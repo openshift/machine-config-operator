@@ -1,0 +1,11 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/hosts"
+contents:
+  inline: |
+    # IPv4 and IPv6 localhost aliases
+    127.0.0.1	localhost
+    ::1		localhost
+
+    # Internal registry hack
+    10.3.0.25 docker-registry.default.svc
