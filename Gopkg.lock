@@ -434,7 +434,7 @@
   version = "kubernetes-1.11.1"
 
 [[projects]]
-  digest = "1:c6d38303d9da335700612bb53b1bb1f6fd18e8335b76049a798a2303eb9231d3"
+  digest = "1:159c095dfb7597e624380203dc6151fe870f7c52b4950a3459ecf1890f6500e2"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -468,6 +468,7 @@
     "pkg/util/json",
     "pkg/util/mergepatch",
     "pkg/util/net",
+    "pkg/util/rand",
     "pkg/util/runtime",
     "pkg/util/sets",
     "pkg/util/strategicpatch",
@@ -640,6 +641,7 @@
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/apimachinery/pkg/util/diff",
     "k8s.io/apimachinery/pkg/util/intstr",
+    "k8s.io/apimachinery/pkg/util/rand",
     "k8s.io/apimachinery/pkg/util/runtime",
     "k8s.io/apimachinery/pkg/util/wait",
     "k8s.io/apimachinery/pkg/watch",
