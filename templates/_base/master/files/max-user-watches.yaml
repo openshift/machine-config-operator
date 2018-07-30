@@ -1,0 +1,5 @@
+filesystem: "root"
+path: "/etc/sysctl.d/10-max-user-watches.conf"
+mode: 0644
+contents:
+  inline: fs.inotify.max_user_watches=16184

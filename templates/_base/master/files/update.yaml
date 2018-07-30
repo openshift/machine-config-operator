@@ -1,0 +1,11 @@
+# This configuration file is specific to Container Linux. It instructs the
+# update-engine component to search for updates within the cluster instead of
+# contacting the public update servers.
+
+filesystem: "root"
+mode: 0644
+path: "/etc/coreos/update.conf"
+contents:
+  inline: |
+    GROUP=stable
+    SERVER=http://localhost:32003/v1/update

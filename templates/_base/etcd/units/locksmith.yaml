@@ -1,0 +1,7 @@
+# This configuration file is specific to Container Linux. It instructs systemd
+# to mask Locksmith, which is normally responsible for rebooting the system. It
+# is disabled because the Node Agent will assume responsibility for rebooting
+# the system (among other things).
+
+name: "locksmith.service"
+mask: true
