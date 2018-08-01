@@ -70,8 +70,8 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machinepool"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinepool-discovery"),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigpool"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigpool-discovery"),
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -169,7 +169,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 
 	pools, err := ctrl.getPoolsForMachineConfig(mc)
 	if err != nil {
-		glog.Error("error finding pools for machineconfig: %v", err)
+		glog.Errorf("error finding pools for machineconfig: %v", err)
 		return
 	}
 
