@@ -3,9 +3,14 @@
 set -eu
 
 REPO=github.com/openshift/machine-config-operator
-WHAT=${WHAT:-}
+WHAT=${WHAT:-...}
 GOFLAGS=${GOFLAGS:-}
 GLDFLAGS=${GLDFLAGS:-}
+
+eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
+
+GOOS=${GOOS:-${GOHOSTOS}}
+GOARCH=${GOACH:-${GOHOSTARCH}}
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)"
@@ -17,8 +22,6 @@ fi
 
 GLDFLAGS+="-X ${REPO}/version.Raw=${VERSION}"
 
-eval $(go env)
-
 if [ -z ${BIN_PATH+a} ]; then
 	export BIN_PATH=_output/bin/${GOOS}/${GOARCH}
 fi
@@ -26,4 +29,4 @@ fi
 mkdir -p ${BIN_PATH}
 
 echo "Building ${WHAT}..."
-GOOS=${GOOS} GOARCH=${GOARCH} go build ${GOFLAGS} -ldflags "${GLDFLAGS}" -o ${WHAT} ${REPO}/cmd/${WHAT}
+GOOS=${GOOS} GOARCH=${GOARCH} go build ${GOFLAGS} -ldflags "${GLDFLAGS}" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}
