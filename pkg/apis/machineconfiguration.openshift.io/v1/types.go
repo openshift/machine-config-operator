@@ -90,7 +90,7 @@ type ControllerConfigList struct {
 //       # One and only one version must be marked as the storage version.
 //       storage: true
 //   # either Namespaced or Cluster
-//   scope: Cluster
+//   scope: Namespaced
 //   names:
 //     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
 //     plural: machineconfigs
@@ -148,7 +148,7 @@ type MachineConfigList struct {
 //       # One and only one version must be marked as the storage version.
 //       storage: true
 //   # either Namespaced or Cluster
-//   scope: Cluster
+//   scope: Namespaced
 //   names:
 //     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
 //     plural: machineconfigpools
