@@ -49,6 +49,14 @@
   version = "v1.0.1"
 
 [[projects]]
+  digest = "1:aba270497eb2d49f5cba6f4162d524b9a1195a24cbce8be20bf56a0051f47deb"
+  name = "github.com/blang/semver"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "2ee87856327ba09384cabd113bc6b5d174e9ec0f"
+  version = "v3.5.1"
+
+[[projects]]
   digest = "1:beedaa1ce9cb1ddb4dc511a68d9d128773e6ada0a1bd8b9bc4b7d7026617b535"
   name = "github.com/coreos/container-linux-config-transpiler"
   packages = [
@@ -236,6 +244,14 @@
   version = "v0.3.5"
 
 [[projects]]
+  digest = "1:406338ad39ab2e37b7f4452906442a3dbf0eb3379dd1f06aafb5c07e769a5fbb"
+  name = "github.com/inconshreveable/mousetrap"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
+  version = "v1.0"
+
+[[projects]]
   digest = "1:53ac4e911e12dde0ab68655e2006449d207a5a681f084974da2b06e5dbeaca72"
   name = "github.com/json-iterator/go"
   packages = ["."]
@@ -260,6 +276,14 @@
   version = "1.0.1"
 
 [[projects]]
+  digest = "1:cce3a18fb0b96b5015cd8ca03a57d20a662679de03c4dc4b6ff5f17ea2050fa6"
+  name = "github.com/pborman/uuid"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "e790cca94e6cc75c7064b1332e63811d4aae1a53"
+  version = "v1.1"
+
+[[projects]]
   branch = "master"
   digest = "1:3bf17a6e6eaa6ad24152148a631d18662f7212e21637c2699bff3369b7f00fa2"
   name = "github.com/petar/GoLLRB"
@@ -274,6 +298,14 @@
   pruneopts = "NUT"
   revision = "5f041e8faa004a95c88a202771f4cc3e991971e6"
   version = "v2.0.1"
+
+[[projects]]
+  digest = "1:343d44e06621142ab09ae0c76c1799104cdfddd3ffb445d78b1adf8dc3ffaf3d"
+  name = "github.com/spf13/cobra"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "ef82de70bb3f60c65fb8eebacbb2d122ef517385"
+  version = "v0.0.3"
 
 [[projects]]
   digest = "1:15e5c398fbd9d2c439b635a08ac161b13d04f0c2aa587fe256b65dc0c3efe8b7"
@@ -434,7 +466,7 @@
   version = "kubernetes-1.11.1"
 
 [[projects]]
-  digest = "1:159c095dfb7597e624380203dc6151fe870f7c52b4950a3459ecf1890f6500e2"
+  digest = "1:31ab6339c5271096f608dd52399ec4fd28a48d9d426ff5d1aa96bc8135626119"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -472,6 +504,7 @@
     "pkg/util/runtime",
     "pkg/util/sets",
     "pkg/util/strategicpatch",
+    "pkg/util/uuid",
     "pkg/util/validation",
     "pkg/util/validation/field",
     "pkg/util/wait",
@@ -486,10 +519,11 @@
   version = "kubernetes-1.11.1"
 
 [[projects]]
-  digest = "1:3ccd3b4164d1cf60e89211349e8d7989c84b6de856407d98cd307dafe4da0346"
+  digest = "1:e90eea1bad74ef223a0a3464ed285796bd2850ecb028177dc7db011eacb52eb4"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
+    "discovery/cached",
     "discovery/fake",
     "informers",
     "informers/admissionregistration",
@@ -626,8 +660,14 @@
     "rest",
     "rest/watch",
     "testing",
+    "tools/auth",
     "tools/cache",
+    "tools/clientcmd",
     "tools/clientcmd/api",
+    "tools/clientcmd/api/latest",
+    "tools/clientcmd/api/v1",
+    "tools/leaderelection",
+    "tools/leaderelection/resourcelock",
     "tools/metrics",
     "tools/pager",
     "tools/record",
@@ -637,6 +677,7 @@
     "util/cert",
     "util/connrotation",
     "util/flowcontrol",
+    "util/homedir",
     "util/integer",
     "util/retry",
     "util/workqueue",
@@ -689,6 +730,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/Masterminds/sprig",
+    "github.com/blang/semver",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
     "github.com/coreos/ignition/config/v2_2",
@@ -696,6 +738,7 @@
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
+    "github.com/spf13/cobra",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/equality",
     "k8s.io/apimachinery/pkg/api/errors",
@@ -710,9 +753,11 @@
     "k8s.io/apimachinery/pkg/util/rand",
     "k8s.io/apimachinery/pkg/util/runtime",
     "k8s.io/apimachinery/pkg/util/strategicpatch",
+    "k8s.io/apimachinery/pkg/util/uuid",
     "k8s.io/apimachinery/pkg/util/wait",
     "k8s.io/apimachinery/pkg/watch",
     "k8s.io/client-go/discovery",
+    "k8s.io/client-go/discovery/cached",
     "k8s.io/client-go/discovery/fake",
     "k8s.io/client-go/informers",
     "k8s.io/client-go/informers/core/v1",
@@ -724,6 +769,9 @@
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
+    "k8s.io/client-go/tools/clientcmd",
+    "k8s.io/client-go/tools/leaderelection",
+    "k8s.io/client-go/tools/leaderelection/resourcelock",
     "k8s.io/client-go/tools/record",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/client-go/util/retry",
