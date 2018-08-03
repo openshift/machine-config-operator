@@ -1,6 +1,7 @@
-package render
+package node
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -13,18 +14,22 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -40,38 +45,46 @@ const (
 // controllerKind contains the schema.GroupVersionKind for this controller type.
 var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
 
-// Controller defines the render controller.
+var nodeUpdateBackoff = wait.Backoff{
+	Steps:    5,
+	Duration: 100 * time.Millisecond,
+	Jitter:   1.0,
+}
+
+// Controller defines the node controller.
 type Controller struct {
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
-	mcpLister mcfglistersv1.MachineConfigPoolLister
-	mcLister  mcfglistersv1.MachineConfigLister
+	mcpLister  mcfglistersv1.MachineConfigPoolLister
+	nodeLister corelisterv1.NodeLister
 
-	mcpListerSynced cache.InformerSynced
-	mcListerSynced  cache.InformerSynced
+	mcpListerSynced  cache.InformerSynced
+	nodeListerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
 }
 
-// New returns a new render controller.
+// New returns a new node controller.
 func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
-	mcInformer mcfginformersv1.MachineConfigInformer,
+	nodeInformer coreinformersv1.NodeInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigpool"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigpool-discovery"),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigpool-node"),
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -79,19 +92,19 @@ func New(
 		UpdateFunc: ctrl.updateMachineConfigPool,
 		DeleteFunc: ctrl.deleteMachineConfigPool,
 	})
-	mcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addMachineConfig,
-		UpdateFunc: ctrl.updateMachineConfig,
-		DeleteFunc: ctrl.deleteMachineConfig,
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addNode,
+		UpdateFunc: ctrl.updateNode,
+		DeleteFunc: ctrl.deleteNode,
 	})
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueue
 
 	ctrl.mcpLister = mcpInformer.Lister()
-	ctrl.mcLister = mcInformer.Lister()
+	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
-	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -104,7 +117,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	glog.Info("Starting MachineController Controller")
 	defer glog.Info("Shutting down MachineController Controller")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.nodeListerSynced) {
 		return
 	}
 
@@ -124,10 +137,6 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	oldPool := old.(*mcfgv1.MachineConfigPool)
 	curPool := cur.(*mcfgv1.MachineConfigPool)
-
-	if equality.Semantic.DeepEqual(oldPool.Spec.MachineConfigSelector, curPool.Spec.MachineConfigSelector) {
-		return
-	}
 
 	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
@@ -150,72 +159,51 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	// TODO(abhinavdahiya): handle deletes.
 }
 
-func (ctrl *Controller) addMachineConfig(obj interface{}) {
-	mc := obj.(*mcfgv1.MachineConfig)
-	if mc.DeletionTimestamp != nil {
-		ctrl.deleteMachineConfig(mc)
+func (ctrl *Controller) addNode(obj interface{}) {
+	node := obj.(*corev1.Node)
+	if node.DeletionTimestamp != nil {
+		ctrl.deleteNode(node)
 		return
 	}
 
-	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		pool := ctrl.resolveControllerRef(mc.Namespace, controllerRef)
-		if pool == nil {
-			return
-		}
-		glog.V(4).Infof("MachineConfig %s added", mc.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return
-	}
-
-	pools, err := ctrl.getPoolsForMachineConfig(mc)
+	pool, err := ctrl.getPoolForNode(node)
 	if err != nil {
-		glog.Errorf("error finding pools for machineconfig: %v", err)
+		glog.Errorf("error finding pools for node: %v", err)
 		return
 	}
-
-	glog.V(4).Infof("MachineConfig %s added", mc.Name)
-	for _, p := range pools {
-		ctrl.enqueueMachineConfigPool(p)
+	if pool == nil {
+		return
 	}
+	glog.V(4).Infof("Node %s added", node.Name)
+	ctrl.enqueueMachineConfigPool(pool)
 }
-func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
-	oldMC := old.(*mcfgv1.MachineConfig)
-	curMC := cur.(*mcfgv1.MachineConfig)
-	if oldMC.ResourceVersion == curMC.ResourceVersion {
+
+func (ctrl *Controller) updateNode(old, cur interface{}) {
+	oldNode := old.(*corev1.Node)
+	curNode := cur.(*corev1.Node)
+
+	if oldNode.ResourceVersion == curNode.ResourceVersion {
 		return
 	}
 
-	curControllerRef := metav1.GetControllerOf(curMC)
-	oldControllerRef := metav1.GetControllerOf(oldMC)
-	controllerRefChanged := !reflect.DeepEqual(curControllerRef, oldControllerRef)
-	if controllerRefChanged && oldControllerRef != nil {
-		glog.Errorf("machineconfig has changed controller, not allowed.")
+	if !nodeChanged(oldNode, curNode) {
 		return
 	}
 
-	if curControllerRef != nil {
-		pool := ctrl.resolveControllerRef(curMC.Namespace, curControllerRef)
-		if pool == nil {
-			return
-		}
-		glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return
-	}
-
-	pools, err := ctrl.getPoolsForMachineConfig(curMC)
+	pool, err := ctrl.getPoolForNode(curNode)
 	if err != nil {
-		glog.Error("error finding pools for machineconfig: %v", err)
+		glog.Errorf("error finding pools for node: %v", err)
 		return
 	}
-
-	glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-	for _, p := range pools {
-		ctrl.enqueueMachineConfigPool(p)
+	if pool == nil {
+		return
 	}
+	glog.V(4).Infof("Node %s updated", curNode.Name)
+	ctrl.enqueueMachineConfigPool(pool)
 }
-func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
-	mc, ok := obj.(*mcfgv1.MachineConfig)
+
+func (ctrl *Controller) deleteNode(obj interface{}) {
+	node, ok := obj.(*corev1.Node)
 
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -223,73 +211,58 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
 			return
 		}
-		mc, ok = tombstone.Obj.(*mcfgv1.MachineConfig)
+		node, ok = tombstone.Obj.(*corev1.Node)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Node %#v", obj))
 			return
 		}
 	}
 
-	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		pool := ctrl.resolveControllerRef(mc.Namespace, controllerRef)
-		if pool == nil {
-			return
-		}
-		glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
-		ctrl.enqueueMachineConfigPool(pool)
+	pool, err := ctrl.getPoolForNode(node)
+	if err != nil {
+		glog.Errorf("error finding pools for node: %v", err)
 		return
 	}
-
-	pools, err := ctrl.getPoolsForMachineConfig(mc)
-	if err != nil {
-		glog.Error("error finding pools for machineconfig: %v", err)
+	if pool == nil {
 		return
 	}
-
-	glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
-	for _, p := range pools {
-		ctrl.enqueueMachineConfigPool(p)
-	}
+	glog.V(4).Infof("Node %s delete", node.Name)
+	ctrl.enqueueMachineConfigPool(pool)
 }
 
-func (ctrl *Controller) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *mcfgv1.MachineConfigPool {
-	// We can't look up by UID, so look up by Name and then verify UID.
-	// Don't even try to look up by Name if it's the wrong Kind.
-	if controllerRef.Kind != controllerKind.Kind {
-		return nil
-	}
-	pool, err := ctrl.mcpLister.MachineConfigPools(namespace).Get(controllerRef.Name)
-	if err != nil {
-		return nil
+func nodeChanged(old, cur *corev1.Node) bool {
+	if old.Annotations == nil && cur.Annotations != nil ||
+		old.Annotations != nil && cur.Annotations == nil {
+		return true
 	}
 
-	if pool.UID != controllerRef.UID {
-		// The controller we found with this Name is not the same one that the
-		// ControllerRef points to.
-		return nil
+	if old.Annotations == nil && cur.Annotations == nil {
+		return false
 	}
-	return pool
+
+	if old.Annotations[CurrentMachineConfigAnnotationKey] != cur.Annotations[CurrentMachineConfigAnnotationKey] ||
+		old.Annotations[DesiredMachineConfigAnnotationKey] != cur.Annotations[DesiredMachineConfigAnnotationKey] {
+		return true
+	}
+
+	return false
 }
 
-func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfigPool, error) {
-	if len(config.Labels) == 0 {
-		return nil, fmt.Errorf("no MachineConfigPool found for MachineConfig %v because it has no labels", config.Name)
-	}
-
-	pList, err := ctrl.mcpLister.MachineConfigPools(config.Namespace).List(labels.Everything())
+func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfigPool, error) {
+	pl, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
 
 	var pools []*mcfgv1.MachineConfigPool
-	for _, p := range pList {
-		selector, err := metav1.LabelSelectorAsSelector(p.Spec.MachineConfigSelector)
+	for _, p := range pl {
+		selector, err := metav1.LabelSelectorAsSelector(p.Spec.MachineSelector)
 		if err != nil {
 			return nil, fmt.Errorf("invalid label selector: %v", err)
 		}
 
 		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
-		if selector.Empty() || !selector.Matches(labels.Set(config.Labels)) {
+		if selector.Empty() || !selector.Matches(labels.Set(node.Labels)) {
 			continue
 		}
 
@@ -297,9 +270,13 @@ func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) (
 	}
 
 	if len(pools) == 0 {
-		return nil, fmt.Errorf("could not find any MachineConfigPool set for MachineConfig %s in namespace %s with labels: %v", config.Name, config.Namespace, config.Labels)
+		// This is not an error, as there might be nodes in cluster that are not managed by machineconfigpool.
+		return nil, nil
 	}
-	return pools, nil
+	if len(pools) > 1 {
+		return nil, fmt.Errorf("node %s belongs to more than one MachineConfigPool, cannot proceed with this Node", node.Name)
+	}
+	return pools[0], nil
 }
 
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
@@ -392,93 +369,131 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	if machineconfigpool.Status.CurrentMachineConfig == "" {
+		return fmt.Errorf("Empty CurrentMachineConfig")
+	}
+
 	// Deep-copy otherwise we are mutating our cache.
 	// TODO: Deep-copy only when needed.
 	pool := machineconfigpool.DeepCopy()
 	everything := metav1.LabelSelector{}
-	if reflect.DeepEqual(pool.Spec.MachineConfigSelector, &everything) {
-		ctrl.eventRecorder.Eventf(pool, v1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machineconfigs. A non-empty selector is require.")
+	if reflect.DeepEqual(pool.Spec.MachineSelector, &everything) {
+		ctrl.eventRecorder.Eventf(pool, v1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machines. A non-empty selector is require.")
 		return nil
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineConfigSelector)
+	if pool.DeletionTimestamp != nil {
+		return ctrl.syncStatusOnly(pool)
+	}
+
+	if pool.Spec.Paused {
+		return ctrl.syncStatusOnly(pool)
+	}
+	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineSelector)
+	if err != nil {
+		return err
+	}
+	nodes, err := ctrl.nodeLister.List(selector)
 	if err != nil {
 		return err
 	}
 
-	mcs, err := ctrl.mcLister.MachineConfigs(pool.Namespace).List(selector)
+	progress, err := makeProgress(pool, nodes)
 	if err != nil {
 		return err
 	}
 
-	return ctrl.syncGeneratedMachineConfig(pool, mcs)
+	if progress == 0 {
+		return ctrl.syncStatusOnly(pool)
+	}
+
+	candidates := getCandidateMachines(pool, nodes, progress)
+	for _, node := range candidates {
+		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Status.CurrentMachineConfig); err != nil {
+			return err
+		}
+	}
+	return ctrl.syncStatusOnly(pool)
 }
 
-func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
-	generated, err := generateMachineConfig(pool, configs)
-	if err != nil {
-		return err
-	}
-
-	_, err = ctrl.mcLister.MachineConfigs(pool.Namespace).Get(generated.Name)
-	if apierrors.IsNotFound(err) {
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs(generated.Namespace).Create(generated)
-	}
-	if err != nil {
-		return err
-	}
-
-	if pool.Status.CurrentMachineConfig == generated.Name {
-		_, _, err = controller.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
-		return err
-	}
-
-	pool.Status.CurrentMachineConfig = generated.Name
-	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools(pool.Namespace).UpdateStatus(pool)
-	if err != nil {
-		return err
-	}
-
-	gmcs, err := ctrl.mcLister.MachineConfigs(pool.Namespace).List(labels.Everything())
-	if err != nil {
-		return err
-	}
-	for _, gmc := range gmcs {
-		if gmc.Name == generated.Name {
-			continue
-		}
-
-		deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, pool.UID, gmc.UID)
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs(gmc.Namespace).Patch(gmc.Name, types.StrategicMergePatchType, []byte(deleteOwnerRefPatch))
+func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
+	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
+		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
 		if err != nil {
-			if errors.IsNotFound(err) {
-				// If the machineconfig no longer exists, ignore it.
-				return nil
-			}
-			if errors.IsInvalid(err) {
-				// Invalid error will be returned in two cases: 1. the machineconfig
-				// has no owner reference, 2. the uid of the machineconfig doesn't
-				// match.
-				// In both cases, the error can be ignored.
-				return nil
-			}
+			return err
+		}
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+		if newNode.Annotations == nil {
+			newNode.Annotations = map[string]string{}
+		}
+		newNode.Annotations[DesiredMachineConfigAnnotationKey] = currentConfig
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+		}
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(nodeName, types.StrategicMergePatchType, patchBytes)
+		return err
+	})
+}
+
+func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, error) {
+	maxunavail, err := maxUnavailable(pool, nodes)
+	if err != nil {
+		return 0, err
+	}
+	unavail := int32(len(getUnavailableMachines(pool.Status.CurrentMachineConfig, nodes)))
+	progress := int32(0)
+	if unavail < maxunavail {
+		progress = maxunavail - unavail
+	}
+
+	return progress, nil
+}
+
+func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, progress int32) []*corev1.Node {
+	acted := getReadyMachines(pool.Status.CurrentMachineConfig, nodes)
+	acted = append(acted, getUnavailableMachines(pool.Status.CurrentMachineConfig, nodes)...)
+
+	actedMap := map[string]struct{}{}
+	for _, node := range acted {
+		actedMap[node.Name] = struct{}{}
+	}
+
+	var candidates []*corev1.Node
+	for idx, node := range nodes {
+		if _, ok := actedMap[node.Name]; !ok {
+			candidates = append(candidates, nodes[idx])
 		}
 	}
 
-	return nil
+	if int32(len(candidates)) <= progress {
+		return candidates
+	}
+	return candidates[:progress]
 }
 
-func generateMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
-	merged := mcfgv1.MergeMachineConfigs(configs)
-	hashedName, err := getMachineConfigHashedName(merged)
-	if err != nil {
-		return nil, err
+func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, error) {
+	intOrPercent := intstrutil.FromInt(1)
+	if pool.Spec.MaxUnavailable != nil {
+		intOrPercent = *pool.Spec.MaxUnavailable
 	}
-	oref := metav1.NewControllerRef(pool, controllerKind)
 
-	merged.SetName(hashedName)
-	merged.SetNamespace(pool.Namespace)
-	merged.SetOwnerReferences([]metav1.OwnerReference{*oref})
-
-	return merged, nil
+	maxunavail, err := intstrutil.GetValueFromIntOrPercent(&intOrPercent, len(nodes), false)
+	if err != nil {
+		return 0, err
+	}
+	if maxunavail == 0 {
+		maxunavail = 1
+	}
+	return int32(maxunavail), nil
 }
