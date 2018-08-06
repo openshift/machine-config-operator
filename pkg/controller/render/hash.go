@@ -21,6 +21,10 @@ var (
 )
 
 func getMachineConfigHashedName(config *mcfgv1.MachineConfig) (string, error) {
+	if config == nil {
+		return "", fmt.Errorf("empty machineconfig object")
+	}
+
 	data, err := yaml.Marshal(config.Spec)
 	if err != nil {
 		return "", err
@@ -30,7 +34,7 @@ func getMachineConfigHashedName(config *mcfgv1.MachineConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(h), nil
+	return fmt.Sprintf("%x", h), nil
 }
 
 func hashData(data []byte) ([]byte, error) {

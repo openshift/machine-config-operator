@@ -13,7 +13,6 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -124,10 +123,6 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	oldPool := old.(*mcfgv1.MachineConfigPool)
 	curPool := cur.(*mcfgv1.MachineConfigPool)
-
-	if equality.Semantic.DeepEqual(oldPool.Spec.MachineConfigSelector, curPool.Spec.MachineConfigSelector) {
-		return
-	}
 
 	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
@@ -415,6 +410,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
+	if len(configs) == 0 {
+		return nil
+	}
+
 	generated, err := generateMachineConfig(pool, configs)
 	if err != nil {
 		return err
@@ -449,7 +448,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		}
 
 		deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, pool.UID, gmc.UID)
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs(gmc.Namespace).Patch(gmc.Name, types.StrategicMergePatchType, []byte(deleteOwnerRefPatch))
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs(gmc.Namespace).Patch(gmc.Name, types.JSONPatchType, []byte(deleteOwnerRefPatch))
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// If the machineconfig no longer exists, ignore it.
