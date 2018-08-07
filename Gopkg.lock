@@ -295,6 +295,31 @@
   version = "1.0.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:0e4a2394c09372421e41095dfe6ff6e56ac9cdb301064e21c0b015d20ae16c4d"
+  name = "github.com/openshift/api"
+  packages = ["security/v1"]
+  pruneopts = "NUT"
+  revision = "f424ae81fec6a71a7d7421d5c572a13106b520fc"
+
+[[projects]]
+  branch = "master"
+  digest = "1:068c3a6996a1485fd808d55d8a88363c485acdf451fc9f1a7d7d2991769cb846"
+  name = "github.com/openshift/client-go"
+  packages = [
+    "security/clientset/versioned",
+    "security/clientset/versioned/scheme",
+    "security/clientset/versioned/typed/security/v1",
+    "security/informers/externalversions",
+    "security/informers/externalversions/internalinterfaces",
+    "security/informers/externalversions/security",
+    "security/informers/externalversions/security/v1",
+    "security/listers/security/v1",
+  ]
+  pruneopts = "NUT"
+  revision = "5b198a036f098f34fbf0c42768382d80708cd2a9"
+
+[[projects]]
   digest = "1:cce3a18fb0b96b5015cd8ca03a57d20a662679de03c4dc4b6ff5f17ea2050fa6"
   name = "github.com/pborman/uuid"
   packages = ["."]
@@ -335,7 +360,6 @@
   version = "v1.0.1"
 
 [[projects]]
-  branch = "master"
   digest = "1:c9b456727ce4101594aabddaa816c80464cd21a1e5fcd145297a902303be0085"
   name = "github.com/vincent-petithory/dataurl"
   packages = ["."]
@@ -489,6 +513,25 @@
   ]
   pruneopts = "NUT"
   revision = "2d6f90ab1293a1fb871cf149423ebb72aa7423aa"
+  version = "kubernetes-1.11.1"
+
+[[projects]]
+  digest = "1:82327daaffa8cd2a1f3e4d4c2c98288bbcfa7a46a508c0ee93158eac5f7e3a76"
+  name = "k8s.io/apiextensions-apiserver"
+  packages = [
+    "pkg/apis/apiextensions",
+    "pkg/apis/apiextensions/v1beta1",
+    "pkg/client/clientset/clientset",
+    "pkg/client/clientset/clientset/scheme",
+    "pkg/client/clientset/clientset/typed/apiextensions/v1beta1",
+    "pkg/client/informers/externalversions",
+    "pkg/client/informers/externalversions/apiextensions",
+    "pkg/client/informers/externalversions/apiextensions/v1beta1",
+    "pkg/client/informers/externalversions/internalinterfaces",
+    "pkg/client/listers/apiextensions/v1beta1",
+  ]
+  pruneopts = "NUT"
+  revision = "06dfdaae5c2bd89e1243151ff65b9bf8ee050f28"
   version = "kubernetes-1.11.1"
 
 [[projects]]
@@ -764,11 +807,24 @@
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
+    "github.com/openshift/api/security/v1",
+    "github.com/openshift/client-go/security/clientset/versioned",
+    "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1",
+    "github.com/openshift/client-go/security/informers/externalversions",
+    "github.com/openshift/client-go/security/informers/externalversions/security/v1",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",
     "github.com/wking/kubernetes-drain",
     "gopkg.in/yaml.v2",
+    "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
+    "k8s.io/api/rbac/v1",
+    "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1",
+    "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset",
+    "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1",
+    "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions",
+    "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1",
+    "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1",
     "k8s.io/apimachinery/pkg/api/equality",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
@@ -779,6 +835,7 @@
     "k8s.io/apimachinery/pkg/runtime/serializer",
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/apimachinery/pkg/util/diff",
+    "k8s.io/apimachinery/pkg/util/errors",
     "k8s.io/apimachinery/pkg/util/intstr",
     "k8s.io/apimachinery/pkg/util/rand",
     "k8s.io/apimachinery/pkg/util/runtime",
@@ -789,11 +846,16 @@
     "k8s.io/client-go/discovery",
     "k8s.io/client-go/discovery/fake",
     "k8s.io/client-go/informers",
+    "k8s.io/client-go/informers/apps/v1",
     "k8s.io/client-go/informers/core/v1",
+    "k8s.io/client-go/informers/rbac/v1",
     "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/kubernetes/fake",
     "k8s.io/client-go/kubernetes/scheme",
+    "k8s.io/client-go/kubernetes/typed/apps/v1",
     "k8s.io/client-go/kubernetes/typed/core/v1",
+    "k8s.io/client-go/kubernetes/typed/rbac/v1",
+    "k8s.io/client-go/listers/apps/v1",
     "k8s.io/client-go/listers/core/v1",
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",

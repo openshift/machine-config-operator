@@ -31,7 +31,6 @@ required = ["k8s.io/gengo/types", "k8s.io/code-generator/cmd/client-gen"]
   name = "github.com/coreos/container-linux-config-transpiler"
   version = "v0.9.0"
 
-
 [[constraint]]
   name = "github.com/ghodss/yaml"
   version = "v1.0.0"
@@ -46,6 +45,10 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
 
 [[constraint]]
   name = "k8s.io/api"
+  version = "kubernetes-1.11.1"
+
+[[constraint]]
+  name = "k8s.io/apiextensions-apiserver"
   version = "kubernetes-1.11.1"
 
 [[constraint]]
@@ -91,3 +94,11 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
 [[constraint]]
   name = "github.com/vincent-petithory/dataurl"
   revision = "9a301d65acbb728fcc3ace14f45f511a4cfeea9c"
+
+[[constraint]]
+  name = "github.com/openshift/api"
+  branch = "master"
+
+[[constraint]]
+  name = "github.com/openshift/client-go"
+  branch = "master"
