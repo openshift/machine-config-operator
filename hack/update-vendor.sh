@@ -12,3 +12,4 @@ cd "$(git rev-parse --show-cdup)"
 dep ensure
 
 (cd hack && ./update-codegen.sh)
+(cd hack && ./update-generated-bindata.sh)
