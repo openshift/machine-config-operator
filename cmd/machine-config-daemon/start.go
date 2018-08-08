@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -33,8 +34,8 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
-	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "target-namespace", "openshift-machine-config", "namespace is where the daemon looks for machineconfigs.")
-	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "root-prefix", "/rootfs", "where the nodes root filesystem is mounted, for the file stage.")
+	startCmd.PersistentFlags().StringVar(&startOpts.targetNamespace, "target-namespace", "openshift-machine-config", "namespace is where the daemon looks for machineconfigs.")
+	startCmd.PersistentFlags().StringVar(&startOpts.rootPrefix, "root-prefix", "/rootfs", "where the nodes root filesystem is mounted, for the file stage.")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -45,7 +46,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.Infof("Version: %+v", version.Version)
 
 	if startOpts.nodeName == "" {
-		glog.Fatalf("node-name is required")
+		name, ok := os.LookupEnv("NODE_NAME")
+		if !ok || name == "" {
+			glog.Fatalf("node-name is required")
+		}
+		startOpts.nodeName = name
 	}
 
 	cb, err := newClientBuilder(startOpts.kubeconfig)
