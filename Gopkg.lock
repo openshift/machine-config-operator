@@ -81,9 +81,12 @@
   version = "v0.2.0"
 
 [[projects]]
-  digest = "1:2ed7e62c94645be6b47be0911035fbabaa6271b20138d3643488716b5c6cad41"
+  digest = "1:13627d07034a944b5ea1aefa8e6e909f49d56315a539e66a7c1dd35b0896ef43"
   name = "github.com/coreos/go-systemd"
-  packages = ["unit"]
+  packages = [
+    "login1",
+    "unit",
+  ]
   pruneopts = "NUT"
   revision = "39ca1b05acc7ad1220e09f133283b8859a8b71ab"
   version = "v17"
@@ -128,6 +131,22 @@
   pruneopts = "NUT"
   revision = "0ca9ea5df5451ffdf184b4428c902747c2c11cd7"
   version = "v1.0.0"
+
+[[projects]]
+  digest = "1:8d24ffb57bd977a9c44a7b0edae0fb80f2ccd2882f77364efdd8c84b8c86ef38"
+  name = "github.com/go-log/log"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "37e2e1f19306361e1fc152a1839f1236149cb4e4"
+  version = "v0.1.0"
+
+[[projects]]
+  digest = "1:ca3369c0fc8d471d8698f85a37a4f8c98a847402681a31431fb87a84fa2e5373"
+  name = "github.com/godbus/dbus"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "a389bdde4dd695d414e47b755e95e72b7826432c"
+  version = "v4.1.0"
 
 [[projects]]
   digest = "1:8679b8a64f3613e9749c5640c3535c83399b8e69f67ce54d91dc73f6d77373af"
@@ -322,6 +341,13 @@
   packages = ["."]
   pruneopts = "NUT"
   revision = "9a301d65acbb728fcc3ace14f45f511a4cfeea9c"
+
+[[projects]]
+  digest = "1:de75365fd4dff7414a8dd8df7ed96e6e99d6cc4999ebfc5e85c01141718ff3b7"
+  name = "github.com/wking/kubernetes-drain"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "b43d446bae992baacb39594d2d416b04ad78f307"
 
 [[projects]]
   branch = "master"
@@ -519,11 +545,10 @@
   version = "kubernetes-1.11.1"
 
 [[projects]]
-  digest = "1:e90eea1bad74ef223a0a3464ed285796bd2850ecb028177dc7db011eacb52eb4"
+  digest = "1:3e18248dc0673da91a73f5d21ad615d2a1c7b2bfcec730a5d42d633159cd54da"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
-    "discovery/cached",
     "discovery/fake",
     "informers",
     "informers/admissionregistration",
@@ -733,16 +758,20 @@
     "github.com/blang/semver",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
+    "github.com/coreos/go-systemd/login1",
     "github.com/coreos/ignition/config/v2_2",
     "github.com/coreos/ignition/config/v2_2/types",
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
     "github.com/spf13/cobra",
+    "github.com/vincent-petithory/dataurl",
+    "github.com/wking/kubernetes-drain",
     "k8s.io/api/core/v1",
     "k8s.io/apimachinery/pkg/api/equality",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
+    "k8s.io/apimachinery/pkg/fields",
     "k8s.io/apimachinery/pkg/labels",
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
@@ -757,7 +786,6 @@
     "k8s.io/apimachinery/pkg/util/wait",
     "k8s.io/apimachinery/pkg/watch",
     "k8s.io/client-go/discovery",
-    "k8s.io/client-go/discovery/cached",
     "k8s.io/client-go/discovery/fake",
     "k8s.io/client-go/informers",
     "k8s.io/client-go/informers/core/v1",
