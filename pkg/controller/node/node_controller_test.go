@@ -8,6 +8,7 @@ import (
 	"time"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -752,7 +753,7 @@ func TestShouldMakeProgress(t *testing.T) {
 
 	f.expectGetNodeAction(nodes[1])
 	expNode := nodes[1].DeepCopy()
-	expNode.Annotations[DesiredMachineConfigAnnotationKey] = "v1"
+	expNode.Annotations[daemon.DesiredMachineConfigAnnotationKey] = "v1"
 	oldData, err := json.Marshal(nodes[1])
 	if err != nil {
 		t.Fatal(err)

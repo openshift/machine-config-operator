@@ -79,3 +79,15 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
 [[constraint]]
   name = "github.com/spf13/cobra"
   version = "v0.0.3"
+
+[[constraint]]
+  name = "github.com/coreos/go-systemd"
+  version = "v17"
+
+[[constraint]]
+  name = "github.com/wking/kubernetes-drain"
+  revision = "b43d446bae992baacb39594d2d416b04ad78f307"
+
+[[constraint]]
+  name = "github.com/vincent-petithory/dataurl"
+  revision = "9a301d65acbb728fcc3ace14f45f511a4cfeea9c"
