@@ -9,6 +9,7 @@ import (
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller"
+	"github.com/openshift/machine-config-operator/pkg/daemon"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -240,8 +241,8 @@ func nodeChanged(old, cur *corev1.Node) bool {
 		return false
 	}
 
-	if old.Annotations[CurrentMachineConfigAnnotationKey] != cur.Annotations[CurrentMachineConfigAnnotationKey] ||
-		old.Annotations[DesiredMachineConfigAnnotationKey] != cur.Annotations[DesiredMachineConfigAnnotationKey] {
+	if old.Annotations[daemon.CurrentMachineConfigAnnotationKey] != cur.Annotations[daemon.CurrentMachineConfigAnnotationKey] ||
+		old.Annotations[daemon.DesiredMachineConfigAnnotationKey] != cur.Annotations[daemon.DesiredMachineConfigAnnotationKey] {
 		return true
 	}
 
@@ -431,7 +432,7 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 		if newNode.Annotations == nil {
 			newNode.Annotations = map[string]string{}
 		}
-		newNode.Annotations[DesiredMachineConfigAnnotationKey] = currentConfig
+		newNode.Annotations[daemon.DesiredMachineConfigAnnotationKey] = currentConfig
 		newData, err := json.Marshal(newNode)
 		if err != nil {
 			return err
