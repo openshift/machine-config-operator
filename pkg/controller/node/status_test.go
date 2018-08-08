@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -56,8 +57,8 @@ func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 	var annos map[string]string
 	if currentConfig != "" || desiredConfig != "" {
 		annos = map[string]string{}
-		annos[CurrentMachineConfigAnnotationKey] = currentConfig
-		annos[DesiredMachineConfigAnnotationKey] = desiredConfig
+		annos[daemon.CurrentMachineConfigAnnotationKey] = currentConfig
+		annos[daemon.DesiredMachineConfigAnnotationKey] = desiredConfig
 	}
 
 	return &corev1.Node{
@@ -90,7 +91,7 @@ func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig st
 	if node.Annotations == nil {
 		node.Annotations = map[string]string{}
 	}
-	node.Annotations[MachineConfigDaemonStateAnnotationKey] = dstate
+	node.Annotations[daemon.MachineConfigDaemonStateAnnotationKey] = dstate
 	return node
 }
 
@@ -438,7 +439,7 @@ func TestCalculateStatus(t *testing.T) {
 		},
 	}, {
 		nodes: []*corev1.Node{
-			newNodeWithReadyAndDaemonState("node-0", "v0", "v1", corev1.ConditionFalse, MachineConfigDaemonStateDegraded),
+			newNodeWithReadyAndDaemonState("node-0", "v0", "v1", corev1.ConditionFalse, daemon.MachineConfigDaemonStateDegraded),
 			newNodeWithReady("node-1", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
 		},
