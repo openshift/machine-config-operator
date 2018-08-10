@@ -1,0 +1,33 @@
+typemeta:
+  kind: MachineConfigPool
+  apiversion: ""
+objectmeta:
+  name: test-pool
+  generatename: ""
+  namespace: test-namespace
+  selflink: ""
+  uid: ""
+  resourceversion: ""
+  generation: 0
+  creationtimestamp: "0001-01-01T00:00:00Z"
+  deletiontimestamp: null
+  deletiongraceperiodseconds: null
+  labels: {}
+  annotations: {}
+  ownerreferences: []
+  initializers: null
+  finalizers: []
+  clustername: ""
+spec:
+  machineconfigselector: null
+  machineselector: null
+  paused: false
+  maxunavailable: null
+status:
+  observedgeneration: 0
+  currentmachineconfig: test-config
+  machinecount: 0
+  updatedmachinecount: 0
+  readymachinecount: 0
+  unavailablemachinecount: 0
+  conditions: []
