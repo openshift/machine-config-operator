@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	initialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
+	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.
+	// The Machine Config Server writes the node annotations to this path.
+	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
 )
 
 // waitUntilUpdate blocks until the desiredConfig annotation doesn't match the
@@ -76,9 +78,9 @@ func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 		return nil
 	}
 
-	d, err := ioutil.ReadFile(initialNodeAnnotationsFilePath)
+	d, err := ioutil.ReadFile(InitialNodeAnnotationsFilePath)
 	if err != nil {
-		return fmt.Errorf("Failed to read initial annotations from %q: %v", initialNodeAnnotationsFilePath, err)
+		return fmt.Errorf("Failed to read initial annotations from %q: %v", InitialNodeAnnotationsFilePath, err)
 	}
 
 	var initial map[string]string
