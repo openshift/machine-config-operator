@@ -1,0 +1,12 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: etcd
+  namespace: kube-system
+spec:
+  machineConfigSelector:
+    matchLabels:
+      "machineconfiguration.openshift.io/role": "etcd"
+  machineSelector:
+    matchLabels:
+      node-role.kubernetes.io/etcd: ""

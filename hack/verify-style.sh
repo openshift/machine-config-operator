@@ -28,8 +28,8 @@ trap 'rc=$?' ERR
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)"
 
-GOFILES=$(find . -path ./vendor -prune -o -name '*.go' | grep -v vendor)
-GOPKGS=$(go list ./... | grep -v '/vendor/' | grep -v '/generated/')
+GOFILES=$(find . -path ./vendor -prune -o -name '*.go' | grep -v vendor | grep -v pkg/operator/assets)
+GOPKGS=$(go list ./... | grep -v '/vendor/' | grep -v '/generated/' | grep -v pkg/operator/assets)
 
 echo "Running gofmt..."
 gofmt -s -d $GOFILES
@@ -46,6 +46,7 @@ yamllint -c hack/yamllint-config.yaml -s $YAMLS
 
 echo "Running verify code-generators"
 (cd hack && ./verify-codegen.sh)
+(cd hack && ./verify-generated-bindata.sh)
 
 echo "Done!"
 exit ${rc}

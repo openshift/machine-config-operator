@@ -1,0 +1,12 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  name: worker
+  namespace: kube-system
+spec:
+  machineConfigSelector:
+    matchLabels:
+      "machineconfiguration.openshift.io/role": "worker"
+  machineSelector:
+    matchLabels:
+      node-role.kubernetes.io/worker: ""
