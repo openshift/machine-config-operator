@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: machine-config-controller
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-config-controller
+  template:
+    metadata:
+      labels:
+        k8s-app: machine-config-controller
+    spec:
+      containers:
+      - name: machine-config-controller
+        image: quay.io/abhinavdahiya/machine-config-controller@sha256:ae2315db3c9027887e56a8f86bbd4fab191734eaedd25a276408dcc2aac24900
+        args:
+        - "start"
+        - "--resourcelock-namespace=kube-system"
+        resources:
+          limits:
+            cpu: 20m
+            memory: 50Mi
+          requests:
+            cpu: 20m
+            memory: 50Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      restartPolicy: Always
+      tolerations:
+      - key: "node-role.kubernetes.io/master"
+        operator: "Exists"
+        effect: "NoSchedule"

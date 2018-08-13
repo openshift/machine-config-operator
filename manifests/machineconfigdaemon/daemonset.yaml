@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: machine-config-daemon
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-config-daemon
+  template:
+    metadata:
+      name: machine-config-daemon
+      labels:
+        k8s-app: machine-config-daemon
+    spec:
+      containers:
+        - name: machine-config-daemon
+          image: quay.io/abhinavdahiya/machine-config-daemon@sha256:5df988a0909e125ed7a9c51d4b0f5c4f4fe3572ae1a95992e820bbccff636943
+          args:
+            - "start"
+            - "--target-namespace={{.TargetNamespace}}"
+          volumeMounts:
+            - mountPath: /rootfs
+              name: rootfs
+            - mountPath: /var/run/dbus
+              name: var-run-dbus
+            - mountPath: /run/systemd
+              name: run-systemd
+            - mountPath: /etc/ssl/certs
+              name: etc-ssl-certs
+              readOnly: true
+            - mountPath: /etc/machine-config-daemon
+              name: etc-mcd
+              readOnly: true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+      serviceAccountName: machine-config-daemon
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/etcd
+          operator: Exists
+          effect: NoSchedule
+      volumes:
+        - name: rootfs
+          hostPath:
+            path: /
+        - name: var-run-dbus
+          hostPath:
+            path: /var/run/dbus
+        - name: run-systemd
+          hostPath:
+            path: /run/systemd
+        - name: etc-ssl-certs
+          hostPath:
+            path: /etc/ssl/certs
+        - name: etc-mcd
+          hostPath:
+            path: /etc/machine-config-daemon
