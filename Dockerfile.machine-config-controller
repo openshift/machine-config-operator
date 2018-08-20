@@ -9,3 +9,4 @@ COPY --from=build-env /go/src/github.com/openshift/machine-config-operator/_outp
 COPY templates /etc/templates
 
 ENTRYPOINT ["/bin/machine-config-controller"]
+test
