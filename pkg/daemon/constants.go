@@ -13,4 +13,6 @@ const (
 	MachineConfigDaemonStateDone = "Done"
 	// MachineConfigDaemonStateDegraded is set by daemon when update cannot be applied.
 	MachineConfigDaemonStateDegraded = "Degraded"
+
+	newconstant = "test"
 )
