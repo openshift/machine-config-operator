@@ -38,7 +38,11 @@ type Daemon struct {
 }
 
 const (
+	// pathSystemd is the path systemd modifiable units, services, etc.. reside
 	pathSystemd = "/etc/systemd/system"
+	// wantsPathSystemd is the path where enabled units should be linked
+	wantsPathSystemd = "/etc/systemd/system/multi-user.target.wants/"
+	// pathDevNull is the systems path to and endless blackhole
 	pathDevNull = "/dev/null"
 )
 
