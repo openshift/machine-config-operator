@@ -14,8 +14,8 @@ const (
 var (
 	rootCmd = &cobra.Command{
 		Use:   componentName,
-		Short: "Run Machine Config Controller",
-		Long:  "",
+		Short: "Run Machine Config Daemon",
+		Long:  "Runs the Machine Config Daemon which handles communication between the host and the cluster as well as applying machineconfigs to the host",
 	}
 )
 
@@ -25,6 +25,6 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing mcc: %v", err)
+		glog.Exitf("Error executing mcd: %v", err)
 	}
 }
