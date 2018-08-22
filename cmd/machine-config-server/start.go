@@ -26,7 +26,6 @@ var (
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
-	startCmd.PersistentFlags().StringVar(&startOpts.targetNamespace, "target-namespace", "openshift-machine-config", "target namespace within which the machine config, pool reside")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -36,7 +35,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
 
-	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.targetNamespace)
+	cs, err := server.NewClusterServer(startOpts.kubeconfig)
 	if err != nil {
 		glog.Exitf("Machine Config Server exited with error: %v", err)
 	}
