@@ -8,6 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ApplyCustomResourceDefinition applies the required CustomResourceDefinition to the cluster.
 func ApplyCustomResourceDefinition(client apiextclientv1beta1.CustomResourceDefinitionsGetter, required *apiextv1beta1.CustomResourceDefinition) (*apiextv1beta1.CustomResourceDefinition, bool, error) {
 	existing, err := client.CustomResourceDefinitions().Get(required.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
