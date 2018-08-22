@@ -10,9 +10,9 @@ import (
 
 // ApplyMachineConfig applies the required machineconfig to the cluster.
 func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, bool, error) {
-	existing, err := client.MachineConfigs(required.GetNamespace()).Get(required.GetName(), metav1.GetOptions{})
+	existing, err := client.MachineConfigs().Get(required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.MachineConfigs(required.GetNamespace()).Create(required)
+		actual, err := client.MachineConfigs().Create(required)
 		return actual, true, err
 	}
 	if err != nil {
@@ -25,15 +25,15 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 		return existing, false, nil
 	}
 
-	actual, err := client.MachineConfigs(required.GetNamespace()).Update(existing)
+	actual, err := client.MachineConfigs().Update(existing)
 	return actual, true, err
 }
 
 // ApplyMachineConfigPool applies the required machineconfig to the cluster.
 func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, required *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfigPool, bool, error) {
-	existing, err := client.MachineConfigPools(required.GetNamespace()).Get(required.GetName(), metav1.GetOptions{})
+	existing, err := client.MachineConfigPools().Get(required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.MachineConfigPools(required.GetNamespace()).Create(required)
+		actual, err := client.MachineConfigPools().Create(required)
 		return actual, true, err
 	}
 	if err != nil {
@@ -46,7 +46,7 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 		return existing, false, nil
 	}
 
-	actual, err := client.MachineConfigPools(required.GetNamespace()).Update(existing)
+	actual, err := client.MachineConfigPools().Update(existing)
 	return actual, true, err
 }
 

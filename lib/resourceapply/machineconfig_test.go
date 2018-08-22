@@ -24,7 +24,7 @@ func TestApplyMachineConfig(t *testing.T) {
 		verifyActions    func(actions []clienttesting.Action, t *testing.T)
 	}{{
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 		},
 		expectedModified: true,
 		verifyActions: func(actions []clienttesting.Action, t *testing.T) {
@@ -38,7 +38,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				t.Error(spew.Sdump(actions))
 			}
 			expected := &mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			}
 			actual := actions[1].(clienttesting.CreateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
@@ -48,11 +48,11 @@ func TestApplyMachineConfig(t *testing.T) {
 	}, {
 		existing: []runtime.Object{
 			&mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 			},
 		},
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 		},
 
 		expectedModified: false,
@@ -67,11 +67,11 @@ func TestApplyMachineConfig(t *testing.T) {
 	}, {
 		existing: []runtime.Object{
 			&mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 			},
 		},
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"new": "merge"}},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"new": "merge"}},
 		},
 
 		expectedModified: true,
@@ -86,7 +86,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				t.Error(spew.Sdump(actions))
 			}
 			expected := &mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone", "new": "merge"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone", "new": "merge"}},
 			}
 			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
 			if !equality.Semantic.DeepEqual(expected, actual) {
@@ -96,11 +96,11 @@ func TestApplyMachineConfig(t *testing.T) {
 	}, {
 		existing: []runtime.Object{
 			&mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 			},
 		},
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
 				OSImageURL: "//:dummy0",
 			},
@@ -118,7 +118,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				t.Error(spew.Sdump(actions))
 			}
 			expected := &mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
 					OSImageURL: "//:dummy0",
 				},
@@ -131,14 +131,14 @@ func TestApplyMachineConfig(t *testing.T) {
 	}, {
 		existing: []runtime.Object{
 			&mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
 					OSImageURL: "//:dummy0",
 				},
 			},
 		},
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
 				OSImageURL: "//:dummy1",
 			},
@@ -156,7 +156,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				t.Error(spew.Sdump(actions))
 			}
 			expected := &mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
 					OSImageURL: "//:dummy1",
 				},
@@ -169,11 +169,11 @@ func TestApplyMachineConfig(t *testing.T) {
 	}, {
 		existing: []runtime.Object{
 			&mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 			},
 		},
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
 				Config: ignv2_2types.Config{
 					Passwd: ignv2_2types.Passwd{
@@ -197,7 +197,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				t.Error(spew.Sdump(actions))
 			}
 			expected := &mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
 					Config: ignv2_2types.Config{
 						Passwd: ignv2_2types.Passwd{
@@ -216,7 +216,7 @@ func TestApplyMachineConfig(t *testing.T) {
 	}, {
 		existing: []runtime.Object{
 			&mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
 					Config: ignv2_2types.Config{
 						Passwd: ignv2_2types.Passwd{
@@ -229,7 +229,7 @@ func TestApplyMachineConfig(t *testing.T) {
 			},
 		},
 		input: &mcfgv1.MachineConfig{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo"},
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
 				Config: ignv2_2types.Config{
 					Passwd: ignv2_2types.Passwd{
@@ -253,7 +253,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				t.Error(spew.Sdump(actions))
 			}
 			expected := &mcfgv1.MachineConfig{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "one-ns", Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
 					Config: ignv2_2types.Config{
 						Passwd: ignv2_2types.Passwd{
