@@ -13,8 +13,8 @@ import (
 type MachineConfigLister interface {
 	// List lists all MachineConfigs in the indexer.
 	List(selector labels.Selector) (ret []*v1.MachineConfig, err error)
-	// MachineConfigs returns an object that can list and get MachineConfigs.
-	MachineConfigs(namespace string) MachineConfigNamespaceLister
+	// Get retrieves the MachineConfig from the index for a given name.
+	Get(name string) (*v1.MachineConfig, error)
 	MachineConfigListerExpansion
 }
 
@@ -36,38 +36,9 @@ func (s *machineConfigLister) List(selector labels.Selector) (ret []*v1.MachineC
 	return ret, err
 }
 
-// MachineConfigs returns an object that can list and get MachineConfigs.
-func (s *machineConfigLister) MachineConfigs(namespace string) MachineConfigNamespaceLister {
-	return machineConfigNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// MachineConfigNamespaceLister helps list and get MachineConfigs.
-type MachineConfigNamespaceLister interface {
-	// List lists all MachineConfigs in the indexer for a given namespace.
-	List(selector labels.Selector) (ret []*v1.MachineConfig, err error)
-	// Get retrieves the MachineConfig from the indexer for a given namespace and name.
-	Get(name string) (*v1.MachineConfig, error)
-	MachineConfigNamespaceListerExpansion
-}
-
-// machineConfigNamespaceLister implements the MachineConfigNamespaceLister
-// interface.
-type machineConfigNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all MachineConfigs in the indexer for a given namespace.
-func (s machineConfigNamespaceLister) List(selector labels.Selector) (ret []*v1.MachineConfig, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.MachineConfig))
-	})
-	return ret, err
-}
-
-// Get retrieves the MachineConfig from the indexer for a given namespace and name.
-func (s machineConfigNamespaceLister) Get(name string) (*v1.MachineConfig, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the MachineConfig from the index for a given name.
+func (s *machineConfigLister) Get(name string) (*v1.MachineConfig, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

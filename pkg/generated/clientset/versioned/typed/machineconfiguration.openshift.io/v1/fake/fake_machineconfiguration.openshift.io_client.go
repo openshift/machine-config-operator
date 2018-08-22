@@ -16,12 +16,12 @@ func (c *FakeMachineconfigurationV1) ControllerConfigs(namespace string) v1.Cont
 	return &FakeControllerConfigs{c, namespace}
 }
 
-func (c *FakeMachineconfigurationV1) MachineConfigs(namespace string) v1.MachineConfigInterface {
-	return &FakeMachineConfigs{c, namespace}
+func (c *FakeMachineconfigurationV1) MachineConfigs() v1.MachineConfigInterface {
+	return &FakeMachineConfigs{c}
 }
 
-func (c *FakeMachineconfigurationV1) MachineConfigPools(namespace string) v1.MachineConfigPoolInterface {
-	return &FakeMachineConfigPools{c, namespace}
+func (c *FakeMachineconfigurationV1) MachineConfigPools() v1.MachineConfigPoolInterface {
+	return &FakeMachineConfigPools{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
