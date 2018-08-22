@@ -14,14 +14,6 @@ type ControllerConfigNamespaceListerExpansion interface{}
 // MachineConfigLister.
 type MachineConfigListerExpansion interface{}
 
-// MachineConfigNamespaceListerExpansion allows custom methods to be added to
-// MachineConfigNamespaceLister.
-type MachineConfigNamespaceListerExpansion interface{}
-
 // MachineConfigPoolListerExpansion allows custom methods to be added to
 // MachineConfigPoolLister.
 type MachineConfigPoolListerExpansion interface{}
-
-// MachineConfigPoolNamespaceListerExpansion allows custom methods to be added to
-// MachineConfigPoolNamespaceLister.
-type MachineConfigPoolNamespaceListerExpansion interface{}
