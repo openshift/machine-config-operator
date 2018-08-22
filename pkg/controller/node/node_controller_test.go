@@ -58,7 +58,7 @@ func newFixture(t *testing.T) *fixture {
 func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavail *intstr.IntOrString, currentMachineConfig string) *mcfgv1.MachineConfigPool {
 	return &mcfgv1.MachineConfigPool{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: metav1.NamespaceDefault},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			MachineSelector: selector,
 			MaxUnavailable:  maxUnavail,
@@ -212,7 +212,7 @@ func filterInformerActions(actions []core.Action) []core.Action {
 }
 
 func (f *fixture) expectUpdateMachineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) {
-	f.actions = append(f.actions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool.Namespace, pool))
+	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool))
 }
 
 func (f *fixture) expectGetNodeAction(node *corev1.Node) {

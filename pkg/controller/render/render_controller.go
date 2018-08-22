@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -70,8 +69,8 @@ func New(
 
 	ctrl := &Controller{
 		client:        mcfgClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigpool"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigpool-discovery"),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigcontroller-rendercontroller"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -101,8 +100,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	glog.Info("Starting MachineController Controller")
-	defer glog.Info("Shutting down MachineController Controller")
+	glog.Info("Starting MachineConfigController-RenderController")
+	defer glog.Info("Shutting down MachineConfigController-RenderController")
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced) {
 		return
@@ -154,7 +153,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	}
 
 	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		pool := ctrl.resolveControllerRef(mc.Namespace, controllerRef)
+		pool := ctrl.resolveControllerRef(controllerRef)
 		if pool == nil {
 			return
 		}
@@ -190,7 +189,7 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	}
 
 	if curControllerRef != nil {
-		pool := ctrl.resolveControllerRef(curMC.Namespace, curControllerRef)
+		pool := ctrl.resolveControllerRef(curControllerRef)
 		if pool == nil {
 			return
 		}
@@ -227,7 +226,7 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	}
 
 	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		pool := ctrl.resolveControllerRef(mc.Namespace, controllerRef)
+		pool := ctrl.resolveControllerRef(controllerRef)
 		if pool == nil {
 			return
 		}
@@ -248,13 +247,13 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	}
 }
 
-func (ctrl *Controller) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *mcfgv1.MachineConfigPool {
+func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReference) *mcfgv1.MachineConfigPool {
 	// We can't look up by UID, so look up by Name and then verify UID.
 	// Don't even try to look up by Name if it's the wrong Kind.
 	if controllerRef.Kind != controllerKind.Kind {
 		return nil
 	}
-	pool, err := ctrl.mcpLister.MachineConfigPools(namespace).Get(controllerRef.Name)
+	pool, err := ctrl.mcpLister.Get(controllerRef.Name)
 	if err != nil {
 		return nil
 	}
@@ -272,7 +271,7 @@ func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) (
 		return nil, fmt.Errorf("no MachineConfigPool found for MachineConfig %v because it has no labels", config.Name)
 	}
 
-	pList, err := ctrl.mcpLister.MachineConfigPools(config.Namespace).List(labels.Everything())
+	pList, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -293,13 +292,13 @@ func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) (
 	}
 
 	if len(pools) == 0 {
-		return nil, fmt.Errorf("could not find any MachineConfigPool set for MachineConfig %s in namespace %s with labels: %v", config.Name, config.Namespace, config.Labels)
+		return nil, fmt.Errorf("could not find any MachineConfigPool set for MachineConfig %s with labels: %v", config.Name, config.Labels)
 	}
 	return pools, nil
 }
 
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
-	key, err := controller.KeyFunc(pool)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
@@ -309,7 +308,7 @@ func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 }
 
 func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
-	key, err := controller.KeyFunc(pool)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
@@ -320,7 +319,7 @@ func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 
 // enqueueAfter will enqueue a pool after the provided amount of time.
 func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfig, after time.Duration) {
-	key, err := controller.KeyFunc(pool)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
@@ -375,11 +374,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		glog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
-	machineconfigpool, err := ctrl.mcpLister.MachineConfigPools(namespace).Get(name)
+	machineconfigpool, err := ctrl.mcpLister.Get(name)
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("MachineConfigPool %v has been deleted", key)
 		return nil
@@ -402,7 +401,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	mcs, err := ctrl.mcLister.MachineConfigs(pool.Namespace).List(selector)
+	mcs, err := ctrl.mcLister.List(selector)
 	if err != nil {
 		return err
 	}
@@ -420,9 +419,9 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	_, err = ctrl.mcLister.MachineConfigs(pool.Namespace).Get(generated.Name)
+	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs(generated.Namespace).Create(generated)
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(generated)
 	}
 	if err != nil {
 		return err
@@ -434,12 +433,12 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	}
 
 	pool.Status.CurrentMachineConfig = generated.Name
-	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools(pool.Namespace).UpdateStatus(pool)
+	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool)
 	if err != nil {
 		return err
 	}
 
-	gmcs, err := ctrl.mcLister.MachineConfigs(pool.Namespace).List(labels.Everything())
+	gmcs, err := ctrl.mcLister.List(labels.Everything())
 	if err != nil {
 		return err
 	}
@@ -449,7 +448,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		}
 
 		deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, pool.UID, gmc.UID)
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs(gmc.Namespace).Patch(gmc.Name, types.JSONPatchType, []byte(deleteOwnerRefPatch))
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Patch(gmc.Name, types.JSONPatchType, []byte(deleteOwnerRefPatch))
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// If the machineconfig no longer exists, ignore it.
@@ -477,7 +476,6 @@ func generateMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.Mac
 	oref := metav1.NewControllerRef(pool, controllerKind)
 
 	merged.SetName(hashedName)
-	merged.SetNamespace(pool.Namespace)
 	merged.SetOwnerReferences([]metav1.OwnerReference{*oref})
 
 	return merged, nil

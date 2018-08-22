@@ -50,7 +50,7 @@ func newFixture(t *testing.T) *fixture {
 func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
 	return &mcfgv1.MachineConfigPool{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: metav1.NamespaceDefault, UID: types.UID(utilrand.String(5))},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			MachineConfigSelector: selector,
 		},
@@ -66,7 +66,7 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 	return &mcfgv1.MachineConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: metav1.NamespaceDefault, Labels: labels, UID: types.UID(utilrand.String(5))},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: osurl,
 			Config:     ignv2_2types.Config{Storage: ignv2_2types.Storage{Files: files}},
@@ -199,23 +199,23 @@ func filterInformerActions(actions []core.Action) []core.Action {
 }
 
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config.Name))
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config))
+	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectPatchMachineConfigAction(config *mcfgv1.MachineConfig, patch []byte) {
-	f.actions = append(f.actions, core.NewPatchAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config.Name, patch))
+	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name, patch))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config))
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectUpdateMachineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) {
-	f.actions = append(f.actions, core.NewUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool.Namespace, pool))
+	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool))
 }
 
 func TestCreatesGeneratedMachineConfig(t *testing.T) {
