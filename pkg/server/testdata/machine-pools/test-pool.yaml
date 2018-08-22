@@ -4,7 +4,6 @@ typemeta:
 objectmeta:
   name: test-pool
   generatename: ""
-  namespace: test-namespace
   selflink: ""
   uid: ""
   resourceversion: ""
