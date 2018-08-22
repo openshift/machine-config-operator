@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -71,8 +70,8 @@ func New(
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "controllerconfig"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "controllerconfig"),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigcontroller-templatecontroller"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-templatecontroller"),
 	}
 
 	ccInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -104,8 +103,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	glog.Info("Starting Controller")
-	defer glog.Info("Shutting down Controller")
+	glog.Info("Starting MachineConfigController-TemplateController")
+	defer glog.Info("Shutting down MachineConfigController-TemplateController")
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced) {
 		return
@@ -238,7 +237,7 @@ func (ctrl *Controller) resolveControllerRef(namespace string, controllerRef *me
 }
 
 func (ctrl *Controller) enqueue(config *mcfgv1.ControllerConfig) {
-	key, err := controller.KeyFunc(config)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(config)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", config, err))
 		return
@@ -248,7 +247,7 @@ func (ctrl *Controller) enqueue(config *mcfgv1.ControllerConfig) {
 }
 
 func (ctrl *Controller) enqueueRateLimited(controllerconfig *mcfgv1.ControllerConfig) {
-	key, err := controller.KeyFunc(controllerconfig)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(controllerconfig)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", controllerconfig, err))
 		return
@@ -259,7 +258,7 @@ func (ctrl *Controller) enqueueRateLimited(controllerconfig *mcfgv1.ControllerCo
 
 // enqueueAfter will enqueue a controllerconfig after the provided amount of time.
 func (ctrl *Controller) enqueueAfter(controllerconfig *mcfgv1.ControllerConfig, after time.Duration) {
-	key, err := controller.KeyFunc(controllerconfig)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(controllerconfig)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", controllerconfig, err))
 		return
@@ -359,7 +358,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	}
 
 	for i := range mcs {
-		mcs[i].SetNamespace(config.GetNamespace())
 		oref := metav1.NewControllerRef(config, controllerKind)
 		mcs[i].SetOwnerReferences([]metav1.OwnerReference{*oref})
 	}

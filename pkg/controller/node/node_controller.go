@@ -8,7 +8,6 @@ import (
 
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -84,8 +83,8 @@ func New(
 	ctrl := &Controller{
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigpool"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigpool-node"),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigcontroller-nodecontroller"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodecontroller"),
 	}
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -115,8 +114,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	glog.Info("Starting MachineController Controller")
-	defer glog.Info("Shutting down MachineController Controller")
+	glog.Info("Starting MachineConfigController-NodeController")
+	defer glog.Info("Shutting down MachineConfigController-NodeController")
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.nodeListerSynced) {
 		return
@@ -281,7 +280,7 @@ func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfig
 }
 
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
-	key, err := controller.KeyFunc(pool)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
@@ -291,7 +290,7 @@ func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 }
 
 func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
-	key, err := controller.KeyFunc(pool)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
@@ -302,7 +301,7 @@ func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 
 // enqueueAfter will enqueue a pool after the provided amount of time.
 func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfig, after time.Duration) {
-	key, err := controller.KeyFunc(pool)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
@@ -357,11 +356,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		glog.V(4).Infof("Finished syncing machineconfigpool %q (%v)", key, time.Since(startTime))
 	}()
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
-	machineconfigpool, err := ctrl.mcpLister.MachineConfigPools(namespace).Get(name)
+	machineconfigpool, err := ctrl.mcpLister.Get(name)
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("MachineConfigPool %v has been deleted", key)
 		return nil
