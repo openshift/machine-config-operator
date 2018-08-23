@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"syscall"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -55,6 +56,29 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		glog.Fatalf("error creating clients: %v", err)
 	}
+
+	// Ensure that the rootMount exists
+	if _, err := os.Stat(startOpts.rootMount); err != nil {
+		if os.IsNotExist(err) {
+			glog.Fatalf("rootPrefix %s does not exist", startOpts.rootPrefix)
+		}
+		glog.Fatalf("unable to verify rootPrefix %s exists: %s", startOpts.rootPrefix, err)
+	}
+
+	// Chroot into the root file system
+	glog.Infof(`chrooting into rootPrefix`, startOpts.rootPrefix)
+	if err := syscall.Chroot(startOpts.rootPrefix); err != nil {
+		glog.Fatalf("unable to chroot to %s: %s", startOpts.rootPrefix, err)
+	}
+
+	// move into / inside the chroot
+	glog.Infof("moving to / inside the chroot")
+	if err := os.Chdir("/"); err != nil {
+		glog.Fatalf("unable to change directory to /: %s", err)
+	}
+
+	// Set the root prefix to "" since we are inside the rootfs chroot
+	startOpts.rootPrefix = ""
 
 	daemon, err := daemon.New(
 		startOpts.rootPrefix,
