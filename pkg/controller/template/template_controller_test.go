@@ -186,15 +186,15 @@ func filterInformerActions(actions []core.Action) []core.Action {
 }
 
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config.Name))
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config))
+	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Namespace, config))
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
 func TestCreatesMachineConfigs(t *testing.T) {

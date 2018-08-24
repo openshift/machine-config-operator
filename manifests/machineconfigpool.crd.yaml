@@ -14,7 +14,7 @@ spec:
       # One and only one version must be marked as the storage version.
       storage: true
   # either Namespaced or Cluster
-  scope: Namespaced
+  scope: Cluster
   subresources:
     status: {}
   names:

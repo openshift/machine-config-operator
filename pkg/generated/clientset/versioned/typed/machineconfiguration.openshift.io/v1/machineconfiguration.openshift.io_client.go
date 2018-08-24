@@ -25,12 +25,12 @@ func (c *MachineconfigurationV1Client) ControllerConfigs(namespace string) Contr
 	return newControllerConfigs(c, namespace)
 }
 
-func (c *MachineconfigurationV1Client) MachineConfigs(namespace string) MachineConfigInterface {
-	return newMachineConfigs(c, namespace)
+func (c *MachineconfigurationV1Client) MachineConfigs() MachineConfigInterface {
+	return newMachineConfigs(c)
 }
 
-func (c *MachineconfigurationV1Client) MachineConfigPools(namespace string) MachineConfigPoolInterface {
-	return newMachineConfigPools(c, namespace)
+func (c *MachineconfigurationV1Client) MachineConfigPools() MachineConfigPoolInterface {
+	return newMachineConfigPools(c)
 }
 
 // NewForConfig creates a new MachineconfigurationV1Client for the given config.

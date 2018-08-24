@@ -27,7 +27,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 
 	newPool := pool
 	newPool.Status = newStatus
-	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools(newPool.Namespace).UpdateStatus(newPool)
+	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(newPool)
 	return err
 }
 

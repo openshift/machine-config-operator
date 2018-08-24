@@ -25,9 +25,6 @@ type Daemon struct {
 	// name is the node name.
 	name string
 
-	//namespace is where the daemon looks for machineconfigs.
-	namespace string
-
 	// login client talks to the systemd-logind service for rebooting the
 	// machine
 	loginClient *login1.Conn
@@ -50,7 +47,6 @@ const (
 func New(
 	rootPrefix string,
 	nodeName string,
-	targetNamespace string,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 ) (*Daemon, error) {
@@ -65,7 +61,6 @@ func New(
 
 	return &Daemon{
 		name:        nodeName,
-		namespace:   targetNamespace,
 		loginClient: loginClient,
 		client:      client,
 		kubeClient:  kubeClient,
@@ -135,11 +130,11 @@ func (dn *Daemon) triggerUpdate() error {
 	if err != nil {
 		return err
 	}
-	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(dn.namespace), ccAnnotation)
+	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
 	if err != nil {
 		return err
 	}
-	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(dn.namespace), dcAnnotation)
+	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
 	if err != nil {
 		return err
 	}
@@ -167,7 +162,7 @@ func (dn *Daemon) validate() (bool, error) {
 		return true, nil
 	}
 
-	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(dn.namespace), dcAnnotation)
+	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
 	if err != nil {
 		return false, err
 	}
