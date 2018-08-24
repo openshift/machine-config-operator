@@ -90,7 +90,7 @@ type ControllerConfigList struct {
 //       # One and only one version must be marked as the storage version.
 //       storage: true
 //   # either Namespaced or Cluster
-//   scope: Namespaced
+//   scope: Cluster
 //   names:
 //     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
 //     plural: machineconfigs
@@ -104,6 +104,7 @@ type ControllerConfigList struct {
 
 // +genclient
 // +genclient:noStatus
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen=false
 
 // MachineConfig defines the configuration for a machine
@@ -122,6 +123,8 @@ type MachineConfigSpec struct {
 	// Config is a Ignition Config object.
 	Config ignv2_2types.Config `json:"config"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // MachineConfigList is a list of MachineConfig resources
 type MachineConfigList struct {
@@ -148,7 +151,7 @@ type MachineConfigList struct {
 //       # One and only one version must be marked as the storage version.
 //       storage: true
 //   # either Namespaced or Cluster
-//   scope: Namespaced
+//   scope: Cluster
 //   names:
 //     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
 //     plural: machineconfigpools
@@ -161,6 +164,7 @@ type MachineConfigList struct {
 //
 
 // +genclient
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // MachineConfigPool describes a pool of MachineConfigs.

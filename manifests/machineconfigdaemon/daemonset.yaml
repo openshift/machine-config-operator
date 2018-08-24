@@ -15,10 +15,9 @@ spec:
     spec:
       containers:
         - name: machine-config-daemon
-          image: quay.io/abhinavdahiya/machine-config-daemon@sha256:5df988a0909e125ed7a9c51d4b0f5c4f4fe3572ae1a95992e820bbccff636943
+          image: quay.io/abhinavdahiya/machine-config-daemon:v0.0.0-66-g61fa2e7d
           args:
             - "start"
-            - "--target-namespace={{.TargetNamespace}}"
           volumeMounts:
             - mountPath: /rootfs
               name: rootfs

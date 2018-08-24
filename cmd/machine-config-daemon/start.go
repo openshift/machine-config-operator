@@ -23,10 +23,9 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig      string
-		nodeName        string
-		targetNamespace string
-		rootPrefix      string
+		kubeconfig string
+		nodeName   string
+		rootPrefix string
 	}
 )
 
@@ -34,7 +33,6 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
-	startCmd.PersistentFlags().StringVar(&startOpts.targetNamespace, "target-namespace", "openshift-machine-config", "namespace is where the daemon looks for machineconfigs.")
 	startCmd.PersistentFlags().StringVar(&startOpts.rootPrefix, "root-prefix", "/rootfs", "where the nodes root filesystem is mounted, for the file stage.")
 }
 
@@ -61,7 +59,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	daemon, err := daemon.New(
 		startOpts.rootPrefix,
 		startOpts.nodeName,
-		startOpts.targetNamespace,
 		cb.ClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
 	)

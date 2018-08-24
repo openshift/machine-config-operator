@@ -23,10 +23,6 @@ var _ = Server(&clusterServer{})
 
 type clusterServer struct {
 
-	// namespace within which the machine config and pool
-	// objects reside.
-	namespace string
-
 	// machineClient is used to interact with the
 	// machine config, pool objects.
 	machineClient v1.MachineconfigurationV1Interface
@@ -41,7 +37,7 @@ type clusterServer struct {
 // objects from within the cluster.
 // It accepts the kubeConfig which is not required when it's
 // run from within the cluster(useful in testing).
-func NewClusterServer(kubeConfig, n string) (Server, error) {
+func NewClusterServer(kubeConfig string) (Server, error) {
 	restConfig, err := getClientConfig(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
@@ -50,7 +46,6 @@ func NewClusterServer(kubeConfig, n string) (Server, error) {
 	mc := v1.NewForConfigOrDie(restConfig)
 	return &clusterServer{
 		machineClient:        mc,
-		namespace:            n,
 		serverKubeConfigPath: kubeConfig,
 	}, nil
 }
@@ -58,14 +53,14 @@ func NewClusterServer(kubeConfig, n string) (Server, error) {
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
 func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
-	mp, err := cs.machineClient.MachineConfigPools(cs.namespace).Get(cr.machinePool, metav1.GetOptions{})
+	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machinePool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}
 
 	currConf := mp.Status.CurrentMachineConfig
 
-	mc, err := cs.machineClient.MachineConfigs(cs.namespace).Get(currConf, metav1.GetOptions{})
+	mc, err := cs.machineClient.MachineConfigs().Get(currConf, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}

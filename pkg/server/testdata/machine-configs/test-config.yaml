@@ -2,7 +2,6 @@ typemeta:
   kind: MachineConfig
 objectmeta:
   name: test-config
-  namespace: test-namespace
 spec:
   config:
     ignition:

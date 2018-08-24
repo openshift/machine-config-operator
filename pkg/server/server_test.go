@@ -16,10 +16,9 @@ import (
 )
 
 const (
-	testNamespace = "test-namespace"
-	testPool      = "test-pool"
-	testConfig    = "test-config"
-	testDir       = "./testdata"
+	testPool   = "test-pool"
+	testConfig = "test-config"
+	testDir    = "./testdata"
 )
 
 var (
@@ -178,18 +177,17 @@ func TestClusterServer(t *testing.T) {
 	}
 
 	cs := fake.NewSimpleClientset()
-	_, err = cs.MachineconfigurationV1().MachineConfigPools(testNamespace).Create(mp)
+	_, err = cs.MachineconfigurationV1().MachineConfigPools().Create(mp)
 	if err != nil {
-		fmt.Printf("err: %v", err)
+		t.Logf("err: %v", err)
 	}
-	_, err = cs.MachineconfigurationV1().MachineConfigs(testNamespace).Create(origMC)
+	_, err = cs.MachineconfigurationV1().MachineConfigs().Create(origMC)
 	if err != nil {
-		fmt.Printf("err: %v", err)
+		t.Logf("err: %v", err)
 	}
 
 	etcdIndex := "1"
 	csc := &clusterServer{
-		namespace:            testNamespace,
 		machineClient:        cs.MachineconfigurationV1(),
 		serverKubeConfigPath: testKubeConfig,
 	}

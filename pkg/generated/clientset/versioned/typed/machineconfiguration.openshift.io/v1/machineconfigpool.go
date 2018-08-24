@@ -14,7 +14,7 @@ import (
 // MachineConfigPoolsGetter has a method to return a MachineConfigPoolInterface.
 // A group's client should implement this interface.
 type MachineConfigPoolsGetter interface {
-	MachineConfigPools(namespace string) MachineConfigPoolInterface
+	MachineConfigPools() MachineConfigPoolInterface
 }
 
 // MachineConfigPoolInterface has methods to work with MachineConfigPool resources.
@@ -34,14 +34,12 @@ type MachineConfigPoolInterface interface {
 // machineConfigPools implements MachineConfigPoolInterface
 type machineConfigPools struct {
 	client rest.Interface
-	ns     string
 }
 
 // newMachineConfigPools returns a MachineConfigPools
-func newMachineConfigPools(c *MachineconfigurationV1Client, namespace string) *machineConfigPools {
+func newMachineConfigPools(c *MachineconfigurationV1Client) *machineConfigPools {
 	return &machineConfigPools{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -49,7 +47,6 @@ func newMachineConfigPools(c *MachineconfigurationV1Client, namespace string) *m
 func (c *machineConfigPools) Get(name string, options metav1.GetOptions) (result *v1.MachineConfigPool, err error) {
 	result = &v1.MachineConfigPool{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -62,7 +59,6 @@ func (c *machineConfigPools) Get(name string, options metav1.GetOptions) (result
 func (c *machineConfigPools) List(opts metav1.ListOptions) (result *v1.MachineConfigPoolList, err error) {
 	result = &v1.MachineConfigPoolList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Do().
@@ -74,7 +70,6 @@ func (c *machineConfigPools) List(opts metav1.ListOptions) (result *v1.MachineCo
 func (c *machineConfigPools) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Watch()
@@ -84,7 +79,6 @@ func (c *machineConfigPools) Watch(opts metav1.ListOptions) (watch.Interface, er
 func (c *machineConfigPools) Create(machineConfigPool *v1.MachineConfigPool) (result *v1.MachineConfigPool, err error) {
 	result = &v1.MachineConfigPool{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		Body(machineConfigPool).
 		Do().
@@ -96,7 +90,6 @@ func (c *machineConfigPools) Create(machineConfigPool *v1.MachineConfigPool) (re
 func (c *machineConfigPools) Update(machineConfigPool *v1.MachineConfigPool) (result *v1.MachineConfigPool, err error) {
 	result = &v1.MachineConfigPool{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		Name(machineConfigPool.Name).
 		Body(machineConfigPool).
@@ -111,7 +104,6 @@ func (c *machineConfigPools) Update(machineConfigPool *v1.MachineConfigPool) (re
 func (c *machineConfigPools) UpdateStatus(machineConfigPool *v1.MachineConfigPool) (result *v1.MachineConfigPool, err error) {
 	result = &v1.MachineConfigPool{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		Name(machineConfigPool.Name).
 		SubResource("status").
@@ -124,7 +116,6 @@ func (c *machineConfigPools) UpdateStatus(machineConfigPool *v1.MachineConfigPoo
 // Delete takes name of the machineConfigPool and deletes it. Returns an error if one occurs.
 func (c *machineConfigPools) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		Name(name).
 		Body(options).
@@ -135,7 +126,6 @@ func (c *machineConfigPools) Delete(name string, options *metav1.DeleteOptions) 
 // DeleteCollection deletes a collection of objects.
 func (c *machineConfigPools) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Body(options).
@@ -147,7 +137,6 @@ func (c *machineConfigPools) DeleteCollection(options *metav1.DeleteOptions, lis
 func (c *machineConfigPools) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.MachineConfigPool, err error) {
 	result = &v1.MachineConfigPool{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("machineconfigpools").
 		SubResource(subresources...).
 		Name(name).

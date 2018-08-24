@@ -31,36 +31,6 @@ func (in *MachineConfig) DeepCopyObject() runtime.Object {
 }
 
 // DeepCopyInto copying the receiver, writing into out. in must be non-nil.
-func (in *MachineConfigList) DeepCopyInto(out *MachineConfigList) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
-	if in.Items != nil {
-		in, out := &in.Items, &out.Items
-		*out = make([]MachineConfig, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-	return
-}
-
-// DeepCopy copying the receiver, creating a new MachineConfigList.
-func (in *MachineConfigList) DeepCopy() *MachineConfigList {
-	if in == nil {
-		return nil
-	}
-	out := new(MachineConfigList)
-	in.DeepCopyInto(out)
-	return out
-}
-
-// DeepCopyObject copying the receiver, creating a new runtime.Object.
-func (in *MachineConfigList) DeepCopyObject() runtime.Object {
-	return in.DeepCopy()
-}
-
-// DeepCopyInto copying the receiver, writing into out. in must be non-nil.
 func (in *MachineConfigSpec) DeepCopyInto(out *MachineConfigSpec) {
 	*out = *in
 	out.Config = deepCopyIgnConfig(in.Config)

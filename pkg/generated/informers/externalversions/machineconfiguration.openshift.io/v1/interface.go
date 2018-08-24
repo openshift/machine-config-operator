@@ -34,10 +34,10 @@ func (v *version) ControllerConfigs() ControllerConfigInformer {
 
 // MachineConfigs returns a MachineConfigInformer.
 func (v *version) MachineConfigs() MachineConfigInformer {
-	return &machineConfigInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+	return &machineConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // MachineConfigPools returns a MachineConfigPoolInformer.
 func (v *version) MachineConfigPools() MachineConfigPoolInformer {
-	return &machineConfigPoolInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+	return &machineConfigPoolInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
