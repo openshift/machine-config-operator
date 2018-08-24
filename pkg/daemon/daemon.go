@@ -73,8 +73,8 @@ func New(
 // function shouldn't return, and should just reboot the node, unless an error
 // occurs, in which case it will return the error up the call stack.
 func (dn *Daemon) Run(stop <-chan struct{}) error {
-	glog.Info("Starting MachineConfigDameon")
-	defer glog.Info("Shutting down MachineConfigDameon")
+	glog.Info("Starting MachineConfigDaemon")
+	defer glog.Info("Shutting down MachineConfigDaemon")
 
 	err := dn.syncOnce()
 	if err != nil {
