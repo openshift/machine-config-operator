@@ -26,7 +26,7 @@ var (
 	startOpts struct {
 		kubeconfig string
 		nodeName   string
-		rootPrefix string
+		rootMount  string
 	}
 )
 
@@ -34,7 +34,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
-	startCmd.PersistentFlags().StringVar(&startOpts.rootPrefix, "root-prefix", "/rootfs", "where the nodes root filesystem is mounted, for the file stage.")
+	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -60,15 +60,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// Ensure that the rootMount exists
 	if _, err := os.Stat(startOpts.rootMount); err != nil {
 		if os.IsNotExist(err) {
-			glog.Fatalf("rootPrefix %s does not exist", startOpts.rootPrefix)
+			glog.Fatalf("rootMount %s does not exist", startOpts.rootMount)
 		}
-		glog.Fatalf("unable to verify rootPrefix %s exists: %s", startOpts.rootPrefix, err)
+		glog.Fatalf("unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
 	}
 
 	// Chroot into the root file system
-	glog.Infof(`chrooting into rootPrefix`, startOpts.rootPrefix)
-	if err := syscall.Chroot(startOpts.rootPrefix); err != nil {
-		glog.Fatalf("unable to chroot to %s: %s", startOpts.rootPrefix, err)
+	glog.Infof(`chrooting into rootMount %s`, startOpts.rootMount)
+	if err := syscall.Chroot(startOpts.rootMount); err != nil {
+		glog.Fatalf("unable to chroot to %s: %s", startOpts.rootMount, err)
 	}
 
 	// move into / inside the chroot
@@ -77,11 +77,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("unable to change directory to /: %s", err)
 	}
 
-	// Set the root prefix to "" since we are inside the rootfs chroot
-	startOpts.rootPrefix = ""
-
 	daemon, err := daemon.New(
-		startOpts.rootPrefix,
+		startOpts.rootMount,
 		startOpts.nodeName,
 		cb.ClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
