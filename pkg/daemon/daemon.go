@@ -107,7 +107,7 @@ func (dn *Daemon) syncOnce() error {
 		return err
 	}
 
-	// watch the annotations.
+	glog.V(2).Infof("Watching for node annotation updates")
 	err = waitUntilUpdate(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	if err != nil {
 		return fmt.Errorf("Failed to wait until update request: %v", err)
