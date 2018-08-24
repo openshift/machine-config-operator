@@ -33,8 +33,8 @@ type Daemon struct {
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 
-	// prefix is where the root filesystem is mounted
-	prefix string
+	// rootMount is the location for the MCD to chroot in
+	rootMount string
 }
 
 const (
@@ -45,7 +45,7 @@ const (
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
-	rootPrefix string,
+	rootMount string,
 	nodeName string,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
@@ -64,7 +64,7 @@ func New(
 		loginClient: loginClient,
 		client:      client,
 		kubeClient:  kubeClient,
-		prefix:      rootPrefix,
+		rootMount:   rootMount,
 	}, nil
 }
 
@@ -181,7 +181,7 @@ func (dn *Daemon) validate() (bool, error) {
 func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
-			path := filepath.Join(dn.prefix, pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if status := checkFileContents(path, u.Dropins[j].Contents); !status {
 				return false
 			}
@@ -191,7 +191,7 @@ func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 			continue
 		}
 
-		path := filepath.Join(dn.prefix, pathSystemd, u.Name)
+		path := filepath.Join(pathSystemd, u.Name)
 		if u.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
@@ -215,13 +215,12 @@ func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 // target config.
 func (dn *Daemon) checkFiles(files []ignv2_2types.File) bool {
 	for _, f := range files {
-		path := filepath.Join(dn.prefix, f.Path)
 		contents, err := dataurl.DecodeString(f.Contents.Source)
 		if err != nil {
 			glog.Errorf("couldn't parse file: %v", err)
 			return false
 		}
-		if status := checkFileContents(path, string(contents.Data)); !status {
+		if status := checkFileContents(f.Path, string(contents.Data)); !status {
 			return false
 		}
 	}
