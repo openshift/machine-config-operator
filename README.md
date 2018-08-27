@@ -23,3 +23,21 @@ Tests can be executed on a per package basis with `go test` like so:
 All tests can be executed with:
 
 `go test -v ./...`
+
+## Building Images
+**NOTE**: To build images you will need [`podman`](https://github.com/containers/libpod/) installed.
+
+Images can be built locally via the `hack/build-image.sh` script. This script uses the
+`WHAT` variable similarly to the `hack/build-go.sh` script.
+
+```console
+$ ./hack/build-image.sh
+ERROR: Note: Building unprivileged may fail due to permissions
+ERROR: WHAT must be set to one of the following:
+ERROR: - all
+ERROR: - machine-config-controller
+ERROR: - machine-config-daemon
+ERROR: - machine-config-operator
+$ WHAT=machine-config-daemon ./hack/build-image.sh
+[...]
+```
