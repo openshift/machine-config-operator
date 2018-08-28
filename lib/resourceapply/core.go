@@ -28,3 +28,21 @@ func ApplyServiceAccount(client coreclientv1.ServiceAccountsGetter, required *co
 	actual, err := client.ServiceAccounts(required.Namespace).Update(existing)
 	return actual, true, err
 }
+
+// ApplySecret merges objectmeta only.
+func ApplySecret(client coreclientv1.SecretsGetter, required *corev1.Secret) (*corev1.Secret, bool, error) {
+	existing, err := client.Secrets(required.Namespace).Get(required.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		actual, err := client.Secrets(required.Namespace).Create(required)
+		return actual, true, err
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	modified := resourcemerge.BoolPtr(false)
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+
+	actual, err := client.Secrets(required.Namespace).Update(existing)
+	return actual, true, err
+}

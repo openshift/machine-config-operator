@@ -215,7 +215,7 @@ func (optr *Operator) sync(key string) error {
 	return optr.syncAll()
 }
 
-func (optr *Operator) renderConfig() *renderConfig {
+func getRenderConfig() *renderConfig {
 	return &renderConfig{
 		TargetNamespace: TargetNamespace,
 	}
