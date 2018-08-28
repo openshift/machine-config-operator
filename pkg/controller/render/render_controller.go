@@ -480,3 +480,54 @@ func generateMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.Mac
 
 	return merged, nil
 }
+
+// RunBootstrap runs the render controller in bootstrap mode.
+// For each pool, it matches the machineconfigs based on label selector and
+// returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
+func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+	var (
+		opools   []*mcfgv1.MachineConfigPool
+		oconfigs []*mcfgv1.MachineConfig
+	)
+	for idx := range pools {
+		pool := pools[idx]
+		pcs, err := getMachineConfigsForPool(pool, configs)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		generated, err := generateMachineConfig(pool, pcs)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pool.Status.CurrentMachineConfig = generated.Name
+		opools = append(opools, pool)
+		oconfigs = append(oconfigs, generated)
+	}
+	return opools, oconfigs, nil
+}
+
+// getMachineConfigsForPool returns configs that match label from configs for a pool.
+func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfig, error) {
+	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineConfigSelector)
+	if err != nil {
+		return nil, fmt.Errorf("invalid label selector: %v", err)
+	}
+
+	var out []*mcfgv1.MachineConfig
+
+	// If a pool with a nil or empty selector creeps in, it should match nothing
+	if selector.Empty() {
+		return out, nil
+	}
+	for idx, config := range configs {
+		if selector.Matches(labels.Set(config.Labels)) {
+			out = append(out, configs[idx])
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("couldn't find any MachineConfigs for pool: %v", pool.Name)
+	}
+	return out, nil
+}
