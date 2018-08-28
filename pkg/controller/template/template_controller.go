@@ -365,3 +365,8 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	sort.Slice(mcs, func(i, j int) bool { return mcs[i].Name < mcs[j].Name })
 	return mcs, nil
 }
+
+// RunBootstrap runs the tempate controller in boostrap mode.
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config)
+}
