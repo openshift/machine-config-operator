@@ -55,7 +55,6 @@ var (
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
-	startCmd.PersistentFlags().StringVar(&startOpts.templates, "templates", "/etc/templates", "Path to the template files used for creating MachineConfig objects")
 	startCmd.PersistentFlags().StringVar(&startOpts.resourceLockNamespace, "resourcelock-namespace", metav1.NamespaceSystem, "Path to the template files used for creating MachineConfig objects")
 }
 
@@ -201,7 +200,7 @@ func createControllerContext(cb *clientBuilder, stop <-chan struct{}) *controlle
 
 func startControllers(ctx *controllerContext) error {
 	go template.New(
-		startOpts.templates,
+		rootOpts.templates,
 		ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.ClientBuilder.KubeClientOrDie("template-controller"),

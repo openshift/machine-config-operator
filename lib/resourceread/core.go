@@ -34,3 +34,12 @@ func ReadServiceAccountV1OrDie(objBytes []byte) *corev1.ServiceAccount {
 	}
 	return requiredObj.(*corev1.ServiceAccount)
 }
+
+// ReadSecretV1OrDie reads secret object from bytes. Panics on error.
+func ReadSecretV1OrDie(objBytes []byte) *corev1.Secret {
+	requiredObj, err := runtime.Decode(coreCodecs.UniversalDecoder(corev1.SchemeGroupVersion), objBytes)
+	if err != nil {
+		panic(err)
+	}
+	return requiredObj.(*corev1.Secret)
+}

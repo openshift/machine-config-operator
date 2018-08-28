@@ -3,6 +3,7 @@
 // manifests/controllerconfig.crd.yaml
 // manifests/etcd.machineconfigpool.yaml
 // manifests/machineconfig.crd.yaml
+// manifests/machineconfigcontroller/bootstrap-pod.yaml
 // manifests/machineconfigcontroller/clusterrole.yaml
 // manifests/machineconfigcontroller/clusterrolebinding.yaml
 // manifests/machineconfigcontroller/controllerconfig.yaml
@@ -14,6 +15,13 @@
 // manifests/machineconfigdaemon/sa.yaml
 // manifests/machineconfigdaemon/scc.yaml
 // manifests/machineconfigpool.crd.yaml
+// manifests/machineconfigserver/bootstrap-pod.yaml
+// manifests/machineconfigserver/clusterrole.yaml
+// manifests/machineconfigserver/clusterrolebinding.yaml
+// manifests/machineconfigserver/daemonset.yaml
+// manifests/machineconfigserver/node-bootstrapper-sa.yaml
+// manifests/machineconfigserver/node-bootstrapper-token.yaml
+// manifests/machineconfigserver/sa.yaml
 // manifests/master.machineconfigpool.yaml
 // manifests/worker.machineconfigpool.yaml
 // install/.gitkeep
@@ -169,6 +177,58 @@ func manifestsMachineconfigCrdYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsMachineconfigcontrollerBootstrapPodYaml = []byte(`apiVersion: v1
+kind: Pod
+metadata:
+  name: bootstrap-machine-config-controller
+spec:
+  containers:
+  - name: machine-config-controller
+    image: quay.io/abhinavdahiya/machine-config-controller:v0.0.0-69-gcf692f4e-dirty
+    args:
+    - "bootstrap"
+    - "--manifest-dir=/etc/mcc/bootstrap/manifests"
+    - "--dest-dir=/etc/mcc/bootstrap/server"
+    resources:
+      limits:
+        cpu: 20m
+        memory: 50Mi
+      requests:
+        cpu: 20m
+        memory: 50Mi
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: bootstrap-manifests
+      mountPath: /etc/mcc/bootstrap/manifests
+    - name: bootstrap-server
+      mountPath: /etc/mcc/bootstrap/server
+  restartPolicy: OnFailure
+  hostNetwork: true
+  volumes:
+  - name: bootstrap-manifests
+    hostPath:
+      path: /etc/mcc/bootstrap/manifests
+  - name: bootstrap-server
+    hostPath:
+      path: /etc/mcs/bootstrap
+`)
+
+func manifestsMachineconfigcontrollerBootstrapPodYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigcontrollerBootstrapPodYaml, nil
+}
+
+func manifestsMachineconfigcontrollerBootstrapPodYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigcontrollerBootstrapPodYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigcontroller/bootstrap-pod.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsMachineconfigcontrollerClusterroleYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -273,7 +333,7 @@ spec:
     spec:
       containers:
       - name: machine-config-controller
-        image: quay.io/abhinavdahiya/machine-config-controller:v0.0.0-66-g61fa2e7d
+        image: quay.io/abhinavdahiya/machine-config-controller:v0.0.0-69-gcf692f4e-dirty
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
@@ -405,7 +465,7 @@ spec:
     spec:
       containers:
         - name: machine-config-daemon
-          image: quay.io/abhinavdahiya/machine-config-daemon:v0.0.0-66-g61fa2e7d
+          image: quay.io/abhinavdahiya/machine-config-daemon:v0.0.0-69-gcf692f4e-dirty
           args:
             - "start"
           volumeMounts:
@@ -578,6 +638,244 @@ func manifestsMachineconfigpoolCrdYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsMachineconfigserverBootstrapPodYaml = []byte(`apiVersion: v1
+kind: Pod
+metadata:
+  name: bootstrap-machine-config-server
+  namespace: {{.TargetNamespace}}
+spec:
+  containers:
+    - name: machine-config-server
+      image: quay.io/abhinavdahiya/machine-config-server:v0.0.0-69-gcf692f4e-dirty
+      args:
+        - "bootstrap"
+      volumeMounts:
+      - name: certs
+        mountPath: /etc/ssl/mcs
+      - name: etc-kubernetes
+        mountPath: /etc/kubernetes/kubeconfig
+      - name: server-basedir
+        mountPath: /etc/mcs/boostrap
+      - name:  etcd-certs
+        mountPath: /etc/ssl/etcd
+  hostNetwork: true
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  restartPolicy: Always
+  volumes:
+  - name: certs
+    hostPath:
+      path: /etc/ssl/mcs
+  - name: etc-kubernetes
+    hostPath:
+      path: /etc/kubernetes/kubeconfig
+  - name: server-basedir
+    hostPath:
+      path: /etc/mcs/boostrap
+  - name: etcd-certs
+    hostPath:
+      path: /etc/ssl/etcd
+`)
+
+func manifestsMachineconfigserverBootstrapPodYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverBootstrapPodYaml, nil
+}
+
+func manifestsMachineconfigserverBootstrapPodYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverBootstrapPodYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/bootstrap-pod.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigserverClusterroleYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: machine-config-server
+  namespace: {{.TargetNamespace}}
+rules:
+- apiGroups: ["machineconfiguration.openshift.io"]
+  resources: ["machineconfigs"]
+  verbs: ["*"]
+`)
+
+func manifestsMachineconfigserverClusterroleYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverClusterroleYaml, nil
+}
+
+func manifestsMachineconfigserverClusterroleYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverClusterroleYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/clusterrole.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigserverClusterrolebindingYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: machine-config-server
+  namespace: {{.TargetNamespace}}
+roleRef:
+  kind: ClusterRole
+  name: machine-config-server
+subjects:
+- kind: ServiceAccount
+  namespace: {{.TargetNamespace}}
+  name: machine-config-server
+`)
+
+func manifestsMachineconfigserverClusterrolebindingYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverClusterrolebindingYaml, nil
+}
+
+func manifestsMachineconfigserverClusterrolebindingYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverClusterrolebindingYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/clusterrolebinding.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigserverDaemonsetYaml = []byte(`apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: machine-config-server
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-config-server
+  template:
+    metadata:
+      name: machine-config-server
+      labels:
+        k8s-app: machine-config-server
+    spec:
+      containers:
+        - name: machine-config-server
+          image: quay.io/abhinavdahiya/machine-config-server:v0.0.0-69-gcf692f4e-dirty
+          args:
+            - "start"
+            - "--apiserver-url=https://adahiya-0-api.tt.testing:6443"
+          volumeMounts:
+          - name: certs
+            mountPath: /etc/ssl/mcs
+          - name: node-bootstrap-token
+            mountPath: /etc/mcs/bootstrap-token
+      hostNetwork: true
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      serviceAccountName: machine-config-server
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      volumes:
+      - name: node-bootstrap-token
+        secret:
+          secretName: node-bootstrapper-token
+      - name: certs
+        secret:
+          secretName: machine-config-server-tls
+`)
+
+func manifestsMachineconfigserverDaemonsetYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverDaemonsetYaml, nil
+}
+
+func manifestsMachineconfigserverDaemonsetYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverDaemonsetYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/daemonset.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigserverNodeBootstrapperSaYaml = []byte(`apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: {{.TargetNamespace}}
+  name: node-bootstrapper
+`)
+
+func manifestsMachineconfigserverNodeBootstrapperSaYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverNodeBootstrapperSaYaml, nil
+}
+
+func manifestsMachineconfigserverNodeBootstrapperSaYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverNodeBootstrapperSaYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/node-bootstrapper-sa.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigserverNodeBootstrapperTokenYaml = []byte(`apiVersion: v1
+kind: Secret
+metadata:
+  annotations:
+    kubernetes.io/service-account.name: node-bootstrapper
+  name: node-bootstrapper-token
+  namespace: {{.TargetNamespace}}
+  type: kubernetes.io/service-account-token
+`)
+
+func manifestsMachineconfigserverNodeBootstrapperTokenYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverNodeBootstrapperTokenYaml, nil
+}
+
+func manifestsMachineconfigserverNodeBootstrapperTokenYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverNodeBootstrapperTokenYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/node-bootstrapper-token.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigserverSaYaml = []byte(`apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: {{.TargetNamespace}}
+  name: machine-config-server
+`)
+
+func manifestsMachineconfigserverSaYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverSaYaml, nil
+}
+
+func manifestsMachineconfigserverSaYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverSaYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/sa.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsMasterMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -704,6 +1002,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/controllerconfig.crd.yaml": manifestsControllerconfigCrdYaml,
 	"manifests/etcd.machineconfigpool.yaml": manifestsEtcdMachineconfigpoolYaml,
 	"manifests/machineconfig.crd.yaml": manifestsMachineconfigCrdYaml,
+	"manifests/machineconfigcontroller/bootstrap-pod.yaml": manifestsMachineconfigcontrollerBootstrapPodYaml,
 	"manifests/machineconfigcontroller/clusterrole.yaml": manifestsMachineconfigcontrollerClusterroleYaml,
 	"manifests/machineconfigcontroller/clusterrolebinding.yaml": manifestsMachineconfigcontrollerClusterrolebindingYaml,
 	"manifests/machineconfigcontroller/controllerconfig.yaml": manifestsMachineconfigcontrollerControllerconfigYaml,
@@ -715,6 +1014,13 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigdaemon/sa.yaml": manifestsMachineconfigdaemonSaYaml,
 	"manifests/machineconfigdaemon/scc.yaml": manifestsMachineconfigdaemonSccYaml,
 	"manifests/machineconfigpool.crd.yaml": manifestsMachineconfigpoolCrdYaml,
+	"manifests/machineconfigserver/bootstrap-pod.yaml": manifestsMachineconfigserverBootstrapPodYaml,
+	"manifests/machineconfigserver/clusterrole.yaml": manifestsMachineconfigserverClusterroleYaml,
+	"manifests/machineconfigserver/clusterrolebinding.yaml": manifestsMachineconfigserverClusterrolebindingYaml,
+	"manifests/machineconfigserver/daemonset.yaml": manifestsMachineconfigserverDaemonsetYaml,
+	"manifests/machineconfigserver/node-bootstrapper-sa.yaml": manifestsMachineconfigserverNodeBootstrapperSaYaml,
+	"manifests/machineconfigserver/node-bootstrapper-token.yaml": manifestsMachineconfigserverNodeBootstrapperTokenYaml,
+	"manifests/machineconfigserver/sa.yaml": manifestsMachineconfigserverSaYaml,
 	"manifests/master.machineconfigpool.yaml": manifestsMasterMachineconfigpoolYaml,
 	"manifests/worker.machineconfigpool.yaml": manifestsWorkerMachineconfigpoolYaml,
 	"install/.gitkeep": installGitkeep,
@@ -768,6 +1074,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"etcd.machineconfigpool.yaml": &bintree{manifestsEtcdMachineconfigpoolYaml, map[string]*bintree{}},
 		"machineconfig.crd.yaml": &bintree{manifestsMachineconfigCrdYaml, map[string]*bintree{}},
 		"machineconfigcontroller": &bintree{nil, map[string]*bintree{
+			"bootstrap-pod.yaml": &bintree{manifestsMachineconfigcontrollerBootstrapPodYaml, map[string]*bintree{}},
 			"clusterrole.yaml": &bintree{manifestsMachineconfigcontrollerClusterroleYaml, map[string]*bintree{}},
 			"clusterrolebinding.yaml": &bintree{manifestsMachineconfigcontrollerClusterrolebindingYaml, map[string]*bintree{}},
 			"controllerconfig.yaml": &bintree{manifestsMachineconfigcontrollerControllerconfigYaml, map[string]*bintree{}},
@@ -782,6 +1089,15 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"scc.yaml": &bintree{manifestsMachineconfigdaemonSccYaml, map[string]*bintree{}},
 		}},
 		"machineconfigpool.crd.yaml": &bintree{manifestsMachineconfigpoolCrdYaml, map[string]*bintree{}},
+		"machineconfigserver": &bintree{nil, map[string]*bintree{
+			"bootstrap-pod.yaml": &bintree{manifestsMachineconfigserverBootstrapPodYaml, map[string]*bintree{}},
+			"clusterrole.yaml": &bintree{manifestsMachineconfigserverClusterroleYaml, map[string]*bintree{}},
+			"clusterrolebinding.yaml": &bintree{manifestsMachineconfigserverClusterrolebindingYaml, map[string]*bintree{}},
+			"daemonset.yaml": &bintree{manifestsMachineconfigserverDaemonsetYaml, map[string]*bintree{}},
+			"node-bootstrapper-sa.yaml": &bintree{manifestsMachineconfigserverNodeBootstrapperSaYaml, map[string]*bintree{}},
+			"node-bootstrapper-token.yaml": &bintree{manifestsMachineconfigserverNodeBootstrapperTokenYaml, map[string]*bintree{}},
+			"sa.yaml": &bintree{manifestsMachineconfigserverSaYaml, map[string]*bintree{}},
+		}},
 		"master.machineconfigpool.yaml": &bintree{manifestsMasterMachineconfigpoolYaml, map[string]*bintree{}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},

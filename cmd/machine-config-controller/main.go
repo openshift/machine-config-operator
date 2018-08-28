@@ -17,10 +17,15 @@ var (
 		Short: "Run Machine Config Controller",
 		Long:  "",
 	}
+
+	rootOpts struct {
+		templates string
+	}
 )
 
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
+	startCmd.PersistentFlags().StringVar(&rootOpts.templates, "templates", "/etc/mcc/templates", "Path to the template files used for creating MachineConfig objects")
 }
 
 func main() {

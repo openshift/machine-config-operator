@@ -8,8 +8,10 @@ import (
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	yaml "gopkg.in/yaml.v2"
+	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
+
+	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 // ensure bootstrapServer implements the
@@ -22,20 +24,18 @@ type bootstrapServer struct {
 	// the machine pool, configs will be picked
 	serverBaseDir string
 
-	// serverKubeConfigPath is the path on the local machine from
-	// where the kubeconfig should be read.
-	serverKubeConfigPath string
+	kubeconfigFunc kubeconfigFunc
 }
 
 // NewBootstrapServer initializes a new Bootstrap server that implements
 // the Server interface.
-func NewBootstrapServer(dir, kubeConf string) (Server, error) {
-	if _, err := os.Stat(kubeConf); err != nil {
-		return nil, fmt.Errorf("kubeconfig not found at location: %s", kubeConf)
+func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
+	if _, err := os.Stat(kubeconfig); err != nil {
+		return nil, fmt.Errorf("kubeconfig not found at location: %s", kubeconfig)
 	}
 	return &bootstrapServer{
-		serverBaseDir:        dir,
-		serverKubeConfigPath: kubeConf,
+		serverBaseDir:  dir,
+		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromFile(kubeconfig) },
 	}, nil
 }
 
@@ -107,10 +107,23 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, err
 	}
 
 	// append KubeConfig to Ignition.
-	err = copyFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, bsc.serverKubeConfigPath)
+	kcData, _, err := bsc.kubeconfigFunc()
 	if err != nil {
 		return nil, err
 	}
-
+	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kcData))
 	return &mc.Spec.Config, nil
+}
+
+func kubeconfigFromFile(path string) ([]byte, []byte, error) {
+	kcData, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting kubeconfig from disk: %v", err)
+	}
+
+	kc := clientcmd.Config{}
+	if err := yaml.Unmarshal(kcData, &kc); err != nil {
+		return nil, nil, err
+	}
+	return kcData, kc.Clusters[0].Cluster.CertificateAuthorityData, nil
 }

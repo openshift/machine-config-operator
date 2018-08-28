@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: machine-config-server
+  namespace: {{.TargetNamespace}}
+spec:
+  selector:
+    matchLabels:
+      k8s-app: machine-config-server
+  template:
+    metadata:
+      name: machine-config-server
+      labels:
+        k8s-app: machine-config-server
+    spec:
+      containers:
+        - name: machine-config-server
+          image: quay.io/abhinavdahiya/machine-config-server:v0.0.0-69-gcf692f4e-dirty
+          args:
+            - "start"
+            - "--apiserver-url=https://adahiya-0-api.tt.testing:6443"
+          volumeMounts:
+          - name: certs
+            mountPath: /etc/ssl/mcs
+          - name: node-bootstrap-token
+            mountPath: /etc/mcs/bootstrap-token
+      hostNetwork: true
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      serviceAccountName: machine-config-server
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      volumes:
+      - name: node-bootstrap-token
+        secret:
+          secretName: node-bootstrapper-token
+      - name: certs
+        secret:
+          secretName: machine-config-server-tls
