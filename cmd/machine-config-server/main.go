@@ -28,9 +28,9 @@ var (
 
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
-	rootCmd.PersistentFlags().IntVar(&rootOpts.port, "port", 45900, "port to serve ignition configs")
-	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "", "cert file for TLS")
-	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "", "key file for TLS")
+	rootCmd.PersistentFlags().IntVar(&rootOpts.port, "port", 49500, "port to serve ignition configs")
+	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "/etc/ssl/mcs/tls.crt", "cert file for TLS")
+	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
 	rootCmd.PersistentFlags().BoolVar(&rootOpts.debug, "debug", false, "turns off TLS")
 }
 

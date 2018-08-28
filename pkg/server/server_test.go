@@ -119,7 +119,11 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// add new files, units in the expected Ignition.
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, getKubeConfigContent(t))
+	kc, _, err := getKubeConfigContent(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
 	anno, err := getNodeAnnotation(mp.Status.CurrentMachineConfig)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
@@ -127,7 +131,10 @@ func TestBootstrapServer(t *testing.T) {
 	appendFileToIgnition(&mc.Spec.Config, daemon.InitialNodeAnnotationsFilePath, anno)
 
 	// initialize bootstrap server and get config.
-	bs, _ := NewBootstrapServer(testDir, testKubeConfig)
+	bs := &bootstrapServer{
+		serverBaseDir:  testDir,
+		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,8 +195,8 @@ func TestClusterServer(t *testing.T) {
 
 	etcdIndex := "1"
 	csc := &clusterServer{
-		machineClient:        cs.MachineconfigurationV1(),
-		serverKubeConfigPath: testKubeConfig,
+		machineClient:  cs.MachineconfigurationV1(),
+		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
 
 	// replace etcd_index param
@@ -200,7 +207,11 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
 
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, getKubeConfigContent(t))
+	kc, _, err := getKubeConfigContent(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
 	anno, err := getNodeAnnotation(mp.Status.CurrentMachineConfig)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
@@ -219,12 +230,8 @@ func TestClusterServer(t *testing.T) {
 	validateIgnitionSystemd(t, res.Systemd.Units, mc.Spec.Config.Systemd.Units)
 }
 
-func getKubeConfigContent(t *testing.T) string {
-	kc, err := ioutil.ReadFile(testKubeConfig)
-	if err != nil {
-		t.Fatalf("error while reading kubeconfig from %s: err: %v", testKubeConfig, err)
-	}
-	return string(kc)
+func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {
+	return []byte("dummy-kubeconfig"), []byte("dummy-root-ca"), nil
 }
 
 func validateIgnitionFiles(t *testing.T, exp, got []ignv2_2types.File) {

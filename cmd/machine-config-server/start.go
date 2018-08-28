@@ -18,14 +18,15 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig      string
-		targetNamespace string
+		kubeconfig   string
+		apiserverURL string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
+	startCmd.PersistentFlags().StringVar(&startOpts.apiserverURL, "apiserver-url", "", "URL for apiserver; Used to generate kubeconfig")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -35,7 +36,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
 
-	cs, err := server.NewClusterServer(startOpts.kubeconfig)
+	if startOpts.apiserverURL == "" {
+		glog.Exitf("--apiserver-url cannot be empty")
+	}
+
+	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL)
 	if err != nil {
 		glog.Exitf("Machine Config Server exited with error: %v", err)
 	}

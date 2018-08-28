@@ -23,11 +23,12 @@ func (optr *Operator) syncAll() error {
 		optr.syncCustomResourceDefinitions,
 		optr.syncMachineConfigPools,
 		optr.syncMachineConfigController,
+		optr.syncMachineConfigServer,
 		optr.syncMachineConfigDaemon,
 	}
 
 	var errs []error
-	config := optr.renderConfig()
+	config := getRenderConfig()
 	for _, f := range syncFuncs {
 		errs = append(errs, f(*config))
 	}
@@ -186,6 +187,73 @@ func (optr *Operator) syncMachineConfigDaemon(config renderConfig) error {
 	}
 
 	mcdBytes, err := renderAsset(config, "manifests/machineconfigdaemon/daemonset.yaml")
+	if err != nil {
+		return err
+	}
+	mcd := resourceread.ReadDaemonSetV1OrDie(mcdBytes)
+	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcd)
+	if err != nil {
+		return err
+	}
+	if updated {
+		return optr.waitForDaemonsetRollout(mcd)
+	}
+	return nil
+}
+
+func (optr *Operator) syncMachineConfigServer(config renderConfig) error {
+	crBytes, err := renderAsset(config, "manifests/machineconfigserver/clusterrole.yaml")
+	if err != nil {
+		return err
+	}
+	cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
+	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
+	if err != nil {
+		return err
+	}
+
+	crbs := []string{
+		"manifests/machineconfigserver/clusterrolebinding.yaml",
+	}
+	for _, crb := range crbs {
+		b, err := renderAsset(config, crb)
+		if err != nil {
+			return err
+		}
+		obj := resourceread.ReadClusterRoleBindingV1OrDie(b)
+		_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), obj)
+		if err != nil {
+			return err
+		}
+	}
+
+	sas := []string{
+		"manifests/machineconfigserver/sa.yaml",
+		"manifests/machineconfigserver/node-bootstrapper-sa.yaml",
+	}
+	for _, sa := range sas {
+		b, err := renderAsset(config, sa)
+		if err != nil {
+			return err
+		}
+		obj := resourceread.ReadServiceAccountV1OrDie(b)
+		_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), obj)
+		if err != nil {
+			return err
+		}
+	}
+
+	nbtBytes, err := renderAsset(config, "manifests/machineconfigserver/node-bootstrapper-token.yaml")
+	if err != nil {
+		return err
+	}
+	nbt := resourceread.ReadSecretV1OrDie(nbtBytes)
+	_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), nbt)
+	if err != nil {
+		return err
+	}
+
+	mcdBytes, err := renderAsset(config, "manifests/machineconfigserver/daemonset.yaml")
 	if err != nil {
 		return err
 	}
