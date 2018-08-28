@@ -6,6 +6,5 @@ RUN WHAT=machine-config-daemon ./hack/build-go.sh
 
 FROM scratch
 COPY --from=build-env /go/src/github.com/openshift/machine-config-operator/_output/linux/amd64/machine-config-daemon /bin/machine-config-daemon
-COPY templates /etc/templates
 
 ENTRYPOINT ["/bin/machine-config-daemon"]

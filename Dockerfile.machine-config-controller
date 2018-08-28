@@ -6,6 +6,6 @@ RUN WHAT=machine-config-controller ./hack/build-go.sh
 
 FROM scratch
 COPY --from=build-env /go/src/github.com/openshift/machine-config-operator/_output/linux/amd64/machine-config-controller /bin/machine-config-controller
-COPY templates /etc/templates
+COPY templates /etc/mcc/templates
 
 ENTRYPOINT ["/bin/machine-config-controller"]

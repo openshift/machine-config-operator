@@ -29,6 +29,9 @@ const (
 	etcdTemplateParam = "{{.etcd_index}}"
 )
 
+// kubeconfigFunc fetches the kubeconfig that needs to be served.
+type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
+
 // Server defines the interface that is implemented by different
 // machine config server implementations.
 type Server interface {
