@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/coreos/go-systemd/login1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	kubernetes "k8s.io/client-go/kubernetes/fake"
 	kubernetescorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -27,9 +28,10 @@ func TestNew(t *testing.T) {
 	kubeClient := kubernetes.NewSimpleClientset()
 	rootFS := "/"
 	nodeName := "node"
+	loginCon := &login1.Conn{}
 
 	// Verify a successful creation
-	daemon, err := New(rootFS, nodeName, clientSet, kubeClient, mockLoadNodeAnnotations(true))
+	daemon, err := New(rootFS, nodeName, clientSet, kubeClient, mockLoadNodeAnnotations(true), loginCon)
 	if err != nil {
 		t.Fatalf("unable to create Daemon: %s", err)
 	}
@@ -38,7 +40,7 @@ func TestNew(t *testing.T) {
 	}
 
 	// There should be no Daemon if loadNodeAnnotations doesn't work
-	daemon, err = New(rootFS, nodeName, clientSet, kubeClient, mockLoadNodeAnnotations(false))
+	daemon, err = New(rootFS, nodeName, clientSet, kubeClient, mockLoadNodeAnnotations(false), loginCon)
 	if daemon != nil {
 		t.Fatalf("expected daemon=nil, found daemon=%+v", daemon)
 	}

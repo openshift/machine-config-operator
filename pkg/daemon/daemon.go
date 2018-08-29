@@ -55,12 +55,16 @@ func New(
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	loadNodeAnnotations NodeAnnotationLoader,
+	loginClient *login1.Conn,
 ) (*Daemon, error) {
-	loginClient, err := login1.New()
-	if err != nil {
-		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
+	// Default to creating our own connection to the system dbus
+	if loginClient == nil {
+		var err error
+		loginClient, err = login1.New()
+		if err != nil {
+			return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
+		}
 	}
-
 	if err := loadNodeAnnotations(kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}
