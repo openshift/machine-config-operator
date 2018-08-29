@@ -25,6 +25,8 @@
 // manifests/master.machineconfigpool.yaml
 // manifests/worker.machineconfigpool.yaml
 // install/.gitkeep
+// install/mcoconfig.crd.yaml
+// install/mcoconfig.yaml
 // DO NOT EDIT!
 
 package assets
@@ -293,14 +295,16 @@ func manifestsMachineconfigcontrollerClusterrolebindingYaml() (*asset, error) {
 var _manifestsMachineconfigcontrollerControllerconfigYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: ControllerConfig
 metadata:
-  name: test
+  name: machine-config-controller
   namespace: {{.TargetNamespace}}
 spec:
-  clusterDNSIP: "10.3.0.10"
-  clusterName: "adahiya-0"
-  platform: "libvirt"
-  baseDomain: "tt.testing"
-  etcdInitialCount: 1`)
+  clusterDNSIP: {{.ControllerConfig.ClusterDNSIP}}
+  cloudProviderConfig: {{.ControllerConfig.CloudProviderConfig}}
+  clusterName: {{.ControllerConfig.ClusterName}}
+  platform: {{.ControllerConfig.Platform}}
+  baseDomain: {{.ControllerConfig.BaseDomain}}
+  etcdInitialCount: {{.ControllerConfig.EtcdInitialCount}}
+`)
 
 func manifestsMachineconfigcontrollerControllerconfigYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigcontrollerControllerconfigYaml, nil
@@ -333,7 +337,7 @@ spec:
     spec:
       containers:
       - name: machine-config-controller
-        image: quay.io/abhinavdahiya/machine-config-controller:v0.0.0-69-gcf692f4e-dirty
+        image: quay.io/abhinavdahiya/machine-config-controller:{{.Version}}
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
@@ -465,7 +469,7 @@ spec:
     spec:
       containers:
         - name: machine-config-daemon
-          image: quay.io/abhinavdahiya/machine-config-daemon:v0.0.0-69-gcf692f4e-dirty
+          image: quay.io/abhinavdahiya/machine-config-daemon:{{.Version}}
           args:
             - "start"
           volumeMounts:
@@ -766,7 +770,7 @@ spec:
     spec:
       containers:
         - name: machine-config-server
-          image: quay.io/abhinavdahiya/machine-config-server:v0.0.0-69-gcf692f4e-dirty
+          image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
           args:
             - "start"
             - "--apiserver-url=https://adahiya-0-api.tt.testing:6443"
@@ -947,6 +951,77 @@ func installGitkeep() (*asset, error) {
 	return a, nil
 }
 
+var _installMcoconfigCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: mcoconfigs.machineconfiguration.openshift.io
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: machineconfiguration.openshift.io
+  # list of versions supported by this CustomResourceDefinition
+  versions:
+    - name: v1
+      # Each version can be enabled/disabled by Served flag.
+      served: true
+      # One and only one version must be marked as the storage version.
+      storage: true
+  # either Namespaced or Cluster
+  scope: Namespaced
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: mcoconfigs
+    # singular name to be used as an alias on the CLI and for display
+    singular: mcoconfig
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: MCOConfig
+`)
+
+func installMcoconfigCrdYamlBytes() ([]byte, error) {
+	return _installMcoconfigCrdYaml, nil
+}
+
+func installMcoconfigCrdYaml() (*asset, error) {
+	bytes, err := installMcoconfigCrdYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "install/mcoconfig.crd.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _installMcoconfigYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: ControllerConfig
+metadata:
+  name: machine-config-operator
+  namespace: openshift-machine-config-operator
+spec:
+  controllerConfig:
+    clusterDNSIP: "10.3.0.10"
+    cloudProviderConfig: ""
+    clusterName: "adahiya-0"
+    platform: "libvirt"
+    baseDomain: "tt.testing"
+    etcdInitialCount: 1
+`)
+
+func installMcoconfigYamlBytes() ([]byte, error) {
+	return _installMcoconfigYaml, nil
+}
+
+func installMcoconfigYaml() (*asset, error) {
+	bytes, err := installMcoconfigYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "install/mcoconfig.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 // Asset loads and returns the asset for the given name.
 // It returns an error if the asset could not be found or
 // could not be loaded.
@@ -1024,6 +1099,8 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/master.machineconfigpool.yaml": manifestsMasterMachineconfigpoolYaml,
 	"manifests/worker.machineconfigpool.yaml": manifestsWorkerMachineconfigpoolYaml,
 	"install/.gitkeep": installGitkeep,
+	"install/mcoconfig.crd.yaml": installMcoconfigCrdYaml,
+	"install/mcoconfig.yaml": installMcoconfigYaml,
 }
 
 // AssetDir returns the file names below a certain
@@ -1068,6 +1145,8 @@ type bintree struct {
 var _bintree = &bintree{nil, map[string]*bintree{
 	"install": &bintree{nil, map[string]*bintree{
 		".gitkeep": &bintree{installGitkeep, map[string]*bintree{}},
+		"mcoconfig.crd.yaml": &bintree{installMcoconfigCrdYaml, map[string]*bintree{}},
+		"mcoconfig.yaml": &bintree{installMcoconfigYaml, map[string]*bintree{}},
 	}},
 	"manifests": &bintree{nil, map[string]*bintree{
 		"controllerconfig.crd.yaml": &bintree{manifestsControllerconfigCrdYaml, map[string]*bintree{}},

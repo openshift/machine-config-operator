@@ -12,6 +12,7 @@ import (
 type MachineconfigurationV1Interface interface {
 	RESTClient() rest.Interface
 	ControllerConfigsGetter
+	MCOConfigsGetter
 	MachineConfigsGetter
 	MachineConfigPoolsGetter
 }
@@ -23,6 +24,10 @@ type MachineconfigurationV1Client struct {
 
 func (c *MachineconfigurationV1Client) ControllerConfigs(namespace string) ControllerConfigInterface {
 	return newControllerConfigs(c, namespace)
+}
+
+func (c *MachineconfigurationV1Client) MCOConfigs(namespace string) MCOConfigInterface {
+	return newMCOConfigs(c, namespace)
 }
 
 func (c *MachineconfigurationV1Client) MachineConfigs() MachineConfigInterface {

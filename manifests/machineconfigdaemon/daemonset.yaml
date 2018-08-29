@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: machine-config-daemon
-          image: quay.io/abhinavdahiya/machine-config-daemon:v0.0.0-69-gcf692f4e-dirty
+          image: quay.io/abhinavdahiya/machine-config-daemon:{{.Version}}
           args:
             - "start"
           volumeMounts:
