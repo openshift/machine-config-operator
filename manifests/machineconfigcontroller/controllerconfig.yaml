@@ -1,11 +1,12 @@
 apiVersion: machineconfiguration.openshift.io/v1
 kind: ControllerConfig
 metadata:
-  name: test
+  name: machine-config-controller
   namespace: {{.TargetNamespace}}
 spec:
-  clusterDNSIP: "10.3.0.10"
-  clusterName: "adahiya-0"
-  platform: "libvirt"
-  baseDomain: "tt.testing"
-  etcdInitialCount: 1
+  clusterDNSIP: {{.ControllerConfig.ClusterDNSIP}}
+  cloudProviderConfig: {{.ControllerConfig.CloudProviderConfig}}
+  clusterName: {{.ControllerConfig.ClusterName}}
+  platform: {{.ControllerConfig.Platform}}
+  baseDomain: {{.ControllerConfig.BaseDomain}}
+  etcdInitialCount: {{.ControllerConfig.EtcdInitialCount}}

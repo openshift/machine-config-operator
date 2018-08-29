@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"text/template"
 
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 )
 
 type renderConfig struct {
-	TargetNamespace string
+	TargetNamespace  string
+	Version          string
+	ControllerConfig mcfgv1.ControllerConfigSpec
 }
 
 func renderAsset(config renderConfig, path string) ([]byte, error) {

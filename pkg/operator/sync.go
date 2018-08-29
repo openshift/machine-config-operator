@@ -5,32 +5,35 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/lib/resourceapply"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
 	appsv1 "k8s.io/api/apps/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/openshift/machine-config-operator/lib/resourceapply"
+	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 )
 
 type syncFunc func(config renderConfig) error
 
-func (optr *Operator) syncAll() error {
+func (optr *Operator) syncAll(mcoconfig *mcfgv1.MCOConfig) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	syncFuncs := []syncFunc{
-		optr.syncCustomResourceDefinitions,
 		optr.syncMachineConfigPools,
+		optr.syncSCC,
 		optr.syncMachineConfigController,
 		optr.syncMachineConfigServer,
 		optr.syncMachineConfigDaemon,
 	}
 
 	var errs []error
-	config := getRenderConfig()
+	config := getRenderConfig(mcoconfig)
 	for _, f := range syncFuncs {
-		errs = append(errs, f(*config))
+		errs = append(errs, f(config))
 	}
 
 	agg := utilerrors.NewAggregate(errs)
@@ -40,7 +43,7 @@ func (optr *Operator) syncAll() error {
 	return nil
 }
 
-func (optr *Operator) syncCustomResourceDefinitions(config renderConfig) error {
+func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
 		"manifests/machineconfig.crd.yaml",
 		"manifests/controllerconfig.crd.yaml",
@@ -48,9 +51,9 @@ func (optr *Operator) syncCustomResourceDefinitions(config renderConfig) error {
 	}
 
 	for _, crd := range crds {
-		crdBytes, err := renderAsset(config, crd)
+		crdBytes, err := assets.Asset(crd)
 		if err != nil {
-			return err
+			return fmt.Errorf("error getting asset %s: %v", crd, err)
 		}
 		c := resourceread.ReadCustomResourceDefinitionV1Beta1OrDie(crdBytes)
 		_, updated, err := resourceapply.ApplyCustomResourceDefinition(optr.apiExtClient.ApiextensionsV1beta1(), c)
@@ -87,6 +90,16 @@ func (optr *Operator) syncMachineConfigPools(config renderConfig) error {
 	}
 
 	return nil
+}
+
+func (optr *Operator) syncSCC(config renderConfig) error {
+	sccBytes, err := renderAsset(config, "manifests/scc.yaml")
+	if err != nil {
+		return err
+	}
+	scc := resourceread.ReadSecurityContextConstraintsV1OrDie(sccBytes)
+	_, _, err = resourceapply.ApplySecurityContextConstraints(optr.securityClient.SecurityV1(), scc)
+	return err
 }
 
 func (optr *Operator) syncMachineConfigController(config renderConfig) error {
@@ -172,16 +185,6 @@ func (optr *Operator) syncMachineConfigDaemon(config renderConfig) error {
 	}
 	sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
 	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
-	if err != nil {
-		return err
-	}
-
-	sccBytes, err := renderAsset(config, "manifests/machineconfigdaemon/scc.yaml")
-	if err != nil {
-		return err
-	}
-	scc := resourceread.ReadSecurityContextConstraintsV1OrDie(sccBytes)
-	_, _, err = resourceapply.ApplySecurityContextConstraints(optr.securityClient.SecurityV1(), scc)
 	if err != nil {
 		return err
 	}
