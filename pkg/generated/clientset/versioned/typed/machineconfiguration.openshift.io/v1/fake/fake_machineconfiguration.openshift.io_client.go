@@ -16,6 +16,10 @@ func (c *FakeMachineconfigurationV1) ControllerConfigs(namespace string) v1.Cont
 	return &FakeControllerConfigs{c, namespace}
 }
 
+func (c *FakeMachineconfigurationV1) MCOConfigs(namespace string) v1.MCOConfigInterface {
+	return &FakeMCOConfigs{c, namespace}
+}
+
 func (c *FakeMachineconfigurationV1) MachineConfigs() v1.MachineConfigInterface {
 	return &FakeMachineConfigs{c}
 }

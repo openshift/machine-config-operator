@@ -10,6 +10,14 @@ type ControllerConfigListerExpansion interface{}
 // ControllerConfigNamespaceLister.
 type ControllerConfigNamespaceListerExpansion interface{}
 
+// MCOConfigListerExpansion allows custom methods to be added to
+// MCOConfigLister.
+type MCOConfigListerExpansion interface{}
+
+// MCOConfigNamespaceListerExpansion allows custom methods to be added to
+// MCOConfigNamespaceLister.
+type MCOConfigNamespaceListerExpansion interface{}
+
 // MachineConfigListerExpansion allows custom methods to be added to
 // MachineConfigLister.
 type MachineConfigListerExpansion interface{}
