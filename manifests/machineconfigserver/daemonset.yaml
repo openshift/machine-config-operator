@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: machine-config-server
-          image: quay.io/abhinavdahiya/machine-config-server:v0.0.0-69-gcf692f4e-dirty
+          image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
           args:
             - "start"
             - "--apiserver-url=https://adahiya-0-api.tt.testing:6443"

@@ -1,14 +1,18 @@
 package operator
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/golang/glog"
 	securityclientset "github.com/openshift/client-go/security/clientset/versioned"
 	securityinformersv1 "github.com/openshift/client-go/security/informers/externalversions/security/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
@@ -33,16 +37,12 @@ const (
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
-
-	workQueueKey     = "kube-system/installconfig"
-	installconfigKey = "installconfig"
-
-	// TargetNamespace is the where operator operates.
-	TargetNamespace = "openshift-machine-config"
 )
 
 // Operator defines machince config operator.
 type Operator struct {
+	namespace, name string
+
 	client         mcfgclientset.Interface
 	kubeClient     kubernetes.Interface
 	securityClient securityclientset.Interface
@@ -52,10 +52,12 @@ type Operator struct {
 	syncHandler func(ic string) error
 
 	crdLister       apiextlistersv1beta1.CustomResourceDefinitionLister
+	mcoconfigLister mcfglistersv1.MCOConfigLister
 	deployLister    appslisterv1.DeploymentLister
 	daemonsetLister appslisterv1.DaemonSetLister
 
 	crdListerSynced       cache.InformerSynced
+	mcoconfigListerSynced cache.InformerSynced
 	deployListerSynced    cache.InformerSynced
 	daemonsetListerSynced cache.InformerSynced
 
@@ -65,6 +67,8 @@ type Operator struct {
 
 // New returns a new machine config operator.
 func New(
+	namespace, name string,
+	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	configMapInformer coreinformersv1.ConfigMapInformer,
 	serviceAccountInfomer coreinformersv1.ServiceAccountInformer,
@@ -84,6 +88,8 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	optr := &Operator{
+		namespace:      namespace,
+		name:           name,
 		client:         client,
 		kubeClient:     kubeClient,
 		securityClient: securityClient,
@@ -92,6 +98,7 @@ func New(
 		queue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
+	mcoconfigInformer.Informer().AddEventHandler(optr.eventHandler())
 	controllerConfigInformer.Informer().AddEventHandler(optr.eventHandler())
 	configMapInformer.Informer().AddEventHandler(optr.eventHandler())
 	serviceAccountInfomer.Informer().AddEventHandler(optr.eventHandler())
@@ -106,6 +113,8 @@ func New(
 
 	optr.crdLister = crdInformer.Lister()
 	optr.crdListerSynced = crdInformer.Informer().HasSynced
+	optr.mcoconfigLister = mcoconfigInformer.Lister()
+	optr.mcoconfigListerSynced = mcoconfigInformer.Informer().HasSynced
 	optr.deployLister = deployInformer.Lister()
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
 	optr.daemonsetLister = daemonsetInformer.Lister()
@@ -124,8 +133,10 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 
 	if !cache.WaitForCacheSync(stopCh,
 		optr.crdListerSynced,
+		optr.mcoconfigListerSynced,
 		optr.deployListerSynced,
 		optr.daemonsetListerSynced) {
+		glog.Error("failed to sync caches")
 		return
 	}
 
@@ -137,6 +148,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 }
 
 func (optr *Operator) eventHandler() cache.ResourceEventHandler {
+	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { optr.queue.Add(workQueueKey) },
 		UpdateFunc: func(old, new interface{}) { optr.queue.Add(workQueueKey) },
@@ -190,33 +202,28 @@ func (optr *Operator) sync(key string) error {
 		glog.V(4).Infof("Finished syncing operator %q (%v)", key, time.Since(startTime))
 	}()
 
-	// namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	// if err != nil {
-	// 	return err
-	// }
+	if err := optr.syncCustomResourceDefinitions(); err != nil {
+		return err
+	}
 
-	// iccm, err := optr.configMapLister.ConfigMaps(namespace).Get(name)
-	// if errors.IsNotFound(err) {
-	// 	glog.V(2).Infof("ConfigMap for InstallConfig %v has been deleted", key)
-	// 	return nil
-	// }
-	// if err != nil {
-	// 	return err
-	// }
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
+	}
 
-	// iccmpCopy := iccm.DeepCopy()
-	// ic, ok := iccmpCopy.Data[installconfigKey]
-	// if !ok {
-	// 	return fmt.Errorf("Did not find %s key in ConfigMap %s", installconfigKey, key)
-	// }
+	obj, err := optr.mcoconfigLister.MCOConfigs(namespace).Get(name)
+	if err != nil {
+		return err
+	}
 
-	// // TODO: set operator status Working
-	// _ = ic
-	return optr.syncAll()
+	mcoconfig := obj.DeepCopy()
+	return optr.syncAll(mcoconfig)
 }
 
-func getRenderConfig() *renderConfig {
-	return &renderConfig{
-		TargetNamespace: TargetNamespace,
+func getRenderConfig(mc *mcfgv1.MCOConfig) renderConfig {
+	return renderConfig{
+		TargetNamespace:  mc.GetNamespace(),
+		Version:          version.Raw,
+		ControllerConfig: mc.Spec.ControllerConfig,
 	}
 }
