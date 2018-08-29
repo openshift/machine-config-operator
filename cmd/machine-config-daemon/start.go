@@ -61,6 +61,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.nodeName,
 		cb.ClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
+		daemon.LoadNodeAnnotations,
 	)
 	if err != nil {
 		glog.Fatalf("failed to initialize daemon: %v", err)
