@@ -115,7 +115,7 @@ func createResourceLock(cb *clientBuilder) resourcelock.Interface {
 
 	return &resourcelock.ConfigMapLock{
 		ConfigMapMeta: metav1.ObjectMeta{
-			Namespace: operator.TargetNamespace,
+			Namespace: componentNamespace,
 			Name:      componentName,
 		},
 		Client: cb.KubeClientOrDie("leader-election").CoreV1(),
@@ -196,9 +196,9 @@ func createControllerContext(cb *clientBuilder, stop <-chan struct{}) *controlle
 	kubeClient := cb.KubeClientOrDie("kube-shared-informer")
 	apiExtClient := cb.APIExtClientOrDie("apiext-shared-informer")
 	securityClient := cb.SecurityClientOrDie("security-shared-informer")
-	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), operator.TargetNamespace, nil)
+	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), componentNamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
-	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), operator.TargetNamespace, nil)
+	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), componentNamespace, nil)
 	apiExtSharedInformer := apiextinformers.NewSharedInformerFactory(apiExtClient, resyncPeriod()())
 	securityInformer := securityinformers.NewSharedInformerFactory(securityClient, resyncPeriod()())
 
@@ -217,6 +217,8 @@ func createControllerContext(cb *clientBuilder, stop <-chan struct{}) *controlle
 
 func startControllers(ctx *controllerContext) error {
 	go operator.New(
+		componentNamespace, componentName,
+		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctx.KubeInformerFactory.Core().V1().ConfigMaps(),
 		ctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),

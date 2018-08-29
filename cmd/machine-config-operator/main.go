@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	componentName = "machine-config-operator"
+	componentName      = "machine-config-operator"
+	componentNamespace = "openshift-machine-config-operator"
 )
 
 var (
