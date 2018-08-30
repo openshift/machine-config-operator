@@ -42,7 +42,7 @@ type clusterServer struct {
 // It accepts the kubeConfig which is not required when it's
 // run from within the cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
-func NewClusterServer(kubeConfig string, apiserverURL string) (Server, error) {
+func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	restConfig, err := getClientConfig(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
@@ -70,22 +70,12 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error)
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}
 
-	err = execEtcdTemplates(&mc.Spec.Config, cr.etcdIndex)
-	if err != nil {
-		return nil, fmt.Errorf("server: could not template etcd. err: %v", err)
+	appenders := getAppenders(cr, currConf, cs.kubeconfigFunc)
+	for _, a := range appenders {
+		if err := a(&mc.Spec.Config); err != nil {
+			return nil, err
+		}
 	}
-
-	err = appendNodeAnnotations(&mc.Spec.Config, currConf)
-	if err != nil {
-		return nil, err
-	}
-
-	// append KubeConfig to Ignition.
-	kcData, _, err := cs.kubeconfigFunc()
-	if err != nil {
-		return nil, err
-	}
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kcData))
 	return &mc.Spec.Config, nil
 }
 

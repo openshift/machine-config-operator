@@ -94,24 +94,12 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, err
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
 	}
 
-	// execute etcd templating.
-	err = execEtcdTemplates(&mc.Spec.Config, cr.etcdIndex)
-	if err != nil {
-		return nil, fmt.Errorf("server: could not template etcd. err: %v", err)
+	appenders := getAppenders(cr, currConf, bsc.kubeconfigFunc)
+	for _, a := range appenders {
+		if err := a(&mc.Spec.Config); err != nil {
+			return nil, err
+		}
 	}
-
-	// append machine annotations file.
-	err = appendNodeAnnotations(&mc.Spec.Config, currConf)
-	if err != nil {
-		return nil, err
-	}
-
-	// append KubeConfig to Ignition.
-	kcData, _, err := bsc.kubeconfigFunc()
-	if err != nil {
-		return nil, err
-	}
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kcData))
 	return &mc.Spec.Config, nil
 }
 
