@@ -117,6 +117,10 @@ type ControllerConfigSpec struct {
 
 	// Size of the initial etcd cluster.
 	EtcdInitialCount int `json:"etcdInitialCount"`
+
+	// CAs
+	EtcdCAData []byte `json:"etcdCAData"`
+	RootCAData []byte `json:"rootCAData"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
