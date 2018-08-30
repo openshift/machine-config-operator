@@ -13,10 +13,26 @@ import (
 )
 
 // RenderBootstrap writes to destinationDir static Pods.
-func RenderBootstrap(configPath string, destinationDir string) error {
+func RenderBootstrap(
+	configPath string,
+	etcdCAFile, rootCAFile string,
+	destinationDir string,
+) error {
 	raw, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return err
+	}
+	var casData [][]byte
+	cas := []string{
+		rootCAFile,
+		etcdCAFile,
+	}
+	for _, ca := range cas {
+		data, err := ioutil.ReadFile(ca)
+		if err != nil {
+			return err
+		}
+		casData = append(casData, data)
 	}
 
 	obji, err := runtime.Decode(mcfgscheme.Codecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), raw)
@@ -27,7 +43,7 @@ func RenderBootstrap(configPath string, destinationDir string) error {
 	if !ok {
 		return fmt.Errorf("expected *MCOConfig found %T", obji)
 	}
-	config := getRenderConfig(mcoconfig)
+	config := getRenderConfig(mcoconfig, casData[1], casData[0])
 
 	manifests := []struct {
 		name     string

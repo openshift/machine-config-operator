@@ -45,7 +45,11 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		glog.Fatal("--config-file cannot be empty")
 	}
 
-	if err := operator.RenderBootstrap(bootstrapOpts.configFile, bootstrapOpts.destinationDir); err != nil {
+	if err := operator.RenderBootstrap(
+		bootstrapOpts.configFile,
+		rootOpts.etcdCAFile, rootOpts.rootCAFile,
+		bootstrapOpts.destinationDir,
+	); err != nil {
 		glog.Fatalf("error rendering bootstrap manifests: %v", err)
 	}
 }

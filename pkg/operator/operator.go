@@ -2,6 +2,7 @@ package operator
 
 import (
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	"github.com/golang/glog"
@@ -43,6 +44,8 @@ const (
 type Operator struct {
 	namespace, name string
 
+	etcdCAFile, rootCAFile string
+
 	client         mcfgclientset.Interface
 	kubeClient     kubernetes.Interface
 	securityClient securityclientset.Interface
@@ -68,6 +71,7 @@ type Operator struct {
 // New returns a new machine config operator.
 func New(
 	namespace, name string,
+	etcdCAFile, rootCAFile string,
 	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	configMapInformer coreinformersv1.ConfigMapInformer,
@@ -90,6 +94,8 @@ func New(
 	optr := &Operator{
 		namespace:      namespace,
 		name:           name,
+		etcdCAFile:     etcdCAFile,
+		rootCAFile:     rootCAFile,
 		client:         client,
 		kubeClient:     kubeClient,
 		securityClient: securityClient,
@@ -217,13 +223,38 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	mcoconfig := obj.DeepCopy()
-	return optr.syncAll(mcoconfig)
+
+	var casData [][]byte
+	cas := []string{
+		optr.rootCAFile,
+		optr.etcdCAFile,
+	}
+	for _, ca := range cas {
+		data, err := ioutil.ReadFile(ca)
+		if err != nil {
+			return err
+		}
+		casData = append(casData, data)
+	}
+
+	rc := getRenderConfig(mcoconfig, casData[1], casData[0])
+	return optr.syncAll(rc)
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig) renderConfig {
+func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte) renderConfig {
+	controllerconfig := mcfgv1.ControllerConfigSpec{
+		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
+		CloudProviderConfig: mc.Spec.CloudProviderConfig,
+		ClusterName:         mc.Spec.ClusterName,
+		Platform:            mc.Spec.Platform,
+		BaseDomain:          mc.Spec.BaseDomain,
+		EtcdInitialCount:    mc.Spec.EtcdInitialCount,
+		EtcdCAData:          etcdCAData,
+		RootCAData:          rootCAData,
+	}
 	return renderConfig{
 		TargetNamespace:  mc.GetNamespace(),
 		Version:          version.Raw,
-		ControllerConfig: mc.Spec.ControllerConfig,
+		ControllerConfig: controllerconfig,
 	}
 }

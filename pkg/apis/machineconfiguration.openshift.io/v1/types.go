@@ -50,7 +50,17 @@ type MCOConfig struct {
 
 // MCOConfigSpec is the spec for MCOConfig resource.
 type MCOConfigSpec struct {
-	ControllerConfig ControllerConfigSpec `json:"controllerConfig"`
+	ClusterDNSIP        string `json:"clusterDNSIP"`
+	CloudProviderConfig string `json:"cloudProviderConfig"`
+	ClusterName         string `json:"clusterName"`
+
+	// The openshift platform, e.g. "libvirt" or "aws"
+	Platform string `json:"platform"`
+
+	BaseDomain string `json:"baseDomain"`
+
+	// Size of the initial etcd cluster.
+	EtcdInitialCount int `json:"etcdInitialCount"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
