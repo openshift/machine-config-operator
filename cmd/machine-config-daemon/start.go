@@ -5,13 +5,10 @@ import (
 	"os"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
@@ -51,7 +48,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.nodeName = name
 	}
 
-	cb, err := newClientBuilder(startOpts.kubeconfig)
+	cb, err := common.NewClientBuilder(startOpts.kubeconfig)
 	if err != nil {
 		glog.Fatalf("error creating clients: %v", err)
 	}
@@ -59,7 +56,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	daemon, err := daemon.New(
 		startOpts.rootPrefix,
 		startOpts.nodeName,
-		cb.ClientOrDie(componentName),
+		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
 	)
 	if err != nil {
@@ -72,36 +69,4 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		glog.Fatalf("failed to run: %v", err)
 	}
-}
-
-type clientBuilder struct {
-	config *rest.Config
-}
-
-func (cb *clientBuilder) ClientOrDie(name string) mcfgclientset.Interface {
-	return mcfgclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
-}
-
-func (cb *clientBuilder) KubeClientOrDie(name string) kubernetes.Interface {
-	return kubernetes.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
-}
-
-func newClientBuilder(kubeconfig string) (*clientBuilder, error) {
-	var config *rest.Config
-	var err error
-
-	if kubeconfig != "" {
-		glog.V(4).Infof("Loading kube client config from path %q", kubeconfig)
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
-		glog.V(4).Infof("Using in-cluster kube client config")
-		config, err = rest.InClusterConfig()
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &clientBuilder{
-		config: config,
-	}, nil
 }
