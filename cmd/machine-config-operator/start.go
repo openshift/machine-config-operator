@@ -21,12 +21,14 @@ var (
 
 	startOpts struct {
 		kubeconfig string
+		imagesFile string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
+	startCmd.PersistentFlags().StringVar(&startOpts.imagesFile, "images-json", "", "images.json file for MCO.")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -35,6 +37,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
+
+	if startOpts.imagesFile == "" {
+		glog.Fatal("--images-json cannot be empty")
+	}
 
 	cb, err := common.NewClientBuilder(startOpts.kubeconfig)
 	if err != nil {
@@ -77,6 +83,7 @@ func startControllers(ctx *common.ControllerContext) error {
 	go operator.New(
 		componentNamespace, componentName,
 		rootOpts.etcdCAFile, rootOpts.rootCAFile,
+		startOpts.imagesFile,
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctx.KubeInformerFactory.Core().V1().ConfigMaps(),

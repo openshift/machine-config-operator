@@ -1,12 +1,15 @@
 package operator
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
 
 	"github.com/golang/glog"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgscheme "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -16,26 +19,25 @@ import (
 func RenderBootstrap(
 	configPath string,
 	etcdCAFile, rootCAFile string,
+	imagesConfigMapFile string,
 	destinationDir string,
 ) error {
-	raw, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return err
-	}
-	var casData [][]byte
-	cas := []string{
+	filesData := map[string][]byte{}
+	files := []string{
+		configPath,
 		rootCAFile,
 		etcdCAFile,
+		imagesConfigMapFile,
 	}
-	for _, ca := range cas {
-		data, err := ioutil.ReadFile(ca)
+	for _, file := range files {
+		data, err := ioutil.ReadFile(file)
 		if err != nil {
 			return err
 		}
-		casData = append(casData, data)
+		filesData[file] = data
 	}
 
-	obji, err := runtime.Decode(mcfgscheme.Codecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), raw)
+	obji, err := runtime.Decode(mcfgscheme.Codecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), filesData[configPath])
 	if err != nil {
 		return err
 	}
@@ -43,7 +45,22 @@ func RenderBootstrap(
 	if !ok {
 		return fmt.Errorf("expected *MCOConfig found %T", obji)
 	}
-	config := getRenderConfig(mcoconfig, casData[1], casData[0])
+
+	obji, err = runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[imagesConfigMapFile])
+	if err != nil {
+		return err
+	}
+	icm, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+	imgsRaw := icm.Data["images.json"]
+	var imgs images
+	if err := json.Unmarshal([]byte(imgsRaw), &imgs); err != nil {
+		return err
+	}
+
+	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], imgs)
 
 	manifests := []struct {
 		name     string
