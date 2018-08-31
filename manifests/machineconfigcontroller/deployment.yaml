@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: machine-config-controller
-        image: quay.io/abhinavdahiya/machine-config-controller:{{.Version}}
+        image: {{.Images.MachineConfigController}}
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
