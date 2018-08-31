@@ -1,0 +1,7 @@
+# See the OWNERS_ALIASES docs: https://git.k8s.io/community/contributors/guide/owners.md#OWNERS_ALIASES
+
+aliases:
+  machine-config-daemon-approvers:
+    - ashcrow
+    - sdemos
+    - jlebon
