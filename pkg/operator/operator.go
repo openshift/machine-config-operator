@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"time"
@@ -46,6 +47,8 @@ type Operator struct {
 
 	etcdCAFile, rootCAFile string
 
+	imagesFile string
+
 	client         mcfgclientset.Interface
 	kubeClient     kubernetes.Interface
 	securityClient securityclientset.Interface
@@ -72,6 +75,7 @@ type Operator struct {
 func New(
 	namespace, name string,
 	etcdCAFile, rootCAFile string,
+	imagesFile string,
 	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	configMapInformer coreinformersv1.ConfigMapInformer,
@@ -224,24 +228,30 @@ func (optr *Operator) sync(key string) error {
 
 	mcoconfig := obj.DeepCopy()
 
-	var casData [][]byte
-	cas := []string{
+	filesData := map[string][]byte{}
+	files := []string{
 		optr.rootCAFile,
 		optr.etcdCAFile,
+		optr.imagesFile,
 	}
-	for _, ca := range cas {
-		data, err := ioutil.ReadFile(ca)
+	for _, file := range files {
+		data, err := ioutil.ReadFile(file)
 		if err != nil {
 			return err
 		}
-		casData = append(casData, data)
+		filesData[file] = data
 	}
 
-	rc := getRenderConfig(mcoconfig, casData[1], casData[0])
+	var imgs images
+	if err := json.Unmarshal(filesData[optr.imagesFile], &imgs); err != nil {
+		return err
+	}
+
+	rc := getRenderConfig(mcoconfig, filesData[optr.etcdCAFile], filesData[optr.rootCAFile], imgs)
 	return optr.syncAll(rc)
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte) renderConfig {
+func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs images) renderConfig {
 	controllerconfig := mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
 		CloudProviderConfig: mc.Spec.CloudProviderConfig,
@@ -256,5 +266,6 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte) render
 		TargetNamespace:  mc.GetNamespace(),
 		Version:          version.Raw,
 		ControllerConfig: controllerconfig,
+		Images:           imgs,
 	}
 }
