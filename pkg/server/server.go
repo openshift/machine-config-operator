@@ -15,7 +15,7 @@ import (
 const (
 	// defaultMachineKubeConfPath defines the default location
 	// of the KubeConfig file on the machine.
-	defaultMachineKubeConfPath = "/etc/system/kubeconfig"
+	defaultMachineKubeConfPath = "/etc/kubernetes/kubeconfig"
 
 	// defaultFileSystem defines the default file system to be
 	// used for writing the ignition files created by the
@@ -32,10 +32,34 @@ const (
 // kubeconfigFunc fetches the kubeconfig that needs to be served.
 type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
 
+// appenderFunc appends Config.
+type appenderFunc func(*ignv2_2types.Config) error
+
 // Server defines the interface that is implemented by different
 // machine config server implementations.
 type Server interface {
 	GetConfig(poolRequest) (*ignv2_2types.Config, error)
+}
+
+func getAppenders(cr poolRequest, currMachineConfig string, f kubeconfigFunc) []appenderFunc {
+	appenders := []appenderFunc{
+		// execute etcd templating.
+		func(config *ignv2_2types.Config) error { return execEtcdTemplates(config, cr.etcdIndex) },
+		// append machine annotations file.
+		func(config *ignv2_2types.Config) error { return appendNodeAnnotations(config, currMachineConfig) },
+		// append kubeconfig.
+		func(config *ignv2_2types.Config) error { return appendKubeConfig(config, f) },
+	}
+	return appenders
+}
+
+func appendKubeConfig(conf *ignv2_2types.Config, f kubeconfigFunc) error {
+	kcData, _, err := f()
+	if err != nil {
+		return err
+	}
+	appendFileToIgnition(conf, defaultMachineKubeConfPath, string(kcData))
+	return nil
 }
 
 func appendNodeAnnotations(conf *ignv2_2types.Config, currConf string) error {
@@ -77,7 +101,7 @@ func appendFileToIgnition(conf *ignv2_2types.Config, outPath, contents string) {
 		},
 		FileEmbedded1: ignv2_2types.FileEmbedded1{
 			Contents: ignv2_2types.FileContents{
-				Source: getEncodedContent(string(contents)),
+				Source: getEncodedContent(contents),
 			},
 			Mode: &fileMode,
 		},
