@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"syscall"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -22,7 +23,7 @@ var (
 	startOpts struct {
 		kubeconfig string
 		nodeName   string
-		rootPrefix string
+		rootMount  string
 	}
 )
 
@@ -30,7 +31,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
-	startCmd.PersistentFlags().StringVar(&startOpts.rootPrefix, "root-prefix", "/rootfs", "where the nodes root filesystem is mounted, for the file stage.")
+	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -53,8 +54,28 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("error creating clients: %v", err)
 	}
 
+	// Ensure that the rootMount exists
+	if _, err := os.Stat(startOpts.rootMount); err != nil {
+		if os.IsNotExist(err) {
+			glog.Fatalf("rootMount %s does not exist", startOpts.rootMount)
+		}
+		glog.Fatalf("unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
+	}
+
+	// Chroot into the root file system
+	glog.Infof(`chrooting into rootMount %s`, startOpts.rootMount)
+	if err := syscall.Chroot(startOpts.rootMount); err != nil {
+		glog.Fatalf("unable to chroot to %s: %s", startOpts.rootMount, err)
+	}
+
+	// move into / inside the chroot
+	glog.Infof("moving to / inside the chroot")
+	if err := os.Chdir("/"); err != nil {
+		glog.Fatalf("unable to change directory to /: %s", err)
+	}
+
 	daemon, err := daemon.New(
-		startOpts.rootPrefix,
+		startOpts.rootMount,
 		startOpts.nodeName,
 		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
