@@ -123,6 +123,32 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	}
 }
 
+// enableUnit enables a systemd unit via symlink
+func (dn *Daemon) enableUnit(unit ignv2_2types.Unit) error {
+	// The link location
+	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
+	// sanity check that we don't return an error when the link already exists
+	if _, err := os.Stat(wantsPath); err != nil {
+		glog.Infof("%s already exists. Not making a new symlink", wantsPath)
+		return nil
+	}
+	// The originating file to link
+	servicePath := filepath.Join(pathSystemd, unit.Name)
+	return os.Symlink(servicePath, wantsPath)
+}
+
+// disableUnit disables a systemd unit via symlink removal
+func (dn *Daemon) disableUnit(unit ignv2_2types.Unit) error {
+	// The link location
+	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
+	// sanity check so we don't return an error when the unit was already disabled
+	if _, err := os.Stat(wantsPath); err != nil {
+		glog.Infof("%s was not present. No need to remove", wantsPath)
+		return nil
+	}
+	return os.Remove(wantsPath)
+}
+
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 	var path string
