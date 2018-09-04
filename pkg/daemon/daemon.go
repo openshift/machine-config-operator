@@ -73,8 +73,8 @@ func New(
 // function shouldn't return, and should just reboot the node, unless an error
 // occurs, in which case it will return the error up the call stack.
 func (dn *Daemon) Run(stop <-chan struct{}) error {
-	glog.Info("Starting MachineConfigDameon")
-	defer glog.Info("Shutting down MachineConfigDameon")
+	glog.Info("Starting MachineConfigDaemon")
+	defer glog.Info("Shutting down MachineConfigDaemon")
 
 	err := dn.syncOnce()
 	if err != nil {
@@ -86,11 +86,11 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 // syncOnce only completes once.
 func (dn *Daemon) syncOnce() error {
 	// validate that the machine correctly made it to the target state
-	status, err := dn.validate()
+	isDesired, err := dn.isDesiredMachineState()
 	if err != nil {
 		return err
 	}
-	if !status {
+	if !isDesired {
 		return dn.triggerUpdate()
 	}
 
@@ -107,7 +107,7 @@ func (dn *Daemon) syncOnce() error {
 		return err
 	}
 
-	// watch the annotations.
+	glog.V(2).Infof("Watching for node annotation updates")
 	err = waitUntilUpdate(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	if err != nil {
 		return fmt.Errorf("Failed to wait until update request: %v", err)
@@ -143,11 +143,11 @@ func (dn *Daemon) triggerUpdate() error {
 	return dn.update(currentConfig, desiredConfig)
 }
 
-// validate confirms that the node is actually in the state that it wants to be
-// in. it does this by looking at the elements in the target config and checks
-// if all are present on the node. if any file/unit is missing or there is a
-// mismatch, it re-triggers the update.
-func (dn *Daemon) validate() (bool, error) {
+// isDesiredMachineState confirms that the node is actually in the state that it
+// wants to be in. It does this by looking at the elements in the target config
+// and checks if all are present on the node. Returns true iff there are no
+// mismatches (e.g. files, units... XXX: but not yet OS version).
+func (dn *Daemon) isDesiredMachineState() (bool, error) {
 	ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
 	if err != nil {
 		return false, err
