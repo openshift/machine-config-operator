@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: machine-config-server
-          image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
+          image: {{.Images.MachineConfigServer}}
           args:
             - "start"
             - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
