@@ -89,13 +89,11 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	var path string
 	newFileSet := make(map[string]struct{})
 	for _, f := range newConfig.Spec.Config.Storage.Files {
-		path = filepath.Join(dn.prefix, f.Path)
-		newFileSet[path] = struct{}{}
+		newFileSet[f.Path] = struct{}{}
 	}
 
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
-		path = filepath.Join(dn.prefix, f.Path)
-		if _, ok := newFileSet[path]; !ok {
+		if _, ok := newFileSet[f.Path]; !ok {
 			os.RemoveAll(path)
 		}
 	}
@@ -104,21 +102,21 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	newDropinSet := make(map[string]struct{})
 	for _, u := range newConfig.Spec.Config.Systemd.Units {
 		for j := range u.Dropins {
-			path = filepath.Join(dn.prefix, pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			newDropinSet[path] = struct{}{}
 		}
-		path = filepath.Join(dn.prefix, pathSystemd, u.Name)
+		path = filepath.Join(pathSystemd, u.Name)
 		newUnitSet[path] = struct{}{}
 	}
 
 	for _, u := range oldConfig.Spec.Config.Systemd.Units {
 		for j := range u.Dropins {
-			path = filepath.Join(dn.prefix, pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
 				os.RemoveAll(path)
 			}
 		}
-		path = filepath.Join(dn.prefix, pathSystemd, u.Name)
+		path = filepath.Join(pathSystemd, u.Name)
 		if _, ok := newUnitSet[path]; !ok {
 			os.RemoveAll(path)
 		}
@@ -132,7 +130,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		// write the dropin to disk
 		for i := range u.Dropins {
 			glog.Infof("writing systemd unit dropin %q", u.Dropins[i].Name)
-			path = filepath.Join(dn.prefix, pathSystemd, u.Name+".d", u.Dropins[i].Name)
+			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
 			if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
 				return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 			}
@@ -148,7 +146,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		glog.Infof("writing systemd unit %q", u.Name)
-		path = filepath.Join(dn.prefix, pathSystemd, u.Name)
+		path = filepath.Join(pathSystemd, u.Name)
 		if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 		}
@@ -179,16 +177,14 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 	for _, f := range files {
-		path := dn.prefix + f.Path
-
 		glog.Infof("Writing file %q", f.Path)
 		// create any required directories for the file
-		if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
+		if err := os.MkdirAll(filepath.Dir(f.Path), os.FileMode(0655)); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(f.Path), err)
 		}
 
 		// create the file
-		file, err := os.Create(path)
+		file, err := os.Create(f.Path)
 		if err != nil {
 			return fmt.Errorf("Failed to create file %q: %v", f.Path, err)
 		}
