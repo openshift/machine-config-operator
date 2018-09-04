@@ -19,14 +19,16 @@ var (
 	}
 
 	bootstrapOpts struct {
-		configFile     string
-		destinationDir string
+		configFile          string
+		imagesConfigMapFile string
+		destinationDir      string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imagesConfigMapFile, "images-json-configmap", "", "ConfigMap that contains images.json for MCO.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "MCOConfig file.")
 }
 
@@ -45,9 +47,14 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		glog.Fatal("--config-file cannot be empty")
 	}
 
+	if bootstrapOpts.imagesConfigMapFile == "" {
+		glog.Fatal("--images-json-configmap cannot be empty")
+	}
+
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
 		rootOpts.etcdCAFile, rootOpts.rootCAFile,
+		bootstrapOpts.imagesConfigMapFile,
 		bootstrapOpts.destinationDir,
 	); err != nil {
 		glog.Fatalf("error rendering bootstrap manifests: %v", err)

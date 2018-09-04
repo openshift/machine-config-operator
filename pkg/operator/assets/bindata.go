@@ -25,6 +25,8 @@
 // manifests/scc.yaml
 // manifests/worker.machineconfigpool.yaml
 // install/.gitkeep
+// install/images.json
+// install/mco.images.yaml
 // install/mcoconfig.crd.yaml
 // install/mcoconfig.yaml
 // DO NOT EDIT!
@@ -186,7 +188,7 @@ metadata:
 spec:
   containers:
   - name: machine-config-controller
-    image: quay.io/abhinavdahiya/machine-config-controller:{{.Version}}
+    image: {{.Images.MachineConfigController}}
     args:
     - "bootstrap"
     - "--manifest-dir=/etc/mcc/bootstrap/manifests"
@@ -339,7 +341,7 @@ spec:
     spec:
       containers:
       - name: machine-config-controller
-        image: quay.io/abhinavdahiya/machine-config-controller:{{.Version}}
+        image: {{.Images.MachineConfigController}}
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
@@ -471,7 +473,7 @@ spec:
     spec:
       containers:
         - name: machine-config-daemon
-          image: quay.io/abhinavdahiya/machine-config-daemon:{{.Version}}
+          image: {{.Images.MachineConfigDaemon}}
           args:
             - "start"
           volumeMounts:
@@ -606,7 +608,7 @@ metadata:
 spec:
   containers:
     - name: machine-config-server
-      image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
+      image: {{.Images.MachineConfigServer}}
       args:
         - "bootstrap"
       volumeMounts:
@@ -726,7 +728,7 @@ spec:
     spec:
       containers:
         - name: machine-config-server
-          image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
+          image: {{.Images.MachineConfigServer}}
           args:
             - "start"
             - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
@@ -953,6 +955,50 @@ func installGitkeep() (*asset, error) {
 	return a, nil
 }
 
+var _installImagesJson = []byte(`{
+    "machineConfigController": "quay.io/abhinavdahiya/machine-config-controller:latest",
+    "machineConfigDaemon": "quay.io/abhinavdahiya/machine-config-daemon:latest",
+    "machineConfigServer": "quay.io/abhinavdahiya/machine-config-server:latest"
+}`)
+
+func installImagesJsonBytes() ([]byte, error) {
+	return _installImagesJson, nil
+}
+
+func installImagesJson() (*asset, error) {
+	bytes, err := installImagesJsonBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "install/images.json", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _installMcoImagesYaml = []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: machine-config-operator-images
+  namespace: machine-config-operator
+data:
+  images.json: '{"machineConfigController": "quay.io/abhinavdahiya/machine-config-controller:latest", "machineConfigDaemon": "quay.io/abhinavdahiya/machine-config-daemon:latest", "machineConfigServer": "quay.io/abhinavdahiya/machine-config-server:latest"}'`)
+
+func installMcoImagesYamlBytes() ([]byte, error) {
+	return _installMcoImagesYaml, nil
+}
+
+func installMcoImagesYaml() (*asset, error) {
+	bytes, err := installMcoImagesYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "install/mco.images.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _installMcoconfigCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
@@ -1101,6 +1147,8 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/scc.yaml": manifestsSccYaml,
 	"manifests/worker.machineconfigpool.yaml": manifestsWorkerMachineconfigpoolYaml,
 	"install/.gitkeep": installGitkeep,
+	"install/images.json": installImagesJson,
+	"install/mco.images.yaml": installMcoImagesYaml,
 	"install/mcoconfig.crd.yaml": installMcoconfigCrdYaml,
 	"install/mcoconfig.yaml": installMcoconfigYaml,
 }
@@ -1147,6 +1195,8 @@ type bintree struct {
 var _bintree = &bintree{nil, map[string]*bintree{
 	"install": &bintree{nil, map[string]*bintree{
 		".gitkeep": &bintree{installGitkeep, map[string]*bintree{}},
+		"images.json": &bintree{installImagesJson, map[string]*bintree{}},
+		"mco.images.yaml": &bintree{installMcoImagesYaml, map[string]*bintree{}},
 		"mcoconfig.crd.yaml": &bintree{installMcoconfigCrdYaml, map[string]*bintree{}},
 		"mcoconfig.yaml": &bintree{installMcoconfigYaml, map[string]*bintree{}},
 	}},
