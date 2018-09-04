@@ -88,8 +88,8 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
   version = "v17"
 
 [[constraint]]
-  name = "github.com/wking/kubernetes-drain"
-  revision = "b43d446bae992baacb39594d2d416b04ad78f307"
+  name = "github.com/openshift/kubernetes-drain"
+  revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
 
 [[constraint]]
   name = "github.com/vincent-petithory/dataurl"
