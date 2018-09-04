@@ -320,6 +320,13 @@
   revision = "5b198a036f098f34fbf0c42768382d80708cd2a9"
 
 [[projects]]
+  digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
+  name = "github.com/openshift/kubernetes-drain"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
+
+[[projects]]
   digest = "1:cce3a18fb0b96b5015cd8ca03a57d20a662679de03c4dc4b6ff5f17ea2050fa6"
   name = "github.com/pborman/uuid"
   packages = ["."]
@@ -365,13 +372,6 @@
   packages = ["."]
   pruneopts = "NUT"
   revision = "9a301d65acbb728fcc3ace14f45f511a4cfeea9c"
-
-[[projects]]
-  digest = "1:de75365fd4dff7414a8dd8df7ed96e6e99d6cc4999ebfc5e85c01141718ff3b7"
-  name = "github.com/wking/kubernetes-drain"
-  packages = ["."]
-  pruneopts = "NUT"
-  revision = "b43d446bae992baacb39594d2d416b04ad78f307"
 
 [[projects]]
   branch = "master"
@@ -812,9 +812,9 @@
     "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1",
     "github.com/openshift/client-go/security/informers/externalversions",
     "github.com/openshift/client-go/security/informers/externalversions/security/v1",
+    "github.com/openshift/kubernetes-drain",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",
-    "github.com/wking/kubernetes-drain",
     "gopkg.in/yaml.v2",
     "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
@@ -861,6 +861,7 @@
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
     "k8s.io/client-go/tools/clientcmd",
+    "k8s.io/client-go/tools/clientcmd/api/v1",
     "k8s.io/client-go/tools/leaderelection",
     "k8s.io/client-go/tools/leaderelection/resourcelock",
     "k8s.io/client-go/tools/record",

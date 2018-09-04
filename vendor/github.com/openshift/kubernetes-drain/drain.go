@@ -553,12 +553,12 @@ func SupportEviction(clientset kubernetes.Interface) (string, error) {
 	return "", nil
 }
 
-// Cordon marks a node "Unschedulable".
+// Cordon marks a node "Unschedulable".  This method is idempotent.
 func Cordon(client typedcorev1.NodeInterface, node *corev1.Node, logger golog.Logger) error {
 	return cordonOrUncordon(client, node, logger, true)
 }
 
-// Uncordon marks a node "Schedulable".
+// Uncordon marks a node "Schedulable".  This method is idempotent.
 func Uncordon(client typedcorev1.NodeInterface, node *corev1.Node, logger golog.Logger) error {
 	return cordonOrUncordon(client, node, logger, false)
 }
