@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"text/template"
 
+	"github.com/Masterminds/sprig"
+
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 )
@@ -21,7 +23,8 @@ func renderAsset(config renderConfig, path string) ([]byte, error) {
 		return nil, fmt.Errorf("error getting asset %s: %v", path, err)
 	}
 
-	tmpl, err := template.New(path).Parse(string(objBytes))
+	funcs := sprig.TxtFuncMap()
+	tmpl, err := template.New(path).Funcs(funcs).Parse(string(objBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse asset %s: %v", path, err)
 	}

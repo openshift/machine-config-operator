@@ -13,7 +13,6 @@
 // manifests/machineconfigdaemon/clusterrolebinding.yaml
 // manifests/machineconfigdaemon/daemonset.yaml
 // manifests/machineconfigdaemon/sa.yaml
-// manifests/machineconfigdaemon/scc.yaml
 // manifests/machineconfigpool.crd.yaml
 // manifests/machineconfigserver/bootstrap-pod.yaml
 // manifests/machineconfigserver/clusterrole.yaml
@@ -23,6 +22,7 @@
 // manifests/machineconfigserver/node-bootstrapper-token.yaml
 // manifests/machineconfigserver/sa.yaml
 // manifests/master.machineconfigpool.yaml
+// manifests/scc.yaml
 // manifests/worker.machineconfigpool.yaml
 // install/.gitkeep
 // install/mcoconfig.crd.yaml
@@ -186,7 +186,7 @@ metadata:
 spec:
   containers:
   - name: machine-config-controller
-    image: quay.io/abhinavdahiya/machine-config-controller:v0.0.0-69-gcf692f4e-dirty
+    image: quay.io/abhinavdahiya/machine-config-controller:{{.Version}}
     args:
     - "bootstrap"
     - "--manifest-dir=/etc/mcc/bootstrap/manifests"
@@ -304,6 +304,8 @@ spec:
   platform: {{.ControllerConfig.Platform}}
   baseDomain: {{.ControllerConfig.BaseDomain}}
   etcdInitialCount: {{.ControllerConfig.EtcdInitialCount}}
+  etcdCAData: {{.ControllerConfig.EtcdCAData | toString | b64enc}}
+  rootCAData: {{.ControllerConfig.RootCAData | toString | b64enc}}
 `)
 
 func manifestsMachineconfigcontrollerControllerconfigYamlBytes() ([]byte, error) {
@@ -553,52 +555,6 @@ func manifestsMachineconfigdaemonSaYaml() (*asset, error) {
 	return a, nil
 }
 
-var _manifestsMachineconfigdaemonSccYaml = []byte(`apiVersion: security.openshift.io/v1
-kind: SecurityContextConstraints
-metadata:
-  annotations:
-    kubernetes.io/description: "privileged-machine-config-daemon for running machine configuration daemon."
-  name: privileged-machine-config-daemon
-allowHostDirVolumePlugin: true
-allowHostIPC: true
-allowHostNetwork: true
-allowHostPID: true
-allowHostPorts: true
-allowPrivilegedContainer: true
-allowedCapabilities:
-- "*"
-fsGroup:
-  type: RunAsAny
-groups:
-- system:serviceaccounts:{{.TargetNamespace}}
-readOnlyRootFilesystem: false
-runAsUser:
-  type: RunAsAny
-seLinuxContext:
-  type: RunAsAny
-seccompProfiles:
-- "*"
-supplementalGroups:
-  type: RunAsAny
-users: []
-volumes:
-- "*"`)
-
-func manifestsMachineconfigdaemonSccYamlBytes() ([]byte, error) {
-	return _manifestsMachineconfigdaemonSccYaml, nil
-}
-
-func manifestsMachineconfigdaemonSccYaml() (*asset, error) {
-	bytes, err := manifestsMachineconfigdaemonSccYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/machineconfigdaemon/scc.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 var _manifestsMachineconfigpoolCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
@@ -650,7 +606,7 @@ metadata:
 spec:
   containers:
     - name: machine-config-server
-      image: quay.io/abhinavdahiya/machine-config-server:v0.0.0-69-gcf692f4e-dirty
+      image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
       args:
         - "bootstrap"
       volumeMounts:
@@ -773,7 +729,7 @@ spec:
           image: quay.io/abhinavdahiya/machine-config-server:{{.Version}}
           args:
             - "start"
-            - "--apiserver-url=https://adahiya-0-api.tt.testing:6443"
+            - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
           volumeMounts:
           - name: certs
             mountPath: /etc/ssl/mcs
@@ -907,6 +863,52 @@ func manifestsMasterMachineconfigpoolYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsSccYaml = []byte(`apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  annotations:
+    kubernetes.io/description: "privileged-openshift-machine-config-operator for running priviledged in openshift-machine-config-operator namespace."
+  name: privileged-openshift-machine-config-operator
+allowHostDirVolumePlugin: true
+allowHostIPC: true
+allowHostNetwork: true
+allowHostPID: true
+allowHostPorts: true
+allowPrivilegedContainer: true
+allowedCapabilities:
+- "*"
+fsGroup:
+  type: RunAsAny
+groups:
+- system:serviceaccounts:{{.TargetNamespace}}
+readOnlyRootFilesystem: false
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+seccompProfiles:
+- "*"
+supplementalGroups:
+  type: RunAsAny
+users: []
+volumes:
+- "*"`)
+
+func manifestsSccYamlBytes() ([]byte, error) {
+	return _manifestsSccYaml, nil
+}
+
+func manifestsSccYaml() (*asset, error) {
+	bytes, err := manifestsSccYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/scc.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsWorkerMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -993,7 +995,7 @@ func installMcoconfigCrdYaml() (*asset, error) {
 }
 
 var _installMcoconfigYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
-kind: ControllerConfig
+kind: MCOConfig
 metadata:
   name: machine-config-operator
   namespace: openshift-machine-config-operator
@@ -1087,7 +1089,6 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigdaemon/clusterrolebinding.yaml": manifestsMachineconfigdaemonClusterrolebindingYaml,
 	"manifests/machineconfigdaemon/daemonset.yaml": manifestsMachineconfigdaemonDaemonsetYaml,
 	"manifests/machineconfigdaemon/sa.yaml": manifestsMachineconfigdaemonSaYaml,
-	"manifests/machineconfigdaemon/scc.yaml": manifestsMachineconfigdaemonSccYaml,
 	"manifests/machineconfigpool.crd.yaml": manifestsMachineconfigpoolCrdYaml,
 	"manifests/machineconfigserver/bootstrap-pod.yaml": manifestsMachineconfigserverBootstrapPodYaml,
 	"manifests/machineconfigserver/clusterrole.yaml": manifestsMachineconfigserverClusterroleYaml,
@@ -1097,6 +1098,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigserver/node-bootstrapper-token.yaml": manifestsMachineconfigserverNodeBootstrapperTokenYaml,
 	"manifests/machineconfigserver/sa.yaml": manifestsMachineconfigserverSaYaml,
 	"manifests/master.machineconfigpool.yaml": manifestsMasterMachineconfigpoolYaml,
+	"manifests/scc.yaml": manifestsSccYaml,
 	"manifests/worker.machineconfigpool.yaml": manifestsWorkerMachineconfigpoolYaml,
 	"install/.gitkeep": installGitkeep,
 	"install/mcoconfig.crd.yaml": installMcoconfigCrdYaml,
@@ -1165,7 +1167,6 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"clusterrolebinding.yaml": &bintree{manifestsMachineconfigdaemonClusterrolebindingYaml, map[string]*bintree{}},
 			"daemonset.yaml": &bintree{manifestsMachineconfigdaemonDaemonsetYaml, map[string]*bintree{}},
 			"sa.yaml": &bintree{manifestsMachineconfigdaemonSaYaml, map[string]*bintree{}},
-			"scc.yaml": &bintree{manifestsMachineconfigdaemonSccYaml, map[string]*bintree{}},
 		}},
 		"machineconfigpool.crd.yaml": &bintree{manifestsMachineconfigpoolCrdYaml, map[string]*bintree{}},
 		"machineconfigserver": &bintree{nil, map[string]*bintree{
@@ -1178,6 +1179,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"sa.yaml": &bintree{manifestsMachineconfigserverSaYaml, map[string]*bintree{}},
 		}},
 		"master.machineconfigpool.yaml": &bintree{manifestsMasterMachineconfigpoolYaml, map[string]*bintree{}},
+		"scc.yaml": &bintree{manifestsSccYaml, map[string]*bintree{}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},
 }}

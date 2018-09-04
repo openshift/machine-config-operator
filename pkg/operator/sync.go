@@ -13,13 +13,12 @@ import (
 
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 )
 
 type syncFunc func(config renderConfig) error
 
-func (optr *Operator) syncAll(mcoconfig *mcfgv1.MCOConfig) error {
+func (optr *Operator) syncAll(rconfig renderConfig) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	syncFuncs := []syncFunc{
@@ -31,9 +30,8 @@ func (optr *Operator) syncAll(mcoconfig *mcfgv1.MCOConfig) error {
 	}
 
 	var errs []error
-	config := getRenderConfig(mcoconfig)
 	for _, f := range syncFuncs {
-		errs = append(errs, f(config))
+		errs = append(errs, f(rconfig))
 	}
 
 	agg := utilerrors.NewAggregate(errs)

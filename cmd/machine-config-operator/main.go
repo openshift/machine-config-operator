@@ -18,9 +18,16 @@ var (
 		Short: "Run Machine Config Controller",
 		Long:  "",
 	}
+
+	rootOpts struct {
+		etcdCAFile string
+		rootCAFile string
+	}
 )
 
 func init() {
+	rootCmd.PersistentFlags().StringVar(&rootOpts.etcdCAFile, "etcd-ca", "/etc/ssl/etcd/ca.crt", "path to etcd CA certificate")
+	rootCmd.PersistentFlags().StringVar(&rootOpts.rootCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "path to root CA certificate")
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 }
 

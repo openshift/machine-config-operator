@@ -19,7 +19,7 @@ contents: |
   ExecStart=/usr/bin/docker \
     run \
       --rm \
-      --volume /etc/ssl/etcd:/etc/ssl/etcd:rw \
+      --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
     "${SIGNER_IMAGE}" \
       request \
         --orgname=system:etcd-servers \
@@ -33,7 +33,7 @@ contents: |
   ExecStart=/usr/bin/docker \
     run \
       --rm \
-      --volume /etc/ssl/etcd:/etc/ssl/etcd:rw \
+      --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
     "${SIGNER_IMAGE}" \
       request \
         --orgname=system:etcd-peers \

@@ -7,3 +7,5 @@ spec:
   baseDomain: "installer.team.coreos.systems"
   etcdInitialCount: 3
   platform: "libvirt"
+  etcdCAData: ZHVtbXkgZXRjZC1jYQo=
+  rootCAData: ZHVtbXkgcm9vdC1jYQo=

@@ -26,11 +26,11 @@ contents: |
         run \
           --rm \
           --name etcd-member \
-          --volume /run/systemd/system:/run/systemd/system:ro \
-          --volume /etc/ssl/certs:/etc/ssl/certs:ro \
-          --volume /etc/ssl/etcd:/etc/ssl/etcd:ro \
-          --volume /var/lib/etcd:/var/lib/etcd:rw \
-          --volume /etc/ssl/certs:/etc/ssl/certs:ro \
+          --volume /run/systemd/system:/run/systemd/system:ro,z \
+          --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
+          --volume /etc/ssl/etcd:/etc/ssl/etcd:ro,z \
+          --volume /var/lib/etcd:/var/lib/etcd:rw,z \
+          --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
           --env 'ETCD_NAME=%m' \
           --env ETCD_DATA_DIR=/var/lib/etcd \
           --network host \

@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -358,7 +359,6 @@ func TestInvalidPlatform(t *testing.T) {
 }
 
 func TestGenerateMachineConfigs(t *testing.T) {
-
 	for platform, config := range configs {
 		controllerConfig, err := controllerConfigFromFile(config)
 		if err != nil {
@@ -424,7 +424,7 @@ func verifyIgnFiles(files []ignv2_2types.File, dir string, update bool, t *testi
 		actual = append(actual, data)
 
 		if update {
-			name := filepath.Base(f.Path)
+			name := strings.Replace(f.Path, "/", "-", -1)
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				t.Logf("error creating dir %s: %v", dir, err)
 			}
