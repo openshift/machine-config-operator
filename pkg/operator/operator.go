@@ -9,6 +9,7 @@ import (
 	"github.com/golang/glog"
 	securityclientset "github.com/openshift/client-go/security/clientset/versioned"
 	securityinformersv1 "github.com/openshift/client-go/security/informers/externalversions/security/v1"
+	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -53,6 +54,7 @@ type Operator struct {
 	kubeClient     kubernetes.Interface
 	securityClient securityclientset.Interface
 	apiExtClient   apiextclientset.Interface
+	cvoClient      cvoclientset.Interface
 	eventRecorder  record.EventRecorder
 
 	syncHandler func(ic string) error
@@ -90,6 +92,7 @@ func New(
 	kubeClient kubernetes.Interface,
 	securityClient securityclientset.Interface,
 	apiExtClient apiextclientset.Interface,
+	cvoClient cvoclientset.Interface,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -104,6 +107,7 @@ func New(
 		kubeClient:     kubeClient,
 		securityClient: securityClient,
 		apiExtClient:   apiExtClient,
+		cvoClient:      cvoClient,
 		eventRecorder:  eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigoperator"}),
 		queue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
