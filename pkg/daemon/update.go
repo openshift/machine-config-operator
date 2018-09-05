@@ -51,20 +51,20 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
 // systemd units. there is no support for multiple filesystems at this point.
 //
-// in addition to files, we also write systemd units to disk. we mask unit files
-// when appropriate, but we ignore requests to enable or disable units.
-// this function relies on the system being restarted after an upgrade,
-// so it doesn't daemon-reload or restart any services.
+// in addition to files, we also write systemd units to disk. we mask, enable,
+// and disable unit files when appropriate. this function relies on the system
+// being restarted after an upgrade, so it doesn't daemon-reload or restart
+// any services.
 //
 // it is worth noting that this function explicitly doesn't rely on the ignition
-// implementation of file and unit writing. this is because ignition is built on
-// the assumption that it is working with a fresh system, where as we are trying
-// to reconcile a system that has already been running.
+// implementation of file, unit writing, enabling or disabling. this is because
+// ignition is built on the assumption that it is working with a fresh system,
+// where as we are trying to reconcile a system that has already been running.
 //
 // in the future, this function should do any additional work to confirm that
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
-// touched. enabling and disabling systemd units should be supported as well.
+// touched.
 func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Updating files")
 
@@ -118,6 +118,9 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 		}
 		path = filepath.Join(pathSystemd, u.Name)
 		if _, ok := newUnitSet[path]; !ok {
+			if err := dn.disableUnit(u); err != nil {
+				glog.Warningf("Unable to disable %s: %s", u.Name, err)
+			}
 			os.RemoveAll(path)
 		}
 	}
@@ -195,6 +198,29 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
 		}
 
+		// if the unit doesn't note if it should be enabled or disabled then
+		// skip all linking.
+		// if the unit should be enabled, then enable it.
+		// otherwise the unit is disabled. run disableUnit to ensure the unit is
+		// disabled. even if the unit wasn't previously enabled the result will
+		// be fine as disableUnit is idempotent.
+		// Note: we have to check for legacy unit.Enable and honor it
+		if u.Enable == true {
+			if err := dn.enableUnit(u); err != nil {
+				return err
+			}
+		}
+		if u.Enabled != nil {
+			if *u.Enabled {
+				if err := dn.enableUnit(u); err != nil {
+					return err
+				}
+			} else {
+				if err := dn.disableUnit(u); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }
