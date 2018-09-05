@@ -320,6 +320,24 @@
   revision = "5b198a036f098f34fbf0c42768382d80708cd2a9"
 
 [[projects]]
+  branch = "master"
+  digest = "1:84447c723ea7a4bb889f6409a671f8d1b0250b381b133c861d4c74d3246539b5"
+  name = "github.com/openshift/cluster-version-operator"
+  packages = [
+    "lib/resourceapply",
+    "lib/resourcemerge",
+    "pkg/apis",
+    "pkg/apis/clusterversion.openshift.io/v1",
+    "pkg/generated/clientset/versioned",
+    "pkg/generated/clientset/versioned/scheme",
+    "pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1",
+    "pkg/generated/listers/clusterversion.openshift.io/v1",
+    "pkg/version",
+  ]
+  pruneopts = "NUT"
+  revision = "7fd23584325138b3a6420cc2a9a0e253233a8637"
+
+[[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
   name = "github.com/openshift/kubernetes-drain"
   packages = ["."]
@@ -793,6 +811,13 @@
   pruneopts = "NUT"
   revision = "d8ea2fe547a448256204cfc68dfee7b26c720acb"
 
+[[projects]]
+  digest = "1:ff54706d46de40c865b5fcfc4bde1087c02510cd12e0150de8e405ab427d9907"
+  name = "k8s.io/utils"
+  packages = ["pointer"]
+  pruneopts = "NUT"
+  revision = "045dc31ee5c40e8240241ce28dc24d7b56130373"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -812,6 +837,10 @@
     "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1",
     "github.com/openshift/client-go/security/informers/externalversions",
     "github.com/openshift/client-go/security/informers/externalversions/security/v1",
+    "github.com/openshift/cluster-version-operator/lib/resourceapply",
+    "github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1",
+    "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
+    "github.com/openshift/cluster-version-operator/pkg/version",
     "github.com/openshift/kubernetes-drain",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",

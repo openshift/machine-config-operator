@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +30,13 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 		optr.syncMachineConfigDaemon,
 	}
 
+	if err := optr.syncStatus(v1.OperatorStatusCondition{
+		Type:    v1.OperatorStatusConditionTypeWorking,
+		Message: "Running sync functions",
+	}); err != nil {
+		return fmt.Errorf("error syncing status: %v", err)
+	}
+
 	var errs []error
 	for _, f := range syncFuncs {
 		errs = append(errs, f(rconfig))
@@ -36,9 +44,15 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 
 	agg := utilerrors.NewAggregate(errs)
 	if agg != nil {
+		errs = append(errs, optr.syncDegradedStatus(agg))
+		agg = utilerrors.NewAggregate(errs)
 		return fmt.Errorf("error syncing: %v", agg.Error())
 	}
-	return nil
+
+	return optr.syncStatus(v1.OperatorStatusCondition{
+		Type:    v1.OperatorStatusConditionTypeDone,
+		Message: "Done running sync functions",
+	})
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {

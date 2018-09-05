@@ -98,6 +98,7 @@ func startControllers(ctx *common.ControllerContext) error {
 		ctx.ClientBuilder.KubeClientOrDie(componentName),
 		ctx.ClientBuilder.SecurityClientOrDie(componentName),
 		ctx.ClientBuilder.APIExtClientOrDie(componentName),
+		ctx.ClientBuilder.ClusterversionClientOrDie(componentName),
 	).Run(2, ctx.Stop)
 
 	return nil
