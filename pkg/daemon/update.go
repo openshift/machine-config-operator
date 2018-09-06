@@ -262,7 +262,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		}
 
 		// set chown if file information is provided
-		if f.User.ID != nil || f.User.Name != "" {
+		if f.User != nil || f.Group != nil {
 			uid, gid, err := getFileOwnership(f)
 			if err != nil {
 				return fmt.Errorf("Failed to retrieve file ownership for file %q: %v", f.Path, err)
@@ -286,19 +286,30 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 	return nil
 }
 
+// This is essentially ResolveNodeUidAndGid() from Ignition; XXX should dedupe
 func getFileOwnership(file ignv2_2types.File) (int, int, error) {
-	var uid, gid int
-	if file.User.ID != nil && file.Group.ID != nil {
-		uid = *file.User.ID
-		gid = *file.Group.ID
-	} else if file.User.Name != "" {
-		osUser, err := user.Lookup(file.User.Name)
-		if err != nil {
-			return uid, gid, fmt.Errorf("Failed to retrieve UserID for username: %s", file.User.Name)
+	uid, gid := 0, 0 // default to root
+	if file.User != nil {
+		if file.User.ID != nil {
+			uid = *file.User.ID
+		} else if file.User.Name != "" {
+			osUser, err := user.Lookup(file.User.Name)
+			if err != nil {
+				return uid, gid, fmt.Errorf("Failed to retrieve UserID for username: %s", file.User.Name)
+			}
+			uid, _ = strconv.Atoi(osUser.Uid)
 		}
-
-		uid, _ = strconv.Atoi(osUser.Uid)
-		gid, _ = strconv.Atoi(osUser.Gid)
+	}
+	if file.Group != nil {
+		if file.Group.ID != nil {
+			gid = *file.Group.ID
+		} else if file.Group.Name != "" {
+			osGroup, err := user.LookupGroup(file.Group.Name)
+			if err != nil {
+				return uid, gid, fmt.Errorf("Failed to retrieve GroupID for group: %s", file.Group.Name)
+			}
+			gid, _ = strconv.Atoi(osGroup.Gid)
+		}
 	}
 	return uid, gid, nil
 }
