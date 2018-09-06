@@ -5,7 +5,7 @@ import (
 
 	"github.com/openshift/cluster-version-operator/lib/resourceapply"
 	"github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1"
-	"github.com/openshift/cluster-version-operator/pkg/version"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )

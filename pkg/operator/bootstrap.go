@@ -7,24 +7,22 @@ import (
 	"path/filepath"
 
 	"github.com/golang/glog"
+	installertypes "github.com/openshift/installer/pkg/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgscheme "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 )
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
-	configPath string,
+	clusterConfigConfigMapFile string,
 	etcdCAFile, rootCAFile string,
 	imagesConfigMapFile string,
 	destinationDir string,
 ) error {
 	filesData := map[string][]byte{}
 	files := []string{
-		configPath,
+		clusterConfigConfigMapFile,
 		rootCAFile,
 		etcdCAFile,
 		imagesConfigMapFile,
@@ -37,16 +35,12 @@ func RenderBootstrap(
 		filesData[file] = data
 	}
 
-	obji, err := runtime.Decode(mcfgscheme.Codecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), filesData[configPath])
+	mcoconfig, err := discoverMCOConfig(getInstallConfigFromFile(filesData[clusterConfigConfigMapFile]))
 	if err != nil {
-		return err
-	}
-	mcoconfig, ok := obji.(*mcfgv1.MCOConfig)
-	if !ok {
-		return fmt.Errorf("expected *MCOConfig found %T", obji)
+		return fmt.Errorf("error discovering MCOConfig from %q", clusterConfigConfigMapFile)
 	}
 
-	obji, err = runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[imagesConfigMapFile])
+	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[imagesConfigMapFile])
 	if err != nil {
 		return err
 	}
@@ -106,4 +100,19 @@ func RenderBootstrap(
 		}
 	}
 	return nil
+}
+
+func getInstallConfigFromFile(cmData []byte) installConfigGetter {
+	return func() (installertypes.InstallConfig, error) {
+		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), cmData)
+		if err != nil {
+			return installertypes.InstallConfig{}, err
+		}
+		cm, ok := obji.(*corev1.ConfigMap)
+		if !ok {
+			return installertypes.InstallConfig{}, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+		}
+
+		return icFromClusterConfig(cm)
+	}
 }
