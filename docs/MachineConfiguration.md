@@ -56,6 +56,32 @@ type MachineConfigSpec struct {
 }
 ```
 
+The actual custom resource manifest then could look like this:
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: worker-2864988432
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    storage:
+      files:
+      - contents:
+          source: data:,%20
+        filesystem: root
+        mode: 384
+        path: /root/myfile
+  osImageURL: quay.io/openshift/rhcos:v4.0.1
+```
+
+(Notice how it's the usual Ignition config object *inplace*, not as a JSON
+string -- also note the `config` and `osImageURL` casing follow the
+`json:` markers in the definition above, of course this follows for the
+Ignition config keys as well).
+
 ### How to create generated MachineConfig
 
 1. For each MachineConfig object,
