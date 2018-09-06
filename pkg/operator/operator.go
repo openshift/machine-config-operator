@@ -6,20 +6,18 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	securityclientset "github.com/openshift/client-go/security/clientset/versioned"
 	securityinformersv1 "github.com/openshift/client-go/security/informers/externalversions/security/v1"
 	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/version"
+	installertypes "github.com/openshift/installer/pkg/types"
 	"k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
 	apiextlistersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
@@ -31,6 +29,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 const (
@@ -103,6 +108,7 @@ func New(
 		name:           name,
 		etcdCAFile:     etcdCAFile,
 		rootCAFile:     rootCAFile,
+		imagesFile:     imagesFile,
 		client:         client,
 		kubeClient:     kubeClient,
 		securityClient: securityClient,
@@ -225,7 +231,15 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
-	obj, err := optr.mcoconfigLister.MCOConfigs(namespace).Get(name)
+	var obj *mcfgv1.MCOConfig
+	obj, err = optr.mcoconfigLister.MCOConfigs(namespace).Get(name)
+	if apierrors.IsNotFound(err) {
+		obj, err = discoverMCOConfig(optr.getInstallConfig)
+		if err == nil {
+			obj.SetNamespace(namespace)
+			obj.SetName(name)
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -253,6 +267,34 @@ func (optr *Operator) sync(key string) error {
 
 	rc := getRenderConfig(mcoconfig, filesData[optr.etcdCAFile], filesData[optr.rootCAFile], imgs)
 	return optr.syncAll(rc)
+}
+
+func (optr *Operator) getInstallConfig() (installertypes.InstallConfig, error) {
+	var (
+		clusterConfigNamespace = "kube-system"
+		clusterConfigName      = "cluster-config-v1"
+	)
+	clusterConfig, err := optr.kubeClient.CoreV1().ConfigMaps(clusterConfigNamespace).Get(clusterConfigName, metav1.GetOptions{})
+	if err != nil {
+		return installertypes.InstallConfig{}, err
+	}
+	return icFromClusterConfig(clusterConfig)
+}
+
+func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error) {
+	var (
+		icKey = "install-config"
+		ic    installertypes.InstallConfig
+	)
+	icData, ok := cm.Data[icKey]
+	if !ok {
+		return ic, fmt.Errorf("%s doesn't exist", icKey)
+	}
+
+	if err := yaml.Unmarshal([]byte(icData), &ic); err != nil {
+		return ic, err
+	}
+	return ic, nil
 }
 
 func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs images) renderConfig {
