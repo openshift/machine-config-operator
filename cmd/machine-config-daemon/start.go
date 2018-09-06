@@ -62,6 +62,18 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
 	}
 
+	// create the daemon instance. this also initializes kube client items
+	// which need to come from the container and not the chroot.
+	daemon, err := daemon.New(
+		startOpts.rootMount,
+		startOpts.nodeName,
+		cb.MachineConfigClientOrDie(componentName),
+		cb.KubeClientOrDie(componentName),
+	)
+	if err != nil {
+		glog.Fatalf("failed to initialize daemon: %v", err)
+	}
+
 	// Chroot into the root file system
 	glog.Infof(`chrooting into rootMount %s`, startOpts.rootMount)
 	if err := syscall.Chroot(startOpts.rootMount); err != nil {
@@ -72,16 +84,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.Infof("moving to / inside the chroot")
 	if err := os.Chdir("/"); err != nil {
 		glog.Fatalf("unable to change directory to /: %s", err)
-	}
-
-	daemon, err := daemon.New(
-		startOpts.rootMount,
-		startOpts.nodeName,
-		cb.MachineConfigClientOrDie(componentName),
-		cb.KubeClientOrDie(componentName),
-	)
-	if err != nil {
-		glog.Fatalf("failed to initialize daemon: %v", err)
 	}
 
 	stopCh := make(chan struct{})
