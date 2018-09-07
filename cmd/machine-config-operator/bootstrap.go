@@ -29,7 +29,7 @@ func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imagesConfigMapFile, "images-json-configmap", "", "ConfigMap that contains images.json for MCO.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "MCOConfig file.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {

@@ -49,6 +49,14 @@
   version = "v1.0.1"
 
 [[projects]]
+  digest = "1:1929b21a34400d463a99336f8e2908d2a154dc525c52411a8d99bb519942dc4c"
+  name = "github.com/apparentlymart/go-cidr"
+  packages = ["cidr"]
+  pruneopts = "NUT"
+  revision = "b1115bf8e14a60131a196f908223e4506b0ddc35"
+  version = "v1.0.0"
+
+[[projects]]
   digest = "1:aba270497eb2d49f5cba6f4162d524b9a1195a24cbce8be20bf56a0051f47deb"
   name = "github.com/blang/semver"
   packages = ["."]
@@ -321,7 +329,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:84447c723ea7a4bb889f6409a671f8d1b0250b381b133c861d4c74d3246539b5"
+  digest = "1:ccaf99203bf1b676653066322bbef492aee758ff747cf350f6515f4bc100d2b0"
   name = "github.com/openshift/cluster-version-operator"
   packages = [
     "lib/resourceapply",
@@ -332,10 +340,17 @@
     "pkg/generated/clientset/versioned/scheme",
     "pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1",
     "pkg/generated/listers/clusterversion.openshift.io/v1",
-    "pkg/version",
   ]
   pruneopts = "NUT"
   revision = "7fd23584325138b3a6420cc2a9a0e253233a8637"
+
+[[projects]]
+  branch = "master"
+  digest = "1:7a866b4639d3b7e4b3c44d9ccafed86f18706939bcf37161123440e5ea03d46f"
+  name = "github.com/openshift/installer"
+  packages = ["pkg/types"]
+  pruneopts = "NUT"
+  revision = "f2e6b3ed56aa114cd263369fd626d6b0e493e6ed"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -823,6 +838,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/Masterminds/sprig",
+    "github.com/apparentlymart/go-cidr/cidr",
     "github.com/blang/semver",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
@@ -840,7 +856,7 @@
     "github.com/openshift/cluster-version-operator/lib/resourceapply",
     "github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1",
     "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
-    "github.com/openshift/cluster-version-operator/pkg/version",
+    "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",
