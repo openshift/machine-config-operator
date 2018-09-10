@@ -4,10 +4,9 @@ contents: |
   [Unit]
   Description=Kubernetes Kubelet
   Wants=rpc-statd.service
-  Requires=docker.service kubelet-workaround.service
-  After=docker.service kubelet-workaround.service
 
   [Service]
+  ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
 
   ExecStart=/usr/bin/hyperkube \
@@ -31,7 +30,7 @@ contents: |
         {{.CloudProviderConfig}} \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
-        $CGROUP_DRIVER_FLAG \
+      --cgroup-driver=systemd \
 
   Restart=always
   RestartSec=10
