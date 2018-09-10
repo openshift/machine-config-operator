@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -21,6 +22,16 @@ import (
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	var err error
+
+	// make sure we can actually reconcile this state
+	reconcilable, err := dn.reconcilable(oldConfig, newConfig)
+	if err != nil {
+		return err
+	}
+	if !reconcilable {
+		return fmt.Errorf("daemon can't reconcile this config")
+	}
+
 	// update files on disk that need updating
 	err = dn.updateFiles(oldConfig, newConfig)
 	if err != nil {
@@ -46,6 +57,81 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 
 	// reboot. this function shouldn't actually return.
 	return dn.reboot()
+}
+
+// reconcilable checks the configs to make sure that the only changes requested
+// are ones we know how to do in-place. if we can't do it in place, the node is
+// marked as degraded.
+//
+// we can only update machine configs that have changes to the files,
+// directories, links, and systemd units sections of the included ignition
+// config currently.
+func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
+	oldIgn := oldConfig.Spec.Config
+	newIgn := newConfig.Spec.Config
+
+	// Ignition section
+
+	// if the config versions are different, all bets are off. this probably
+	// shouldn't happen, but if it does, we can't deal with it.
+	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
+		glog.Warningf("daemon can't reconcile state!")
+		glog.Warningf("Ignition version mismatch between old and new config: old: %s new: %s",
+			oldIgn.Ignition.Version, newIgn.Ignition.Version)
+		return false, nil
+	}
+	// everything else in the ignition section doesn't matter to us, since the
+	// rest of the stuff in this section has to do with fetching remote
+	// resources, and the mcc should've fully rendered those out before the
+	// config gets here.
+
+	// Networkd section
+
+	// we don't currently configure the network in place. we can't fix it if
+	// something changed here.
+	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
+		glog.Warningf("daemon can't reconcile state!")
+		glog.Warningf("Ignition networkd section contains changes")
+		return false, nil
+	}
+
+	// Passwd section
+
+	// we don't currently configure groups or users in place. we can't fix it if
+	// something changed here.
+	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
+		glog.Warningf("daemon can't reconcile state!")
+		glog.Warningf("Ignition passwd section contains changes")
+		return false, nil
+	}
+
+	// Storage section
+
+	// there are six subsections here - directories, files, and links, which we
+	// can reconcile, and disks, filesystems, and raid, which we can't. make
+	// sure the sections we can't fix aren't changed.
+	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
+		glog.Warningf("daemon can't reconcile state!")
+		glog.Warningf("Ignition disks section contains changes")
+		return false, nil
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
+		glog.Warningf("daemon can't reconcile state!")
+		glog.Warningf("Ignition filesystems section contains changes")
+		return false, nil
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
+		glog.Warningf("daemon can't reconcile state!")
+		glog.Warningf("Ignition raid section contains changes")
+		return false, nil
+	}
+
+	// Systemd section
+
+	// we can reconcile any state changes in the systemd section.
+
+	// we made it through all the checks. reconcile away!
+	return true, nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
