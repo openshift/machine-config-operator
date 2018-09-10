@@ -80,11 +80,32 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err := dn.syncOnce()
+	err := dn.process()
 	if err != nil {
+		glog.Errorf("Marking degraded due to: %v", err)
 		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
+
 	return nil
+}
+
+// process starts the main loop that actually does all the work.
+func (dn *Daemon) process() error {
+
+	// do a first pass before entering the main loop
+	if err := dn.syncOnce(); err != nil {
+		return err
+	}
+
+	for {
+		glog.V(2).Infof("Watching for node annotation updates on %q", dn.name)
+		if err := waitUntilUpdate(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+			return err
+		}
+		if err := dn.syncOnce(); err != nil {
+			return err
+		}
+	}
 }
 
 // syncOnce only completes once.
@@ -94,8 +115,17 @@ func (dn *Daemon) syncOnce() error {
 	if err != nil {
 		return err
 	}
+
 	if !isDesired {
-		return dn.triggerUpdate()
+		// this currently doesn't return, but may return in the future if the
+		// update could be done without rebooting
+		if err := dn.triggerUpdate(); err != nil {
+			return err
+		}
+
+		glog.V(2).Infof("Successfully updated without reboot")
+	} else {
+		glog.V(2).Infof("Node is up to date")
 	}
 
 	if err := setUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
@@ -111,13 +141,7 @@ func (dn *Daemon) syncOnce() error {
 		return err
 	}
 
-	glog.V(2).Infof("Watching for node annotation updates")
-	err = waitUntilUpdate(dn.kubeClient.CoreV1().Nodes(), dn.name)
-	if err != nil {
-		return fmt.Errorf("Failed to wait until update request: %v", err)
-	}
-
-	return dn.triggerUpdate()
+	return nil
 }
 
 // triggerUpdate starts the update using the current and the target config.
