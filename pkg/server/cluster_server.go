@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
-	yaml "gopkg.in/yaml.v2"
+	yaml "github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	rest "k8s.io/client-go/rest"

@@ -97,6 +97,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
 		return
 	}
 	if conf == nil && err == nil {
@@ -107,5 +108,6 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	if err := encoder.Encode(conf); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		glog.Errorf("couldn't encode the config for req: %v, error: %v", cr, err)
 	}
 }
