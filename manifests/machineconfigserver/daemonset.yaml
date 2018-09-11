@@ -14,16 +14,16 @@ spec:
         k8s-app: machine-config-server
     spec:
       containers:
-        - name: machine-config-server
-          image: {{.Images.MachineConfigServer}}
-          args:
-            - "start"
-            - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
-          volumeMounts:
-          - name: certs
-            mountPath: /etc/ssl/mcs
-          - name: node-bootstrap-token
-            mountPath: /etc/mcs/bootstrap-token
+      - name: machine-config-server
+        image: {{.Images.MachineConfigServer}}
+        args:
+          - "start"
+          - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
+        volumeMounts:
+        - name: certs
+          mountPath: /etc/ssl/mcs
+        - name: node-bootstrap-token
+          mountPath: /etc/mcs/bootstrap-token
       hostNetwork: true
       nodeSelector:
         node-role.kubernetes.io/master: ""

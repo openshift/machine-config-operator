@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	yaml "github.com/ghodss/yaml"
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-	yaml "gopkg.in/yaml.v2"
 )
 
 const (

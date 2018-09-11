@@ -5,4 +5,4 @@ metadata:
     kubernetes.io/service-account.name: node-bootstrapper
   name: node-bootstrapper-token
   namespace: {{.TargetNamespace}}
-  type: kubernetes.io/service-account-token
+type: kubernetes.io/service-account-token
