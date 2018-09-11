@@ -7,8 +7,8 @@ import (
 	"path"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
-	yaml "gopkg.in/yaml.v2"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -61,6 +61,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, err
 
 	// 1. Read the Machine Config Pool object.
 	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machinePool+".yaml")
+	glog.Infof("reading file %q", fileName)
 	data, err := ioutil.ReadFile(fileName)
 	if os.IsNotExist(err) {
 		glog.Errorf("could not find file: %s", fileName)
@@ -80,8 +81,10 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, err
 
 	// 2. Read the Machine Config object.
 	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+".yaml")
+	glog.Infof("reading file %q", fileName)
 	data, err = ioutil.ReadFile(fileName)
 	if os.IsNotExist(err) {
+		glog.Errorf("could not find file: %s", fileName)
 		return nil, nil
 	}
 	if err != nil {

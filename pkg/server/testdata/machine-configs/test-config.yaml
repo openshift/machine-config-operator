@@ -1,6 +1,6 @@
-typemeta:
-  kind: MachineConfig
-objectmeta:
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
   name: test-config
 spec:
   config:

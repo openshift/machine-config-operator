@@ -12,7 +12,7 @@ import (
 
 var (
 	bootstrapCmd = &cobra.Command{
-		Use:   "boostrap",
+		Use:   "bootstrap",
 		Short: "Starts Machine Config Controller in bootstrap mode",
 		Long:  "",
 		Run:   runbootstrapCmd,
@@ -27,7 +27,7 @@ var (
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination dir where MCC writes the generated machineconfigs and machineconfigpools.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.manifestsDir, "mainfest-dir", "", "The dir where MCC reads the controllerconfig, machineconfigpools and user-defined machineconfigs.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.manifestsDir, "manifest-dir", "", "The dir where MCC reads the controllerconfig, machineconfigpools and user-defined machineconfigs.")
 
 }
 
