@@ -1,32 +1,21 @@
-typemeta:
-  kind: MachineConfigPool
-  apiversion: ""
-objectmeta:
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  creationTimestamp: null
   name: test-pool
-  generatename: ""
-  selflink: ""
-  uid: ""
-  resourceversion: ""
-  generation: 0
-  creationtimestamp: "0001-01-01T00:00:00Z"
-  deletiontimestamp: null
-  deletiongraceperiodseconds: null
-  labels: {}
-  annotations: {}
-  ownerreferences: []
-  initializers: null
-  finalizers: []
-  clustername: ""
 spec:
-  machineconfigselector: null
-  machineselector: null
+  machineConfigSelector:
+    matchLabels:
+      machineconfiguration.openshift.io/role: test
+  machineSelector:
+    matchLabels:
+      node-role.kubernetes.io/test: ""
+  maxUnavailable: null
   paused: false
-  maxunavailable: null
 status:
-  observedgeneration: 0
-  currentmachineconfig: test-config
-  machinecount: 0
-  updatedmachinecount: 0
-  readymachinecount: 0
-  unavailablemachinecount: 0
-  conditions: []
+  conditions: null
+  currentMachineConfig: test-config
+  machineCount: 0
+  readyMachineCount: 0
+  unavailableMachineCount: 0
+  updatedMachineCount: 0
