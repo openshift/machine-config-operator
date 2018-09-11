@@ -73,6 +73,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 
+	if cconfig == nil {
+		return fmt.Errorf("error: no controllerconfig found in dir: %q", destDir)
+	}
 	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig)
 	if err != nil {
 		return err
@@ -100,7 +103,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	configdir := filepath.Join(destDir, "machine-configs")
-	if err := os.MkdirAll(poolsdir, 0664); err != nil {
+	if err := os.MkdirAll(configdir, 0664); err != nil {
 		return err
 	}
 	for _, c := range gconfigs {
