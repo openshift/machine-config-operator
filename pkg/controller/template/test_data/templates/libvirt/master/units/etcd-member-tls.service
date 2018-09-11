@@ -5,19 +5,15 @@ contents: |
   ConditionFileNotEmpty=|!/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
   ConditionFileNotEmpty=|!/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
   ConditionFileNotEmpty=|!/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
-  Requires=docker.service
-  After=docker.service
 
   [Service]
-  Type=oneshot
-  RemainAfterExit=yes
-
   Environment="SIGNER_IMAGE=quay.io/coreos/kube-client-agent:678cc8e6841e2121ebfdb6e2db568fce290b67d6"
 
-  ExecStart=/usr/bin/docker \
+  ExecStartPre=/bin/podman \
     run \
       --rm \
       --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
+      --network host \
     "${SIGNER_IMAGE}" \
       request \
         --orgname=system:etcd-servers \
@@ -28,10 +24,11 @@ contents: |
         --commonname=system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
         --ipaddrs=127.0.0.1 \
 
-  ExecStart=/usr/bin/docker \
+  ExecStartPre=/bin/podman \
     run \
       --rm \
       --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
+      --network host \
     "${SIGNER_IMAGE}" \
       request \
         --orgname=system:etcd-peers \
@@ -41,9 +38,11 @@ contents: |
         --dnsnames=*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
         --commonname=system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
 
-  ExecStart=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
-  ExecStart=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
-  ExecStart=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
-  ExecStart=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
+
+  ExecStart=/bin/true
 enabled: true
 name: etcd-member-tls.service
