@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bootstrap-machine-config-operator
+  namespace: {{.TargetNamespace}}
+spec:
+  initContainers:
+  - name: machine-config-controller
+    image: {{.Images.MachineConfigController}}
+    args:
+    - "bootstrap"
+    - "--manifest-dir=/etc/mcc/bootstrap/manifests"
+    - "--dest-dir=/etc/mcc/bootstrap/server"
+    resources:
+      limits:
+        cpu: 20m
+        memory: 50Mi
+      requests:
+        cpu: 20m
+        memory: 50Mi
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: bootstrap-manifests
+      mountPath: /etc/mcc/bootstrap/manifests
+    - name: server-basedir
+      mountPath: /etc/mcc/bootstrap/server
+  containers:
+  - name: machine-config-server
+    image: {{.Images.MachineConfigServer}}
+    args:
+      - "bootstrap"
+    volumeMounts:
+    - name: certs
+      mountPath: /etc/ssl/mcs
+    - name: etc-kubernetes
+      mountPath: /etc/kubernetes/kubeconfig
+    - name: server-basedir
+      mountPath: /etc/mcs/bootstrap
+    - name:  etcd-certs
+      mountPath: /etc/ssl/etcd
+    securityContext:
+      privileged: true
+  hostNetwork: true
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  restartPolicy: Always
+  volumes:
+  - name: certs
+    hostPath:
+      path: /etc/ssl/mcs
+  - name: etc-kubernetes
+    hostPath:
+      path: /etc/kubernetes/kubeconfig
+  - name: server-basedir
+    hostPath:
+      path: /etc/mcs/bootstrap
+  - name: etcd-certs
+    hostPath:
+      path: /etc/ssl/etcd
+  - name: bootstrap-manifests
+    hostPath:
+      path: /etc/mcc/bootstrap/manifests

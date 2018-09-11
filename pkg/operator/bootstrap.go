@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/golang/glog"
@@ -61,31 +62,16 @@ func RenderBootstrap(
 		filename string
 	}{{
 		name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
-		filename: "machineconfigcontroller-controllerconfig.yaml",
-	}, {
-		name:     "manifests/machineconfigcontroller/bootstrap-pod.yaml",
-		filename: "machineconfigcontroller-bootstrap-pod.yaml",
+		filename: "manifests/machineconfigcontroller-controllerconfig.yaml",
 	}, {
 		name:     "manifests/master.machineconfigpool.yaml",
-		filename: "master.machineconfigpool.yaml",
+		filename: "manifests/master.machineconfigpool.yaml",
 	}, {
 		name:     "manifests/worker.machineconfigpool.yaml",
-		filename: "worker.machineconfigpool.yaml",
+		filename: "manifests/worker.machineconfigpool.yaml",
 	}, {
-		name:     "manifests/etcd.machineconfigpool.yaml",
-		filename: "etcd.machineconfigpool.yaml",
-	}, {
-		name:     "manifests/machineconfigserver/bootstrap-pod.yaml",
-		filename: "machineconfigserver-bootstrap-pod.yaml",
-	}, {
-		name:     "manifests/controllerconfig.crd.yaml",
-		filename: "controllerconfig.crd.yaml",
-	}, {
-		name:     "manifests/machineconfig.crd.yaml",
-		filename: "machineconfig.crd.yaml",
-	}, {
-		name:     "manifests/machineconfigpool.crd.yaml",
-		filename: "machineconfigpool.crd.yaml",
+		name:     "manifests/bootstrap-pod.yaml",
+		filename: "machineconfigoperator-bootstrap-pod.yaml",
 	}}
 	for _, m := range manifests {
 		glog.Info(m)
@@ -95,6 +81,10 @@ func RenderBootstrap(
 		}
 
 		path := filepath.Join(destinationDir, m.filename)
+		dirname := filepath.Dir(path)
+		if err := os.MkdirAll(dirname, 0655); err != nil {
+			return err
+		}
 		if err := ioutil.WriteFile(path, b, 0655); err != nil {
 			return err
 		}
