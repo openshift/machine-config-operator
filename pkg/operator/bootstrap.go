@@ -38,7 +38,7 @@ func RenderBootstrap(
 
 	mcoconfig, err := discoverMCOConfig(getInstallConfigFromFile(filesData[clusterConfigConfigMapFile]))
 	if err != nil {
-		return fmt.Errorf("error discovering MCOConfig from %q", clusterConfigConfigMapFile)
+		return fmt.Errorf("error discovering MCOConfig from %q: %v", clusterConfigConfigMapFile, err)
 	}
 
 	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[imagesConfigMapFile])
