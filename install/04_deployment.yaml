@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: machine-config-operator
-        image: ${machine_config_operator_image}
+        image: openshift/origin-machine-config-operator:v4.0.0
         args:
         - "start"
         - "--images-json=/etc/mco/images/images.json"
