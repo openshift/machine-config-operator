@@ -4,8 +4,6 @@ contents: |
   [Unit]
   Description=etcd (System Application Container)
   Documentation=https://github.com/coreos/etcd
-  Requires=etcd-member-tls.service
-  After=etcd-member-tls.service
 
   [Service]
   Restart=on-failure
@@ -13,7 +11,49 @@ contents: |
   TimeoutStartSec=0
   LimitNOFILE=40000
 
+  Environment="SIGNER_IMAGE=quay.io/coreos/kube-client-agent:678cc8e6841e2121ebfdb6e2db568fce290b67d6"
   Environment="ETCD_IMAGE=quay.io/coreos/etcd:v3.2.14"
+
+  ExecStartPre=/bin/sh -c " \
+    [ -e /etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt -a \
+      -e /etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key ] || \
+    /bin/podman \
+      run \
+        --rm \
+        --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
+        --network host \
+      '${SIGNER_IMAGE}' \
+        request \
+          --orgname=system:etcd-servers \
+          --cacrt=/etc/ssl/etcd/root-ca.crt \
+          --assetsdir=/etc/ssl/etcd \
+          --address=https://adahiya-0-api.tt.testing:6443 \
+          --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,adahiya-0-etcd-0.tt.testing \
+          --commonname=system:etcd-server:adahiya-0-etcd-0.tt.testing \
+          --ipaddrs=127.0.0.1 \
+  "
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key
+
+  ExecStartPre=/bin/sh -c " \
+    [ -e /etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt -a \
+      -e /etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key ] || \
+    /bin/podman \
+      run \
+        --rm \
+        --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
+        --network host \
+      '${SIGNER_IMAGE}'' \
+        request \
+          --orgname=system:etcd-peers \
+          --cacrt=/etc/ssl/etcd/root-ca.crt \
+          --assetsdir=/etc/ssl/etcd \
+          --address={{apiServerURL .}} \
+          --dnsnames={{etcdPeerCertDNSNames .}} \
+          --commonname=system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}} \
+  "
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key
 
   ExecStartPre=-/bin/podman rm etcd-member
   ExecStartPre=/usr/bin/mkdir --parents /var/lib/etcd
