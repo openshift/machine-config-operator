@@ -20,15 +20,15 @@ contents: |
         --rm \
         --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
         --network host \
-      '${SIGNER_IMAGE}' \
-        request \
-          --orgname=system:etcd-servers \
-          --cacrt=/etc/ssl/etcd/root-ca.crt \
-          --assetsdir=/etc/ssl/etcd \
-          --address=https://adahiya-0-api.tt.testing:6443 \
-          --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,adahiya-0-etcd-0.tt.testing \
-          --commonname=system:etcd-server:adahiya-0-etcd-0.tt.testing \
-          --ipaddrs=127.0.0.1 \
+        '${SIGNER_IMAGE}' \
+          request \
+            --orgname=system:etcd-servers \
+            --cacrt=/etc/ssl/etcd/root-ca.crt \
+            --assetsdir=/etc/ssl/etcd \
+            --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
+            --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
+            --commonname=system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
+            --ipaddrs=127.0.0.1 \
   "
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
@@ -41,14 +41,14 @@ contents: |
         --rm \
         --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
         --network host \
-      '${SIGNER_IMAGE}' \
-        request \
-          --orgname=system:etcd-peers \
-          --cacrt=/etc/ssl/etcd/root-ca.crt \
-          --assetsdir=/etc/ssl/etcd \
-          --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
-          --dnsnames=*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
-          --commonname=system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
+        '${SIGNER_IMAGE}' \
+          request \
+            --orgname=system:etcd-peers \
+            --cacrt=/etc/ssl/etcd/root-ca.crt \
+            --assetsdir=/etc/ssl/etcd \
+            --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
+            --dnsnames=*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
+            --commonname=system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
   "
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
