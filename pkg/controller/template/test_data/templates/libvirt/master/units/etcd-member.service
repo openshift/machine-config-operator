@@ -41,7 +41,7 @@ contents: |
         --rm \
         --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
         --network host \
-      '${SIGNER_IMAGE}'' \
+      '${SIGNER_IMAGE}' \
         request \
           --orgname=system:etcd-peers \
           --cacrt=/etc/ssl/etcd/root-ca.crt \
