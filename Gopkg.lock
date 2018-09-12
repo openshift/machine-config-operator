@@ -346,11 +346,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:7a866b4639d3b7e4b3c44d9ccafed86f18706939bcf37161123440e5ea03d46f"
+  digest = "1:e1397de7eda15e425e712b890b41d22cc1c96610ba7dceb1074bd54667d635f7"
   name = "github.com/openshift/installer"
-  packages = ["pkg/types"]
+  packages = [
+    "pkg/ipnet",
+    "pkg/types",
+  ]
   pruneopts = "NUT"
-  revision = "f2e6b3ed56aa114cd263369fd626d6b0e493e6ed"
+  revision = "ae20cf6ddc6872c79600a3342598ff61bf4925fd"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -860,7 +863,6 @@
     "github.com/openshift/kubernetes-drain",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",
-    "gopkg.in/yaml.v2",
     "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
     "k8s.io/api/rbac/v1",

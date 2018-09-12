@@ -62,12 +62,8 @@ metadata:
   creationTimestamp: null
   name: test-0
 networking:
-  podCIDR:
-    IP: 10.2.0.0
-    Mask: //8AAA==
-  serviceCIDR:
-    IP: 10.3.0.0
-    Mask: //8AAA==
+  podCIDR: 10.2.0.0/16
+  serviceCIDR: 10.3.0.0/16
   type: flannel
 platform:
   libvirt:
