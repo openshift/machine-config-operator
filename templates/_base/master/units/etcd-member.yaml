@@ -22,15 +22,15 @@ contents: |
         --rm \
         --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
         --network host \
-      '${SIGNER_IMAGE}' \
-        request \
-          --orgname=system:etcd-servers \
-          --cacrt=/etc/ssl/etcd/root-ca.crt \
-          --assetsdir=/etc/ssl/etcd \
-          --address=https://adahiya-0-api.tt.testing:6443 \
-          --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,adahiya-0-etcd-0.tt.testing \
-          --commonname=system:etcd-server:adahiya-0-etcd-0.tt.testing \
-          --ipaddrs=127.0.0.1 \
+        '${SIGNER_IMAGE}' \
+          request \
+            --orgname=system:etcd-servers \
+            --cacrt=/etc/ssl/etcd/root-ca.crt \
+            --assetsdir=/etc/ssl/etcd \
+            --address={{apiServerURL .}} \
+            --dnsnames={{etcdServerCertDNSNames .}} \
+            --commonname=system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}} \
+            --ipaddrs=127.0.0.1 \
   "
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key
@@ -43,14 +43,14 @@ contents: |
         --rm \
         --volume /etc/ssl/etcd:/etc/ssl/etcd:rw,z \
         --network host \
-      '${SIGNER_IMAGE}' \
-        request \
-          --orgname=system:etcd-peers \
-          --cacrt=/etc/ssl/etcd/root-ca.crt \
-          --assetsdir=/etc/ssl/etcd \
-          --address={{apiServerURL .}} \
-          --dnsnames={{etcdPeerCertDNSNames .}} \
-          --commonname=system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}} \
+        '${SIGNER_IMAGE}' \
+          request \
+            --orgname=system:etcd-peers \
+            --cacrt=/etc/ssl/etcd/root-ca.crt \
+            --assetsdir=/etc/ssl/etcd \
+            --address={{apiServerURL .}} \
+            --dnsnames={{etcdPeerCertDNSNames .}} \
+            --commonname=system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}} \
   "
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt
   ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key
