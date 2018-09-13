@@ -38,6 +38,8 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: spec.nodeName
+      hostNetwork: true
+      hostPID: true
       serviceAccountName: machine-config-daemon
       tolerations:
         - key: node-role.kubernetes.io/master
