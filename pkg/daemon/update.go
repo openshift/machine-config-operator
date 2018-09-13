@@ -33,8 +33,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	// update files on disk that need updating
-	err = dn.updateFiles(oldConfig, newConfig)
-	if err != nil {
+	if err = dn.updateFiles(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	if err = dn.updateOS(oldConfig, newConfig); err != nil {
 		return err
 	}
 
@@ -398,6 +401,22 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 		}
 	}
 	return uid, gid, nil
+}
+
+// updateOS updates the system OS to the one specified in newConfig
+func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// XXX(jl): don't re-ask rpm-ostree here, just cache from checkOS()
+	bootedOSImageURL, _, err := getBootedOSImageURL()
+	if err != nil {
+		return err
+	}
+
+	if newConfig.Spec.OSImageURL == bootedOSImageURL {
+		return nil
+	}
+
+	glog.Infof("Updating OS to %s", newConfig.Spec.OSImageURL)
+	return runPivot(newConfig.Spec.OSImageURL)
 }
 
 // reboot is the final step. it tells systemd-logind to reboot the machine,
