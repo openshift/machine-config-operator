@@ -49,7 +49,7 @@ type MachineConfig struct {
 
 type MachineConfigSpec struct {
     // OSImageURL specifies the remote location that will be used to
-    // fetch the OS.
+    // fetch the OS. This must be in the canonical $name@$digest format.
     OSImageURL string `json:"osImageURL"`
     // Config is a Ignition Config object.
     Config ignv2_2.Config `json:"config"`
@@ -74,7 +74,7 @@ spec:
         filesystem: root
         mode: 384
         path: /root/myfile
-  osImageURL: quay.io/openshift/rhcos:v4.0.1
+  osImageURL: quay.io/openshift/rhcos@sha256:...
 ```
 
 (Notice how it's the usual Ignition config object *inplace*, not as a JSON
@@ -96,6 +96,6 @@ Ignition config keys as well).
 
 ### OSImageURL
 
-The operating system used to first boot a machine is platform dependent. For example, on AWS AMIs are used to bring up EC2Instances. But for day-2 updates of the cluster, the MachineConfigDaemon uses the `OSImageURL` to fetch new operating system during updates. An example for OSImageURL is `quay.io/openshift/$CONTAINER:$OCP_VERSION`.
+The operating system used to first boot a machine is platform dependent. For example, on AWS AMIs are used to bring up EC2Instances. But for day-2 updates of the cluster, the MachineConfigDaemon uses the `OSImageURL` to fetch new operating system during updates. An example for OSImageURL is `quay.io/openshift/$CONTAINER@sha256:$DIGEST`. The digest is required to ensure there are no race conditions.
 
 When combining multiple MachineConfig objects, OSImageURL field is ignored from all the MachineConfig objects except the one defined by Openshift.
