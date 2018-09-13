@@ -346,14 +346,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e1397de7eda15e425e712b890b41d22cc1c96610ba7dceb1074bd54667d635f7"
+  digest = "1:c2802eed24ed1b44737118fc3c8c88897648202896733da870fd943d87a55fa0"
   name = "github.com/openshift/installer"
   packages = [
     "pkg/ipnet",
     "pkg/types",
   ]
   pruneopts = "NUT"
-  revision = "ae20cf6ddc6872c79600a3342598ff61bf4925fd"
+  revision = "533c4e581af380166680a0df7241728b9342f711"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
