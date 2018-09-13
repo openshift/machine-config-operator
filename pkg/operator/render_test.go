@@ -49,12 +49,12 @@ baseDomain: tt.testing
 clusterID: 2d149e46-90ee-3436-018a-1b02f6864006
 machines:
 - name: master
-  platformConfig:
+  platform:
     libvirt:
       qcowImagePath: /path/rhcos-qemu.qcow2
   replicas: 1
 - name: worker
-  platformConfig:
+  platform:
     libvirt:
       qcowImagePath: /path/rhcos-qemu.qcow2
   replicas: 2
