@@ -5,16 +5,18 @@ contents: |
 
   [Service]
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  Environment=KUBELET_RUNTIME_REQUEST_TIMEOUT=10m
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
+  EnvironmentFile=-/etc/kubernetes/kubelet-env
 
   ExecStart=/usr/bin/hyperkube \
       kubelet \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --rotate-certificates \
-        --cni-conf-dir=/etc/kubernetes/cni/net.d \
-        --cni-bin-dir=/var/lib/cni/bin \
-        --network-plugin=cni \
+        --container-runtime=remote \
+        --container-runtime-endpoint=unix:///var/run/crio/crio.sock \
+        --runtime-request-timeout=${KUBELET_RUNTIME_REQUEST_TIMEOUT} \
         --lock-file=/var/run/lock/kubelet.lock \
         --exit-on-lock-contention \
         --pod-manifest-path=/etc/kubernetes/manifests \
