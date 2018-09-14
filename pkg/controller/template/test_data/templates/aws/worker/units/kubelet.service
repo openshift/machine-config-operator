@@ -5,6 +5,7 @@ contents: |
 
   [Service]
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=/bin/mkdir --parents /var/lib/kubelet/configs
   Environment=KUBELET_RUNTIME_REQUEST_TIMEOUT=10m
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
@@ -16,6 +17,7 @@ contents: |
         --rotate-certificates \
         --container-runtime=remote \
         --container-runtime-endpoint=unix:///var/run/crio/crio.sock \
+        --dynamic-config-dir=/var/lib/kubelet/configs \
         --runtime-request-timeout=${KUBELET_RUNTIME_REQUEST_TIMEOUT} \
         --lock-file=/var/run/lock/kubelet.lock \
         --exit-on-lock-contention \
