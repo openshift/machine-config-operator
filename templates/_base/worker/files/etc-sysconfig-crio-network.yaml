@@ -1,0 +1,6 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/sysconfig/crio-network"
+contents:
+  inline: |
+    CRIO_NETWORK_OPTIONS="--cni-config-dir=/etc/kubernetes/cni/net.d --cni-plugin-dir=/var/lib/cni/bin"
