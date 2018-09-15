@@ -9,3 +9,4 @@ COPY --from=build-env /go/src/github.com/openshift/machine-config-operator/_outp
 COPY install /manifests
 
 ENTRYPOINT ["/bin/machine-config-operator"]
+LABEL io.openshift.release.operator true
