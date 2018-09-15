@@ -1,0 +1,20 @@
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+spec:
+  tags:
+  - name: machine-config-operator
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-machine-config-operator:v4.0.0
+  - name: machine-config-controller
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-machine-config-controller:v4.0.0
+  - name: machine-config-server
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-machine-config-server:v4.0.0
+  - name: machine-config-daemon
+    from:
+      kind: DockerImage
+      name: docker.io/openshift/origin-machine-config-daemon:v4.0.0
