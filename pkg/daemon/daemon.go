@@ -216,8 +216,17 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	glog.Infof("Current osImageURL: %v (%s)", bootedOSImageURL, bootedOSTreeVersion)
 
+	// XXX: the installer doesn't pivot yet so for now, just make "" equivalent
+	// to "://dummy" so that we don't immediately try to pivot to this dummy
+	// URL. See also
+	// https://github.com/openshift/machine-config-operator/pull/60#issuecomment-421489272
+	if bootedOSImageURL == "" {
+		bootedOSImageURL = "://dummy"
+		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
+	}
+
+	glog.Infof("Current osImageURL: %v (%s)", bootedOSImageURL, bootedOSTreeVersion)
 	return bootedOSImageURL == osImageURL, nil
 }
 

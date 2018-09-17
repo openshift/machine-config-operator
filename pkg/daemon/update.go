@@ -411,6 +411,11 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
+	// see similar block in checkOS()
+	if bootedOSImageURL == "" {
+		bootedOSImageURL = "://dummy"
+	}
+
 	if newConfig.Spec.OSImageURL == bootedOSImageURL {
 		return nil
 	}
