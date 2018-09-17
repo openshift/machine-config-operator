@@ -217,7 +217,7 @@ func (dn *Daemon) enableUnit(unit ignv2_2types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check that we don't return an error when the link already exists
-	if _, err := os.Stat(wantsPath); err != nil {
+	if _, err := os.Stat(wantsPath); err == nil {
 		glog.Infof("%s already exists. Not making a new symlink", wantsPath)
 		return nil
 	}
