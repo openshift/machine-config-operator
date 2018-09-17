@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"time"
 
+	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -49,12 +51,24 @@ func waitUntilUpdate(client corev1.NodeInterface, node string) error {
 		return nil
 	}
 
-	// for now, we wait forever. that might not be the best long-term strategy.
-	_, err = watch.Until(0, watcher, updateWatcher)
-	if err != nil {
-		return fmt.Errorf("Failed to watch for update request: %v", err)
+	// loop over the watch. when a nil event is returned that means the timeout
+	// has been reached at which point we restart the watcher.
+	// Note: previously we tried to wait forever. However, the wait will eventually
+	// timeout and cause the MCD to "restart".
+	// See: https://github.com/openshift/machine-config-operator/issues/68
+	timeout := time.Duration(MachineConfigDaemonWatcherTimeoutInMinutes) * time.Minute
+	for {
+		glog.V(2).Infof("Watching endpoint for %s", timeout)
+		event, err := watch.Until(timeout, watcher, updateWatcher)
+		if err != nil {
+			return fmt.Errorf("Failed to watch for update request: %v", err)
+		}
+		// if we have an event, break the loop and fall into the return statement
+		if event != nil {
+			break
+		}
+		glog.V(2).Infof("Watcher hit %s timeout", timeout)
 	}
-
 	return nil
 }
 
