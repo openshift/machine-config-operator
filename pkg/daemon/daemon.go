@@ -195,8 +195,14 @@ func (dn *Daemon) isDesiredMachineState() (bool, error) {
 		return false, err
 	}
 
+	isDesiredOS, err := dn.checkOS(desiredConfig.Spec.OSImageURL)
+	if err != nil {
+		return false, err
+	}
+
 	if dn.checkFiles(desiredConfig.Spec.Config.Storage.Files) &&
-		dn.checkUnits(desiredConfig.Spec.Config.Systemd.Units) {
+		dn.checkUnits(desiredConfig.Spec.Config.Systemd.Units) &&
+		isDesiredOS {
 		return true, nil
 	}
 
@@ -204,8 +210,28 @@ func (dn *Daemon) isDesiredMachineState() (bool, error) {
 	return false, nil
 }
 
-// checkUnits validates the contents of  all the units in the
-// target config.
+// checkOS validates the OS image URL and returns true if they match.
+func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
+	bootedOSImageURL, bootedOSTreeVersion, err := getBootedOSImageURL()
+	if err != nil {
+		return false, err
+	}
+
+	// XXX: the installer doesn't pivot yet so for now, just make "" equivalent
+	// to "://dummy" so that we don't immediately try to pivot to this dummy
+	// URL. See also
+	// https://github.com/openshift/machine-config-operator/pull/60#issuecomment-421489272
+	if bootedOSImageURL == "" {
+		bootedOSImageURL = "://dummy"
+		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
+	}
+
+	glog.Infof("Current osImageURL: %v (%s)", bootedOSImageURL, bootedOSTreeVersion)
+	return bootedOSImageURL == osImageURL, nil
+}
+
+// checkUnits validates the contents of all the units in the
+// target config and retursn true if they match.
 func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
