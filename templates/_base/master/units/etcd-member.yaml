@@ -4,6 +4,8 @@ contents: |
   [Unit]
   Description=etcd (System Application Container)
   Documentation=https://github.com/coreos/etcd
+  After=network-online.target
+  Wants=network-online.target
 
   [Service]
   Restart=on-failure
