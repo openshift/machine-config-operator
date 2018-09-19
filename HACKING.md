@@ -2,34 +2,23 @@
 
 # Hacking on the MCD
 
-1. Create a cluster (e.g. using [libvirt](https://github.com/openshift/installer/blob/master/Documentation/dev/libvirt-howto.md))
-2. Delete the old node agent daemonset:
+These instructions were tested with installer version https://github.com/openshift/installer/commit/d0b3f913981ef79fd58f089909d7ef1918aa3894 and RHCOS version 4.0.5836.
 
-    ```sh
-    oc delete ds tectonic-node-agent --namespace tectonic-system
-    ```
+1. Create a cluster (e.g. using [libvirt](https://github.com/openshift/installer/blob/d0b3f913981ef79fd58f089909d7ef1918aa3894/Documentation/dev/libvirt-howto.md))
+2. Build a container image for the MCD and push it to a registry somewhere, e.g.
 
-    This will be fixed in the installer eventually.
+   ```sh
+   # this takes care of building the binary for you as well
+   WHAT=machine-config-daemon ./hack/build-image.sh
+   WHAT=machine-config-daemon REPO=docker.io/sdemos ./hack/push-image.sh
+   ```
 
-3. Run:
+3. Configure the MCO to deploy your test version. There is a ConfigMap in the
+   `openshift-machine-config-operator` namespace that contains the versions of
+   the components that the operator will deploy. When modified, the operator
+   will automatically deploy the new container versions.
 
-    ```sh
-    sed s/node-configuration.v1.coreos.com/machineconfiguration.openshift.io/g /opt/tectonic/node-annotations.json >/etc/machine-config-daemon/node-annotations.json
-    ```
-
-    The install process will take care of this eventually.
-
-4. Create a namespace, e.g. `oc new-project mco`
-5. Create items from `manifests/` in a sensible order, e.g.
-
-    ```sh
-    for f in manifests/*.crd.yaml; do oc create -f $f; done
-    for f in manifests/*.machineconfigpool.yaml; do oc create -f $f; done
-    oc create -f manifests/machineconfigdaemon/clusterrole.yaml
-    oc create -f manifests/machineconfigdaemon/sa.yaml
-    oc create -f manifests/machineconfigdaemon/scc.yaml
-    oc create -f manifests/machineconfigdaemon/clusterrolebinding.yaml
-    oc create -f manifests/machineconfigdaemon/daemonset.yaml
-    ```
-
-    (Though note you'll have to sub in `{{.TargetNamespace}}` with `mco`).
+   ```sh
+   kubectl edit configmap -n openshift-machine-config-operator machine-config-operator-images
+   # change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example
+   ```
