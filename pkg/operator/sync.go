@@ -86,7 +86,6 @@ func (optr *Operator) syncMachineConfigPools(config renderConfig) error {
 	mcps := []string{
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
-		"manifests/etcd.machineconfigpool.yaml",
 	}
 
 	for _, mcp := range mcps {
