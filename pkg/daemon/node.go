@@ -28,12 +28,10 @@ func waitUntilUpdate(client corev1.NodeInterface, node string) error {
 		return err
 	}
 
-	options := metav1.ListOptions{
+	watcher, err := client.Watch(metav1.ListOptions{
 		FieldSelector:   fields.OneTermEqualSelector("metadata.name", node).String(),
 		ResourceVersion: n.ResourceVersion,
-	}
-
-	watcher, err := client.Watch(options)
+	})
 	if err != nil {
 		return fmt.Errorf("Failed to watch self node (%q): %v", node, err)
 	}
@@ -59,8 +57,6 @@ func waitUntilUpdate(client corev1.NodeInterface, node string) error {
 		if _, err := watch.Until(0, watcher, updateWatcher); err != nil {
 			// if the watch was closed, watch again
 			if err == watch.ErrWatchClosed {
-				// we must reset the watcher on error
-				watcher, err = client.Watch(options)
 				continue
 			}
 			// any other error should return
