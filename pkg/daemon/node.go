@@ -49,22 +49,13 @@ func waitUntilUpdate(client corev1.NodeInterface, node string) error {
 		return nil
 	}
 
-	// Loop over watches to ensure that if the watch is closed before changes we
-	// start up a new watch.
-	// See: https://github.com/openshift/machine-config-operator/issues/68
-	for {
-		// for now, we wait forever. that might not be the best long-term strategy.
-		if _, err := watch.Until(0, watcher, updateWatcher); err != nil {
-			// if the watch was closed, watch again
-			if err == watch.ErrWatchClosed {
-				continue
-			}
-			// any other error should return
-			return fmt.Errorf("Failed to watch for update request: %v", err)
-		}
-		// no error received so none returned
-		return nil
+	// for now, we wait forever. that might not be the best long-term strategy.
+	_, err = watch.Until(0, watcher, updateWatcher)
+	if err != nil {
+		return fmt.Errorf("Failed to watch for update request: %v", err)
 	}
+
+	return nil
 }
 
 // setConfig sets the given annotation key, value pair.
