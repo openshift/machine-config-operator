@@ -23,6 +23,8 @@ import (
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	var err error
 
+	glog.Info("Updating node with new config")
+
 	// make sure we can actually reconcile this state
 	reconcilable, err := dn.reconcilable(oldConfig, newConfig)
 	if err != nil {
@@ -57,6 +59,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return err
 	}
+	glog.V(2).Infof("Node successfully drained")
 
 	// reboot. this function shouldn't actually return.
 	return dn.reboot()
@@ -70,6 +73,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // directories, links, and systemd units sections of the included ignition
 // config currently.
 func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
+	glog.Info("Checking if configs are reconcilable")
+
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
 
@@ -134,6 +139,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// we can reconcile any state changes in the systemd section.
 
 	// we made it through all the checks. reconcile away!
+	glog.V(2).Infof("Configs are reconcilable")
 	return true, nil
 }
 
@@ -176,17 +182,20 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 // it encounters.
 func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	var path string
+	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newConfig.Spec.Config.Storage.Files {
 		newFileSet[f.Path] = struct{}{}
 	}
 
+	glog.V(2).Info("Removing stale config storage files")
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
 			os.RemoveAll(path)
 		}
 	}
 
+	glog.V(2).Info("Removing stale config systemd units")
 	newUnitSet := make(map[string]struct{})
 	newDropinSet := make(map[string]struct{})
 	for _, u := range newConfig.Spec.Config.Systemd.Units {
@@ -226,7 +235,14 @@ func (dn *Daemon) enableUnit(unit ignv2_2types.Unit) error {
 	}
 	// The originating file to link
 	servicePath := filepath.Join(pathSystemd, unit.Name)
-	return os.Symlink(servicePath, wantsPath)
+	err := os.Symlink(servicePath, wantsPath)
+	if err != nil {
+		glog.Warningf("Cannot enable unit %s: %s", unit.Name, err)
+	} else {
+		glog.Infof("Enabled %s", unit.Name)
+		glog.V(2).Infof("Symlinked %s to %s", servicePath, wantsPath)
+	}
+	return err
 }
 
 // disableUnit disables a systemd unit via symlink removal
@@ -238,6 +254,8 @@ func (dn *Daemon) disableUnit(unit ignv2_2types.Unit) error {
 		glog.Infof("%s was not present. No need to remove", wantsPath)
 		return nil
 	}
+	glog.V(2).Infof("Disabling unit at %s", wantsPath)
+
 	return os.Remove(wantsPath)
 }
 
@@ -247,37 +265,45 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 	for _, u := range units {
 		// write the dropin to disk
 		for i := range u.Dropins {
-			glog.Infof("writing systemd unit dropin %q", u.Dropins[i].Name)
+			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
 			if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
 				return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 			}
+			glog.V(2).Infof("Created directory: %s", path)
 
 			err := ioutil.WriteFile(path, []byte(u.Dropins[i].Contents), os.FileMode(0644))
 			if err != nil {
 				return fmt.Errorf("Failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
 			}
+			glog.V(2).Infof("Wrote systemd unit dropin at %s", path)
 		}
 
 		if u.Contents == "" {
 			continue
 		}
 
-		glog.Infof("writing systemd unit %q", u.Name)
+		glog.Infof("Writing systemd unit %q", u.Name)
 		path = filepath.Join(pathSystemd, u.Name)
 		if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 		}
+		glog.V(2).Infof("Created directory: %s", path)
 
 		// check if the unit is masked. if it is, we write a symlink to
-		// /dev/null and contiue
+		// /dev/null and continue
 		if u.Mask {
+			glog.V(2).Infof("Systemd unit masked.")
 			if err := os.RemoveAll(path); err != nil {
 				return fmt.Errorf("Failed to remove unit %q: %v", u.Name, err)
 			}
+			glog.V(2).Infof("Removed unit %q", u.Name)
+
 			if err := os.Symlink(pathDevNull, path); err != nil {
 				return fmt.Errorf("Failed to symlink unit %q to %s: %v", u.Name, pathDevNull, err)
 			}
+			glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
+
 			continue
 		}
 
@@ -286,6 +312,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		if err != nil {
 			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
 		}
+		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
 
 		// if the unit doesn't note if it should be enabled or disabled then
 		// skip all linking.
@@ -294,20 +321,24 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		// disabled. even if the unit wasn't previously enabled the result will
 		// be fine as disableUnit is idempotent.
 		// Note: we have to check for legacy unit.Enable and honor it
+		glog.Infof("Enabling systemd unit %q", u.Name)
 		if u.Enable == true {
 			if err := dn.enableUnit(u); err != nil {
 				return err
 			}
+			glog.V(2).Infof("Enabled systemd unit %q: ", u.Name)
 		}
 		if u.Enabled != nil {
 			if *u.Enabled {
 				if err := dn.enableUnit(u); err != nil {
 					return err
 				}
+				glog.V(2).Infof("Enabled systemd unit %q: ", u.Name)
 			} else {
 				if err := dn.disableUnit(u); err != nil {
 					return err
 				}
+				glog.V(2).Infof("Disabled systemd unit %q: ", u.Name)
 			}
 		}
 	}
@@ -386,6 +417,7 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 			if err != nil {
 				return uid, gid, fmt.Errorf("Failed to retrieve UserID for username: %s", file.User.Name)
 			}
+			glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, file.User.Name)
 			uid, _ = strconv.Atoi(osUser.Uid)
 		}
 	}
@@ -397,6 +429,7 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 			if err != nil {
 				return uid, gid, fmt.Errorf("Failed to retrieve GroupID for group: %s", file.Group.Name)
 			}
+			glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, file.Group.Name)
 			gid, _ = strconv.Atoi(osGroup.Gid)
 		}
 	}
@@ -408,12 +441,15 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// XXX(jl): don't re-ask rpm-ostree here, just cache from checkOS()
 	bootedOSImageURL, _, err := getBootedOSImageURL()
 	if err != nil {
+		glog.Warningf("Cannot retrieve bootedOSImageURL.")
 		return err
 	}
+	glog.V(2).Infof("Retrieved Booted OS Image URL: %s", bootedOSImageURL)
 
 	// see similar block in checkOS()
 	if bootedOSImageURL == "" {
 		bootedOSImageURL = "://dummy"
+		glog.V(2).Infof("Assigned empty Booted OS Image URL to: %s", bootedOSImageURL)
 	}
 
 	if newConfig.Spec.OSImageURL == bootedOSImageURL {
