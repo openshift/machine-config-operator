@@ -18,7 +18,7 @@ contents: |
         --rotate-certificates \
         --serialize-image-pulls=false \
         --container-runtime=remote \
-        --container-runtime-endpoint=unix:///var/run/crio/crio.sock \
+        --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-request-timeout=${KUBELET_RUNTIME_REQUEST_TIMEOUT} \
         --lock-file=/var/run/lock/kubelet.lock \
         --exit-on-lock-contention \
