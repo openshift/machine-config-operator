@@ -13,4 +13,9 @@ const (
 	MachineConfigDaemonStateDone = "Done"
 	// MachineConfigDaemonStateDegraded is set by daemon when update cannot be applied.
 	MachineConfigDaemonStateDegraded = "Degraded"
+
+	// MachineConfigDaemonOSRHCOS denotes RHCOS
+	MachineConfigDaemonOSRHCOS = "RHCOS"
+	// MachineConfigDaemonOSRHEL denotes RHEL
+	MachineConfigDaemonOSRHEL = "RHEL"
 )
