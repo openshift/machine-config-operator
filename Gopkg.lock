@@ -57,6 +57,14 @@
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:563d5933a25ebbd7e938e04d633bad92ae8f58cb88d70b55c3918857328376c6"
+  name = "github.com/ashcrow/osrelease"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "9b292693c55c791c79825cdce5b7e0b3b6da6e88"
+  version = "v1"
+
+[[projects]]
   digest = "1:aba270497eb2d49f5cba6f4162d524b9a1195a24cbce8be20bf56a0051f47deb"
   name = "github.com/blang/semver"
   packages = ["."]
@@ -842,6 +850,7 @@
   input-imports = [
     "github.com/Masterminds/sprig",
     "github.com/apparentlymart/go-cidr/cidr",
+    "github.com/ashcrow/osrelease",
     "github.com/blang/semver",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
