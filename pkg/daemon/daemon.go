@@ -24,6 +24,8 @@ import (
 type Daemon struct {
 	// name is the node name.
 	name string
+	// OperatingSystem the operating system the MCD is running on
+	OperatingSystem string
 
 	// login client talks to the systemd-logind service for rebooting the
 	// machine
@@ -51,6 +53,7 @@ const (
 func New(
 	rootMount string,
 	nodeName string,
+	operatingSystem string,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 ) (*Daemon, error) {
@@ -64,11 +67,12 @@ func New(
 	}
 
 	return &Daemon{
-		name:        nodeName,
-		loginClient: loginClient,
-		client:      client,
-		kubeClient:  kubeClient,
-		rootMount:   rootMount,
+		name:            nodeName,
+		OperatingSystem: operatingSystem,
+		loginClient:     loginClient,
+		client:          client,
+		kubeClient:      kubeClient,
+		rootMount:       rootMount,
 	}, nil
 }
 
