@@ -6,12 +6,14 @@ import (
 	"strings"
 )
 
+// RpmOstreeState houses zero or more RpmOstreeDeployments
 // Subset of `rpm-ostree status --json`
 // https://github.com/projectatomic/rpm-ostree/blob/bce966a9812df141d38e3290f845171ec745aa4e/src/daemon/rpmostreed-deployment-utils.c#L227
 type RpmOstreeState struct {
 	Deployments []RpmOstreeDeployment
 }
 
+// RpmOstreeDeployment represents a single deployment on a node
 type RpmOstreeDeployment struct {
 	Id           string   `json:"id"`
 	OSName       string   `json:"osname"`
