@@ -15,7 +15,7 @@ type RpmOstreeState struct {
 
 // RpmOstreeDeployment represents a single deployment on a node
 type RpmOstreeDeployment struct {
-	Id           string   `json:"id"`
+	ID           string   `json:"id"`
 	OSName       string   `json:"osname"`
 	Serial       int32    `json:"serial"`
 	Checksum     string   `json:"checksum"`
