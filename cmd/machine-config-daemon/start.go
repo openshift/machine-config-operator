@@ -41,6 +41,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
 
+	operatingSystem, err := daemon.GetHostRunningOS(startOpts.rootMount)
+	if err != nil {
+		glog.Fatalf("Error found when checking operating system: %s", err)
+	}
+
 	if startOpts.nodeName == "" {
 		name, ok := os.LookupEnv("NODE_NAME")
 		if !ok || name == "" {
@@ -67,6 +72,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	daemon, err := daemon.New(
 		startOpts.rootMount,
 		startOpts.nodeName,
+		operatingSystem,
 		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
 	)
