@@ -438,21 +438,7 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	// XXX(jl): don't re-ask rpm-ostree here, just cache from checkOS()
-	bootedOSImageURL, _, err := getBootedOSImageURL()
-	if err != nil {
-		glog.Warningf("Cannot retrieve bootedOSImageURL.")
-		return err
-	}
-	glog.V(2).Infof("Retrieved Booted OS Image URL: %s", bootedOSImageURL)
-
-	// see similar block in checkOS()
-	if bootedOSImageURL == "" {
-		bootedOSImageURL = "://dummy"
-		glog.V(2).Infof("Assigned empty Booted OS Image URL to: %s", bootedOSImageURL)
-	}
-
-	if newConfig.Spec.OSImageURL == bootedOSImageURL {
+	if newConfig.Spec.OSImageURL == dn.bootedOSImageURL {
 		return nil
 	}
 
