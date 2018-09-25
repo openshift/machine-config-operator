@@ -75,6 +75,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		operatingSystem,
 		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
+		daemon.LoadNodeAnnotations,
+		nil, // allow New to make the dbus connection itself
 	)
 	if err != nil {
 		glog.Fatalf("failed to initialize daemon: %v", err)

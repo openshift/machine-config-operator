@@ -16,6 +16,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	coreclientv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -48,6 +49,10 @@ const (
 	pathDevNull = "/dev/null"
 )
 
+// NodeAnnotationLoader is the function type that loads annotations from the cluster.
+// It is required when creating a new Daemon object via it's constructor.
+type NodeAnnotationLoader func(coreclientv1.NodeInterface, string) error
+
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
@@ -56,12 +61,17 @@ func New(
 	operatingSystem string,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
+	loadNodeAnnotations NodeAnnotationLoader,
+	loginClient *login1.Conn,
 ) (*Daemon, error) {
-	loginClient, err := login1.New()
-	if err != nil {
-		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
+	// Default to creating our own connection to the system dbus
+	if loginClient == nil {
+		var err error
+		loginClient, err = login1.New()
+		if err != nil {
+			return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
+		}
 	}
-
 	if err := loadNodeAnnotations(kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}

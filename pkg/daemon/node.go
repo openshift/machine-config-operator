@@ -67,7 +67,10 @@ func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]s
 	})
 }
 
-func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
+// LoadNodeAnnotations loads annotations from the cluster via a providec client. This is used when
+// creating a new Daemon instance via it's constructor.
+// This function implements NodeAnnotationLoader
+func LoadNodeAnnotations(client corev1.NodeInterface, node string) error {
 	ccAnnotation, err := getNodeAnnotation(client, node, CurrentMachineConfigAnnotationKey)
 
 	// we need to load the annotations from the file only for the
