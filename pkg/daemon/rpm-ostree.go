@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 // RpmOstreeState houses zero or more RpmOstreeDeployments
@@ -26,9 +28,9 @@ type RpmOstreeDeployment struct {
 	CustomOrigin []string `json:"custom-origin"`
 }
 
-func getBootedDeployment() (*RpmOstreeDeployment, error) {
+func getBootedDeployment(rootMount string) (*RpmOstreeDeployment, error) {
 	var rosState RpmOstreeState
-	output, err := RunGetOut("rpm-ostree", "status", "--json")
+	output, err := RunGetOut("chroot", rootMount, "rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +49,8 @@ func getBootedDeployment() (*RpmOstreeDeployment, error) {
 }
 
 // getBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
-func getBootedOSImageURL() (string, string, error) {
-	bootedDeployment, err := getBootedDeployment()
+func getBootedOSImageURL(rootMount string) (string, string, error) {
+	bootedDeployment, err := getBootedDeployment(rootMount)
 	if err != nil {
 		return "", "", err
 	}
@@ -59,6 +61,14 @@ func getBootedOSImageURL() (string, string, error) {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
 			osImageURL = bootedDeployment.CustomOrigin[0][len("pivot://"):]
 		}
+	}
+
+	// XXX: the installer doesn't pivot yet so for now, just make "" equivalent
+	// to "://dummy" so that we don't immediately try to pivot to this dummy
+	// URL. See also: https://github.com/openshift/installer/issues/281
+	if osImageURL == "" {
+		osImageURL = "://dummy"
+		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
 	}
 
 	return osImageURL, bootedDeployment.Version, nil

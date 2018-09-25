@@ -27,6 +27,9 @@ type Daemon struct {
 	// OperatingSystem the operating system the MCD is running on
 	OperatingSystem string
 
+	// bootedOSImageURL is the currently booted URL of the operating system
+	bootedOSImageURL string
+
 	// login client talks to the systemd-logind service for rebooting the
 	// machine
 	loginClient *login1.Conn
@@ -62,17 +65,21 @@ func New(
 		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
 	}
 
-	if err := loadNodeAnnotations(kubeClient.CoreV1().Nodes(), nodeName); err != nil {
+	if err = loadNodeAnnotations(kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}
 
+	osImageURL, osVersion, err := getBootedOSImageURL(rootMount)
+	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
+
 	return &Daemon{
-		name:            nodeName,
-		OperatingSystem: operatingSystem,
-		loginClient:     loginClient,
-		client:          client,
-		kubeClient:      kubeClient,
-		rootMount:       rootMount,
+		name:             nodeName,
+		OperatingSystem:  operatingSystem,
+		loginClient:      loginClient,
+		client:           client,
+		kubeClient:       kubeClient,
+		rootMount:        rootMount,
+		bootedOSImageURL: osImageURL,
 	}, nil
 }
 
@@ -216,22 +223,7 @@ func (dn *Daemon) isDesiredMachineState() (bool, error) {
 
 // checkOS validates the OS image URL and returns true if they match.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
-	bootedOSImageURL, bootedOSTreeVersion, err := getBootedOSImageURL()
-	if err != nil {
-		return false, err
-	}
-
-	// XXX: the installer doesn't pivot yet so for now, just make "" equivalent
-	// to "://dummy" so that we don't immediately try to pivot to this dummy
-	// URL. See also
-	// https://github.com/openshift/machine-config-operator/pull/60#issuecomment-421489272
-	if bootedOSImageURL == "" {
-		bootedOSImageURL = "://dummy"
-		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
-	}
-
-	glog.Infof("Current osImageURL: %v (%s)", bootedOSImageURL, bootedOSTreeVersion)
-	return bootedOSImageURL == osImageURL, nil
+	return dn.bootedOSImageURL == osImageURL, nil
 }
 
 // checkUnits validates the contents of all the units in the
