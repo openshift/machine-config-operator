@@ -80,14 +80,12 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("failed to initialize daemon: %v", err)
 	}
 
-	// Chroot into the root file system
-	glog.Infof(`chrooting into rootMount %s`, startOpts.rootMount)
+	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
 	if err := syscall.Chroot(startOpts.rootMount); err != nil {
 		glog.Fatalf("unable to chroot to %s: %s", startOpts.rootMount, err)
 	}
 
-	// move into / inside the chroot
-	glog.Infof("moving to / inside the chroot")
+	glog.V(2).Infof("Moving to / inside the chroot")
 	if err := os.Chdir("/"); err != nil {
 		glog.Fatalf("unable to change directory to /: %s", err)
 	}
