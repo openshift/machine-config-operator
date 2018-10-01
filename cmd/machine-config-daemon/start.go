@@ -73,7 +73,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.rootMount,
 		startOpts.nodeName,
 		operatingSystem,
-		daemon.NewNodeUpdaterClient(),
+		daemon.NewNodeUpdaterClient(daemon.NewProcessClient()),
 		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
 	)

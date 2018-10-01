@@ -38,17 +38,21 @@ type NodeUpdaterClient interface {
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
-type RpmOstreeClient struct{}
+type RpmOstreeClient struct {
+	ProcessClient ProcessClient
+}
 
 // NewNodeUpdaterClient returns a new instance of the default DeploymentClient (RpmOstreeClient)
-func NewNodeUpdaterClient() *RpmOstreeClient {
-	return &RpmOstreeClient{}
+func NewNodeUpdaterClient(processClient ProcessClient) *RpmOstreeClient {
+	return &RpmOstreeClient{
+		ProcessClient: processClient,
+	}
 }
 
 // GetBootedDeployment returns the current deployment found
 func (r *RpmOstreeClient) GetBootedDeployment(rootMount string) (*RpmOstreeDeployment, error) {
 	var rosState RpmOstreeState
-	output, err := RunGetOut("chroot", rootMount, "rpm-ostree", "status", "--json")
+	output, err := r.ProcessClient.RunGetOut("chroot", rootMount, "rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -95,5 +99,5 @@ func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string,
 // RunPivot executes a pivot from one deployment to another as found in the referenced
 // osImageURL. See https://github.com/openshift/pivot.
 func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
-	return Run("/bin/pivot", osImageURL)
+	return r.ProcessClient.Run("/bin/pivot", osImageURL)
 }
