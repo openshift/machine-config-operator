@@ -8,6 +8,7 @@ contents: |
   Wants=network-online.target
 
   [Service]
+  Type=notify
   Restart=on-failure
   RestartSec=10s
   TimeoutStartSec=0
@@ -69,6 +70,7 @@ contents: |
         --rm \
         --name etcd-member \
         --volume /run/systemd/system:/run/systemd/system:ro,z \
+        --volume /run/systemd/notify:/run/systemd/notify:rw,z \
         --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
         --volume /etc/ssl/etcd:/etc/ssl/etcd:ro,z \
         --volume /var/lib/etcd:/var/lib/etcd:rw,z \
