@@ -6,6 +6,7 @@ contents: |
   Wants=network-online.target
 
   [Service]
+  Type=notify
   Restart=on-failure
   RestartSec=10s
   TimeoutStartSec=0
@@ -61,37 +62,38 @@ contents: |
   ExecStartPre=/usr/bin/chown etcd /var/lib/etcd
   ExecStartPre=/usr/bin/chown etcd /run/etcd
 
-  ExecStart= /usr/bin/bash -c " \
-      /bin/podman \
-        run \
-          --rm \
-          --name etcd-member \
-          --volume /run/systemd/system:/run/systemd/system:ro,z \
-          --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
-          --volume /etc/ssl/etcd:/etc/ssl/etcd:ro,z \
-          --volume /var/lib/etcd:/var/lib/etcd:rw,z \
-          --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
-          --env 'ETCD_NAME=%m' \
-          --env ETCD_DATA_DIR=/var/lib/etcd \
-          --network host \
-          --user=$(id --user etcd) \
-        '${ETCD_IMAGE}' \
-          /usr/local/bin/etcd \
-            --name=my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
-            --advertise-client-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2379 \
-            --cert-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
-            --key-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key \
-            --trusted-ca-file=/etc/ssl/etcd/ca.crt \
-            --client-cert-auth=true \
-            --peer-cert-file=/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
-            --peer-key-file=/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key \
-            --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
-            --peer-client-cert-auth=true \
-            --initial-cluster='my-test-cluster-etcd-0.installer.team.coreos.systems=https://my-test-cluster-etcd-0.installer.team.coreos.systems:2380,my-test-cluster-etcd-1.installer.team.coreos.systems=https://my-test-cluster-etcd-1.installer.team.coreos.systems:2380,my-test-cluster-etcd-2.installer.team.coreos.systems=https://my-test-cluster-etcd-2.installer.team.coreos.systems:2380' \
-            --initial-advertise-peer-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2380 \
-            --listen-client-urls=https://0.0.0.0:2379 \
-            --listen-peer-urls=https://0.0.0.0:2380 \
-      "
+  ExecStart=/usr/bin/bash -c " \
+    /bin/podman \
+      run \
+        --rm \
+        --name etcd-member \
+        --volume /run/systemd/system:/run/systemd/system:ro,z \
+        --volume /run/systemd/notify:/run/systemd/notify:rw,z \
+        --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
+        --volume /etc/ssl/etcd:/etc/ssl/etcd:ro,z \
+        --volume /var/lib/etcd:/var/lib/etcd:rw,z \
+        --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
+        --env 'ETCD_NAME=%m' \
+        --env ETCD_DATA_DIR=/var/lib/etcd \
+        --network host \
+        --user=$(id --user etcd) \
+      '${ETCD_IMAGE}' \
+        /usr/local/bin/etcd \
+          --name=my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
+          --advertise-client-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2379 \
+          --cert-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
+          --key-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key \
+          --trusted-ca-file=/etc/ssl/etcd/ca.crt \
+          --client-cert-auth=true \
+          --peer-cert-file=/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
+          --peer-key-file=/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key \
+          --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
+          --peer-client-cert-auth=true \
+          --initial-cluster='my-test-cluster-etcd-0.installer.team.coreos.systems=https://my-test-cluster-etcd-0.installer.team.coreos.systems:2380,my-test-cluster-etcd-1.installer.team.coreos.systems=https://my-test-cluster-etcd-1.installer.team.coreos.systems:2380,my-test-cluster-etcd-2.installer.team.coreos.systems=https://my-test-cluster-etcd-2.installer.team.coreos.systems:2380' \
+          --initial-advertise-peer-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2380 \
+          --listen-client-urls=https://0.0.0.0:2379 \
+          --listen-peer-urls=https://0.0.0.0:2380 \
+  "
 
   [Install]
   WantedBy=multi-user.target

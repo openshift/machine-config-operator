@@ -8,6 +8,7 @@ contents: |
   Wants=network-online.target
 
   [Service]
+  Type=notify
   Restart=on-failure
   RestartSec=10s
   TimeoutStartSec=0
@@ -63,37 +64,38 @@ contents: |
   ExecStartPre=/usr/bin/chown etcd /var/lib/etcd
   ExecStartPre=/usr/bin/chown etcd /run/etcd
 
-  ExecStart= /usr/bin/bash -c " \
-      /bin/podman \
-        run \
-          --rm \
-          --name etcd-member \
-          --volume /run/systemd/system:/run/systemd/system:ro,z \
-          --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
-          --volume /etc/ssl/etcd:/etc/ssl/etcd:ro,z \
-          --volume /var/lib/etcd:/var/lib/etcd:rw,z \
-          --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
-          --env 'ETCD_NAME=%m' \
-          --env ETCD_DATA_DIR=/var/lib/etcd \
-          --network host \
-          --user=$(id --user etcd) \
-        '${ETCD_IMAGE}' \
-          /usr/local/bin/etcd \
-            --name={{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}} \
-            --advertise-client-urls=https://{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}:2379 \
-            --cert-file=/etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt \
-            --key-file=/etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key \
-            --trusted-ca-file=/etc/ssl/etcd/ca.crt \
-            --client-cert-auth=true \
-            --peer-cert-file=/etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt \
-            --peer-key-file=/etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key \
-            --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
-            --peer-client-cert-auth=true \
-            --initial-cluster='{{etcdInitialCluster .}}' \
-            --initial-advertise-peer-urls=https://{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}:2380 \
-            --listen-client-urls=https://0.0.0.0:2379 \
-            --listen-peer-urls=https://0.0.0.0:2380 \
-      "
+  ExecStart=/usr/bin/bash -c " \
+    /bin/podman \
+      run \
+        --rm \
+        --name etcd-member \
+        --volume /run/systemd/system:/run/systemd/system:ro,z \
+        --volume /run/systemd/notify:/run/systemd/notify:rw,z \
+        --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
+        --volume /etc/ssl/etcd:/etc/ssl/etcd:ro,z \
+        --volume /var/lib/etcd:/var/lib/etcd:rw,z \
+        --volume /etc/ssl/certs:/etc/ssl/certs:ro,z \
+        --env 'ETCD_NAME=%m' \
+        --env ETCD_DATA_DIR=/var/lib/etcd \
+        --network host \
+        --user=$(id --user etcd) \
+      '${ETCD_IMAGE}' \
+        /usr/local/bin/etcd \
+          --name={{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}} \
+          --advertise-client-urls=https://{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}:2379 \
+          --cert-file=/etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt \
+          --key-file=/etc/ssl/etcd/system:etcd-server:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key \
+          --trusted-ca-file=/etc/ssl/etcd/ca.crt \
+          --client-cert-auth=true \
+          --peer-cert-file=/etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.crt \
+          --peer-key-file=/etc/ssl/etcd/system:etcd-peer:{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}.key \
+          --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
+          --peer-client-cert-auth=true \
+          --initial-cluster='{{etcdInitialCluster .}}' \
+          --initial-advertise-peer-urls=https://{{.ClusterName}}-etcd-{{skip "etcd_index"}}.{{.BaseDomain}}:2380 \
+          --listen-client-urls=https://0.0.0.0:2379 \
+          --listen-peer-urls=https://0.0.0.0:2380 \
+  "
 
   [Install]
   WantedBy=multi-user.target
