@@ -5,25 +5,33 @@ contents: |
 
   [Service]
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  Environment=KUBELET_RUNTIME_REQUEST_TIMEOUT=10m
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
 
   ExecStart=/usr/bin/hyperkube \
       kubelet \
-        --config=/etc/kubernetes/kubelet.conf \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
-        --rotate-certificates \
         --kubeconfig=/var/lib/kubelet/kubeconfig \
+        --rotate-certificates \
+        --serialize-image-pulls=false \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
+        --runtime-request-timeout=${KUBELET_RUNTIME_REQUEST_TIMEOUT} \
+        --lock-file=/var/run/lock/kubelet.lock \
+        --exit-on-lock-contention \
+        --pod-manifest-path=/etc/kubernetes/manifests \
         --allow-privileged \
         --node-labels=node-role.kubernetes.io/master \
         --minimum-container-ttl-duration=6m0s \
+        --cluster-dns=10.3.0.10 \
+        --cluster-domain=cluster.local \
         --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider= \
-        \
+         \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
+      --cgroup-driver=systemd \
 
   Restart=always
   RestartSec=10
