@@ -251,7 +251,7 @@ func TestEtcdServerCertDNSNames(t *testing.T) {
 		clusterName: "test-cluster",
 		baseDomain:  "tt.testing",
 		etcdCount:   3,
-		url:         "localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,test-cluster-etcd-0.tt.testing,test-cluster-etcd-1.tt.testing,test-cluster-etcd-2.tt.testing",
+		url:         "localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,test-cluster-etcd-0.tt.testing,test-cluster-etcd-1.tt.testing,test-cluster-etcd-2.tt.testing",
 		err:         false,
 	}}
 	for idx, c := range cases {
