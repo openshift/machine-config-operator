@@ -93,45 +93,61 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 	return nil
 }
 
-// process starts the main loop that actually does all the work.
+// process is the main loop that actually does all the work. the flow goes
+// something like this -
+// 1. we restarted for some reason. the happy path reason we restarted is
+//    because of a machine reboot. validate the current machine state is the
+//    desired machine state. if we aren't try updating again. if we are, update
+//    the current state annotation accordingly.
+// 2. watch the desired config annotation, waiting for an update to be
+//    requested by the controller.
+// 3. if an update is requested by the controller, we assume that that means
+//    something changed and apply the desired config no matter what.
+// 4. the update function doesn't return right now, but at some point in the
+//    future if a reboot isn't required for an update it will. if it returns,
+//    validate the machine state and set the update to done.
+//
+// the only reason this function will return is if an error occurs. otherwise it
+// will keep trying to update the machine until it reboots.
 func (dn *Daemon) process() error {
-
-	// do a first pass before entering the main loop
-	if err := dn.syncOnce(); err != nil {
-		return err
-	}
-
 	for {
-		glog.V(2).Infof("Watching for node annotation updates on %q", dn.name)
-		if err := waitUntilUpdate(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+		// validate machine state
+		isDesired, err := dn.isDesiredMachineState()
+		if err != nil {
 			return err
 		}
-		if err := dn.syncOnce(); err != nil {
-			return err
+
+		if isDesired {
+			// we got the machine state we wanted. set the update complete!
+			if err := dn.completeUpdate(); err != nil {
+				return err
+			}
+
+			// now wait until we need another one.
+			glog.V(2).Infof("Watching for node annotation updates on %q", dn.name)
+			if err := waitUntilUpdate(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+				return err
+			}
 		}
-	}
-}
 
-// syncOnce only completes once.
-func (dn *Daemon) syncOnce() error {
-	// validate that the machine correctly made it to the target state
-	isDesired, err := dn.isDesiredMachineState()
-	if err != nil {
-		return err
-	}
-
-	if !isDesired {
-		// this currently doesn't return, but may return in the future if the
-		// update could be done without rebooting
+		// either the machine state isn't what we wanted and we should try
+		// again, or the machine state is what we wanted, and now another update
+		// is was triggered.
 		if err := dn.triggerUpdate(); err != nil {
 			return err
 		}
 
+		// we managed to update the machine without rebooting. in this case, we
+		// basically just restart the logic, but working under the assumption
+		// that everything is already initialized for us, so we just go to the
+		// top
 		glog.V(2).Infof("Successfully updated without reboot")
-	} else {
-		glog.V(2).Infof("Node is up to date")
 	}
+}
 
+// completeUpdate does all the stuff required to finish an update. right now, it
+// sets the status annotation to Done and marks the node as schedulable again.
+func (dn *Daemon) completeUpdate() error {
 	if err := setUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 		return err
 	}
