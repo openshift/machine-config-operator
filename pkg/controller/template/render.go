@@ -302,6 +302,8 @@ func etcdServerCertDNSNames(cfg renderConfig) (interface{}, error) {
 		"localhost",
 		"*.kube-etcd.kube-system.svc.cluster.local",
 		"kube-etcd-client.kube-system.svc.cluster.local",
+		"etcd.kube-system.svc",               // sign for the local etcd service name that cluster-network apiservers use to communicate
+		"etcd.kube-system.svc.cluster.local", // sign for the local etcd service name that cluster-network apiservers use to communicate
 	}
 
 	for i := 0; i < cfg.EtcdInitialCount; i++ {
