@@ -28,7 +28,7 @@ contents: |
             --cacrt=/etc/ssl/etcd/root-ca.crt \
             --assetsdir=/etc/ssl/etcd \
             --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
-            --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
+            --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
             --commonname=system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
             --ipaddrs=127.0.0.1 \
   "
