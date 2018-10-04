@@ -18,6 +18,15 @@ These instructions were tested with installer version https://github.com/openshi
    the components that the operator will deploy. When modified, the operator
    will automatically deploy the new container versions.
 
+   Note that for newer clusters set up by the installer, you must first disable
+   CVO as it owns the configmap and it will revert your changes:
+
+   ```sh
+   kubectl scale deployment --namespace=openshift-cluster-version --replicas=0 cluster-version-operator
+   ```
+
+   then:
+
    ```sh
    kubectl edit configmap -n openshift-machine-config-operator machine-config-operator-images
    # change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example
