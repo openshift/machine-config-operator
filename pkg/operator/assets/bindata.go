@@ -8,6 +8,7 @@
 // manifests/machineconfigcontroller/controllerconfig.yaml
 // manifests/machineconfigcontroller/deployment.yaml
 // manifests/machineconfigcontroller/sa.yaml
+// manifests/machineconfigdaemon/OWNERS
 // manifests/machineconfigdaemon/clusterrole.yaml
 // manifests/machineconfigdaemon/clusterrolebinding.yaml
 // manifests/machineconfigdaemon/daemonset.yaml
@@ -20,7 +21,6 @@
 // manifests/machineconfigserver/node-bootstrapper-token.yaml
 // manifests/machineconfigserver/sa.yaml
 // manifests/master.machineconfigpool.yaml
-// manifests/scc.yaml
 // manifests/worker.machineconfigpool.yaml
 // DO NOT EDIT!
 
@@ -390,6 +390,27 @@ func manifestsMachineconfigcontrollerSaYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "manifests/machineconfigcontroller/sa.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigdaemonOwners = []byte(`# See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
+
+approvers:
+  - machine-config-daemon-approvers
+`)
+
+func manifestsMachineconfigdaemonOwnersBytes() ([]byte, error) {
+	return _manifestsMachineconfigdaemonOwners, nil
+}
+
+func manifestsMachineconfigdaemonOwners() (*asset, error) {
+	bytes, err := manifestsMachineconfigdaemonOwnersBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigdaemon/OWNERS", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -818,52 +839,6 @@ func manifestsMasterMachineconfigpoolYaml() (*asset, error) {
 	return a, nil
 }
 
-var _manifestsSccYaml = []byte(`apiVersion: security.openshift.io/v1
-kind: SecurityContextConstraints
-metadata:
-  annotations:
-    kubernetes.io/description: "privileged-openshift-machine-config-operator for running priviledged in openshift-machine-config-operator namespace."
-  name: privileged-openshift-machine-config-operator
-allowHostDirVolumePlugin: true
-allowHostIPC: true
-allowHostNetwork: true
-allowHostPID: true
-allowHostPorts: true
-allowPrivilegedContainer: true
-allowedCapabilities:
-- "*"
-fsGroup:
-  type: RunAsAny
-groups:
-- system:serviceaccounts:{{.TargetNamespace}}
-readOnlyRootFilesystem: false
-runAsUser:
-  type: RunAsAny
-seLinuxContext:
-  type: RunAsAny
-seccompProfiles:
-- "*"
-supplementalGroups:
-  type: RunAsAny
-users: []
-volumes:
-- "*"`)
-
-func manifestsSccYamlBytes() ([]byte, error) {
-	return _manifestsSccYaml, nil
-}
-
-func manifestsSccYaml() (*asset, error) {
-	bytes, err := manifestsSccYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/scc.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 var _manifestsWorkerMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -951,6 +926,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigcontroller/controllerconfig.yaml": manifestsMachineconfigcontrollerControllerconfigYaml,
 	"manifests/machineconfigcontroller/deployment.yaml": manifestsMachineconfigcontrollerDeploymentYaml,
 	"manifests/machineconfigcontroller/sa.yaml": manifestsMachineconfigcontrollerSaYaml,
+	"manifests/machineconfigdaemon/OWNERS": manifestsMachineconfigdaemonOwners,
 	"manifests/machineconfigdaemon/clusterrole.yaml": manifestsMachineconfigdaemonClusterroleYaml,
 	"manifests/machineconfigdaemon/clusterrolebinding.yaml": manifestsMachineconfigdaemonClusterrolebindingYaml,
 	"manifests/machineconfigdaemon/daemonset.yaml": manifestsMachineconfigdaemonDaemonsetYaml,
@@ -963,7 +939,6 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigserver/node-bootstrapper-token.yaml": manifestsMachineconfigserverNodeBootstrapperTokenYaml,
 	"manifests/machineconfigserver/sa.yaml": manifestsMachineconfigserverSaYaml,
 	"manifests/master.machineconfigpool.yaml": manifestsMasterMachineconfigpoolYaml,
-	"manifests/scc.yaml": manifestsSccYaml,
 	"manifests/worker.machineconfigpool.yaml": manifestsWorkerMachineconfigpoolYaml,
 }
 
@@ -1019,6 +994,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"sa.yaml": &bintree{manifestsMachineconfigcontrollerSaYaml, map[string]*bintree{}},
 		}},
 		"machineconfigdaemon": &bintree{nil, map[string]*bintree{
+			"OWNERS": &bintree{manifestsMachineconfigdaemonOwners, map[string]*bintree{}},
 			"clusterrole.yaml": &bintree{manifestsMachineconfigdaemonClusterroleYaml, map[string]*bintree{}},
 			"clusterrolebinding.yaml": &bintree{manifestsMachineconfigdaemonClusterrolebindingYaml, map[string]*bintree{}},
 			"daemonset.yaml": &bintree{manifestsMachineconfigdaemonDaemonsetYaml, map[string]*bintree{}},
@@ -1034,7 +1010,6 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"sa.yaml": &bintree{manifestsMachineconfigserverSaYaml, map[string]*bintree{}},
 		}},
 		"master.machineconfigpool.yaml": &bintree{manifestsMasterMachineconfigpoolYaml, map[string]*bintree{}},
-		"scc.yaml": &bintree{manifestsSccYaml, map[string]*bintree{}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},
 }}
