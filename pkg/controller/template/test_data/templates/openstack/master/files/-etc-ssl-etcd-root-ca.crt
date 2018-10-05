@@ -1,0 +1,6 @@
+contents:
+  source: data:,dummy%20root-ca%0A
+  verification: {}
+filesystem: root
+mode: 420
+path: /etc/ssl/etcd/root-ca.crt

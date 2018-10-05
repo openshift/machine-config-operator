@@ -353,6 +353,8 @@ func cloudProvider(cfg renderConfig) (interface{}, error) {
 	switch cfg.Platform {
 	case "aws":
 		return "aws", nil
+	case "openstack":
+		return "openstack", nil
 	}
 	return "", nil
 }
