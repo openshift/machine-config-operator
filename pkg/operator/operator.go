@@ -9,7 +9,6 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	securityclientset "github.com/openshift/client-go/security/clientset/versioned"
-	securityinformersv1 "github.com/openshift/client-go/security/informers/externalversions/security/v1"
 	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
 	installertypes "github.com/openshift/installer/pkg/types"
 	"k8s.io/api/core/v1"
@@ -92,7 +91,6 @@ func New(
 	daemonsetInformer appsinformersv1.DaemonSetInformer,
 	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
 	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
-	securityInformer securityinformersv1.SecurityContextConstraintsInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	securityClient securityclientset.Interface,
@@ -127,7 +125,6 @@ func New(
 	daemonsetInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleBindingInformer.Informer().AddEventHandler(optr.eventHandler())
-	securityInformer.Informer().AddEventHandler(optr.eventHandler())
 
 	optr.syncHandler = optr.sync
 

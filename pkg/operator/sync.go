@@ -24,7 +24,6 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	// any error marks sync as failure but continues to next syncFunc
 	syncFuncs := []syncFunc{
 		optr.syncMachineConfigPools,
-		optr.syncSCC,
 		optr.syncMachineConfigController,
 		optr.syncMachineConfigServer,
 		optr.syncMachineConfigDaemon,
@@ -101,16 +100,6 @@ func (optr *Operator) syncMachineConfigPools(config renderConfig) error {
 	}
 
 	return nil
-}
-
-func (optr *Operator) syncSCC(config renderConfig) error {
-	sccBytes, err := renderAsset(config, "manifests/scc.yaml")
-	if err != nil {
-		return err
-	}
-	scc := resourceread.ReadSecurityContextConstraintsV1OrDie(sccBytes)
-	_, _, err = resourceapply.ApplySecurityContextConstraints(optr.securityClient.SecurityV1(), scc)
-	return err
 }
 
 func (optr *Operator) syncMachineConfigController(config renderConfig) error {
