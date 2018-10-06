@@ -28,9 +28,31 @@ type RpmOstreeDeployment struct {
 	CustomOrigin []string `json:"custom-origin"`
 }
 
-func getBootedDeployment(rootMount string) (*RpmOstreeDeployment, error) {
+// NodeUpdaterClient is an interface describing how to interact with the host
+// around content deployment
+type NodeUpdaterClient interface {
+	GetBootedDeployment(string) (*RpmOstreeDeployment, error)
+	GetBootedOSImageURL(string) (string, string, error)
+	RunPivot(string) error
+}
+
+// RpmOstreeClient provides all RpmOstree related methods in one structure.
+// This structure implements DeploymentClient
+type RpmOstreeClient struct {
+	ProcessClient ProcessClient
+}
+
+// NewNodeUpdaterClient returns a new instance of the default DeploymentClient (RpmOstreeClient)
+func NewNodeUpdaterClient(processClient ProcessClient) *RpmOstreeClient {
+	return &RpmOstreeClient{
+		ProcessClient: processClient,
+	}
+}
+
+// GetBootedDeployment returns the current deployment found
+func (r *RpmOstreeClient) GetBootedDeployment(rootMount string) (*RpmOstreeDeployment, error) {
 	var rosState RpmOstreeState
-	output, err := RunGetOut("chroot", rootMount, "rpm-ostree", "status", "--json")
+	output, err := r.ProcessClient.RunGetOut("chroot", rootMount, "rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -48,9 +70,9 @@ func getBootedDeployment(rootMount string) (*RpmOstreeDeployment, error) {
 	return nil, fmt.Errorf("Not currently booted in a deployment")
 }
 
-// getBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
-func getBootedOSImageURL(rootMount string) (string, string, error) {
-	bootedDeployment, err := getBootedDeployment(rootMount)
+// GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
+func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string, error) {
+	bootedDeployment, err := r.GetBootedDeployment(rootMount)
 	if err != nil {
 		return "", "", err
 	}
@@ -74,6 +96,8 @@ func getBootedOSImageURL(rootMount string) (string, string, error) {
 	return osImageURL, bootedDeployment.Version, nil
 }
 
-func runPivot(osImageURL string) error {
-	return Run("/bin/pivot", osImageURL)
+// RunPivot executes a pivot from one deployment to another as found in the referenced
+// osImageURL. See https://github.com/openshift/pivot.
+func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
+	return r.ProcessClient.Run("/bin/pivot", osImageURL)
 }

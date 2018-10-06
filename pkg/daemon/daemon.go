@@ -27,6 +27,9 @@ type Daemon struct {
 	// OperatingSystem the operating system the MCD is running on
 	OperatingSystem string
 
+	// NodeUpdaterClient an instance of the client which interfaces with host content deployments
+	NodeUpdaterClient NodeUpdaterClient
+
 	// bootedOSImageURL is the currently booted URL of the operating system
 	bootedOSImageURL string
 
@@ -57,6 +60,7 @@ func New(
 	rootMount string,
 	nodeName string,
 	operatingSystem string,
+	nodeUpdaterClient NodeUpdaterClient,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 ) (*Daemon, error) {
@@ -69,17 +73,18 @@ func New(
 		return nil, err
 	}
 
-	osImageURL, osVersion, err := getBootedOSImageURL(rootMount)
+	osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 
 	return &Daemon{
-		name:             nodeName,
-		OperatingSystem:  operatingSystem,
-		loginClient:      loginClient,
-		client:           client,
-		kubeClient:       kubeClient,
-		rootMount:        rootMount,
-		bootedOSImageURL: osImageURL,
+		name:              nodeName,
+		OperatingSystem:   operatingSystem,
+		NodeUpdaterClient: nodeUpdaterClient,
+		loginClient:       loginClient,
+		client:            client,
+		kubeClient:        kubeClient,
+		rootMount:         rootMount,
+		bootedOSImageURL:  osImageURL,
 	}, nil
 }
 
