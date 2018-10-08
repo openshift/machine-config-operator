@@ -443,7 +443,7 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	glog.Infof("Updating OS to %s", newConfig.Spec.OSImageURL)
-	return runPivot(newConfig.Spec.OSImageURL)
+	return dn.NodeUpdaterClient.RunPivot(newConfig.Spec.OSImageURL)
 }
 
 // reboot is the final step. it tells systemd-logind to reboot the machine,
