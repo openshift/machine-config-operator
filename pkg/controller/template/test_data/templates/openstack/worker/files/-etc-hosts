@@ -1,0 +1,6 @@
+contents:
+  source: data:,%23%20IPv4%20and%20IPv6%20localhost%20aliases%0A127.0.0.1%09localhost%0A%3A%3A1%09%09localhost%0A%0A%23%20Internal%20registry%20hack%0A10.3.0.25%20docker-registry.default.svc%0A
+  verification: {}
+filesystem: root
+mode: 420
+path: /etc/hosts

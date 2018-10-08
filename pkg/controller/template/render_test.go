@@ -36,6 +36,9 @@ func TestCloudProvider(t *testing.T) {
 		platform: "aws",
 		res:      "aws",
 	}, {
+		platform: "openstack",
+		res:      "openstack",
+	}, {
 		platform: "libvirt",
 		res:      "",
 	}}
@@ -328,8 +331,9 @@ const (
 
 var (
 	configs = map[string]string{
-		"aws":     "./test_data/controller_config_aws.yaml",
-		"libvirt": "./test_data/controller_config_libvirt.yaml",
+		"aws":           "./test_data/controller_config_aws.yaml",
+		"openstack":     "./test_data/controller_config_openstack.yaml",
+		"libvirt":       "./test_data/controller_config_libvirt.yaml",
 	}
 )
 

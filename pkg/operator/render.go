@@ -80,6 +80,8 @@ func platformFromInstallConfig(ic installertypes.InstallConfig) string {
 	switch {
 	case ic.Platform.AWS != nil:
 		return "aws"
+	case ic.Platform.OpenStack != nil:
+		return "openstack"
 	case ic.Libvirt != nil:
 		return "libvirt"
 	default:
