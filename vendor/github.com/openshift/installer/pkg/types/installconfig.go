@@ -37,6 +37,17 @@ type InstallConfig struct {
 	PullSecret string `json:"pullSecret"`
 }
 
+// MasterCount returns the number of replicas in the master machine pool,
+// defaulting to one if no machine pool was found.
+func (c *InstallConfig) MasterCount() int {
+	for _, m := range c.Machines {
+		if m.Name == "master" && m.Replicas != nil {
+			return int(*m.Replicas)
+		}
+	}
+	return 1
+}
+
 // Admin is the configuration for the admin user.
 type Admin struct {
 	// Email is the email address of the admin user.
@@ -52,8 +63,12 @@ type Admin struct {
 type Platform struct {
 	// AWS is the configuration used when installing on AWS.
 	AWS *AWSPlatform `json:"aws,omitempty"`
+
 	// Libvirt is the configuration used when installing on libvirt.
 	Libvirt *LibvirtPlatform `json:"libvirt,omitempty"`
+
+	// OpenStack is the configuration used when installing on OpenStack.
+	OpenStack *OpenStackPlatform `json:"openstack,omitempty"`
 }
 
 // Networking defines the pod network provider in the cluster.
@@ -79,6 +94,14 @@ type AWSPlatform struct {
 	// Region specifies the AWS region where the cluster will be created.
 	Region string `json:"region"`
 
+	// UserTags specifies additional tags for AWS resources created for the cluster.
+	UserTags map[string]string `json:"userTags,omitempty"`
+
+	// DefaultMachinePlatform is the default configuration used when
+	// installing on AWS for machine pools which do not define their own
+	// platform configuration.
+	DefaultMachinePlatform *AWSMachinePoolPlatform `json:"defaultMachinePlatform,omitempty"`
+
 	// VPCID specifies the vpc to associate with the cluster.
 	// If empty, new vpc will be created.
 	// +optional
@@ -89,11 +112,46 @@ type AWSPlatform struct {
 	VPCCIDRBlock string `json:"vpcCIDRBlock"`
 }
 
+// OpenStackPlatform stores all the global configuration that
+// all machinesets use.
+type OpenStackPlatform struct {
+	// Region specifies the OpenStack region where the cluster will be created.
+	Region string `json:"region"`
+
+	// VPCID specifies the vpc to associate with the cluster.
+	// If empty, new vpc will be created.
+	// +optional
+	VPCID string `json:"vpcID"`
+
+	// NetworkCIDRBlock
+	// +optional
+	NetworkCIDRBlock string `json:"NetworkCIDRBlock"`
+
+	// BaseImage
+	// Name of image to use from OpenStack cloud
+	BaseImage string `json:"baseImage"`
+
+	// Cloud
+	// Name of OpenStack cloud to use from clouds.yaml
+	Cloud string `json:"cloud"`
+
+	// ExternalNetwork
+	// The OpenStack external network to be used for installation.
+	ExternalNetwork string `json:"externalNetwork"`
+}
+
 // LibvirtPlatform stores all the global configuration that
 // all machinesets use.
 type LibvirtPlatform struct {
-	// URI
+	// URI is the identifier for the libvirtd connection.  It must be
+	// reachable from both the host (where the installer is run) and the
+	// cluster (where the cluster-API controller pod will be running).
 	URI string `json:"URI"`
+
+	// DefaultMachinePlatform is the default configuration used when
+	// installing on AWS for machine pools which do not define their own
+	// platform configuration.
+	DefaultMachinePlatform *LibvirtMachinePoolPlatform `json:"defaultMachinePlatform,omitempty"`
 
 	// Network
 	Network LibvirtNetwork `json:"network"`
