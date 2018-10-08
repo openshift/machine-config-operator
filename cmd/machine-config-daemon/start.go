@@ -76,6 +76,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		daemon.NewNodeUpdaterClient(),
 		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
+		daemon.NewFileSystemClient(),
 	)
 	if err != nil {
 		glog.Fatalf("failed to initialize daemon: %v", err)

@@ -41,6 +41,9 @@ type Daemon struct {
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 
+	// filesystemClient allows interaction with the local filesystm
+	fileSystemClient FileSystemClient
+
 	// rootMount is the location for the MCD to chroot in
 	rootMount string
 }
@@ -63,6 +66,7 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
+	fileSystemClient FileSystemClient,
 ) (*Daemon, error) {
 	loginClient, err := login1.New()
 	if err != nil {
@@ -84,6 +88,7 @@ func New(
 		client:            client,
 		kubeClient:        kubeClient,
 		rootMount:         rootMount,
+		fileSystemClient:  fileSystemClient,
 		bootedOSImageURL:  osImageURL,
 	}, nil
 }
