@@ -210,9 +210,25 @@ func (dn *Daemon) isDesiredMachineState() (bool, error) {
 		return true, nil
 	}
 
+	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
+	if err != nil {
+		return false, err
+	}
 	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
 	if err != nil {
 		return false, err
+	}
+
+	// if we can't reconcile the changes between the old config and the new
+	// config, the machine is definitely not in its desired state. this function
+	// will return true (meaning they are reconcilable) if there aren't actually
+	// changes.
+	reconcilable, err := dn.reconcilable(currentConfig, desiredConfig)
+	if err != nil {
+		return false, err
+	}
+	if !reconcilable {
+		return false, nil
 	}
 
 	isDesiredOS, err := dn.checkOS(desiredConfig.Spec.OSImageURL)
