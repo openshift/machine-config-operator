@@ -191,7 +191,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	glog.V(2).Info("Removing stale config storage files")
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
-			os.RemoveAll(path)
+			dn.fileSystemClient.RemoveAll(path)
 		}
 	}
 
@@ -211,7 +211,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 		for j := range u.Dropins {
 			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
-				os.RemoveAll(path)
+				dn.fileSystemClient.RemoveAll(path)
 			}
 		}
 		path = filepath.Join(pathSystemd, u.Name)
@@ -219,7 +219,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 			if err := dn.disableUnit(u); err != nil {
 				glog.Warningf("Unable to disable %s: %s", u.Name, err)
 			}
-			os.RemoveAll(path)
+			dn.fileSystemClient.RemoveAll(path)
 		}
 	}
 }
@@ -229,13 +229,13 @@ func (dn *Daemon) enableUnit(unit ignv2_2types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check that we don't return an error when the link already exists
-	if _, err := os.Stat(wantsPath); err == nil {
+	if _, err := dn.fileSystemClient.Stat(wantsPath); err == nil {
 		glog.Infof("%s already exists. Not making a new symlink", wantsPath)
 		return nil
 	}
 	// The originating file to link
 	servicePath := filepath.Join(pathSystemd, unit.Name)
-	err := os.Symlink(servicePath, wantsPath)
+	err := dn.fileSystemClient.Symlink(servicePath, wantsPath)
 	if err != nil {
 		glog.Warningf("Cannot enable unit %s: %s", unit.Name, err)
 	} else {
@@ -250,13 +250,13 @@ func (dn *Daemon) disableUnit(unit ignv2_2types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check so we don't return an error when the unit was already disabled
-	if _, err := os.Stat(wantsPath); err != nil {
+	if _, err := dn.fileSystemClient.Stat(wantsPath); err != nil {
 		glog.Infof("%s was not present. No need to remove", wantsPath)
 		return nil
 	}
 	glog.V(2).Infof("Disabling unit at %s", wantsPath)
 
-	return os.Remove(wantsPath)
+	return dn.fileSystemClient.Remove(wantsPath)
 }
 
 // writeUnits writes the systemd units to disk
@@ -267,7 +267,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
+			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
 				return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 			}
 			glog.V(2).Infof("Created directory: %s", path)
@@ -285,7 +285,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 
 		glog.Infof("Writing systemd unit %q", u.Name)
 		path = filepath.Join(pathSystemd, u.Name)
-		if err := os.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
+		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 		}
 		glog.V(2).Infof("Created directory: %s", path)
@@ -294,12 +294,12 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		// /dev/null and continue
 		if u.Mask {
 			glog.V(2).Infof("Systemd unit masked.")
-			if err := os.RemoveAll(path); err != nil {
+			if err := dn.fileSystemClient.RemoveAll(path); err != nil {
 				return fmt.Errorf("Failed to remove unit %q: %v", u.Name, err)
 			}
 			glog.V(2).Infof("Removed unit %q", u.Name)
 
-			if err := os.Symlink(pathDevNull, path); err != nil {
+			if err := dn.fileSystemClient.Symlink(pathDevNull, path); err != nil {
 				return fmt.Errorf("Failed to symlink unit %q to %s: %v", u.Name, pathDevNull, err)
 			}
 			glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
@@ -351,12 +351,12 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 	for _, f := range files {
 		glog.Infof("Writing file %q", f.Path)
 		// create any required directories for the file
-		if err := os.MkdirAll(filepath.Dir(f.Path), os.FileMode(0655)); err != nil {
+		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), os.FileMode(0655)); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(f.Path), err)
 		}
 
 		// create the file
-		file, err := os.Create(f.Path)
+		file, err := dn.fileSystemClient.Create(f.Path)
 		if err != nil {
 			return fmt.Errorf("Failed to create file %q: %v", f.Path, err)
 		}
