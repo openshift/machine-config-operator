@@ -68,7 +68,7 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 		Spec: mcfgv1.MCOConfigSpec{
 			ClusterDNSIP:        dnsIP,
 			CloudProviderConfig: "",
-			ClusterName:         ic.Name,
+			ClusterName:         ic.ObjectMeta.Name,
 			Platform:            platformFromInstallConfig(ic),
 			BaseDomain:          ic.BaseDomain,
 			EtcdInitialCount:    eic,

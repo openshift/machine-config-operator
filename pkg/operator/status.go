@@ -4,21 +4,21 @@ import (
 	"fmt"
 
 	"github.com/openshift/cluster-version-operator/lib/resourceapply"
-	"github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1"
+	osv1 "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // syncStatus applies the new condition to the mco's OperatorStatus object.
-func (optr *Operator) syncStatus(cond v1.OperatorStatusCondition) error {
-	if cond.Type == v1.OperatorStatusConditionTypeDegraded {
-		return fmt.Errorf("invalid cond %s", cond.Type)
+func (optr *Operator) syncStatus(cond osv1.OperatorStatusCondition) error {
+	if cond.Type == osv1.OperatorStatusConditionTypeDegraded {
+		return fmt.Errorf("invalid condition %s", cond.Type)
 	}
 
 	// TODO(yifan): Fill in the Extention field for the status
 	// to report the status of all the managed components.
-	status := &v1.OperatorStatus{
+	status := &osv1.OperatorStatus{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: optr.namespace,
 			Name:      optr.name,
@@ -27,7 +27,7 @@ func (optr *Operator) syncStatus(cond v1.OperatorStatusCondition) error {
 		Version:    version.Raw,
 		LastUpdate: metav1.Now(),
 	}
-	_, _, err := resourceapply.ApplyOperatorStatus(optr.cvoClient.ClusterversionV1(), status)
+	_, _, err := resourceapply.ApplyOperatorStatus(optr.cvoClient.OperatorstatusV1(), status)
 	return err
 }
 
@@ -38,12 +38,12 @@ func (optr *Operator) syncDegradedStatus(ierr error) error {
 	if ierr == nil {
 		return nil
 	}
-	cond := v1.OperatorStatusCondition{
-		Type:    v1.OperatorStatusConditionTypeDegraded,
+	cond := osv1.OperatorStatusCondition{
+		Type:    osv1.OperatorStatusConditionTypeDegraded,
 		Message: fmt.Sprintf("error syncing: %v", ierr),
 	}
 
-	status := &v1.OperatorStatus{
+	status := &osv1.OperatorStatus{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: optr.namespace,
 			Name:      optr.name,
@@ -53,7 +53,7 @@ func (optr *Operator) syncDegradedStatus(ierr error) error {
 		LastUpdate: metav1.Now(),
 		Extension:  runtime.RawExtension{},
 	}
-	_, _, err := resourceapply.ApplyOperatorStatus(optr.cvoClient.ClusterversionV1(), status)
+	_, _, err := resourceapply.ApplyOperatorStatus(optr.cvoClient.OperatorstatusV1(), status)
 	if err != nil {
 		return err
 	}
