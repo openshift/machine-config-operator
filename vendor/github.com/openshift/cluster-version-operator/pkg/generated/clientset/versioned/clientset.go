@@ -20,6 +20,7 @@ package versioned
 
 import (
 	clusterversionv1 "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1"
+	operatorstatusv1 "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned/typed/operatorstatus.openshift.io/v1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -30,6 +31,9 @@ type Interface interface {
 	ClusterversionV1() clusterversionv1.ClusterversionV1Interface
 	// Deprecated: please explicitly pick a version if possible.
 	Clusterversion() clusterversionv1.ClusterversionV1Interface
+	OperatorstatusV1() operatorstatusv1.OperatorstatusV1Interface
+	// Deprecated: please explicitly pick a version if possible.
+	Operatorstatus() operatorstatusv1.OperatorstatusV1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
@@ -37,6 +41,7 @@ type Interface interface {
 type Clientset struct {
 	*discovery.DiscoveryClient
 	clusterversionV1 *clusterversionv1.ClusterversionV1Client
+	operatorstatusV1 *operatorstatusv1.OperatorstatusV1Client
 }
 
 // ClusterversionV1 retrieves the ClusterversionV1Client
@@ -48,6 +53,17 @@ func (c *Clientset) ClusterversionV1() clusterversionv1.ClusterversionV1Interfac
 // Please explicitly pick a version.
 func (c *Clientset) Clusterversion() clusterversionv1.ClusterversionV1Interface {
 	return c.clusterversionV1
+}
+
+// OperatorstatusV1 retrieves the OperatorstatusV1Client
+func (c *Clientset) OperatorstatusV1() operatorstatusv1.OperatorstatusV1Interface {
+	return c.operatorstatusV1
+}
+
+// Deprecated: Operatorstatus retrieves the default version of OperatorstatusClient.
+// Please explicitly pick a version.
+func (c *Clientset) Operatorstatus() operatorstatusv1.OperatorstatusV1Interface {
+	return c.operatorstatusV1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -70,6 +86,10 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
+	cs.operatorstatusV1, err = operatorstatusv1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfig(&configShallowCopy)
 	if err != nil {
@@ -83,6 +103,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
 	cs.clusterversionV1 = clusterversionv1.NewForConfigOrDie(c)
+	cs.operatorstatusV1 = operatorstatusv1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -92,6 +113,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.clusterversionV1 = clusterversionv1.New(c)
+	cs.operatorstatusV1 = operatorstatusv1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs
