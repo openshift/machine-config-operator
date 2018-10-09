@@ -28,7 +28,6 @@ import (
 type ClusterversionV1Interface interface {
 	RESTClient() rest.Interface
 	CVOConfigsGetter
-	OperatorStatusesGetter
 }
 
 // ClusterversionV1Client is used to interact with features provided by the clusterversion.openshift.io group.
@@ -38,10 +37,6 @@ type ClusterversionV1Client struct {
 
 func (c *ClusterversionV1Client) CVOConfigs(namespace string) CVOConfigInterface {
 	return newCVOConfigs(c, namespace)
-}
-
-func (c *ClusterversionV1Client) OperatorStatuses(namespace string) OperatorStatusInterface {
-	return newOperatorStatuses(c, namespace)
 }
 
 // NewForConfig creates a new ClusterversionV1Client for the given config.

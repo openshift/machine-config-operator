@@ -19,5 +19,3 @@ limitations under the License.
 package v1
 
 type CVOConfigExpansion interface{}
-
-type OperatorStatusExpansion interface{}
