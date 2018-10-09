@@ -50,3 +50,45 @@ func ApplyClusterRole(client rbacclientv1.ClusterRolesGetter, required *rbacv1.C
 	actual, err := client.ClusterRoles().Update(existing)
 	return actual, true, err
 }
+
+// ApplyRoleBinding applies the required clusterrolebinding to the cluster.
+func ApplyRoleBinding(client rbacclientv1.RoleBindingsGetter, required *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
+	existing, err := client.RoleBindings(required.Namespace).Get(required.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		actual, err := client.RoleBindings(required.Namespace).Create(required)
+		return actual, true, err
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	modified := pointer.BoolPtr(false)
+	resourcemerge.EnsureRoleBinding(modified, existing, *required)
+	if !*modified {
+		return existing, false, nil
+	}
+
+	actual, err := client.RoleBindings(required.Namespace).Update(existing)
+	return actual, true, err
+}
+
+// ApplyRole applies the required clusterrole to the cluster.
+func ApplyRole(client rbacclientv1.RolesGetter, required *rbacv1.Role) (*rbacv1.Role, bool, error) {
+	existing, err := client.Roles(required.Namespace).Get(required.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		actual, err := client.Roles(required.Namespace).Create(required)
+		return actual, true, err
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	modified := pointer.BoolPtr(false)
+	resourcemerge.EnsureRole(modified, existing, *required)
+	if !*modified {
+		return existing, false, nil
+	}
+
+	actual, err := client.Roles(required.Namespace).Update(existing)
+	return actual, true, err
+}

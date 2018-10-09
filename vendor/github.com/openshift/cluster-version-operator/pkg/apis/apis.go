@@ -1,4 +1,7 @@
 package apis
 
-// GroupName defines the API group for clusterversion.
-const GroupName = "clusterversion.openshift.io"
+// ClusterVersionGroupName defines the API group for clusterversion.
+const ClusterVersionGroupName = "clusterversion.openshift.io"
+
+// OperatorStatusGroupName defines the API group for operatorstatus.
+const OperatorStatusGroupName = "operatorstatus.openshift.io"

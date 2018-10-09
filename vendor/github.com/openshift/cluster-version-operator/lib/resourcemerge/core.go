@@ -1,6 +1,8 @@
 package resourcemerge
 
 import (
+	"reflect"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 )
@@ -94,9 +96,10 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 	setStringIfSet(modified, &existing.Image, required.Image)
 
 	// if you want modify the launch, you need to modify it in the config, not in the launch args
-	setStringSliceIfSet(modified, &existing.Command, required.Command)
-	setStringSliceIfSet(modified, &existing.Args, required.Args)
-
+	setStringSlice(modified, &existing.Command, required.Command)
+	setStringSlice(modified, &existing.Args, required.Args)
+	ensureEnvVar(modified, &existing.Env, required.Env)
+	ensureEnvFromSource(modified, &existing.EnvFrom, required.EnvFrom)
 	setStringIfSet(modified, &existing.WorkingDir, required.WorkingDir)
 
 	// any port we specify, we require
@@ -142,6 +145,26 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 
 	// our security context should always win
 	ensureSecurityContextPtr(modified, &existing.SecurityContext, required.SecurityContext)
+}
+
+func ensureEnvVar(modified *bool, existing *[]corev1.EnvVar, required []corev1.EnvVar) {
+	if required == nil {
+		return
+	}
+	if !equality.Semantic.DeepEqual(required, *existing) {
+		*existing = required
+		*modified = true
+	}
+}
+
+func ensureEnvFromSource(modified *bool, existing *[]corev1.EnvFromSource, required []corev1.EnvFromSource) {
+	if required == nil {
+		return
+	}
+	if !equality.Semantic.DeepEqual(required, *existing) {
+		*existing = required
+		*modified = true
+	}
 }
 
 func ensureProbePtr(modified *bool, existing **corev1.Probe, required *corev1.Probe) {
@@ -266,6 +289,13 @@ func setStringSliceIfSet(modified *bool, existing *[]string, required []string) 
 		return
 	}
 	if !equality.Semantic.DeepEqual(required, *existing) {
+		*existing = required
+		*modified = true
+	}
+}
+
+func setStringSlice(modified *bool, existing *[]string, required []string) {
+	if !reflect.DeepEqual(required, *existing) {
 		*existing = required
 		*modified = true
 	}

@@ -337,31 +337,34 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:ccaf99203bf1b676653066322bbef492aee758ff747cf350f6515f4bc100d2b0"
+  digest = "1:fff3d05867197962bd6d2f3feb7d4068e9a734237ff603f423b9cb0ff3026681"
   name = "github.com/openshift/cluster-version-operator"
   packages = [
     "lib/resourceapply",
     "lib/resourcemerge",
     "pkg/apis",
     "pkg/apis/clusterversion.openshift.io/v1",
+    "pkg/apis/operatorstatus.openshift.io/v1",
     "pkg/generated/clientset/versioned",
     "pkg/generated/clientset/versioned/scheme",
     "pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1",
+    "pkg/generated/clientset/versioned/typed/operatorstatus.openshift.io/v1",
     "pkg/generated/listers/clusterversion.openshift.io/v1",
+    "pkg/generated/listers/operatorstatus.openshift.io/v1",
   ]
   pruneopts = "NUT"
-  revision = "7fd23584325138b3a6420cc2a9a0e253233a8637"
+  revision = "a5a76d5118048d0e969e6bd3d40cb4c36591d171"
 
 [[projects]]
   branch = "master"
-  digest = "1:c2802eed24ed1b44737118fc3c8c88897648202896733da870fd943d87a55fa0"
+  digest = "1:f7a2be11a42212f70233249ee4d53c9b9cad1db039d0c059bb0bbbc4d3dffb7e"
   name = "github.com/openshift/installer"
   packages = [
     "pkg/ipnet",
     "pkg/types",
   ]
   pruneopts = "NUT"
-  revision = "533c4e581af380166680a0df7241728b9342f711"
+  revision = "d496f46dafe909e1611c574ebbf35aa5f20a0db6"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -393,6 +396,14 @@
   pruneopts = "NUT"
   revision = "5f041e8faa004a95c88a202771f4cc3e991971e6"
   version = "v2.0.1"
+
+[[projects]]
+  digest = "1:5cf3f025cbee5951a4ee961de067c8a89fc95a5adabead774f82822efabab121"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
 
 [[projects]]
   digest = "1:343d44e06621142ab09ae0c76c1799104cdfddd3ffb445d78b1adf8dc3ffaf3d"
@@ -830,6 +841,20 @@
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[projects]]
+  digest = "1:03ab6a5fd79eb77eff18da6eb498ea0d68010b5af0cfa195230db43708459520"
+  name = "k8s.io/kube-aggregator"
+  packages = [
+    "pkg/apis/apiregistration",
+    "pkg/apis/apiregistration/v1",
+    "pkg/apis/apiregistration/v1beta1",
+    "pkg/client/clientset_generated/clientset/scheme",
+    "pkg/client/clientset_generated/clientset/typed/apiregistration/v1",
+  ]
+  pruneopts = "NUT"
+  revision = "89cd614e9090a2f1e78316ed459857c49c55d276"
+  version = "kubernetes-1.11.1"
+
+[[projects]]
   branch = "master"
   digest = "1:a2c842a1e0aed96fd732b535514556323a6f5edfded3b63e5e0ab1bce188aa54"
   name = "k8s.io/kube-openapi"
@@ -860,11 +885,8 @@
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
-    "github.com/openshift/api/security/v1",
     "github.com/openshift/client-go/security/clientset/versioned",
-    "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1",
     "github.com/openshift/client-go/security/informers/externalversions",
-    "github.com/openshift/client-go/security/informers/externalversions/security/v1",
     "github.com/openshift/cluster-version-operator/lib/resourceapply",
     "github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1",
     "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",

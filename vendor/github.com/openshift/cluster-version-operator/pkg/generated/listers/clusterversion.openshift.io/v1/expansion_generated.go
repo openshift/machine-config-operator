@@ -25,11 +25,3 @@ type CVOConfigListerExpansion interface{}
 // CVOConfigNamespaceListerExpansion allows custom methods to be added to
 // CVOConfigNamespaceLister.
 type CVOConfigNamespaceListerExpansion interface{}
-
-// OperatorStatusListerExpansion allows custom methods to be added to
-// OperatorStatusLister.
-type OperatorStatusListerExpansion interface{}
-
-// OperatorStatusNamespaceListerExpansion allows custom methods to be added to
-// OperatorStatusNamespaceLister.
-type OperatorStatusNamespaceListerExpansion interface{}

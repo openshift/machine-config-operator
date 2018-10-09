@@ -96,7 +96,7 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
   revision = "9a301d65acbb728fcc3ace14f45f511a4cfeea9c"
 
 [[constraint]]
-  name = "github.com/openshift/api"
+  name = "github.com/openshift/cluster-version-operator"
   branch = "master"
 
 [[constraint]]
