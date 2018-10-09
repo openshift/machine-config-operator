@@ -28,6 +28,17 @@ type FsClientMock struct {
 	ChownReturns     []error
 }
 
+// updateErrorReturns is a shortcut to pop out the error and shift
+// around the Returns array.
+func updateErrorReturns(returns *[]error) error {
+	r := *returns
+	returnValues := r[0]
+	if len(r) > 0 {
+		*returns = r[1:]
+	}
+	return returnValues
+}
+
 // Create provides a mocked implemention
 func (f FsClientMock) Create(name string) (*os.File, error) {
 	returnValues := f.CreateReturns[0]
@@ -39,29 +50,17 @@ func (f FsClientMock) Create(name string) (*os.File, error) {
 
 // Remove provides a mocked implemention
 func (f FsClientMock) Remove(name string) error {
-	returnValue := f.RemoveReturns[0]
-	if len(f.RemoveReturns) > 0 {
-		f.RemoveReturns = f.RemoveReturns[1:]
-	}
-	return returnValue
+	return updateErrorReturns(&f.RemoveReturns)
 }
 
 // RemoveAll provides a mocked implemention
 func (f FsClientMock) RemoveAll(path string) error {
-	returnValue := f.RemoveAllReturns[0]
-	if len(f.RemoveAllReturns) > 0 {
-		f.RemoveAllReturns = f.RemoveAllReturns[1:]
-	}
-	return returnValue
+	return updateErrorReturns(&f.RemoveReturns)
 }
 
 // MkdirAll provides a mocked implemention
 func (f FsClientMock) MkdirAll(name string, perm os.FileMode) error {
-	returnValue := f.MkdirAllReturns[0]
-	if len(f.MkdirAllReturns) > 0 {
-		f.MkdirAllReturns = f.MkdirAllReturns[1:]
-	}
-	return returnValue
+	return updateErrorReturns(&f.MkdirAllReturns)
 }
 
 // Stat provides a mocked implemention
@@ -75,27 +74,15 @@ func (f FsClientMock) Stat(name string) (os.FileInfo, error) {
 
 // Symlink provides a mocked implemention
 func (f FsClientMock) Symlink(oldname, newname string) error {
-	returnValue := f.SymlinkReturns[0]
-	if len(f.SymlinkReturns) > 0 {
-		f.SymlinkReturns = f.SymlinkReturns[1:]
-	}
-	return returnValue
+	return updateErrorReturns(&f.SymlinkReturns)
 }
 
 // Chmod provides a mocked implemention
 func (f FsClientMock) Chmod(name string, mode os.FileMode) error {
-	returnValue := f.ChmodReturns[0]
-	if len(f.ChmodReturns) > 0 {
-		f.ChmodReturns = f.ChmodReturns[1:]
-	}
-	return returnValue
+	return updateErrorReturns(&f.ChmodReturns)
 }
 
 // Chown provides a mocked implemention
 func (f FsClientMock) Chown(name string, uid, gid int) error {
-	returnValue := f.ChownReturns[0]
-	if len(f.RemoveReturns) > 0 {
-		f.ChmodReturns = f.ChownReturns[1:]
-	}
-	return returnValue
+	return updateErrorReturns(&f.ChownReturns)
 }
