@@ -240,7 +240,6 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
-
 	mcoconfig := obj.DeepCopy()
 
 	filesData := map[string][]byte{}
@@ -257,7 +256,7 @@ func (optr *Operator) sync(key string) error {
 		filesData[file] = data
 	}
 
-	var imgs images
+	imgs := DefaultImages()
 	if err := json.Unmarshal(filesData[optr.imagesFile], &imgs); err != nil {
 		return err
 	}
@@ -294,7 +293,7 @@ func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error)
 	return ic, nil
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs images) renderConfig {
+func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs Images) renderConfig {
 	controllerconfig := mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
 		CloudProviderConfig: mc.Spec.CloudProviderConfig,
