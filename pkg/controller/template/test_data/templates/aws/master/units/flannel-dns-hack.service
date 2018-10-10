@@ -11,5 +11,8 @@ contents: |
 
   ExecStartPre=-/sbin/modprobe br_netfilter
   ExecStart=/sbin/sysctl -w net.bridge.bridge-nf-call-iptables=1
+
+  [Install]
+  WantedBy=multi-user.target
 enabled: true
 name: flannel-dns-hack.service
