@@ -18,7 +18,7 @@ type renderConfig struct {
 	TargetNamespace  string
 	Version          string
 	ControllerConfig mcfgv1.ControllerConfigSpec
-	Images           images
+	Images           Images
 }
 
 func renderAsset(config renderConfig, path string) ([]byte, error) {
