@@ -19,6 +19,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	DefaultFilePermissions      os.FileMode = 0644
+)
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	var err error
@@ -308,7 +312,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		// write the unit to disk
-		err := ioutil.WriteFile(path, []byte(u.Contents), os.FileMode(0644))
+		err := ioutil.WriteFile(path, []byte(u.Contents), os.FileMode(DefaultFilePermissions))
 		if err != nil {
 			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
 		}
@@ -372,7 +376,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		}
 
 		// chmod and chown
-		mode := os.FileMode(0644)
+		mode := DefaultFilePermissions
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}

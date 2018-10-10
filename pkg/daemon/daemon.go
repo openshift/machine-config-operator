@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+	"os"
 
 	"github.com/coreos/go-systemd/login1"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -274,7 +275,7 @@ func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if status := checkFileContents(path, u.Dropins[j].Contents); !status {
+			if status := checkFileContentsAndMode(path, u.Dropins[j].Contents, DefaultFilePermissions); !status {
 				return false
 			}
 		}
@@ -295,7 +296,7 @@ func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 				return false
 			}
 		}
-		if status := checkFileContents(path, u.Contents); !status {
+		if status := checkFileContentsAndMode(path, u.Contents, DefaultFilePermissions); !status {
 			return false
 		}
 
@@ -307,22 +308,36 @@ func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 // target config.
 func (dn *Daemon) checkFiles(files []ignv2_2types.File) bool {
 	for _, f := range files {
+		mode := DefaultFilePermissions
+		if f.Mode != nil {
+			mode = os.FileMode(*f.Mode)
+		}
 		contents, err := dataurl.DecodeString(f.Contents.Source)
 		if err != nil {
 			glog.Errorf("couldn't parse file: %v", err)
 			return false
 		}
-		if status := checkFileContents(f.Path, string(contents.Data)); !status {
+		if status := checkFileContentsAndMode(f.Path, string(contents.Data), mode); !status {
 			return false
 		}
 	}
 	return true
 }
 
-// checkFileContents reads the file from the filepath and compares its contents
-// with the  expectedContent. It logs an error in case of an error or mismatch
-// and returns the status of the evaluation.
-func checkFileContents(filePath, expectedContent string) bool {
+// checkFileContentsAndMode reads the file from the filepath and compares its
+// contents and mode with the expectedContent and mode parameters. It logs an
+// error in case of an error or mismatch and returns the status of the
+// evaluation.
+func checkFileContentsAndMode(filePath, expectedContent string, mode os.FileMode) bool {
+	fi, err := os.Lstat(filePath)
+	if err != nil {
+		glog.Errorf("could not stat file: %q, error: %v", filePath, err)
+		return false
+	}
+	if fi.Mode() != mode {
+		glog.Errorf("mode mismatch for file: %q; expected: %v; received: %v", filePath, mode, fi.Mode())
+		return false
+	}
 	contents, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		glog.Errorf("could not read file: %q, error: %v", filePath, err)
