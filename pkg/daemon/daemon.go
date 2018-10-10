@@ -211,7 +211,7 @@ func (dn *Daemon) triggerUpdate() error {
 // isDesiredMachineState confirms that the node is actually in the state that it
 // wants to be in. It does this by looking at the elements in the target config
 // and checks if all are present on the node. Returns true iff there are no
-// mismatches (e.g. files, units... XXX: but not yet OS version).
+// mismatches (e.g. files, units, OS version).
 func (dn *Daemon) isDesiredMachineState() (bool, error) {
 	ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
 	if err != nil {
