@@ -1,7 +1,6 @@
 package operator
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -18,7 +17,7 @@ import (
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
 	etcdCAFile, rootCAFile string,
-	imagesConfigMapFile string,
+	imgs Images,
 	destinationDir string,
 ) error {
 	filesData := map[string][]byte{}
@@ -26,7 +25,6 @@ func RenderBootstrap(
 		clusterConfigConfigMapFile,
 		rootCAFile,
 		etcdCAFile,
-		imagesConfigMapFile,
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -39,20 +37,6 @@ func RenderBootstrap(
 	mcoconfig, err := discoverMCOConfig(getInstallConfigFromFile(filesData[clusterConfigConfigMapFile]))
 	if err != nil {
 		return fmt.Errorf("error discovering MCOConfig from %q: %v", clusterConfigConfigMapFile, err)
-	}
-
-	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[imagesConfigMapFile])
-	if err != nil {
-		return err
-	}
-	icm, ok := obji.(*corev1.ConfigMap)
-	if !ok {
-		return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-	}
-	imgsRaw := icm.Data["images.json"]
-	var imgs images
-	if err := json.Unmarshal([]byte(imgsRaw), &imgs); err != nil {
-		return err
 	}
 
 	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], imgs)
