@@ -134,6 +134,16 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 		return false, nil
 	}
 
+	// Special case files append: if the new config wants us to append, then we
+	// have to force a reprovision since it's not idempotent
+	for _, f := range newIgn.Storage.Files {
+		if f.Append {
+			glog.Warningf("daemon can't reconcile state!")
+			glog.Warningf("Ignition files includes append")
+			return false, nil
+		}
+	}
+
 	// Systemd section
 
 	// we can reconcile any state changes in the systemd section.
