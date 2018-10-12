@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	DefaultDirectoryPermissions os.FileMode = 0755
 	DefaultFilePermissions      os.FileMode = 0644
 )
 
@@ -271,7 +272,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
+			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), DefaultDirectoryPermissions); err != nil {
 				return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 			}
 			glog.V(2).Infof("Created directory: %s", path)
@@ -289,7 +290,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 
 		glog.Infof("Writing systemd unit %q", u.Name)
 		path = filepath.Join(pathSystemd, u.Name)
-		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), os.FileMode(0655)); err != nil {
+		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), DefaultDirectoryPermissions); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 		}
 		glog.V(2).Infof("Created directory: %s", path)
@@ -355,7 +356,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 	for _, f := range files {
 		glog.Infof("Writing file %q", f.Path)
 		// create any required directories for the file
-		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), os.FileMode(0655)); err != nil {
+		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), DefaultDirectoryPermissions); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(f.Path), err)
 		}
 
