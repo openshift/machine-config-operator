@@ -101,8 +101,16 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err := dn.process()
-	if err != nil {
+	// sanity check we're not already in a degraded state
+	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
+		// try to set to degraded... because we failed to check if we're degraded
+		glog.Errorf("Marking degraded due to: %v", err)
+		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+	} else if state == MachineConfigDaemonStateDegraded {
+		return fmt.Errorf("Node is degraded; exiting loudly...")
+	}
+
+	if err := dn.process(); err != nil {
 		glog.Errorf("Marking degraded due to: %v", err)
 		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
@@ -211,7 +219,7 @@ func (dn *Daemon) triggerUpdate() error {
 // isDesiredMachineState confirms that the node is actually in the state that it
 // wants to be in. It does this by looking at the elements in the target config
 // and checks if all are present on the node. Returns true iff there are no
-// mismatches (e.g. files, units... XXX: but not yet OS version).
+// mismatches (e.g. files, units, OS version).
 func (dn *Daemon) isDesiredMachineState() (bool, error) {
 	ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
 	if err != nil {
