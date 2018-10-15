@@ -107,7 +107,14 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 		glog.Errorf("Marking degraded due to: %v", err)
 		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	} else if state == MachineConfigDaemonStateDegraded {
-		return fmt.Errorf("Node is degraded; exiting loudly...")
+		// just sleep so that we don't clobber output of previous run which
+		// probably contains the real reason why we marked the node as degraded
+		// in the first place
+		glog.Info("Node is degraded; going to sleep")
+		select {
+		case <-stop:
+			return nil
+		}
 	}
 
 	if err := dn.process(); err != nil {
