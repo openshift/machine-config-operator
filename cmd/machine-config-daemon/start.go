@@ -24,6 +24,7 @@ var (
 		kubeconfig string
 		nodeName   string
 		rootMount  string
+		onceFrom   string
 	}
 )
 
@@ -32,6 +33,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
 	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
+	startCmd.PersistentFlags().StringVar(&startOpts.onceFrom, "once-from", "", "Runs the daemon once using a provided file path or URL endpoint as its machine config source")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -82,6 +84,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		cb.KubeClientOrDie(componentName),
 		daemon.NewFileSystemClient(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
+		startOpts.onceFrom,
 	)
 	if err != nil {
 		glog.Fatalf("failed to initialize daemon: %v", err)
