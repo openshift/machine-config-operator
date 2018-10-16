@@ -96,7 +96,13 @@ func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 	return nil
 }
 
+// getNodeAnnotation gets the node annotation, unsurprisingly
 func getNodeAnnotation(client corev1.NodeInterface, node string, k string) (string, error) {
+	return getNodeAnnotationExt(client, node, k, false)
+}
+
+// getNodeAnnotationExt is like getNodeAnnotation, but allows one to customize ENOENT handling
+func getNodeAnnotationExt(client corev1.NodeInterface, node string, k string, allow_noent bool) (string, error) {
 	n, err := client.Get(node, metav1.GetOptions{})
 	if err != nil {
 		return "", err
@@ -104,7 +110,11 @@ func getNodeAnnotation(client corev1.NodeInterface, node string, k string) (stri
 
 	v, ok := n.Annotations[k]
 	if !ok {
-		return "", fmt.Errorf("%s annotation not found in %s", k, node)
+		if !allow_noent {
+			return "", fmt.Errorf("%s annotation not found in %s", k, node)
+		} else {
+			return "", nil
+		}
 	}
 
 	return v, nil
