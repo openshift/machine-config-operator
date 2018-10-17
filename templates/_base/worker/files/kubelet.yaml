@@ -9,6 +9,7 @@ contents:
     clusterDNS:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
+    readOnlyPort: 10255
     rotateCertificates: true
     runtimeRequestTimeout: 10m
     serializeImagePulls: false
