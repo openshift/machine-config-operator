@@ -79,6 +79,9 @@ func New(
 	}
 
 	osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
+	}
 	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 
 	return &Daemon{
