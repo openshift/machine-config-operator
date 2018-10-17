@@ -26,6 +26,7 @@ type FsClientMock struct {
 	SymlinkReturns   []error
 	ChmodReturns     []error
 	ChownReturns     []error
+	WriteFileReturns []error
 }
 
 // updateErrorReturns is a shortcut to pop out the error and shift
@@ -85,4 +86,9 @@ func (f FsClientMock) Chmod(name string, mode os.FileMode) error {
 // Chown provides a mocked implemention
 func (f FsClientMock) Chown(name string, uid, gid int) error {
 	return updateErrorReturns(&f.ChownReturns)
+}
+
+// WriteFile provides a mocked implemention
+func (f FsClientMock) WriteFile(filename string, data []byte, perm os.FileMode) error {
+	return updateErrorReturns(&f.WriteFileReturns)
 }
