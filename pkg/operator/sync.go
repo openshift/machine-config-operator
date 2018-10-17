@@ -217,6 +217,9 @@ func (optr *Operator) syncMachineConfigServer(config renderConfig) error {
 
 	crbs := []string{
 		"manifests/machineconfigserver/clusterrolebinding.yaml",
+		"manifests/machineconfigserver/csr-approver-role-binding.yaml",
+		"manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
+		"manifests/machineconfigserver/csr-renewal-role-binding.yaml",
 	}
 	for _, crb := range crbs {
 		b, err := renderAsset(config, crb)
