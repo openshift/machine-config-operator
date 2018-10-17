@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"io/ioutil"
 	"os"
 )
 
@@ -14,6 +15,7 @@ type FileSystemClient interface {
 	Symlink(string, string) error
 	Chmod(string, os.FileMode) error
 	Chown(string, int, int) error
+	WriteFile(filename string, data []byte, perm os.FileMode) error
 }
 
 // FsClient is used to hang the FileSystemClient functions on.
@@ -57,6 +59,11 @@ func (f FsClient) Chmod(name string, mode os.FileMode) error {
 // Chown implements os.Chown
 func (f FsClient) Chown(name string, uid, gid int) error {
 	return os.Chown(name, uid, gid)
+}
+
+// WriteFile implements ioutil.WriteFile
+func (f FsClient) WriteFile(filename string, data []byte, perm os.FileMode) error {
+	return ioutil.WriteFile(filename, data, perm)
 }
 
 // NewFileSystemClient creates a new file system client using the default
