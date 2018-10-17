@@ -282,11 +282,6 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 	if err != nil {
 		return false, "", err
 	}
-	// if the current annotation is equal to the desired annotation,
-	// system state is valid.
-	if strings.Compare(dcAnnotation, ccAnnotation) == 0 {
-		return true, dcAnnotation, nil
-	}
 
 	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
 	if err != nil {
