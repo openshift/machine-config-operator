@@ -16,6 +16,7 @@ type FileSystemClient interface {
 	Chmod(string, os.FileMode) error
 	Chown(string, int, int) error
 	WriteFile(filename string, data []byte, perm os.FileMode) error
+	ReadFile(filename string) ([]byte, error)
 }
 
 // FsClient is used to hang the FileSystemClient functions on.
@@ -64,6 +65,11 @@ func (f FsClient) Chown(name string, uid, gid int) error {
 // WriteFile implements ioutil.WriteFile
 func (f FsClient) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return ioutil.WriteFile(filename, data, perm)
+}
+
+// ReadFile implements ioutil.WriteFile
+func (f FsClient) ReadFile(filename string) ([]byte, error) {
+	return ioutil.ReadFile(filename)
 }
 
 // NewFileSystemClient creates a new file system client using the default
