@@ -16,6 +16,13 @@ type StatReturn struct {
 	Error      error
 }
 
+// ReadFileReturn is a structure used for testing. It holds a single return value
+// set for a mocked ReadFile call.
+type ReadFileReturn struct {
+	Bytes []byte
+	Error error
+}
+
 // FsClientMockMock is used as a mock of FsClientMock for testing.
 type FsClientMock struct {
 	CreateReturns    []CreateReturn
@@ -27,6 +34,7 @@ type FsClientMock struct {
 	ChmodReturns     []error
 	ChownReturns     []error
 	WriteFileReturns []error
+	ReadFileReturns  []ReadFileReturn
 }
 
 // updateErrorReturns is a shortcut to pop out the error and shift
@@ -91,4 +99,13 @@ func (f FsClientMock) Chown(name string, uid, gid int) error {
 // WriteFile provides a mocked implemention
 func (f FsClientMock) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return updateErrorReturns(&f.WriteFileReturns)
+}
+
+// ReadFile provides a mocked implemention
+func (f FsClientMock) ReadFile(filename string) ([]byte, error) {
+	returnValues := f.ReadFileReturns[0]
+	if len(f.ReadFileReturns) > 0 {
+		f.ReadFileReturns = f.ReadFileReturns[1:]
+	}
+	return returnValues.Bytes, returnValues.Error
 }
