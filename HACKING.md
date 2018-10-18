@@ -22,7 +22,7 @@ These instructions were tested with installer version https://github.com/openshi
    CVO as it owns the configmap and it will revert your changes:
 
    ```sh
-   kubectl scale deployment --namespace=openshift-cluster-version --replicas=0 cluster-version-operator
+   kubectl delete ds cluster-version-operator -n openshift-cluster-version
    ```
 
    then:
