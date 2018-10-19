@@ -1,6 +1,9 @@
 package daemon
 
-import "os"
+import (
+	"io"
+	"os"
+)
 
 // CreateReturn is a structure used for testing. It holds a single return value
 // set for a mocked Create call.
@@ -34,6 +37,7 @@ type FsClientMock struct {
 	ChmodReturns     []error
 	ChownReturns     []error
 	WriteFileReturns []error
+	ReadAllReturns   []ReadFileReturn
 	ReadFileReturns  []ReadFileReturn
 }
 
@@ -99,6 +103,15 @@ func (f FsClientMock) Chown(name string, uid, gid int) error {
 // WriteFile provides a mocked implemention
 func (f FsClientMock) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return updateErrorReturns(&f.WriteFileReturns)
+}
+
+// ReadAll provides a mocked implemention
+func (f FsClientMock) ReadAll(reader io.Reader) ([]byte, error) {
+	returnValues := f.ReadAllReturns[0]
+	if len(f.ReadAllReturns) > 1 {
+		f.ReadAllReturns = f.ReadAllReturns[1:]
+	}
+	return returnValues.Bytes, returnValues.Error
 }
 
 // ReadFile provides a mocked implemention
