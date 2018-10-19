@@ -126,6 +126,12 @@ func New(
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stop <-chan struct{}) error {
+	// Catch quickly if we've been asked to run once.
+	if dn.onceFrom != "" {
+		glog.V(2).Info("Running once per request")
+		return dn.runOnce()
+	}
+
 	if !cache.WaitForCacheSync(stop, dn.nodeListerSynced) {
 		glog.Error("Marking degraded due to: failure to sync caches")
 		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
@@ -181,6 +187,41 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	}
 
 	return nil
+}
+
+// runOnce pulls the MachineConfig from either a file or remote URL
+// executes one run, and exits.
+// TODO: Revisit the Run/process methods and refactor and unify them with runOnce
+func (dn *Daemon) runOnce() error {
+	var machineConfig *mcfgv1.MachineConfig
+	var err error
+	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+		// If we sense a remote URL has been provided then request MC content
+		// from a remote URL and parse it
+		glog.V(2).Infof("Getting machine config content from %s", dn.onceFrom)
+		machineConfig, err = dn.getMachineConfigFromURL(dn.onceFrom)
+		if err != nil {
+			return err
+		}
+	} else if validPath(dn.onceFrom) {
+		// If we sense a local file has been provided parse it
+		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
+		if err != nil {
+			return err
+		}
+		machineConfig, err = dn.getMachineConfigFromFile(absoluteOnceFrom)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Otherwise return an error as the input format is unsupported
+		return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+	}
+
+	// At this point we have a populated MachineConfig struct for our desired config
+	// and we run update using an empty machineConfig as there is no provided current state.
+	oldConfig := mcfgv1.MachineConfig{}
+	return dn.update(&oldConfig, machineConfig)
 }
 
 // handleNodeUpdate is the handler for informer callbacks detecting node
