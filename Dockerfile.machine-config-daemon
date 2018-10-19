@@ -4,7 +4,7 @@ COPY . /go/src/github.com/openshift/machine-config-operator
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 RUN WHAT=machine-config-daemon ./hack/build-go.sh
 
-FROM scratch
+FROM openshift/origin-base:v4.0.0
 COPY --from=build-env /go/src/github.com/openshift/machine-config-operator/_output/linux/amd64/machine-config-daemon /bin/machine-config-daemon
 
 ENTRYPOINT ["/bin/machine-config-daemon"]
