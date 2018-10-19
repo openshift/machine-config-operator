@@ -25,7 +25,7 @@ type RpmOstreeClientMock struct {
 // It returns an OsImageURL, Version, and Error as defined in GetBootedOSImageURLReturns in order.
 func (r RpmOstreeClientMock) GetBootedOSImageURL(string) (string, string, error) {
 	returnValues := r.GetBootedOSImageURLReturns[0]
-	if len(r.GetBootedOSImageURLReturns) > 0 {
+	if len(r.GetBootedOSImageURLReturns) > 1 {
 		r.GetBootedOSImageURLReturns = r.GetBootedOSImageURLReturns[1:]
 	}
 	return returnValues.OsImageURL, returnValues.Version, returnValues.Error
@@ -35,7 +35,7 @@ func (r RpmOstreeClientMock) GetBootedOSImageURL(string) (string, string, error)
 // in the instances RunPivotReturns field in order.
 func (r RpmOstreeClientMock) RunPivot(string) error {
 	err := r.RunPivotReturns[0]
-	if len(r.RunPivotReturns) > 0 {
+	if len(r.RunPivotReturns) > 1 {
 		r.RunPivotReturns = r.RunPivotReturns[1:]
 	}
 	return err
