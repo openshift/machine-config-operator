@@ -42,7 +42,7 @@ type FsClientMock struct {
 func updateErrorReturns(returns *[]error) error {
 	r := *returns
 	returnValues := r[0]
-	if len(r) > 0 {
+	if len(r) > 1 {
 		*returns = r[1:]
 	}
 	return returnValues
@@ -51,7 +51,7 @@ func updateErrorReturns(returns *[]error) error {
 // Create provides a mocked implemention
 func (f FsClientMock) Create(name string) (*os.File, error) {
 	returnValues := f.CreateReturns[0]
-	if len(f.RemoveReturns) > 0 {
+	if len(f.RemoveReturns) > 1 {
 		f.CreateReturns = f.CreateReturns[1:]
 	}
 	return returnValues.OsFilePointer, returnValues.Error
@@ -75,7 +75,7 @@ func (f FsClientMock) MkdirAll(name string, perm os.FileMode) error {
 // Stat provides a mocked implemention
 func (f FsClientMock) Stat(name string) (os.FileInfo, error) {
 	returnValues := f.StatReturns[0]
-	if len(f.RemoveReturns) > 0 {
+	if len(f.RemoveReturns) > 1 {
 		f.StatReturns = f.StatReturns[1:]
 	}
 	return returnValues.OsFileInfo, returnValues.Error
@@ -104,7 +104,7 @@ func (f FsClientMock) WriteFile(filename string, data []byte, perm os.FileMode) 
 // ReadFile provides a mocked implemention
 func (f FsClientMock) ReadFile(filename string) ([]byte, error) {
 	returnValues := f.ReadFileReturns[0]
-	if len(f.ReadFileReturns) > 0 {
+	if len(f.ReadFileReturns) > 1 {
 		f.ReadFileReturns = f.ReadFileReturns[1:]
 	}
 	return returnValues.Bytes, returnValues.Error
