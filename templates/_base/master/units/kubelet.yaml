@@ -6,6 +6,7 @@ contents: |
   Wants=rpc-statd.service
 
   [Service]
+  Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
