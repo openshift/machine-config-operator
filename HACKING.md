@@ -22,12 +22,30 @@ These instructions were tested with installer version https://github.com/openshi
    CVO as it owns the configmap and it will revert your changes:
 
    ```sh
+   # if using kubectl:
    kubectl delete ds cluster-version-operator -n openshift-cluster-version
+
+   # if using oc:
+   oc delete daemonset cluster-version-operator -n openshift-cluster-version --config=auth/kubeconfig
    ```
 
-   then:
+   then change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example:
 
    ```sh
+   # if using kubectl:
    kubectl edit configmap -n openshift-machine-config-operator machine-config-operator-images
-   # change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example
+
+   # if using oc:
+   oc edit configmap -n openshift-machine-config-operator machine-config-operator-images --config=auth/kubeconfig
+   ```
+
+4. Check that the deployment was successful. Open the yaml file and confirm that new image location (docker.io/...)
+   is present (check field-> spec: template: spec: image:)
+ 
+   ```sh
+   #if using kubectl:
+   kubectl get -n openshift-machine-config-operator ds machine-config-daemon -o yaml
+
+   #if using oc:
+   oc get -n openshift-machine-config-operator daemonset machine-config-daemon -o yaml --config=auth/kubeconfig
    ```
