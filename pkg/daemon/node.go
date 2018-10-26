@@ -157,12 +157,7 @@ func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node))
 	return nil
 }
 
-func setUpdateDone(client corev1.NodeInterface, node string) error {
-	dcAnnotation, err := getNodeAnnotation(client, node, DesiredMachineConfigAnnotationKey)
-	if err != nil {
-		return err
-	}
-
+func setUpdateDone(client corev1.NodeInterface, node string, dcAnnotation string) error {
 	annos := map[string]string{
 		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDone,
 		CurrentMachineConfigAnnotationKey:     dcAnnotation,
