@@ -148,14 +148,14 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 func (dn *Daemon) process() error {
 	for {
 		// validate machine state
-		isDesired, err := dn.isDesiredMachineState()
+		isDesired, dcAnnotation, err := dn.isDesiredMachineState()
 		if err != nil {
 			return err
 		}
 
 		if isDesired {
 			// we got the machine state we wanted. set the update complete!
-			if err := dn.completeUpdate(); err != nil {
+			if err := dn.completeUpdate(dcAnnotation); err != nil {
 				return err
 			}
 
@@ -183,8 +183,8 @@ func (dn *Daemon) process() error {
 
 // completeUpdate does all the stuff required to finish an update. right now, it
 // sets the status annotation to Done and marks the node as schedulable again.
-func (dn *Daemon) completeUpdate() error {
-	if err := setUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+func (dn *Daemon) completeUpdate(dcAnnotation string) error {
+	if err := setUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, dcAnnotation); err != nil {
 		return err
 	}
 
@@ -230,29 +230,30 @@ func (dn *Daemon) triggerUpdate() error {
 // isDesiredMachineState confirms that the node is actually in the state that it
 // wants to be in. It does this by looking at the elements in the target config
 // and checks if all are present on the node. Returns true iff there are no
-// mismatches (e.g. files, units, OS version).
-func (dn *Daemon) isDesiredMachineState() (bool, error) {
+// mismatches (e.g. files, units, OS version), as well as the config that was
+// evaluated if the state is what the machine wants to be in.
+func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 	ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, DesiredMachineConfigAnnotationKey)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	// if the current annotation is equal to the desired annotation,
 	// system state is valid.
 	if strings.Compare(dcAnnotation, ccAnnotation) == 0 {
-		return true, nil
+		return true, dcAnnotation, nil
 	}
 
 	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	// if we can't reconcile the changes between the old config and the new
@@ -261,25 +262,25 @@ func (dn *Daemon) isDesiredMachineState() (bool, error) {
 	// changes.
 	reconcilable, err := dn.reconcilable(currentConfig, desiredConfig)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	if !reconcilable {
-		return false, nil
+		return false, "", nil
 	}
 
 	isDesiredOS, err := dn.checkOS(desiredConfig.Spec.OSImageURL)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	if dn.checkFiles(desiredConfig.Spec.Config.Storage.Files) &&
 		dn.checkUnits(desiredConfig.Spec.Config.Systemd.Units) &&
 		isDesiredOS {
-		return true, nil
+		return true, dcAnnotation, nil
 	}
 
 	// error is nil, as we successfully decided that validate is false
-	return false, nil
+	return false, "", nil
 }
 
 // checkOS validates the OS image URL and returns true if they match.
