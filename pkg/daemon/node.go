@@ -7,8 +7,6 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/watch"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/util/retry"
 )
@@ -18,45 +16,6 @@ const (
 	// The Machine Config Server writes the node annotations to this path.
 	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
 )
-
-// waitUntilUpdate blocks until the desiredConfig annotation doesn't match the
-// currentConfig annotation, which indicates that there is an update available
-// for the node.
-func waitUntilUpdate(client corev1.NodeInterface, node string) error {
-	n, err := client.Get(node, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	watcher, err := client.Watch(metav1.ListOptions{
-		FieldSelector:   fields.OneTermEqualSelector("metadata.name", node).String(),
-		ResourceVersion: n.ResourceVersion,
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to watch self node (%q): %v", node, err)
-	}
-
-	// make sure the condition isn't already true
-	dc, err := getNodeAnnotation(client, node, DesiredMachineConfigAnnotationKey)
-	if err != nil {
-		return err
-	}
-	cc, err := getNodeAnnotation(client, node, CurrentMachineConfigAnnotationKey)
-	if err != nil || cc == "" {
-		return err
-	}
-	if dc != cc {
-		return nil
-	}
-
-	// for now, we wait forever. that might not be the best long-term strategy.
-	_, err = watch.Until(0, watcher, updateWatcher)
-	if err != nil {
-		return fmt.Errorf("Failed to watch for update request: %v", err)
-	}
-
-	return nil
-}
 
 // setConfig sets the given annotation key, value pair.
 func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]string) error {
@@ -118,17 +77,6 @@ func getNodeAnnotationExt(client corev1.NodeInterface, node string, k string, al
 	}
 
 	return v, nil
-}
-
-// updateWatcher is the handler for the watch event.
-func updateWatcher(event watch.Event) (bool, error) {
-	switch event.Type {
-	case watch.Modified:
-		node := event.Object.(*v1.Node)
-		return node.Annotations[DesiredMachineConfigAnnotationKey] != node.Annotations[CurrentMachineConfigAnnotationKey], nil
-	}
-
-	return false, nil
 }
 
 // updateNodeRetry calls f to update a node object in Kubernetes.

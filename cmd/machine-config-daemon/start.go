@@ -67,6 +67,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
 	}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	ctx := common.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	daemon, err := daemon.New(
@@ -77,6 +81,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		cb.MachineConfigClientOrDie(componentName),
 		cb.KubeClientOrDie(componentName),
 		daemon.NewFileSystemClient(),
+		ctx.KubeInformerFactory.Core().V1().Nodes(),
 	)
 	if err != nil {
 		glog.Fatalf("failed to initialize daemon: %v", err)
@@ -92,8 +97,17 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("unable to change directory to /: %s", err)
 	}
 
-	stopCh := make(chan struct{})
-	defer close(stopCh)
+	glog.Info("Starting MachineConfigDaemon")
+	defer glog.Info("Shutting down MachineConfigDaemon")
+
+	err = daemon.CheckStateOnBoot(stopCh)
+	if err != nil {
+		glog.Fatalf("error checking initial state of node: %v", err)
+	}
+
+	ctx.KubeInformerFactory.Start(ctx.Stop)
+	close(ctx.KubeInformersStarted)
+
 	err = daemon.Run(stopCh)
 	if err != nil {
 		glog.Fatalf("failed to run: %v", err)
