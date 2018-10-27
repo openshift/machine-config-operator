@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"path"
 	"reflect"
-	"strings"
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -46,42 +45,6 @@ func TestStringEncode(t *testing.T) {
 	}
 }
 
-func TestEtcdTemplate(t *testing.T) {
-	etcdInd := "1"
-	inpContent := "etcd-{{.etcd_index}}"
-	outContent := fmt.Sprintf("etcd-%s", etcdInd)
-
-	inpIgn := ignv2_2types.Config{
-		Systemd: ignv2_2types.Systemd{
-			Units: []ignv2_2types.Unit{
-				{
-					Contents: inpContent,
-				},
-			},
-		},
-	}
-	expIgn := ignv2_2types.Config{
-		Systemd: ignv2_2types.Systemd{
-			Units: []ignv2_2types.Unit{
-				{
-					Contents: outContent,
-				},
-			},
-		},
-	}
-	execEtcdTemplates(&inpIgn, "")
-	if inpIgn.Systemd.Units[0].Contents != inpContent {
-		t.Errorf("expected no transformations when etcd_index is \"\" ")
-	}
-
-	err := execEtcdTemplates(&inpIgn, etcdInd)
-	if err != nil {
-		t.Errorf("expected err to not be nil, received: %v", err)
-	}
-
-	validateIgnitionSystemd(t, expIgn.Systemd.Units, inpIgn.Systemd.Units)
-}
-
 // TestBootstrapServer tests the behavior of the machine config server
 // when it's running in bootstrap mode.
 // The test does the following:
@@ -90,15 +53,12 @@ func TestEtcdTemplate(t *testing.T) {
 // 2. Fetch the machine-config from the testdata.
 // 3. Manually update the ignition config from Step 2 by adding
 //    the node-annotations file, the kubeconfig file(which is read
-//    from the testdata), update the etcd_index in the systemd unit to
-//    desired value, by a string replace. This ignition config is then
+//    from the testdata). This ignition config is then
 //    labeled as expected Ignition config.
 // 4. Call the Bootstrap GetConfig method by passing the reference to the
 //    machine pool present in the testdata folder.
 // 5. Compare the Ignition configs from Step 3 and Step 4.
 func TestBootstrapServer(t *testing.T) {
-	etcdIndex := "1"
-
 	mp, err := getTestMachinePool()
 	if err != nil {
 		t.Fatal(err)
@@ -110,10 +70,8 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
 	}
 
-	// replace etcd_index param
-	finalMCData := strings.Replace(string(mcData), etcdTemplateParam, etcdIndex, -1)
 	mc := new(v1.MachineConfig)
-	err = yaml.Unmarshal([]byte(finalMCData), mc)
+	err = yaml.Unmarshal([]byte(mcData), mc)
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
@@ -140,7 +98,6 @@ func TestBootstrapServer(t *testing.T) {
 	}
 	res, err := bs.GetConfig(poolRequest{
 		machinePool: testPool,
-		etcdIndex:   etcdIndex,
 	})
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
@@ -159,8 +116,7 @@ func TestBootstrapServer(t *testing.T) {
 // 2. Fetch the machine-config from the testdata, call this origMC.
 // 3. Manually update the ignition config from Step 2 by adding
 //    the node-annotations file, the kubeconfig file(which is read
-//    from the testdata), update the etcd_index in the systemd unit to
-//    desired value, by a string replace. This ignition config is then
+//    from the testdata). This ignition config is then
 //    labeled as expected Ignition config (mc).
 // 4. Use the Kubernetes fake client to Create the machine pool and the config
 //    objects from Step 1, 2 inside the cluster.
@@ -193,16 +149,13 @@ func TestClusterServer(t *testing.T) {
 		t.Logf("err: %v", err)
 	}
 
-	etcdIndex := "1"
 	csc := &clusterServer{
 		machineClient:  cs.MachineconfigurationV1(),
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
 
-	// replace etcd_index param
-	finalMCData := strings.Replace(string(mcData), etcdTemplateParam, etcdIndex, -1)
 	mc := new(v1.MachineConfig)
-	err = yaml.Unmarshal([]byte(finalMCData), mc)
+	err = yaml.Unmarshal([]byte(mcData), mc)
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
@@ -220,7 +173,6 @@ func TestClusterServer(t *testing.T) {
 
 	res, err := csc.GetConfig(poolRequest{
 		machinePool: testPool,
-		etcdIndex:   etcdIndex,
 	})
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
