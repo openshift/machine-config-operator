@@ -7,7 +7,7 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
-	cidr "github.com/apparentlymart/go-cidr/cidr"
+	"github.com/apparentlymart/go-cidr/cidr"
 	installertypes "github.com/openshift/installer/pkg/types"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -54,16 +54,6 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 		return nil, err
 	}
 
-	var eic int
-	for _, m := range ic.Machines {
-		if m.Name == "master" && m.Replicas != nil {
-			eic = int(*(m.Replicas))
-		}
-	}
-	if eic == 0 {
-		return nil, fmt.Errorf("EtcdInitialCount cannot be empty")
-	}
-
 	return &mcfgv1.MCOConfig{
 		Spec: mcfgv1.MCOConfigSpec{
 			ClusterDNSIP:        dnsIP,
@@ -71,7 +61,6 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 			ClusterName:         ic.ObjectMeta.Name,
 			Platform:            platformFromInstallConfig(ic),
 			BaseDomain:          ic.BaseDomain,
-			EtcdInitialCount:    eic,
 		},
 	}, nil
 }

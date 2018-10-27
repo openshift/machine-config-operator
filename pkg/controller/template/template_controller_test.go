@@ -51,11 +51,10 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: metav1.NamespaceDefault},
 		Spec: mcfgv1.ControllerConfigSpec{
-			ClusterDNSIP:     "10.3.0.1/16",
-			ClusterName:      name,
-			BaseDomain:       "openshift.testing",
-			EtcdInitialCount: 1,
-			Platform:         "libvirt",
+			ClusterDNSIP: "10.3.0.1/16",
+			ClusterName:  name,
+			BaseDomain:   "openshift.testing",
+			Platform:     "libvirt",
 		},
 	}
 }

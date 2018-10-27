@@ -104,7 +104,4 @@ func TestDiscoverMCOConfig(t *testing.T) {
 	if got, want := mco.Spec.BaseDomain, "tt.testing"; got != want {
 		t.Fatalf("mismatch got = %v want = %v", got, want)
 	}
-	if got, want := mco.Spec.EtcdInitialCount, 1; got != want {
-		t.Fatalf("mismatch got = %v want = %v", got, want)
-	}
 }

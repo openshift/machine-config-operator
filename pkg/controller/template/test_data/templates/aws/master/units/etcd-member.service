@@ -4,6 +4,7 @@ contents: |
   Documentation=https://github.com/coreos/etcd
   After=network-online.target
   Wants=network-online.target
+  Requires=setup-etcd-environment.service
 
   [Service]
   Restart=on-failure
@@ -11,12 +12,14 @@ contents: |
   TimeoutStartSec=0
   LimitNOFILE=40000
 
+  ## FIXME(abhinav): these images should be replacable by release image.
   Environment="SIGNER_IMAGE=quay.io/coreos/kube-client-agent:678cc8e6841e2121ebfdb6e2db568fce290b67d6"
   Environment="ETCD_IMAGE=quay.io/coreos/etcd:v3.2.14"
+  EnvironmentFile=/run/etcd/environment
 
   ExecStartPre=/bin/sh -c " \
-    [ -e /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt -a \
-      -e /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key ] || \
+    [ -e /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt -a \
+      -e /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key ] || \
     /bin/podman \
       run \
         --rm \
@@ -28,16 +31,16 @@ contents: |
             --cacrt=/etc/ssl/etcd/root-ca.crt \
             --assetsdir=/etc/ssl/etcd \
             --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
-            --dnsnames=localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
-            --commonname=system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
-            --ipaddrs=127.0.0.1 \
+            --dnsnames=localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,${ETCD_DNS_NAME} \
+            --commonname=system:etcd-server:${ETCD_DNS_NAME} \
+            --ipaddrs=${ETCD_IPV4_ADDRESS},127.0.0.1 \
   "
-  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
-  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key
 
   ExecStartPre=/bin/sh -c " \
-    [ -e /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt -a \
-      -e /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key ] || \
+    [ -e /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt -a \
+      -e /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key ] || \
     /bin/podman \
       run \
         --rm \
@@ -49,11 +52,12 @@ contents: |
             --cacrt=/etc/ssl/etcd/root-ca.crt \
             --assetsdir=/etc/ssl/etcd \
             --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
-            --dnsnames=*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,my-test-cluster-etcd-0.installer.team.coreos.systems,my-test-cluster-etcd-1.installer.team.coreos.systems,my-test-cluster-etcd-2.installer.team.coreos.systems \
-            --commonname=system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
+            --dnsnames=${ETCD_DNS_NAME},installer.team.coreos.systems \
+            --commonname=system:etcd-peer:${ETCD_DNS_NAME} \
+            --ipaddrs=${ETCD_IPV4_ADDRESS} \
   "
-  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt
-  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt
+  ExecStartPre=/bin/chown etcd:etcd /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key
 
   ExecStartPre=-/bin/podman rm etcd-member
   ExecStartPre=/usr/bin/mkdir --parents /var/lib/etcd
@@ -77,18 +81,18 @@ contents: |
           --user=$(id --user etcd) \
         '${ETCD_IMAGE}' \
           /usr/local/bin/etcd \
-            --name=my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
-            --advertise-client-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2379 \
-            --cert-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
-            --key-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key \
+            --name ${ETCD_DNS_NAME} \
+            --discovery-srv installer.team.coreos.systems \
+            --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
+            --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
+            --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \
             --trusted-ca-file=/etc/ssl/etcd/ca.crt \
             --client-cert-auth=true \
-            --peer-cert-file=/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
-            --peer-key-file=/etc/ssl/etcd/system:etcd-peer:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.key \
+            --peer-cert-file=/etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt \
+            --peer-key-file=/etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key \
             --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
             --peer-client-cert-auth=true \
-            --initial-cluster='my-test-cluster-etcd-0.installer.team.coreos.systems=https://my-test-cluster-etcd-0.installer.team.coreos.systems:2380,my-test-cluster-etcd-1.installer.team.coreos.systems=https://my-test-cluster-etcd-1.installer.team.coreos.systems:2380,my-test-cluster-etcd-2.installer.team.coreos.systems=https://my-test-cluster-etcd-2.installer.team.coreos.systems:2380' \
-            --initial-advertise-peer-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2380 \
+            --advertise-client-urls=https://${ETCD_IPV4_ADDRESS}:2379 \
             --listen-client-urls=https://0.0.0.0:2379 \
             --listen-peer-urls=https://0.0.0.0:2380 \
       "

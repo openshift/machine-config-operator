@@ -108,106 +108,29 @@ func TestAPIServerURL(t *testing.T) {
 	}
 }
 
-func TestEtcdInitialCluster(t *testing.T) {
-	dummyTemplate := []byte(`{{etcdInitialCluster .}}`)
-
-	cases := []struct {
-		clusterName string
-		baseDomain  string
-		etcdCount   int
-
-		url string
-		err bool
-	}{{
-		clusterName: "",
-		baseDomain:  "",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "tt.testing",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "tt.testing",
-		etcdCount:   3,
-		url:         "test-cluster-etcd-0.tt.testing=https://test-cluster-etcd-0.tt.testing:2380,test-cluster-etcd-1.tt.testing=https://test-cluster-etcd-1.tt.testing:2380,test-cluster-etcd-2.tt.testing=https://test-cluster-etcd-2.tt.testing:2380",
-		err:         false,
-	}}
-	for idx, c := range cases {
-		name := fmt.Sprintf("case #%d", idx)
-		t.Run(name, func(t *testing.T) {
-			config := &mcfgv1.ControllerConfig{
-				Spec: mcfgv1.ControllerConfigSpec{
-					BaseDomain:       c.baseDomain,
-					ClusterName:      c.clusterName,
-					EtcdInitialCount: c.etcdCount,
-				},
-			}
-			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
-			if err != nil && !c.err {
-				t.Fatalf("expected nil error %v", err)
-			}
-
-			if string(got) != c.url {
-				t.Fatalf("mismatch got: %s want: %s", got, c.url)
-			}
-		})
-	}
-}
-
 func TestEtcdPeerCertDNSNames(t *testing.T) {
 	dummyTemplate := []byte(`{{etcdPeerCertDNSNames .}}`)
 
 	cases := []struct {
-		clusterName string
-		baseDomain  string
-		etcdCount   int
+		baseDomain string
 
 		url string
 		err bool
 	}{{
-		clusterName: "",
-		baseDomain:  "",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
+		baseDomain: "",
+		url:        "",
+		err:        true,
 	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "tt.testing",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "tt.testing",
-		etcdCount:   3,
-		url:         "*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,test-cluster-etcd-0.tt.testing,test-cluster-etcd-1.tt.testing,test-cluster-etcd-2.tt.testing",
-		err:         false,
+		baseDomain: "tt.testing",
+		url:        "${ETCD_DNS_NAME},tt.testing",
+		err:        false,
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
-					BaseDomain:       c.baseDomain,
-					ClusterName:      c.clusterName,
-					EtcdInitialCount: c.etcdCount,
+					BaseDomain: c.baseDomain,
 				},
 			}
 			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
@@ -226,45 +149,25 @@ func TestEtcdServerCertDNSNames(t *testing.T) {
 	dummyTemplate := []byte(`{{etcdServerCertDNSNames .}}`)
 
 	cases := []struct {
-		clusterName string
-		baseDomain  string
-		etcdCount   int
+		baseDomain string
 
 		url string
 		err bool
 	}{{
-		clusterName: "",
-		baseDomain:  "",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
+		baseDomain: "",
+		url:        "",
+		err:        true,
 	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "tt.testing",
-		etcdCount:   0,
-		url:         "",
-		err:         true,
-	}, {
-		clusterName: "test-cluster",
-		baseDomain:  "tt.testing",
-		etcdCount:   3,
-		url:         "localhost,*.kube-etcd.kube-system.svc.cluster.local,kube-etcd-client.kube-system.svc.cluster.local,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,test-cluster-etcd-0.tt.testing,test-cluster-etcd-1.tt.testing,test-cluster-etcd-2.tt.testing",
-		err:         false,
+		baseDomain: "tt.testing",
+		url:        "localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,${ETCD_DNS_NAME}",
+		err:        false,
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
-					BaseDomain:       c.baseDomain,
-					ClusterName:      c.clusterName,
-					EtcdInitialCount: c.etcdCount,
+					BaseDomain: c.baseDomain,
 				},
 			}
 			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
@@ -331,9 +234,9 @@ const (
 
 var (
 	configs = map[string]string{
-		"aws":           "./test_data/controller_config_aws.yaml",
-		"openstack":     "./test_data/controller_config_openstack.yaml",
-		"libvirt":       "./test_data/controller_config_libvirt.yaml",
+		"aws":       "./test_data/controller_config_aws.yaml",
+		"openstack": "./test_data/controller_config_openstack.yaml",
+		"libvirt":   "./test_data/controller_config_libvirt.yaml",
 	}
 )
 
