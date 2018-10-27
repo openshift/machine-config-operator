@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
-	"strings"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -43,8 +42,6 @@ type Server interface {
 
 func getAppenders(cr poolRequest, currMachineConfig string, f kubeconfigFunc) []appenderFunc {
 	appenders := []appenderFunc{
-		// execute etcd templating.
-		func(config *ignv2_2types.Config) error { return execEtcdTemplates(config, cr.etcdIndex) },
 		// append machine annotations file.
 		func(config *ignv2_2types.Config) error { return appendNodeAnnotations(config, currMachineConfig) },
 		// append kubeconfig.
@@ -110,23 +107,6 @@ func appendFileToIgnition(conf *ignv2_2types.Config, outPath, contents string) {
 		conf.Storage.Files = make([]ignv2_2types.File, 0)
 	}
 	conf.Storage.Files = append(conf.Storage.Files, file)
-}
-
-func execEtcdTemplates(conf *ignv2_2types.Config, etcdIndex string) error {
-	if etcdIndex == "" {
-		return nil
-	}
-	if len(conf.Systemd.Units) > 0 {
-		for i := range conf.Systemd.Units {
-			conf.Systemd.Units[i].Contents = strings.Replace(conf.Systemd.Units[i].Contents, etcdTemplateParam, etcdIndex, -1)
-
-			for j := range conf.Systemd.Units[i].Dropins {
-				conf.Systemd.Units[i].Dropins[j].Contents =
-					strings.Replace(conf.Systemd.Units[i].Dropins[j].Contents, etcdTemplateParam, etcdIndex, -1)
-			}
-		}
-	}
-	return nil
 }
 
 func getDecodedContent(inp string) (string, error) {

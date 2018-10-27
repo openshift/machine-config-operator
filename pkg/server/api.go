@@ -16,7 +16,6 @@ const (
 
 type poolRequest struct {
 	machinePool string
-	etcdIndex   string
 }
 
 // APIServer provides the HTTP(s) endpoint
@@ -91,7 +90,6 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	cr := poolRequest{
 		machinePool: path.Base(r.URL.Path),
-		etcdIndex:   r.URL.Query().Get(apiParamEtcd),
 	}
 
 	conf, err := sh.server.GetConfig(cr)
