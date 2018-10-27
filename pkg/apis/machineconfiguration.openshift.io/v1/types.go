@@ -58,9 +58,6 @@ type MCOConfigSpec struct {
 	Platform string `json:"platform"`
 
 	BaseDomain string `json:"baseDomain"`
-
-	// Size of the initial etcd cluster.
-	EtcdInitialCount int `json:"etcdInitialCount"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -124,9 +121,6 @@ type ControllerConfigSpec struct {
 	Platform string `json:"platform"`
 
 	BaseDomain string `json:"baseDomain"`
-
-	// Size of the initial etcd cluster.
-	EtcdInitialCount int `json:"etcdInitialCount"`
 
 	// CAs
 	EtcdCAData []byte `json:"etcdCAData"`

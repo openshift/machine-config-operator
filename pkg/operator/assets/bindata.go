@@ -304,7 +304,6 @@ spec:
   clusterName: {{.ControllerConfig.ClusterName}}
   platform: {{.ControllerConfig.Platform}}
   baseDomain: {{.ControllerConfig.BaseDomain}}
-  etcdInitialCount: {{.ControllerConfig.EtcdInitialCount}}
   etcdCAData: {{.ControllerConfig.EtcdCAData | toString | b64enc}}
   rootCAData: {{.ControllerConfig.RootCAData | toString | b64enc}}
 `)
