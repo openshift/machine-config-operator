@@ -265,7 +265,6 @@ func renderTemplate(config renderConfig, path string, b []byte) ([]byte, error) 
 	funcs["skip"] = skipMissing
 	funcs["etcdServerCertDNSNames"] = etcdServerCertDNSNames
 	funcs["etcdPeerCertDNSNames"] = etcdPeerCertDNSNames
-	funcs["etcdInitialCluster"] = etcdInitialCluster
 	funcs["apiServerURL"] = apiServerURL
 	funcs["cloudProvider"] = cloudProvider
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
@@ -294,51 +293,29 @@ func skipMissing(key string) (interface{}, error) {
 
 // Process the {{etcdPeerCertDNSNames}} and {{etcdServerCertDNSNames}}
 func etcdServerCertDNSNames(cfg renderConfig) (interface{}, error) {
-	if cfg.ClusterName == "" || cfg.BaseDomain == "" || cfg.EtcdInitialCount <= 0 {
+	if cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
 
 	var dnsNames = []string{
 		"localhost",
-		"*.kube-etcd.kube-system.svc.cluster.local",
-		"kube-etcd-client.kube-system.svc.cluster.local",
 		"etcd.kube-system.svc",               // sign for the local etcd service name that cluster-network apiservers use to communicate
 		"etcd.kube-system.svc.cluster.local", // sign for the local etcd service name that cluster-network apiservers use to communicate
-	}
-
-	for i := 0; i < cfg.EtcdInitialCount; i++ {
-		dnsNames = append(dnsNames, fmt.Sprintf("%s-etcd-%d.%s", cfg.ClusterName, i, cfg.BaseDomain))
+		"${ETCD_DNS_NAME}",
 	}
 	return strings.Join(dnsNames, ","), nil
 }
 
 func etcdPeerCertDNSNames(cfg renderConfig) (interface{}, error) {
-	if cfg.ClusterName == "" || cfg.BaseDomain == "" || cfg.EtcdInitialCount <= 0 {
+	if cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
 
 	var dnsNames = []string{
-		"*.kube-etcd.kube-system.svc.cluster.local",
-		"kube-etcd-client.kube-system.svc.cluster.local",
-	}
-
-	for i := 0; i < cfg.EtcdInitialCount; i++ {
-		dnsNames = append(dnsNames, fmt.Sprintf("%s-etcd-%d.%s", cfg.ClusterName, i, cfg.BaseDomain))
+		"${ETCD_DNS_NAME}",
+		cfg.BaseDomain, // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
 	}
 	return strings.Join(dnsNames, ","), nil
-}
-
-func etcdInitialCluster(cfg renderConfig) (interface{}, error) {
-	if cfg.ClusterName == "" || cfg.BaseDomain == "" || cfg.EtcdInitialCount <= 0 {
-		return nil, fmt.Errorf("invalid configuration")
-	}
-
-	var addresses []string
-	for i := 0; i < cfg.EtcdInitialCount; i++ {
-		endpoint := fmt.Sprintf("%s-etcd-%d.%s", cfg.ClusterName, i, cfg.BaseDomain)
-		addresses = append(addresses, fmt.Sprintf("%s=https://%s:2380", endpoint, endpoint))
-	}
-	return strings.Join(addresses, ","), nil
 }
 
 // generate apiserver url using cluster-name, basename

@@ -63,5 +63,5 @@ fi
 for IMAGE_TO_BUILD in $TOBUILD; do
 	NAME="${IMAGE_TO_BUILD#Dockerfile.}"
 	set -x
-	podman build -t "${NAME}:${VERSION}" -f "${IMAGE_TO_BUILD}"
+	podman build -t "${NAME}:${VERSION}" -f "${IMAGE_TO_BUILD}" --no-cache
 done
