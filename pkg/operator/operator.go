@@ -300,7 +300,6 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs I
 		ClusterName:         mc.Spec.ClusterName,
 		Platform:            mc.Spec.Platform,
 		BaseDomain:          mc.Spec.BaseDomain,
-		EtcdInitialCount:    mc.Spec.EtcdInitialCount,
 		EtcdCAData:          etcdCAData,
 		RootCAData:          rootCAData,
 	}
