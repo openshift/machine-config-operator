@@ -194,17 +194,38 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 // TODO: Revisit the Run/process methods and refactor and unify them with runOnce
 func (dn *Daemon) runOnce() error {
 	var machineConfig *mcfgv1.MachineConfig
+	var oldConfig mcfgv1.MachineConfig
 	var err error
+
 	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+		// NOTE: This case expects a cluster to exists already.
 		// If we sense a remote URL has been provided then request MC content
-		// from a remote URL and parse it
+		// from a remote URL and parse it.
 		glog.V(2).Infof("Getting machine config content from %s", dn.onceFrom)
 		machineConfig, err = dn.getMachineConfigFromURL(dn.onceFrom)
 		if err != nil {
 			return err
 		}
+
+		needUpdate, err := dn.prepUpdateFromCluster()
+		if err != nil {
+			glog.V(2).Infof("Unable to prep update: %s", err)
+			return err
+		} else if needUpdate == false {
+			glog.V(2).Infof("No update needed")
+			return nil
+		}
+		// At this point we have verified we need to update
+		if err := dn.executeUpdateFromClusterWithMachineConfig(machineConfig); err != nil {
+			glog.Warningf("Unable to update: %s", err)
+			return err
+		}
+		return nil
+
 	} else if validPath(dn.onceFrom) {
-		// If we sense a local file has been provided parse it
+		// NOTE: This case expects that the cluster is NOT CREATED YET.
+		// If we sense a local file has been provided parse it.
+		oldConfig = mcfgv1.MachineConfig{}
 		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
 		if err != nil {
 			return err
@@ -213,49 +234,79 @@ func (dn *Daemon) runOnce() error {
 		if err != nil {
 			return err
 		}
-	} else {
-		// Otherwise return an error as the input format is unsupported
-		return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+		// Execute update without hitting the cluster
+		return dn.update(&oldConfig, machineConfig)
 	}
-
-	// At this point we have a populated MachineConfig struct for our desired config
-	// and we run update using an empty machineConfig as there is no provided current state.
-	oldConfig := mcfgv1.MachineConfig{}
-	return dn.update(&oldConfig, machineConfig)
+	// Otherwise return an error as the input format is unsupported
+	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
 }
 
-// handleNodeUpdate is the handler for informer callbacks detecting node
-// changes. If an update is requested by the controller, we assume that
-// that means something changed and apply the desired config no matter what.
+// handleNodeUpdate is the gatekeeper handler for informer callbacks detecting
+// node changes. If an update is requested by the controller, we assume that
+// that means something changed and pass over to execution methods no matter what.
 // Also note that we only care about node updates, not creation or deletion.
 func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	node := cur.(*corev1.Node)
 
 	// First check if the node that was updated is this daemon's node
-	if node.Name != dn.name {
-		// The node that was changed was not ours
-		return
+	if node.Name == dn.name {
+		// Pass to the shared update prep method
+		needUpdate, err := dn.prepUpdateFromCluster()
+		if err != nil {
+			// On prepUpdateFromCluster error the node should already be marked degraded
+			glog.V(2).Infof("Unable to prep update: %s", err)
+			dn.reboot()
+			return
+		}
+		// Only executeUpdateFromCluster when we need to update
+		if needUpdate {
+			// Note that if executeUpdateFromCluster errors it will mark the node
+			// degraded and reboot.
+			if err = dn.executeUpdateFromCluster(); err != nil {
+				glog.V(2).Infof("Unable to execute update: %s", err)
+				return
+			}
+		}
 	}
+	// The node that was changed was not ours, return out
+	return
+}
 
+// prepUpdateFromCluster handles the shared update prepping functionality for
+// flows that expect the cluster to already be available.
+func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
 	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
 		glog.Errorf("Marking degraded due to: %v", err)
 		setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
-		return
+		return false, err
 	} else if state == MachineConfigDaemonStateDegraded {
 		// Just return since we want to continue sleeping
-		return
+		return false, fmt.Errorf("state is already degraded")
+	}
+
+	// Grab the node instance
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+	if err != nil {
+		return false, err
 	}
 
 	// Detect if there is an update
 	if node.Annotations[DesiredMachineConfigAnnotationKey] == node.Annotations[CurrentMachineConfigAnnotationKey] {
 		// No actual update to the config
-		return
+		glog.V(2).Info("No updating is required")
+		return false, nil
 	}
+	return true, nil
+}
 
+// executeUpdateFromClusterWithMachineConfig starts the actual update process. The provided config
+// will be used as the desired config, while the current config will be pulled from the cluster. If
+// you want both pulled from the cluster please use executeUpdateFromCluster().
+func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	// The desired machine config has changed, trigger update
-	if err := dn.triggerUpdate(); err != nil {
+	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
 		glog.Errorf("Marking degraded due to: %v", err)
 		if errSet := setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name); errSet != nil {
 			glog.Errorf("Futher error attempting to set the node to degraded: %v", errSet)
@@ -267,6 +318,12 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	// we managed to update the machine without rebooting. in this case,
 	// continue as usual waiting for the next update
 	glog.V(2).Infof("Successfully updated without reboot")
+	return nil
+}
+
+// executeUpdateFromCluster starts the actual update process using configs from the cluster.
+func (dn *Daemon) executeUpdateFromCluster() error {
+	return dn.executeUpdateFromClusterWithMachineConfig(nil)
 }
 
 // completeUpdate does all the stuff required to finish an update. right now, it
@@ -288,8 +345,9 @@ func (dn *Daemon) completeUpdate(dcAnnotation string) error {
 	return nil
 }
 
-// triggerUpdate starts the update using the current and the target config.
-func (dn *Daemon) triggerUpdate() error {
+// triggerUpdateWithMachineConfig starts the update using the desired config and queries the cluster for
+// the current config. If all configs should be pulled from the cluster use triggerUpdate().
+func (dn *Daemon) triggerUpdateWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	if err := setUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 		return err
 	}
@@ -306,13 +364,19 @@ func (dn *Daemon) triggerUpdate() error {
 	if err != nil {
 		return err
 	}
-	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
-	if err != nil {
-		return err
+	if desiredConfig == nil {
+		desiredConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
+		if err != nil {
+			return err
+		}
 	}
-
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
+}
+
+// triggerUpdate starts the update using the current and the target config.
+func (dn *Daemon) triggerUpdate() error {
+	return dn.triggerUpdateWithMachineConfig(nil)
 }
 
 // isDesiredMachineState confirms that the node is actually in the state that it
