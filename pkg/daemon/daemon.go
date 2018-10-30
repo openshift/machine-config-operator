@@ -3,9 +3,9 @@ package daemon
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
-	"os"
 
 	"github.com/coreos/go-systemd/login1"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -15,12 +15,12 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/vincent-petithory/dataurl"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -185,7 +185,7 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	node := cur.(*corev1.Node)
 
 	// First check if the node that was updated is this daemon's node
-	if (node.Name != dn.name) {
+	if node.Name != dn.name {
 		// The node that was changed was not ours
 		return
 	}
@@ -202,7 +202,7 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	}
 
 	// Detect if there is an update
-	if (node.Annotations[DesiredMachineConfigAnnotationKey] == node.Annotations[CurrentMachineConfigAnnotationKey]) {
+	if node.Annotations[DesiredMachineConfigAnnotationKey] == node.Annotations[CurrentMachineConfigAnnotationKey] {
 		// No actual update to the config
 		return
 	}
