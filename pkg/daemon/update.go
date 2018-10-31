@@ -453,6 +453,12 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// see similar logic in checkOS()
+	if newConfig.Spec.OSImageURL == "://dummy" {
+		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
+		return nil
+	}
+
 	if newConfig.Spec.OSImageURL == dn.bootedOSImageURL {
 		return nil
 	}

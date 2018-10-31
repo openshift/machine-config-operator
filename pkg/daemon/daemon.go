@@ -321,6 +321,12 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 
 // checkOS validates the OS image URL and returns true if they match.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
+	// XXX: The installer doesn't pivot yet so for now, just make "://dummy"
+	// match anything. See also: https://github.com/openshift/installer/issues/281
+	if osImageURL == "://dummy" {
+		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
+		return true, nil
+	}
 	return dn.bootedOSImageURL == osImageURL, nil
 }
 

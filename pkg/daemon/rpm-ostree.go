@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/golang/glog"
 )
 
 // RpmOstreeState houses zero or more RpmOstreeDeployments
@@ -73,19 +71,11 @@ func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string,
 	}
 
 	// the canonical image URL is stored in the custom origin field by the pivot tool
-	osImageURL := ""
+	osImageURL := "<not pivoted>"
 	if len(bootedDeployment.CustomOrigin) > 0 {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
 			osImageURL = bootedDeployment.CustomOrigin[0][len("pivot://"):]
 		}
-	}
-
-	// XXX: the installer doesn't pivot yet so for now, just make "" equivalent
-	// to "://dummy" so that we don't immediately try to pivot to this dummy
-	// URL. See also: https://github.com/openshift/installer/issues/281
-	if osImageURL == "" {
-		osImageURL = "://dummy"
-		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
 	}
 
 	return osImageURL, bootedDeployment.Version, nil
