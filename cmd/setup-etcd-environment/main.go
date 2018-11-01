@@ -50,7 +50,6 @@ func main() {
 
 func runRootCmd(cmd *cobra.Command, args []string) error {
 	flag.Set("logtostderr", "true")
-	flag.Parse()
 
 	if rootOpts.discoverySRV == "" {
 		return errors.New("--discovery-srv cannot be empty")
