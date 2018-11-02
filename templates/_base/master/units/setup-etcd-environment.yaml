@@ -20,7 +20,7 @@ contents: |
       --rm \
       --volume /run/etcd:/run/etcd:z \
       ${IMAGE} \
-        --discovery-srv={{.BaseDomain}} \
+        --discovery-srv={{.ClusterName}}.{{.BaseDomain}} \
         --output-file=/run/etcd/environment \
         --v=4 \
 
