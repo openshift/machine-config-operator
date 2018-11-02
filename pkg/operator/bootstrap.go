@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/glog"
 	installertypes "github.com/openshift/installer/pkg/types"
+	"github.com/openshift/library-go/pkg/operator/v1alpha1helpers"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -78,15 +79,10 @@ func RenderBootstrap(
 
 func getInstallConfigFromFile(cmData []byte) installConfigGetter {
 	return func() (installertypes.InstallConfig, error) {
-		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), cmData)
+		installConfig, err := v1alpha1helpers.InstallConfigFromFile(filesData[cmData])
 		if err != nil {
 			return installertypes.InstallConfig{}, err
 		}
-		cm, ok := obji.(*corev1.ConfigMap)
-		if !ok {
-			return installertypes.InstallConfig{}, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-		}
-
-		return icFromClusterConfig(cm)
+		return installConfig, nil
 	}
 }
