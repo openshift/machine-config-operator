@@ -84,7 +84,7 @@ contents: |
         '${ETCD_IMAGE}' \
           /usr/local/bin/etcd \
             --name ${ETCD_DNS_NAME} \
-            --discovery-srv {{.BaseDomain}} \
+            --discovery-srv {{.ClusterName}}.{{.BaseDomain}} \
             --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
             --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \
