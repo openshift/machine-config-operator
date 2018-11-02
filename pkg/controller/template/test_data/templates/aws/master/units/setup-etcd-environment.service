@@ -1,8 +1,0 @@
-contents: "[Unit]\nDescription=Setup Etcd Environment  \nRequires=network-online.target
-  \ \nAfter=network-online.target\n\n[Service]\nRestart=on-failure\nRestartSec=5s\n\n##
-  FIXME(abhinav): switch this to official image.\nEnvironment=\"IMAGE=docker.io/abhinavdahiya/origin-setup-etcd-environment\"\n\nExecStartPre=/usr/bin/mkdir
-  --parents /run/etcd\nExecStart=/bin/podman \\\n  run \\\n    --net host \\\n    --rm
-  \\\n    --volume /run/etcd:/run/etcd:z \\\n    ${IMAGE} \\\n      --discovery-srv=my-test-cluster.installer.team.coreos.systems
-  \\\n      --output-file=/run/etcd/environment \\\n      --v=4 \\\n\n[Install]\nWantedBy=multi-user.target\n"
-enabled: true
-name: setup-etcd-environment.service
