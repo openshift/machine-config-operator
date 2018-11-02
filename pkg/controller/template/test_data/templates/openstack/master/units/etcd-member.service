@@ -52,7 +52,7 @@ contents: |
             --cacrt=/etc/ssl/etcd/root-ca.crt \
             --assetsdir=/etc/ssl/etcd \
             --address=https://my-test-cluster-api.installer.team.coreos.systems:6443 \
-            --dnsnames=${ETCD_DNS_NAME},installer.team.coreos.systems \
+            --dnsnames=${ETCD_DNS_NAME},my-test-cluster.installer.team.coreos.systems \
             --commonname=system:etcd-peer:${ETCD_DNS_NAME} \
             --ipaddrs=${ETCD_IPV4_ADDRESS} \
   "
@@ -82,7 +82,7 @@ contents: |
         '${ETCD_IMAGE}' \
           /usr/local/bin/etcd \
             --name ${ETCD_DNS_NAME} \
-            --discovery-srv installer.team.coreos.systems \
+            --discovery-srv my-test-cluster.installer.team.coreos.systems \
             --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
             --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \

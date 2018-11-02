@@ -307,13 +307,13 @@ func etcdServerCertDNSNames(cfg renderConfig) (interface{}, error) {
 }
 
 func etcdPeerCertDNSNames(cfg renderConfig) (interface{}, error) {
-	if cfg.BaseDomain == "" {
+	if cfg.ClusterName == "" || cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
 
 	var dnsNames = []string{
 		"${ETCD_DNS_NAME}",
-		cfg.BaseDomain, // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
+		fmt.Sprintf("%s.%s", cfg.ClusterName, cfg.BaseDomain), // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
 	}
 	return strings.Join(dnsNames, ","), nil
 }

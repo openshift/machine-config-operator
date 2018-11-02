@@ -112,25 +112,39 @@ func TestEtcdPeerCertDNSNames(t *testing.T) {
 	dummyTemplate := []byte(`{{etcdPeerCertDNSNames .}}`)
 
 	cases := []struct {
-		baseDomain string
+		clusterName string
+		baseDomain  string
 
 		url string
 		err bool
 	}{{
-		baseDomain: "",
-		url:        "",
-		err:        true,
+		clusterName: "",
+		baseDomain:  "",
+		url:         "",
+		err:         true,
 	}, {
-		baseDomain: "tt.testing",
-		url:        "${ETCD_DNS_NAME},tt.testing",
-		err:        false,
+		clusterName: "my-test-cluster",
+		baseDomain:  "",
+		url:         "",
+		err:         true,
+	}, {
+		clusterName: "",
+		baseDomain:  "tt.testing",
+		url:         "",
+		err:         true,
+	}, {
+		clusterName: "my-test-cluster",
+		baseDomain:  "tt.testing",
+		url:         "${ETCD_DNS_NAME},my-test-cluster.tt.testing",
+		err:         false,
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
-					BaseDomain: c.baseDomain,
+					ClusterName: c.clusterName,
+					BaseDomain:  c.baseDomain,
 				},
 			}
 			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
