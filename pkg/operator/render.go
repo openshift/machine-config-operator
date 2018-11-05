@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"text/template"
+    "encoding/base64"
 
 	"github.com/Masterminds/sprig"
 	"github.com/apparentlymart/go-cidr/cidr"
@@ -64,15 +65,34 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 		return nil, err
 	}
 
+    cloudProviderConfig, err := cloudProviderConfFromInstallConfig(ic)
+
 	return &mcfgv1.MCOConfig{
 		Spec: mcfgv1.MCOConfigSpec{
 			ClusterDNSIP:        dnsIP,
-			CloudProviderConfig: "",
+			CloudProviderConfig: cloudProviderConfig,
 			ClusterName:         ic.ObjectMeta.Name,
 			Platform:            platformFromInstallConfig(ic),
 			BaseDomain:          ic.BaseDomain,
 		},
 	}, nil
+}
+
+func cloudProviderConfFromInstallConfig(ic installertypes.InstallConfig) (string, error) {
+	switch {
+	case ic.Platform.AWS != nil:
+		return "", nil
+	case ic.Platform.OpenStack != nil:
+        platform, err := yaml.Marshal(ic.Platform.OpenStack)
+        if err != nil {
+                return "", err
+        }
+        return base64.StdEncoding.EncodeToString(platform), nil
+	case ic.Libvirt != nil:
+		return "", nil
+	default:
+		return "", fmt.Errorf("No platform configs found")
+	}
 }
 
 func platformFromInstallConfig(ic installertypes.InstallConfig) string {

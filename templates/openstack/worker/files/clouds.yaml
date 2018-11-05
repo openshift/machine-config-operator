@@ -1,0 +1,16 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/openstack/clouds.conf"
+contents:
+  inline: |
+    {{with cloudProviderConfig .}}
+    [Global]
+    username={{.Cloud.AuthInfo.Username}}
+    password={{.Cloud.AuthInfo.Password}}
+    auth-url={{.Cloud.AuthInfo.AuthURL}}
+    tenant-id={{.Cloud.AuthInfo.ProjectID}}
+    domain-id={{.Cloud.AuthInfo.ProjectDomainID}}
+    {{end}}
+
+    [LoadBalancer]
+    subnet-id=

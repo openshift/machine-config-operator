@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+    "encoding/base64"
 
 	"github.com/Masterminds/sprig"
 	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
@@ -19,6 +20,8 @@ import (
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+    install_types "github.com/openshift/installer/pkg/types"
 )
 
 // renderConfig is wrapper around ControllerConfigSpec.
@@ -268,6 +271,7 @@ func renderTemplate(config renderConfig, path string, b []byte) ([]byte, error) 
 	funcs["etcdPeerCertDNSNames"] = etcdPeerCertDNSNames
 	funcs["apiServerURL"] = apiServerURL
 	funcs["cloudProvider"] = cloudProvider
+	funcs["cloudProviderConfig"] = cloudProviderConfig
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
@@ -333,6 +337,26 @@ func cloudProvider(cfg renderConfig) (interface{}, error) {
 		return "aws", nil
 	case "openstack":
 		return "openstack", nil
+	}
+	return "", nil
+}
+
+func cloudProviderConfig(cfg renderConfig) (interface{}, error) {
+    config, err := base64.StdEncoding.DecodeString(cfg.CloudProviderConfig)
+        if err != nil {
+                return "", err
+        }
+
+	switch cfg.Platform {
+	case "aws":
+		return "", nil
+	case "openstack":
+        var openstack *install_types.OpenStackPlatform
+        err = yaml.Unmarshal(config, &openstack)
+        if err != nil {
+                return "", err
+        }
+        return openstack, nil
 	}
 	return "", nil
 }
