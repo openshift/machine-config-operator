@@ -123,7 +123,7 @@ contents:
           path: /run/etcd
       - name: certs
         hostPath:
-          path: /etc/ssl/etcd
+          path: /etc/kubernetes/static-pod-resources/etcd-member
       - name: data-dir
         hostPath:
           path: /var/lib/etcd
