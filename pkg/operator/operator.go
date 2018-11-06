@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -50,8 +51,6 @@ const (
 type Operator struct {
 	namespace, name string
 
-	etcdCAFile, rootCAFile string
-
 	imagesFile string
 
 	client         mcfgclientset.Interface
@@ -80,7 +79,6 @@ type Operator struct {
 // New returns a new machine config operator.
 func New(
 	namespace, name string,
-	etcdCAFile, rootCAFile string,
 	imagesFile string,
 	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
@@ -104,8 +102,6 @@ func New(
 	optr := &Operator{
 		namespace:      namespace,
 		name:           name,
-		etcdCAFile:     etcdCAFile,
-		rootCAFile:     rootCAFile,
 		imagesFile:     imagesFile,
 		client:         client,
 		kubeClient:     kubeClient,
@@ -242,27 +238,44 @@ func (optr *Operator) sync(key string) error {
 	}
 	mcoconfig := obj.DeepCopy()
 
-	filesData := map[string][]byte{}
-	files := []string{
-		optr.rootCAFile,
-		optr.etcdCAFile,
-		optr.imagesFile,
+	imgsRaw, err := ioutil.ReadFile(optr.imagesFile)
+	if err != nil {
+		return err
 	}
-	for _, file := range files {
-		data, err := ioutil.ReadFile(file)
-		if err != nil {
-			return err
-		}
-		filesData[file] = data
-	}
-
 	imgs := DefaultImages()
-	if err := json.Unmarshal(filesData[optr.imagesFile], &imgs); err != nil {
+	if err := json.Unmarshal(imgsRaw, &imgs); err != nil {
 		return err
 	}
 
-	rc := getRenderConfig(mcoconfig, filesData[optr.etcdCAFile], filesData[optr.rootCAFile], imgs)
+	etcdCA, err := optr.getCAsFromConfigMap("kube-system", "etcd-serving-ca", "ca-bundle.crt")
+	if err != nil {
+		return err
+	}
+	rootCA, err := optr.getCAsFromConfigMap("kube-system", "root-ca", "ca.crt")
+	if err != nil {
+		return err
+	}
+
+	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, imgs)
 	return optr.syncAll(rc)
+}
+
+func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
+	cm, err := optr.kubeClient.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if bd, bdok := cm.BinaryData[key]; bdok {
+		return bd, nil
+	} else if d, dok := cm.Data[key]; dok {
+		raw, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return nil, err
+		}
+		return raw, nil
+	} else {
+		return nil, fmt.Errorf("%s not found in %s/%s", key, namespace, name)
+	}
 }
 
 func (optr *Operator) getInstallConfig() (installertypes.InstallConfig, error) {
