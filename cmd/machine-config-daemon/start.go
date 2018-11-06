@@ -6,7 +6,6 @@ import (
 	"syscall"
 
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -40,6 +39,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
+	glog.V(2).Infof("Options parsed: %+v", startOpts)
+
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
 
@@ -56,11 +57,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.nodeName = name
 	}
 
-	cb, err := common.NewClientBuilder(startOpts.kubeconfig)
-	if err != nil {
-		glog.Fatalf("error creating clients: %v", err)
-	}
-
 	// Ensure that the rootMount exists
 	if _, err := os.Stat(startOpts.rootMount); err != nil {
 		if os.IsNotExist(err) {
@@ -71,23 +67,44 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
+	var dn *daemon.Daemon
 
-	ctx := common.CreateControllerContext(cb, stopCh, componentName)
-	// create the daemon instance. this also initializes kube client items
-	// which need to come from the container and not the chroot.
-	daemon, err := daemon.New(
-		startOpts.rootMount,
-		startOpts.nodeName,
-		operatingSystem,
-		daemon.NewNodeUpdaterClient(),
-		cb.MachineConfigClientOrDie(componentName),
-		cb.KubeClientOrDie(componentName),
-		daemon.NewFileSystemClient(),
-		ctx.KubeInformerFactory.Core().V1().Nodes(),
-		startOpts.onceFrom,
-	)
-	if err != nil {
-		glog.Fatalf("failed to initialize daemon: %v", err)
+	// If we are asked to run once and it's a valid file system path use
+	// the bare Daemon
+	if startOpts.onceFrom != "" && daemon.ValidPath(startOpts.onceFrom) {
+		dn, err = daemon.New(
+			startOpts.rootMount,
+			startOpts.nodeName,
+			operatingSystem,
+			daemon.NewNodeUpdaterClient(),
+			daemon.NewFileSystemClient(),
+			startOpts.onceFrom,
+		)
+		if err != nil {
+			glog.Fatalf("failed to initialize single run daemon: %v", err)
+		}
+		// Else we use the cluster driven daemon
+	} else {
+		// create the daemon instance. this also initializes kube client items
+		// which need to come from the container and not the chroot.
+		dn, err = daemon.NewClusterDrivenDaemon(
+			startOpts.rootMount,
+			startOpts.nodeName,
+			operatingSystem,
+			daemon.NewNodeUpdaterClient(),
+			startOpts.kubeconfig,
+			daemon.NewFileSystemClient(),
+			startOpts.onceFrom,
+			stopCh,
+			componentName,
+		)
+		if err != nil {
+			glog.Fatalf("failed to initialize daemon: %v", err)
+		}
+		err = dn.CheckStateOnBoot(stopCh)
+		if err != nil {
+			glog.Fatalf("error checking initial state of node: %v", err)
+		}
 	}
 
 	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
@@ -103,15 +120,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err = daemon.CheckStateOnBoot(stopCh)
-	if err != nil {
-		glog.Fatalf("error checking initial state of node: %v", err)
-	}
-
-	ctx.KubeInformerFactory.Start(ctx.Stop)
-	close(ctx.KubeInformersStarted)
-
-	err = daemon.Run(stopCh)
+	err = dn.Run(stopCh)
 	if err != nil {
 		glog.Fatalf("failed to run: %v", err)
 	}
