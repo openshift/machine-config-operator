@@ -222,7 +222,7 @@ func (dn *Daemon) runOnce() error {
 		}
 		return nil
 
-	} else if validPath(dn.onceFrom) {
+	} else if ValidPath(dn.onceFrom) {
 		// NOTE: This case expects that the cluster is NOT CREATED YET.
 		// If we sense a local file has been provided parse it.
 		oldConfig = mcfgv1.MachineConfig{}
@@ -563,9 +563,9 @@ func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (
 	return client.Get(name, metav1.GetOptions{})
 }
 
-// validPath attempts to see if the path provided is indeed an acceptable
+// ValidPath attempts to see if the path provided is indeed an acceptable
 // filesystem path. This function does not check if the path exists.
-func validPath(path string) bool {
+func ValidPath(path string) bool {
 	path = filepath.Clean(path)
 	for _, validStart := range []string{".", "..", "/"} {
 		if strings.HasPrefix(path, validStart) {
