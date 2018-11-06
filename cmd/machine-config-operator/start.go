@@ -82,7 +82,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 func startControllers(ctx *common.ControllerContext) error {
 	go operator.New(
 		componentNamespace, componentName,
-		rootOpts.etcdCAFile, rootOpts.rootCAFile,
 		startOpts.imagesFile,
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
