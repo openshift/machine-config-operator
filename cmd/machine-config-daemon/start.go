@@ -105,6 +105,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		if err != nil {
 			glog.Fatalf("error checking initial state of node: %v", err)
 		}
+		if err = dn.StartInformer(stopCh, startOpts.nodeName, componentName, startOpts.kubeconfig); err != nil {
+			glog.Fatalf("error starting kubernetes informers: %v", err)
+		}
 	}
 
 	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
