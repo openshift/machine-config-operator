@@ -12,6 +12,7 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -19,7 +20,6 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -71,17 +71,13 @@ const (
 	pathDevNull = "/dev/null"
 )
 
-// New sets up the systemd and kubernetes connections needed to update the
-// machine.
+// New sets up the bare minimum local connections required to create a Daemon instance
 func New(
 	rootMount string,
 	nodeName string,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
-	client mcfgclientset.Interface,
-	kubeClient kubernetes.Interface,
 	fileSystemClient FileSystemClient,
-	nodeInformer coreinformersv1.NodeInformer,
 	onceFrom string,
 ) (*Daemon, error) {
 	loginClient, err := login1.New()
@@ -89,14 +85,11 @@ func New(
 		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
 	}
 
-	if err = loadNodeAnnotations(kubeClient.CoreV1().Nodes(), nodeName); err != nil {
-		return nil, err
-	}
-
 	osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
 	}
+
 	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 
 	dn := &Daemon{
@@ -104,14 +97,58 @@ func New(
 		OperatingSystem:   operatingSystem,
 		NodeUpdaterClient: nodeUpdaterClient,
 		loginClient:       loginClient,
-		client:            client,
-		kubeClient:        kubeClient,
 		rootMount:         rootMount,
 		fileSystemClient:  fileSystemClient,
 		bootedOSImageURL:  osImageURL,
 		onceFrom:          onceFrom,
 	}
 
+	return dn, nil
+}
+
+// NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
+// machine.
+func NewClusterDrivenDaemon(
+	rootMount string,
+	nodeName string,
+	operatingSystem string,
+	nodeUpdaterClient NodeUpdaterClient,
+	kubeconfig string,
+	fileSystemClient FileSystemClient,
+	onceFrom string,
+	stopCh chan (struct{}),
+	componentName string,
+) (*Daemon, error) {
+	dn, err := New(
+		rootMount,
+		nodeName,
+		operatingSystem,
+		nodeUpdaterClient,
+		fileSystemClient,
+		onceFrom)
+
+	if err != nil {
+		return nil, err
+	}
+
+	cb, err := common.NewClientBuilder(kubeconfig)
+	if err != nil {
+		glog.Fatalf("error creating clients: %v", err)
+	}
+
+	ctx := common.CreateControllerContext(cb, stopCh, componentName)
+
+	ctx.KubeInformerFactory.Start(ctx.Stop)
+	close(ctx.KubeInformersStarted)
+
+	dn.kubeClient = cb.KubeClientOrDie(componentName)
+	dn.client = cb.MachineConfigClientOrDie(componentName)
+
+	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
+		return nil, err
+	}
+
+	nodeInformer := ctx.KubeInformerFactory.Core().V1().Nodes()
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: dn.handleNodeUpdate,
 	})
@@ -206,7 +243,6 @@ func (dn *Daemon) runOnce() error {
 		if err != nil {
 			return err
 		}
-
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			glog.V(2).Infof("Unable to prep update: %s", err)
