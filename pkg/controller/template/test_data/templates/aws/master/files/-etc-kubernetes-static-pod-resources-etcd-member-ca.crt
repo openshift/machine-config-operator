@@ -3,4 +3,4 @@ contents:
   verification: {}
 filesystem: root
 mode: 420
-path: /etc/ssl/etcd/ca.crt
+path: /etc/kubernetes/static-pod-resources/etcd-member/ca.crt

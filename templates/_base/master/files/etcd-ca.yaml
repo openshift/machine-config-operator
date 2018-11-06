@@ -1,6 +1,6 @@
 filesystem: "root"
 mode: 0644
-path: "/etc/ssl/etcd/ca.crt"
+path: "/etc/kubernetes/static-pod-resources/etcd-member/ca.crt"
 contents:
   inline: |
 {{.EtcdCAData | toString | indent 4}}
