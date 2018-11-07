@@ -1,12 +1,14 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-systemd/login1"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
@@ -62,6 +64,11 @@ type Daemon struct {
 	// onceFrom defines where the source config is to run the daemon once and exit
 	onceFrom     string
 	fromIgnition bool
+
+	kubeletHealthzEnabled  bool
+	kubeletHealthzEndpoint string
+
+	nodeWriter *NodeWriter
 }
 
 const (
@@ -73,7 +80,15 @@ const (
 	pathDevNull = "/dev/null"
 )
 
-// New sets up the bare minimum local connections required to create a Daemon instance
+const (
+	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
+	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
+	kubeletHealthzTimeout          = time.Duration(30 * time.Second)
+	kubeletHealthzFailureThreshold = 3
+)
+
+// New sets up the systemd and kubernetes connections needed to update the
+// machine.
 func New(
 	rootMount string,
 	nodeName string,
@@ -82,6 +97,10 @@ func New(
 	fileSystemClient FileSystemClient,
 	onceFrom string,
 	fromIgnition bool,
+	nodeInformer coreinformersv1.NodeInformer,
+	kubeletHealthzEnabled bool,
+	kubeletHealthzEndpoint string,
+	nodeWriter *NodeWriter,
 ) (*Daemon, error) {
 	loginClient, err := login1.New()
 	if err != nil {
@@ -98,15 +117,18 @@ func New(
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
 	dn := &Daemon{
-		name:              nodeName,
-		OperatingSystem:   operatingSystem,
-		NodeUpdaterClient: nodeUpdaterClient,
-		loginClient:       loginClient,
-		rootMount:         rootMount,
-		fileSystemClient:  fileSystemClient,
-		bootedOSImageURL:  osImageURL,
-		onceFrom:          onceFrom,
-		fromIgnition:      fromIgnition,
+		name:                   nodeName,
+		OperatingSystem:        operatingSystem,
+		NodeUpdaterClient:      nodeUpdaterClient,
+		loginClient:            loginClient,
+		rootMount:              rootMount,
+		fileSystemClient:       fileSystemClient,
+		bootedOSImageURL:       osImageURL,
+		onceFrom:               onceFrom,
+		fromIgnition:           fromIgnition,
+		kubeletHealthzEnabled:  kubeletHealthzEnabled,
+		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
+		nodeWriter:             nodeWriter,
 	}
 
 	return dn, nil
@@ -125,6 +147,9 @@ func NewClusterDrivenDaemon(
 	onceFrom string,
 	fromIgnition bool,
 	nodeInformer coreinformersv1.NodeInformer,
+	kubeletHealthzEnabled bool,
+	kubeletHealthzEndpoint string,
+	nodeWriter *NodeWriter,
 ) (*Daemon, error) {
 	dn, err := New(
 		rootMount,
@@ -133,7 +158,12 @@ func NewClusterDrivenDaemon(
 		nodeUpdaterClient,
 		fileSystemClient,
 		onceFrom,
-		fromIgnition)
+		fromIgnition,
+		nodeInformer,
+		kubeletHealthzEnabled,
+		kubeletHealthzEndpoint,
+		nodeWriter,
+	)
 
 	if err != nil {
 		return nil, err
@@ -159,6 +189,11 @@ func NewClusterDrivenDaemon(
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stop <-chan struct{}) error {
+	if dn.kubeletHealthzEnabled {
+		glog.Info("Enabling Kubelet Healthz Monitor")
+		go dn.runKubeletHealthzMonitor(stop)
+	}
+
 	// Catch quickly if we've been asked to run once.
 	if dn.onceFrom != "" {
 		if dn.fromIgnition {
@@ -172,13 +207,67 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 
 	if !cache.WaitForCacheSync(stop, dn.nodeListerSynced) {
 		glog.Error("Marking degraded due to: failure to sync caches")
-		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
 
 	<-stop
 
 	// Run() should block on the above <-stop until an updated is detected,
 	// which is handled by the callbacks.
+	return nil
+}
+
+func (dn *Daemon) runKubeletHealthzMonitor(stop <-chan struct{}) {
+	failureCount := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case <-time.After(kubeletHealthzPollingInterval):
+			if err := dn.getHealth(); err != nil {
+				glog.Warningf("Failed kubelet health check: %v", err)
+				failureCount++
+				if failureCount >= kubeletHealthzFailureThreshold {
+					glog.Error("Kubelet health failure threshold reached. Marking degraded.")
+					dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+				}
+			} else {
+				failureCount = 0 // reset failure count on success
+			}
+		}
+	}
+}
+
+func (dn *Daemon) getHealth() error {
+	glog.V(2).Info("Kubelet health running")
+	ctx, cancel := context.WithTimeout(context.Background(), kubeletHealthzTimeout)
+	defer cancel()
+
+	req, err := http.NewRequest("GET", dn.kubeletHealthzEndpoint, nil)
+	if err != nil {
+		return err
+	}
+	req = req.WithContext(ctx)
+
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respData, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if string(respData) != "ok" {
+		glog.Warningf("Kubelet Healthz Endpoint returned: %s", string(respData))
+		return nil
+	}
+
+	glog.V(2).Info("Kubelet health ok")
+
 	return nil
 }
 
@@ -195,7 +284,7 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	if state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
 		glog.Errorf("Marking degraded due to: %v", err)
-		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	} else if state == MachineConfigDaemonStateDegraded {
 		// just sleep so that we don't clobber output of previous run which
 		// probably contains the real reason why we marked the node as degraded
@@ -211,14 +300,14 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	isDesired, dcAnnotation, err := dn.isDesiredMachineState()
 	if err != nil {
 		glog.Errorf("Marking degraded due to: %v", err)
-		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
 
 	if isDesired {
 		// we got the machine state we wanted. set the update complete!
 		if err := dn.completeUpdate(dcAnnotation); err != nil {
 			glog.Errorf("Marking degraded due to: %v", err)
-			return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+			return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 		}
 	} else if err := dn.triggerUpdate(); err != nil {
 		return err
@@ -342,7 +431,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
 		glog.Errorf("Marking degraded due to: %v", err)
-		setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
 		return false, err
 	} else if state == MachineConfigDaemonStateDegraded {
 		// Just return since we want to continue sleeping
@@ -371,7 +460,7 @@ func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv
 	// The desired machine config has changed, trigger update
 	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
 		glog.Errorf("Marking degraded due to: %v", err)
-		if errSet := setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name); errSet != nil {
+		if errSet := dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name); errSet != nil {
 			glog.Errorf("Futher error attempting to set the node to degraded: %v", errSet)
 		}
 		// reboot the node, which will catch the degraded state and sleep
@@ -392,7 +481,7 @@ func (dn *Daemon) executeUpdateFromCluster() error {
 // completeUpdate does all the stuff required to finish an update. right now, it
 // sets the status annotation to Done and marks the node as schedulable again.
 func (dn *Daemon) completeUpdate(dcAnnotation string) error {
-	if err := setUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, dcAnnotation); err != nil {
+	if err := dn.nodeWriter.SetUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, dcAnnotation); err != nil {
 		return err
 	}
 
@@ -411,7 +500,7 @@ func (dn *Daemon) completeUpdate(dcAnnotation string) error {
 // triggerUpdateWithMachineConfig starts the update using the desired config and queries the cluster for
 // the current config. If all configs should be pulled from the cluster use triggerUpdate().
 func (dn *Daemon) triggerUpdateWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
-	if err := setUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+	if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 		return err
 	}
 
