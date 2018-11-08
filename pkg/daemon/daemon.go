@@ -12,7 +12,6 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
-	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -20,6 +19,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -113,11 +113,11 @@ func NewClusterDrivenDaemon(
 	nodeName string,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
-	kubeconfig string,
+	client mcfgclientset.Interface,
+	kubeClient kubernetes.Interface,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
-	stopCh chan (struct{}),
-	componentName string,
+	nodeInformer coreinformersv1.NodeInformer,
 ) (*Daemon, error) {
 	dn, err := New(
 		rootMount,
@@ -131,41 +131,20 @@ func NewClusterDrivenDaemon(
 		return nil, err
 	}
 
-	cb, err := common.NewClientBuilder(kubeconfig)
-	if err != nil {
-		glog.Fatalf("error creating clients: %v", err)
-	}
-
-	dn.kubeClient = cb.KubeClientOrDie(componentName)
-	dn.client = cb.MachineConfigClientOrDie(componentName)
+	dn.kubeClient = kubeClient
+	dn.client = client
 
 	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}
-	return dn, nil
-}
 
-// StartInformer initializes and starts the informers.
-func (dn *Daemon) StartInformer(stopCh chan (struct{}), nodeName, componentName, kubeconfig string) error {
-	cb, err := common.NewClientBuilder(kubeconfig)
-	if err != nil {
-		return err
-	}
-
-	ctx := common.CreateControllerContext(cb, stopCh, componentName)
-
-	nodeInformer := ctx.KubeInformerFactory.Core().V1().Nodes()
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: dn.handleNodeUpdate,
 	})
-
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 
-	ctx.KubeInformerFactory.Start(ctx.Stop)
-	close(ctx.KubeInformersStarted)
-
-	return nil
+	return dn, nil
 }
 
 // Run finishes informer setup and then blocks, and the informer will be

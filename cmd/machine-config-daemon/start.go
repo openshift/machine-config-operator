@@ -6,6 +6,7 @@ import (
 	"syscall"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -68,6 +69,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	var dn *daemon.Daemon
+	var ctx *common.ControllerContext
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
@@ -85,6 +87,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 		// Else we use the cluster driven daemon
 	} else {
+		cb, err := common.NewClientBuilder(startOpts.kubeconfig)
+		if err != nil {
+			glog.Fatalf("failed to initialize daemon: %v", err)
+		}
+		ctx = common.CreateControllerContext(cb, stopCh, componentName)
 		// create the daemon instance. this also initializes kube client items
 		// which need to come from the container and not the chroot.
 		dn, err = daemon.NewClusterDrivenDaemon(
@@ -92,21 +99,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.nodeName,
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
-			startOpts.kubeconfig,
+			cb.MachineConfigClientOrDie(componentName),
+			cb.KubeClientOrDie(componentName),
 			daemon.NewFileSystemClient(),
 			startOpts.onceFrom,
-			stopCh,
-			componentName,
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize daemon: %v", err)
-		}
-		err = dn.CheckStateOnBoot(stopCh)
-		if err != nil {
-			glog.Fatalf("error checking initial state of node: %v", err)
-		}
-		if err = dn.StartInformer(stopCh, startOpts.nodeName, componentName, startOpts.kubeconfig); err != nil {
-			glog.Fatalf("error starting kubernetes informers: %v", err)
 		}
 	}
 
@@ -118,6 +118,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.V(2).Infof("Moving to / inside the chroot")
 	if err := os.Chdir("/"); err != nil {
 		glog.Fatalf("unable to change directory to /: %s", err)
+	}
+
+	if startOpts.onceFrom == "" {
+		err = dn.CheckStateOnBoot(stopCh)
+		if err != nil {
+			glog.Fatalf("error checking initial state of node: %v", err)
+		}
+		ctx.KubeInformerFactory.Start(ctx.Stop)
+		close(ctx.KubeInformersStarted)
 	}
 
 	glog.Info("Starting MachineConfigDaemon")
