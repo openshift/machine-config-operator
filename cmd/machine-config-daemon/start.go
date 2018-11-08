@@ -24,6 +24,7 @@ var (
 		kubeconfig string
 		nodeName   string
 		rootMount  string
+		onceFrom   string
 	}
 )
 
@@ -32,11 +33,14 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
 	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
+	startCmd.PersistentFlags().StringVar(&startOpts.onceFrom, "once-from", "", "Runs the daemon once using a provided file path or URL endpoint as its machine config source")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
+
+	glog.V(2).Infof("Options parsed: %+v", startOpts)
 
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
@@ -54,11 +58,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.nodeName = name
 	}
 
-	cb, err := common.NewClientBuilder(startOpts.kubeconfig)
-	if err != nil {
-		glog.Fatalf("error creating clients: %v", err)
-	}
-
 	// Ensure that the rootMount exists
 	if _, err := os.Stat(startOpts.rootMount); err != nil {
 		if os.IsNotExist(err) {
@@ -69,22 +68,46 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
+	var dn *daemon.Daemon
+	var ctx *common.ControllerContext
 
-	ctx := common.CreateControllerContext(cb, stopCh, componentName)
-	// create the daemon instance. this also initializes kube client items
-	// which need to come from the container and not the chroot.
-	daemon, err := daemon.New(
-		startOpts.rootMount,
-		startOpts.nodeName,
-		operatingSystem,
-		daemon.NewNodeUpdaterClient(),
-		cb.MachineConfigClientOrDie(componentName),
-		cb.KubeClientOrDie(componentName),
-		daemon.NewFileSystemClient(),
-		ctx.KubeInformerFactory.Core().V1().Nodes(),
-	)
-	if err != nil {
-		glog.Fatalf("failed to initialize daemon: %v", err)
+	// If we are asked to run once and it's a valid file system path use
+	// the bare Daemon
+	if startOpts.onceFrom != "" && daemon.ValidPath(startOpts.onceFrom) {
+		dn, err = daemon.New(
+			startOpts.rootMount,
+			startOpts.nodeName,
+			operatingSystem,
+			daemon.NewNodeUpdaterClient(),
+			daemon.NewFileSystemClient(),
+			startOpts.onceFrom,
+		)
+		if err != nil {
+			glog.Fatalf("failed to initialize single run daemon: %v", err)
+		}
+		// Else we use the cluster driven daemon
+	} else {
+		cb, err := common.NewClientBuilder(startOpts.kubeconfig)
+		if err != nil {
+			glog.Fatalf("failed to initialize daemon: %v", err)
+		}
+		ctx = common.CreateControllerContext(cb, stopCh, componentName)
+		// create the daemon instance. this also initializes kube client items
+		// which need to come from the container and not the chroot.
+		dn, err = daemon.NewClusterDrivenDaemon(
+			startOpts.rootMount,
+			startOpts.nodeName,
+			operatingSystem,
+			daemon.NewNodeUpdaterClient(),
+			cb.MachineConfigClientOrDie(componentName),
+			cb.KubeClientOrDie(componentName),
+			daemon.NewFileSystemClient(),
+			startOpts.onceFrom,
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
+		)
+		if err != nil {
+			glog.Fatalf("failed to initialize daemon: %v", err)
+		}
 	}
 
 	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
@@ -97,18 +120,19 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("unable to change directory to /: %s", err)
 	}
 
+	if startOpts.onceFrom == "" {
+		err = dn.CheckStateOnBoot(stopCh)
+		if err != nil {
+			glog.Fatalf("error checking initial state of node: %v", err)
+		}
+		ctx.KubeInformerFactory.Start(ctx.Stop)
+		close(ctx.KubeInformersStarted)
+	}
+
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err = daemon.CheckStateOnBoot(stopCh)
-	if err != nil {
-		glog.Fatalf("error checking initial state of node: %v", err)
-	}
-
-	ctx.KubeInformerFactory.Start(ctx.Stop)
-	close(ctx.KubeInformersStarted)
-
-	err = daemon.Run(stopCh)
+	err = dn.Run(stopCh)
 	if err != nil {
 		glog.Fatalf("failed to run: %v", err)
 	}
