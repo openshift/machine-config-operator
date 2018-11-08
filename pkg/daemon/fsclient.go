@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 )
@@ -16,6 +17,7 @@ type FileSystemClient interface {
 	Chmod(string, os.FileMode) error
 	Chown(string, int, int) error
 	WriteFile(filename string, data []byte, perm os.FileMode) error
+	ReadAll(reader io.Reader) ([]byte, error)
 	ReadFile(filename string) ([]byte, error)
 }
 
@@ -70,6 +72,11 @@ func (f FsClient) WriteFile(filename string, data []byte, perm os.FileMode) erro
 // ReadFile implements ioutil.WriteFile
 func (f FsClient) ReadFile(filename string) ([]byte, error) {
 	return ioutil.ReadFile(filename)
+}
+
+// ReadAll implements ioutil.ReadAll
+func (f FsClient) ReadAll(reader io.Reader) ([]byte, error) {
+	return ioutil.ReadAll(reader)
 }
 
 // NewFileSystemClient creates a new file system client using the default

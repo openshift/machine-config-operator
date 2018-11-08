@@ -3,24 +3,26 @@ package daemon
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
-	"os"
 
 	"github.com/coreos/go-systemd/login1"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
+	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/vincent-petithory/dataurl"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -56,6 +58,8 @@ type Daemon struct {
 	nodeLister corelisterv1.NodeLister
 
 	nodeListerSynced cache.InformerSynced
+	// onceFrom defines where the source config is to run the daemon once and exit
+	onceFrom string
 }
 
 const (
@@ -67,31 +71,25 @@ const (
 	pathDevNull = "/dev/null"
 )
 
-// New sets up the systemd and kubernetes connections needed to update the
-// machine.
+// New sets up the bare minimum local connections required to create a Daemon instance
 func New(
 	rootMount string,
 	nodeName string,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
-	client mcfgclientset.Interface,
-	kubeClient kubernetes.Interface,
 	fileSystemClient FileSystemClient,
-	nodeInformer coreinformersv1.NodeInformer,
+	onceFrom string,
 ) (*Daemon, error) {
 	loginClient, err := login1.New()
 	if err != nil {
 		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
 	}
 
-	if err = loadNodeAnnotations(kubeClient.CoreV1().Nodes(), nodeName); err != nil {
-		return nil, err
-	}
-
 	osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
 	}
+
 	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 
 	dn := &Daemon{
@@ -99,17 +97,50 @@ func New(
 		OperatingSystem:   operatingSystem,
 		NodeUpdaterClient: nodeUpdaterClient,
 		loginClient:       loginClient,
-		client:            client,
-		kubeClient:        kubeClient,
 		rootMount:         rootMount,
 		fileSystemClient:  fileSystemClient,
 		bootedOSImageURL:  osImageURL,
+		onceFrom:          onceFrom,
+	}
+
+	return dn, nil
+}
+
+// NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
+// machine.
+func NewClusterDrivenDaemon(
+	rootMount string,
+	nodeName string,
+	operatingSystem string,
+	nodeUpdaterClient NodeUpdaterClient,
+	client mcfgclientset.Interface,
+	kubeClient kubernetes.Interface,
+	fileSystemClient FileSystemClient,
+	onceFrom string,
+	nodeInformer coreinformersv1.NodeInformer,
+) (*Daemon, error) {
+	dn, err := New(
+		rootMount,
+		nodeName,
+		operatingSystem,
+		nodeUpdaterClient,
+		fileSystemClient,
+		onceFrom)
+
+	if err != nil {
+		return nil, err
+	}
+
+	dn.kubeClient = kubeClient
+	dn.client = client
+
+	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
+		return nil, err
 	}
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: dn.handleNodeUpdate,
 	})
-
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 
@@ -120,6 +151,12 @@ func New(
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stop <-chan struct{}) error {
+	// Catch quickly if we've been asked to run once.
+	if dn.onceFrom != "" {
+		glog.V(2).Info("Running once per request")
+		return dn.runOnce()
+	}
+
 	if !cache.WaitForCacheSync(stop, dn.nodeListerSynced) {
 		glog.Error("Marking degraded due to: failure to sync caches")
 		return setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
@@ -177,38 +214,123 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	return nil
 }
 
-// handleNodeUpdate is the handler for informer callbacks detecting node
-// changes. If an update is requested by the controller, we assume that
-// that means something changed and apply the desired config no matter what.
+// runOnce pulls the MachineConfig from either a file or remote URL
+// executes one run, and exits.
+// TODO: Revisit the Run/process methods and refactor and unify them with runOnce
+func (dn *Daemon) runOnce() error {
+	var machineConfig *mcfgv1.MachineConfig
+	var oldConfig mcfgv1.MachineConfig
+	var err error
+
+	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+		// NOTE: This case expects a cluster to exists already.
+		// If we sense a remote URL has been provided then request MC content
+		// from a remote URL and parse it.
+		glog.V(2).Infof("Getting machine config content from %s", dn.onceFrom)
+		machineConfig, err = dn.getMachineConfigFromURL(dn.onceFrom)
+		if err != nil {
+			return err
+		}
+		needUpdate, err := dn.prepUpdateFromCluster()
+		if err != nil {
+			glog.V(2).Infof("Unable to prep update: %s", err)
+			return err
+		} else if needUpdate == false {
+			glog.V(2).Infof("No update needed")
+			return nil
+		}
+		// At this point we have verified we need to update
+		if err := dn.executeUpdateFromClusterWithMachineConfig(machineConfig); err != nil {
+			glog.Warningf("Unable to update: %s", err)
+			return err
+		}
+		return nil
+
+	} else if ValidPath(dn.onceFrom) {
+		// NOTE: This case expects that the cluster is NOT CREATED YET.
+		// If we sense a local file has been provided parse it.
+		oldConfig = mcfgv1.MachineConfig{}
+		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
+		if err != nil {
+			return err
+		}
+		machineConfig, err = dn.getMachineConfigFromFile(absoluteOnceFrom)
+		if err != nil {
+			return err
+		}
+		// Execute update without hitting the cluster
+		return dn.update(&oldConfig, machineConfig)
+	}
+	// Otherwise return an error as the input format is unsupported
+	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+}
+
+// handleNodeUpdate is the gatekeeper handler for informer callbacks detecting
+// node changes. If an update is requested by the controller, we assume that
+// that means something changed and pass over to execution methods no matter what.
 // Also note that we only care about node updates, not creation or deletion.
 func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	node := cur.(*corev1.Node)
 
 	// First check if the node that was updated is this daemon's node
-	if (node.Name != dn.name) {
-		// The node that was changed was not ours
-		return
+	if node.Name == dn.name {
+		// Pass to the shared update prep method
+		needUpdate, err := dn.prepUpdateFromCluster()
+		if err != nil {
+			// On prepUpdateFromCluster error the node should already be marked degraded
+			glog.V(2).Infof("Unable to prep update: %s", err)
+			dn.reboot()
+			return
+		}
+		// Only executeUpdateFromCluster when we need to update
+		if needUpdate {
+			// Note that if executeUpdateFromCluster errors it will mark the node
+			// degraded and reboot.
+			if err = dn.executeUpdateFromCluster(); err != nil {
+				glog.V(2).Infof("Unable to execute update: %s", err)
+				return
+			}
+		}
 	}
+	// The node that was changed was not ours, return out
+	return
+}
 
+// prepUpdateFromCluster handles the shared update prepping functionality for
+// flows that expect the cluster to already be available.
+func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
 	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
 		glog.Errorf("Marking degraded due to: %v", err)
 		setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
-		return
+		return false, err
 	} else if state == MachineConfigDaemonStateDegraded {
 		// Just return since we want to continue sleeping
-		return
+		return false, fmt.Errorf("state is already degraded")
+	}
+
+	// Grab the node instance
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+	if err != nil {
+		return false, err
 	}
 
 	// Detect if there is an update
-	if (node.Annotations[DesiredMachineConfigAnnotationKey] == node.Annotations[CurrentMachineConfigAnnotationKey]) {
+	if node.Annotations[DesiredMachineConfigAnnotationKey] == node.Annotations[CurrentMachineConfigAnnotationKey] {
 		// No actual update to the config
-		return
+		glog.V(2).Info("No updating is required")
+		return false, nil
 	}
+	return true, nil
+}
 
+// executeUpdateFromClusterWithMachineConfig starts the actual update process. The provided config
+// will be used as the desired config, while the current config will be pulled from the cluster. If
+// you want both pulled from the cluster please use executeUpdateFromCluster().
+func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	// The desired machine config has changed, trigger update
-	if err := dn.triggerUpdate(); err != nil {
+	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
 		glog.Errorf("Marking degraded due to: %v", err)
 		if errSet := setUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name); errSet != nil {
 			glog.Errorf("Futher error attempting to set the node to degraded: %v", errSet)
@@ -220,6 +342,12 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	// we managed to update the machine without rebooting. in this case,
 	// continue as usual waiting for the next update
 	glog.V(2).Infof("Successfully updated without reboot")
+	return nil
+}
+
+// executeUpdateFromCluster starts the actual update process using configs from the cluster.
+func (dn *Daemon) executeUpdateFromCluster() error {
+	return dn.executeUpdateFromClusterWithMachineConfig(nil)
 }
 
 // completeUpdate does all the stuff required to finish an update. right now, it
@@ -241,8 +369,9 @@ func (dn *Daemon) completeUpdate(dcAnnotation string) error {
 	return nil
 }
 
-// triggerUpdate starts the update using the current and the target config.
-func (dn *Daemon) triggerUpdate() error {
+// triggerUpdateWithMachineConfig starts the update using the desired config and queries the cluster for
+// the current config. If all configs should be pulled from the cluster use triggerUpdate().
+func (dn *Daemon) triggerUpdateWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	if err := setUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 		return err
 	}
@@ -259,13 +388,19 @@ func (dn *Daemon) triggerUpdate() error {
 	if err != nil {
 		return err
 	}
-	desiredConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
-	if err != nil {
-		return err
+	if desiredConfig == nil {
+		desiredConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
+		if err != nil {
+			return err
+		}
 	}
-
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
+}
+
+// triggerUpdate starts the update using the current and the target config.
+func (dn *Daemon) triggerUpdate() error {
+	return dn.triggerUpdateWithMachineConfig(nil)
 }
 
 // isDesiredMachineState confirms that the node is actually in the state that it
@@ -416,6 +551,50 @@ func (dn *Daemon) Close() {
 	dn.loginClient.Close()
 }
 
+// getMachineConfigFromFile parses a valid machine config file in yaml format and returns
+// a MachineConfig struct.
+func (dn *Daemon) getMachineConfigFromFile(filePath string) (*mcfgv1.MachineConfig, error) {
+	data, err := dn.fileSystemClient.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	config := resourceread.ReadMachineConfigV1OrDie(data)
+	return config, nil
+}
+
+// getMachineConfigFromURL reads a remote MC in yaml format and returns a MachineConfig struct.
+func (dn *Daemon) getMachineConfigFromURL(url string) (*mcfgv1.MachineConfig, error) {
+	// Make a request to the remote URL
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read the body content from the request
+	body, err := dn.fileSystemClient.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal the body into the machineConfig
+	config := resourceread.ReadMachineConfigV1OrDie(body)
+
+	return config, nil
+}
+
 func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {
 	return client.Get(name, metav1.GetOptions{})
+}
+
+// ValidPath attempts to see if the path provided is indeed an acceptable
+// filesystem path. This function does not check if the path exists.
+func ValidPath(path string) bool {
+	path = filepath.Clean(path)
+	for _, validStart := range []string{".", "..", "/"} {
+		if strings.HasPrefix(path, validStart) {
+			return true
+		}
+	}
+	return false
 }

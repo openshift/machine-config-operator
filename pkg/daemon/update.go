@@ -48,24 +48,28 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
-	glog.Info("Update completed. Draining the node.")
+	// TODO: Change the logic to be clearer
+	// We need to skip draining of the node when we are running once
+	// and there is no cluster.
+	if dn.onceFrom != "" && !ValidPath(dn.onceFrom) {
+		glog.Info("Update completed. Draining the node.")
 
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
-	if err != nil {
-		return err
+		node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		err = drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
+			DeleteLocalData:    true,
+			Force:              true,
+			GracePeriodSeconds: 600,
+			IgnoreDaemonsets:   true,
+		})
+		if err != nil {
+			return err
+		}
+		glog.V(2).Infof("Node successfully drained")
 	}
-
-	err = drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
-		DeleteLocalData:    true,
-		Force:              true,
-		GracePeriodSeconds: 600,
-		IgnoreDaemonsets:   true,
-	})
-	if err != nil {
-		return err
-	}
-	glog.V(2).Infof("Node successfully drained")
-
 	// reboot. this function shouldn't actually return.
 	return dn.reboot()
 }
@@ -80,6 +84,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
 	glog.Info("Checking if configs are reconcilable")
 
+	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
+	// reason is that there is a good chance a previous state is not available to match against.
+	if oldConfig.Kind == "" && dn.onceFrom != "" {
+		glog.Infof("Missing kind in old config. Assuming reconcilable with new.")
+		return true, nil
+	}
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
 
