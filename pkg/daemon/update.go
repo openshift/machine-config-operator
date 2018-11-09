@@ -87,7 +87,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Infof("Missing kind in old config. Assuming reconcilable with new.")
+		glog.Infof("Missing kind in old config. Assuming no prior state.")
 		return true, nil
 	}
 	oldIgn := oldConfig.Spec.Config

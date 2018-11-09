@@ -153,7 +153,7 @@ func NewClusterDrivenDaemon(
 func (dn *Daemon) Run(stop <-chan struct{}) error {
 	// Catch quickly if we've been asked to run once.
 	if dn.onceFrom != "" {
-		glog.V(2).Info("Running once per request")
+		glog.V(2).Info("Daemon running once per request")
 		return dn.runOnce()
 	}
 
@@ -236,7 +236,6 @@ func (dn *Daemon) runOnce() error {
 			glog.V(2).Infof("Unable to prep update: %s", err)
 			return err
 		} else if needUpdate == false {
-			glog.V(2).Infof("No update needed")
 			return nil
 		}
 		// At this point we have verified we need to update
@@ -287,7 +286,6 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 			// Note that if executeUpdateFromCluster errors it will mark the node
 			// degraded and reboot.
 			if err = dn.executeUpdateFromCluster(); err != nil {
-				glog.V(2).Infof("Unable to execute update: %s", err)
 				return
 			}
 		}
