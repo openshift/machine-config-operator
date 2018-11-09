@@ -20,8 +20,10 @@ import (
 )
 
 const (
+	// DefaultDirectoryPermissions houses the default mode to use when no directory permissions are provided
 	DefaultDirectoryPermissions os.FileMode = 0755
-	DefaultFilePermissions      os.FileMode = 0644
+	// DefaultFilePermissions houses the default mode to use when no file permissions are provided
+	DefaultFilePermissions os.FileMode = 0644
 )
 
 // update the node to the provided node configuration.
@@ -87,7 +89,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Infof("Missing kind in old config. Assuming reconcilable with new.")
+		glog.Infof("Missing kind in old config. Assuming no prior state.")
 		return true, nil
 	}
 	oldIgn := oldConfig.Spec.Config
