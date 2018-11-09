@@ -24,6 +24,8 @@ func GetHostRunningOS(rootFs string) (string, error) {
 		return MachineConfigDaemonOSRHCOS, nil
 	} else if or.ID == "rhel" {
 		return MachineConfigDaemonOSRHEL, nil
+	} else if or.ID == "centos" {
+		return MachineConfigDaemonOSCENTOS, nil
 	}
 	// default to unknown OS
 	return "", fmt.Errorf(
