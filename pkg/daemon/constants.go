@@ -18,4 +18,6 @@ const (
 	MachineConfigDaemonOSRHCOS = "RHCOS"
 	// MachineConfigDaemonOSRHEL denotes RHEL
 	MachineConfigDaemonOSRHEL = "RHEL"
+	// MachineConfigDaemonOSCENTOS denotes CENTOS
+	MachineConfigDaemonOSCENTOS = "CENTOS"
 )
