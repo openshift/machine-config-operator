@@ -20,8 +20,10 @@ import (
 )
 
 const (
+	// DefaultDirectoryPermissions houses the default mode to use when no directory permissions are provided
 	DefaultDirectoryPermissions os.FileMode = 0755
-	DefaultFilePermissions      os.FileMode = 0644
+	// DefaultFilePermissions houses the default mode to use when no file permissions are provided
+	DefaultFilePermissions os.FileMode = 0644
 )
 
 // update the node to the provided node configuration.
