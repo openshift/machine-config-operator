@@ -465,6 +465,10 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
+		glog.V(2).Infof("Updating of non RHCOS nodes are not supported")
+		return nil
+	}
 	// see similar logic in checkOS()
 	if newConfig.Spec.OSImageURL == "://dummy" {
 		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
