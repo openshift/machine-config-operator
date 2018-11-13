@@ -439,9 +439,17 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 		return false, "", nil
 	}
 
-	isDesiredOS, err := dn.checkOS(desiredConfig.Spec.OSImageURL)
-	if err != nil {
-		return false, "", err
+	isDesiredOS := false
+	// We only deal with operating system management on RHCOS
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
+		// If we are on anything but RHCOS we set to True as there
+		// is nothing to updated.
+		isDesiredOS = true
+	} else {
+		isDesiredOS, err = dn.checkOS(desiredConfig.Spec.OSImageURL)
+		if err != nil {
+			return false, "", err
+		}
 	}
 
 	if dn.checkFiles(desiredConfig.Spec.Config.Storage.Files) &&
