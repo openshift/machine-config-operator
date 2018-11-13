@@ -85,13 +85,15 @@ func New(
 		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
 	}
 
-	osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
-	if err != nil {
-		return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
+	osImageURL := ""
+	// Only pull the osImageURL from OSTree when we are on RHCOS
+	if operatingSystem == MachineConfigDaemonOSRHCOS {
+		osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
+		if err != nil {
+			return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
+		}
+		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
-
-	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
-
 	dn := &Daemon{
 		name:              nodeName,
 		OperatingSystem:   operatingSystem,
