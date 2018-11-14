@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/coreos/go-systemd/login1"
+	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
@@ -59,7 +60,8 @@ type Daemon struct {
 
 	nodeListerSynced cache.InformerSynced
 	// onceFrom defines where the source config is to run the daemon once and exit
-	onceFrom string
+	onceFrom     string
+	fromIgnition bool
 }
 
 const (
@@ -79,6 +81,7 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
+	fromIgnition bool,
 ) (*Daemon, error) {
 	loginClient, err := login1.New()
 	if err != nil {
@@ -103,6 +106,7 @@ func New(
 		fileSystemClient:  fileSystemClient,
 		bootedOSImageURL:  osImageURL,
 		onceFrom:          onceFrom,
+		fromIgnition:      fromIgnition,
 	}
 
 	return dn, nil
@@ -119,6 +123,7 @@ func NewClusterDrivenDaemon(
 	kubeClient kubernetes.Interface,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
+	fromIgnition bool,
 	nodeInformer coreinformersv1.NodeInformer,
 ) (*Daemon, error) {
 	dn, err := New(
@@ -127,7 +132,8 @@ func NewClusterDrivenDaemon(
 		operatingSystem,
 		nodeUpdaterClient,
 		fileSystemClient,
-		onceFrom)
+		onceFrom,
+		fromIgnition)
 
 	if err != nil {
 		return nil, err
@@ -155,8 +161,13 @@ func NewClusterDrivenDaemon(
 func (dn *Daemon) Run(stop <-chan struct{}) error {
 	// Catch quickly if we've been asked to run once.
 	if dn.onceFrom != "" {
-		glog.V(2).Info("Daemon running once per request")
-		return dn.runOnce()
+		if dn.fromIgnition {
+			glog.V(2).Info("Daemon running directly from Ignition")
+			return dn.runFromIgnition()
+		} else {
+			glog.V(2).Info("Daemon running once per request")
+			return dn.runOnce()
+		}
 	}
 
 	if !cache.WaitForCacheSync(stop, dn.nodeListerSynced) {
@@ -261,6 +272,34 @@ func (dn *Daemon) runOnce() error {
 		}
 		// Execute update without hitting the cluster
 		return dn.update(&oldConfig, machineConfig)
+	}
+	// Otherwise return an error as the input format is unsupported
+	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+}
+
+func (dn *Daemon) runFromIgnition() error {
+	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+		// TODO(michaelgugino): implement this
+		glog.V(2).Infof("Getting ignition config content from %s", dn.onceFrom)
+		return nil
+	} else if ValidPath(dn.onceFrom) {
+
+		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
+		if err != nil {
+			return err
+		}
+		ignConfig, err := dn.getIgnitionConfigFromFile(absoluteOnceFrom)
+		if err != nil {
+			return err
+		}
+		// Execute update without hitting the cluster
+		if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
+			return err
+		}
+		if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
+			return err
+		}
+		return nil
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
@@ -567,6 +606,15 @@ func (dn *Daemon) getMachineConfigFromFile(filePath string) (*mcfgv1.MachineConf
 		return nil, err
 	}
 	config := resourceread.ReadMachineConfigV1OrDie(data)
+	return config, nil
+}
+
+func (dn *Daemon) getIgnitionConfigFromFile(filePath string) (ignv2_2types.Config, error) {
+	data, err := dn.fileSystemClient.ReadFile(filePath)
+	if err != nil {
+		return ignv2_2types.Config{}, err
+	}
+	config, _, _ := ignv2.Parse(data)
 	return config, nil
 }
 
