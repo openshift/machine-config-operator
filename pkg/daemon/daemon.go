@@ -85,13 +85,15 @@ func New(
 		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
 	}
 
-	osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
-	if err != nil {
-		return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
+	osImageURL := ""
+	// Only pull the osImageURL from OSTree when we are on RHCOS
+	if operatingSystem == MachineConfigDaemonOSRHCOS {
+		osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
+		if err != nil {
+			return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
+		}
+		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
-
-	glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
-
 	dn := &Daemon{
 		name:              nodeName,
 		OperatingSystem:   operatingSystem,
@@ -437,9 +439,17 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 		return false, "", nil
 	}
 
-	isDesiredOS, err := dn.checkOS(desiredConfig.Spec.OSImageURL)
-	if err != nil {
-		return false, "", err
+	isDesiredOS := false
+	// We only deal with operating system management on RHCOS
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
+		// If we are on anything but RHCOS we set to True as there
+		// is nothing to updated.
+		isDesiredOS = true
+	} else {
+		isDesiredOS, err = dn.checkOS(desiredConfig.Spec.OSImageURL)
+		if err != nil {
+			return false, "", err
+		}
 	}
 
 	if dn.checkFiles(desiredConfig.Spec.Config.Storage.Files) &&
