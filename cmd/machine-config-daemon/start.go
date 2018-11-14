@@ -73,7 +73,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
-	if startOpts.onceFrom != "" && daemon.ValidPath(startOpts.onceFrom) {
+	if startOpts.onceFrom != "" {
 		dn, err = daemon.New(
 			startOpts.rootMount,
 			startOpts.nodeName,
