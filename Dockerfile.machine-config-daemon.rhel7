@@ -4,5 +4,5 @@ COPY . .
 RUN WHAT=machine-config-daemon ./hack/build-go.sh
 
 FROM registry.svc.ci.openshift.org/ocp/4.0:base
-COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/linux/amd64/machine-config-operator /usr/bin/
+COPY --from=builder /go/src/github.com/openshift/machine-config-operator/_output/linux/amd64/machine-config-daemon /usr/bin/
 ENTRYPOINT ["/usr/bin/machine-config-daemon"]
