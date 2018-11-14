@@ -588,7 +588,6 @@ func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (
 // ValidPath attempts to see if the path provided is indeed an acceptable
 // filesystem path. This function does not check if the path exists.
 func ValidPath(path string) bool {
-	path = filepath.Clean(path)
 	for _, validStart := range []string{".", "..", "/"} {
 		if strings.HasPrefix(path, validStart) {
 			return true
