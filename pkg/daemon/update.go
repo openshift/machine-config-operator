@@ -2,21 +2,20 @@ package daemon
 
 import (
 	"fmt"
+	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/golang/glog"
+	drain "github.com/openshift/kubernetes-drain"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/vincent-petithory/dataurl"
 	"io/ioutil"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
 	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"time"
-
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/golang/glog"
-	drain "github.com/openshift/kubernetes-drain"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/vincent-petithory/dataurl"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
