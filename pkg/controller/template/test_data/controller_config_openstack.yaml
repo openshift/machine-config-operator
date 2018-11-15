@@ -9,3 +9,5 @@ spec:
   platform: "openstack"
   etcdCAData: ZHVtbXkgZXRjZC1jYQo=
   rootCAData: ZHVtbXkgcm9vdC1jYQo=
+  pullSecret:
+    data: ZHVtbXkgZXRjZC1jYQo=
