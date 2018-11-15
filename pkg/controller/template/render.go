@@ -24,6 +24,7 @@ import (
 // renderConfig is wrapper around ControllerConfigSpec.
 type renderConfig struct {
 	*mcfgv1.ControllerConfigSpec
+	PullSecret string
 }
 
 const (
