@@ -58,4 +58,12 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setStringIfSet(modified, &existing.Platform, required.Platform)
 	setStringIfSet(modified, &existing.BaseDomain, required.BaseDomain)
 	setStringIfSet(modified, &existing.Platform, required.Platform)
+
+	setBytesIfSet(modified, &existing.EtcdCAData, required.EtcdCAData)
+	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
+
+	if required.PullSecret != nil && !equality.Semantic.DeepEqual(existing.PullSecret, required.PullSecret) {
+		existing.PullSecret = required.PullSecret
+		*modified = true
+	}
 }
