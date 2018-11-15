@@ -1,6 +1,0 @@
-filesystem: "root"
-mode: 0644
-path: "/etc/modules-load.d/bridge.conf"
-contents:
-  inline: |
-    br_netfilter
