@@ -62,8 +62,7 @@ type Daemon struct {
 
 	nodeListerSynced cache.InformerSynced
 	// onceFrom defines where the source config is to run the daemon once and exit
-	onceFrom     string
-	fromIgnition bool
+	onceFrom string
 
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
@@ -96,7 +95,6 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
-	fromIgnition bool,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -125,7 +123,6 @@ func New(
 		fileSystemClient:       fileSystemClient,
 		bootedOSImageURL:       osImageURL,
 		onceFrom:               onceFrom,
-		fromIgnition:           fromIgnition,
 		kubeletHealthzEnabled:  kubeletHealthzEnabled,
 		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
 		nodeWriter:             nodeWriter,
@@ -145,7 +142,6 @@ func NewClusterDrivenDaemon(
 	kubeClient kubernetes.Interface,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
-	fromIgnition bool,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -158,7 +154,6 @@ func NewClusterDrivenDaemon(
 		nodeUpdaterClient,
 		fileSystemClient,
 		onceFrom,
-		fromIgnition,
 		nodeInformer,
 		kubeletHealthzEnabled,
 		kubeletHealthzEndpoint,
@@ -196,12 +191,13 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 
 	// Catch quickly if we've been asked to run once.
 	if dn.onceFrom != "" {
-		if dn.fromIgnition {
+		switch configType := SenseOnceFromConfigType(dn.onceFrom); configType {
+		case MachineConfigIgnitionFileType:
 			glog.V(2).Info("Daemon running directly from Ignition")
-			return dn.runFromIgnition()
-		} else {
+			return dn.runOnceFromIgnition()
+		default:
 			glog.V(2).Info("Daemon running once per request")
-			return dn.runOnce()
+			return dn.runOnceFromMachineConfig()
 		}
 	}
 
@@ -316,15 +312,15 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	return nil
 }
 
-// runOnce pulls the MachineConfig from either a file or remote URL
+// runOnceFromMachineConfig pulls the MachineConfig from either a file or remote URL
 // executes one run, and exits.
 // TODO: Revisit the Run/process methods and refactor and unify them with runOnce
-func (dn *Daemon) runOnce() error {
+func (dn *Daemon) runOnceFromMachineConfig() error {
 	var machineConfig *mcfgv1.MachineConfig
 	var oldConfig mcfgv1.MachineConfig
 	var err error
 
-	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
 		// NOTE: This case expects a cluster to exists already.
 		// If we sense a remote URL has been provided then request MC content
 		// from a remote URL and parse it.
@@ -366,13 +362,14 @@ func (dn *Daemon) runOnce() error {
 	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
 }
 
-func (dn *Daemon) runFromIgnition() error {
-	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+// runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
+func (dn *Daemon) runOnceFromIgnition() error {
+	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
 		// TODO(michaelgugino): implement this
 		glog.V(2).Infof("Getting ignition config content from %s", dn.onceFrom)
+		glog.Warningf("onceFrom over http via Ignition is not currently supported")
 		return nil
 	} else if ValidPath(dn.onceFrom) {
-
 		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
 		if err != nil {
 			return err
@@ -698,13 +695,14 @@ func (dn *Daemon) getMachineConfigFromFile(filePath string) (*mcfgv1.MachineConf
 	return config, nil
 }
 
+// getIgnitionConfigFromFile parses an Ignition file and returns a usable Ignition config
 func (dn *Daemon) getIgnitionConfigFromFile(filePath string) (ignv2_2types.Config, error) {
 	data, err := dn.fileSystemClient.ReadFile(filePath)
 	if err != nil {
 		return ignv2_2types.Config{}, err
 	}
-	config, _, _ := ignv2.Parse(data)
-	return config, nil
+	config, _, err := ignv2.Parse(data)
+	return config, err
 }
 
 // getMachineConfigFromURL reads a remote MC in yaml format and returns a MachineConfig struct.
@@ -741,4 +739,13 @@ func ValidPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// SenseOnceFromConfigType checks if the provided file is an Ignition config or MachineConfig. If
+// the file ends in .ign we assume Ignition, otherwise we assume it's a MachineConfig.
+func SenseOnceFromConfigType(filePath string) string {
+	if strings.HasSuffix(filePath, ".ign") {
+		return MachineConfigIgnitionFileType
+	}
+	return MachineConfigMCFileType
 }

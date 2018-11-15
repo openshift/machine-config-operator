@@ -20,4 +20,9 @@ const (
 	MachineConfigDaemonOSRHEL = "RHEL"
 	// MachineConfigDaemonOSCENTOS denotes CENTOS
 	MachineConfigDaemonOSCENTOS = "CENTOS"
+
+	// MachineConfigMCFileType denotes when an MC config has been provided
+	MachineConfigMCFileType = "MACHINECONFIG"
+	// MachineConfigIgnitionFileType denotes when an Ignition config has provided
+	MachineConfigIgnitionFileType = "IGNITION"
 )
