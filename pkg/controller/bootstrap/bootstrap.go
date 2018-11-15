@@ -8,7 +8,9 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	kscheme "k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
@@ -22,13 +24,16 @@ type Bootstrap struct {
 	templatesDir string
 	// dir used to read pools and user defined machineconfigs.
 	manifestDir string
+	// pull secret file
+	pullSecretFile string
 }
 
 // New returns controller for bootstrap
-func New(templatesDir, manifestDir string) *Bootstrap {
+func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 	return &Bootstrap{
-		templatesDir: templatesDir,
-		manifestDir:  manifestDir,
+		templatesDir:   templatesDir,
+		manifestDir:    manifestDir,
+		pullSecretFile: pullSecretFile,
 	}
 }
 
@@ -36,6 +41,16 @@ func New(templatesDir, manifestDir string) *Bootstrap {
 // It writes all the assets to destDir
 func (b *Bootstrap) Run(destDir string) error {
 	infos, err := ioutil.ReadDir(b.manifestDir)
+	if err != nil {
+		return err
+	}
+
+	psfraw, err := ioutil.ReadFile(b.pullSecretFile)
+	if err != nil {
+		return err
+	}
+
+	psraw, err := getPullSecretFromSecret(psfraw)
 	if err != nil {
 		return err
 	}
@@ -76,7 +91,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	if cconfig == nil {
 		return fmt.Errorf("error: no controllerconfig found in dir: %q", destDir)
 	}
-	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig)
+	iconfigs, err := template.RunBootstrap(b.templatesDir, cconfig, psraw)
 	if err != nil {
 		return err
 	}
@@ -117,4 +132,19 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 	}
 	return nil
+}
+
+func getPullSecretFromSecret(sData []byte) ([]byte, error) {
+	obji, err := runtime.Decode(kscheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), sData)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := obji.(*corev1.Secret)
+	if !ok {
+		return nil, fmt.Errorf("expected *corev1.Secret found %T", obji)
+	}
+	if s.Type != corev1.SecretTypeDockerConfigJson {
+		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, s.Type)
+	}
+	return s.Data[corev1.DockerConfigJsonKey], nil
 }

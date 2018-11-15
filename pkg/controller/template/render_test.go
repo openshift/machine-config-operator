@@ -50,7 +50,7 @@ func TestCloudProvider(t *testing.T) {
 					Platform: c.platform,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
+			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -96,7 +96,7 @@ func TestAPIServerURL(t *testing.T) {
 					ClusterName: c.clusterName,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
+			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -147,7 +147,7 @@ func TestEtcdPeerCertDNSNames(t *testing.T) {
 					BaseDomain:  c.baseDomain,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
+			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -184,7 +184,7 @@ func TestEtcdServerCertDNSNames(t *testing.T) {
 					BaseDomain: c.baseDomain,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec}, name, dummyTemplate)
+			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -271,11 +271,11 @@ func TestInvalidPlatform(t *testing.T) {
 	}
 
 	controllerConfig.Spec.Platform = "_bad_"
-	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec}, templateDir)
+	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	expectErr(err, "platform _bad_ unsupported")
 
 	controllerConfig.Spec.Platform = "_base"
-	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec}, templateDir)
+	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	expectErr(err, "platform _base unsupported")
 }
 
@@ -286,7 +286,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateMachineConfigs(&renderConfig{&controllerConfig.Spec}, templateDir)
+		cfgs, err := generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}

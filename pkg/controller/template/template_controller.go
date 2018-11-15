@@ -13,12 +13,13 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1clientset "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -41,6 +42,7 @@ type Controller struct {
 	templatesDir string
 
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler             func(ccKey string) error
@@ -65,11 +67,12 @@ func New(
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	eventBroadcaster.StartRecordingToSink(&corev1clientset.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
+		kubeClient:    kubeClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigcontroller-templatecontroller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-templatecontroller"),
 	}
@@ -330,7 +333,19 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	// TODO: Deep-copy only when needed.
 	cfg := controllerconfig.DeepCopy()
 
-	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg)
+	var pullSecretRaw []byte
+	if cfg.Spec.PullSecret != nil {
+		secret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(cfg.Spec.PullSecret.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		if secret.Type != corev1.SecretTypeDockerConfigJson {
+			return fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, secret.Type)
+		}
+		pullSecretRaw = secret.Data[corev1.DockerConfigJsonKey]
+	}
+	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw)
 	if err != nil {
 		return err
 	}
@@ -348,9 +363,10 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	return nil
 }
 
-func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfig, error) {
+func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
 	rc := &renderConfig{
 		ControllerConfigSpec: &config.Spec,
+		PullSecret:           string(pullSecretRaw),
 	}
 	mcs, err := generateMachineConfigs(rc, templatesDir)
 	if err != nil {
@@ -367,6 +383,6 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 }
 
 // RunBootstrap runs the tempate controller in boostrap mode.
-func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfig, error) {
-	return getMachineConfigsForControllerConfig(templatesDir, config)
+func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
+	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw)
 }

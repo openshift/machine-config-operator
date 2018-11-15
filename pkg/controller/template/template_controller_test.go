@@ -203,7 +203,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 func TestDoNothing(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestDoNothing(t *testing.T) {
 func TestRecreateMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 func TestUpdateMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
