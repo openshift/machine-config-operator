@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/util/retry"
 )
 
 const (
@@ -16,15 +14,6 @@ const (
 	// The Machine Config Server writes the node annotations to this path.
 	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
 )
-
-// setConfig sets the given annotation key, value pair.
-func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]string) error {
-	return updateNodeRetry(client, node, func(node *v1.Node) {
-		for k, v := range m {
-			node.Annotations[k] = v
-		}
-	})
-}
 
 func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 	ccAnnotation, err := getNodeAnnotation(client, node, CurrentMachineConfigAnnotationKey)
@@ -76,52 +65,4 @@ func getNodeAnnotationExt(client corev1.NodeInterface, node string, k string, al
 	}
 
 	return v, nil
-}
-
-// updateNodeRetry calls f to update a node object in Kubernetes.
-// It will attempt to update the node by applying f to it up to DefaultBackoff
-// number of times.
-// f will be called each time since the node object will likely have changed if
-// a retry is necessary.
-func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node)) error {
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, getErr := client.Get(node, metav1.GetOptions{})
-		if getErr != nil {
-			return getErr
-		}
-
-		// Call the node modifier.
-		f(n)
-
-		_, err := client.Update(n)
-		return err
-	})
-	if err != nil {
-		// may be conflict if max retries were hit
-		return fmt.Errorf("Unable to update node %q: %v", node, err)
-	}
-
-	return nil
-}
-
-func setUpdateDone(client corev1.NodeInterface, node string, dcAnnotation string) error {
-	annos := map[string]string{
-		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDone,
-		CurrentMachineConfigAnnotationKey:     dcAnnotation,
-	}
-	return setNodeAnnotations(client, node, annos)
-}
-
-func setUpdateWorking(client corev1.NodeInterface, node string) error {
-	annos := map[string]string{
-		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateWorking,
-	}
-	return setNodeAnnotations(client, node, annos)
-}
-
-func setUpdateDegraded(client corev1.NodeInterface, node string) error {
-	annos := map[string]string{
-		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDegraded,
-	}
-	return setNodeAnnotations(client, node, annos)
 }
