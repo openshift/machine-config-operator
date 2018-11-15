@@ -21,11 +21,13 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig   string
-		nodeName     string
-		rootMount    string
-		onceFrom     string
-		fromIgnition bool
+		kubeconfig             string
+		nodeName               string
+		rootMount              string
+		onceFrom               string
+		fromIgnition           bool
+		kubeletHealthzEnabled  bool
+		kubeletHealthzEndpoint string
 	}
 )
 
@@ -36,6 +38,8 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	startCmd.PersistentFlags().StringVar(&startOpts.onceFrom, "once-from", "", "Runs the daemon once using a provided file path or URL endpoint as its machine config source")
 	startCmd.PersistentFlags().BoolVar(&startOpts.fromIgnition, "from-ign", false, "Configures run-once mode to use ignition file directly instead of MachineConfig")
+	startCmd.PersistentFlags().BoolVar(&startOpts.kubeletHealthzEnabled, "kubelet-healthz-enabled", true, "kubelet healthz endpoint monitoring")
+	startCmd.PersistentFlags().StringVar(&startOpts.kubeletHealthzEndpoint, "kubelet-healthz-endpoint", "http://localhost:10248/healthz", "healthz endpoint to check health")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -72,6 +76,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	var dn *daemon.Daemon
 	var ctx *common.ControllerContext
 
+	glog.Info("starting node writer")
+	nodeWriter := daemon.NewNodeWriter()
+	go nodeWriter.Run(stopCh)
+
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
@@ -83,6 +91,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			daemon.NewFileSystemClient(),
 			startOpts.onceFrom,
 			startOpts.fromIgnition,
+			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			startOpts.kubeletHealthzEnabled,
+			startOpts.kubeletHealthzEndpoint,
+			nodeWriter,
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize single run daemon: %v", err)
@@ -107,6 +119,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.onceFrom,
 			startOpts.fromIgnition,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			startOpts.kubeletHealthzEnabled,
+			startOpts.kubeletHealthzEndpoint,
+			nodeWriter,
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize daemon: %v", err)
