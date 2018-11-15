@@ -81,6 +81,7 @@ spec:
     - "bootstrap"
     - "--manifest-dir=/etc/mcc/bootstrap/manifests"
     - "--dest-dir=/etc/mcc/bootstrap/server"
+    - "--pull-secret=/etc/mcc/bootstrap/manifests/machineconfigcontroller-pull-secret"
     resources:
       limits:
         cpu: 20m
@@ -245,7 +246,7 @@ rules:
   resources: ["*"]
   verbs: ["*"]
 - apiGroups: [""]
-  resources: ["configmaps"]
+  resources: ["configmaps", "secrets"]
   verbs: ["*"]
 `)
 
@@ -299,13 +300,7 @@ metadata:
   name: machine-config-controller
   namespace: {{.TargetNamespace}}
 spec:
-  clusterDNSIP: {{.ControllerConfig.ClusterDNSIP}}
-  cloudProviderConfig: {{.ControllerConfig.CloudProviderConfig}}
-  clusterName: {{.ControllerConfig.ClusterName}}
-  platform: {{.ControllerConfig.Platform}}
-  baseDomain: {{.ControllerConfig.BaseDomain}}
-  etcdCAData: {{.ControllerConfig.EtcdCAData | toString | b64enc}}
-  rootCAData: {{.ControllerConfig.RootCAData | toString | b64enc}}
+{{toYAML .ControllerConfig | toString | indent 2}}
 `)
 
 func manifestsMachineconfigcontrollerControllerconfigYamlBytes() ([]byte, error) {

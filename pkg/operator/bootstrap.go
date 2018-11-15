@@ -16,7 +16,7 @@ import (
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
-	etcdCAFile, rootCAFile string,
+	etcdCAFile, rootCAFile string, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
 ) error {
@@ -25,6 +25,9 @@ func RenderBootstrap(
 		clusterConfigConfigMapFile,
 		rootCAFile,
 		etcdCAFile,
+	}
+	if pullSecretFile != "" {
+		files = append(files, pullSecretFile)
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -39,10 +42,11 @@ func RenderBootstrap(
 		return fmt.Errorf("error discovering MCOConfig from %q: %v", clusterConfigConfigMapFile, err)
 	}
 
-	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], imgs)
+	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], nil, imgs)
 
 	manifests := []struct {
 		name     string
+		data     []byte
 		filename string
 	}{{
 		name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
@@ -56,12 +60,24 @@ func RenderBootstrap(
 	}, {
 		name:     "manifests/bootstrap-pod.yaml",
 		filename: "machineconfigoperator-bootstrap-pod.yaml",
+	}, {
+		data:     filesData[pullSecretFile],
+		filename: "manifests/machineconfigcontroller-pull-secret",
 	}}
 	for _, m := range manifests {
 		glog.Info(m)
-		b, err := renderAsset(config, m.name)
-		if err != nil {
-			return err
+
+		var b []byte
+		var err error
+		if len(m.name) > 0 {
+			b, err = renderAsset(config, m.name)
+			if err != nil {
+				return err
+			}
+		} else if len(m.data) > 0 {
+			b = m.data
+		} else {
+			continue
 		}
 
 		path := filepath.Join(destinationDir, m.filename)

@@ -11,5 +11,5 @@ rules:
   resources: ["*"]
   verbs: ["*"]
 - apiGroups: [""]
-  resources: ["configmaps"]
+  resources: ["configmaps", "secrets"]
   verbs: ["*"]

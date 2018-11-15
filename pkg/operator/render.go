@@ -8,6 +8,7 @@ import (
 
 	"github.com/Masterminds/sprig"
 	"github.com/apparentlymart/go-cidr/cidr"
+	"github.com/ghodss/yaml"
 	installertypes "github.com/openshift/installer/pkg/types"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -28,6 +29,7 @@ func renderAsset(config renderConfig, path string) ([]byte, error) {
 	}
 
 	funcs := sprig.TxtFuncMap()
+	funcs["toYAML"] = toYAML
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(objBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse asset %s: %v", path, err)
@@ -39,6 +41,14 @@ func renderAsset(config renderConfig, path string) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func toYAML(i interface{}) []byte {
+	out, err := yaml.Marshal(i)
+	if err != nil {
+		panic(err)
+	}
+	return out
 }
 
 type installConfigGetter func() (installertypes.InstallConfig, error)
