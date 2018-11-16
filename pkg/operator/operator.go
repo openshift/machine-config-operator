@@ -270,7 +270,9 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 	} else if d, dok := cm.Data[key]; dok {
 		raw, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
-			return nil, err
+                        // this is actually the result of a bad assumption.  configmap values are not encoded.
+                        // After the installer pull merges, this entire attempt to decode can go away.
+			return []byte(d), nil
 		}
 		return raw, nil
 	} else {
