@@ -22,6 +22,8 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -189,13 +191,19 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 
 	// Catch quickly if we've been asked to run once.
 	if dn.onceFrom != "" {
-		switch configType := SenseOnceFromConfigType(dn.onceFrom); configType {
-		case MachineConfigIgnitionFileType:
+		genericConfig, configType, contentFrom, err := dn.SenseAndLoadOnceFrom()
+		if err != nil {
+			glog.Warningf("Unable to decipher onceFrom config type: %s", err)
+			return err
+		}
+		if configType == MachineConfigIgnitionFileType {
 			glog.V(2).Info("Daemon running directly from Ignition")
-			return dn.runOnceFromIgnition()
-		default:
-			glog.V(2).Info("Daemon running once per request")
-			return dn.runOnceFromMachineConfig()
+			ignConfig := genericConfig.(ignv2_2types.Config)
+			return dn.runOnceFromIgnition(ignConfig)
+		} else if configType == MachineConfigMCFileType {
+			glog.V(2).Info("Daemon running directly from MachineConfig")
+			mcConfig := genericConfig.(*(mcfgv1.MachineConfig))
+			return dn.runOnceFromMachineConfig(*mcConfig, contentFrom)
 		}
 	}
 
@@ -206,7 +214,7 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 
 	<-stop
 
-	// Run() should block on the above <-stop until an updated is detected,
+	// Run(mcConfig)til an updated is detected,
 	// which is handled by the callbacks.
 	return nil
 }
@@ -310,23 +318,12 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	return nil
 }
 
-// runOnceFromMachineConfig pulls the MachineConfig from either a file or remote URL
-// executes one run, and exits.
-// TODO: Revisit the Run/process methods and refactor and unify them with runOnce
-func (dn *Daemon) runOnceFromMachineConfig() error {
-	var machineConfig *mcfgv1.MachineConfig
-	var oldConfig mcfgv1.MachineConfig
-	var err error
-
-	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
+// runOnceFromMachineConfig utilizes a parsed machineConfig and executes in onceFrom
+// mode. If the content was remote, it executes cluster calls, otherwise it assumes
+// no cluster is present yet.
+func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, contentFrom string) error {
+	if contentFrom == MachineConfigOnceFromRemoteConfig {
 		// NOTE: This case expects a cluster to exists already.
-		// If we sense a remote URL has been provided then request MC content
-		// from a remote URL and parse it.
-		glog.V(2).Infof("Getting machine config content from %s", dn.onceFrom)
-		machineConfig, err = dn.getMachineConfigFromURL(dn.onceFrom)
-		if err != nil {
-			return err
-		}
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			glog.V(2).Infof("Unable to prep update: %s", err)
@@ -335,58 +332,32 @@ func (dn *Daemon) runOnceFromMachineConfig() error {
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.executeUpdateFromClusterWithMachineConfig(machineConfig); err != nil {
+		if err := dn.executeUpdateFromClusterWithMachineConfig(&machineConfig); err != nil {
 			glog.Warningf("Unable to update: %s", err)
 			return err
 		}
 		return nil
 
-	} else if ValidPath(dn.onceFrom) {
+	} else if contentFrom == MachineConfigOnceFromLocalConfig {
 		// NOTE: This case expects that the cluster is NOT CREATED YET.
-		// If we sense a local file has been provided parse it.
-		oldConfig = mcfgv1.MachineConfig{}
-		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
-		if err != nil {
-			return err
-		}
-		machineConfig, err = dn.getMachineConfigFromFile(absoluteOnceFrom)
-		if err != nil {
-			return err
-		}
+		oldConfig := mcfgv1.MachineConfig{}
 		// Execute update without hitting the cluster
-		return dn.update(&oldConfig, machineConfig)
+		return dn.update(&oldConfig, &machineConfig)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
-func (dn *Daemon) runOnceFromIgnition() error {
-	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
-		// TODO(michaelgugino): implement this
-		glog.V(2).Infof("Getting ignition config content from %s", dn.onceFrom)
-		glog.Warningf("onceFrom over http via Ignition is not currently supported")
-		return nil
-	} else if ValidPath(dn.onceFrom) {
-		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
-		if err != nil {
-			return err
-		}
-		ignConfig, err := dn.getIgnitionConfigFromFile(absoluteOnceFrom)
-		if err != nil {
-			return err
-		}
-		// Execute update without hitting the cluster
-		if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
-			return err
-		}
-		if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
-			return err
-		}
-		return nil
+func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
+	// Execute update without hitting the cluster
+	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
+		return err
 	}
-	// Otherwise return an error as the input format is unsupported
-	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
+		return err
+	}
+	return nil
 }
 
 // handleNodeUpdate is the gatekeeper handler for informer callbacks detecting
@@ -739,11 +710,59 @@ func ValidPath(path string) bool {
 	return false
 }
 
-// SenseOnceFromConfigType checks if the provided file is an Ignition config or MachineConfig. If
-// the file ends in .ign we assume Ignition, otherwise we assume it's a MachineConfig.
-func SenseOnceFromConfigType(filePath string) string {
-	if strings.HasSuffix(filePath, ".ign") {
-		return MachineConfigIgnitionFileType
+// SenseAndLoadOnceFrom gets a hold of the content for supported onceFrom configurations,
+// parses to verify the type, and returns back the genericInterface, the type description,
+// if it was local or remote, and error.
+func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
+	var content []byte
+	var err error
+	var contentFrom string
+	// Read the content from a remote endpoint if requested
+	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
+		contentFrom = MachineConfigOnceFromRemoteConfig
+		resp, err := http.Get(dn.onceFrom)
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+		defer resp.Body.Close()
+		// Read the body content from the request
+		content, err = dn.fileSystemClient.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+	} else {
+		// Otherwise read it from a local file
+		contentFrom = MachineConfigOnceFromLocalConfig
+		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+
+		content, err = dn.fileSystemClient.ReadFile(absoluteOnceFrom)
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
 	}
-	return MachineConfigMCFileType
+
+	// Try each supported parser
+	ignConfig, _, err := ignv2.Parse(content)
+	if err == nil && ignConfig.Ignition.Version != "" {
+		glog.V(2).Infof("onceFrom file is of type Ignition")
+		return ignConfig, MachineConfigIgnitionFileType, contentFrom, nil
+	}
+
+	glog.V(2).Infof("%s is not an Ignition config: %s. Trying MachineConfig.", dn.onceFrom, err)
+
+	// TODO: Add to resource/machineconfig.go as a function?
+	mcfgScheme := runtime.NewScheme()
+	mcfgv1.AddToScheme(mcfgScheme)
+	mcfgCodecs := serializer.NewCodecFactory(mcfgScheme)
+	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), content)
+	if err == nil {
+		glog.V(2).Infof("onceFrom file is of type MachineConfig")
+		mcConfig := requiredObj.(*mcfgv1.MachineConfig)
+		return mcConfig, MachineConfigMCFileType, contentFrom, nil
+	}
+
+	return nil, "", "", fmt.Errorf("unable to decipher onceFrom config type: %s", err)
 }

@@ -25,4 +25,9 @@ const (
 	MachineConfigMCFileType = "MACHINECONFIG"
 	// MachineConfigIgnitionFileType denotes when an Ignition config has provided
 	MachineConfigIgnitionFileType = "IGNITION"
+
+	// MachineConfigOnceFromRemoteConfig denotes that the config was pulled from a remote source
+	MachineConfigOnceFromRemoteConfig = "REMOTE"
+	// MachineConfigOnceFromLocalConfig denotes that the config was found locally
+	MachineConfigOnceFromLocalConfig = "LOCAL"
 )
