@@ -119,3 +119,7 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
 [[constraint]]
   name = "github.com/ashcrow/osrelease"
   version = "1.0.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/gophercloud/utils"
