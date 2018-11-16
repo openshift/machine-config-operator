@@ -5,6 +5,7 @@
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
@@ -82,6 +83,11 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		in, out := &in.RootCAData, &out.RootCAData
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
+	}
+	if in.PullSecret != nil {
+		in, out := &in.PullSecret, &out.PullSecret
+		*out = new(corev1.ObjectReference)
+		**out = **in
 	}
 	return
 }

@@ -125,6 +125,10 @@ type ControllerConfigSpec struct {
 	// CAs
 	EtcdCAData []byte `json:"etcdCAData"`
 	RootCAData []byte `json:"rootCAData"`
+
+	// PullSecret is the default pull secret that needs to be installed
+	// on all machines.
+	PullSecret *corev1.ObjectReference `json:"pullSecret,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

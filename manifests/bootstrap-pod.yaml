@@ -11,6 +11,7 @@ spec:
     - "bootstrap"
     - "--manifest-dir=/etc/mcc/bootstrap/manifests"
     - "--dest-dir=/etc/mcc/bootstrap/server"
+    - "--pull-secret=/etc/mcc/bootstrap/manifests/machineconfigcontroller-pull-secret"
     resources:
       limits:
         cpu: 20m

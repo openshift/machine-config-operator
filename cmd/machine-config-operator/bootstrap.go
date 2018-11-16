@@ -27,6 +27,7 @@ var (
 	bootstrapOpts struct {
 		etcdCAFile          string
 		rootCAFile          string
+		pullSecretFile      string
 		configFile          string
 		imagesConfigMapFile string
 		mccImage            string
@@ -40,6 +41,7 @@ func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdCAFile, "etcd-ca", "/etc/ssl/etcd/ca.crt", "path to etcd CA certificate")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.rootCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "path to root CA certificate")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imagesConfigMapFile, "images-json-configmap", "", "ConfigMap that contains images.json for MCO.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller. (this cannot be set if --images-json-configmap is set)")
@@ -86,7 +88,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	}
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
-		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile,
+		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.pullSecretFile,
 		imgs,
 		bootstrapOpts.destinationDir,
 	); err != nil {
