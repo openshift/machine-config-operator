@@ -15,7 +15,6 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
@@ -651,48 +650,6 @@ func checkFileContentsAndMode(filePath, expectedContent string, mode os.FileMode
 // Close closes all the connections the node agent has open for it's lifetime
 func (dn *Daemon) Close() {
 	dn.loginClient.Close()
-}
-
-// getMachineConfigFromFile parses a valid machine config file in yaml format and returns
-// a MachineConfig struct.
-func (dn *Daemon) getMachineConfigFromFile(filePath string) (*mcfgv1.MachineConfig, error) {
-	data, err := dn.fileSystemClient.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	config := resourceread.ReadMachineConfigV1OrDie(data)
-	return config, nil
-}
-
-// getIgnitionConfigFromFile parses an Ignition file and returns a usable Ignition config
-func (dn *Daemon) getIgnitionConfigFromFile(filePath string) (ignv2_2types.Config, error) {
-	data, err := dn.fileSystemClient.ReadFile(filePath)
-	if err != nil {
-		return ignv2_2types.Config{}, err
-	}
-	config, _, err := ignv2.Parse(data)
-	return config, err
-}
-
-// getMachineConfigFromURL reads a remote MC in yaml format and returns a MachineConfig struct.
-func (dn *Daemon) getMachineConfigFromURL(url string) (*mcfgv1.MachineConfig, error) {
-	// Make a request to the remote URL
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Read the body content from the request
-	body, err := dn.fileSystemClient.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unmarshal the body into the machineConfig
-	config := resourceread.ReadMachineConfigV1OrDie(body)
-
-	return config, nil
 }
 
 func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {
