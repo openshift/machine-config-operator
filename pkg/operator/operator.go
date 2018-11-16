@@ -256,7 +256,7 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
-	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, imgs)
+	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}, imgs)
 	return optr.syncAll(rc)
 }
 
@@ -308,7 +308,7 @@ func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error)
 	return ic, nil
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs Images) renderConfig {
+func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1.ObjectReference, imgs Images) renderConfig {
 	controllerconfig := mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
 		CloudProviderConfig: mc.Spec.CloudProviderConfig,
@@ -317,6 +317,7 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, imgs I
 		BaseDomain:          mc.Spec.BaseDomain,
 		EtcdCAData:          etcdCAData,
 		RootCAData:          rootCAData,
+		PullSecret:          ps,
 	}
 	return renderConfig{
 		TargetNamespace:  mc.GetNamespace(),

@@ -25,6 +25,16 @@ func setStringIfSet(modified *bool, existing *string, required string) {
 	}
 }
 
+func setBytesIfSet(modified *bool, existing *[]byte, required []byte) {
+	if len(required) == 0 {
+		return
+	}
+	if string(required) != string(*existing) {
+		*existing = required
+		*modified = true
+	}
+}
+
 func mergeMap(modified *bool, existing *map[string]string, required map[string]string) {
 	if *existing == nil {
 		*existing = map[string]string{}
