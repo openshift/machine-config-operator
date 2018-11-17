@@ -1,6 +1,8 @@
 package template
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -364,9 +366,13 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 }
 
 func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {
+	buf := &bytes.Buffer{}
+	if err := json.Compact(buf, pullSecretRaw); err != nil {
+		return nil, fmt.Errorf("couldn't compact pullsecret %q: %v", string(pullSecretRaw), err)
+	}
 	rc := &renderConfig{
 		ControllerConfigSpec: &config.Spec,
-		PullSecret:           string(pullSecretRaw),
+		PullSecret:           string(buf.Bytes()),
 	}
 	mcs, err := generateMachineConfigs(rc, templatesDir)
 	if err != nil {
