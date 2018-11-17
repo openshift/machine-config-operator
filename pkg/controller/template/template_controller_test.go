@@ -12,6 +12,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,20 +30,24 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client *fake.Clientset
+	client     *fake.Clientset
+	kubeclient *k8sfake.Clientset
 
 	ccLister []*mcfgv1.ControllerConfig
 	mcLister []*mcfgv1.MachineConfig
 
-	actions []core.Action
+	kubeactions []core.Action
+	actions     []core.Action
 
-	objects []runtime.Object
+	kubeobjects []runtime.Object
+	objects     []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
+	f.kubeobjects = []runtime.Object{}
 	return f
 }
 
@@ -55,17 +60,31 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 			ClusterName:  name,
 			BaseDomain:   "openshift.testing",
 			Platform:     "libvirt",
+			PullSecret: &corev1.ObjectReference{
+				Namespace: "default",
+				Name:      "coreos-pull-secret",
+			},
 		},
+	}
+}
+
+func newPullSecret(name string, contents []byte) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta:   metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: metav1.NamespaceDefault},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: contents},
 	}
 }
 
 func (f *fixture) newController() (*Controller, informers.SharedInformerFactory) {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	c := New(templateDir,
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(),
-		k8sfake.NewSimpleClientset(), f.client)
+		f.kubeclient, f.client)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -118,6 +137,21 @@ func (f *fixture) runController(ccname string, startInformers bool, expectError 
 
 	if len(f.actions) > len(actions) {
 		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
+	}
+
+	k8sActions := filterInformerActions(f.kubeclient.Actions())
+	for i, action := range k8sActions {
+		if len(f.kubeactions) < i+1 {
+			f.t.Errorf("%d unexpected actions: %+v", len(k8sActions)-len(f.kubeactions), k8sActions[i:])
+			break
+		}
+
+		expectedAction := f.kubeactions[i]
+		checkAction(expectedAction, action, f.t)
+	}
+
+	if len(f.kubeactions) > len(k8sActions) {
+		f.t.Errorf("%d additional expected actions:%+v", len(f.kubeactions)-len(k8sActions), f.kubeactions[len(k8sActions):])
 	}
 }
 
@@ -196,17 +230,23 @@ func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
+func (f *fixture) expectGetSecretAction(secret *corev1.Secret) {
+	f.kubeactions = append(f.kubeactions, core.NewGetAction(schema.GroupVersionResource{Resource: "secrets"}, secret.Namespace, secret.Name))
+}
 func TestCreatesMachineConfigs(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
+	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
 
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
+	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.expectGetSecretAction(ps)
 
 	for idx := range expMCs {
 		f.expectGetMachineConfigAction(expMCs[idx])
@@ -219,18 +259,21 @@ func TestCreatesMachineConfigs(t *testing.T) {
 func TestDoNothing(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
+	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
+	f.kubeobjects = append(f.kubeobjects, ps)
 	f.mcLister = append(f.mcLister, mcs...)
 	for idx := range mcs {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
+	f.expectGetSecretAction(ps)
 	for idx := range mcs {
 		f.expectGetMachineConfigAction(mcs[idx])
 	}
@@ -241,17 +284,20 @@ func TestDoNothing(t *testing.T) {
 func TestRecreateMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
+	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	f.ccLister = append(f.ccLister, cc)
 	f.objects = append(f.objects, cc)
+	f.kubeobjects = append(f.kubeobjects, ps)
 	for idx := 0; idx < len(mcs)-1; idx++ {
 		f.mcLister = append(f.mcLister, mcs[idx])
 		f.objects = append(f.objects, mcs[idx])
 	}
+	f.expectGetSecretAction(ps)
 
 	for idx := range mcs {
 		f.expectGetMachineConfigAction(mcs[idx])
@@ -264,7 +310,8 @@ func TestRecreateMachineConfig(t *testing.T) {
 func TestUpdateMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
+	ps := newPullSecret("coreos-pull-secret", []byte(`{"dummy": "dummy"}`))
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,16 +319,18 @@ func TestUpdateMachineConfig(t *testing.T) {
 	mcs[len(mcs)-1].Spec.Config = ignv2_2types.Config{}
 
 	f.ccLister = append(f.ccLister, cc)
+	f.kubeobjects = append(f.kubeobjects, ps)
 	f.objects = append(f.objects, cc)
 	for idx := range mcs {
 		f.mcLister = append(f.mcLister, mcs[idx])
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte{})
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.expectGetSecretAction(ps)
 	for idx := range expmcs {
 		f.expectGetMachineConfigAction(expmcs[idx])
 	}
