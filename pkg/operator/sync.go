@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	osv1 "github.com/openshift/cluster-version-operator/pkg/apis/operatorstatus.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,11 +28,8 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 		optr.syncMachineConfigDaemon,
 	}
 
-	if err := optr.syncStatus(osv1.OperatorStatusCondition{
-		Type:    osv1.OperatorStatusConditionTypeWorking,
-		Message: "Running sync functions",
-	}); err != nil {
-		return fmt.Errorf("error syncing status: %v", err)
+	if err := optr.syncProgressingStatus(); err != nil {
+		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
 
 	var errs []error
@@ -43,15 +39,12 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 
 	agg := utilerrors.NewAggregate(errs)
 	if agg != nil {
-		errs = append(errs, optr.syncDegradedStatus(agg))
+		errs = append(errs, optr.syncFailingStatus(agg))
 		agg = utilerrors.NewAggregate(errs)
 		return fmt.Errorf("error syncing: %v", agg.Error())
 	}
 
-	return optr.syncStatus(osv1.OperatorStatusCondition{
-		Type:    osv1.OperatorStatusConditionTypeDone,
-		Message: "Done running sync functions",
-	})
+	return optr.syncAvailableStatus()
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {

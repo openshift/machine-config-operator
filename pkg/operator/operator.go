@@ -9,8 +9,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
-	securityclientset "github.com/openshift/client-go/security/clientset/versioned"
-	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	installertypes "github.com/openshift/installer/pkg/types"
 	"k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -53,12 +52,11 @@ type Operator struct {
 
 	imagesFile string
 
-	client         mcfgclientset.Interface
-	kubeClient     kubernetes.Interface
-	securityClient securityclientset.Interface
-	apiExtClient   apiextclientset.Interface
-	cvoClient      cvoclientset.Interface
-	eventRecorder  record.EventRecorder
+	client        mcfgclientset.Interface
+	kubeClient    kubernetes.Interface
+	apiExtClient  apiextclientset.Interface
+	configClient  configclientset.Interface
+	eventRecorder record.EventRecorder
 
 	syncHandler func(ic string) error
 
@@ -82,7 +80,6 @@ func New(
 	imagesFile string,
 	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
-	configMapInformer coreinformersv1.ConfigMapInformer,
 	serviceAccountInfomer coreinformersv1.ServiceAccountInformer,
 	crdInformer apiextinformersv1beta1.CustomResourceDefinitionInformer,
 	deployInformer appsinformersv1.DeploymentInformer,
@@ -91,30 +88,27 @@ func New(
 	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
-	securityClient securityclientset.Interface,
 	apiExtClient apiextclientset.Interface,
-	cvoClient cvoclientset.Interface,
+	configClient configclientset.Interface,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	optr := &Operator{
-		namespace:      namespace,
-		name:           name,
-		imagesFile:     imagesFile,
-		client:         client,
-		kubeClient:     kubeClient,
-		securityClient: securityClient,
-		apiExtClient:   apiExtClient,
-		cvoClient:      cvoClient,
-		eventRecorder:  eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigoperator"}),
-		queue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		namespace:     namespace,
+		name:          name,
+		imagesFile:    imagesFile,
+		client:        client,
+		kubeClient:    kubeClient,
+		apiExtClient:  apiExtClient,
+		configClient:  configClient,
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigoperator"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
 	mcoconfigInformer.Informer().AddEventHandler(optr.eventHandler())
 	controllerConfigInformer.Informer().AddEventHandler(optr.eventHandler())
-	configMapInformer.Informer().AddEventHandler(optr.eventHandler())
 	serviceAccountInfomer.Informer().AddEventHandler(optr.eventHandler())
 	crdInformer.Informer().AddEventHandler(optr.eventHandler())
 	deployInformer.Informer().AddEventHandler(optr.eventHandler())
@@ -189,13 +183,11 @@ func (optr *Operator) processNextWorkItem() bool {
 
 func (optr *Operator) handleErr(err error, key interface{}) {
 	if err == nil {
-		//TODO: set operator Done.
-
 		optr.queue.Forget(key)
 		return
 	}
 
-	//TODO: set operator degraded.
+	optr.syncFailingStatus(err)
 
 	if optr.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing operator %v: %v", key, err)
@@ -270,8 +262,8 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 	} else if d, dok := cm.Data[key]; dok {
 		raw, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
-                        // this is actually the result of a bad assumption.  configmap values are not encoded.
-                        // After the installer pull merges, this entire attempt to decode can go away.
+			// this is actually the result of a bad assumption.  configmap values are not encoded.
+			// After the installer pull merges, this entire attempt to decode can go away.
 			return []byte(d), nil
 		}
 		return raw, nil
