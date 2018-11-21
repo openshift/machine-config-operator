@@ -2,13 +2,14 @@ package common
 
 import (
 	"github.com/golang/glog"
-	securityclientset "github.com/openshift/client-go/security/clientset/versioned"
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
 // ClientBuilder can create a variety of kubernetes client interface
@@ -29,8 +30,8 @@ func (cb *ClientBuilder) KubeClientOrDie(name string) kubernetes.Interface {
 
 // ClientOrDie returns the kubernetes client interface for security related kubernetes objects
 // such as pod security policy, security context.
-func (cb *ClientBuilder) SecurityClientOrDie(name string) securityclientset.Interface {
-	return securityclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+func (cb *ClientBuilder) ConfigClientOrDie(name string) configclientset.Interface {
+	return configclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // ClientOrDie returns the kubernetes client interface for extended kubernetes objects.
