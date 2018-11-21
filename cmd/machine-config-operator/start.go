@@ -58,7 +58,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctx.KubeInformerFactory.Start(ctx.Stop)
 		ctx.KubeNamespacedInformerFactory.Start(ctx.Stop)
 		ctx.APIExtInformerFactory.Start(ctx.Stop)
-		ctx.SecurityInformerFactory.Start(ctx.Stop)
 		close(ctx.KubeInformersStarted)
 
 		select {}
@@ -85,7 +84,6 @@ func startControllers(ctx *common.ControllerContext) error {
 		startOpts.imagesFile,
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-		ctx.KubeInformerFactory.Core().V1().ConfigMaps(),
 		ctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
 		ctx.APIExtInformerFactory.Apiextensions().V1beta1().CustomResourceDefinitions(),
 		ctx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
@@ -94,9 +92,8 @@ func startControllers(ctx *common.ControllerContext) error {
 		ctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
 		ctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		ctx.ClientBuilder.KubeClientOrDie(componentName),
-		ctx.ClientBuilder.SecurityClientOrDie(componentName),
 		ctx.ClientBuilder.APIExtClientOrDie(componentName),
-		ctx.ClientBuilder.ClusterversionClientOrDie(componentName),
+		ctx.ClientBuilder.ConfigClientOrDie(componentName),
 	).Run(2, ctx.Stop)
 
 	return nil
