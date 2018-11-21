@@ -19,19 +19,19 @@ var (
 	}
 
 	rootOpts struct {
-		port  int
-		cert  string
-		key   string
-		debug bool
+		sport  int
+		isport int
+		cert   string
+		key    string
 	}
 )
 
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
-	rootCmd.PersistentFlags().IntVar(&rootOpts.port, "port", 49500, "port to serve ignition configs")
+	rootCmd.PersistentFlags().IntVar(&rootOpts.sport, "secure-port", 49500, "secure port to serve ignition configs")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "/etc/ssl/mcs/tls.crt", "cert file for TLS")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
-	rootCmd.PersistentFlags().BoolVar(&rootOpts.debug, "debug", false, "turns off TLS")
+	rootCmd.PersistentFlags().IntVar(&rootOpts.isport, "insecure-port", 49501, "insecure port to serve ignition configs")
 }
 
 func main() {
