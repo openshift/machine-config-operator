@@ -20,4 +20,14 @@ const (
 	MachineConfigDaemonOSRHEL = "RHEL"
 	// MachineConfigDaemonOSCENTOS denotes CENTOS
 	MachineConfigDaemonOSCENTOS = "CENTOS"
+
+	// MachineConfigMCFileType denotes when an MC config has been provided
+	MachineConfigMCFileType = "MACHINECONFIG"
+	// MachineConfigIgnitionFileType denotes when an Ignition config has provided
+	MachineConfigIgnitionFileType = "IGNITION"
+
+	// MachineConfigOnceFromRemoteConfig denotes that the config was pulled from a remote source
+	MachineConfigOnceFromRemoteConfig = "REMOTE"
+	// MachineConfigOnceFromLocalConfig denotes that the config was found locally
+	MachineConfigOnceFromLocalConfig = "LOCAL"
 )

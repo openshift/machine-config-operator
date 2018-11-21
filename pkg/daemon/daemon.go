@@ -15,13 +15,14 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -62,8 +63,7 @@ type Daemon struct {
 
 	nodeListerSynced cache.InformerSynced
 	// onceFrom defines where the source config is to run the daemon once and exit
-	onceFrom     string
-	fromIgnition bool
+	onceFrom string
 
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
@@ -96,8 +96,6 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
-	fromIgnition bool,
-	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 	nodeWriter *NodeWriter,
@@ -125,7 +123,6 @@ func New(
 		fileSystemClient:       fileSystemClient,
 		bootedOSImageURL:       osImageURL,
 		onceFrom:               onceFrom,
-		fromIgnition:           fromIgnition,
 		kubeletHealthzEnabled:  kubeletHealthzEnabled,
 		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
 		nodeWriter:             nodeWriter,
@@ -145,7 +142,6 @@ func NewClusterDrivenDaemon(
 	kubeClient kubernetes.Interface,
 	fileSystemClient FileSystemClient,
 	onceFrom string,
-	fromIgnition bool,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -158,8 +154,6 @@ func NewClusterDrivenDaemon(
 		nodeUpdaterClient,
 		fileSystemClient,
 		onceFrom,
-		fromIgnition,
-		nodeInformer,
 		kubeletHealthzEnabled,
 		kubeletHealthzEndpoint,
 		nodeWriter,
@@ -196,12 +190,19 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 
 	// Catch quickly if we've been asked to run once.
 	if dn.onceFrom != "" {
-		if dn.fromIgnition {
+		genericConfig, configType, contentFrom, err := dn.SenseAndLoadOnceFrom()
+		if err != nil {
+			glog.Warningf("Unable to decipher onceFrom config type: %s", err)
+			return err
+		}
+		if configType == MachineConfigIgnitionFileType {
 			glog.V(2).Info("Daemon running directly from Ignition")
-			return dn.runFromIgnition()
-		} else {
-			glog.V(2).Info("Daemon running once per request")
-			return dn.runOnce()
+			ignConfig := genericConfig.(ignv2_2types.Config)
+			return dn.runOnceFromIgnition(ignConfig)
+		} else if configType == MachineConfigMCFileType {
+			glog.V(2).Info("Daemon running directly from MachineConfig")
+			mcConfig := genericConfig.(*(mcfgv1.MachineConfig))
+			return dn.runOnceFromMachineConfig(*mcConfig, contentFrom)
 		}
 	}
 
@@ -212,7 +213,7 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 
 	<-stop
 
-	// Run() should block on the above <-stop until an updated is detected,
+	// Run(mcConfig)til an updated is detected,
 	// which is handled by the callbacks.
 	return nil
 }
@@ -316,23 +317,12 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	return nil
 }
 
-// runOnce pulls the MachineConfig from either a file or remote URL
-// executes one run, and exits.
-// TODO: Revisit the Run/process methods and refactor and unify them with runOnce
-func (dn *Daemon) runOnce() error {
-	var machineConfig *mcfgv1.MachineConfig
-	var oldConfig mcfgv1.MachineConfig
-	var err error
-
-	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
+// runOnceFromMachineConfig utilizes a parsed machineConfig and executes in onceFrom
+// mode. If the content was remote, it executes cluster calls, otherwise it assumes
+// no cluster is present yet.
+func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, contentFrom string) error {
+	if contentFrom == MachineConfigOnceFromRemoteConfig {
 		// NOTE: This case expects a cluster to exists already.
-		// If we sense a remote URL has been provided then request MC content
-		// from a remote URL and parse it.
-		glog.V(2).Infof("Getting machine config content from %s", dn.onceFrom)
-		machineConfig, err = dn.getMachineConfigFromURL(dn.onceFrom)
-		if err != nil {
-			return err
-		}
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			glog.V(2).Infof("Unable to prep update: %s", err)
@@ -341,57 +331,32 @@ func (dn *Daemon) runOnce() error {
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.executeUpdateFromClusterWithMachineConfig(machineConfig); err != nil {
+		if err := dn.executeUpdateFromClusterWithMachineConfig(&machineConfig); err != nil {
 			glog.Warningf("Unable to update: %s", err)
 			return err
 		}
 		return nil
 
-	} else if ValidPath(dn.onceFrom) {
+	} else if contentFrom == MachineConfigOnceFromLocalConfig {
 		// NOTE: This case expects that the cluster is NOT CREATED YET.
-		// If we sense a local file has been provided parse it.
-		oldConfig = mcfgv1.MachineConfig{}
-		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
-		if err != nil {
-			return err
-		}
-		machineConfig, err = dn.getMachineConfigFromFile(absoluteOnceFrom)
-		if err != nil {
-			return err
-		}
+		oldConfig := mcfgv1.MachineConfig{}
 		// Execute update without hitting the cluster
-		return dn.update(&oldConfig, machineConfig)
+		return dn.update(&oldConfig, &machineConfig)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
 }
 
-func (dn *Daemon) runFromIgnition() error {
-	if strings.HasPrefix("http://", dn.onceFrom) || strings.HasPrefix("https://", dn.onceFrom) {
-		// TODO(michaelgugino): implement this
-		glog.V(2).Infof("Getting ignition config content from %s", dn.onceFrom)
-		return nil
-	} else if ValidPath(dn.onceFrom) {
-
-		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
-		if err != nil {
-			return err
-		}
-		ignConfig, err := dn.getIgnitionConfigFromFile(absoluteOnceFrom)
-		if err != nil {
-			return err
-		}
-		// Execute update without hitting the cluster
-		if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
-			return err
-		}
-		if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
-			return err
-		}
-		return nil
+// runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
+func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
+	// Execute update without hitting the cluster
+	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
+		return err
 	}
-	// Otherwise return an error as the input format is unsupported
-	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
+		return err
+	}
+	return dn.reboot()
 }
 
 // handleNodeUpdate is the gatekeeper handler for informer callbacks detecting
@@ -687,47 +652,6 @@ func (dn *Daemon) Close() {
 	dn.loginClient.Close()
 }
 
-// getMachineConfigFromFile parses a valid machine config file in yaml format and returns
-// a MachineConfig struct.
-func (dn *Daemon) getMachineConfigFromFile(filePath string) (*mcfgv1.MachineConfig, error) {
-	data, err := dn.fileSystemClient.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	config := resourceread.ReadMachineConfigV1OrDie(data)
-	return config, nil
-}
-
-func (dn *Daemon) getIgnitionConfigFromFile(filePath string) (ignv2_2types.Config, error) {
-	data, err := dn.fileSystemClient.ReadFile(filePath)
-	if err != nil {
-		return ignv2_2types.Config{}, err
-	}
-	config, _, _ := ignv2.Parse(data)
-	return config, nil
-}
-
-// getMachineConfigFromURL reads a remote MC in yaml format and returns a MachineConfig struct.
-func (dn *Daemon) getMachineConfigFromURL(url string) (*mcfgv1.MachineConfig, error) {
-	// Make a request to the remote URL
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Read the body content from the request
-	body, err := dn.fileSystemClient.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unmarshal the body into the machineConfig
-	config := resourceread.ReadMachineConfigV1OrDie(body)
-
-	return config, nil
-}
-
 func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {
 	return client.Get(name, metav1.GetOptions{})
 }
@@ -741,4 +665,61 @@ func ValidPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// SenseAndLoadOnceFrom gets a hold of the content for supported onceFrom configurations,
+// parses to verify the type, and returns back the genericInterface, the type description,
+// if it was local or remote, and error.
+func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
+	var content []byte
+	var err error
+	var contentFrom string
+	// Read the content from a remote endpoint if requested
+	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
+		contentFrom = MachineConfigOnceFromRemoteConfig
+		resp, err := http.Get(dn.onceFrom)
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+		defer resp.Body.Close()
+		// Read the body content from the request
+		content, err = dn.fileSystemClient.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+	} else {
+		// Otherwise read it from a local file
+		contentFrom = MachineConfigOnceFromLocalConfig
+		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+
+		content, err = dn.fileSystemClient.ReadFile(absoluteOnceFrom)
+		if err != nil {
+			return nil, "", contentFrom, err
+		}
+	}
+
+	// Try each supported parser
+	ignConfig, _, err := ignv2.Parse(content)
+	if err == nil && ignConfig.Ignition.Version != "" {
+		glog.V(2).Infof("onceFrom file is of type Ignition")
+		return ignConfig, MachineConfigIgnitionFileType, contentFrom, nil
+	}
+
+	glog.V(2).Infof("%s is not an Ignition config: %s. Trying MachineConfig.", dn.onceFrom, err)
+
+	// TODO: Add to resource/machineconfig.go as a function?
+	mcfgScheme := runtime.NewScheme()
+	mcfgv1.AddToScheme(mcfgScheme)
+	mcfgCodecs := serializer.NewCodecFactory(mcfgScheme)
+	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), content)
+	if err == nil {
+		glog.V(2).Infof("onceFrom file is of type MachineConfig")
+		mcConfig := requiredObj.(*mcfgv1.MachineConfig)
+		return mcConfig, MachineConfigMCFileType, contentFrom, nil
+	}
+
+	return nil, "", "", fmt.Errorf("unable to decipher onceFrom config type: %s", err)
 }
