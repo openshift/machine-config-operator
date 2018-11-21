@@ -17,12 +17,12 @@ import (
 const (
 	// LeaseDuration is the default duration for the leader election lease.
 	LeaseDuration = 90 * time.Second
-	// LeaseDuration is the default duration for the leader renewal.
+	// RenewDeadline is the default duration for the leader renewal.
 	RenewDeadline = 60 * time.Second
-	// LeaseDuration is the default duration for the leader electrion retrial.
+	// RetryPeriod is the default duration for the leader electrion retrial.
 	RetryPeriod = 30 * time.Second
 
-	minResyncPeriod = 10 * time.Second
+	minResyncPeriod = 20 * time.Minute
 )
 
 func resyncPeriod() func() time.Duration {
