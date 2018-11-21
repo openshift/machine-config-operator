@@ -9,7 +9,6 @@ contents:
     clusterDNS:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
-    readOnlyPort: 10255
     runtimeRequestTimeout: 10m
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
