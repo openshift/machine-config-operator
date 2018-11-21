@@ -312,36 +312,29 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0e4a2394c09372421e41095dfe6ff6e56ac9cdb301064e21c0b015d20ae16c4d"
+  digest = "1:ed29ecf1c5dd11cf07819a0fac7bbbd38688b9eef4427d4e6f791d76ed4a03f4"
   name = "github.com/openshift/api"
-  packages = ["security/v1"]
+  packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "f424ae81fec6a71a7d7421d5c572a13106b520fc"
+  revision = "ffac7eec5e7f87c6a9fcbc766e3b024ed3ef39ea"
 
 [[projects]]
   branch = "master"
-  digest = "1:068c3a6996a1485fd808d55d8a88363c485acdf451fc9f1a7d7d2991769cb846"
+  digest = "1:fdda79460918fcab1410b47dd23e33eb1f78f80e65cb7bc80352d23d72df8893"
   name = "github.com/openshift/client-go"
   packages = [
-    "security/clientset/versioned",
-    "security/clientset/versioned/scheme",
-    "security/clientset/versioned/typed/security/v1",
-    "security/informers/externalversions",
-    "security/informers/externalversions/internalinterfaces",
-    "security/informers/externalversions/security",
-    "security/informers/externalversions/security/v1",
-    "security/listers/security/v1",
+    "config/clientset/versioned",
+    "config/clientset/versioned/scheme",
+    "config/clientset/versioned/typed/config/v1",
   ]
   pruneopts = "NUT"
-  revision = "5b198a036f098f34fbf0c42768382d80708cd2a9"
+  revision = "960f72aa32a8e9b4dd769b90ff1cb5bd4c898eec"
 
 [[projects]]
   branch = "master"
-  digest = "1:fff3d05867197962bd6d2f3feb7d4068e9a734237ff603f423b9cb0ff3026681"
+  digest = "1:eea2525811ae00259877526b7a895caa7e85d8683b921daf46595314b32aff8a"
   name = "github.com/openshift/cluster-version-operator"
   packages = [
-    "lib/resourceapply",
-    "lib/resourcemerge",
     "pkg/apis",
     "pkg/apis/clusterversion.openshift.io/v1",
     "pkg/apis/operatorstatus.openshift.io/v1",
@@ -349,8 +342,6 @@
     "pkg/generated/clientset/versioned/scheme",
     "pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1",
     "pkg/generated/clientset/versioned/typed/operatorstatus.openshift.io/v1",
-    "pkg/generated/listers/clusterversion.openshift.io/v1",
-    "pkg/generated/listers/operatorstatus.openshift.io/v1",
   ]
   pruneopts = "NUT"
   revision = "a5a76d5118048d0e969e6bd3d40cb4c36591d171"
@@ -841,33 +832,12 @@
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[projects]]
-  digest = "1:03ab6a5fd79eb77eff18da6eb498ea0d68010b5af0cfa195230db43708459520"
-  name = "k8s.io/kube-aggregator"
-  packages = [
-    "pkg/apis/apiregistration",
-    "pkg/apis/apiregistration/v1",
-    "pkg/apis/apiregistration/v1beta1",
-    "pkg/client/clientset_generated/clientset/scheme",
-    "pkg/client/clientset_generated/clientset/typed/apiregistration/v1",
-  ]
-  pruneopts = "NUT"
-  revision = "89cd614e9090a2f1e78316ed459857c49c55d276"
-  version = "kubernetes-1.11.1"
-
-[[projects]]
   branch = "master"
   digest = "1:a2c842a1e0aed96fd732b535514556323a6f5edfded3b63e5e0ab1bce188aa54"
   name = "k8s.io/kube-openapi"
   packages = ["pkg/util/proto"]
   pruneopts = "NUT"
   revision = "d8ea2fe547a448256204cfc68dfee7b26c720acb"
-
-[[projects]]
-  digest = "1:ff54706d46de40c865b5fcfc4bde1087c02510cd12e0150de8e405ab427d9907"
-  name = "k8s.io/utils"
-  packages = ["pointer"]
-  pruneopts = "NUT"
-  revision = "045dc31ee5c40e8240241ce28dc24d7b56130373"
 
 [solve-meta]
   analyzer-name = "dep"
@@ -885,10 +855,8 @@
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
-    "github.com/openshift/client-go/security/clientset/versioned",
-    "github.com/openshift/client-go/security/informers/externalversions",
-    "github.com/openshift/cluster-version-operator/lib/resourceapply",
-    "github.com/openshift/cluster-version-operator/pkg/apis/clusterversion.openshift.io/v1",
+    "github.com/openshift/api/config/v1",
+    "github.com/openshift/client-go/config/clientset/versioned",
     "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
     "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
@@ -905,8 +873,8 @@
     "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1",
     "k8s.io/apimachinery/pkg/api/equality",
     "k8s.io/apimachinery/pkg/api/errors",
+    "k8s.io/apimachinery/pkg/api/meta",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
-    "k8s.io/apimachinery/pkg/fields",
     "k8s.io/apimachinery/pkg/labels",
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
