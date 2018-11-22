@@ -200,7 +200,7 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 
 	pools, err := ctrl.getPoolsForMachineConfig(curMC)
 	if err != nil {
-		glog.Error("error finding pools for machineconfig: %v", err)
+		glog.Errorf("error finding pools for machineconfig: %v", err)
 		return
 	}
 
@@ -237,7 +237,7 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 
 	pools, err := ctrl.getPoolsForMachineConfig(mc)
 	if err != nil {
-		glog.Error("error finding pools for machineconfig: %v", err)
+		glog.Errorf("error finding pools for machineconfig: %v", err)
 		return
 	}
 

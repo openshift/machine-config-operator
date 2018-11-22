@@ -46,6 +46,12 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	apiHandler := server.NewServerAPIHandler(cs)
-	apiServer := server.NewAPIServer(apiHandler, rootOpts.port, rootOpts.debug, rootOpts.cert, rootOpts.key)
-	apiServer.Serve()
+	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
+	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
+
+	stopCh := make(chan struct{})
+	go secureServer.Serve()
+	go insecureServer.Serve()
+	<-stopCh
+	panic("not possible")
 }

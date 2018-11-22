@@ -84,7 +84,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		case *v1.ControllerConfig:
 			cconfig = obj
 		default:
-			glog.Infof("skipping %T", path, obji)
+			glog.Infof("skipping %q %T", path, obji)
 		}
 	}
 

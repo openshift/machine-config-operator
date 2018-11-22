@@ -21,23 +21,23 @@ type poolRequest struct {
 // APIServer provides the HTTP(s) endpoint
 // for providing the machine configs.
 type APIServer struct {
-	handler *APIHandler
-	port    int
-	debug   bool
-	cert    string
-	key     string
+	handler  *APIHandler
+	port     int
+	insecure bool
+	cert     string
+	key      string
 }
 
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, d bool, c, k string) *APIServer {
+func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 	return &APIServer{
-		handler: a,
-		port:    p,
-		debug:   d,
-		cert:    c,
-		key:     k,
+		handler:  a,
+		port:     p,
+		insecure: is,
+		cert:     c,
+		key:      k,
 	}
 }
 
@@ -52,9 +52,8 @@ func (a *APIServer) Serve() {
 	}
 
 	glog.Info("launching server")
-	if a.debug {
-		// Serve a non TLS server for debugging
-		glog.Warning("INSECURE MODE only for testings")
+	if a.insecure {
+		// Serve a non TLS server.
 		if err := mcs.ListenAndServe(); err != http.ErrServerClosed {
 			glog.Exitf("Machine Config Server exited with error: %v", err)
 		}
