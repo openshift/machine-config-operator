@@ -1,19 +1,23 @@
 # machine-config-operator
 
-## machine-config-operator
-- Build: `WHAT=machine-config-operator ./hack/build-go.sh`
+## Generic building
 
-## machine-config-server
+You can either use the Makefile or the `hack/build-go.sh` script directory to build the targets. When using `hack/build-go.sh` you will need to run it via `WHAT=<TARGET> hack/build-go.sh`
+
+### machine-config-operator
+- Build: `make machine-config-operator`
+
+### machine-config-server
 - [Design doc](docs/MachineConfigServer.md)
-- Build: `WHAT=machine-config-server ./hack/build-go.sh`
+- Build: `make machine-config-server`
 
-## machine-config-daemon
+### machine-config-daemon
 - [Design doc](docs/MachineConfigDaemon.md)
-- Build: `WHAT=machine-config-daemon ./hack/build-go.sh`
+- Build: `make machine-config-daemon`
 
-## machine-config-controller
+### machine-config-controller
 - [Design doc](docs/MachineConfigController.md)
-- `WHAT=machine-config-controller ./hack/build-go.sh`
+- Build: `make machine-config-controller`
 
 ## Tests
 Tests can be executed on a per package basis with `go test` like so:
@@ -22,22 +26,9 @@ Tests can be executed on a per package basis with `go test` like so:
 
 All tests can be executed with:
 
-`go test -v ./...`
+`make test`
 
 ## Building Images
 **NOTE**: To build images you will need [`podman`](https://github.com/containers/libpod/) installed.
 
-Images can be built locally via the `hack/build-image.sh` script. This script uses the
-`WHAT` variable similarly to the `hack/build-go.sh` script.
-
-```console
-$ ./hack/build-image.sh
-ERROR: Note: Building unprivileged may fail due to permissions
-ERROR: WHAT must be set to one of the following:
-ERROR: - all
-ERROR: - machine-config-controller
-ERROR: - machine-config-daemon
-ERROR: - machine-config-operator
-$ WHAT=machine-config-daemon ./hack/build-image.sh
-[...]
-```
+Images can be built for the corresponding Dockerfiles via `make image-<TOPIC>` where `<TOPIC>` is the suffix after the first dot. For example `Dockerfile.setup-etcd-environment.rhel7` would be `make image-setup-etcd-environment.rhel7`.
