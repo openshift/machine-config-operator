@@ -3,5 +3,6 @@
 aliases:
   machine-config-daemon-approvers:
     - ashcrow
-    - sdemos
     - jlebon
+    - kikisdeliveryservice
+    - yuqi-zhang
