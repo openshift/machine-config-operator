@@ -469,8 +469,8 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return nil
 	}
 	// see similar logic in checkOS()
-	if newConfig.Spec.OSImageURL == "://dummy" {
-		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
+	if dn.isUnspecifiedOS(newConfig.Spec.OSImageURL) {
+		glog.Infof(`No target osImageURL provided`)
 		return nil
 	}
 

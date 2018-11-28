@@ -203,10 +203,6 @@ func generateMachineConfigForRole(config *renderConfig, roleName string, roleDir
 const (
 	machineConfigNameTmpl     = "00-%s"
 	machineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
-
-	// DefaultOSImageURL is the value used for OSImageURL field.
-	// TODO: this might have to be configured using ControllerConfig.
-	DefaultOSImageURL = "://dummy"
 )
 
 func machineConfigFromIgnConfig(role string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
@@ -220,7 +216,7 @@ func machineConfigFromIgnConfig(role string, ignCfg *ignv2_2types.Config) *mcfgv
 			Name:   name,
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: DefaultOSImageURL,
+			OSImageURL: "",
 			Config:     *ignCfg,
 		},
 	}
