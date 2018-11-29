@@ -12,3 +12,6 @@ contents:
     runtimeRequestTimeout: 10m
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
+    systemReserved:
+      cpu: 500m
+      memory: 500Mi
