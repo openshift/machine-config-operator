@@ -19,6 +19,20 @@ func EnsureClusterRoleBinding(modified *bool, existing *rbacv1.ClusterRoleBindin
 	}
 }
 
+// EnsureRoleBinding ensures that the existing matches the required.
+// modified is set to true when existing had to be updated with required.
+func EnsureRoleBinding(modified *bool, existing *rbacv1.RoleBinding, required rbacv1.RoleBinding) {
+	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	if !equality.Semantic.DeepEqual(existing.Subjects, required.Subjects) {
+		*modified = true
+		existing.Subjects = required.Subjects
+	}
+	if !equality.Semantic.DeepEqual(existing.RoleRef, required.RoleRef) {
+		*modified = true
+		existing.RoleRef = required.RoleRef
+	}
+}
+
 // EnsureClusterRole ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureClusterRole(modified *bool, existing *rbacv1.ClusterRole, required rbacv1.ClusterRole) {
