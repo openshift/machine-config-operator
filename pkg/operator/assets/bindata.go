@@ -12,6 +12,9 @@
 // manifests/machineconfigdaemon/clusterrole.yaml
 // manifests/machineconfigdaemon/clusterrolebinding.yaml
 // manifests/machineconfigdaemon/daemonset.yaml
+// manifests/machineconfigdaemon/events-clusterrole.yaml
+// manifests/machineconfigdaemon/events-rolebinding-default.yaml
+// manifests/machineconfigdaemon/events-rolebinding-target.yaml
 // manifests/machineconfigdaemon/sa.yaml
 // manifests/machineconfigpool.crd.yaml
 // manifests/machineconfigserver/clusterrole.yaml
@@ -562,6 +565,90 @@ func manifestsMachineconfigdaemonDaemonsetYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsMachineconfigdaemonEventsClusterroleYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: machine-config-daemon-events
+  namespace: {{.TargetNamespace}}
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+`)
+
+func manifestsMachineconfigdaemonEventsClusterroleYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigdaemonEventsClusterroleYaml, nil
+}
+
+func manifestsMachineconfigdaemonEventsClusterroleYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigdaemonEventsClusterroleYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigdaemon/events-clusterrole.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigdaemonEventsRolebindingDefaultYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-config-daemon-events
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: machine-config-daemon-events
+subjects:
+- kind: ServiceAccount
+  namespace: {{.TargetNamespace}}
+  name: machine-config-daemon
+`)
+
+func manifestsMachineconfigdaemonEventsRolebindingDefaultYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigdaemonEventsRolebindingDefaultYaml, nil
+}
+
+func manifestsMachineconfigdaemonEventsRolebindingDefaultYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigdaemonEventsRolebindingDefaultYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigdaemon/events-rolebinding-default.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigdaemonEventsRolebindingTargetYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: machine-config-daemon-events
+  namespace: {{.TargetNamespace}}
+roleRef:
+  kind: ClusterRole
+  name: machine-config-daemon-events
+subjects:
+- kind: ServiceAccount
+  namespace: {{.TargetNamespace}}
+  name: machine-config-daemon
+`)
+
+func manifestsMachineconfigdaemonEventsRolebindingTargetYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigdaemonEventsRolebindingTargetYaml, nil
+}
+
+func manifestsMachineconfigdaemonEventsRolebindingTargetYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigdaemonEventsRolebindingTargetYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigdaemon/events-rolebinding-target.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsMachineconfigdaemonSaYaml = []byte(`apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -1024,6 +1111,9 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigdaemon/clusterrole.yaml": manifestsMachineconfigdaemonClusterroleYaml,
 	"manifests/machineconfigdaemon/clusterrolebinding.yaml": manifestsMachineconfigdaemonClusterrolebindingYaml,
 	"manifests/machineconfigdaemon/daemonset.yaml": manifestsMachineconfigdaemonDaemonsetYaml,
+	"manifests/machineconfigdaemon/events-clusterrole.yaml": manifestsMachineconfigdaemonEventsClusterroleYaml,
+	"manifests/machineconfigdaemon/events-rolebinding-default.yaml": manifestsMachineconfigdaemonEventsRolebindingDefaultYaml,
+	"manifests/machineconfigdaemon/events-rolebinding-target.yaml": manifestsMachineconfigdaemonEventsRolebindingTargetYaml,
 	"manifests/machineconfigdaemon/sa.yaml": manifestsMachineconfigdaemonSaYaml,
 	"manifests/machineconfigpool.crd.yaml": manifestsMachineconfigpoolCrdYaml,
 	"manifests/machineconfigserver/clusterrole.yaml": manifestsMachineconfigserverClusterroleYaml,
@@ -1095,6 +1185,9 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"clusterrole.yaml": &bintree{manifestsMachineconfigdaemonClusterroleYaml, map[string]*bintree{}},
 			"clusterrolebinding.yaml": &bintree{manifestsMachineconfigdaemonClusterrolebindingYaml, map[string]*bintree{}},
 			"daemonset.yaml": &bintree{manifestsMachineconfigdaemonDaemonsetYaml, map[string]*bintree{}},
+			"events-clusterrole.yaml": &bintree{manifestsMachineconfigdaemonEventsClusterroleYaml, map[string]*bintree{}},
+			"events-rolebinding-default.yaml": &bintree{manifestsMachineconfigdaemonEventsRolebindingDefaultYaml, map[string]*bintree{}},
+			"events-rolebinding-target.yaml": &bintree{manifestsMachineconfigdaemonEventsRolebindingTargetYaml, map[string]*bintree{}},
 			"sa.yaml": &bintree{manifestsMachineconfigdaemonSaYaml, map[string]*bintree{}},
 		}},
 		"machineconfigpool.crd.yaml": &bintree{manifestsMachineconfigpoolCrdYaml, map[string]*bintree{}},

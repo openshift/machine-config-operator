@@ -2,20 +2,21 @@ package daemon
 
 import (
 	"fmt"
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/golang/glog"
-	drain "github.com/openshift/kubernetes-drain"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/vincent-petithory/dataurl"
 	"io/ioutil"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
 	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"time"
+
+	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/golang/glog"
+	drain "github.com/openshift/kubernetes-drain"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/vincent-petithory/dataurl"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -37,6 +38,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 	if !reconcilable {
+		dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", "New config could not be reconciled.")
 		return fmt.Errorf("daemon can't reconcile this config")
 	}
 
@@ -60,6 +62,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 			return err
 		}
 
+		dn.recorder.Eventf(node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+
 		err = drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
 			DeleteLocalData:    true,
 			Force:              true,
@@ -71,7 +75,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		}
 		glog.V(2).Infof("Node successfully drained")
 	}
+
 	// reboot. this function shouldn't actually return.
+	dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", "Node will reboot for new config.")
 	return dn.reboot()
 }
 
