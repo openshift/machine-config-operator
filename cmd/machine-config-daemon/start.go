@@ -70,10 +70,20 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 		glog.Fatalf("unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
 	}
+
+	// This channel is used to ensure all spawned goroutines exit when we exit.
 	stopCh := make(chan struct{})
 	defer close(stopCh)
+
+	// This channel is used to signal Run() something failed and to jump ship.
+	// It's purely a chan<- in the Daemon struct for goroutines to write to, and
+	// a <-chan in Run() for the main thread to listen on.
+	exitCh := make(chan error)
+	defer close(exitCh)
+
 	var dn *daemon.Daemon
 	var ctx *common.ControllerContext
+
 
 	glog.Info("starting node writer")
 	nodeWriter := daemon.NewNodeWriter()
@@ -92,6 +102,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.kubeletHealthzEnabled,
 			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
+			exitCh,
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize single run daemon: %v", err)
@@ -118,6 +129,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.kubeletHealthzEnabled,
 			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
+			exitCh,
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize daemon: %v", err)
@@ -135,18 +147,18 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if startOpts.onceFrom == "" {
-		err = dn.CheckStateOnBoot(stopCh)
+		err = dn.CheckStateOnBoot()
 		if err != nil {
 			glog.Fatalf("error checking initial state of node: %v", err)
 		}
-		ctx.KubeInformerFactory.Start(ctx.Stop)
+		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.KubeInformersStarted)
 	}
 
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err = dn.Run(stopCh)
+	err = dn.Run(stopCh, exitCh)
 	if err != nil {
 		glog.Fatalf("failed to run: %v", err)
 	}
