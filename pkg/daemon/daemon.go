@@ -464,15 +464,15 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(desiredConfig *mcfgv1.MachineCo
 	if err != nil {
 		return err
 	}
-	dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, DesiredMachineConfigAnnotationKey)
-	if err != nil {
-		return err
-	}
 	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
 	if err != nil {
 		return err
 	}
 	if desiredConfig == nil {
+		dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, DesiredMachineConfigAnnotationKey)
+		if err != nil {
+			return err
+		}
 		desiredConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
 		if err != nil {
 			return err
