@@ -208,8 +208,7 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 	}
 
 	if !cache.WaitForCacheSync(stop, dn.nodeListerSynced) {
-		glog.Error("Marking degraded due to: failure to sync caches")
-		return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return dn.nodeWriter.SetUpdateDegradedMsgIgnoreErr("failed to sync cache", dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
 
 	<-stop
@@ -230,8 +229,7 @@ func (dn *Daemon) runKubeletHealthzMonitor(stop <-chan struct{}) {
 				glog.Warningf("Failed kubelet health check: %v", err)
 				failureCount++
 				if failureCount >= kubeletHealthzFailureThreshold {
-					glog.Error("Kubelet health failure threshold reached. Marking degraded.")
-					dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+					dn.nodeWriter.SetUpdateDegradedMsgIgnoreErr("Kubelet health failure threshold reached", dn.kubeClient.CoreV1().Nodes(), dn.name)
 				}
 			} else {
 				failureCount = 0 // reset failure count on success
@@ -285,8 +283,7 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	// sanity check we're not already in a degraded state
 	if state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
-		glog.Errorf("Marking degraded due to: %v", err)
-		return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 	} else if state == MachineConfigDaemonStateDegraded {
 		// just sleep so that we don't clobber output of previous run which
 		// probably contains the real reason why we marked the node as degraded
@@ -301,15 +298,13 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 	// validate machine state
 	isDesired, dcAnnotation, err := dn.isDesiredMachineState()
 	if err != nil {
-		glog.Errorf("Marking degraded due to: %v", err)
-		return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
 
 	if isDesired {
 		// we got the machine state we wanted. set the update complete!
 		if err := dn.completeUpdate(dcAnnotation); err != nil {
-			glog.Errorf("Marking degraded due to: %v", err)
-			return dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
+			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		}
 	} else if err := dn.triggerUpdate(); err != nil {
 		return err
@@ -396,9 +391,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
 	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
-		glog.Errorf("Marking degraded due to: %v", err)
-		dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name)
-		return false, err
+		return false, dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 	} else if state == MachineConfigDaemonStateDegraded {
 		// Just return since we want to continue sleeping
 		return false, fmt.Errorf("state is already degraded")
@@ -425,10 +418,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	// The desired machine config has changed, trigger update
 	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
-		glog.Errorf("Marking degraded due to: %v", err)
-		if errSet := dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name); errSet != nil {
-			glog.Errorf("Further error attempting to set the node to degraded: %v", errSet)
-		}
+		dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		// reboot the node, which will catch the degraded state and sleep
 		dn.reboot()
 	}
