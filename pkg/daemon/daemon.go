@@ -426,7 +426,7 @@ func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv
 	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
 		glog.Errorf("Marking degraded due to: %v", err)
 		if errSet := dn.nodeWriter.SetUpdateDegraded(dn.kubeClient.CoreV1().Nodes(), dn.name); errSet != nil {
-			glog.Errorf("Futher error attempting to set the node to degraded: %v", errSet)
+			glog.Errorf("Further error attempting to set the node to degraded: %v", errSet)
 		}
 		// reboot the node, which will catch the degraded state and sleep
 		dn.reboot()
