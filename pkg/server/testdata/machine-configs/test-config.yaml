@@ -82,7 +82,7 @@ spec:
               RestartSec=10s
               TimeoutStartSec=0
               LimitNOFILE=40000
-              Environment="ETCD_IMAGE=quay.io/coreos/etcd:v3.2.14"
+              Environment="ETCD_IMAGE=quay.io/coreos/etcd:v3.3.10"
               ExecStartPre=-/usr/bin/docker rm etcd-member
               ExecStartPre=/usr/bin/mkdir --parents /var/lib/etcd
               ExecStartPre=/usr/bin/mkdir --parents /run/etcd
