@@ -70,6 +70,9 @@ type Daemon struct {
 	kubeletHealthzEndpoint string
 
 	nodeWriter *NodeWriter
+
+	// channel used by callbacks to signal Run() of an error
+	exitCh chan<- error
 }
 
 const (
@@ -100,6 +103,7 @@ func New(
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 	nodeWriter *NodeWriter,
+	exitCh chan<- error,
 ) (*Daemon, error) {
 	loginClient, err := login1.New()
 	if err != nil {
@@ -127,6 +131,7 @@ func New(
 		kubeletHealthzEnabled:  kubeletHealthzEnabled,
 		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
 		nodeWriter:             nodeWriter,
+		exitCh:                 exitCh,
 	}
 
 	return dn, nil
@@ -147,6 +152,7 @@ func NewClusterDrivenDaemon(
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 	nodeWriter *NodeWriter,
+	exitCh chan<- error,
 ) (*Daemon, error) {
 	dn, err := New(
 		rootMount,
@@ -158,6 +164,7 @@ func NewClusterDrivenDaemon(
 		kubeletHealthzEnabled,
 		kubeletHealthzEndpoint,
 		nodeWriter,
+		exitCh,
 	)
 
 	if err != nil {
@@ -183,10 +190,10 @@ func NewClusterDrivenDaemon(
 // Run finishes informer setup and then blocks, and the informer will be
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
-func (dn *Daemon) Run(stop <-chan struct{}) error {
+func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
-		go dn.runKubeletHealthzMonitor(stop)
+		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
 	}
 
 	// Catch quickly if we've been asked to run once.
@@ -203,33 +210,36 @@ func (dn *Daemon) Run(stop <-chan struct{}) error {
 		} else if configType == MachineConfigMCFileType {
 			glog.V(2).Info("Daemon running directly from MachineConfig")
 			mcConfig := genericConfig.(*(mcfgv1.MachineConfig))
+			// this already sets the node as degraded on error in the in-cluster path
 			return dn.runOnceFromMachineConfig(*mcConfig, contentFrom)
 		}
 	}
 
-	if !cache.WaitForCacheSync(stop, dn.nodeListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced) {
 		return dn.nodeWriter.SetUpdateDegradedMsgIgnoreErr("failed to sync cache", dn.kubeClient.CoreV1().Nodes(), dn.name)
 	}
 
-	<-stop
+	// Block on exit channel. The node informer will send callbacks through
+	// handleNodeUpdate(). If a failure happens there, it writes to the channel.
+	// The HealthzMonitor goroutine also writes to this channel if the threshold
+	// is reached.
+	err := <-exitCh
 
-	// Run(mcConfig)til an updated is detected,
-	// which is handled by the callbacks.
-	return nil
+	return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 }
 
-func (dn *Daemon) runKubeletHealthzMonitor(stop <-chan struct{}) {
+func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 	failureCount := 0
 	for {
 		select {
-		case <-stop:
+		case <-stopCh:
 			return
 		case <-time.After(kubeletHealthzPollingInterval):
 			if err := dn.getHealth(); err != nil {
 				glog.Warningf("Failed kubelet health check: %v", err)
 				failureCount++
 				if failureCount >= kubeletHealthzFailureThreshold {
-					dn.nodeWriter.SetUpdateDegradedMsgIgnoreErr("Kubelet health failure threshold reached", dn.kubeClient.CoreV1().Nodes(), dn.name)
+					exitCh <- fmt.Errorf("Kubelet health failure threshold reached")
 				}
 			} else {
 				failureCount = 0 // reset failure count on success
@@ -279,7 +289,7 @@ func (dn *Daemon) getHealth() error {
 //    because of a machine reboot. validate the current machine state is the
 //    desired machine state. if we aren't try updating again. if we are, update
 //    the current state annotation accordingly.
-func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
+func (dn *Daemon) CheckStateOnBoot() error {
 	// sanity check we're not already in a degraded state
 	if state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true); err != nil {
 		// try to set to degraded... because we failed to check if we're degraded
@@ -289,10 +299,7 @@ func (dn *Daemon) CheckStateOnBoot(stop <-chan struct{}) error {
 		// probably contains the real reason why we marked the node as degraded
 		// in the first place
 		glog.Info("Node is degraded; going to sleep")
-		select {
-		case <-stop:
-			return nil
-		}
+		select {}
 	}
 
 	// validate machine state
@@ -321,15 +328,13 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		// NOTE: This case expects a cluster to exists already.
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
-			glog.V(2).Infof("Unable to prep update: %s", err)
-			return err
+			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		} else if needUpdate == false {
 			return nil
 		}
 		// At this point we have verified we need to update
 		if err := dn.executeUpdateFromClusterWithMachineConfig(&machineConfig); err != nil {
-			glog.Warningf("Unable to update: %s", err)
-			return err
+			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		}
 		return nil
 
@@ -367,16 +372,15 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 		// Pass to the shared update prep method
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
-			// On prepUpdateFromCluster error the node should already be marked degraded
-			glog.V(2).Infof("Unable to prep update: %s", err)
-			dn.reboot()
+			glog.Infof("Unable to prep update: %s", err)
+			dn.exitCh<- err
 			return
 		}
 		// Only executeUpdateFromCluster when we need to update
 		if needUpdate {
-			// Note that if executeUpdateFromCluster errors it will mark the node
-			// degraded and reboot.
 			if err = dn.executeUpdateFromCluster(); err != nil {
+				glog.Infof("Unable to apply update: %s", err)
+				dn.exitCh<- err
 				return
 			}
 		}
@@ -386,14 +390,13 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 }
 
 // prepUpdateFromCluster handles the shared update prepping functionality for
-// flows that expect the cluster to already be available.
+// flows that expect the cluster to already be available. Returns true if an
+// update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
 	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
-		// try to set to degraded... because we failed to check if we're degraded
-		return false, dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
+		return false, err
 	} else if state == MachineConfigDaemonStateDegraded {
-		// Just return since we want to continue sleeping
 		return false, fmt.Errorf("state is already degraded")
 	}
 
@@ -418,9 +421,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	// The desired machine config has changed, trigger update
 	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
-		dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
-		// reboot the node, which will catch the degraded state and sleep
-		dn.reboot()
+		return err
 	}
 
 	// we managed to update the machine without rebooting. in this case,
