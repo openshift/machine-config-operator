@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
@@ -653,7 +654,18 @@ func (dn *Daemon) Close() {
 }
 
 func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {
-	return client.Get(name, metav1.GetOptions{})
+	// Retry for 5 minutes to get a MachineConfig in case of transient errors.
+	var mc *mcfgv1.MachineConfig = nil
+	err := wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+		var err error
+		mc, err = client.Get(name, metav1.GetOptions{})
+		if err == nil {
+			return true, nil
+		}
+		glog.Infof("While getting MachineConfig %s, got: %v. Retrying...", name, err)
+		return false, nil
+	})
+	return mc, err
 }
 
 // ValidPath attempts to see if the path provided is indeed an acceptable
