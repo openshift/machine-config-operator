@@ -100,7 +100,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	} else {
 		cb, err := common.NewClientBuilder(startOpts.kubeconfig)
 		if err != nil {
-			glog.Fatalf("failed to initialize daemon: %v", err)
+			glog.Fatalf("failed to initialize ClientBuilder: %v", err)
 		}
 		ctx = common.CreateControllerContext(cb, stopCh, componentName)
 		// create the daemon instance. this also initializes kube client items
