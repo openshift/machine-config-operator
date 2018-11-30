@@ -77,8 +77,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	// reboot. this function shouldn't actually return.
-	dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", "Node will reboot for new config.")
-	return dn.reboot()
+	return dn.reboot("Node will reboot with new config.")
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
@@ -491,8 +490,9 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
-func (dn *Daemon) reboot() error {
-	glog.Info("Rebooting")
+func (dn *Daemon) reboot(rationale string) error {
+	dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
+	glog.Infof("Rebooting: %s", rationale)
 
 	// reboot
 	dn.loginClient.Reboot(false)

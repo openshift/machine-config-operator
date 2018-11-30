@@ -368,7 +368,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
 		return err
 	}
-	return dn.reboot()
+	return dn.reboot("runOnceFromIgnition complete")
 }
 
 // handleNodeUpdate is the gatekeeper handler for informer callbacks detecting
