@@ -29,7 +29,7 @@ These instructions were tested with installer version https://github.com/openshi
    CVO as it owns the configmap and it will revert your changes:
 
    ```sh
-   oc delete daemonset cluster-version-operator -n openshift-cluster-version
+   oc delete deploy cluster-version-operator -n openshift-cluster-version
    ```
 
    then change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example:
