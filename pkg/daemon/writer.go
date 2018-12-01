@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 
+	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -78,8 +79,10 @@ func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, node string)
 	return <-respChan
 }
 
-// SetUpdateDegraded Sets the state to UpdateDegraded.
-func (nw *NodeWriter) SetUpdateDegraded(client corev1.NodeInterface, node string) error {
+// SetUpdateDegraded logs the error and sets the state to UpdateDegraded.
+// Returns an error if it couldn't set the annotation.
+func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, node string) error {
+	glog.Errorf("Marking degraded due to: %v", err)
 	annos := map[string]string{
 		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDegraded,
 	}
@@ -91,6 +94,27 @@ func (nw *NodeWriter) SetUpdateDegraded(client corev1.NodeInterface, node string
 		responseChannel: respChan,
 	}
 	return <-respChan
+}
+
+// SetUpdateDegradedIgnoreErr logs the error and sets the state to
+// UpdateDegraded. Logs an error if if couldn't set the annotation. Always
+// returns the same error that it was passed. This is useful in situations
+// where one just wants to return an error to its caller after having set the
+// node to degraded due to that error.
+func (nw *NodeWriter) SetUpdateDegradedIgnoreErr(err error, client corev1.NodeInterface, node string) error {
+	// log error here since the caller won't look at it
+	degraded_err := nw.SetUpdateDegraded(err, client, node)
+	if degraded_err != nil {
+		glog.Error("Error while setting degraded: %v", degraded_err)
+	}
+	return err
+}
+
+// SetUpdateDegradedMsgIgnoreErr is like SetUpdateDegradedMsgIgnoreErr but
+// takes a string and constructs the error object itself.
+func (nw *NodeWriter) SetUpdateDegradedMsgIgnoreErr(msg string, client corev1.NodeInterface, node string) error {
+	err := fmt.Errorf(msg)
+	return nw.SetUpdateDegradedIgnoreErr(err, client, node)
 }
 
 // updateNodeRetry calls f to update a node object in Kubernetes.
