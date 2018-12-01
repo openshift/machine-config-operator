@@ -547,12 +547,19 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 	return false, "", nil
 }
 
+// isUnspecifiedOS says whether an osImageURL is "unspecified",
+// i.e. we should not try to change the current state.
+func (dn *Daemon) isUnspecifiedOS(osImageURL string) bool {
+	// The ://dummy syntax is legacy
+	return osImageURL == "" || osImageURL == "://dummy";
+}
+
 // checkOS validates the OS image URL and returns true if they match.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
-	// XXX: The installer doesn't pivot yet so for now, just make "://dummy"
-	// match anything. See also: https://github.com/openshift/installer/issues/281
-	if osImageURL == "://dummy" {
-		glog.Warningf(`Working around "://dummy" OS image URL until installer ➰ pivots`)
+	// XXX: The installer doesn't pivot yet so for now, just make ""
+	// mean "unset, don't pivot". See also: https://github.com/openshift/installer/issues/281
+	if dn.isUnspecifiedOS(osImageURL) {
+		glog.Infof(`No target osImageURL provided`)
 		return true, nil
 	}
 	return dn.bootedOSImageURL == osImageURL, nil
