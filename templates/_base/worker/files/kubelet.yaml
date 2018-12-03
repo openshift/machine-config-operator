@@ -16,3 +16,6 @@ contents:
     systemReserved:
       cpu: 500m
       memory: 500Mi
+    featureGates:
+      RotateKubeletServerCertificate: true
+    serverTLSBootstrap: true
