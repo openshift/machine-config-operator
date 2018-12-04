@@ -26,8 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	clientsetcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -52,6 +55,8 @@ type Daemon struct {
 	client mcfgclientset.Interface
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
+	// recorder sends events to the apiserver
+	recorder record.EventRecorder
 
 	// filesystemClient allows interaction with the local filesystm
 	fileSystemClient FileSystemClient
@@ -105,6 +110,7 @@ func New(
 	nodeWriter *NodeWriter,
 	exitCh chan<- error,
 ) (*Daemon, error) {
+
 	loginClient, err := login1.New()
 	if err != nil {
 		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
@@ -173,6 +179,11 @@ func NewClusterDrivenDaemon(
 
 	dn.kubeClient = kubeClient
 	dn.client = client
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.V(2).Infof)
+	eventBroadcaster.StartRecordingToSink(&clientsetcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
 	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
