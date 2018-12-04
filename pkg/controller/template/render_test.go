@@ -302,8 +302,12 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			}
 
 			ign := cfg.Spec.Config
-			verifyIgnFiles(ign.Storage.Files, filepath.Join(resultDir, platform, role, "files"), *updateGoldenFiles, t)
-			verifyIgnUnits(ign.Systemd.Units, filepath.Join(resultDir, platform, role, "units"), *updateGoldenFiles, t)
+			if len(ign.Storage.Files) > 0 {
+				verifyIgnFiles(ign.Storage.Files, filepath.Join(resultDir, role, cfg.Name, platform, "files"), *updateGoldenFiles, t)
+			}
+			if len(ign.Systemd.Units) > 0 {
+				verifyIgnUnits(ign.Systemd.Units, filepath.Join(resultDir, role, cfg.Name, platform, "units"), *updateGoldenFiles, t)
+			}
 		}
 	}
 }
