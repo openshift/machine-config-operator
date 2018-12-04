@@ -105,7 +105,7 @@ func (nw *NodeWriter) SetUpdateDegradedIgnoreErr(err error, client corev1.NodeIn
 	// log error here since the caller won't look at it
 	degraded_err := nw.SetUpdateDegraded(err, client, node)
 	if degraded_err != nil {
-		glog.Error("Error while setting degraded: %v", degraded_err)
+		glog.Errorf("Error while setting degraded: %v", degraded_err)
 	}
 	return err
 }
