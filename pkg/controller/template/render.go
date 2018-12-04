@@ -33,20 +33,19 @@ const (
 )
 
 // generateMachineConfigs returns MachineConfig objects from the templateDir and a config object
-// expected directory structure for correctly templating machine configs: <templatedir>/<platform>/<role>/<type>/<tmpl_file>
+// expected directory structure for correctly templating machine configs: <templatedir>/<role>/<name>/<platform>/<type>/<tmpl_file>
 //
 // All files from platform _base are always included, and may be overridden or
 // supplemented by platform-specific templates
 //
 //  ex:
-//       templates/_base/worker/units/kubelet.conf.tmpl
-//                           /files/hostname.tmpl
-//                    /master/units/kubelet.tmpl
-//                           /files/hostname.tmpl
-//       templates/aws/worker/units/kubelet-dropin.conf.tmpl
+//       templates/worker/worker/_base/units/kubelet.conf.tmpl
+//                                    /files/hostname.tmpl
+//                              /aws/units/kubelet-dropin.conf.tmpl
+//                /master/master/_base/units/kubelet.tmpl
+//                                    /files/hostname.tmpl
 //
 func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
-	platformDirs := []string{}
 	if config.Platform == "" {
 		return nil, fmt.Errorf("cannot generateMachineConfigs with an empty Platform")
 	}
@@ -55,70 +54,73 @@ func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1
 		return nil, fmt.Errorf("platform _base unsupported")
 	}
 
+	infos, err := ioutil.ReadDir(templateDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dir %q: %v", templateDir, err)
+	}
+
+	cfgs := []*mcfgv1.MachineConfig{}
+	for _, info := range infos {
+		if !info.IsDir() {
+			glog.Infof("ignoring non-directory path %q", info.Name())
+			continue
+		}
+		role := info.Name()
+		path := filepath.Join(templateDir, role)
+		roleConfigs, err := generateMachineConfigsForRole(config, role, path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
+		}
+		cfgs = append(cfgs, roleConfigs...)
+	}
+
+	return cfgs, nil
+}
+
+func generateMachineConfigsForRole(config *renderConfig, role string, path string) ([]*mcfgv1.MachineConfig, error) {
+	infos, err := ioutil.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
+	}
+
+	cfgs := []*mcfgv1.MachineConfig{}
+	for _, info := range infos {
+		if !info.IsDir() {
+			glog.Infof("ignoring non-directory path %q", info.Name())
+			continue
+		}
+		name := info.Name()
+		namePath := filepath.Join(path, name)
+		nameConfig, err := generateMachineConfigForName(config, role, name, namePath)
+		if err != nil {
+			return nil, err
+		}
+		cfgs = append(cfgs, nameConfig)
+	}
+
+	return cfgs, nil
+}
+
+func generateMachineConfigForName(config *renderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
+	platformDirs := []string{}
 	for _, dir := range []string{"_base", config.Platform} {
-		path := filepath.Join(templateDir, dir)
-		exists, err := existsDir(path)
+		platformPath := filepath.Join(path, dir)
+		exists, err := existsDir(platformPath)
 		if err != nil {
 			return nil, err
 		}
 		if !exists {
-			glog.Errorf("could not find expected template directory %s", path)
+			glog.Errorf("could not find expected template directory %s", platformPath)
 			return nil, fmt.Errorf("platform %s unsupported", config.Platform)
 		}
-		platformDirs = append(platformDirs, path)
+		platformDirs = append(platformDirs, platformPath)
 	}
 
-	return generateMachineConfigsForPlatform(config, platformDirs)
-}
-
-// generateMachineConfigsForPlatform generates the MachineConfig for every defined role for a given
-// platform. It will merge multiple platforms.
-func generateMachineConfigsForPlatform(config *renderConfig, platformDirs []string) ([]*mcfgv1.MachineConfig, error) {
-	var configs []*mcfgv1.MachineConfig
-
-	// map from role name to ordered template dirs
-	roles := map[string][]string{}
-
-	// platform dirs to get role -> templatedir mapping
-	for _, p := range platformDirs {
-		infos, err := ioutil.ReadDir(p)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read dir %q: %v", p, err)
-		}
-
-		for _, info := range infos {
-			if !info.IsDir() {
-				glog.Infof("ignoring non-directory path %q", info.Name())
-				continue
-			}
-			name := info.Name()
-			roles[name] = append(roles[name], filepath.Join(p, name))
-		}
-	}
-
-	for roleName, roleDirs := range roles {
-		cfg, err := generateMachineConfigForRole(config, roleName, roleDirs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate MachineConfig for role %q: %v", roleName, err)
-		}
-		configs = append(configs, cfg)
-	}
-
-	return configs, nil
-}
-
-// generateMachineConfigForRole generates the MachineConfig for a single role.
-// The directory structure of each 'roleDir' looks like this:
-//       worker/units/kubelet.conf.tmpl
-//             /files/hostname.tmpl
-// Later roleDirs can override entries from earlier roleDirs if the have the same filename
-// Zero-length files (empty files) indicate the file should not be created
-func generateMachineConfigForRole(config *renderConfig, roleName string, roleDirs []string) (*mcfgv1.MachineConfig, error) {
 	files := map[string]string{}
 	units := map[string]string{}
 
 	// walk all role dirs, with later ones taking precedence
-	for _, roleDir := range roleDirs {
+	for _, platformDir := range platformDirs {
 		// magic param
 		var walkDest *map[string]string
 
@@ -151,7 +153,7 @@ func generateMachineConfigForRole(config *renderConfig, roleName string, roleDir
 		}
 
 		walkDest = &files
-		p := filepath.Join(roleDir, filesDir)
+		p := filepath.Join(platformDir, filesDir)
 		exists, err := existsDir(p)
 		if err != nil {
 			return nil, err
@@ -163,7 +165,7 @@ func generateMachineConfigForRole(config *renderConfig, roleName string, roleDir
 		}
 
 		walkDest = &units
-		p = filepath.Join(roleDir, unitsDir)
+		p = filepath.Join(platformDir, unitsDir)
 		exists, err = existsDir(p)
 		if err != nil {
 			return nil, err
@@ -197,7 +199,7 @@ func generateMachineConfigForRole(config *renderConfig, roleName string, roleDir
 		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
 	}
 
-	return machineConfigFromIgnConfig(roleName, ignCfg), nil
+	return machineConfigFromIgnConfig(role, name, ignCfg), nil
 }
 
 const (
@@ -205,15 +207,15 @@ const (
 	machineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
 )
 
-func machineConfigFromIgnConfig(role string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
-	name := fmt.Sprintf(machineConfigNameTmpl, role)
+func machineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
+	cfgName := fmt.Sprintf(machineConfigNameTmpl, name)
 	labels := map[string]string{
 		machineConfigRoleLabelKey: role,
 	}
 	return &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels,
-			Name:   name,
+			Name:   cfgName,
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: "",
