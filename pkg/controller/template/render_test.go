@@ -272,7 +272,7 @@ func TestInvalidPlatform(t *testing.T) {
 
 	controllerConfig.Spec.Platform = "_bad_"
 	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
-	expectErr(err, "platform _bad_ unsupported")
+	expectErr(err, "failed to create MachineConfig for role master: platform _bad_ unsupported")
 
 	controllerConfig.Spec.Platform = "_base"
 	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
@@ -299,10 +299,6 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			role, ok := cfg.Labels[machineConfigRoleLabelKey]
 			if !ok || role == "" {
 				t.Fatal("role label missing")
-			}
-
-			if got, exp := cfg.Name, fmt.Sprintf(machineConfigNameTmpl, role); got != exp {
-				t.Fatal("mismatch name found")
 			}
 
 			ign := cfg.Spec.Config
