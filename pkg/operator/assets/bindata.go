@@ -341,6 +341,7 @@ spec:
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
+        - "--v=2"
         resources:
           limits:
             cpu: 20m
