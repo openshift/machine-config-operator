@@ -42,6 +42,7 @@ const (
 //       templates/worker/worker/_base/units/kubelet.conf.tmpl
 //                                    /files/hostname.tmpl
 //                              /aws/units/kubelet-dropin.conf.tmpl
+//                       /worker-kubelet/_base/files/random.conf.tmpl
 //                /master/master/_base/units/kubelet.tmpl
 //                                    /files/hostname.tmpl
 //
