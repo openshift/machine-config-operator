@@ -307,6 +307,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	utilruntime.HandleError(err)
 	glog.V(2).Infof("Dropping controllerconfig %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
+	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
 // syncControllerConfig will sync the controller config with the given key.
