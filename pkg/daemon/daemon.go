@@ -15,14 +15,13 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
+	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -384,14 +383,14 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			glog.Infof("Unable to prep update: %s", err)
-			dn.exitCh<- err
+			dn.exitCh <- err
 			return
 		}
 		// Only executeUpdateFromCluster when we need to update
 		if needUpdate {
 			if err = dn.executeUpdateFromCluster(); err != nil {
 				glog.Infof("Unable to apply update: %s", err)
-				dn.exitCh<- err
+				dn.exitCh <- err
 				return
 			}
 		}
@@ -562,7 +561,7 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 // i.e. we should not try to change the current state.
 func (dn *Daemon) isUnspecifiedOS(osImageURL string) bool {
 	// The ://dummy syntax is legacy
-	return osImageURL == "" || osImageURL == "://dummy";
+	return osImageURL == "" || osImageURL == "://dummy"
 }
 
 // checkOS validates the OS image URL and returns true if they match.
@@ -731,15 +730,11 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 
 	glog.V(2).Infof("%s is not an Ignition config: %s. Trying MachineConfig.", dn.onceFrom, err)
 
-	// TODO: Add to resource/machineconfig.go as a function?
-	mcfgScheme := runtime.NewScheme()
-	mcfgv1.AddToScheme(mcfgScheme)
-	mcfgCodecs := serializer.NewCodecFactory(mcfgScheme)
-	requiredObj, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), content)
+	// Try to parse as a machine config
+	mc, err := resourceread.ReadMachineConfigV1(content)
 	if err == nil {
 		glog.V(2).Infof("onceFrom file is of type MachineConfig")
-		mcConfig := requiredObj.(*mcfgv1.MachineConfig)
-		return mcConfig, MachineConfigMCFileType, contentFrom, nil
+		return mc, MachineConfigMCFileType, contentFrom, nil
 	}
 
 	return nil, "", "", fmt.Errorf("unable to decipher onceFrom config type: %s", err)
