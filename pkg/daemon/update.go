@@ -491,7 +491,10 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
 func (dn *Daemon) reboot(rationale string) error {
-	dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
+	// We'll only have a recorder if we're cluster driven
+	if (dn.recorder != nil) {
+		dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
+	}
 	glog.Infof("Rebooting: %s", rationale)
 
 	// reboot
