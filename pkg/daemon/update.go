@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/user"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -487,6 +489,32 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	return dn.NodeUpdaterClient.RunPivot(newConfig.Spec.OSImageURL)
 }
 
+// Log a message to the systemd journal as well as our stdout
+func (dn *Daemon) logSystem(format string, a ...interface{}) {
+	message := fmt.Sprintf(format, a...)
+	glog.Info(message)
+	// Since we're chrooted into the host rootfs with /run mounted,
+	// we can just talk to the journald socket.  Doing this as a
+	// subprocess rather than talking to journald in process since
+	// I worry about the golang library having a connection pre-chroot.
+	logger := exec.Command("logger")
+	stdin, err := logger.StdinPipe()
+	if err != nil {
+		glog.Errorf("Failed to get stdin pipe: %v", err)
+		return
+	}
+
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, message)
+	}()
+	err = logger.Run()
+	if err != nil {
+		glog.Errorf("Failed to invoke logger: %v", err)
+		return
+	}
+}
+
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
@@ -495,7 +523,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	if (dn.recorder != nil) {
 		dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
 	}
-	glog.Infof("Rebooting: %s", rationale)
+	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
 
 	// reboot
 	dn.loginClient.Reboot(false)
