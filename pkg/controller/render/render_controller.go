@@ -363,6 +363,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	utilruntime.HandleError(err)
 	glog.V(2).Infof("Dropping machineconfigpool %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
+	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
