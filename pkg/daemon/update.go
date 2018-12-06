@@ -32,7 +32,9 @@ const (
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	var err error
 
-	glog.Info("Updating node with new config")
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
+	glog.Infof("Updating machineconfig from %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
 	reconcilable, err := dn.reconcilable(oldConfig, newConfig)
@@ -41,7 +43,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 	if !reconcilable {
 		dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", "New config could not be reconciled.")
-		return fmt.Errorf("daemon can't reconcile this config")
+		return fmt.Errorf("daemon can't reconcile config %v with %v", oldConfigName, newConfigName)
 	}
 
 	// update files on disk that need updating
@@ -57,7 +59,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// We need to skip draining of the node when we are running once
 	// and there is no cluster.
 	if dn.onceFrom != "" && !ValidPath(dn.onceFrom) {
-		glog.Info("Update completed. Draining the node.")
+		glog.Info("Update prepared; draining the node")
 
 		node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
 		if err != nil {
@@ -79,7 +81,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	// reboot. this function shouldn't actually return.
-	return dn.reboot("Node will reboot with new config.")
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfigName))
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
