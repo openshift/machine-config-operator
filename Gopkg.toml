@@ -51,7 +51,7 @@ revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
   name = "k8s.io/apiextensions-apiserver"
   version = "kubernetes-1.11.1"
 
-[[constraint]]
+[[override]]
   name = "k8s.io/apimachinery"
   version = "kubernetes-1.11.1"
 
