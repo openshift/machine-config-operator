@@ -44,3 +44,50 @@ These instructions were tested with installer version https://github.com/openshi
    ```sh
    oc get -n openshift-machine-config-operator daemonset machine-config-daemon -o yaml
    ```
+
+# How to lay down files with the MCD
+
+1. Create a new machineconfig:
+
+
+    ```yaml
+    # test.yaml
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      labels:
+        machineconfiguration.openshift.io/role: worker
+      name: test-file
+    spec:
+      config:
+        storage:
+          files:
+          - contents:
+              source: data:,hello%20world%0A
+              verification: {}
+            filesystem: root
+            mode: 420
+            path: /home/core/test
+    ```
+
+    Then:
+
+    ```sh
+    oc create -f test.yaml
+    ```
+
+1. The MCC will then notice this, generate a new merged
+   MachineConfig and update the node annotation for the
+   worker. You can monitor new MachineConfig objects with:
+
+   ```sh
+   oc get machineconfigs --watch
+   ```
+
+   You can monitor the MCD logs on a worker to see when it
+   reacts to the node annotation change and reboots the
+   system:
+
+   ```sh
+   oc logs -f machine-config-daemon-<hash>
+   ```
