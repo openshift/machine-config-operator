@@ -331,6 +331,13 @@
   revision = "960f72aa32a8e9b4dd769b90ff1cb5bd4c898eec"
 
 [[projects]]
+  digest = "1:f9c1fc8da2b44ba323ec3b338f0da9f375e26c787bc3a6ea241f9cb3f191cb62"
+  name = "github.com/openshift/cluster-network-operator"
+  packages = ["pkg/apis/networkoperator/v1"]
+  pruneopts = "NUT"
+  revision = "fb8b55a1072436a51b153de9acf5bf5525efcf83"
+
+[[projects]]
   branch = "master"
   digest = "1:eea2525811ae00259877526b7a895caa7e85d8683b921daf46595314b32aff8a"
   name = "github.com/openshift/cluster-version-operator"
@@ -348,14 +355,17 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f7a2be11a42212f70233249ee4d53c9b9cad1db039d0c059bb0bbbc4d3dffb7e"
+  digest = "1:031c5a894aa592d4d6b42aba5cf9f46bc2163ef3f180ed8c0bfb94656536b8c9"
   name = "github.com/openshift/installer"
   packages = [
     "pkg/ipnet",
     "pkg/types",
+    "pkg/types/aws",
+    "pkg/types/libvirt",
+    "pkg/types/openstack",
   ]
   pruneopts = "NUT"
-  revision = "d496f46dafe909e1611c574ebbf35aa5f20a0db6"
+  revision = "015ac0f9569212654e5f031ed9e742aeb6d2c91d"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -838,6 +848,14 @@
   packages = ["pkg/util/proto"]
   pruneopts = "NUT"
   revision = "d8ea2fe547a448256204cfc68dfee7b26c720acb"
+
+[[projects]]
+  digest = "1:84a8609383bec11b71d52dd813f33f1d16614b91966940bdc2aa79bea864fa25"
+  name = "sigs.k8s.io/controller-runtime"
+  packages = ["pkg/runtime/scheme"]
+  pruneopts = "NUT"
+  revision = "c63ebda0bf4be5f0a8abd4003e4ea546032545ba"
+  version = "v0.1.8"
 
 [solve-meta]
   analyzer-name = "dep"
