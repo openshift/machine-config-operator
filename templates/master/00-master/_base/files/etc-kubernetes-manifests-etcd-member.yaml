@@ -59,6 +59,9 @@ contents:
           
         securityContext:
           priviledged: true
+        resources:
+          requests:
+            memory: 600Mi
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/
