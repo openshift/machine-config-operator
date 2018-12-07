@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/user"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -30,7 +32,9 @@ const (
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	var err error
 
-	glog.Info("Updating node with new config")
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
+	glog.Infof("Updating machineconfig from %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
 	reconcilable, err := dn.reconcilable(oldConfig, newConfig)
@@ -39,7 +43,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 	if !reconcilable {
 		dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", "New config could not be reconciled.")
-		return fmt.Errorf("daemon can't reconcile this config")
+		return fmt.Errorf("daemon can't reconcile config %v with %v", oldConfigName, newConfigName)
 	}
 
 	// update files on disk that need updating
@@ -55,7 +59,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// We need to skip draining of the node when we are running once
 	// and there is no cluster.
 	if dn.onceFrom != "" && !ValidPath(dn.onceFrom) {
-		glog.Info("Update completed. Draining the node.")
+		glog.Info("Update prepared; draining the node")
 
 		node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
 		if err != nil {
@@ -77,7 +81,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	// reboot. this function shouldn't actually return.
-	return dn.reboot("Node will reboot with new config.")
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfigName))
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
@@ -487,6 +491,32 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	return dn.NodeUpdaterClient.RunPivot(newConfig.Spec.OSImageURL)
 }
 
+// Log a message to the systemd journal as well as our stdout
+func (dn *Daemon) logSystem(format string, a ...interface{}) {
+	message := fmt.Sprintf(format, a...)
+	glog.Info(message)
+	// Since we're chrooted into the host rootfs with /run mounted,
+	// we can just talk to the journald socket.  Doing this as a
+	// subprocess rather than talking to journald in process since
+	// I worry about the golang library having a connection pre-chroot.
+	logger := exec.Command("logger")
+	stdin, err := logger.StdinPipe()
+	if err != nil {
+		glog.Errorf("Failed to get stdin pipe: %v", err)
+		return
+	}
+
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, message)
+	}()
+	err = logger.Run()
+	if err != nil {
+		glog.Errorf("Failed to invoke logger: %v", err)
+		return
+	}
+}
+
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
@@ -495,7 +525,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	if (dn.recorder != nil) {
 		dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
 	}
-	glog.Infof("Rebooting: %s", rationale)
+	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
 
 	// reboot
 	dn.loginClient.Reboot(false)
