@@ -406,7 +406,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if err != nil {
 		return err
 	}
+	if len(mcs) == 0 {
+		return fmt.Errorf("no MachineConfigs found matching selector %v", selector)
+	}
 
+	glog.V(4).Infof("Syncing generated machineconfig for pool %s using (%d) machineconfigs", pool.GetName(), len(mcs))
 	return ctrl.syncGeneratedMachineConfig(pool, mcs)
 }
 
