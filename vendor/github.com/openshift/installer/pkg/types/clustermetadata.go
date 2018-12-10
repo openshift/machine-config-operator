@@ -1,5 +1,11 @@
 package types
 
+import (
+	"github.com/openshift/installer/pkg/types/aws"
+	"github.com/openshift/installer/pkg/types/libvirt"
+	"github.com/openshift/installer/pkg/types/openstack"
+)
+
 // ClusterMetadata contains information
 // regarding the cluster that was created by installer.
 type ClusterMetadata struct {
@@ -9,9 +15,9 @@ type ClusterMetadata struct {
 
 // ClusterPlatformMetadata contains metadata for platfrom.
 type ClusterPlatformMetadata struct {
-	AWS       *ClusterAWSPlatformMetadata       `json:"aws,omitempty"`
-	OpenStack *ClusterOpenStackPlatformMetadata `json:"openstack,omitempty"`
-	Libvirt   *ClusterLibvirtPlatformMetadata   `json:"libvirt,omitempty"`
+	AWS       *aws.Metadata       `json:"aws,omitempty"`
+	OpenStack *openstack.Metadata `json:"openstack,omitempty"`
+	Libvirt   *libvirt.Metadata   `json:"libvirt,omitempty"`
 }
 
 // Platform returns a string representation of the platform
@@ -27,24 +33,8 @@ func (cpm *ClusterPlatformMetadata) Platform() string {
 	if cpm.Libvirt != nil {
 		return "libvirt"
 	}
+	if cpm.OpenStack != nil {
+		return "openstack"
+	}
 	return ""
-}
-
-// ClusterAWSPlatformMetadata contains AWS metadata.
-type ClusterAWSPlatformMetadata struct {
-	Region string `json:"region"`
-	// Most AWS resources are tagged with these tags as identifier.
-	Identifier map[string]string `json:"identifier"`
-}
-
-// ClusterOpenStackPlatformMetadata contains OpenStack metadata.
-type ClusterOpenStackPlatformMetadata struct {
-	Region string `json:"region"`
-	// Most OpenStack resources are tagged with these tags as identifier.
-	Identifier map[string]string `json:"identifier"`
-}
-
-// ClusterLibvirtPlatformMetadata contains libvirt metadata.
-type ClusterLibvirtPlatformMetadata struct {
-	URI string `json:"uri"`
 }
