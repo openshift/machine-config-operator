@@ -67,22 +67,22 @@ func TestUpdateOS(t *testing.T) {
 // reconcilable. Welcome to the longest unittest you've ever read.
 func TestReconcilable(t *testing.T) {
 	// checkReconcilableResults is a shortcut for verifying results that should be reconcilable
-	checkReconcilableResults := func(key string, err error, isReconcilable bool) {
+	checkReconcilableResults := func(key string, err error, reconcilableError *string) {
 		if err != nil {
 			t.Errorf("Expected no error. Got %s.", err)
 		}
-		if isReconcilable != true {
-			t.Errorf("Expected the same %s values would cause reconcilable. Received irreconcilable.", key)
+		if reconcilableError != nil {
+			t.Errorf("Expected the same %s values would be reconcilable. Received error: %v", key, *reconcilableError)
 		}
 	}
 
 	// checkIreconcilableResults is a shortcut for verifing results that should be ireconcilable
-	checkIreconcilableResults := func(key string, err error, isReconcilable bool) {
+	checkIreconcilableResults := func(key string, err error, reconcilableError *string) {
 		if err != nil {
 			t.Errorf("Expected no error. Got %s.", err)
 		}
-		if isReconcilable != false {
-			t.Errorf("Expected different %s values would cause irreconcilable. Received reconcilable.", key)
+		if reconcilableError == nil {
+			t.Errorf("Expected different %s values would not be reconcilable.", key)
 		}
 	}
 

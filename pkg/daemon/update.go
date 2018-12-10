@@ -5,8 +5,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/user"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -34,16 +34,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
-	glog.Infof("Updating machineconfig from %v to %v", oldConfigName, newConfigName)
-
+	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// make sure we can actually reconcile this state
-	reconcilable, err := dn.reconcilable(oldConfig, newConfig)
+	reconcilableError, err := dn.reconcilable(oldConfig, newConfig)
 	if err != nil {
 		return err
 	}
-	if !reconcilable {
-		dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", "New config could not be reconciled.")
-		return fmt.Errorf("daemon can't reconcile config %v with %v", oldConfigName, newConfigName)
+	if reconcilableError != nil {
+		msg := fmt.Sprintf("Can't reconcile config %v with %v: %v", oldConfigName, newConfigName, *reconcilableError)
+		if dn.recorder != nil {
+			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", msg)
+		}
+		dn.logSystem(msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	// update files on disk that need updating
@@ -85,20 +88,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
-// are ones we know how to do in-place. if we can't do it in place, the node is
-// marked as degraded.
+// are ones we know how to do in-place.  If we can reconcile, (nil, nil) is returned.
+// Otherwise, if we can't do it in place, the node is marked as degraded;
+// the returned string value includes the rationale.
 //
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
-	glog.Info("Checking if configs are reconcilable")
-
+func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*string, error) {
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
 		glog.Infof("Missing kind in old config. Assuming no prior state.")
-		return true, nil
+		return nil, nil
 	}
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
@@ -108,10 +110,9 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// if the config versions are different, all bets are off. this probably
 	// shouldn't happen, but if it does, we can't deal with it.
 	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
-		glog.Warningf("daemon can't reconcile state!")
-		glog.Warningf("Ignition version mismatch between old and new config: old: %s new: %s",
+		msg := fmt.Sprintf("Ignition version mismatch between old and new config: old: %s new: %s",
 			oldIgn.Ignition.Version, newIgn.Ignition.Version)
-		return false, nil
+		return &msg, nil
 	}
 	// everything else in the ignition section doesn't matter to us, since the
 	// rest of the stuff in this section has to do with fetching remote
@@ -123,9 +124,8 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// we don't currently configure the network in place. we can't fix it if
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
-		glog.Warningf("daemon can't reconcile state!")
-		glog.Warningf("Ignition networkd section contains changes")
-		return false, nil
+		msg := "Ignition networkd section contains changes"
+		return &msg, nil
 	}
 
 	// Passwd section
@@ -133,9 +133,8 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// we don't currently configure groups or users in place. we can't fix it if
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
-		glog.Warningf("daemon can't reconcile state!")
-		glog.Warningf("Ignition passwd section contains changes")
-		return false, nil
+		msg := "Ignition passwd section contains changes"
+		return &msg, nil
 	}
 
 	// Storage section
@@ -144,28 +143,24 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 	// can reconcile, and disks, filesystems, and raid, which we can't. make
 	// sure the sections we can't fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
-		glog.Warningf("daemon can't reconcile state!")
-		glog.Warningf("Ignition disks section contains changes")
-		return false, nil
+		msg := "Ignition disks section contains changes"
+		return &msg, nil
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
-		glog.Warningf("daemon can't reconcile state!")
-		glog.Warningf("Ignition filesystems section contains changes")
-		return false, nil
+		msg := "Ignition filesystems section contains changes"
+		return &msg, nil
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
-		glog.Warningf("daemon can't reconcile state!")
-		glog.Warningf("Ignition raid section contains changes")
-		return false, nil
+		msg := "Ignition raid section contains changes"
+		return &msg, nil
 	}
 
 	// Special case files append: if the new config wants us to append, then we
 	// have to force a reprovision since it's not idempotent
 	for _, f := range newIgn.Storage.Files {
 		if f.Append {
-			glog.Warningf("daemon can't reconcile state!")
-			glog.Warningf("Ignition files includes append")
-			return false, nil
+			msg := fmt.Sprintf("Ignition file %v includes append", f.Path)
+			return &msg, nil
 		}
 	}
 
@@ -175,7 +170,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (bool
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Infof("Configs are reconcilable")
-	return true, nil
+	return nil, nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
@@ -522,7 +517,7 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 // and manages to return, it returns a scary error message.
 func (dn *Daemon) reboot(rationale string) error {
 	// We'll only have a recorder if we're cluster driven
-	if (dn.recorder != nil) {
+	if dn.recorder != nil {
 		dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
 	}
 	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
