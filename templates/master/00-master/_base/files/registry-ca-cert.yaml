@@ -1,6 +1,0 @@
-filesystem: "root"
-mode: 0644
-path: "/etc/docker/certs.d/docker-registry.default.svc:5000/ca.crt"
-contents:
-  inline: |
-{{.RootCAData | toString | indent 4}}
