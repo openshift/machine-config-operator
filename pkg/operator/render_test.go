@@ -41,10 +41,7 @@ func TestClusterDNSIP(t *testing.T) {
 
 var (
 	testInstallConfig = []byte(`
-admin:
-  email: a@b.c
-  password: verysecure
-  sshKey: ssh-rsa AAAA....
+sshKey: ssh-rsa AAAA....
 baseDomain: tt.testing
 clusterID: 2d149e46-90ee-3436-018a-1b02f6864006
 machines:
