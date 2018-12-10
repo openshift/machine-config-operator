@@ -98,4 +98,4 @@ Ignition config keys as well).
 
 The operating system used to first boot a machine is platform dependent. For example, on AWS AMIs are used to bring up EC2Instances. But for day-2 updates of the cluster, the MachineConfigDaemon uses the `OSImageURL` to fetch new operating system during updates. An example for OSImageURL is `quay.io/openshift/$CONTAINER@sha256:$DIGEST`. The digest is required to ensure there are no race conditions.
 
-When combining multiple MachineConfig objects, OSImageURL field is ignored from all the MachineConfig objects except the one defined by Openshift.
+When combining multiple MachineConfig objects, the last non-empty OSImageURL field is used. In general though, this is only expected to be set by the release payload and not cluster administrators.
