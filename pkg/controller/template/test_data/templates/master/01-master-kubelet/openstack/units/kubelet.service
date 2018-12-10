@@ -1,0 +1,35 @@
+contents: |
+  [Unit]
+  Description=Kubernetes Kubelet
+  Wants=rpc-statd.service
+
+  [Service]
+  Type=notify
+  ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  EnvironmentFile=-/etc/kubernetes/kubelet-workaround
+  EnvironmentFile=-/etc/kubernetes/kubelet-env
+
+  ExecStart=/usr/bin/hyperkube \
+      kubelet \
+        --config=/etc/kubernetes/kubelet.conf \
+        --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
+        --rotate-certificates \
+        --kubeconfig=/var/lib/kubelet/kubeconfig \
+        --container-runtime=remote \
+        --container-runtime-endpoint=/var/run/crio/crio.sock \
+        --allow-privileged \
+        --node-labels=node-role.kubernetes.io/master \
+        --minimum-container-ttl-duration=6m0s \
+        --client-ca-file=/etc/kubernetes/ca.crt \
+        --cloud-provider=openstack \
+        \
+        --anonymous-auth=false \
+        --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
+
+  Restart=always
+  RestartSec=10
+
+  [Install]
+  WantedBy=multi-user.target
+enabled: true
+name: kubelet.service
