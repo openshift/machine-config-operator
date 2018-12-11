@@ -2,11 +2,9 @@
 
 # Hacking on the MCD
 
-These instructions were tested with installer version https://github.com/openshift/installer/commit/d0b3f913981ef79fd58f089909d7ef1918aa3894 and RHCOS version 4.0.5836.
+1. Create a cluster using [the installer](https://github.com/openshift/installer/).  Many of the MCD developers use libvirt.  These instructions will be kept up to date generally against the leading edge of the installer.
 
-1. Create a cluster (e.g. using [libvirt](https://github.com/openshift/installer/blob/d0b3f913981ef79fd58f089909d7ef1918aa3894/Documentation/dev/libvirt-howto.md))
-
-2. Build a container image for the MCD and push it to a registry somewhere, e.g.
+1. Build a container image for the MCD and push it to a registry somewhere, e.g.
 
    ```sh
    # this takes care of building the binary for you as well
@@ -14,13 +12,21 @@ These instructions were tested with installer version https://github.com/openshi
    WHAT=machine-config-daemon REPO=docker.io/sdemos ./hack/push-image.sh
    ```
 
-3. Set `KUBECONFIG` for use with `oc` 
+1. Set `KUBECONFIG` for use with `oc`
 
    ```sh
    export KUBECONFIG=<path to kubeconfig>
    ```
 
-4. Configure the MCO to deploy your test version. There is a ConfigMap in the
+1. (optional) Since most of your work will be in the `openshift-machine-config-operator` namespace, you may find it convenient to:
+
+   ```sh
+   oc project openshift-machine-config-operator
+   ```
+
+   Then you can omit `-n openshift-machine-config-operator` to most commands.
+
+1. Configure the MCO to deploy your test version. There is a ConfigMap in the
    `openshift-machine-config-operator` namespace that contains the versions of
    the components that the operator will deploy. When modified, the operator
    will automatically deploy the new container versions.
@@ -29,16 +35,18 @@ These instructions were tested with installer version https://github.com/openshi
    CVO as it owns the configmap and it will revert your changes:
 
    ```sh
-   oc delete deploy cluster-version-operator -n openshift-cluster-version
+   oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
    ```
 
-   then change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example:
+   (If you later want the CVO back to do cluster upgrades, use `--replicas=1` to restore it)
+
+   To use your new container, change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example:
 
    ```sh
    oc edit configmap -n openshift-machine-config-operator machine-config-operator-images
    ```
 
-5. Check that the deployment was successful. Open the yaml file and confirm that new image location (docker.io/...)
+1. Check that the deployment was successful. Open the yaml file and confirm that new image location (docker.io/...)
    is present (check field-> spec: template: spec: image:)
  
    ```sh
