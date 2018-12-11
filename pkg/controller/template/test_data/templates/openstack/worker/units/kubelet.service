@@ -20,7 +20,6 @@ contents: |
         --node-labels=node-role.kubernetes.io/worker \
         --minimum-container-ttl-duration=6m0s \
         --client-ca-file=/etc/kubernetes/ca.crt \
-        --cloud-provider=openstack \
         \
         --anonymous-auth=false \
 

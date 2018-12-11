@@ -1,3 +1,5 @@
+name: "kubelet.service"
+enabled: true
 contents: |
   [Unit]
   Description=Kubernetes Kubelet
@@ -21,7 +23,7 @@ contents: |
         --node-labels=node-role.kubernetes.io/master \
         --minimum-container-ttl-duration=6m0s \
         --client-ca-file=/etc/kubernetes/ca.crt \
-        \
+        {{.CloudProviderConfig -}} \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
 
@@ -30,5 +32,3 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
-enabled: true
-name: kubelet.service
