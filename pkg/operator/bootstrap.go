@@ -63,6 +63,28 @@ func RenderBootstrap(
 	}, {
 		data:     filesData[pullSecretFile],
 		filename: "manifests/machineconfigcontroller-pull-secret",
+	}, {
+		// new directories for mco bootstrapping.
+		name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
+		filename: "bootstrap/manifests/machineconfigcontroller-controllerconfig.yaml",
+	}, {
+		name:     "manifests/master.machineconfigpool.yaml",
+		filename: "bootstrap/manifests/master.machineconfigpool.yaml",
+	}, {
+		name:     "manifests/worker.machineconfigpool.yaml",
+		filename: "bootstrap/manifests/worker.machineconfigpool.yaml",
+	}, {
+		name:     "manifests/bootstrap-pod-v2.yaml",
+		filename: "bootstrap/machineconfigoperator-bootstrap-pod.yaml",
+	}, {
+		data:     filesData[pullSecretFile],
+		filename: "bootstrap/manifests/machineconfigcontroller-pull-secret",
+	}, {
+		name:     "manifests/machineconfigserver/csr-approver-role-binding.yaml",
+		filename: "manifests/csr-approver-role-binding.yaml",
+	}, {
+		name:     "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
+		filename: "manifests/csr-bootstrap-role-binding.yaml",
 	}}
 	for _, m := range manifests {
 		glog.Info(m)
