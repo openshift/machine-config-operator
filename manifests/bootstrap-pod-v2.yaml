@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bootstrap-machine-config-operator
+  namespace: {{.TargetNamespace}}
+spec:
+  initContainers:
+  - name: machine-config-controller
+    image: {{.Images.MachineConfigController}}
+    args:
+    - "bootstrap"
+    - "--manifest-dir=/etc/mcc/bootstrap"
+    - "--dest-dir=/etc/mcs/bootstrap"
+    - "--pull-secret=/etc/mcc/bootstrap/machineconfigcontroller-pull-secret"
+    resources:
+      limits:
+        cpu: 20m
+        memory: 50Mi
+      requests:
+        cpu: 20m
+        memory: 50Mi
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: bootstrap-manifests
+      mountPath: /etc/mcc/bootstrap
+    - name: server-basedir
+      mountPath: /etc/mcs/bootstrap
+  containers:
+  - name: machine-config-server
+    image: {{.Images.MachineConfigServer}}
+    args:
+      - "bootstrap"
+    volumeMounts:
+    - name: server-certs
+      mountPath: /etc/ssl/mcs
+    - name: bootstrap-kubeconfig
+      mountPath: /etc/kubernetes/kubeconfig
+    - name: server-basedir
+      mountPath: /etc/mcs/bootstrap
+    securityContext:
+      privileged: true
+  hostNetwork: true
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  restartPolicy: Always
+  volumes:
+  - name: server-certs
+    hostPath:
+      path: /etc/ssl/mcs
+  - name: bootstrap-kubeconfig
+    hostPath:
+      path: /etc/mcs/kubeconfig
+  - name: server-basedir
+    hostPath:
+      path: /etc/mcs/bootstrap
+  - name: bootstrap-manifests
+    hostPath:
+      path: /etc/mcc/bootstrap
