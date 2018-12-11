@@ -65,3 +65,10 @@ func NewClientBuilder(kubeconfig string) (*ClientBuilder, error) {
 		config: config,
 	}, nil
 }
+
+// NewClientBuilderFromConfig returns a *ClientBuilder given a rest.Config
+func NewClientBuilderFromConfig(config *rest.Config) (*ClientBuilder, error) {
+	return &ClientBuilder{
+		config: config,
+	}, nil
+}
