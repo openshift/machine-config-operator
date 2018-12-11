@@ -53,6 +53,39 @@
    oc get -n openshift-machine-config-operator daemonset machine-config-daemon -o yaml
    ```
 
+# Without building images
+
+It is possible to iterate on the MCD without having to rebuild images
+for each change. To do this, change the daemonset definition to
+something like:
+
+
+```yaml
+containers:
+- command: ["/bin/bash"]
+  args:
+  - -c
+  - cp /rootfs/usr/local/bin/machine-config-daemon /usr/local/bin/machine-config-daemon && /usr/local/bin/machine-config-daemon start -v 4
+```
+
+Then, one can simply `scp` newly built binaries to `/usr/local/bin` on
+all the nodes and restart the daemon (one can just delete the running
+ones and let new instances take their place). E.g.:
+
+```sh
+# copy core creds to root so we can scp directly in the next invocation
+for ip in 11 51; do ssh core@192.168.126.$ip sudo cp -R /home/core/.ssh /root; done
+# scp MCD build to /usr/local/bin
+for ip in 11 51; do scp _output/linux/amd64/machine-config-daemon root@192.168.126.$ip:/usr/local/bin; done
+```
+
+Note this still requires disabling the CVO. It also requires disabling
+the operator since the MCD daemonset will be overwritten:
+
+```
+oc scale deployment machine-config-operator --replicas=0
+```
+
 # How to lay down files with the MCD
 
 1. Create a new machineconfig:
