@@ -50,22 +50,6 @@ func RenderBootstrap(
 		filename string
 	}{{
 		name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
-		filename: "manifests/machineconfigcontroller-controllerconfig.yaml",
-	}, {
-		name:     "manifests/master.machineconfigpool.yaml",
-		filename: "manifests/master.machineconfigpool.yaml",
-	}, {
-		name:     "manifests/worker.machineconfigpool.yaml",
-		filename: "manifests/worker.machineconfigpool.yaml",
-	}, {
-		name:     "manifests/bootstrap-pod.yaml",
-		filename: "machineconfigoperator-bootstrap-pod.yaml",
-	}, {
-		data:     filesData[pullSecretFile],
-		filename: "manifests/machineconfigcontroller-pull-secret",
-	}, {
-		// new directories for mco bootstrapping.
-		name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
 		filename: "bootstrap/manifests/machineconfigcontroller-controllerconfig.yaml",
 	}, {
 		name:     "manifests/master.machineconfigpool.yaml",
