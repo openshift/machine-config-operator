@@ -1,57 +1,56 @@
 ⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
 
-# Hacking on the MCD
+# Hacking on the MCO - prep
 
-1. Create a cluster using [the installer](https://github.com/openshift/installer/).  Many of the MCD developers use libvirt.  These instructions will be kept up to date generally against the leading edge of the installer.
+These instructions have been tested inside a Fedora 29 podman container (on a FSB29 host).
+It should also work to run these commands directly on a host system if you haven't yet
+containerized your workflow.
 
-1. Build a container image for the MCD and push it to a registry somewhere, e.g.
+1. Create a cluster using [the installer](https://github.com/openshift/installer/).  Many of the MCD developers use libvirt.  These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
 
-   ```sh
-   # this takes care of building the binary for you as well
-   WHAT=machine-config-daemon ./hack/build-image.sh
-   WHAT=machine-config-daemon REPO=docker.io/sdemos ./hack/push-image.sh
-   ```
+1. (libvirt) Set up a local proxy
 
-1. Set `KUBECONFIG` for use with `oc`
+The steps here come from [this comment](https://github.com/openshift/installer/issues/411#issuecomment-445165262) which provides a way for libvirt developers to expose their registry.
 
-   ```sh
-   export KUBECONFIG=<path to kubeconfig>
-   ```
+Allow your client binary to bind low ports:
 
-1. (optional) Since most of your work will be in the `openshift-machine-config-operator` namespace, you may find it convenient to:
+```
+sudo setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/oc
+```
 
-   ```sh
-   oc project openshift-machine-config-operator
-   ```
+(Or `kubectl` depending on your setup.  You may prefer to copy the `oc` binary elsewhere before writing to it as well.)
 
-   Then you can omit `-n openshift-machine-config-operator` to most commands.
+Now, forward port `443` to the router:
 
-1. Configure the MCO to deploy your test version. There is a ConfigMap in the
-   `openshift-machine-config-operator` namespace that contains the versions of
-   the components that the operator will deploy. When modified, the operator
-   will automatically deploy the new container versions.
+```
+oc -n openshift-ingress port-forward svc/router-default 443
+```
 
-   Note that for newer clusters set up by the installer, you must first disable
-   CVO as it owns the configmap and it will revert your changes:
+Leave that process running in a separate terminal.
 
-   ```sh
-   oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
-   ```
+1. Run `hack/cluster-push-prep.sh` (once)
 
-   (If you later want the CVO back to do cluster upgrades, use `--replicas=1` to restore it)
+You will likely get an error about needing to add the registry to your `/etc/hosts`; do that and then rerun the script.
 
-   To use your new container, change the "MachineConfigDaemon" value in the images.json field to your container image, e.g. "docker.io/sdemos/origin-machine-config-daemon:latest" for the previous example:
+# Hacking on the MCO - doing builds
 
-   ```sh
-   oc edit configmap -n openshift-machine-config-operator machine-config-operator-images
-   ```
+While you're still in the mode of testing builds, use `make`:
 
-1. Check that the deployment was successful. Open the yaml file and confirm that new image location (docker.io/...)
-   is present (check field-> spec: template: spec: image:)
- 
-   ```sh
-   oc get -n openshift-machine-config-operator daemonset machine-config-daemon -o yaml
-   ```
+```
+$ make machine-config-daemon
+```
+
+You can also `make machine-config-controller` and `make machine-config-operator`.
+
+When you want to push to the cluster, use the `deploy-` prefix, e.g.:
+
+```
+make deploy-machine-config-daemon
+```
+
+(Like above, you can use `operator` or `controller` in place of `daemon`).
+
+Use `oc get pods -w` to watch for your new code to be deployed.
 
 # Without building images
 
