@@ -23,6 +23,12 @@ _image-%:
 	@which podman 2> /dev/null &>1 || { echo "podman must be installed to build an image";  exit 1; }
 	WHAT=$* $(my_p)/hack/build-image.sh
 
+# Build + push + deploy image for a component. Intended to be called via another target.
+# Example:
+#    make _deploy-machine-config-daemon
+_deploy-%:
+	WHAT=$* $(my_p)/hack/cluster-push.sh
+
 # Run unit tests
 # Example:
 #    make test
@@ -57,6 +63,7 @@ $(foreach P, $(patsubst cmd/%, %, $(shell find cmd -maxdepth 1 -mindepth 1 -type
 define image_template =
  .PHONY: image-$(1)
  image-$(1): _image-$(1) _build-$(1)
+ deploy-$(1): _deploy-$(1)
 
  imc += image-$(1)
 endef
