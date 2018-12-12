@@ -474,7 +474,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 func generateMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
 	merged := mcfgv1.MergeMachineConfigs(configs)
-	hashedName, err := getMachineConfigHashedName(merged)
+	hashedName, err := getMachineConfigHashedName(pool, merged)
 	if err != nil {
 		return nil, err
 	}
