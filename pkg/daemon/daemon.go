@@ -531,30 +531,33 @@ func (dn *Daemon) isDesiredMachineState() (bool, string, error) {
 		return false, "", err
 	}
 	if reconcilableError != nil {
+		glog.Infof("Not in desired state: can't reconcile current=%s with desired=%s: %s",
+			currentConfig.GetName(), desiredConfig.GetName(), *reconcilableError)
 		return false, "", nil
 	}
 
-	isDesiredOS := false
 	// We only deal with operating system management on RHCOS
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		// If we are on anything but RHCOS we set to True as there
-		// is nothing to updated.
-		isDesiredOS = true
-	} else {
-		isDesiredOS, err = dn.checkOS(desiredConfig.Spec.OSImageURL)
+	if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+		isDesiredOS, err := dn.checkOS(desiredConfig.Spec.OSImageURL)
 		if err != nil {
 			return false, "", err
 		}
+		if !isDesiredOS {
+			glog.Infof("Not in desired state; booted osImageURL differs from target")
+			return false, "", nil
+		}
 	}
 
-	if dn.checkFiles(desiredConfig.Spec.Config.Storage.Files) &&
-		dn.checkUnits(desiredConfig.Spec.Config.Systemd.Units) &&
-		isDesiredOS {
-		return true, dcAnnotation, nil
+	if !dn.checkFiles(desiredConfig.Spec.Config.Storage.Files) {
+		glog.Infof("Not in desired state; checkFiles failed")
+		return false, "", nil
+	}
+	if !dn.checkUnits(desiredConfig.Spec.Config.Systemd.Units) {
+		glog.Infof("Not in desired state; checkUnits failed")
+		return false, "", nil
 	}
 
-	// error is nil, as we successfully decided that validate is false
-	return false, "", nil
+	return true, dcAnnotation, nil
 }
 
 // isUnspecifiedOS says whether an osImageURL is "unspecified",
