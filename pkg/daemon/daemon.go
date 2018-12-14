@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coreos/go-systemd/login1"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
@@ -46,10 +45,6 @@ type Daemon struct {
 
 	// bootedOSImageURL is the currently booted URL of the operating system
 	bootedOSImageURL string
-
-	// login client talks to the systemd-logind service for rebooting the
-	// machine
-	loginClient *login1.Conn
 
 	client mcfgclientset.Interface
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
@@ -110,11 +105,6 @@ func New(
 	exitCh chan<- error,
 ) (*Daemon, error) {
 
-	loginClient, err := login1.New()
-	if err != nil {
-		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
-	}
-
 	osImageURL := ""
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == MachineConfigDaemonOSRHCOS {
@@ -128,7 +118,6 @@ func New(
 		name:                   nodeName,
 		OperatingSystem:        operatingSystem,
 		NodeUpdaterClient:      nodeUpdaterClient,
-		loginClient:            loginClient,
 		rootMount:              rootMount,
 		fileSystemClient:       fileSystemClient,
 		bootedOSImageURL:       osImageURL,
@@ -367,7 +356,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
 		return err
 	}
-	return dn.reboot("runOnceFromIgnition complete")
+	return dn.queueReboot("runOnceFromIgnition complete")
 }
 
 // handleNodeUpdate is the gatekeeper handler for informer callbacks detecting
@@ -658,7 +647,6 @@ func checkFileContentsAndMode(filePath, expectedContent string, mode os.FileMode
 
 // Close closes all the connections the node agent has open for it's lifetime
 func (dn *Daemon) Close() {
-	dn.loginClient.Close()
 }
 
 func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {

@@ -32,7 +32,6 @@ func TestUpdateOS(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   MachineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
-		loginClient:       nil, // set to nil as it will not be used within tests
 		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
@@ -90,7 +89,6 @@ func TestReconcilable(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   MachineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: nil,
-		loginClient:       nil,
 		client:            nil,
 		kubeClient:        nil,
 		rootMount:         "/",

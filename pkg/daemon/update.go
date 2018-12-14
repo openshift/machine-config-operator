@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"syscall"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,10 +63,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// TODO: Change the logic to be clearer
 	// We need to skip draining of the node when we are running once
 	// and there is no cluster.
-	if dn.onceFrom != "" && !ValidPath(dn.onceFrom) {
+	onceFromMode := dn.onceFrom == "" || ValidPath(dn.onceFrom)
+	var node *corev1.Node
+	if !onceFromMode {
 		glog.Info("Update prepared; draining the node")
 
-		node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+		node, err = dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -78,13 +82,36 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 			IgnoreDaemonsets:   true,
 		})
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "Draining non-daemonsets")
 		}
-		glog.V(2).Infof("Node successfully drained")
+		glog.V(2).Infof("Node successfully drained (non-daemonsets)")
 	}
 
-	// reboot. this function shouldn't actually return.
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfigName))
+	err = dn.queueReboot(fmt.Sprintf("Node will reboot into config %v", newConfigName))
+	if err != nil {
+		return err
+	}
+
+	// And now this time without IgnoreDaemonSets, which should as a side
+	// effect kill us and release the reboot lock, allowing the queued
+	// reboot to proceed.
+	if !onceFromMode {
+		err = drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
+			DeleteLocalData:    true,
+			Force:              true,
+			GracePeriodSeconds: 600,
+		})
+		if err != nil {
+			return errors.Wrapf(err, "Final drain")
+		}
+
+		// cross fingers
+		time.Sleep(24 * 7 * time.Hour)
+	}
+
+	// Otherwise, we fall through, which will in onceFrom mode also
+	// exit the process, releasing the file lock.
+	return nil
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
@@ -512,25 +539,35 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	}
 }
 
-// reboot is the final step. it tells systemd-logind to reboot the machine,
-// cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
-// and manages to return, it returns a scary error message.
-func (dn *Daemon) reboot(rationale string) error {
+const rebootLockPath = "/run/machine-config-daemon-reboot"
+
+// The main idea here is that we *queue* a reboot in a separate systemd unit,
+// which will start once this process exits.  In the orchestrated (not-onceFrom)
+// case, the drain should kill our pod, releasing our lock.  In the onceFrom
+// case we just exit.
+func (dn *Daemon) queueReboot(rationale string) error {
 	// We'll only have a recorder if we're cluster driven
 	if dn.recorder != nil {
 		dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
 	}
-	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
+	dn.logSystem("machine-config-daemon: initiating reboot: %s", rationale)
 
-	// reboot
-	dn.loginClient.Reboot(false)
+	fh, err := os.OpenFile(rebootLockPath, os.O_CREATE|os.O_RDONLY, os.FileMode(0600))
+	if err != nil {
+		return err
+	}
 
-	// cleanup
-	dn.Close()
+	if err = syscall.Flock(int(fh.Fd()), syscall.LOCK_EX); err != nil {
+		return errors.Wrapf(err, "flock(%s)", rebootLockPath)
+	}
 
-	// cross fingers
-	time.Sleep(24 * 7 * time.Hour)
-
-	// if everything went well, this should be unreachable.
-	return fmt.Errorf("Reboot failed; this error should be unreachable, something is seriously wrong")
+	// We invoke via systemd-run so that this pod can be safely drained
+	rebootCmd := exec.Command("systemd-run", "--unit", "machine-config-daemon-reboot",
+		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale),
+		"flock", rebootLockPath, "reboot")
+	err = rebootCmd.Run()
+	if err != nil {
+		return errors.Wrapf(err, "Failed to queue reboot")
+	}
+	return nil
 }
