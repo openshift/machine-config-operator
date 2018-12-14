@@ -1,3 +1,5 @@
+COMPONENTS = daemon controller server operator
+
 # vim: noexpandtab ts=8
 my_p=$(shell pwd -P)
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
@@ -50,27 +52,29 @@ verify: test machine-configs
 
 # Template for defining build targets for binaries.
 define target_template =
- .PHONY: $(1)
- $(1): _build-$(1)
+ .PHONY: $(1) machine-config-$(1)
+ machine-config-$(1): _build-machine-config-$(1)
+ $(1): machine-config-$(1)
 
  mc += $(1)
 endef
 
-# Create a target for each command defined in `cmd` except for common.
-$(foreach P, $(patsubst cmd/%, %, $(shell find cmd -maxdepth 1 -mindepth 1 -type d -not -path cmd/common)), $(eval $(call target_template,$(P))))
+# Create a target for each component
+$(foreach C, $(COMPONENTS), $(eval $(call target_template,$(C))))
 
 # Template for image builds.
 define image_template =
- .PHONY: image-$(1)
- image-$(1): _image-$(1) _build-$(1)
- deploy-$(1): _deploy-$(1)
+ .PHONY: image-$(1) image-machine-config-$(1) deploy-$(1) deploy-machine-config-$(1)
+ image-machine-config-$(1): _image-machine-config-$(1) _build-machine-config-$(1)
+ image-$(1): image-machine-config-$(1)
+ deploy-machine-config-$(1): _deploy-$(1)
+ deploy-$(1): deploy-machine-config-$(1)
 
  imc += image-$(1)
 endef
 
-# Call 'image_template' for each Dockerfile found.
-$(foreach D, $(patsubst Dockerfile.%,%, $(wildcard Dockerfile*)), $(eval $(call image_template,$(D))))
-
+# Generate 'image_template' for each component
+$(foreach C, $(COMPONENTS), $(eval $(call image_template,$(C))))
 
 .PHONY: machine-configs images images.rhel7
 
