@@ -57,6 +57,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 		"manifests/machineconfig.crd.yaml",
 		"manifests/controllerconfig.crd.yaml",
 		"manifests/machineconfigpool.crd.yaml",
+		"manifests/kubeletconfig.crd.yaml",
 	}
 
 	for _, crd := range crds {

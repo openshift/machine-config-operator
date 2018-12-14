@@ -4,6 +4,8 @@ package v1
 
 type ControllerConfigExpansion interface{}
 
+type KubeletConfigExpansion interface{}
+
 type MCOConfigExpansion interface{}
 
 type MachineConfigExpansion interface{}
