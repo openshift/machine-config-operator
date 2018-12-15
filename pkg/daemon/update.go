@@ -36,10 +36,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	newConfigName := newConfig.GetName()
 	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// make sure we can actually reconcile this state
-	reconcilableError, err := dn.reconcilable(oldConfig, newConfig)
-	if err != nil {
-		return err
-	}
+	reconcilableError := dn.reconcilable(oldConfig, newConfig)
+
 	if reconcilableError != nil {
 		msg := fmt.Sprintf("Can't reconcile config %v with %v: %v", oldConfigName, newConfigName, *reconcilableError)
 		if dn.recorder != nil {
@@ -95,12 +93,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*string, error) {
+func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *string {
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
 		glog.Infof("Missing kind in old config. Assuming no prior state.")
-		return nil, nil
+		return nil
 	}
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
@@ -112,7 +110,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*str
 	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
 		msg := fmt.Sprintf("Ignition version mismatch between old and new config: old: %s new: %s",
 			oldIgn.Ignition.Version, newIgn.Ignition.Version)
-		return &msg, nil
+		return &msg
 	}
 	// everything else in the ignition section doesn't matter to us, since the
 	// rest of the stuff in this section has to do with fetching remote
@@ -125,7 +123,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*str
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
 		msg := "Ignition networkd section contains changes"
-		return &msg, nil
+		return &msg
 	}
 
 	// Passwd section
@@ -134,7 +132,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*str
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
 		msg := "Ignition passwd section contains changes"
-		return &msg, nil
+		return &msg
 	}
 
 	// Storage section
@@ -144,15 +142,15 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*str
 	// sure the sections we can't fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
 		msg := "Ignition disks section contains changes"
-		return &msg, nil
+		return &msg
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
 		msg := "Ignition filesystems section contains changes"
-		return &msg, nil
+		return &msg
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
 		msg := "Ignition raid section contains changes"
-		return &msg, nil
+		return &msg
 	}
 
 	// Special case files append: if the new config wants us to append, then we
@@ -160,7 +158,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*str
 	for _, f := range newIgn.Storage.Files {
 		if f.Append {
 			msg := fmt.Sprintf("Ignition file %v includes append", f.Path)
-			return &msg, nil
+			return &msg
 		}
 	}
 
@@ -170,7 +168,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*str
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Infof("Configs are reconcilable")
-	return nil, nil
+	return nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
