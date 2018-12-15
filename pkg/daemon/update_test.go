@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -67,20 +66,16 @@ func TestUpdateOS(t *testing.T) {
 // reconcilable. Welcome to the longest unittest you've ever read.
 func TestReconcilable(t *testing.T) {
 	// checkReconcilableResults is a shortcut for verifying results that should be reconcilable
-	checkReconcilableResults := func(key string, err error, reconcilableError *string) {
-		if err != nil {
-			t.Errorf("Expected no error. Got %s.", err)
-		}
+	checkReconcilableResults := func(key string, reconcilableError *string) {
+
 		if reconcilableError != nil {
 			t.Errorf("Expected the same %s values would be reconcilable. Received error: %v", key, *reconcilableError)
 		}
 	}
 
 	// checkIreconcilableResults is a shortcut for verifing results that should be ireconcilable
-	checkIreconcilableResults := func(key string, err error, reconcilableError *string) {
-		if err != nil {
-			t.Errorf("Expected no error. Got %s.", err)
-		}
+	checkIreconcilableResults := func(key string, reconcilableError *string) {
+
 		if reconcilableError == nil {
 			t.Errorf("Expected different %s values would not be reconcilable.", key)
 		}
@@ -120,13 +115,13 @@ func TestReconcilable(t *testing.T) {
 	}
 
 	// Verify Ignition version changes react as expected
-	isReconcilable, err := d.reconcilable(oldConfig, newConfig)
-	checkIreconcilableResults("ignition", err, isReconcilable)
+	isReconcilable := d.reconcilable(oldConfig, newConfig)
+	checkIreconcilableResults("ignition", isReconcilable)
 
 	// Match ignition versions
 	oldConfig.Spec.Config.Ignition.Version = "1.0"
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults("ignition", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults("ignition", isReconcilable)
 
 	// Verify Networkd unit changes react as expected
 	oldConfig.Spec.Config.Networkd = ignv2_2types.Networkd{}
@@ -137,14 +132,14 @@ func TestReconcilable(t *testing.T) {
 			},
 		},
 	}
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkIreconcilableResults("networkd", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkIreconcilableResults("networkd", isReconcilable)
 
 	// Match Networkd
 	oldConfig.Spec.Config.Networkd = newConfig.Spec.Config.Networkd
 
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults("networkd", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults("networkd", isReconcilable)
 
 	// Verify Disk changes react as expected
 	oldConfig.Spec.Config.Storage.Disks = []ignv2_2types.Disk{
@@ -153,13 +148,13 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkIreconcilableResults("disk", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkIreconcilableResults("disk", isReconcilable)
 
 	// Match storage disks
 	newConfig.Spec.Config.Storage.Disks = oldConfig.Spec.Config.Storage.Disks
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults("disk", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults("disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
 	oldConfig.Spec.Config.Storage.Filesystems = []ignv2_2types.Filesystem{
@@ -168,13 +163,13 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkIreconcilableResults("filesystem", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkIreconcilableResults("filesystem", isReconcilable)
 
 	// Match Storage filesystems
 	newConfig.Spec.Config.Storage.Filesystems = oldConfig.Spec.Config.Storage.Filesystems
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults("filesystem", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults("filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
 	oldConfig.Spec.Config.Storage.Raid = []ignv2_2types.Raid{
@@ -183,11 +178,11 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkIreconcilableResults("raid", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkIreconcilableResults("raid", isReconcilable)
 
 	// Match storage raid
 	newConfig.Spec.Config.Storage.Raid = oldConfig.Spec.Config.Storage.Raid
-	isReconcilable, err = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults("raid", err, isReconcilable)
+	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults("raid", isReconcilable)
 }
