@@ -11,7 +11,6 @@ import (
 
 const (
 	apiPathConfig = "/config/"
-	apiParamEtcd  = "etcd_index"
 )
 
 type poolRequest struct {
