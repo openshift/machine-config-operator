@@ -80,6 +80,78 @@ func TestHandler(t *testing.T) {
 			},
 		},
 		{
+			name:    "get /healthz",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return new(ignv2_2types.Config), nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusNoContent)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "head /healthz",
+			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return new(ignv2_2types.Config), nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusNoContent)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "get health path that does not exist",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz-does-not-exist", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return nil, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusNotFound)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "get health child that does not exist",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz/does-not-exist", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return nil, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusNotFound)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "get root",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return nil, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusNotFound)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "post root",
+			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return nil, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusNotFound)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
 			name:    "post non-config path that does not exist",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/post", nil),
 			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
@@ -94,6 +166,18 @@ func TestHandler(t *testing.T) {
 		{
 			name:    "post config path that exists",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return nil, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusMethodNotAllowed)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "post /healthz",
+			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
 			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
 				return nil, nil
 			},

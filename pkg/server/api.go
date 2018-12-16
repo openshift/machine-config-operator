@@ -22,6 +22,7 @@ type getConfig func(request poolRequest) (*ignv2_2types.Config, error)
 
 func newHandler(getConfig getConfig) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/healthz", &healthHandler{})
 	mux.Handle(apiPathConfig, &configHandler{getConfig: getConfig})
 	mux.Handle("/", &defaultHandler{})
 	return mux
@@ -83,6 +84,26 @@ func (h *configHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Errorf("failed to write %v response: %v", cr, err)
 	}
+}
+
+type healthHandler struct{}
+
+// ServeHTTP handles /healthz requests.
+func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Length", "0")
+
+	if r.URL.Path == "/healthz" {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	return
 }
 
 // defaultHandler is the HTTP Handler for backstopping invalid requests.
