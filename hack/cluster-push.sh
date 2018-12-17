@@ -20,7 +20,7 @@ WHAT=${WHAT:-machine-config-daemon}
 LOCAL_IMGNAME=localhost/${WHAT}
 REMOTE_IMGNAME=openshift-machine-config-operator/${WHAT}
 if [ "${do_build}" = 1 ]; then
-    podman build -t "${LOCAL_IMGNAME}" -f Dockerfile.${WHAT}
+    podman build -t "${LOCAL_IMGNAME}" -f Dockerfile.${WHAT} --no-cache
     podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
 fi
 
