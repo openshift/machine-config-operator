@@ -42,12 +42,9 @@ func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 
 // Serve launches the API Server.
 func (a *APIServer) Serve() {
-	mux := http.NewServeMux()
-	mux.Handle(apiPathConfig, a.handler)
-
 	mcs := &http.Server{
 		Addr:    fmt.Sprintf(":%v", a.port),
-		Handler: mux,
+		Handler: a.handler,
 	}
 
 	glog.Info("launching server")
@@ -80,14 +77,14 @@ func NewServerAPIHandler(s Server) *APIHandler {
 // ServeHTTP handles the requests for the machine config server
 // API handler.
 func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
-	if r.URL.Path == "" {
-		w.WriteHeader(http.StatusBadRequest)
+	base, pool := path.Split(r.URL.Path)
+	if base != apiPathConfig {
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	cr := poolRequest{
-		machinePool: path.Base(r.URL.Path),
+		machinePool: pool,
 	}
 
 	conf, err := sh.server.GetConfig(cr)

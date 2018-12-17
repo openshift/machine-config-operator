@@ -18,7 +18,7 @@ func (ms *mockServer) GetConfig(pr poolRequest) (*ignv2_2types.Config, error) {
 }
 
 type scenario struct {
-	name           string
+	request        *http.Request
 	expectedStatus int
 	serverFunc     func(poolRequest) (*ignv2_2types.Config, error)
 }
@@ -26,21 +26,21 @@ type scenario struct {
 func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
-			name:           "not-found",
+			request:        httptest.NewRequest("GET", "http://testrequest/does-not-exist", nil),
 			expectedStatus: http.StatusNotFound,
 			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
 				return nil, nil
 			},
 		},
 		{
-			name:           "internal-server",
+			request:        httptest.NewRequest("GET", "http://testrequest/config/does-not-exist", nil),
 			expectedStatus: http.StatusInternalServerError,
 			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), fmt.Errorf("not acceptable")
 			},
 		},
 		{
-			name:           "success",
+			request:        httptest.NewRequest("GET", "http://testrequest/config/master", nil),
 			expectedStatus: http.StatusOK,
 			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
@@ -48,19 +48,20 @@ func TestAPIHandler(t *testing.T) {
 		},
 	}
 
-	for i := range scenarios {
-		req := httptest.NewRequest("GET", "http://testrequest/", nil)
-		w := httptest.NewRecorder()
-		ms := &mockServer{
-			GetConfigFn: scenarios[i].serverFunc,
-		}
-		handler := NewServerAPIHandler(ms)
-		handler.ServeHTTP(w, req)
+	for _, scenario := range scenarios {
+		t.Run(scenario.request.URL.Path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			ms := &mockServer{
+				GetConfigFn: scenario.serverFunc,
+			}
+			handler := NewServerAPIHandler(ms)
+			handler.ServeHTTP(w, scenario.request)
 
-		resp := w.Result()
+			resp := w.Result()
 
-		if resp.StatusCode != scenarios[i].expectedStatus {
-			t.Errorf("API Handler test failed for: %s, expected: %d, received: %d", scenarios[i].name, scenarios[i].expectedStatus, resp.StatusCode)
-		}
+			if resp.StatusCode != scenario.expectedStatus {
+				t.Errorf("API Handler test failed: expected: %d, received: %d", scenario.expectedStatus, resp.StatusCode)
+			}
+		})
 	}
 }
