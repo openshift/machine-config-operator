@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -64,7 +65,7 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mcPath := path.Join(testDir, "machine-configs", testConfig+".yaml")
+	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
 	mcData, err := ioutil.ReadFile(mcPath)
 	if err != nil {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
@@ -128,7 +129,7 @@ func TestClusterServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mcPath := path.Join(testDir, "machine-configs", testConfig+".yaml")
+	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
 	mcData, err := ioutil.ReadFile(mcPath)
 	if err != nil {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
