@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path"
 
+	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 )
 
@@ -17,69 +18,23 @@ type poolRequest struct {
 	machinePool string
 }
 
-// APIServer provides the HTTP(s) endpoint
-// for providing the machine configs.
-type APIServer struct {
-	handler  *APIHandler
-	port     int
-	insecure bool
-	cert     string
-	key      string
-}
+type getConfig func(request poolRequest) (*ignv2_2types.Config, error)
 
-// NewAPIServer initializes a new API server
-// that runs the Machine Config Server as a
-// handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
-	return &APIServer{
-		handler:  a,
-		port:     p,
-		insecure: is,
-		cert:     c,
-		key:      k,
-	}
-}
-
-// Serve launches the API Server.
-func (a *APIServer) Serve() {
+func newHandler(getConfig getConfig) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(apiPathConfig, a.handler)
-
-	mcs := &http.Server{
-		Addr:    fmt.Sprintf(":%v", a.port),
-		Handler: mux,
-	}
-
-	glog.Info("launching server")
-	if a.insecure {
-		// Serve a non TLS server.
-		if err := mcs.ListenAndServe(); err != http.ErrServerClosed {
-			glog.Exitf("Machine Config Server exited with error: %v", err)
-		}
-	} else {
-		if err := mcs.ListenAndServeTLS(a.cert, a.key); err != http.ErrServerClosed {
-			glog.Exitf("Machine Config Server exited with error: %v", err)
-		}
-	}
+	mux.Handle(apiPathConfig, &configHandler{getConfig: getConfig})
+	mux.Handle("/", &defaultHandler{})
+	return mux
 }
 
-// APIHandler is the HTTP Handler for the
-// Machine Config Server.
-type APIHandler struct {
-	server Server
-}
-
-// NewServerAPIHandler initializes a new API handler
-// for the Machine Config Server.
-func NewServerAPIHandler(s Server) *APIHandler {
-	return &APIHandler{
-		server: s,
-	}
+// configHandler is the HTTP Handler for machine configuration.
+type configHandler struct {
+	getConfig getConfig
 }
 
 // ServeHTTP handles the requests for the machine config server
 // API handler.
-func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *configHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -96,7 +51,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		machinePool: path.Base(r.URL.Path),
 	}
 
-	conf, err := sh.server.GetConfig(cr)
+	conf, err := h.getConfig(cr)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -128,4 +83,14 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Errorf("failed to write %v response: %v", cr, err)
 	}
+}
+
+// defaultHandler is the HTTP Handler for backstopping invalid requests.
+type defaultHandler struct{}
+
+// ServeHTTP handles invalid requests.
+func (h *defaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Length", "0")
+	w.WriteHeader(http.StatusNotFound)
+	return
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"path/filepath"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -24,11 +25,7 @@ const (
 	bootstrapTokenDir = "/etc/mcs/bootstrap-token"
 )
 
-// ensure clusterServer implements the
-// Server interface.
-var _ = Server(&clusterServer{})
-
-type clusterServer struct {
+type clusterConfig struct {
 	// machineClient is used to interact with the
 	// machine config, pool objects.
 	machineClient v1.MachineconfigurationV1Interface
@@ -36,28 +33,31 @@ type clusterServer struct {
 	kubeconfigFunc kubeconfigFunc
 }
 
-// NewClusterServer is used to initialize the machine config
-// server that will be used to fetch the requested machine pool
-// objects from within the cluster.
-// It accepts the kubeConfig which is not required when it's
-// run from within the cluster(useful in testing).
-// It accepts the apiserverURL which is the location of the KubeAPIServer.
-func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
+// NewClusterServer initializes a new Server that loads its
+// configuration from the cluster. It accepts the kubeConfig which is
+// not required when it's run from within the cluster (useful in
+// testing). It accepts the apiServerURL which is the location of the
+// Kubernetes API server.
+func NewClusterServer(kubeConfig, apiServerURL string) (*http.Server, error) {
 	restConfig, err := getClientConfig(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
 	}
 
 	mc := v1.NewForConfigOrDie(restConfig)
-	return &clusterServer{
+	config := &clusterConfig{
 		machineClient:  mc,
-		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
+		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiServerURL) },
+	}
+
+	return &http.Server{
+		Handler: newHandler(config.getConfig),
 	}, nil
 }
 
-// GetConfig fetches the machine config(type - Ignition) from the cluster,
+// getConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
-func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
+func (cs *clusterConfig) getConfig(cr poolRequest) (*ignv2_2types.Config, error) {
 	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machinePool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)

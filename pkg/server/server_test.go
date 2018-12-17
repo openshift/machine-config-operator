@@ -56,7 +56,7 @@ func TestStringEncode(t *testing.T) {
 //    the node-annotations file, the kubeconfig file(which is read
 //    from the testdata). This ignition config is then
 //    labeled as expected Ignition config.
-// 4. Call the Bootstrap GetConfig method by passing the reference to the
+// 4. Call the Bootstrap getConfig method by passing the reference to the
 //    machine pool present in the testdata folder.
 // 5. Compare the Ignition configs from Step 3 and Step 4.
 func TestBootstrapServer(t *testing.T) {
@@ -90,14 +90,14 @@ func TestBootstrapServer(t *testing.T) {
 	appendFileToIgnition(&mc.Spec.Config, daemon.InitialNodeAnnotationsFilePath, anno)
 
 	// initialize bootstrap server and get config.
-	bs := &bootstrapServer{
-		serverBaseDir:  testDir,
+	bs := &bootstrapConfig{
+		configBaseDir:  testDir,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := bs.GetConfig(poolRequest{
+	res, err := bs.getConfig(poolRequest{
 		machinePool: testPool,
 	})
 	if err != nil {
@@ -121,7 +121,7 @@ func TestBootstrapServer(t *testing.T) {
 //    labeled as expected Ignition config (mc).
 // 4. Use the Kubernetes fake client to Create the machine pool and the config
 //    objects from Step 1, 2 inside the cluster.
-// 5. Call the Cluster GetConfig method.
+// 5. Call the Cluster getConfig method.
 // 6. Compare the Ignition configs from Step 3 and Step 5.
 func TestClusterServer(t *testing.T) {
 	mp, err := getTestMachinePool()
@@ -150,7 +150,7 @@ func TestClusterServer(t *testing.T) {
 		t.Logf("err: %v", err)
 	}
 
-	csc := &clusterServer{
+	csc := &clusterConfig{
 		machineClient:  cs.MachineconfigurationV1(),
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
@@ -172,7 +172,7 @@ func TestClusterServer(t *testing.T) {
 	}
 	appendFileToIgnition(&mc.Spec.Config, daemon.InitialNodeAnnotationsFilePath, anno)
 
-	res, err := csc.GetConfig(poolRequest{
+	res, err := csc.getConfig(poolRequest{
 		machinePool: testPool,
 	})
 	if err != nil {

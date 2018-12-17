@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path"
 
@@ -14,32 +15,32 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
-// ensure bootstrapServer implements the
-// Server interface.
-var _ = Server(&bootstrapServer{})
+type bootstrapConfig struct {
 
-type bootstrapServer struct {
-
-	// serverBaseDir is the root, relative to which
+	// configBaseDir is the root, relative to which
 	// the machine pool, configs will be picked
-	serverBaseDir string
+	configBaseDir string
 
 	kubeconfigFunc kubeconfigFunc
 }
 
-// NewBootstrapServer initializes a new Bootstrap server that implements
-// the Server interface.
-func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
+// NewBootstrapServer initializes a new Server that loads
+// its configuration from the local filesystem.
+func NewBootstrapServer(dir, kubeconfig string) (*http.Server, error) {
 	if _, err := os.Stat(kubeconfig); err != nil {
 		return nil, fmt.Errorf("kubeconfig not found at location: %s", kubeconfig)
 	}
-	return &bootstrapServer{
-		serverBaseDir:  dir,
+	config := &bootstrapConfig{
+		configBaseDir:  dir,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromFile(kubeconfig) },
+	}
+
+	return &http.Server{
+		Handler: newHandler(config.getConfig),
 	}, nil
 }
 
-// GetConfig fetches the machine config(type - Ignition) from the bootstrap server,
+// getConfig fetches the machine config(type - Ignition) from the bootstrap server,
 // based on the pool request.
 // It returns nil for conf, error if the config isn't found. It returns a formatted
 // error if any other error is encountered during its operations.
@@ -47,19 +48,19 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 // The method does the following:
 //
 // 1. Read the machine config pool by using the following path template:
-// 		"<serverBaseDir>/machine-pools/<machineConfigPoolName>.yaml"
+// 		"<configBaseDir>/machine-pools/<machineConfigPoolName>.yaml"
 //
 // 2. Read the currentConfig field from the Status and read the config file
 //    using the following path template:
-// 		"<serverBaseDir>/machine-configs/<currentConfig>.yaml"
+// 		"<configBaseDir>/machine-configs/<currentConfig>.yaml"
 //
 // 3. Load the machine config.
 // 4. Append the machine annotations file.
 // 5. Append the KubeConfig file.
-func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
+func (bsc *bootstrapConfig) getConfig(cr poolRequest) (*ignv2_2types.Config, error) {
 
 	// 1. Read the Machine Config Pool object.
-	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machinePool+".yaml")
+	fileName := path.Join(bsc.configBaseDir, "machine-pools", cr.machinePool+".yaml")
 	glog.Infof("reading file %q", fileName)
 	data, err := ioutil.ReadFile(fileName)
 	if os.IsNotExist(err) {
@@ -79,7 +80,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, err
 	currConf := mp.Status.CurrentMachineConfig
 
 	// 2. Read the Machine Config object.
-	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+".yaml")
+	fileName = path.Join(bsc.configBaseDir, "machine-configs", currConf+".yaml")
 	glog.Infof("reading file %q", fileName)
 	data, err = ioutil.ReadFile(fileName)
 	if os.IsNotExist(err) {

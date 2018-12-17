@@ -28,12 +28,6 @@ type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
 // appenderFunc appends Config.
 type appenderFunc func(*ignv2_2types.Config) error
 
-// Server defines the interface that is implemented by different
-// machine config server implementations.
-type Server interface {
-	GetConfig(poolRequest) (*ignv2_2types.Config, error)
-}
-
 func getAppenders(cr poolRequest, currMachineConfig string, f kubeconfigFunc) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.

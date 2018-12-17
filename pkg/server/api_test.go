@@ -23,16 +23,16 @@ type checkResponse func(t *testing.T, response *http.Response)
 type scenario struct {
 	name          string
 	request       *http.Request
-	serverFunc    func(poolRequest) (*ignv2_2types.Config, error)
+	getConfig     getConfig
 	checkResponse checkResponse
 }
 
-func TestAPIHandler(t *testing.T) {
+func TestHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
 			name:    "get non-config path that does not exist",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/does-not-exist", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
 				return nil, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -44,7 +44,7 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "get config path that does not exist",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -56,7 +56,7 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "get config path that exists",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -69,7 +69,7 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "head config path that exists",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -82,11 +82,11 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "post non-config path that does not exist",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/post", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
 				return nil, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
-				checkStatus(t, response, http.StatusMethodNotAllowed)
+				checkStatus(t, response, http.StatusNotFound)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
 			},
@@ -94,8 +94,8 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "post config path that exists",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			getConfig: func(poolRequest) (*ignv2_2types.Config, error) {
+				return nil, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
@@ -108,10 +108,7 @@ func TestAPIHandler(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			ms := &mockServer{
-				GetConfigFn: scenario.serverFunc,
-			}
-			handler := NewServerAPIHandler(ms)
+			handler := newHandler(scenario.getConfig)
 			handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()

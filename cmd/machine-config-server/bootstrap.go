@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/server"
@@ -37,18 +38,18 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	glog.Infof("Version: %+v", version.Version)
 
 	bs, err := server.NewBootstrapServer(bootstrapOpts.serverBaseDir, bootstrapOpts.serverKubeConfig)
-
 	if err != nil {
 		glog.Exitf("Machine Config Server exited with error: %v", err)
 	}
 
-	apiHandler := server.NewServerAPIHandler(bs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
+	secureServer := *bs
+	secureServer.Addr = fmt.Sprintf(":%d", rootOpts.sport)
+	insecureServer := *bs
+	insecureServer.Addr = fmt.Sprintf(":%d", rootOpts.isport)
 
 	stopCh := make(chan struct{})
-	go secureServer.Serve()
-	go insecureServer.Serve()
+	go secureServer.ListenAndServeTLS(rootOpts.cert, rootOpts.key)
+	go insecureServer.ListenAndServe()
 	<-stopCh
 	panic("not possible")
 }
