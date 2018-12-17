@@ -54,9 +54,8 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 // 		"<serverBaseDir>/machine-configs/<currentConfig>.yaml"
 //
 // 3. Load the machine config.
-// 4. Execute the etcd template function based on the etcd_index, if passed in the request .
-// 5. Append the machine annotations file.
-// 6. Append the KubeConfig file.
+// 4. Append the machine annotations file.
+// 5. Append the KubeConfig file.
 func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
 
 	// 1. Read the Machine Config Pool object.
