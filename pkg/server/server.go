@@ -20,12 +20,6 @@ const (
 	// used for writing the ignition files created by the
 	// server.
 	defaultFileSystem = "root"
-
-	// etcdTemplateParam defines the parameter used for the etcd
-	// index in the machine config.
-	// This param needs to be replaced by the value of the index
-	// received in the request.
-	etcdTemplateParam = "{{.etcd_index}}"
 )
 
 // kubeconfigFunc fetches the kubeconfig that needs to be served.
