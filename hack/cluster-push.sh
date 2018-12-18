@@ -47,6 +47,9 @@ EOF
 oc replace -f ${outf}
 rm ${tmpf} ${outf}
 
+# The operator still controls the deployment, scale it down
+# and patch directly for increased speed
+oc scale --replicas=0 deploy/machine-config-operator
 patch=$(mktemp)
 cat >${patch} <<EOF
 spec:
@@ -68,5 +71,6 @@ case $WHAT in
     *) echo "Unhandled WHAT=$WHAT" && exit 1
 esac
 
-oc patch -n openshift-machine-config-operator "${target}" -p "$(cat ${patch})"
+oc patch "${target}" -p "$(cat ${patch})"
 rm ${patch}
+oc scale --replicas=1 deploy/machine-config-operator
