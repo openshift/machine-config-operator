@@ -20,7 +20,7 @@ WHAT=${WHAT:-machine-config-daemon}
 LOCAL_IMGNAME=localhost/${WHAT}
 REMOTE_IMGNAME=openshift-machine-config-operator/${WHAT}
 if [ "${do_build}" = 1 ]; then
-    podman build -t "${LOCAL_IMGNAME}" -f Dockerfile.${WHAT}
+    podman build -t "${LOCAL_IMGNAME}" -f Dockerfile.${WHAT} --no-cache
     podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
 fi
 
@@ -47,6 +47,9 @@ EOF
 oc replace -f ${outf}
 rm ${tmpf} ${outf}
 
+# The operator still controls the deployment, scale it down
+# and patch directly for increased speed
+oc scale --replicas=0 deploy/machine-config-operator
 patch=$(mktemp)
 cat >${patch} <<EOF
 spec:
@@ -68,5 +71,6 @@ case $WHAT in
     *) echo "Unhandled WHAT=$WHAT" && exit 1
 esac
 
-oc patch -n openshift-machine-config-operator "${target}" -p "$(cat ${patch})"
+oc patch "${target}" -p "$(cat ${patch})"
 rm ${patch}
+oc scale --replicas=1 deploy/machine-config-operator
