@@ -66,6 +66,7 @@ func getNodeAnnotation(conf string) (string, error) {
 	nodeAnnotations := map[string]string{
 		daemon.CurrentMachineConfigAnnotationKey: conf,
 		daemon.DesiredMachineConfigAnnotationKey: conf,
+		daemon.MachineConfigDaemonStateAnnotationKey: daemon.MachineConfigDaemonStateDone,
 	}
 	contents, err := json.Marshal(nodeAnnotations)
 	if err != nil {
