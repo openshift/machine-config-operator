@@ -15,7 +15,6 @@ import (
 // FakeControllerConfigs implements ControllerConfigInterface
 type FakeControllerConfigs struct {
 	Fake *FakeMachineconfigurationV1
-	ns   string
 }
 
 var controllerconfigsResource = schema.GroupVersionResource{Group: "machineconfiguration.openshift.io", Version: "v1", Resource: "controllerconfigs"}
@@ -25,8 +24,7 @@ var controllerconfigsKind = schema.GroupVersionKind{Group: "machineconfiguration
 // Get takes name of the controllerConfig, and returns the corresponding controllerConfig object, and an error if there is any.
 func (c *FakeControllerConfigs) Get(name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(controllerconfigsResource, c.ns, name), &machineconfigurationopenshiftiov1.ControllerConfig{})
-
+		Invokes(testing.NewRootGetAction(controllerconfigsResource, name), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
@@ -36,8 +34,7 @@ func (c *FakeControllerConfigs) Get(name string, options v1.GetOptions) (result 
 // List takes label and field selectors, and returns the list of ControllerConfigs that match those selectors.
 func (c *FakeControllerConfigs) List(opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.ControllerConfigList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(controllerconfigsResource, controllerconfigsKind, c.ns, opts), &machineconfigurationopenshiftiov1.ControllerConfigList{})
-
+		Invokes(testing.NewRootListAction(controllerconfigsResource, controllerconfigsKind, opts), &machineconfigurationopenshiftiov1.ControllerConfigList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -58,15 +55,13 @@ func (c *FakeControllerConfigs) List(opts v1.ListOptions) (result *machineconfig
 // Watch returns a watch.Interface that watches the requested controllerConfigs.
 func (c *FakeControllerConfigs) Watch(opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(controllerconfigsResource, c.ns, opts))
-
+		InvokesWatch(testing.NewRootWatchAction(controllerconfigsResource, opts))
 }
 
 // Create takes the representation of a controllerConfig and creates it.  Returns the server's representation of the controllerConfig, and an error, if there is any.
 func (c *FakeControllerConfigs) Create(controllerConfig *machineconfigurationopenshiftiov1.ControllerConfig) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(controllerconfigsResource, c.ns, controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
-
+		Invokes(testing.NewRootCreateAction(controllerconfigsResource, controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
@@ -76,8 +71,7 @@ func (c *FakeControllerConfigs) Create(controllerConfig *machineconfigurationope
 // Update takes the representation of a controllerConfig and updates it. Returns the server's representation of the controllerConfig, and an error, if there is any.
 func (c *FakeControllerConfigs) Update(controllerConfig *machineconfigurationopenshiftiov1.ControllerConfig) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(controllerconfigsResource, c.ns, controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
-
+		Invokes(testing.NewRootUpdateAction(controllerconfigsResource, controllerConfig), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
@@ -87,14 +81,13 @@ func (c *FakeControllerConfigs) Update(controllerConfig *machineconfigurationope
 // Delete takes name of the controllerConfig and deletes it. Returns an error if one occurs.
 func (c *FakeControllerConfigs) Delete(name string, options *v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(controllerconfigsResource, c.ns, name), &machineconfigurationopenshiftiov1.ControllerConfig{})
-
+		Invokes(testing.NewRootDeleteAction(controllerconfigsResource, name), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeControllerConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(controllerconfigsResource, c.ns, listOptions)
+	action := testing.NewRootDeleteCollectionAction(controllerconfigsResource, listOptions)
 
 	_, err := c.Fake.Invokes(action, &machineconfigurationopenshiftiov1.ControllerConfigList{})
 	return err
@@ -103,8 +96,7 @@ func (c *FakeControllerConfigs) DeleteCollection(options *v1.DeleteOptions, list
 // Patch applies the patch and returns the patched controllerConfig.
 func (c *FakeControllerConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(controllerconfigsResource, c.ns, name, data, subresources...), &machineconfigurationopenshiftiov1.ControllerConfig{})
-
+		Invokes(testing.NewRootPatchSubresourceAction(controllerconfigsResource, name, data, subresources...), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
