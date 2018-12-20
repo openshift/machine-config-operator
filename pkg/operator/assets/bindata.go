@@ -165,7 +165,7 @@ spec:
       # One and only one version must be marked as the storage version.
       storage: true
   # either Namespaced or Cluster
-  scope: Namespaced
+  scope: Cluster
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
     plural: controllerconfigs
@@ -296,7 +296,6 @@ var _manifestsMachineconfigcontrollerControllerconfigYaml = []byte(`apiVersion: 
 kind: ControllerConfig
 metadata:
   name: machine-config-controller
-  namespace: {{.TargetNamespace}}
 spec:
 {{toYAML .ControllerConfig | toString | indent 2}}
 `)
