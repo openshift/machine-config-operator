@@ -182,10 +182,6 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	oldNode := old.(*corev1.Node)
 	curNode := cur.(*corev1.Node)
 
-	if oldNode.ResourceVersion == curNode.ResourceVersion {
-		return
-	}
-
 	if !nodeChanged(oldNode, curNode) {
 		return
 	}
