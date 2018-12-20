@@ -6,10 +6,6 @@ package v1
 // ControllerConfigLister.
 type ControllerConfigListerExpansion interface{}
 
-// ControllerConfigNamespaceListerExpansion allows custom methods to be added to
-// ControllerConfigNamespaceLister.
-type ControllerConfigNamespaceListerExpansion interface{}
-
 // MCOConfigListerExpansion allows custom methods to be added to
 // MCOConfigLister.
 type MCOConfigListerExpansion interface{}

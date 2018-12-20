@@ -12,8 +12,8 @@ type FakeMachineconfigurationV1 struct {
 	*testing.Fake
 }
 
-func (c *FakeMachineconfigurationV1) ControllerConfigs(namespace string) v1.ControllerConfigInterface {
-	return &FakeControllerConfigs{c, namespace}
+func (c *FakeMachineconfigurationV1) ControllerConfigs() v1.ControllerConfigInterface {
+	return &FakeControllerConfigs{c}
 }
 
 func (c *FakeMachineconfigurationV1) MCOConfigs(namespace string) v1.MCOConfigInterface {

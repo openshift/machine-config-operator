@@ -14,7 +14,7 @@ import (
 // ControllerConfigsGetter has a method to return a ControllerConfigInterface.
 // A group's client should implement this interface.
 type ControllerConfigsGetter interface {
-	ControllerConfigs(namespace string) ControllerConfigInterface
+	ControllerConfigs() ControllerConfigInterface
 }
 
 // ControllerConfigInterface has methods to work with ControllerConfig resources.
@@ -33,14 +33,12 @@ type ControllerConfigInterface interface {
 // controllerConfigs implements ControllerConfigInterface
 type controllerConfigs struct {
 	client rest.Interface
-	ns     string
 }
 
 // newControllerConfigs returns a ControllerConfigs
-func newControllerConfigs(c *MachineconfigurationV1Client, namespace string) *controllerConfigs {
+func newControllerConfigs(c *MachineconfigurationV1Client) *controllerConfigs {
 	return &controllerConfigs{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -48,7 +46,6 @@ func newControllerConfigs(c *MachineconfigurationV1Client, namespace string) *co
 func (c *controllerConfigs) Get(name string, options metav1.GetOptions) (result *v1.ControllerConfig, err error) {
 	result = &v1.ControllerConfig{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -61,7 +58,6 @@ func (c *controllerConfigs) Get(name string, options metav1.GetOptions) (result 
 func (c *controllerConfigs) List(opts metav1.ListOptions) (result *v1.ControllerConfigList, err error) {
 	result = &v1.ControllerConfigList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Do().
@@ -73,7 +69,6 @@ func (c *controllerConfigs) List(opts metav1.ListOptions) (result *v1.Controller
 func (c *controllerConfigs) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Watch()
@@ -83,7 +78,6 @@ func (c *controllerConfigs) Watch(opts metav1.ListOptions) (watch.Interface, err
 func (c *controllerConfigs) Create(controllerConfig *v1.ControllerConfig) (result *v1.ControllerConfig, err error) {
 	result = &v1.ControllerConfig{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		Body(controllerConfig).
 		Do().
@@ -95,7 +89,6 @@ func (c *controllerConfigs) Create(controllerConfig *v1.ControllerConfig) (resul
 func (c *controllerConfigs) Update(controllerConfig *v1.ControllerConfig) (result *v1.ControllerConfig, err error) {
 	result = &v1.ControllerConfig{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		Name(controllerConfig.Name).
 		Body(controllerConfig).
@@ -107,7 +100,6 @@ func (c *controllerConfigs) Update(controllerConfig *v1.ControllerConfig) (resul
 // Delete takes name of the controllerConfig and deletes it. Returns an error if one occurs.
 func (c *controllerConfigs) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		Name(name).
 		Body(options).
@@ -118,7 +110,6 @@ func (c *controllerConfigs) Delete(name string, options *metav1.DeleteOptions) e
 // DeleteCollection deletes a collection of objects.
 func (c *controllerConfigs) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Body(options).
@@ -130,7 +121,6 @@ func (c *controllerConfigs) DeleteCollection(options *metav1.DeleteOptions, list
 func (c *controllerConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.ControllerConfig, err error) {
 	result = &v1.ControllerConfig{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("controllerconfigs").
 		SubResource(subresources...).
 		Name(name).
