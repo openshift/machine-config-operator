@@ -5,6 +5,7 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/pkg/errors"
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -149,7 +150,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if startOpts.onceFrom == "" {
 		err = dn.CheckStateOnBoot()
 		if err != nil {
-			glog.Fatalf("error checking initial state of node: %v", err)
+			dn.EnterDegradedState(errors.Wrapf(err, "Checking initial state"))
 		}
 		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.KubeInformersStarted)
