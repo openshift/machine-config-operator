@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -410,7 +411,6 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return fmt.Errorf("no MachineConfigs found matching selector %v", selector)
 	}
 
-	glog.V(4).Infof("Syncing generated machineconfig for pool %s using (%d) machineconfigs", pool.GetName(), len(mcs))
 	return ctrl.syncGeneratedMachineConfig(pool, mcs)
 }
 
@@ -424,9 +424,16 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
+	configNames := make([]string, 0)
+	for _, cfg := range configs {
+		configNames = append(configNames, cfg.GetName())
+	}
+	joinedConfigNames := strings.Join(configNames, ", ")
+
 	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
 		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(generated)
+		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(configNames), joinedConfigNames)
 	}
 	if err != nil {
 		return err
