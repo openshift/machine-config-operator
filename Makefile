@@ -67,8 +67,8 @@ define image_template =
  .PHONY: image-$(1) image-machine-config-$(1) deploy-$(1) deploy-machine-config-$(1)
  image-machine-config-$(1): _image-machine-config-$(1) _build-machine-config-$(1)
  image-$(1): image-machine-config-$(1)
- deploy-machine-config-$(1): _deploy-$(1)
- deploy-$(1): deploy-machine-config-$(1)
+ deploy-machine-config-$(1): _deploy-machine-config-$(1)
+ deploy-$(1): _deploy-machine-config-$(1)
 
  imc += image-$(1)
 endef
