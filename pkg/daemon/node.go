@@ -3,10 +3,13 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 	"io/ioutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	core_v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -51,7 +54,15 @@ func getNodeAnnotation(client corev1.NodeInterface, node string, k string) (stri
 
 // getNodeAnnotationExt is like getNodeAnnotation, but allows one to customize ENOENT handling
 func getNodeAnnotationExt(client corev1.NodeInterface, node string, k string, allowNoent bool) (string, error) {
-	n, err := client.Get(node, metav1.GetOptions{})
+	var n *core_v1.Node
+	err := wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+		var err error
+		n, err = client.Get(node, metav1.GetOptions{})
+		if err == nil {
+			return true, nil
+		}
+		return false, nil
+	})
 	if err != nil {
 		return "", err
 	}
