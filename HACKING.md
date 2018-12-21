@@ -37,15 +37,15 @@ You will likely get an error about needing to add the registry to your `/etc/hos
 While you're still in the mode of testing builds, use `make`:
 
 ```
-$ make machine-config-daemon
+$ make daemon
 ```
 
-You can also `make machine-config-controller` and `make machine-config-operator`.
+You can also `make controller` and `make operator`.
 
 When you want to push to the cluster, use the `deploy-` prefix, e.g.:
 
 ```
-make deploy-machine-config-daemon
+make deploy-daemon
 ```
 
 (Like above, you can use `operator` or `controller` in place of `daemon`).
