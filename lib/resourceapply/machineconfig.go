@@ -52,9 +52,9 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 
 // ApplyControllerConfig applies the required machineconfig to the cluster.
 func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required *mcfgv1.ControllerConfig) (*mcfgv1.ControllerConfig, bool, error) {
-	existing, err := client.ControllerConfigs(required.GetNamespace()).Get(required.GetName(), metav1.GetOptions{})
+	existing, err := client.ControllerConfigs().Get(required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.ControllerConfigs(required.GetNamespace()).Create(required)
+		actual, err := client.ControllerConfigs().Create(required)
 		return actual, true, err
 	}
 	if err != nil {
@@ -67,6 +67,6 @@ func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required
 		return existing, false, nil
 	}
 
-	actual, err := client.ControllerConfigs(required.GetNamespace()).Update(existing)
+	actual, err := client.ControllerConfigs().Update(existing)
 	return actual, true, err
 }

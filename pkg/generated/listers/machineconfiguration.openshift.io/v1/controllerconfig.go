@@ -13,8 +13,8 @@ import (
 type ControllerConfigLister interface {
 	// List lists all ControllerConfigs in the indexer.
 	List(selector labels.Selector) (ret []*v1.ControllerConfig, err error)
-	// ControllerConfigs returns an object that can list and get ControllerConfigs.
-	ControllerConfigs(namespace string) ControllerConfigNamespaceLister
+	// Get retrieves the ControllerConfig from the index for a given name.
+	Get(name string) (*v1.ControllerConfig, error)
 	ControllerConfigListerExpansion
 }
 
@@ -36,38 +36,9 @@ func (s *controllerConfigLister) List(selector labels.Selector) (ret []*v1.Contr
 	return ret, err
 }
 
-// ControllerConfigs returns an object that can list and get ControllerConfigs.
-func (s *controllerConfigLister) ControllerConfigs(namespace string) ControllerConfigNamespaceLister {
-	return controllerConfigNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// ControllerConfigNamespaceLister helps list and get ControllerConfigs.
-type ControllerConfigNamespaceLister interface {
-	// List lists all ControllerConfigs in the indexer for a given namespace.
-	List(selector labels.Selector) (ret []*v1.ControllerConfig, err error)
-	// Get retrieves the ControllerConfig from the indexer for a given namespace and name.
-	Get(name string) (*v1.ControllerConfig, error)
-	ControllerConfigNamespaceListerExpansion
-}
-
-// controllerConfigNamespaceLister implements the ControllerConfigNamespaceLister
-// interface.
-type controllerConfigNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ControllerConfigs in the indexer for a given namespace.
-func (s controllerConfigNamespaceLister) List(selector labels.Selector) (ret []*v1.ControllerConfig, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1.ControllerConfig))
-	})
-	return ret, err
-}
-
-// Get retrieves the ControllerConfig from the indexer for a given namespace and name.
-func (s controllerConfigNamespaceLister) Get(name string) (*v1.ControllerConfig, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the ControllerConfig from the index for a given name.
+func (s *controllerConfigLister) Get(name string) (*v1.ControllerConfig, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

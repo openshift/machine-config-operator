@@ -177,9 +177,6 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
-	if oldMC.ResourceVersion == curMC.ResourceVersion {
-		return
-	}
 
 	curControllerRef := metav1.GetControllerOf(curMC)
 	oldControllerRef := metav1.GetControllerOf(oldMC)
