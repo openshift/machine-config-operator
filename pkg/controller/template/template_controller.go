@@ -161,7 +161,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	}
 
 	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		cfg := ctrl.resolveControllerRef(mc.Namespace, controllerRef)
+		cfg := ctrl.resolveControllerRef(controllerRef)
 		if cfg == nil {
 			return
 		}
@@ -174,14 +174,10 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 }
 
 func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
-	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
-	if oldMC.ResourceVersion == curMC.ResourceVersion {
-		return
-	}
 
 	if controllerRef := metav1.GetControllerOf(curMC); controllerRef != nil {
-		cfg := ctrl.resolveControllerRef(curMC.Namespace, controllerRef)
+		cfg := ctrl.resolveControllerRef(controllerRef)
 		if cfg == nil {
 			return
 		}
@@ -214,7 +210,7 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		// No controller should care about orphans being deleted.
 		return
 	}
-	cfg := ctrl.resolveControllerRef(mc.Namespace, controllerRef)
+	cfg := ctrl.resolveControllerRef(controllerRef)
 	if cfg == nil {
 		return
 	}
@@ -222,13 +218,13 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	ctrl.enqueueControllerConfig(cfg)
 }
 
-func (ctrl *Controller) resolveControllerRef(namespace string, controllerRef *metav1.OwnerReference) *mcfgv1.ControllerConfig {
+func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReference) *mcfgv1.ControllerConfig {
 	// We can't look up by UID, so look up by Name and then verify UID.
 	// Don't even try to look up by Name if it's the wrong Kind.
 	if controllerRef.Kind != controllerKind.Kind {
 		return nil
 	}
-	cfg, err := ctrl.ccLister.ControllerConfigs(namespace).Get(controllerRef.Name)
+	cfg, err := ctrl.ccLister.Get(controllerRef.Name)
 	if err != nil {
 		return nil
 	}
@@ -319,11 +315,11 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		glog.V(4).Infof("Finished syncing controllerconfig %q (%v)", key, time.Since(startTime))
 	}()
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
-	controllerconfig, err := ctrl.ccLister.ControllerConfigs(namespace).Get(name)
+	controllerconfig, err := ctrl.ccLister.Get(name)
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("ControllerConfig %v has been deleted", key)
 		return nil

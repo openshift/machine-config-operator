@@ -22,8 +22,8 @@ type MachineconfigurationV1Client struct {
 	restClient rest.Interface
 }
 
-func (c *MachineconfigurationV1Client) ControllerConfigs(namespace string) ControllerConfigInterface {
-	return newControllerConfigs(c, namespace)
+func (c *MachineconfigurationV1Client) ControllerConfigs() ControllerConfigInterface {
+	return newControllerConfigs(c)
 }
 
 func (c *MachineconfigurationV1Client) MCOConfigs(namespace string) MCOConfigInterface {

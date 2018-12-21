@@ -31,7 +31,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 
 // ControllerConfigs returns a ControllerConfigInformer.
 func (v *version) ControllerConfigs() ControllerConfigInformer {
-	return &controllerConfigInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+	return &controllerConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // MCOConfigs returns a MCOConfigInformer.

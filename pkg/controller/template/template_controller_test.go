@@ -54,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 	return &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: metav1.NamespaceDefault},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: mcfgv1.ControllerConfigSpec{
 			ClusterDNSIP: "10.3.0.1/16",
 			ClusterName:  name,
