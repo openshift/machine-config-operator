@@ -1,17 +1,20 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"time"
 
+	errors "github.com/pkg/errors"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
@@ -27,6 +30,38 @@ const (
 	// DefaultFilePermissions houses the default mode to use when no file permissions are provided
 	DefaultFilePermissions os.FileMode = 0644
 )
+
+// Someone please tell me this actually lives in the stdlib somewhere
+func replaceFileContentsAtomically(fpath string, b []byte) error {
+	f, err := ioutil.TempFile(path.Dir(fpath), "")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	n, err := f.Write(b)
+	if err == nil && n < len(b) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), fpath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
+	t := &pendingConfigState{
+		PendingConfig: desiredConfig.GetName(),
+		BootID: dn.bootID,
+	}
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	return replaceFileContentsAtomically(pathStateJSON, b)
+}
 
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
@@ -79,6 +114,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 			return err
 		}
 		glog.V(2).Infof("Node successfully drained")
+	}
+
+	if err = dn.writePendingState(newConfig); err != nil {
+		return errors.Wrapf(err, "writing pending state")
 	}
 
 	// reboot. this function shouldn't actually return.
