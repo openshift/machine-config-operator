@@ -20,6 +20,7 @@ type message struct {
 	client          corev1.NodeInterface
 	node            string
 	annos           map[string]string
+	labels          map[string]string
 	responseChannel chan error
 }
 
@@ -43,7 +44,7 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			msg.responseChannel <- setNodeAnnotations(msg.client, msg.node, msg.annos)
+			msg.responseChannel <- setNodeConfig(msg.client, msg.node, msg.annos, msg.labels)
 		}
 	}
 }
@@ -86,11 +87,15 @@ func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, 
 	annos := map[string]string{
 		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDegraded,
 	}
+	labels := map[string]string{
+		MachineConfigDaemonLabelDegraded: "",
+	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
 		node:            node,
 		annos:           annos,
+		labels:          labels,
 		responseChannel: respChan,
 	}
 	return <-respChan
@@ -143,11 +148,14 @@ func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node))
 	return nil
 }
 
-// setConfig sets the given annotation key, value pair.
-func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]string) error {
+// setNodeConfig updates a node's labels and annotations
+func setNodeConfig(client corev1.NodeInterface, node string, annos, labels map[string]string) error {
 	return updateNodeRetry(client, node, func(node *v1.Node) {
-		for k, v := range m {
+		for k, v := range annos {
 			node.Annotations[k] = v
+		}
+		for k, v := range labels {
+			node.Labels[k] = v
 		}
 	})
 }

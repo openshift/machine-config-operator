@@ -31,13 +31,13 @@ func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 		return fmt.Errorf("Failed to read initial annotations from %q: %v", InitialNodeAnnotationsFilePath, err)
 	}
 
-	var initial map[string]string
-	err = json.Unmarshal(d, &initial)
+	var annosInitial, labelsInitial map[string]string
+	err = json.Unmarshal(d, &annosInitial)
 	if err != nil {
 		return fmt.Errorf("Failed to unmarshal initial annotations: %v", err)
 	}
 
-	err = setNodeAnnotations(client, node, initial)
+	err = setNodeConfig(client, node, annosInitial, labelsInitial)
 	if err != nil {
 		return fmt.Errorf("Failed to set initial annotations: %v", err)
 	}

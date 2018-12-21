@@ -14,6 +14,10 @@ const (
 	// MachineConfigDaemonStateDegraded is set by daemon when update cannot be applied.
 	MachineConfigDaemonStateDegraded = "Degraded"
 
+	// This label was introduced in addition to state/Degraded because we
+	// want operators and admins to be able to easily query this state.
+	MachineConfigDaemonLabelDegraded = "machineconfiguration.openshift.io/degraded"
+
 	// MachineConfigDaemonOSRHCOS denotes RHCOS
 	MachineConfigDaemonOSRHCOS = "RHCOS"
 	// MachineConfigDaemonOSRHEL denotes RHEL
