@@ -12,11 +12,15 @@
 
 ## Overview
 
-MachineConfigDaemon is scheduled on the machines in a cluster as a DaemonSet. This daemon is responsible for performing machine updates for Openshift. The update will include tasks related to the systemd units, files on disk, operating system upgrades etc. The MachineConfigDaemon updates a machine to configuration defined by MachineConfig as instructed by the MachineConfigController.
+MachineConfigDaemon is scheduled on the machines in a cluster as a DaemonSet. This daemon is responsible for performing machine updates in OpenShift 4. The update will include tasks related to the systemd units, files on disk, operating system upgrades etc. The MachineConfigDaemon updates a machine to configuration defined by MachineConfig as instructed by the MachineConfigController.
 
 ## Supported vs Unsupported Ignition config changes
 
-The MachineConfigDaemon receives machine configuration for update in the form of an Ignition config. The updated Ignition config will contain changes that the daemon is incapable of applying while others that can be applied and verified.
+The MachineConfigDaemon receives machine configuration in the form of a "rendered" or merged MachineConfig which is generated from applicable fragments by the controller.
+
+If the updated Ignition config contains changes compatible with the current config, the node will be updated in place.  Otherwise, it will enter a "degraded" state; the idea is that a human or automation tooling can then re-provision degraded machines.
+
+Not all Ignition config sections are supported; see the following table:
 
 Ignition sections | Supported
 --- | ---
@@ -30,25 +34,16 @@ Disks | NO
 RAID | NO
 systemd Units | YES
 
-MachineConfigDaemon should be able to apply and verify updates to all the supported sections.
-
-For update to unsupported section, MachineConfigDaemon has few options,
-
-1. Exit with errors stopping updates.
-
-2. Ignore and record WARNING.
-
-3. Request decommission of the machine from cluster so that changes are adopted by new machine.
 
 ## Coordinating updates
 
-MachineConfigDaemon uses [annotations defined](./MachineConfigController.md#updatecontroller-interface-with-machineconfigdaemon) on the Node object to coordinate updates with MachineConfigController for the machine.
+The MachineConfigDaemon uses [annotations defined](./MachineConfigController.md#updatecontroller-interface-with-machineconfigdaemon) on the Node object to coordinate updates with MachineConfigController for the machine.
 
 ![MachineConfigDaemon update flow](./MachineConfigDaemonUpdate.svg)
 
 ### States
 
-1. `Done` when daemon sets currentConfig <= desiredConfig
+1. `Done` when daemon sets currentConfig = desiredConfig
 
 2. `Working` when daemon starts updating the machine.
 
@@ -56,17 +51,29 @@ MachineConfigDaemon uses [annotations defined](./MachineConfigController.md#upda
 
 ## OS updates
 
-MachineConfigDaemon should be able to update the operating system of the machine.
+In addition to handling Ignition configs, the MachineConfigDaemon also takes
+care of updating the base operating system.
 
-- Updates will use `rpm-ostree` (which uses the `ostree` library)
-- Content will come down via an OCI image (container) which houses the ostree compose
-- `rpm-ostree` will point to the content in the container through a decided upon method (this may be provided in cluster via the images http server serving the `ostree` content, or it may be pulled locally, mounted, and referenced)
-- `rpm-ostree` will deploy (or upgrade in this sense of the terminology) the latest update along side the running system and create a new grub entry
-- When the system reboots the new update will become the running system
+Updates are provided via the `OSImageURL` component of a MachineConfig object.
+This should generally be controlled by the
+[cluster-version-operator](https://github.com/openshift/cluster-version-operator/),
+and its current existence in MachineConfig objects should be though of as an
+implementation detail.
+
+MachineConfigDaemon only supports updating Red Hat CoreOS, which uses rpm-ostree.
+The `OSImageURL` refers to a container image that carries inside it an OSTree payload.  When
+the `OSImageURL` changes, it will be passed to the [pivot](https://github.com/openshift/pivot)
+command which is included in Red Hat CoreOS, and in turn takes care of passing it
+to rpm-ostree.
+
+Once an update is prepared (in terms of a new bootloader entry which points to a
+new OSTree "deployment" or filesystem tree), then the MachineConfigDaemon will
+reboot.
 
 ### Verfication
 
-**TODO:add how to verify OS version**
+Upon start, MachineConfigDaemon queries rpm-ostree to determine the booted system version
+and verifies it matches the expected config.
 
 ## systemd unit updates
 
@@ -90,7 +97,7 @@ The daemon should prune all the files and directories that don't exist in the de
 
 ### Verification
 
-MachineConfigDaemon verifies that contents and existence of the files and directories. The daemon should also verify the permission on file and directories.
+When starting, MachineConfigDaemon verifies that contents and existence of the files and directories match the current configuration.  If the MachineConfigDaemon is coming up after applying a "pending" configuration, it will become current, and then verification will proceed.
 
 ## Machine reboot
 
