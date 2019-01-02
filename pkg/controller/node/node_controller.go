@@ -366,8 +366,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	if machineconfigpool.Status.CurrentMachineConfig == "" {
-		return fmt.Errorf("Empty CurrentMachineConfig")
+	if machineconfigpool.Status.Configuration.Name == "" {
+		return fmt.Errorf("Empty Current MachineConfig")
 	}
 
 	// Deep-copy otherwise we are mutating our cache.
@@ -406,7 +406,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	candidates := getCandidateMachines(pool, nodes, progress)
 	for _, node := range candidates {
-		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Status.CurrentMachineConfig); err != nil {
+		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Status.Configuration.Name); err != nil {
 			return err
 		}
 	}
@@ -448,7 +448,7 @@ func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, 
 	if err != nil {
 		return 0, err
 	}
-	unavail := int32(len(getUnavailableMachines(pool.Status.CurrentMachineConfig, nodes)))
+	unavail := int32(len(getUnavailableMachines(pool.Status.Configuration.Name, nodes)))
 	progress := int32(0)
 	if unavail < maxunavail {
 		progress = maxunavail - unavail
@@ -458,8 +458,8 @@ func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, 
 }
 
 func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, progress int32) []*corev1.Node {
-	acted := getReadyMachines(pool.Status.CurrentMachineConfig, nodes)
-	acted = append(acted, getUnavailableMachines(pool.Status.CurrentMachineConfig, nodes)...)
+	acted := getReadyMachines(pool.Status.Configuration.Name, nodes)
+	acted = append(acted, getUnavailableMachines(pool.Status.Configuration.Name, nodes)...)
 
 	actedMap := map[string]struct{}{}
 	for _, node := range acted {

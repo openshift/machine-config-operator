@@ -438,12 +438,12 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	if pool.Status.CurrentMachineConfig == generated.Name {
+	if pool.Status.Configuration.Name == generated.Name {
 		_, _, err = resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
 		return err
 	}
 
-	pool.Status.CurrentMachineConfig = generated.Name
+	pool.Status.Configuration.Name = generated.Name
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool)
 	if err != nil {
 		return err
@@ -516,7 +516,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		pool.Status.CurrentMachineConfig = generated.Name
+		pool.Status.Configuration.Name = generated.Name
 		opools = append(opools, pool)
 		oconfigs = append(oconfigs, generated)
 	}

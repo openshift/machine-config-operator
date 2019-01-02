@@ -64,7 +64,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavai
 			MaxUnavailable:  maxUnavail,
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
-			CurrentMachineConfig: currentMachineConfig,
+			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 	}
 }
@@ -426,7 +426,7 @@ func TestGetCandidateMachines(t *testing.T) {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
 				Status: mcfgv1.MachineConfigPoolStatus{
-					CurrentMachineConfig: "v1",
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: "v1"}},
 				},
 			}
 
@@ -503,7 +503,7 @@ func TestMakeProgress(t *testing.T) {
 					MaxUnavailable: &test.max,
 				},
 				Status: mcfgv1.MachineConfigPoolStatus{
-					CurrentMachineConfig: "v1",
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: "v1"}},
 				},
 			}
 			got, err := makeProgress(pool, test.nodes)
