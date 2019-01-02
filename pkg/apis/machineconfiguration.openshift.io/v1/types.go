@@ -269,7 +269,7 @@ type MachineConfigPoolStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// The current MachineConfig object for the machine pool.
-	CurrentMachineConfig string `json:"currentMachineConfig"`
+	Configuration MachineConfigPoolStatusConfiguration `json:"configuration"`
 
 	// Total number of machines in the machine pool.
 	MachineCount int32 `json:"machineCount"`
@@ -286,6 +286,16 @@ type MachineConfigPoolStatus struct {
 
 	// Represents the latest available observations of current state.
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
+}
+
+// MachineConfigPoolStatusConfiguration stores the current configuration for the pool, and
+// optionally also stores the list of machineconfig objects used to generate the configuration.
+type MachineConfigPoolStatusConfiguration struct {
+	corev1.ObjectReference
+
+	// source is the list of machineconfigs that were used to generate the single machineconfig object specified in `content`.
+	// +optional
+	Source []corev1.ObjectReference `json:"source,omitempty"`
 }
 
 // MachineConfigPoolCondition contains condition information for an MachineConfigPool.
