@@ -63,7 +63,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error)
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}
 
-	currConf := mp.Status.CurrentMachineConfig
+	currConf := mp.Status.Configuration.Name
 
 	mc, err := cs.machineClient.MachineConfigs().Get(currConf, metav1.GetOptions{})
 	if err != nil {

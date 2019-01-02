@@ -83,7 +83,7 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
-	anno, err := getNodeAnnotation(mp.Status.CurrentMachineConfig)
+	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestClusterServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
-	anno, err := getNodeAnnotation(mp.Status.CurrentMachineConfig)
+	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
