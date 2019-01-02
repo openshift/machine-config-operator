@@ -18,6 +18,8 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -73,6 +75,16 @@ func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
 		}
 		cfgs = append(cfgs, roleConfigs...)
+	}
+
+	// tag all the machineconfigs with version of the controller.
+	ctrlv := version.Version
+	for idx := range cfgs {
+		cfg := cfgs[idx]
+		if cfg.Annotations == nil {
+			cfg.Annotations = map[string]string{}
+		}
+		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = ctrlv.String()
 	}
 
 	return cfgs, nil
