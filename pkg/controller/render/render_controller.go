@@ -3,7 +3,6 @@ package render
 import (
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -39,8 +38,12 @@ const (
 	maxRetries = 15
 )
 
-// controllerKind contains the schema.GroupVersionKind for this controller type.
-var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
+var (
+	// controllerKind contains the schema.GroupVersionKind for this controller type.
+	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
+
+	machineconfigKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfig")
+)
 
 // Controller defines the render controller.
 type Controller struct {
@@ -423,16 +426,15 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	configNames := make([]string, 0)
+	source := []v1.ObjectReference{}
 	for _, cfg := range configs {
-		configNames = append(configNames, cfg.GetName())
+		source = append(source, v1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
 	}
-	joinedConfigNames := strings.Join(configNames, ", ")
 
 	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
 		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(generated)
-		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(configNames), joinedConfigNames)
+		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
 	}
 	if err != nil {
 		return err
@@ -444,6 +446,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	}
 
 	pool.Status.Configuration.Name = generated.Name
+	pool.Status.Configuration.Source = source
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool)
 	if err != nil {
 		return err
