@@ -76,7 +76,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, err
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
 	}
 
-	currConf := mp.Status.CurrentMachineConfig
+	currConf := mp.Status.Configuration.Name
 
 	// 2. Read the Machine Config object.
 	fileName = path.Join(bsc.serverBaseDir, "machine-configs", currConf+".yaml")
