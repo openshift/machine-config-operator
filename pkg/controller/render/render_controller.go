@@ -9,10 +9,12 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -486,6 +488,10 @@ func generateMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.Mac
 
 	merged.SetName(hashedName)
 	merged.SetOwnerReferences([]metav1.OwnerReference{*oref})
+	if merged.Annotations == nil {
+		merged.Annotations = map[string]string{}
+	}
+	merged.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Version.String()
 
 	return merged, nil
 }
