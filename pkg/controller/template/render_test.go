@@ -312,6 +312,38 @@ func TestGenerateMachineConfigs(t *testing.T) {
 	}
 }
 
+func TestGenerateMachineConfigsSSH(t *testing.T) {
+	for _, config := range configs {
+		controllerConfig, err := controllerConfigFromFile(config)
+		if err != nil {
+			t.Fatalf("failed to get controllerconfig config: %v", err)
+		}
+
+		controllerConfig.Spec.SSHKey = "1234"
+		cfgs, err := generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+
+		if err != nil {
+			t.Fatalf("failed to generate machine configs: %v", err)
+		}
+
+		if cfgs[0].Spec.Config.Passwd.Users[0].Name != "core" && cfgs[0].Spec.Config.Passwd.Users[0].SSHAuthorizedKeys[0] != "1234" {
+			t.Fatalf("Failed to create SSH machine config with user core and sshkey 1234, Got: %v", cfgs[0].Spec.Config.Passwd.Users[0])
+		}
+
+		if cfgs[0].ObjectMeta.Name != "00-master-ssh" {
+			t.Fatalf("SSH machine config named incorrectly. Expected: 00-master-ssh, Got: %v", cfgs[0].ObjectMeta.Name)
+		}
+
+		if cfgs[3].Spec.Config.Passwd.Users[0].Name != "core" && cfgs[3].Spec.Config.Passwd.Users[0].SSHAuthorizedKeys[0] != "1234" {
+			t.Fatalf("Failed to create SSH machine config with user core and sshkey 1234, Got: %v", cfgs[3].Spec.Config.Passwd.Users[0])
+		}
+
+		if cfgs[3].ObjectMeta.Name != "00-worker-ssh" {
+			t.Fatalf("SSH machine config named incorrectly. Expected: 00-worker-ssh, Got: %v", cfgs[3].ObjectMeta.Name)
+		}
+	}
+}
+
 func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {

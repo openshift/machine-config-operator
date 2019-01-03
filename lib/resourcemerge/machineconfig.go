@@ -57,7 +57,7 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setStringIfSet(modified, &existing.ClusterName, required.ClusterName)
 	setStringIfSet(modified, &existing.Platform, required.Platform)
 	setStringIfSet(modified, &existing.BaseDomain, required.BaseDomain)
-	setStringIfSet(modified, &existing.Platform, required.Platform)
+	setStringIfSet(modified, &existing.SSHKey, required.SSHKey)
 
 	setBytesIfSet(modified, &existing.EtcdCAData, required.EtcdCAData)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)

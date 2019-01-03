@@ -186,3 +186,54 @@ func TestReconcilable(t *testing.T) {
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults("raid", isReconcilable)
 }
+
+func TestUpdateSSHKeys(t *testing.T) {
+	// expectedError is the error we will use when expecting an error to return
+	expectedError := fmt.Errorf("broken")
+	// testClient is the NodeUpdaterClient mock instance that will front
+	// calls to update the host.
+	testClient := RpmOstreeClientMock{
+		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+		RunPivotReturns: []error{
+			// First run will return no error
+			nil,
+			// Second rrun will return our expected error
+			expectedError},
+	}
+	mockFS := &FsClientMock{MkdirAllReturns: []error{nil}, WriteFileReturns: []error{nil}}
+	// Create a Daemon instance with mocked clients
+	d := Daemon{
+		name:              "nodeName",
+		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		NodeUpdaterClient: testClient,
+		loginClient:       nil, // set to nil as it will not be used within tests
+		client:            fake.NewSimpleClientset(),
+		kubeClient:        k8sfake.NewSimpleClientset(),
+		rootMount:         "/",
+		bootedOSImageURL:  "test",
+		fileSystemClient:  mockFS,
+	}
+	// Set up machineconfigs that are identical except for SSH keys
+	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234"}}
+
+	newMcfg := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ignv2_2types.Config{
+				Passwd: ignv2_2types.Passwd{
+					Users: []ignv2_2types.PasswdUser{tempUser},
+				},
+			},
+		},
+	}
+	err := d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
+	if err != nil {
+		t.Errorf("Expected no error. Got %s.", err)
+
+	}
+	// Until users are supported should not be writing keys for any user not named "core"
+	newMcfg.Spec.Config.Passwd.Users[0].Name = "not_core"
+	err = d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
+	if err == nil {
+		t.Errorf("Expected error, user is not core")
+	}
+}
