@@ -85,3 +85,23 @@ func filterOutCondition(conditions []MachineConfigPoolCondition, condType Machin
 	}
 	return newConditions
 }
+
+// IsMachineConfigPoolConditionTrue returns true when the conditionType is present and set to `ConditionTrue`
+func IsMachineConfigPoolConditionTrue(conditions []MachineConfigPoolCondition, conditionType MachineConfigPoolConditionType) bool {
+	return IsMachineConfigPoolConditionPresentAndEqual(conditions, conditionType, corev1.ConditionTrue)
+}
+
+// IsMachineConfigPoolConditionFalse returns true when the conditionType is present and set to `ConditionFalse`
+func IsMachineConfigPoolConditionFalse(conditions []MachineConfigPoolCondition, conditionType MachineConfigPoolConditionType) bool {
+	return IsMachineConfigPoolConditionPresentAndEqual(conditions, conditionType, corev1.ConditionFalse)
+}
+
+// IsMachineConfigPoolConditionPresentAndEqual returns true when conditionType is present and equal to status.
+func IsMachineConfigPoolConditionPresentAndEqual(conditions []MachineConfigPoolCondition, conditionType MachineConfigPoolConditionType, status corev1.ConditionStatus) bool {
+	for _, condition := range conditions {
+		if condition.Type == conditionType {
+			return condition.Status == status
+		}
+	}
+	return false
+}
