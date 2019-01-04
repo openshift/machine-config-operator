@@ -992,6 +992,8 @@ var _manifestsMasterMachineconfigpoolYaml = []byte(`apiVersion: machineconfigura
 kind: MachineConfigPool
 metadata:
   name: master
+  labels:
+    "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
 spec:
   machineConfigSelector:
     matchLabels:
