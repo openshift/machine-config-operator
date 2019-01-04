@@ -355,17 +355,18 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:031c5a894aa592d4d6b42aba5cf9f46bc2163ef3f180ed8c0bfb94656536b8c9"
+  digest = "1:cbb8020eac6e8a28e087a73ad96e8325c6d35383dd46cefb0e5dd6b33fee49c6"
   name = "github.com/openshift/installer"
   packages = [
     "pkg/ipnet",
     "pkg/types",
     "pkg/types/aws",
     "pkg/types/libvirt",
+    "pkg/types/none",
     "pkg/types/openstack",
   ]
   pruneopts = "NUT"
-  revision = "015ac0f9569212654e5f031ed9e742aeb6d2c91d"
+  revision = "9a710427c0d79a27dd0f0446b2e44cd263a476c7"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -878,6 +879,7 @@
     "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
     "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
+    "github.com/pkg/errors",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",
     "k8s.io/api/apps/v1",
