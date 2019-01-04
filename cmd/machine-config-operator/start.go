@@ -83,6 +83,8 @@ func startControllers(ctx *common.ControllerContext) error {
 		componentNamespace, componentName,
 		startOpts.imagesFile,
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
+		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
 		ctx.APIExtInformerFactory.Apiextensions().V1beta1().CustomResourceDefinitions(),
