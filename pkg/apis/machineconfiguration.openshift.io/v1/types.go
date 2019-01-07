@@ -54,7 +54,7 @@ type MCOConfigSpec struct {
 	CloudProviderConfig string `json:"cloudProviderConfig"`
 	ClusterName         string `json:"clusterName"`
 
-	// The openshift platform, e.g. "libvirt", "openstack", or "aws"
+	// The openshift platform, e.g. "libvirt", "openstack", "aws", or "none"
 	Platform string `json:"platform"`
 
 	BaseDomain string `json:"baseDomain"`
@@ -118,7 +118,7 @@ type ControllerConfigSpec struct {
 	CloudProviderConfig string `json:"cloudProviderConfig"`
 	ClusterName         string `json:"clusterName"`
 
-	// The openshift platform, e.g. "libvirt", "openstack", or "aws"
+	// The openshift platform, e.g. "libvirt", "openstack", "aws", or "none"
 	Platform string `json:"platform"`
 
 	BaseDomain string `json:"baseDomain"`
