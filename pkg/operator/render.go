@@ -10,7 +10,6 @@ import (
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/ghodss/yaml"
 	installertypes "github.com/openshift/installer/pkg/types"
-
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 )
@@ -58,7 +57,6 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	dnsIP, err := clusterDNSIP(ic.Networking.ServiceCIDR.String())
 	if err != nil {
 		return nil, err
@@ -71,6 +69,7 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 			ClusterName:         ic.ObjectMeta.Name,
 			Platform:            platformFromInstallConfig(ic),
 			BaseDomain:          ic.BaseDomain,
+			SSHKey:              ic.SSHKey,
 		},
 	}, nil
 }

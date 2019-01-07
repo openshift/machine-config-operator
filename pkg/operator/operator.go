@@ -9,8 +9,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
-	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	installertypes "github.com/openshift/installer/pkg/types"
+
 	"k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
@@ -28,7 +27,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-
+	
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	installertypes "github.com/openshift/installer/pkg/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -310,6 +311,7 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1
 		EtcdCAData:          etcdCAData,
 		RootCAData:          rootCAData,
 		PullSecret:          ps,
+		SSHKey:              mc.Spec.SSHKey,
 	}
 	return renderConfig{
 		TargetNamespace:  mc.GetNamespace(),

@@ -58,6 +58,8 @@ type MCOConfigSpec struct {
 	Platform string `json:"platform"`
 
 	BaseDomain string `json:"baseDomain"`
+
+	SSHKey string `json:"sshKey"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -130,6 +132,9 @@ type ControllerConfigSpec struct {
 	// PullSecret is the default pull secret that needs to be installed
 	// on all machines.
 	PullSecret *corev1.ObjectReference `json:"pullSecret,omitempty"`
+
+	// Public SSH
+	SSHKey string `json:"sshKey"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
