@@ -91,6 +91,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
+	if err = dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
+		return err
+	}
+
 	// TODO: Change the logic to be clearer
 	// We need to skip draining of the node when we are running once
 	// and there is no cluster.
@@ -132,7 +136,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
+
 func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *string {
+	glog.Info("Checking if configs are reconcilable")
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
@@ -170,8 +176,25 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// we don't currently configure groups or users in place. we can't fix it if
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
-		msg := "Ignition passwd section contains changes"
-		return &msg
+		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
+			msg := "Ignition Passwd Groups section contains changes"
+			return &msg
+		}
+		// check if the prior config is empty and that this is the first time running.
+		// if so, the SSHKey from the cluster config and user "core" must be added to machine config,.
+		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
+			if len(oldIgn.Passwd.Users) == 0 && len(newIgn.Passwd.Users) == 1 {
+				if newIgn.Passwd.Users[0].Name == "core" && len(newIgn.Passwd.Users[0].SSHAuthorizedKeys) > 0 {
+					glog.Info("SSH Keys reconcilable")
+				} else {
+					msg := "Ignition passwd user section contains unsupported changes"
+					return &msg
+				}
+			}
+		} else {
+			msg := "Ignition passwd section contains unsupported changes"
+			return &msg
+		}
 	}
 
 	// Storage section
@@ -501,6 +524,37 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 		}
 	}
 	return uid, gid, nil
+}
+
+// Update a given PasswdUser's SSHKey
+func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
+	// Keys should only be written to "/home/core/.ssh"
+	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
+	if newUsers[0].Name != "core" {
+		// Double checking that we are only writing SSH Keys for user "core"
+		return fmt.Errorf("Expecting user core. Got %s instead", newUsers[0].Name)
+	}
+	sshDirPath := filepath.Join("/home", newUsers[0].Name, ".ssh")
+	// we are only dealing with the "core" User at this time, so only dealing with the first entry in Users[]
+	glog.Infof("Writing SSHKeys at %q:", sshDirPath)
+	if err := dn.fileSystemClient.MkdirAll(filepath.Dir(sshDirPath), os.FileMode(0600)); err != nil {
+		return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(sshDirPath), err)
+	}
+	glog.V(2).Infof("Created directory: %s", sshDirPath)
+
+	authkeypath := filepath.Join(sshDirPath, "authorized_keys")
+	var concatSSHKeys string
+	for _, k := range newUsers[0].SSHAuthorizedKeys {
+		concatSSHKeys = concatSSHKeys + string(k) + "\n"
+	}
+
+	if err := dn.fileSystemClient.WriteFile(authkeypath, []byte(concatSSHKeys), os.FileMode(0600)); err != nil {
+		return fmt.Errorf("Failed to write ssh key: %v", err)
+	}
+
+	glog.V(2).Infof("Wrote SSHKeys at %s", sshDirPath)
+
+	return nil
 }
 
 // updateOS updates the system OS to the one specified in newConfig
