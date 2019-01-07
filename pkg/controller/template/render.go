@@ -79,22 +79,17 @@ func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1
 	return cfgs, nil
 }
 
+// generateMachineConfigsForRole is part of generateMachineConfigs; it operates
+// on a specific role which has a set of builtin templates.
 func generateMachineConfigsForRole(config *renderConfig, role string, path string) ([]*mcfgv1.MachineConfig, error) {
+	// Start with the cluster-derived configs
+	cfgs := generateDerivedMachineConfigs(config, role)
+
+	// Add our built-in templates
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
 	}
-	// for each role a machine config is created containing the sshauthorized keys to allow for ssh access
-	// ex: role = worker -> machine config "00-worker-ssh" created containing user core and ssh key
-	var tempIgnConfig ignv2_2types.Config
-	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{ignv2_2types.SSHAuthorizedKey(config.SSHKey)}}
-	tempIgnConfig.Passwd.Users = append(tempIgnConfig.Passwd.Users, tempUser)
-	sshConfigName := "00-" + role + "-ssh"
-	sshMachineConfigForRole := machineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig)
-
-	cfgs := []*mcfgv1.MachineConfig{}
-	cfgs = append(cfgs, sshMachineConfigForRole)
-
 	for _, info := range infos {
 		if !info.IsDir() {
 			glog.Infof("ignoring non-directory path %q", info.Name())
@@ -112,6 +107,24 @@ func generateMachineConfigsForRole(config *renderConfig, role string, path strin
 	return cfgs, nil
 }
 
+// generateDerivedMachineConfigs is part of generateMachineConfigsForRole. It
+// takes care of generating MachineConfig objects which are derived from other
+// components of the cluster configuration. Currently, that's just SSH keys which
+// are part of the install configuration.
+func generateDerivedMachineConfigs(config *renderConfig, role string) []*mcfgv1.MachineConfig {
+	// for each role a machine config is created containing the sshauthorized keys to allow for ssh access
+	// ex: role = worker -> machine config "00-worker-ssh" created containing user core and ssh key
+	var tempIgnConfig ignv2_2types.Config
+	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{ignv2_2types.SSHAuthorizedKey(config.SSHKey)}}
+	tempIgnConfig.Passwd.Users = append(tempIgnConfig.Passwd.Users, tempUser)
+	sshConfigName := "00-" + role + "-ssh"
+	cfgs := []*mcfgv1.MachineConfig{}
+
+	return append(cfgs, machineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig))
+}
+
+
+// generateMachineConfigForName is part of the implementation of generateMachineConfigsForRole
 func generateMachineConfigForName(config *renderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
 	platformDirs := []string{}
 	for _, dir := range []string{"_base", config.Platform} {
