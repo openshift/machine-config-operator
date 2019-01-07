@@ -14,11 +14,11 @@ import (
 	"strconv"
 	"time"
 
-	errors "github.com/pkg/errors"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,7 +54,7 @@ func replaceFileContentsAtomically(fpath string, b []byte) error {
 func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 	t := &pendingConfigState{
 		PendingConfig: desiredConfig.GetName(),
-		BootID: dn.bootID,
+		BootID:        dn.bootID,
 	}
 	b, err := json.Marshal(t)
 	if err != nil {
@@ -173,27 +173,38 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 
 	// Passwd section
 
-	// we don't currently configure groups or users in place. we can't fix it if
-	// something changed here.
+	// we don't currently configure Groups in place. we don't configure Users except
+	// for setting/updating SSHAuthorizedKeys for the only allowed user "core".
+	// otherwise we can't fix it if something changed here.
 	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
 		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
 			msg := "Ignition Passwd Groups section contains changes"
 			return &msg
 		}
-		// check if the prior config is empty and that this is the first time running.
-		// if so, the SSHKey from the cluster config and user "core" must be added to machine config,.
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
+			// check if the prior config is empty and that this is the first time running.
+			// if so, the SSHKey from the cluster config and user "core" must be added to machine config.
 			if len(oldIgn.Passwd.Users) == 0 && len(newIgn.Passwd.Users) == 1 {
-				if newIgn.Passwd.Users[0].Name == "core" && len(newIgn.Passwd.Users[0].SSHAuthorizedKeys) > 0 {
-					glog.Info("SSH Keys reconcilable")
-				} else {
-					msg := "Ignition passwd user section contains unsupported changes"
+				glog.Infof("user data sent to verify before ssh init: %v", newIgn.Passwd.Users[0])
+				msg := verifyUserFields(newIgn.Passwd.Users[0])
+				if msg != "" {
+					return &msg
+				}
+			} else if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) >= 1 {
+				// there is an update to Users, we must verify that it is ONLY making an acceptable
+				// change to the SSHAuthorizedKeys for the user "core"
+				for _, user := range newIgn.Passwd.Users {
+					if user.Name != "core" {
+						msg := "Ignition passwd user section contains unsupported changes: non-core user"
+						return &msg
+					}
+				}
+				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+				msg := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+				if msg != "" {
 					return &msg
 				}
 			}
-		} else {
-			msg := "Ignition passwd section contains unsupported changes"
-			return &msg
 		}
 	}
 
@@ -231,6 +242,29 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Infof("Configs are reconcilable")
 	return nil
+}
+
+// verifyUserFields returns nil if the user Name = "core", if 1 or more SSHKeys exist for
+// this user and if all other fields in User are empty.
+// Otherwise, an error msg will be returned and the proposed config will not be reconcilable.
+// At this time we do not support non-"core" users or any changes to the "core" user
+// outside of SSHAuthorizedKeys.
+func verifyUserFields(pwdUser ignv2_2types.PasswdUser) string {
+	var msg string
+	emptyUser := ignv2_2types.PasswdUser{}
+	tempUser := pwdUser
+	if tempUser.Name == "core" && len(tempUser.SSHAuthorizedKeys) >= 1 {
+		tempUser.Name = ""
+		tempUser.SSHAuthorizedKeys = nil
+		if !reflect.DeepEqual(emptyUser, tempUser) {
+			msg = "Ignition passwd user section contains unsupported changes: non-sshKey changes"
+		} else {
+			glog.Info("SSH Keys reconcilable")
+		}
+	} else {
+		msg = "Ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys"
+	}
+	return msg
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
@@ -536,7 +570,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 	}
 	sshDirPath := filepath.Join("/home", newUsers[0].Name, ".ssh")
 	// we are only dealing with the "core" User at this time, so only dealing with the first entry in Users[]
-	glog.Infof("Writing SSHKeys at %q:", sshDirPath)
+	glog.Infof("Writing SSHKeys at %q", sshDirPath)
 	if err := dn.fileSystemClient.MkdirAll(filepath.Dir(sshDirPath), os.FileMode(0600)); err != nil {
 		return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(sshDirPath), err)
 	}
@@ -544,7 +578,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 
 	authkeypath := filepath.Join(sshDirPath, "authorized_keys")
 	var concatSSHKeys string
-	for _, k := range newUsers[0].SSHAuthorizedKeys {
+	for _, k := range newUsers[len(newUsers)-1].SSHAuthorizedKeys {
 		concatSSHKeys = concatSSHKeys + string(k) + "\n"
 	}
 
