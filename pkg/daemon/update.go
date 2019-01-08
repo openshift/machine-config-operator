@@ -261,16 +261,18 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 		return err
 	}
 
-	dn.deleteStaleData(oldConfig, newConfig)
+	if err := dn.deleteStaleData(oldConfig, newConfig); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // deleteStaleData performs a diff of the new and the old config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
-// this function doesn't cause the agent to stop on failures and logs any errors
-// it encounters.
-func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
+// this function will error out if it fails to delete a file (with the exception
+// of simply warning if the error is ENOENT since that's the desired state).
+func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newConfig.Spec.Config.Storage.Files {
@@ -281,7 +283,12 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 		if _, ok := newFileSet[f.Path]; !ok {
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			if err := dn.fileSystemClient.Remove(f.Path); err != nil {
-				glog.Warningf("Unable to delete %s: %s", f.Path, err);
+				new_err := fmt.Errorf("Unable to delete %s: %s", f.Path, err)
+				if !os.IsNotExist(err) {
+					return new_err
+				}
+				// otherwise, just warn
+				glog.Warningf("%v", new_err)
 			}
 		}
 	}
@@ -303,7 +310,12 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 			if _, ok := newDropinSet[path]; !ok {
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := dn.fileSystemClient.Remove(path); err != nil {
-					glog.Warningf("Unable to delete %s: %s", path, err);
+					new_err := fmt.Errorf("Unable to delete %s: %s", path, err)
+					if !os.IsNotExist(err) {
+						return new_err
+					}
+					// otherwise, just warn
+					glog.Warningf("%v", new_err)
 				}
 			}
 		}
@@ -314,10 +326,17 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			if err := dn.fileSystemClient.Remove(path); err != nil {
-				glog.Warningf("Unable to delete %s: %s", path, err);
+				new_err := fmt.Errorf("Unable to delete %s: %s", path, err)
+				if !os.IsNotExist(err) {
+					return new_err
+				}
+				// otherwise, just warn
+				glog.Warningf("%v", new_err)
 			}
 		}
 	}
+
+	return nil
 }
 
 // enableUnit enables a systemd unit via symlink
