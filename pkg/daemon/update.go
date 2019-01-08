@@ -271,45 +271,51 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 // this function doesn't cause the agent to stop on failures and logs any errors
 // it encounters.
 func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
-	var path string
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newConfig.Spec.Config.Storage.Files {
 		newFileSet[f.Path] = struct{}{}
 	}
 
-	glog.V(2).Info("Removing stale config storage files")
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
-			dn.fileSystemClient.RemoveAll(path)
+			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
+			if err := dn.fileSystemClient.Remove(f.Path); err != nil {
+				glog.Warningf("Unable to delete %s: %s", f.Path, err);
+			}
 		}
 	}
 
-	glog.V(2).Info("Removing stale config systemd units")
 	newUnitSet := make(map[string]struct{})
 	newDropinSet := make(map[string]struct{})
 	for _, u := range newConfig.Spec.Config.Systemd.Units {
 		for j := range u.Dropins {
-			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			newDropinSet[path] = struct{}{}
 		}
-		path = filepath.Join(pathSystemd, u.Name)
+		path := filepath.Join(pathSystemd, u.Name)
 		newUnitSet[path] = struct{}{}
 	}
 
 	for _, u := range oldConfig.Spec.Config.Systemd.Units {
 		for j := range u.Dropins {
-			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
-				dn.fileSystemClient.RemoveAll(path)
+				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
+				if err := dn.fileSystemClient.Remove(path); err != nil {
+					glog.Warningf("Unable to delete %s: %s", path, err);
+				}
 			}
 		}
-		path = filepath.Join(pathSystemd, u.Name)
+		path := filepath.Join(pathSystemd, u.Name)
 		if _, ok := newUnitSet[path]; !ok {
 			if err := dn.disableUnit(u); err != nil {
 				glog.Warningf("Unable to disable %s: %s", u.Name, err)
 			}
-			dn.fileSystemClient.RemoveAll(path)
+			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
+			if err := dn.fileSystemClient.Remove(path); err != nil {
+				glog.Warningf("Unable to delete %s: %s", path, err);
+			}
 		}
 	}
 }
