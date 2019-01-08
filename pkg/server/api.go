@@ -9,10 +9,6 @@ import (
 	"github.com/golang/glog"
 )
 
-const (
-	apiPathConfig = "/config/"
-)
-
 type poolRequest struct {
 	machinePool string
 }
@@ -20,7 +16,7 @@ type poolRequest struct {
 // APIServer provides the HTTP(s) endpoint
 // for providing the machine configs.
 type APIServer struct {
-	handler  *APIHandler
+	handler  http.Handler
 	port     int
 	insecure bool
 	cert     string
@@ -31,8 +27,13 @@ type APIServer struct {
 // that runs the Machine Config Server as a
 // handler.
 func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
+	mux := http.NewServeMux()
+	mux.Handle("/config/", a)
+	mux.Handle("/healthz", &healthHandler{})
+	mux.Handle("/", &defaultHandler{})
+
 	return &APIServer{
-		handler:  a,
+		handler:  mux,
 		port:     p,
 		insecure: is,
 		cert:     c,
@@ -42,12 +43,9 @@ func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 
 // Serve launches the API Server.
 func (a *APIServer) Serve() {
-	mux := http.NewServeMux()
-	mux.Handle(apiPathConfig, a.handler)
-
 	mcs := &http.Server{
 		Addr:    fmt.Sprintf(":%v", a.port),
-		Handler: mux,
+		Handler: a.handler,
 	}
 
 	glog.Info("launching server")
@@ -128,4 +126,33 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Errorf("failed to write %v response: %v", cr, err)
 	}
+}
+
+type healthHandler struct{}
+
+// ServeHTTP handles /healthz requests.
+func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Length", "0")
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	return
+}
+
+// defaultHandler is the HTTP Handler for backstopping invalid requests.
+type defaultHandler struct{}
+
+// ServeHTTP handles invalid requests.
+func (h *defaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Length", "0")
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	return
 }
