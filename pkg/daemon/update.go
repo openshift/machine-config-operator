@@ -281,7 +281,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	glog.V(2).Info("Removing stale config storage files")
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
-			dn.fileSystemClient.RemoveAll(path)
+			dn.fileSystemClient.RemoveAll(f.Path)
 		}
 	}
 
