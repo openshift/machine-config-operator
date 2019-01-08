@@ -280,7 +280,9 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
-			dn.fileSystemClient.RemoveAll(f.Path)
+			if err := dn.fileSystemClient.Remove(f.Path); err != nil {
+				glog.Warningf("Unable to delete %s: %s", f.Path, err);
+			}
 		}
 	}
 
@@ -300,7 +302,9 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
-				dn.fileSystemClient.RemoveAll(path)
+				if err := dn.fileSystemClient.Remove(path); err != nil {
+					glog.Warningf("Unable to delete %s: %s", path, err);
+				}
 			}
 		}
 		path := filepath.Join(pathSystemd, u.Name)
@@ -309,7 +313,9 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 				glog.Warningf("Unable to disable %s: %s", u.Name, err)
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
-			dn.fileSystemClient.RemoveAll(path)
+			if err := dn.fileSystemClient.Remove(path); err != nil {
+				glog.Warningf("Unable to delete %s: %s", path, err);
+			}
 		}
 	}
 }
