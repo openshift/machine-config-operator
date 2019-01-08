@@ -277,14 +277,13 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 		newFileSet[f.Path] = struct{}{}
 	}
 
-	glog.V(2).Info("Removing stale config storage files")
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
+			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			dn.fileSystemClient.RemoveAll(f.Path)
 		}
 	}
 
-	glog.V(2).Info("Removing stale config systemd units")
 	newUnitSet := make(map[string]struct{})
 	newDropinSet := make(map[string]struct{})
 	for _, u := range newConfig.Spec.Config.Systemd.Units {
@@ -300,6 +299,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
+				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				dn.fileSystemClient.RemoveAll(path)
 			}
 		}
@@ -308,6 +308,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) {
 			if err := dn.disableUnit(u); err != nil {
 				glog.Warningf("Unable to disable %s: %s", u.Name, err)
 			}
+			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			dn.fileSystemClient.RemoveAll(path)
 		}
 	}
