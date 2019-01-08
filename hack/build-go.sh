@@ -9,8 +9,8 @@ GLDFLAGS=${GLDFLAGS:-}
 
 eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
 
-GOOS=${GOOS:-${GOHOSTOS}}
-GOARCH=${GOACH:-${GOHOSTARCH}}
+: "${GOOS:=${GOHOSTOS}}"
+: "${GOARCH:=${GOHOSTARCH}}"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)"
