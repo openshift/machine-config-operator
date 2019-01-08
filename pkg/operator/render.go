@@ -82,6 +82,8 @@ func platformFromInstallConfig(ic installertypes.InstallConfig) string {
 		return "openstack"
 	case ic.Libvirt != nil:
 		return "libvirt"
+	case ic.None != nil:
+		return "none"
 	default:
 		panic("invalid platform")
 	}

@@ -41,6 +41,9 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform: "libvirt",
 		res:      "",
+	}, {
+		platform: "none",
+		res:      "",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
@@ -251,6 +254,7 @@ var (
 		"aws":       "./test_data/controller_config_aws.yaml",
 		"openstack": "./test_data/controller_config_openstack.yaml",
 		"libvirt":   "./test_data/controller_config_libvirt.yaml",
+		"none":      "./test_data/controller_config_none.yaml",
 	}
 )
 
