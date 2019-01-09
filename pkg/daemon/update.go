@@ -15,11 +15,11 @@ import (
 	"syscall"
 	"time"
 
-	errors "github.com/pkg/errors"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,7 +56,7 @@ func replaceFileContentsAtomically(fpath string, b []byte) error {
 func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 	t := &pendingConfigState{
 		PendingConfig: desiredConfig.GetName(),
-		BootID: dn.bootID,
+		BootID:        dn.bootID,
 	}
 	b, err := json.Marshal(t)
 	if err != nil {
