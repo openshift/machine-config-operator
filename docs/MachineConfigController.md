@@ -83,11 +83,11 @@ type MachinePoolStatus struct {
 
 ## TemplateController
 
-The TemplateController uses `internal templates` and a `configuration object` to generate OpenShift owned MachineConfig objects for pre-defined `roles` like master, worker etc.
+The TemplateController uses `internal templates` and a `configuration object` to generate OpenShift-owned MachineConfig objects for pre-defined `roles` like master, worker etc. These templates are stored in the `templates/` directory of this repository. For example, the `templates/master/00-master` directory will yield a MachineConfig object named `00-master` for the `master` role. Template variables such as `{{.EtcdCAData}}` are filled in using the controllerconfig custom resource (e.g. `controllerconfig/machine-config-controller`).
 
-- The TemplateController constantly reconciles the MachineConfig objects in the cluster to match its internal state. The TemplateController will overwrite any user changes of its owned objects.
+- The TemplateController constantly reconciles the MachineConfig objects in the cluster to match its internal state (which is essentially: baked-in templates + controllerconfig). The TemplateController will overwrite any user changes of its owned objects.
 
-- TemplateController watches changes to the `MachineConfigControllerConfig` to generate OpenShift owned MachineConfig objects.
+- TemplateController watches changes to the controllerconfig to generate OpenShift-owned MachineConfig objects.
 
 - TemplateController adds `OwnerReference` or similar annotations on its objects to declare ownership.
 
