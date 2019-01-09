@@ -2,16 +2,15 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/coreos/go-systemd/login1"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -21,6 +20,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -323,7 +323,6 @@ func (dn *Daemon) getHealth() error {
 	return nil
 }
 
-
 // EnterDegradedState causes the MCD to update the annotations
 // to note that we're degraded, and sleep forever.
 func (dn *Daemon) EnterDegradedState(err error) {
@@ -340,7 +339,7 @@ func (dn *Daemon) EnterDegradedState(err error) {
 //
 // If any of the object names are the same, they will be pointer-equal.
 type stateAndConfigs struct {
-	state          string
+	state         string
 	currentConfig *mcfgv1.MachineConfig
 	pendingConfig *mcfgv1.MachineConfig
 	desiredConfig *mcfgv1.MachineConfig
@@ -396,7 +395,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		currentConfig: currentConfig,
 		pendingConfig: pendingConfig,
 		desiredConfig: desiredConfig,
-		state: state,
+		state:         state,
 	}, nil
 }
 
