@@ -4,7 +4,8 @@
 
 These instructions have been tested inside a Fedora 29 podman container (on a FSB29 host).
 It should also work to run these commands directly on a host system if you haven't yet
-containerized your workflow.
+containerized your workflow.  You will need build dependencies such as a `go` compiler,
+and the image builds rely on `podman`.
 
 1. Create a cluster using [the installer](https://github.com/openshift/installer/).  Many of the MCD developers use libvirt.  These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
 
@@ -52,7 +53,48 @@ make deploy-daemon
 
 Use `oc get pods -w` to watch for your new code to be deployed.
 
-# Without building images
+# Unit Tests
+
+Unit tests (that don't interact with a running cluster) can be executed on a per
+package basis with `go test` like so:
+
+`go test -v github.com/openshift/machine-config-operator/pkg/apis`
+
+All tests can be executed with:
+
+`make test`
+
+# Managing Go Dependencies
+
+We follow a hard flattening approach; i.e. direct and inherited dependencies are installed in the base `vendor/`.
+
+Dependencies are managed with [dep](https://golang.github.io/dep/) but committed directly to the repository. If you don't have dep, install the latest release from [Installation](https://golang.github.io/dep/docs/installation.html) link.
+
+We require atleast following version for dep:
+
+```
+dep:
+ version     : v0.5.0
+ build date  : 2018-07-26
+ git hash    : 224a564
+ go version  : go1.10.3
+```
+
+To add a new dependency:
+
+- Edit the `Gopkg.toml` file to add your dependency.
+- Ensure you add a `version` field for the tag or the `revision` field for commit id you want to pin to.
+- Revendor the dependencies:
+
+```sh
+dep ensure
+```
+
+This [guide](https://golang.github.io/dep/docs/daily-dep.html) a great source to learn more about using `dep` is .
+
+For the sake of your fellow reviewers, commit vendored code separately from any other changes.
+
+# Developing the MCD without building images
 
 It is possible to iterate on the MCD without having to rebuild images
 for each change. To do this, change the daemonset definition to
