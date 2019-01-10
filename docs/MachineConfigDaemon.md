@@ -25,7 +25,7 @@ Not all Ignition config sections are supported; see the following table:
 Ignition sections | Supported
 --- | ---
 Networkd | NO
-Users | NO
+Users | NO *
 Directories | YES
 Files | YES
 FileSystems | NO
@@ -34,6 +34,7 @@ Disks | NO
 RAID | NO
 systemd Units | YES
 
+\* At this time only updates to `sshAuthorizedKeys` for user `core` are permitted. Please see [Update-SSHKeys](./Update-SSHKeys.md) for details.
 
 ## Coordinating updates
 
