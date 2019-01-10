@@ -1,64 +1,45 @@
 # machine-config-operator
 
-## Generic building
+This operator is an integral part of the operator-focused OpenShift 4 platform.
+It manages and applies configuration and updates of the base operating system
+and container runtime; essentially everything between the kernel and kubelet.
 
-You can either use the Makefile or the `hack/build-go.sh` script directory to build the targets. When using `hack/build-go.sh` you will need to run it via `WHAT=<TARGET> hack/build-go.sh`
+The approach here is a "fusion" of code from the original CoreOS
+Tectonic as well as some components of Red Hat Enterprise Linux Atomic Host,
+as well as some fundamentally new design.
 
-### machine-config-operator
-- Build: `make machine-config-operator`
+The MCO (for short) interacts closely with
+both [the installer](https://github.com/openshift/installer/) as well as Red Hat
+CoreOS. See also [the machine-api-operator](https://github.com/openshift/machine-api-operator)
+which handles provisioning of new machines - once the machine-api-operator
+provisions a machine (with a "pristine" base Red hat CoreOS), the MCO will take
+care of configuring it.
 
-### machine-config-server
-- [Design doc](docs/MachineConfigServer.md)
-- Build: `make machine-config-server`
+One way to view the MCO is to treat the operating system itself as "just another
+Kubernetes component" that you can inspect and manage with `oc`.
 
-### machine-config-daemon
-- [Design doc](docs/MachineConfigDaemon.md)
-- Build: `make machine-config-daemon`
+The MCO uses [CoreOS Ignition](https://github.com/coreos/ignition) as a configuration
+format.  Operating system updates use [rpm-ostree](http://github.com/projectatomic/rpm-ostree).
 
-### machine-config-controller
-- [Design doc](docs/MachineConfigController.md)
-- Build: `make machine-config-controller`
+# Sub-components and design
 
-## Tests
-Tests can be executed on a per package basis with `go test` like so:
+This operator is split into 4 components; the above covers
+the operator.  Here are links to design docs for the sub-components:
 
-`go test -v github.com/openshift/machine-config-operator/pkg/apis`
+ - [machine-config-server](docs/MachineConfigServer.md)
+ - [machine-config-controller](docs/MachineConfigController.md)
+ - [machine-config-daemon](docs/MachineConfigDaemon.md)
 
-All tests can be executed with:
+# Interacting with the MCO
 
-`make test`
+View operator status:
+`oc describe clusteroperator/machine-config-operator`
 
-## Building Images
-**NOTE**: To build images you will need [`podman`](https://github.com/containers/libpod/) installed.
+Inspect the status of the `machineconfigpool` objects which track upgrades:
+`oc describe machineconfigpool`
 
-Images can be built for the corresponding Dockerfiles via `make image-<TOPIC>` where `<TOPIC>` is the suffix after the first dot. For example `Dockerfile.setup-etcd-environment.rhel7` would be `make image-setup-etcd-environment.rhel7`.
+(More to come)
 
-## Managing Go Dependencies
+# Developing the MCO
 
-We follow a hard flattening approach; i.e. direct and inherited dependencies are installed in the base `vendor/`.
-
-Dependencies are managed with [dep](https://golang.github.io/dep/) but committed directly to the repository. If you don't have dep, install the latest release from [Installation](https://golang.github.io/dep/docs/installation.html) link.
-
-We require atleast following version for dep:
-
-```
-dep:
- version     : v0.5.0
- build date  : 2018-07-26
- git hash    : 224a564
- go version  : go1.10.3
-```
-
-To add a new dependency:
-
-- Edit the `Gopkg.toml` file to add your dependency.
-- Ensure you add a `version` field for the tag or the `revision` field for commit id you want to pin to.
-- Revendor the dependencies:
-
-```sh
-dep ensure
-```
-
-This [guide](https://golang.github.io/dep/docs/daily-dep.html) a great source to learn more about using `dep` is .
-
-For the sake of your fellow reviewers, commit vendored code separately from any other changes.
+See [HACKING.md](HACKING.md).
