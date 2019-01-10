@@ -5,15 +5,18 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+
 	appsv1 "k8s.io/api/apps/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 type syncFunc func(config renderConfig) error
@@ -26,6 +29,7 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 		optr.syncMachineConfigController,
 		optr.syncMachineConfigServer,
 		optr.syncMachineConfigDaemon,
+		optr.syncRequiredMachineConfigPools,
 	}
 
 	if err := optr.syncProgressingStatus(); err != nil {
@@ -35,6 +39,7 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	var errs []error
 	for _, f := range syncFuncs {
 		errs = append(errs, f(rconfig))
+		optr.syncProgressingStatus()
 	}
 
 	agg := utilerrors.NewAggregate(errs)
@@ -287,6 +292,49 @@ func (optr *Operator) syncMachineConfigServer(config renderConfig) error {
 	return nil
 }
 
+// syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
+// have updated to the latest configuration.
+func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error {
+	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, requiredForUpgradeMachineConfigPoolLabelKey, ""))
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	if err := wait.Poll(time.Second, 5*time.Minute, func() (bool, error) {
+		pools, err := optr.mcpLister.List(sel)
+		if apierrors.IsNotFound(err) {
+			return false, err
+		}
+		if err != nil {
+			lastErr = err
+			return false, nil
+		}
+
+		for _, pool := range pools {
+			p := pool.DeepCopy()
+			err := isMachineConfigPoolConfigurationValid(p, version.Version.String(), optr.mcLister.Get)
+			if err != nil {
+				lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v", p.Name, err)
+				return false, nil
+			}
+
+			if p.Generation <= p.Status.ObservedGeneration && p.Status.MachineCount == p.Status.UpdatedMachineCount && p.Status.UnavailableMachineCount == 0 {
+				continue
+			}
+			lastErr = fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d)", p.Name, p.Status.MachineCount, p.Status.UpdatedMachineCount, p.Status.UnavailableMachineCount)
+			return false, nil
+		}
+
+		return true, nil
+	}); err != nil {
+		if err.Error() == wait.ErrWaitTimeout.Error() {
+			return fmt.Errorf("%v during syncRequiredMachineConfigPools: %v", err, lastErr)
+		}
+		return err
+	}
+	return nil
+}
+
 const (
 	deploymentRolloutPollInterval = time.Second
 	deploymentRolloutTimeout      = 5 * time.Minute
@@ -367,3 +415,7 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		return false, nil
 	})
 }
+
+const (
+	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+)

@@ -9,6 +9,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -55,7 +56,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMa
 			MachineConfigSelector: selector,
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
-			CurrentMachineConfig: currentMachineConfig,
+			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 	}
 }
@@ -264,7 +265,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	gmc.Spec.OSImageURL = "why-did-you-change-it"
-	mcp.Status.CurrentMachineConfig = gmc.Name
+	mcp.Status.Configuration.Name = gmc.Name
 
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
@@ -306,7 +307,7 @@ func TestDoNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mcp.Status.CurrentMachineConfig = gmc.Name
+	mcp.Status.Configuration.Name = gmc.Name
 
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)

@@ -14,7 +14,8 @@ spec:
   paused: false
 status:
   conditions: null
-  currentMachineConfig: test-config
+  configuration:
+    name: test-config
   machineCount: 0
   readyMachineCount: 0
   unavailableMachineCount: 0
