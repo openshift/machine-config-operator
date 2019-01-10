@@ -141,9 +141,10 @@ func New(
 	}
 
 	osImageURL := ""
+	osVersion := ""
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == MachineConfigDaemonOSRHCOS {
-		osImageURL, osVersion, err := nodeUpdaterClient.GetBootedOSImageURL(rootMount)
+		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 		if err != nil {
 			return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
 		}
