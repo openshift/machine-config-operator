@@ -5,11 +5,11 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -84,7 +84,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	var dn *daemon.Daemon
 	var ctx *common.ControllerContext
-
 
 	glog.Info("starting node writer")
 	nodeWriter := daemon.NewNodeWriter()
