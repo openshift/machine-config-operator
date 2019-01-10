@@ -24,7 +24,7 @@ import (
 )
 
 // renderConfig is wrapper around ControllerConfigSpec.
-type renderConfig struct {
+type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
 	PullSecret string
 }
@@ -48,7 +48,7 @@ const (
 //                /master/00-master/_base/units/kubelet.tmpl
 //                                    /files/hostname.tmpl
 //
-func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
+func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	if config.Platform == "" {
 		return nil, fmt.Errorf("cannot generateMachineConfigs with an empty Platform")
 	}
@@ -71,7 +71,7 @@ func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1
 		}
 		role := info.Name()
 		path := filepath.Join(templateDir, role)
-		roleConfigs, err := generateMachineConfigsForRole(config, role, path)
+		roleConfigs, err := GenerateMachineConfigsForRole(config, role, path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
 		}
@@ -91,7 +91,7 @@ func generateMachineConfigs(config *renderConfig, templateDir string) ([]*mcfgv1
 	return cfgs, nil
 }
 
-func generateMachineConfigsForRole(config *renderConfig, role string, path string) ([]*mcfgv1.MachineConfig, error) {
+func GenerateMachineConfigsForRole(config *RenderConfig, role string, path string) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
@@ -102,7 +102,7 @@ func generateMachineConfigsForRole(config *renderConfig, role string, path strin
 	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{ignv2_2types.SSHAuthorizedKey(config.SSHKey)}}
 	tempIgnConfig.Passwd.Users = append(tempIgnConfig.Passwd.Users, tempUser)
 	sshConfigName := "00-" + role + "-ssh"
-	sshMachineConfigForRole := machineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig)
+	sshMachineConfigForRole := MachineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig)
 
 	cfgs := []*mcfgv1.MachineConfig{}
 	cfgs = append(cfgs, sshMachineConfigForRole)
@@ -124,7 +124,7 @@ func generateMachineConfigsForRole(config *renderConfig, role string, path strin
 	return cfgs, nil
 }
 
-func generateMachineConfigForName(config *renderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
+func generateMachineConfigForName(config *RenderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
 	platformDirs := []string{}
 	for _, dir := range []string{"_base", config.Platform} {
 		platformPath := filepath.Join(path, dir)
@@ -221,14 +221,14 @@ func generateMachineConfigForName(config *renderConfig, role, name, path string)
 		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
 	}
 
-	return machineConfigFromIgnConfig(role, name, ignCfg), nil
+	return MachineConfigFromIgnConfig(role, name, ignCfg), nil
 }
 
 const (
 	machineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
 )
 
-func machineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
+func MachineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
 	labels := map[string]string{
 		machineConfigRoleLabelKey: role,
 	}
@@ -276,9 +276,9 @@ func transpileToIgn(files, units []string) (*ignv2_2types.Config, error) {
 	return &ignCfg, nil
 }
 
-// renderTemplate renders a template file with values from a renderConfig
+// renderTemplate renders a template file with values from a RenderConfig
 // returns the rendered file data
-func renderTemplate(config renderConfig, path string, b []byte) ([]byte, error) {
+func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) {
 
 	funcs := sprig.TxtFuncMap()
 	funcs["skip"] = skipMissing
@@ -311,7 +311,7 @@ func skipMissing(key string) (interface{}, error) {
 }
 
 // Process the {{etcdPeerCertDNSNames}} and {{etcdServerCertDNSNames}}
-func etcdServerCertDNSNames(cfg renderConfig) (interface{}, error) {
+func etcdServerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 	if cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
@@ -325,7 +325,7 @@ func etcdServerCertDNSNames(cfg renderConfig) (interface{}, error) {
 	return strings.Join(dnsNames, ","), nil
 }
 
-func etcdPeerCertDNSNames(cfg renderConfig) (interface{}, error) {
+func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 	if cfg.ClusterName == "" || cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
@@ -338,14 +338,14 @@ func etcdPeerCertDNSNames(cfg renderConfig) (interface{}, error) {
 }
 
 // generate apiserver url using cluster-name, basename
-func apiServerURL(cfg renderConfig) (interface{}, error) {
+func apiServerURL(cfg RenderConfig) (interface{}, error) {
 	if cfg.ClusterName == "" || cfg.BaseDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
 	return fmt.Sprintf("https://%s-api.%s:6443", cfg.ClusterName, cfg.BaseDomain), nil
 }
 
-func cloudProvider(cfg renderConfig) (interface{}, error) {
+func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	switch cfg.Platform {
 	case "aws":
 		return "aws", nil

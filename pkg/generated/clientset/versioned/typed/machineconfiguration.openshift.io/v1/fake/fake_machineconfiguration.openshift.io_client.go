@@ -16,6 +16,10 @@ func (c *FakeMachineconfigurationV1) ControllerConfigs() v1.ControllerConfigInte
 	return &FakeControllerConfigs{c}
 }
 
+func (c *FakeMachineconfigurationV1) KubeletConfigs() v1.KubeletConfigInterface {
+	return &FakeKubeletConfigs{c}
+}
+
 func (c *FakeMachineconfigurationV1) MCOConfigs(namespace string) v1.MCOConfigInterface {
 	return &FakeMCOConfigs{c, namespace}
 }
