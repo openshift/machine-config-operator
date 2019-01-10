@@ -43,3 +43,4 @@ Inspect the status of the `machineconfigpool` objects which track upgrades:
 # Developing the MCO
 
 See [HACKING.md](HACKING.md).
+
