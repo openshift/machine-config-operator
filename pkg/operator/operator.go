@@ -63,6 +63,8 @@ type Operator struct {
 
 	crdLister       apiextlistersv1beta1.CustomResourceDefinitionLister
 	mcoconfigLister mcfglistersv1.MCOConfigLister
+	mcpLister       mcfglistersv1.MachineConfigPoolLister
+	mcLister        mcfglistersv1.MachineConfigLister
 	deployLister    appslisterv1.DeploymentLister
 	daemonsetLister appslisterv1.DaemonSetLister
 
@@ -80,6 +82,8 @@ func New(
 	namespace, name string,
 	imagesFile string,
 	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
+	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	serviceAccountInfomer coreinformersv1.ServiceAccountInformer,
 	crdInformer apiextinformersv1beta1.CustomResourceDefinitionInformer,
@@ -123,6 +127,8 @@ func New(
 	optr.crdListerSynced = crdInformer.Informer().HasSynced
 	optr.mcoconfigLister = mcoconfigInformer.Lister()
 	optr.mcoconfigListerSynced = mcoconfigInformer.Informer().HasSynced
+	optr.mcpLister = mcpInformer.Lister()
+	optr.mcLister = mcInformer.Lister()
 	optr.deployLister = deployInformer.Lister()
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
 	optr.daemonsetLister = daemonsetInformer.Lister()

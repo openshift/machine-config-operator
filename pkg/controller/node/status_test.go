@@ -646,7 +646,7 @@ func TestCalculateStatus(t *testing.T) {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
 				Status: mcfgv1.MachineConfigPoolStatus{
-					CurrentMachineConfig: test.currentConfig,
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.currentConfig}},
 				},
 			}
 			status := calculateStatus(pool, test.nodes)
