@@ -10,6 +10,8 @@ import (
 type Interface interface {
 	// ControllerConfigs returns a ControllerConfigInformer.
 	ControllerConfigs() ControllerConfigInformer
+	// KubeletConfigs returns a KubeletConfigInformer.
+	KubeletConfigs() KubeletConfigInformer
 	// MCOConfigs returns a MCOConfigInformer.
 	MCOConfigs() MCOConfigInformer
 	// MachineConfigs returns a MachineConfigInformer.
@@ -32,6 +34,11 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // ControllerConfigs returns a ControllerConfigInformer.
 func (v *version) ControllerConfigs() ControllerConfigInformer {
 	return &controllerConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// KubeletConfigs returns a KubeletConfigInformer.
+func (v *version) KubeletConfigs() KubeletConfigInformer {
+	return &kubeletConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // MCOConfigs returns a MCOConfigInformer.
