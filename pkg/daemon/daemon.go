@@ -347,7 +347,6 @@ type stateAndConfigs struct {
 }
 
 func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
-	// TODO: Add a retry loop around these just like we do with getMachineConfig()
 	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true)
 	if err != nil {
 		return nil, err
