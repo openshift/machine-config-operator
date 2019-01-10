@@ -2,6 +2,8 @@
 
 # Hacking on the MCO - prep
 
+DO NOT MERGE
+
 These instructions have been tested inside a Fedora 29 podman container (on a FSB29 host).
 It should also work to run these commands directly on a host system if you haven't yet
 containerized your workflow.  You will need build dependencies such as a `go` compiler,
