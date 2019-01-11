@@ -141,6 +141,14 @@
   version = "v1.1.0"
 
 [[projects]]
+  digest = "1:32598368f409bbee79deb9d43569fcd92b9fb27f39155f5e166b3371217f051f"
+  name = "github.com/evanphx/json-patch"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "72bf35d0ff611848c1dc9df0f976c81192392fa5"
+  version = "v4.1.0"
+
+[[projects]]
   digest = "1:81466b4218bf6adddac2572a30ac733a9255919bc2f470b4827a317bd4ee1756"
   name = "github.com/ghodss/yaml"
   packages = ["."]
@@ -601,7 +609,7 @@
   version = "kubernetes-1.11.1"
 
 [[projects]]
-  digest = "1:31ab6339c5271096f608dd52399ec4fd28a48d9d426ff5d1aa96bc8135626119"
+  digest = "1:5fe9b815ecb0b60391873116d19280ccadb4198bbdd005a2e3a051b78c67a728"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -633,6 +641,7 @@
     "pkg/util/framer",
     "pkg/util/intstr",
     "pkg/util/json",
+    "pkg/util/jsonmergepatch",
     "pkg/util/mergepatch",
     "pkg/util/net",
     "pkg/util/rand",
@@ -860,6 +869,24 @@
   revision = "d8ea2fe547a448256204cfc68dfee7b26c720acb"
 
 [[projects]]
+  digest = "1:8a95d26ceb1368cecc12b5f67a5e9ec920c9de3035db321b52f452db88419549"
+  name = "k8s.io/kubernetes"
+  packages = [
+    "pkg/apis/core",
+    "pkg/apis/core/v1/helper/qos",
+    "pkg/apis/scheduling",
+    "pkg/kubelet/apis/kubeletconfig",
+    "pkg/kubelet/apis/kubeletconfig/scheme",
+    "pkg/kubelet/apis/kubeletconfig/v1beta1",
+    "pkg/kubelet/qos",
+    "pkg/kubelet/types",
+    "pkg/master/ports",
+    "pkg/util/pointer",
+  ]
+  pruneopts = "NUT"
+  revision = "v1.11.2"
+
+[[projects]]
   digest = "1:84a8609383bec11b71d52dd813f33f1d16614b91966940bdc2aa79bea864fa25"
   name = "sigs.k8s.io/controller-runtime"
   packages = ["pkg/runtime/scheme"]
@@ -883,6 +910,7 @@
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
+    "github.com/imdario/mergo",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
     "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
@@ -913,11 +941,13 @@
     "k8s.io/apimachinery/pkg/util/diff",
     "k8s.io/apimachinery/pkg/util/errors",
     "k8s.io/apimachinery/pkg/util/intstr",
+    "k8s.io/apimachinery/pkg/util/jsonmergepatch",
     "k8s.io/apimachinery/pkg/util/rand",
     "k8s.io/apimachinery/pkg/util/runtime",
     "k8s.io/apimachinery/pkg/util/strategicpatch",
     "k8s.io/apimachinery/pkg/util/uuid",
     "k8s.io/apimachinery/pkg/util/wait",
+    "k8s.io/apimachinery/pkg/util/yaml",
     "k8s.io/apimachinery/pkg/watch",
     "k8s.io/client-go/discovery",
     "k8s.io/client-go/discovery/fake",
@@ -946,6 +976,8 @@
     "k8s.io/client-go/util/workqueue",
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/gengo/types",
+    "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme",
+    "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1beta1",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

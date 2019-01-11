@@ -5,6 +5,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	kubeletconfigv1beta1 "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1beta1"
 )
 
 // CustomResourceDefinition for MCOConfig
@@ -348,4 +349,66 @@ type MachineConfigPoolList struct {
 	metav1.ListMeta `json:"metadata"`
 
 	Items []MachineConfigPool `json:"items"`
+}
+
+// CustomResourceDefinition for KubeletConfig
+// apiVersion: apiextensions.k8s.io/v1beta1
+// kind: CustomResourceDefinition
+// metadata:
+//   # name must match the spec fields below, and be in the form: <plural>.<group>
+//   name: kubeletconfigs.machineconfiguration.openshift.io
+// spec:
+//   # group name to use for REST API: /apis/<group>/<version>
+//   group: machineconfiguration.openshift.io
+//   # list of versions supported by this CustomResourceDefinition
+//   versions:
+//     - name: v1
+//       # Each version can be enabled/disabled by Served flag.
+//       served: true
+//       # One and only one version must be marked as the storage version.
+//       storage: true
+//   # either Namespaced or Cluster
+//   scope: Cluster
+//   names:
+//     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+//     plural: kubeletconfigs
+//     # singular name to be used as an alias on the CLI and for display
+//     singular: kubeletconfig
+//     # kind is normally the CamelCased singular type. Your resource manifests use this.
+//     kind: KubeletConfig
+//     # shortNames allow shorter string to match your resource on the CLI
+//     shortNames:
+//
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// KubeletConfig describes a customized Kubelet configuration.
+type KubeletConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   KubeletConfigSpec   `json:"spec,omitempty"`
+	Status KubeletConfigStatus `json:"status,omitempty"`
+}
+
+// KubeletConfigSpec defines the desired state of KubeletConfig
+type KubeletConfigSpec struct {
+	MachineConfigPoolSelector *metav1.LabelSelector                      `json:"machineConfigPoolSelector,omitempty"`
+	KubeletConfig             *kubeletconfigv1beta1.KubeletConfiguration `json:"kubeletConfig,omitempty"`
+}
+
+// KubeletConfigStatus defines the observed state of a KubeletConfig
+type KubeletConfigStatus struct {
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// KubeletConfigList is a list of KubeletConfig resources
+type KubeletConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []KubeletConfig `json:"items"`
 }
