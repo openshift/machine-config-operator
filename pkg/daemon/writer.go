@@ -20,6 +20,7 @@ type message struct {
 	client          corev1.NodeInterface
 	node            string
 	annos           map[string]string
+	taint           *v1.Taint
 	responseChannel chan error
 }
 
@@ -43,7 +44,11 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			msg.responseChannel <- setNodeAnnotations(msg.client, msg.node, msg.annos)
+			if msg.annos != nil {
+				msg.responseChannel <- setNodeAnnotations(msg.client, msg.node, msg.annos)
+			} else if msg.taint != nil {
+				msg.responseChannel <- addTaint(msg.client, msg.node, msg.taint)
+			}
 		}
 	}
 }
@@ -117,6 +122,18 @@ func (nw *NodeWriter) SetUpdateDegradedMsgIgnoreErr(msg string, client corev1.No
 	return nw.SetUpdateDegradedIgnoreErr(err, client, node)
 }
 
+// SetTaint takes the specified taint and applies it to the node's taints
+func (nw *NodeWriter) SetTaint(client corev1.NodeInterface, node string, taint *v1.Taint) error {
+	respChan := make(chan error, 1)
+	nw.writer <- message{
+		client:          client,
+		node:            node,
+		taint:           taint,
+		responseChannel: respChan,
+	}
+	return <-respChan
+}
+
 // updateNodeRetry calls f to update a node object in Kubernetes.
 // It will attempt to update the node by applying f to it up to DefaultBackoff
 // number of times.
@@ -150,4 +167,12 @@ func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]s
 			node.Annotations[k] = v
 		}
 	})
+}
+
+// addTaint appends the specified taint to the nodespec
+func addTaint(client corev1.NodeInterface, node string, taint *v1.Taint) error {
+	return updateNodeRetry(client, node, func(node *v1.Node) {
+		node.Spec.Taints = append(node.Spec.Taints, *taint)
+	})
+
 }
