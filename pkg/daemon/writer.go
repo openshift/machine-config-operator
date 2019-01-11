@@ -46,7 +46,8 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 		case msg := <-nw.writer:
 			if msg.annos != nil {
 				msg.responseChannel <- setNodeAnnotations(msg.client, msg.node, msg.annos)
-			} else if msg.taint != nil {
+			}
+			if msg.taint != nil {
 				msg.responseChannel <- addTaint(msg.client, msg.node, msg.taint)
 			}
 		}
@@ -172,6 +173,13 @@ func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]s
 // addTaint appends the specified taint to the nodespec
 func addTaint(client corev1.NodeInterface, node string, taint *v1.Taint) error {
 	return updateNodeRetry(client, node, func(node *v1.Node) {
+		for _, v := range node.Spec.Taints {
+			if (v.Key == taint.Key) {
+				// If the taint exists, don't apply it again
+				return
+			}
+
+		}
 		node.Spec.Taints = append(node.Spec.Taints, *taint)
 	})
 

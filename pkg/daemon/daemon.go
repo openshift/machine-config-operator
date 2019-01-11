@@ -102,8 +102,8 @@ const (
 	pathDevNull = "/dev/null"
 	// pathStateJSON is where we store temporary state across config changes
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
-	// pathSSHTaint is the runtime file that notifies the MCD to taint the node
-	pathSSHTaint = "/var/tmp/ssh-taint"
+	// pathSSHTaint is the file that notifies the MCD to taint the node
+	pathSSHTaint = "/etc/machine-config-daemon/ssh-tainted"
 )
 
 const (

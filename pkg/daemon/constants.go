@@ -33,6 +33,6 @@ const (
 
 	// MachineConfigDaemonSSHTaintKey is the taint key applied when ssh access is detected
 	MachineConfigDaemonSSHTaintKey = "rhcosSsh"
-	// MachineConfigDaemonSSHTaintValue is the taint value applied when ssh access is detecte
+	// MachineConfigDaemonSSHTaintValue is the taint value applied when ssh access is detected
 	MachineConfigDaemonSSHTaintValue = "accessed"
 )
