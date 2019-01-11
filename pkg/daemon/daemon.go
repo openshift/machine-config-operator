@@ -261,6 +261,8 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		}
 	}
 
+	go dn.runLoginMonitor(stopCh, dn.exitCh)
+
 	// Set up the file watcher for SSH taint
 	fileWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -286,6 +288,18 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	err = <-exitCh
 
 	return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
+}
+
+func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
+	sessionNewCh := dn.loginClient.Subscribe("SessionNew")
+	for {
+		select {
+		case <-stopCh:
+			return
+		case msg := <-sessionNewCh:
+			glog.Infof("Detected a new logged in session: %v", msg)
+		}
+	}
 }
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
