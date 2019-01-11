@@ -53,7 +53,7 @@ func TestCloudProvider(t *testing.T) {
 					Platform: c.platform,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -99,7 +99,7 @@ func TestAPIServerURL(t *testing.T) {
 					ClusterName: c.clusterName,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -150,7 +150,7 @@ func TestEtcdPeerCertDNSNames(t *testing.T) {
 					BaseDomain:  c.baseDomain,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -187,7 +187,7 @@ func TestEtcdServerCertDNSNames(t *testing.T) {
 					BaseDomain: c.baseDomain,
 				},
 			}
-			got, err := renderTemplate(renderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -232,7 +232,7 @@ func TestSkipMissing(t *testing.T) {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
 			tmpl := []byte(fmt.Sprintf(dummyTemplate, c.key))
-			got, err := renderTemplate(renderConfig{}, name, tmpl)
+			got, err := renderTemplate(RenderConfig{}, name, tmpl)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -275,11 +275,11 @@ func TestInvalidPlatform(t *testing.T) {
 	}
 
 	controllerConfig.Spec.Platform = "_bad_"
-	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+	_, err = generateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _bad_ unsupported")
 
 	controllerConfig.Spec.Platform = "_base"
-	_, err = generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+	_, err = generateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	expectErr(err, "platform _base unsupported")
 }
 
@@ -290,7 +290,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+		cfgs, err := generateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
@@ -324,7 +324,7 @@ func TestGenerateMachineConfigsSSH(t *testing.T) {
 		}
 
 		controllerConfig.Spec.SSHKey = "1234"
-		cfgs, err := generateMachineConfigs(&renderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+		cfgs, err := generateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)

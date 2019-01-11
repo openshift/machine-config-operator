@@ -367,7 +367,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	if err := json.Compact(buf, pullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %v", string(pullSecretRaw), err)
 	}
-	rc := &renderConfig{
+	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 	}

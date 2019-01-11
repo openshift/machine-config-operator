@@ -42,6 +42,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MCOConfig{},
 		&ControllerConfig{},
 		&ControllerConfigList{},
+		&KubeletConfig{},
+		&KubeletConfigList{},
 		&MachineConfig{},
 		&MachineConfigList{},
 		&MachineConfigPool{},

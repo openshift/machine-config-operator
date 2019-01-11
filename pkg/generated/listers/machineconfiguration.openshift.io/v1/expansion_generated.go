@@ -6,6 +6,10 @@ package v1
 // ControllerConfigLister.
 type ControllerConfigListerExpansion interface{}
 
+// KubeletConfigListerExpansion allows custom methods to be added to
+// KubeletConfigLister.
+type KubeletConfigListerExpansion interface{}
+
 // MCOConfigListerExpansion allows custom methods to be added to
 // MCOConfigLister.
 type MCOConfigListerExpansion interface{}

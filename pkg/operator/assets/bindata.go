@@ -2,6 +2,7 @@
 // sources:
 // manifests/bootstrap-pod-v2.yaml
 // manifests/controllerconfig.crd.yaml
+// manifests/kubeletconfig.crd.yaml
 // manifests/machineconfig.crd.yaml
 // manifests/machineconfigcontroller/clusterrole.yaml
 // manifests/machineconfigcontroller/clusterrolebinding.yaml
@@ -186,6 +187,39 @@ func manifestsControllerconfigCrdYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "manifests/controllerconfig.crd.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsKubeletconfigCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: kubeletconfigs.machineconfiguration.openshift.io
+spec:
+  group: machineconfiguration.openshift.io
+  names:
+    kind: KubeletConfig
+    listKind: KubeletConfigList
+    plural: kubeletconfigs
+    singular: kubeletconfig
+  scope: Cluster
+  versions:
+    - name: v1
+      served: true
+      storage: true
+`)
+
+func manifestsKubeletconfigCrdYamlBytes() ([]byte, error) {
+	return _manifestsKubeletconfigCrdYaml, nil
+}
+
+func manifestsKubeletconfigCrdYaml() (*asset, error) {
+	bytes, err := manifestsKubeletconfigCrdYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/kubeletconfig.crd.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -1132,6 +1166,7 @@ func AssetNames() []string {
 var _bindata = map[string]func() (*asset, error){
 	"manifests/bootstrap-pod-v2.yaml": manifestsBootstrapPodV2Yaml,
 	"manifests/controllerconfig.crd.yaml": manifestsControllerconfigCrdYaml,
+	"manifests/kubeletconfig.crd.yaml": manifestsKubeletconfigCrdYaml,
 	"manifests/machineconfig.crd.yaml": manifestsMachineconfigCrdYaml,
 	"manifests/machineconfigcontroller/clusterrole.yaml": manifestsMachineconfigcontrollerClusterroleYaml,
 	"manifests/machineconfigcontroller/clusterrolebinding.yaml": manifestsMachineconfigcontrollerClusterrolebindingYaml,
@@ -1203,6 +1238,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 	"manifests": &bintree{nil, map[string]*bintree{
 		"bootstrap-pod-v2.yaml": &bintree{manifestsBootstrapPodV2Yaml, map[string]*bintree{}},
 		"controllerconfig.crd.yaml": &bintree{manifestsControllerconfigCrdYaml, map[string]*bintree{}},
+		"kubeletconfig.crd.yaml": &bintree{manifestsKubeletconfigCrdYaml, map[string]*bintree{}},
 		"machineconfig.crd.yaml": &bintree{manifestsMachineconfigCrdYaml, map[string]*bintree{}},
 		"machineconfigcontroller": &bintree{nil, map[string]*bintree{
 			"clusterrole.yaml": &bintree{manifestsMachineconfigcontrollerClusterroleYaml, map[string]*bintree{}},

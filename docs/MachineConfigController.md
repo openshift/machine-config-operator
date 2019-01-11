@@ -20,6 +20,8 @@
 
 3. `RenderController` is responsible for discovering MachineConfigs for a `Pool of Machines` and generating the static MachineConfig.
 
+4. `KubeletConfigController` is responsible for wrapping custom Kubelet configurations within a CRD. The available options are documented within the KubeletConfiguration (https://github.com/kubernetes/kubernetes/blob/release-1.11/pkg/kubelet/apis/kubeletconfig/v1beta1/types.go#L45).
+
 ## MachinePool
 
 ```go
@@ -123,24 +125,24 @@ UpdateController watches for changes on MachinePool and runs update if,
 
 **Historically** the following annotations were used to coordinate between UpdateController and the MachineConfigDaemon,
 
-* node-configuration.v1.coreos.com/currentConfig
-* node-configuration.v1.coreos.com/targetConfig
-* node-configuration.v1.coreos.com/desiredConfig
+- node-configuration.v1.coreos.com/currentConfig
+- node-configuration.v1.coreos.com/targetConfig
+- node-configuration.v1.coreos.com/desiredConfig
 
 With these three fields it becomes possible to determine the update progress of the machine:
 
-* desiredConfig == currentConfig: The machine is up-to-date.
-* desiredConfig != currentConfig && desiredConfig == targetConfig: The machine is not up-to-date, but is in the process of updating.
-* desiredConfig != currentConfig && desiredConfig != targetConfig: The machine is not up-to-date and is not in the process of updating.
-* Node is marked updated by UpdateController unless `NodeReady` is reported by kubelet.
+- desiredConfig == currentConfig: The machine is up-to-date.
+- desiredConfig != currentConfig && desiredConfig == targetConfig: The machine is not up-to-date, but is in the process of updating.
+- desiredConfig != currentConfig && desiredConfig != targetConfig: The machine is not up-to-date and is not in the process of updating.
+- Node is marked updated by UpdateController unless `NodeReady` is reported by kubelet.
 
 ## UpdateController interface with MachineConfigDaemon
 
 Following annotations on node object will be used by UpdateController to coordinate node update with MachineConfigDaemon.
 
-* machine-config-daemon.v1.openshift.com/currentConfig : defines the current MachineConfig applied by MachineConfigDaemon.
-* machine-config-daemon.v1.openshift.com/desiredConfig : defines the desired MachineConfig that need to be applied by MachineConfigDaemon
-* machine-config-daemon.v1.openshift.com/state : defines the state of the MachineConfigDaemon, It can be done, working and degraded.
+- machine-config-daemon.v1.openshift.com/currentConfig : defines the current MachineConfig applied by MachineConfigDaemon.
+- machine-config-daemon.v1.openshift.com/desiredConfig : defines the desired MachineConfig that need to be applied by MachineConfigDaemon
+- machine-config-daemon.v1.openshift.com/state : defines the state of the MachineConfigDaemon, It can be done, working and degraded.
 
 With these three fields it becomes possible to determine the update progress of the machine:
 
@@ -149,3 +151,22 @@ b. desiredConfig != currentConfig && state == working : The machine is not up-to
 c. desiredConfig != currentConfig && state == degraded : The machine is not up-to-date and MachineConfigDaemon cannot apply the desired configuration.
 
 Node is marked updated by UpdateController only when `NodeReady` is reported by kubelet when case (a) is true.
+
+## KubeletConfig
+
+The KubeletConfigController manages the KubeletConfig CRD allowing customers to manage their Feature Flags, Max Pods, and other Kubelet options.
+
+The `KubeletConfigController` listens for changes within KubeletConfig CRDs and merges in changes from the user.
+
+When the user creates a new KubeletConfig object they pass in the MachineConfigPoolSelector to target.
+
+The MachineConfigController performs the following operations:
+
+1. Validates the user defined KubeletConfig
+1. Renders the current MachineConfig (storage.files.contents[kubelet.conf]) into the KubeletConfiguration structure
+1. Loads the user's KubeletConfig instance
+1. Uses mergo to merge the two structures
+1. Serialize the KubeletConfig to yaml
+1. Create or Update a MachineConfig (called `99-[role]-kubelet-managed`) with a new (/etc/kubernetes/kubelet.conf)
+
+The machine will subseqently reboot by the MachineConfigDaemon to apply the new config.
