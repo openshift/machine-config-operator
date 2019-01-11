@@ -14,6 +14,8 @@
 
 MachineConfigDaemon is scheduled on the machines in a cluster as a DaemonSet. This daemon is responsible for performing machine updates in OpenShift 4. The update will include tasks related to the systemd units, files on disk, operating system upgrades etc. The MachineConfigDaemon updates a machine to configuration defined by MachineConfig as instructed by the MachineConfigController.
 
+The MachineConfigDaemon is also responsible for tainting a machine with rhcosSsh=accessed:NoSchedule when it detects an SSH access to the machine.
+
 ## Supported vs Unsupported Ignition config changes
 
 The MachineConfigDaemon receives machine configuration in the form of a "rendered" or merged MachineConfig which is generated from applicable fragments by the controller.
@@ -128,3 +130,8 @@ The draining of pods on the only master node will not evict the control plane as
 ### Node drain etcd static pods on masters
 
 Etcd is co-located on master nodes as static pods. The draining behavior defined above prevents draining of static pods to prevent interference to etcd cluster by the daemon.
+
+## Tainting
+The MachineConfigDaemon is also responsible for tainting the node every time an SSH access is detected. It does this via. watching a file at `/etc/machine-config-daemon/ssh-tainted`, which other scripts can write to to notify the MCD to apply the taint.
+
+The taint can be removed via. `kubectl taint nodes <node> rhcosSsh-`.
