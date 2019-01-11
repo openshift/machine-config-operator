@@ -196,6 +196,22 @@ metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: machineconfigs.machineconfiguration.openshift.io
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .metadata.annotations.machineconfiguration\.openshift\.io/generated-by-controller-version
+    description: Version of the controller that generated the machineconfig. This will be empty if the machineconfig is not managed by a controller.
+    name: GeneratedByController
+    type: string
+  - JSONPath: .spec.config.ignition.version
+    description: Version of the Ignition Config defined in the machineconfig.
+    name: IgnitionVersion
+    type: string
+  - JSONPath: .spec.osImageURL
+    description: URL for the RPM OS-tree image. This is optional and can be empty.
+    name: OSImageURL
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Created
+    type: date
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
@@ -674,6 +690,22 @@ metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: machineconfigpools.machineconfiguration.openshift.io
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.configuration.name
+    name: Config
+    type: string
+  - JSONPath: .status.conditions[?(@.type=="Updated")].status
+    description: When all the machines in the pool are updated to the correct machine config.
+    name: Updated
+    type: string
+  - JSONPath: .status.conditions[?(@.type=="Updating")].status
+    description: When at least one of machine is not either not updated or is in the process of updating to the desired machine config.
+    name: Updating
+    type: string
+  - JSONPath: .status.conditions[?(@.type=="Degraded")].status
+    description: When the update for one of the machine is not progressig due to an error.
+    name: Degraded
+    type: string
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
