@@ -448,17 +448,19 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 }
 
 // applySSHTaint calls nodewriter to apply the specified ssh taint
+// (or it will in the future)
 func (dn *Daemon) applySSHTaint() error {
-	glog.Infof("Detected ssh! The node is being tainted with: %v=%v:%v",
-	MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
+	glog.Infof("NOTE: In a future version of RHCOS this will taint the node")
+	return nil
+	// glog.Infof("Detected ssh! The node is being tainted with: %v=%v:%v",
+	// MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
 
-	taint := &corev1.Taint {
-		Key: MachineConfigDaemonSSHTaintKey,
-		Value: MachineConfigDaemonSSHTaintValue,
-		Effect: corev1.TaintEffectNoSchedule,
-	}
-	return dn.nodeWriter.SetTaint(dn.kubeClient.CoreV1().Nodes(), dn.name, taint)
-
+	// taint := &corev1.Taint {
+	// 	Key: MachineConfigDaemonSSHTaintKey,
+	// 	Value: MachineConfigDaemonSSHTaintValue,
+	// 	Effect: corev1.TaintEffectNoSchedule,
+	// }
+	// return dn.nodeWriter.SetTaint(dn.kubeClient.CoreV1().Nodes(), dn.name, taint)
 }
 
 // CheckStateOnBoot is a core entrypoint for our state machine.
