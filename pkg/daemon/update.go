@@ -186,13 +186,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
 			// check if the prior config is empty and that this is the first time running.
 			// if so, the SSHKey from the cluster config and user "core" must be added to machine config.
-			if len(oldIgn.Passwd.Users) == 0 && len(newIgn.Passwd.Users) == 1 {
-				glog.Infof("user data sent to verify before ssh init: %v", newIgn.Passwd.Users[0])
-				msg := verifyUserFields(newIgn.Passwd.Users[0])
-				if msg != "" {
-					return &msg
-				}
-			} else if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) >= 1 {
+			if len(oldIgn.Passwd.Users) >= 0 && len(newIgn.Passwd.Users) >= 1 {
 				// there is an update to Users, we must verify that it is ONLY making an acceptable
 				// change to the SSHAuthorizedKeys for the user "core"
 				for _, user := range newIgn.Passwd.Users {
@@ -589,6 +583,10 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 
 // Update a given PasswdUser's SSHKey
 func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
+	if len(newUsers) == 0 {
+		return nil
+	}
+
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	if newUsers[0].Name != "core" {
