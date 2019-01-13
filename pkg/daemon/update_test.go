@@ -262,6 +262,12 @@ func TestReconcilableSSH(t *testing.T) {
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "ssh", errMsg)
 
+	//check that empty Users does not generate error/degrade node
+	newMcfg.Spec.Config.Passwd.Users = nil
+
+	errMsg = d.reconcilable(oldMcfg, newMcfg)
+	checkReconcilableResults(t, "ssh", errMsg)
+
 }
 
 func TestUpdateSSHKeys(t *testing.T) {
@@ -312,6 +318,13 @@ func TestUpdateSSHKeys(t *testing.T) {
 	err = d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
 	if err == nil {
 		t.Errorf("Expected error, user is not core")
+	}
+
+	// if Users is empty, nothing should happen and no error should ever be generated
+	newMcfg2 := &mcfgv1.MachineConfig{}
+	err = d.updateSSHKeys(newMcfg2.Spec.Config.Passwd.Users)
+	if err != nil {
+		t.Errorf("Expected no error. Got: %s", err)
 	}
 }
 
