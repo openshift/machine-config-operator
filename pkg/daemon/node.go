@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/golang/glog"
 	core_v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,6 +41,7 @@ func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 		return fmt.Errorf("Failed to unmarshal initial annotations: %v", err)
 	}
 
+	glog.Infof("Setting initial node config: %s", initial[CurrentMachineConfigAnnotationKey])
 	err = setNodeAnnotations(client, node, initial)
 	if err != nil {
 		return fmt.Errorf("Failed to set initial annotations: %v", err)
