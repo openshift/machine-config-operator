@@ -219,6 +219,7 @@ func NewClusterDrivenDaemon(
 	eventBroadcaster.StartRecordingToSink(&clientsetcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
+	glog.Infof("Managing node: %s", nodeName)
 	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}
@@ -388,11 +389,15 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	var desiredConfig *mcfgv1.MachineConfig
 	if currentConfigName == desiredConfigName {
 		desiredConfig = currentConfig
+		glog.Infof("Current+desired config: %s", currentConfigName)
 	} else {
 		desiredConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), desiredConfigName)
 		if err != nil {
 			return nil, err
 		}
+
+		glog.Infof("Current config: %s", currentConfigName)
+		glog.Infof("Desired config: %s", desiredConfigName)
 	}
 
 	var pendingConfig *mcfgv1.MachineConfig
@@ -405,6 +410,8 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		if err != nil {
 			return nil, err
 		}
+
+		glog.Infof("Pending config: %s", pendingConfigName)
 	}
 
 	return &stateAndConfigs{
