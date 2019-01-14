@@ -219,6 +219,7 @@ func NewClusterDrivenDaemon(
 	eventBroadcaster.StartRecordingToSink(&clientsetcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
+	glog.Infof("Managing node: %s", nodeName)
 	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}
