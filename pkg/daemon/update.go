@@ -89,7 +89,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
-	if err = dn.updateOS(oldConfig, newConfig); err != nil {
+	if err = dn.updateOS(newConfig); err != nil {
 		return err
 	}
 
@@ -617,22 +617,25 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 }
 
 // updateOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
 		glog.V(2).Infof("Updating of non RHCOS nodes are not supported")
 		return nil
 	}
+
+	newURL := config.Spec.OSImageURL
+
 	// see similar logic in checkOS()
-	if dn.isUnspecifiedOS(newConfig.Spec.OSImageURL) {
+	if dn.isUnspecifiedOS(newURL) {
 		glog.Infof(`No target osImageURL provided`)
 		return nil
 	}
 
-	if newConfig.Spec.OSImageURL == dn.bootedOSImageURL {
+	if newURL == dn.bootedOSImageURL {
 		return nil
 	}
 
-	glog.Infof("Updating OS to %s", newConfig.Spec.OSImageURL)
+	glog.Infof("Updating OS to %s", newURL)
 
 	// try to run pivot 5 times; in the future we'd make the tool smarter
 	// so it can always retry things it knows are transient
@@ -642,7 +645,7 @@ func (dn *Daemon) updateOS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		Factor:   2,               // factor by which to increase sleep
 	}, func() (bool, error) {
 		var err error
-		if err = dn.NodeUpdaterClient.RunPivot(newConfig.Spec.OSImageURL); err != nil {
+		if err = dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
 			if exitError, ok := err.(*exec.ExitError); ok {
 				rc := exitError.Sys().(syscall.WaitStatus).ExitStatus()
 				if rc != 0 {
