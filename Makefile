@@ -1,7 +1,7 @@
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 
-.PHONY: clean test verify update
+.PHONY: clean test test-unit verify update
 # Remove build artifaces
 # Example:
 #    make clean
@@ -28,11 +28,12 @@ _image-%:
 _deploy-%:
 	WHAT=$* hack/cluster-push.sh
 
-# Run unit tests
-# Example:
-#    make test
-test:
-	cd $(my_p) && go test -v ./...
+# Run tests
+test: test-unit
+
+# Unit tests only (no active cluster required)
+test-unit:
+	go test -v ./cmd/... ./pkg/... ./lib/...
 
 # Run the code generation tasks.
 # Example:
