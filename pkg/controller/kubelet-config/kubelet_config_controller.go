@@ -33,11 +33,13 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1beta1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 const (
@@ -386,6 +388,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
+		mc.ObjectMeta.Annotations = map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
+		}
 		mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 			metav1.OwnerReference{
 				APIVersion: mcfgv1.SchemeGroupVersion.String(),
