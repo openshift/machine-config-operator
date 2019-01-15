@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+const (
+	namespace = "openshift-machine-config-operator"
+)
+
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }

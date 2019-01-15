@@ -65,41 +65,16 @@ func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 	return replaceFileContentsAtomically(pathStateJSON, b)
 }
 
-// update the node to the provided node configuration.
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+// updateOSAndReboot is the last step in an update(), and it can also
+// be called as a special case for the "bootstrap pivot".
+func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	var err error
-
-	oldConfigName := oldConfig.GetName()
-	newConfigName := newConfig.GetName()
-	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
-	// make sure we can actually reconcile this state
-	reconcilableError := dn.reconcilable(oldConfig, newConfig)
-
-	if reconcilableError != nil {
-		msg := fmt.Sprintf("Can't reconcile config %v with %v: %v", oldConfigName, newConfigName, *reconcilableError)
-		if dn.recorder != nil {
-			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", msg)
-		}
-		dn.logSystem(msg)
-		return fmt.Errorf("%s", msg)
-	}
-
-	// update files on disk that need updating
-	if err = dn.updateFiles(oldConfig, newConfig); err != nil {
-		return err
-	}
 
 	if err = dn.updateOS(newConfig); err != nil {
 		return err
 	}
 
-	if err = dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
-		return err
-	}
-
-	// TODO: Change the logic to be clearer
-	// We need to skip draining of the node when we are running once
-	// and there is no cluster.
+	// Skip draining of the node when we're not cluster driven
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
 
@@ -122,12 +97,49 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		glog.V(2).Infof("Node successfully drained")
 	}
 
+	// reboot. this function shouldn't actually return.
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
+}
+
+// update the node to the provided node configuration.
+func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	var err error
+
+	if dn.nodeWriter != nil {
+		if err = dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+			return err
+		}
+	}
+
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
+	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
+	// make sure we can actually reconcile this state
+	reconcilableError := dn.reconcilable(oldConfig, newConfig)
+
+	if reconcilableError != nil {
+		msg := fmt.Sprintf("Can't reconcile config %v with %v: %v", oldConfigName, newConfigName, *reconcilableError)
+		if dn.recorder != nil {
+			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", msg)
+		}
+		dn.logSystem(msg)
+		return fmt.Errorf("%s", msg)
+	}
+
+	// update files on disk that need updating
+	if err = dn.updateFiles(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	if err = dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
+		return err
+	}
+
 	if err = dn.writePendingState(newConfig); err != nil {
 		return errors.Wrapf(err, "writing pending state")
 	}
 
-	// reboot. this function shouldn't actually return.
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfigName))
+	return dn.updateOSAndReboot(newConfig)
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
