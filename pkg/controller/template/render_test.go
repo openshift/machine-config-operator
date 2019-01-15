@@ -330,21 +330,33 @@ func TestGenerateMachineConfigsSSH(t *testing.T) {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
 
-		if cfgs[0].Spec.Config.Passwd.Users[0].Name != "core" && cfgs[0].Spec.Config.Passwd.Users[0].SSHAuthorizedKeys[0] != "1234" {
-			t.Fatalf("Failed to create SSH machine config with user core and sshkey 1234, Got: %v", cfgs[0].Spec.Config.Passwd.Users[0])
+		var masterSsh *mcfgv1.MachineConfig
+		var workerSsh *mcfgv1.MachineConfig
+		for _, cfg := range cfgs {
+			name := cfg.ObjectMeta.Name
+			switch name {
+			case "00-master-ssh": {
+				masterSsh = cfg
+			}
+			case "00-worker-ssh": {
+				workerSsh = cfg
+			}
+			}
 		}
+		if masterSsh == nil {
+			t.Fatal("Failed to find 00-master-ssh")
+		}
+		validateSSHConfig(t, masterSsh)
+		if workerSsh == nil {
+			t.Fatal("Failed to find 00-worker-ssh")
+		}
+		validateSSHConfig(t, workerSsh)
+	}
+}
 
-		if cfgs[0].ObjectMeta.Name != "00-master-ssh" {
-			t.Fatalf("SSH machine config named incorrectly. Expected: 00-master-ssh, Got: %v", cfgs[0].ObjectMeta.Name)
-		}
-
-		if cfgs[3].Spec.Config.Passwd.Users[0].Name != "core" && cfgs[3].Spec.Config.Passwd.Users[0].SSHAuthorizedKeys[0] != "1234" {
-			t.Fatalf("Failed to create SSH machine config with user core and sshkey 1234, Got: %v", cfgs[3].Spec.Config.Passwd.Users[0])
-		}
-
-		if cfgs[3].ObjectMeta.Name != "00-worker-ssh" {
-			t.Fatalf("SSH machine config named incorrectly. Expected: 00-worker-ssh, Got: %v", cfgs[3].ObjectMeta.Name)
-		}
+func validateSSHConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
+	if mc.Spec.Config.Passwd.Users[0].Name != "core" && mc.Spec.Config.Passwd.Users[0].SSHAuthorizedKeys[0] != "1234" {
+		t.Fatalf("Failed to create SSH machine config with user core and sshkey 1234, Got: %v", mc.Spec.Config.Passwd.Users[0])
 	}
 }
 
