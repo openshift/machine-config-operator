@@ -49,6 +49,10 @@ spec:
  - Updating `user: name`: Do not update the `user: name` field. The only user currently supported is `core` as shown in the above example config.
 
  ## Applying the MachineConfig
+First scale the Cluster Version Operator:
+```sh
+    oc -n openshift-cluster-version scale --replicas=0 deployment/cluster-version-operator
+```
 
 Now with your new MachineConfig yaml file (using the example above):
 ```sh
