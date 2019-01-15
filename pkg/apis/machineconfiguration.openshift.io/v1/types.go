@@ -136,6 +136,9 @@ type ControllerConfigSpec struct {
 
 	// Public SSH
 	SSHKey string `json:"sshKey"`
+
+	// Sourced from configmap/machine-config-osimageurl
+	OSImageURL string `json:"osImageURL`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

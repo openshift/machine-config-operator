@@ -42,7 +42,7 @@ func RenderBootstrap(
 		return fmt.Errorf("error discovering MCOConfig from %q: %v", clusterConfigConfigMapFile, err)
 	}
 
-	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], nil, imgs)
+	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], nil, imgs, "")
 
 	manifests := []struct {
 		name     string
