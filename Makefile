@@ -1,5 +1,4 @@
 # vim: noexpandtab ts=8
-my_p=$(shell pwd -P)
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 
 .PHONY: clean test verify update
@@ -8,26 +7,26 @@ export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 #    make clean
 #
 clean:
-	@rm -rf $(my_p)/_output
+	@rm -rf _output
 
 # Build machine configs. Intended to be called via another target.
 # Example:
 #    make _build-setup-etcd
 _build-%:
-	WHAT=$* $(my_p)/hack/build-go.sh
+	WHAT=$* hack/build-go.sh
 
 # Build image for a component. Intended to be called via another target.
 # Example:
 #    make _image-machine-config-daemon
 _image-%:
 	@which podman 2> /dev/null &>1 || { echo "podman must be installed to build an image";  exit 1; }
-	WHAT=$* $(my_p)/hack/build-image.sh
+	WHAT=$* hack/build-image.sh
 
 # Build + push + deploy image for a component. Intended to be called via another target.
 # Example:
 #    make _deploy-machine-config-daemon
 _deploy-%:
-	WHAT=$* $(my_p)/hack/cluster-push.sh
+	WHAT=$* hack/cluster-push.sh
 
 # Run unit tests
 # Example:
@@ -39,14 +38,14 @@ test:
 # Example:
 #    make update
 update:
-	$(my_p)/hack/update-codegen.sh
+	hack/update-codegen.sh
 
 # Run verification steps
 # Example:
 #    make verify
 verify: test machine-configs
-	$(my_p)/hack/verify-style.sh
-	$(my_p)/hack/verify-codegen.sh
+	hack/verify-style.sh
+	hack/verify-codegen.sh
 
 # Template for defining build targets for binaries.
 define target_template =
