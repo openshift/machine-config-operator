@@ -48,16 +48,12 @@ func TestUpdateOS(t *testing.T) {
 		},
 	}
 
-	// Test when the machine configs match. No operation should occur
-	if err := d.updateOS(mcfg, mcfg); err != nil {
+	// This should be a no-op
+	if err := d.updateOS(mcfg); err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
 	}
-	// When machine configs differ but pivot succeeds we should get no error.
-	if err := d.updateOS(mcfg, mcfg); err != nil {
-		t.Errorf("Expected no error. Got %s.", err)
-	}
-	// When machine configs differ but pivot fails we should get the expected error.
-	if err := d.updateOS(mcfg, differentMcfg); err == expectedError {
+	// Second call should return an error
+	if err := d.updateOS(differentMcfg); err == expectedError {
 		t.Error("Expected an error. Got none.")
 	}
 }
