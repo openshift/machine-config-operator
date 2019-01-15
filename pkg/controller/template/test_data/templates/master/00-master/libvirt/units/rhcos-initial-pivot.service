@@ -1,0 +1,19 @@
+contents: |
+  [Unit]
+  Description=RHCOS initial pivot
+  # Before we join the cluster
+  Before=kubelet.service
+  # But be sure that we've finished Ignition before we reboot
+  After=ignition-firstboot-complete.service
+  ConditionPathExists=/etc/rhcos-initial-pivot-target
+
+  [Service]
+  Type=simple
+  ExecStart=/usr/bin/sh -c 'pivot --reboot $(cat /etc/rhcos-initial-pivot-target) && rm /etc/rhcos-initial-pivot-target'
+  Restart=on-failure
+  RestartSec=30
+
+  [Install]
+  WantedBy=multi-user.target
+enabled: true
+name: rhcos-initial-pivot.service

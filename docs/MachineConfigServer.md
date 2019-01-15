@@ -36,6 +36,10 @@ It performs the following extra actions on the Ignition config defined in the Ma
 
    The new machines that come up, will need a KubeConfig file which will be added as an Ignition file. 
 
+* *Early pivot* - `/etc/rhcos-initial-pivot-target`
+
+    While the Ignition content configures the node, it may actually be booted into an older OS image than is specified by the release payload managed by the [Cluster Version Operator](https://github.com/openshift/cluster-version-operator/).  The MCS writes out the `osImageURL` to this file, and the system will (if necessary) performs an "early pivot" before the node has actually joined the cluster.  This then ensures that when the MachineConfigDaemon starts, it will validate the `currentConfig` (including files written by Ignition and the `osImageURL`).
+
 ### Running MachineConfigServer
 
 It is recommended that the MachineConfigServer is run as a DaemonSet on all `master` machines with the pods running in host network. So machines can access the Ignition endpoint through load balancer setup for control plane.

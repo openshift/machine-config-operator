@@ -16,6 +16,9 @@ const (
 	// of the KubeConfig file on the machine.
 	defaultMachineKubeConfPath = "/etc/kubernetes/kubeconfig"
 
+	// rhcosInitialPivotPath is processed by rhcos-initial-pivot.service
+	rhcosInitialPivotPath = "/etc/rhcos-initial-pivot-target"
+
 	// defaultFileSystem defines the default file system to be
 	// used for writing the ignition files created by the
 	// server.
@@ -34,10 +37,11 @@ type Server interface {
 	GetConfig(poolRequest) (*ignv2_2types.Config, error)
 }
 
-func getAppenders(cr poolRequest, currMachineConfig string, f kubeconfigFunc) []appenderFunc {
+func getAppenders(cr poolRequest, currMachineConfig string, f kubeconfigFunc, osimageurl string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
 		func(config *ignv2_2types.Config) error { return appendNodeAnnotations(config, currMachineConfig) },
+		func(config *ignv2_2types.Config) error { return appendInitialPivot(config, osimageurl) },
 		// append kubeconfig.
 		func(config *ignv2_2types.Config) error { return appendKubeConfig(config, f) },
 	}
@@ -50,6 +54,15 @@ func appendKubeConfig(conf *ignv2_2types.Config, f kubeconfigFunc) error {
 		return err
 	}
 	appendFileToIgnition(conf, defaultMachineKubeConfPath, string(kcData))
+	return nil
+}
+
+// Ensures that the node is in the OS we expect; for more information see
+// rhcos-initial-pivot.service in the templates
+func appendInitialPivot(conf *ignv2_2types.Config, osimageurl string) error {
+	if osimageurl != "" {
+		appendFileToIgnition(conf, rhcosInitialPivotPath, osimageurl + "\n")
+	}
 	return nil
 }
 
