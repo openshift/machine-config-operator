@@ -527,11 +527,11 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	if err != nil {
 		return err
 	}
-	stateAndConfigs, err := dn.getStateAndConfigs(pendingConfigName)
+	state, err := dn.getStateAndConfigs(pendingConfigName)
 	if err != nil {
 		return err
 	}
-	if stateAndConfigs.state == MachineConfigDaemonStateDegraded {
+	if state.state == MachineConfigDaemonStateDegraded {
 		// We're already degraded.  Sleep so that we don't clobber
 		// output of previous run which probably contains the real
 		// reason why we marked the node as degraded in the first place
@@ -550,10 +550,10 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// We currently just do this on startup, but in the future it could e.g. be
 	// a once-a-day or week cron job.
 	var expectedConfig *mcfgv1.MachineConfig
-	if stateAndConfigs.pendingConfig != nil {
-		expectedConfig = stateAndConfigs.pendingConfig
+	if state.pendingConfig != nil {
+		expectedConfig = state.pendingConfig
 	} else {
-		expectedConfig = stateAndConfigs.currentConfig
+		expectedConfig = state.currentConfig
 	}
 	if isOnDiskValid := dn.validateOnDiskState(expectedConfig); !isOnDiskValid {
 		return errors.New("Unexpected on-disk state")
@@ -568,8 +568,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// However, it may be the case that desiredConfig changed while we
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
-	if stateAndConfigs.pendingConfig != nil {
-		if err := dn.nodeWriter.SetUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, stateAndConfigs.pendingConfig.GetName()); err != nil {
+	if state.pendingConfig != nil {
+		if err := dn.nodeWriter.SetUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, state.pendingConfig.GetName()); err != nil {
 			return err
 		}
 		// And remove the pending state file
@@ -577,28 +577,28 @@ func (dn *Daemon) CheckStateOnBoot() error {
 			return errors.Wrapf(err, "Removing transient state file")
 		}
 
-		stateAndConfigs.currentConfig = stateAndConfigs.pendingConfig
+		state.currentConfig = state.pendingConfig
 	}
 
-	inDesiredConfig := stateAndConfigs.currentConfig == stateAndConfigs.desiredConfig
+	inDesiredConfig := state.currentConfig == state.desiredConfig
 	if inDesiredConfig {
-		if stateAndConfigs.pendingConfig != nil {
+		if state.pendingConfig != nil {
 			// Great, we've successfully rebooted for the desired config,
 			// let's mark it done!
-			glog.Infof("Completing pending config %s", stateAndConfigs.pendingConfig.GetName())
-			if err := dn.completeUpdate(stateAndConfigs.pendingConfig.GetName()); err != nil {
+			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
+			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
 				return err
 			}
 		}
 
-		glog.Infof("In desired config %s", stateAndConfigs.currentConfig.GetName())
+		glog.Infof("In desired config %s", state.currentConfig.GetName())
 
 		// All good!
 		return nil
 	} else {
 		// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 		// Kick off an update.
-		if err := dn.triggerUpdateWithMachineConfig(stateAndConfigs.desiredConfig); err != nil {
+		if err := dn.triggerUpdateWithMachineConfig(state.desiredConfig); err != nil {
 			return err
 		}
 	}
