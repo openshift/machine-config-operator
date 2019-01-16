@@ -1,6 +1,8 @@
 package common
 
 import (
+	"os"
+
 	"github.com/golang/glog"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
@@ -49,6 +51,10 @@ func (cb *ClientBuilder) ClusterversionClientOrDie(name string) cvoclientset.Int
 func NewClientBuilder(kubeconfig string) (*ClientBuilder, error) {
 	var config *rest.Config
 	var err error
+
+	if kubeconfig == "" {
+		kubeconfig = os.Getenv("KUBECONFIG")
+	}
 
 	if kubeconfig != "" {
 		glog.V(4).Infof("Loading kube client config from path %q", kubeconfig)
