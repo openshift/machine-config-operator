@@ -2,6 +2,7 @@ kind: ImageStream
 apiVersion: image.openshift.io/v1
 spec:
   tags:
+  # These are the 4 components of the MCO
   - name: machine-config-operator
     from:
       kind: DockerImage
@@ -18,3 +19,10 @@ spec:
     from:
       kind: DockerImage
       name: docker.io/openshift/origin-machine-config-daemon:v4.0.0
+  # This one is special, it's the OS payload
+  # https://github.com/openshift/machine-config-operator/issues/183
+  # See the machine-config-osimageurl configmap.
+  - name: machine-os-content
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/rhcos/maipo@sha256:61dc83d62cfb5054c4c5532bd2478742a0711075ef5151572e63f94babeacc1a
