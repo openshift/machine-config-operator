@@ -3,7 +3,7 @@ COMPONENTS = daemon controller server operator
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 
-.PHONY: clean test test-unit verify update
+.PHONY: clean test test-unit test-e2e verify update
 # Remove build artifaces
 # Example:
 #    make clean
@@ -31,7 +31,7 @@ _deploy-%:
 	WHAT=$* hack/cluster-push.sh
 
 # Run tests
-test: test-unit
+test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit:
@@ -92,3 +92,7 @@ images: $(imc)
 # Example:
 #    make images.rhel7
 images.rhel7: $(imc7)
+
+# This was copied from https://github.com/openshift/cluster-image-registry-operato
+test-e2e:
+	go test -timeout 20m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
