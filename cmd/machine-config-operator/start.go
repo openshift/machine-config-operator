@@ -92,6 +92,7 @@ func startControllers(ctx *common.ControllerContext) error {
 		ctx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
 		ctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
 		ctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
+		ctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 		ctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		ctx.ClientBuilder.KubeClientOrDie(componentName),
 		ctx.ClientBuilder.APIExtClientOrDie(componentName),

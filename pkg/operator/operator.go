@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -45,6 +46,9 @@ const (
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
+
+	// osImageConfigMapName is the name of our configmap for the osImageURL
+	osImageConfigMapName = "machine-config-osimageurl"
 )
 
 // Operator defines machince config operator.
@@ -67,11 +71,13 @@ type Operator struct {
 	mcLister        mcfglistersv1.MachineConfigLister
 	deployLister    appslisterv1.DeploymentLister
 	daemonsetLister appslisterv1.DaemonSetLister
+	cmLister        corelisterv1.ConfigMapLister
 
 	crdListerSynced       cache.InformerSynced
 	mcoconfigListerSynced cache.InformerSynced
 	deployListerSynced    cache.InformerSynced
 	daemonsetListerSynced cache.InformerSynced
+	cmListerSynced        cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -91,6 +97,7 @@ func New(
 	daemonsetInformer appsinformersv1.DaemonSetInformer,
 	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
 	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
+	cmInformer coreinformersv1.ConfigMapInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
@@ -120,6 +127,7 @@ func New(
 	daemonsetInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleBindingInformer.Informer().AddEventHandler(optr.eventHandler())
+	cmInformer.Informer().AddEventHandler(optr.eventHandler())
 
 	optr.syncHandler = optr.sync
 
@@ -133,6 +141,8 @@ func New(
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
 	optr.daemonsetLister = daemonsetInformer.Lister()
 	optr.daemonsetListerSynced = daemonsetInformer.Informer().HasSynced
+	optr.cmLister = cmInformer.Lister()
+	optr.cmListerSynced = cmInformer.Informer().HasSynced
 
 	return optr
 }
@@ -149,6 +159,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.crdListerSynced,
 		optr.mcoconfigListerSynced,
 		optr.deployListerSynced,
+		optr.cmListerSynced,
 		optr.daemonsetListerSynced) {
 		glog.Error("failed to sync caches")
 		return
@@ -255,8 +266,22 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
-	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}, imgs)
+	osimageurl, err := optr.getOsImageURL(namespace)
+	glog.Infof("using osimageurl: %s", osimageurl)
+	if err != nil {
+		return err
+	}
+
+	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}, imgs, osimageurl)
 	return optr.syncAll(rc)
+}
+
+func (optr *Operator) getOsImageURL(namespace string) (string, error) {
+	cm, err := optr.kubeClient.CoreV1().ConfigMaps(namespace).Get(osImageConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	return cm.Data["osImageURL"], nil
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
@@ -307,7 +332,7 @@ func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error)
 	return ic, nil
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1.ObjectReference, imgs Images) renderConfig {
+func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1.ObjectReference, imgs Images, osimageurl string) renderConfig {
 	controllerconfig := mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
 		CloudProviderConfig: mc.Spec.CloudProviderConfig,
@@ -318,6 +343,7 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1
 		RootCAData:          rootCAData,
 		PullSecret:          ps,
 		SSHKey:              mc.Spec.SSHKey,
+		OSImageURL:          osimageurl,
 	}
 	return renderConfig{
 		TargetNamespace:  mc.GetNamespace(),
