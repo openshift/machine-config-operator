@@ -62,6 +62,7 @@ contents:
         resources:
           requests:
             memory: 600Mi
+            cpu: 300m
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/

@@ -19,6 +19,10 @@ spec:
         args:
           - "start"
           - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
         volumeMounts:
         - name: certs
           mountPath: /etc/ssl/mcs

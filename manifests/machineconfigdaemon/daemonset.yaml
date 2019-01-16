@@ -18,6 +18,10 @@ spec:
         image: {{.Images.MachineConfigDaemon}}
         args:
           - "start"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
         securityContext:
           privileged: true
         volumeMounts:
