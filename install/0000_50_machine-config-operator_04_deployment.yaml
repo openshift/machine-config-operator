@@ -22,9 +22,6 @@ spec:
         - "start"
         - "--images-json=/etc/mco/images/images.json"
         resources:
-          limits:
-            cpu: 20m
-            memory: 50Mi
           requests:
             cpu: 20m
             memory: 50Mi
