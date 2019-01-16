@@ -65,7 +65,7 @@ case $WHAT in
     machine-config-controller|machine-config-operator)
         target=deploy/${WHAT}
         ;;
-    machine-config-daemon)
+    machine-config-daemon|machine-config-server)
         target=daemonset/${WHAT}
         ;;
     *) echo "Unhandled WHAT=$WHAT" && exit 1
