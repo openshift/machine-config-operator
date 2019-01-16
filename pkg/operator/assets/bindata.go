@@ -577,8 +577,6 @@ spec:
         - key: node-role.kubernetes.io/etcd
           operator: Exists
           effect: NoSchedule
-      nodeSelector:
-        beta.kubernetes.io/os: linux
       volumes:
         - name: rootfs
           hostPath:
