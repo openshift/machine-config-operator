@@ -475,15 +475,17 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// If the machineconfig no longer exists, ignore it.
-				return nil
+				continue
 			}
 			if errors.IsInvalid(err) {
 				// Invalid error will be returned in two cases: 1. the machineconfig
 				// has no owner reference, 2. the uid of the machineconfig doesn't
 				// match.
 				// In both cases, the error can be ignored.
-				return nil
+				continue
 			}
+			// Let's not make it fatal for now
+			glog.Warningf("Failed to delete ownerReference from %s: %v", gmc.Name, err)
 		}
 	}
 
