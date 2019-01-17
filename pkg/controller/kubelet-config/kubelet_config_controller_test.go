@@ -279,6 +279,74 @@ func TestKubeletConfigCreate(t *testing.T) {
 	f.run(getKey(kc1, t))
 }
 
+func TestKubeletConfigBlacklistedOptions(t *testing.T) {
+	failureTests := []struct {
+		name   string
+		config *kubeletconfigv1beta1.KubeletConfiguration
+	}{
+		{
+			name: "test banned cgroupdriver",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				CgroupDriver: "some_value",
+			},
+		},
+		{
+			name: "test banned clusterdns",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ClusterDNS: []string{"1.1.1.1"},
+			},
+		},
+		{
+			name: "test banned clusterdomain",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ClusterDomain: "some_value",
+			},
+		},
+		{
+			name: "test banned runtimerequesttimeout",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				RuntimeRequestTimeout: metav1.Duration{Duration: 1 * time.Minute},
+			},
+		},
+		{
+			name: "test banned staticpodpath",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				StaticPodPath: "some_value",
+			},
+		},
+	}
+
+	successTests := []struct {
+		name   string
+		config *kubeletconfigv1beta1.KubeletConfiguration
+	}{
+		{
+			name: "test maxpods",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				MaxPods: 100,
+			},
+		},
+	}
+
+	// Failure Tests
+	for _, test := range failureTests {
+		kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		err := validateUserKubeletConfig(kc)
+		if err == nil {
+			t.Errorf("%s: failed", test.name)
+		}
+	}
+
+	// Successful Tests
+	for _, test := range successTests {
+		kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		err := validateUserKubeletConfig(kc)
+		if err != nil {
+			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+		}
+	}
+}
+
 func getKey(config *mcfgv1.KubeletConfig, t *testing.T) string {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(config)
 	if err != nil {

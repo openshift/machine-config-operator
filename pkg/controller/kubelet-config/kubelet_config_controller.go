@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -55,6 +56,20 @@ var updateBackoff = wait.Backoff{
 	Steps:    5,
 	Duration: 100 * time.Millisecond,
 	Jitter:   1.0,
+}
+
+// A list of fields a user cannot set within the KubeletConfig CR. If a user
+// were to set these values, then the system may become unrecoverable (ie: not
+// recover after a reboot).
+//
+// If the KubeletConfig CR instance contains a non-zero or non-empty value for
+// the following fields, then the MCC will not apply the CR and log the message.
+var blacklistKubeletConfigurationFields = []string{
+	"CgroupDriver",
+	"ClusterDNS",
+	"ClusterDomain",
+	"RuntimeRequestTimeout",
+	"StaticPodPath",
 }
 
 // Controller defines the kubelet config controller.
@@ -304,6 +319,53 @@ func getManagedKey(pool *mcfgv1.MachineConfigPool, config *mcfgv1.KubeletConfig)
 	return fmt.Sprintf("99-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
 }
 
+// validates a KubeletConfig and returns an error if invalid
+func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
+	if cfg.Spec.KubeletConfig == nil {
+		return nil
+	}
+	kcValues := reflect.ValueOf(*cfg.Spec.KubeletConfig)
+	if !kcValues.IsValid() {
+		return fmt.Errorf("KubeletConfig is not valid")
+	}
+	for _, bannedFieldName := range blacklistKubeletConfigurationFields {
+		v := kcValues.FieldByName(bannedFieldName)
+		if !v.IsValid() {
+			continue
+		}
+		err := fmt.Errorf("%v is not allowed to be set.", bannedFieldName)
+		switch v.Kind() {
+		case reflect.Slice:
+			if v.Len() > 0 {
+				return err
+			}
+		case reflect.String:
+			if v.String() != "" {
+				return err
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if v.Int() != 0 {
+				return err
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if v.Uint() != 0 {
+				return err
+			}
+		case reflect.Struct:
+			if v.Type().String() == "v1.Duration" {
+				d := v.Interface().(metav1.Duration)
+				if d.Duration.String() != "0s" {
+					return err
+				}
+			}
+		default:
+			return fmt.Errorf("Invalid type in field %v", bannedFieldName)
+		}
+	}
+
+	return nil
+}
+
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (ctrl *Controller) syncKubeletConfig(key string) error {
@@ -334,6 +396,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.cascadeDelete(cfg)
 		}
 		return nil
+	}
+
+	// Validate the KubeletConfig CR
+	if err := validateUserKubeletConfig(cfg); err != nil {
+		return err
 	}
 
 	// Find all MachineConfigPools
