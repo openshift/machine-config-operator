@@ -331,6 +331,7 @@ func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 	}
 
 	var dnsNames = []string{
+		"localhost",
 		"${ETCD_DNS_NAME}",
 		fmt.Sprintf("%s.%s", cfg.ClusterName, cfg.BaseDomain), // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
 	}

@@ -55,7 +55,7 @@ contents:
                 --assetsdir=/etc/ssl/etcd \
                 --dnsnames={{etcdPeerCertDNSNames .}} \
                 --commonname=system:etcd-peer:${ETCD_DNS_NAME} \
-                --ipaddrs=${ETCD_IPV4_ADDRESS} \
+                --ipaddrs=${ETCD_IPV4_ADDRESS},127.0.0.1 \
           
         securityContext:
           priviledged: true
