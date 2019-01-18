@@ -239,13 +239,13 @@ spec:
     description: Version of the Ignition Config defined in the machineconfig.
     name: IgnitionVersion
     type: string
+  - JSONPath: .metadata.creationTimestamp
+    name: Created
+    type: date
   - JSONPath: .spec.osImageURL
     description: URL for the RPM OS-tree image. This is optional and can be empty.
     name: OSImageURL
     type: string
-  - JSONPath: .metadata.creationTimestamp
-    name: Created
-    type: date
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
@@ -547,6 +547,10 @@ spec:
         image: {{.Images.MachineConfigDaemon}}
         args:
           - "start"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
         securityContext:
           privileged: true
         volumeMounts:
@@ -950,6 +954,10 @@ spec:
         args:
           - "start"
           - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
         volumeMounts:
         - name: certs
           mountPath: /etc/ssl/mcs
