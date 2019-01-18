@@ -55,6 +55,8 @@ const (
 type Operator struct {
 	namespace, name string
 
+	inClusterBringup bool
+
 	imagesFile string
 
 	client        mcfgclientset.Interface
@@ -154,6 +156,17 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 
 	glog.Info("Starting MachineConfigOperator")
 	defer glog.Info("Shutting down MachineConfigOperator")
+
+	apiClient := optr.apiExtClient.ApiextensionsV1beta1()
+	_, err := apiClient.CustomResourceDefinitions().Get("machineconfigpools.machineconfiguration.openshift.io", metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			glog.Infof("Couldn't find machineconfigpool CRD, in cluster bringup mode")
+			optr.inClusterBringup = true
+		} else {
+			glog.Errorf("While checking for cluster bringup: %v", err)
+		}
+	}
 
 	if !cache.WaitForCacheSync(stopCh,
 		optr.crdListerSynced,
