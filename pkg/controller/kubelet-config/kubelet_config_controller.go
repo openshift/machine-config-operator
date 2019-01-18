@@ -281,7 +281,7 @@ func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2type
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
-	cfg.Status.Conditions = append(cfg.Status.Conditions, newCondition(err, args))
+	cfg.Status.Conditions = append(cfg.Status.Conditions, wrapErrorWithCondition(err, args...))
 	_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(cfg)
 	return lerr
 }
