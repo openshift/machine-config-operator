@@ -53,6 +53,22 @@ make deploy-daemon
 
 Use `oc get pods -w` to watch for your new code to be deployed.
 
+# Hacking on MCO - updating the manifests
+
+To update the manifests applied by Machine Config Operator, edit the `yaml` files in `manifests` folder in the root. The manifest folder has 3 subfolders, each for sub component.
+
+- `manifests/machineconfigcontroller`: These are all the manifests related to Machine Config Controller.
+- `manifests/machineconfigdaemon`: These are all the manifests related to Machine Config Daemon.
+- `manifests/machineconfigserver`: These are all the manifests related to Machine Config Server.
+
+The `manifests` folder also contains global manifests at its root.
+
+Every time you modify any of the manifests in `manifests` please run the following command to update the `bindata` for Machine Config Operator.
+
+```sh
+./hack/update-generated-bindata.sh
+```
+
 # Unit Tests
 
 Unit tests (that don't interact with a running cluster) can be executed on a per
