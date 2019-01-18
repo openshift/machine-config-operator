@@ -404,23 +404,42 @@ type KubeletConfigSpec struct {
 
 // KubeletConfigStatus defines the observed state of a KubeletConfig
 type KubeletConfigStatus struct {
+	// The generation observed by the controller.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Represents the latest available observations of current state.
 	Conditions []KubeletConfigCondition `json:"conditions"`
 }
 
 // KubeletConfigCondition defines the state of the KubeletConfig
 type KubeletConfigCondition struct {
-	// Status of the condition, one of ('True', 'False', 'Unknown').
+	// type specifies the state of the operator's reconciliation functionality.
+	Type KubeletConfigStatusConditionType `json:"type"`
+
+	// status of the condition, one of True, False, Unknown.
 	Status corev1.ConditionStatus `json:"status"`
 
-	// Message is a human readable description of the details of the last
-	// transition, complementing reason.
-	Message string `json:"message"`
-
-	// LastTransitionTime is the timestamp corresponding to the last status
-	// change of this condition.
+	// lastTransitionTime is the time of the last update to the current status object.
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+
+	// reason is the reason for the condition's last transition.  Reasons are CamelCase
+	Reason string `json:"reason,omitempty"`
+
+	// message provides additional information about the current condition.
+	// This is only to be consumed by humans.
+	Message string `json:"message,omitempty"`
 }
+
+// KubeletConfigStatusConditionType is the state of the operator's reconciliation functionality.
+type KubeletConfigStatusConditionType string
+
+const (
+	// KubeletConfigSuccess designates a successful application of a KubeletConfig CR.
+	KubeletConfigSuccess KubeletConfigStatusConditionType = "Success"
+
+	// KubeletConfigFailure designates a failure applying a KubeletConfig CR.
+	KubeletConfigFailure KubeletConfigStatusConditionType = "Failure"
+)
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 

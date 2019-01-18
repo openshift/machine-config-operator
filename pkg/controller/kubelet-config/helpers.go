@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
-	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -99,23 +98,28 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	return nil
 }
 
-func newCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {
-	condition := mcfgv1.KubeletConfigCondition{}
+func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfigCondition {
+	var condition *mcfgv1.KubeletConfigCondition
 	if err != nil {
-		condition.Status = v1.ConditionFalse
-		condition.Message = fmt.Sprintf("Error: %v", err)
+		condition = mcfgv1.NewKubeletConfigCondition(
+			mcfgv1.KubeletConfigFailure,
+			v1.ConditionFalse,
+			fmt.Sprintf("Error: %v", err),
+		)
 	} else {
-		condition.Status = v1.ConditionTrue
-		condition.Message = "Successful"
+		condition = mcfgv1.NewKubeletConfigCondition(
+			mcfgv1.KubeletConfigSuccess,
+			v1.ConditionTrue,
+			"Success",
+		)
 	}
-	condition.LastTransitionTime = metav1.Time{Time: time.Now()}
 	if len(args) > 0 {
 		format, ok := args[0].(string)
 		if ok {
 			condition.Message = fmt.Sprintf(format, args[:1]...)
 		}
 	}
-	return condition
+	return *condition
 }
 
 func decodeKubeletConfig(data []byte) (*kubeletconfigv1beta1.KubeletConfiguration, error) {

@@ -109,3 +109,13 @@ func IsMachineConfigPoolConditionPresentAndEqual(conditions []MachineConfigPoolC
 	}
 	return false
 }
+
+// NewKubeletConfigCondition returns an instance of a KubeletConfigCondition
+func NewKubeletConfigCondition(condType KubeletConfigStatusConditionType, status corev1.ConditionStatus, message string) *KubeletConfigCondition {
+	return &KubeletConfigCondition{
+		Type:               condType,
+		Status:             status,
+		LastTransitionTime: metav1.Now(),
+		Message:            message,
+	}
+}
