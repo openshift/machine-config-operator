@@ -100,7 +100,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// TODO: Change the logic to be clearer
 	// We need to skip draining of the node when we are running once
 	// and there is no cluster.
-	if dn.onceFrom != "" && !ValidPath(dn.onceFrom) {
+	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
 
 		node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})

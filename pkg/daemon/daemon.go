@@ -598,7 +598,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	} else {
 		// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 		// Kick off an update.
-		if err := dn.triggerUpdateWithMachineConfig(state.desiredConfig); err != nil {
+		if err := dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig); err != nil {
 			return err
 		}
 	}
@@ -706,7 +706,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 // you want both pulled from the cluster please use executeUpdateFromCluster().
 func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
 	// The desired machine config has changed, trigger update
-	if err := dn.triggerUpdateWithMachineConfig(desiredConfig); err != nil {
+	if err := dn.triggerUpdateWithMachineConfig(nil, desiredConfig); err != nil {
 		return err
 	}
 
@@ -739,21 +739,24 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	return nil
 }
 
-// triggerUpdateWithMachineConfig starts the update using the desired config and queries the cluster for
-// the current config.
-func (dn *Daemon) triggerUpdateWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
+// triggerUpdateWithMachineConfig starts the update. It queries the cluster for
+// the current and desired config if they weren't passed.
+func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
 	if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 		return err
 	}
 
-	ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
-	if err != nil {
-		return err
+	if currentConfig == nil {
+		ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
+		if err != nil {
+			return err
+		}
+		currentConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
+		if err != nil {
+			return err
+		}
 	}
-	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
-	if err != nil {
-		return err
-	}
+
 	if desiredConfig == nil {
 		dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, DesiredMachineConfigAnnotationKey)
 		if err != nil {
@@ -764,6 +767,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(desiredConfig *mcfgv1.MachineCo
 			return err
 		}
 	}
+
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
 }
