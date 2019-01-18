@@ -97,9 +97,10 @@
   version = "v0.2.0"
 
 [[projects]]
-  digest = "1:13627d07034a944b5ea1aefa8e6e909f49d56315a539e66a7c1dd35b0896ef43"
+  digest = "1:3e0c23d9976ded8b4d3ae5d5264a403858b25d7007171ff391f457a5b525c9b5"
   name = "github.com/coreos/go-systemd"
   packages = [
+    "dbus",
     "login1",
     "unit",
   ]
@@ -955,6 +956,7 @@
     "github.com/blang/semver",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
+    "github.com/coreos/go-systemd/dbus",
     "github.com/coreos/go-systemd/login1",
     "github.com/coreos/ignition/config/v2_2",
     "github.com/coreos/ignition/config/v2_2/types",
