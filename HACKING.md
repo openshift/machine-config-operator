@@ -24,7 +24,7 @@ sudo setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/oc
 Now, forward port `443` to the router:
 
 ```
-oc -n openshift-ingress port-forward svc/router-default 443
+oc -n openshift-ingress port-forward svc/router-internal-default 443
 ```
 
 Leave that process running in a separate terminal.
