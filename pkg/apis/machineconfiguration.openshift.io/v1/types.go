@@ -263,8 +263,9 @@ type MachineConfigPoolSpec struct {
 	// Label selector for Machines.
 	MachineSelector *metav1.LabelSelector `json:"machineSelector,omitempty"`
 
-	// If true, changes to this machine pool should be stopped.
-	// This includes generating new desiredMachineConfig and update of machines.
+	// If true, changes to this machine pool should be stopped,
+	// including generating new desiredMachineConfig and update of machines.
+	// This flag is intended for administrators to change.
 	Paused bool `json:"paused"`
 
 	// MaxUnavailable specifies the percentage or constant number of machines that can be updating at any given time.
