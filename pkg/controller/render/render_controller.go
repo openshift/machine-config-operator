@@ -486,6 +486,8 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 			}
 			// Let's not make it fatal for now
 			glog.Warningf("Failed to delete ownerReference from %s: %v", gmc.Name, err)
+		} else {
+			glog.Infof("Queued for GC: %s", gmc.Name)
 		}
 	}
 
