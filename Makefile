@@ -95,4 +95,4 @@ images.rhel7: $(imc7)
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operato
 test-e2e:
-	go test -timeout 20m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+	if ! go test -timeout 20m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/; then ./test/e2e/debuglog; exit 1; fi

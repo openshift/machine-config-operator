@@ -1,0 +1,9 @@
+#!/bin/bash
+set -xeuo pipefail
+oc get nodes
+oc -n openshift-machine-config-operator get machineconfigpool
+oc -n openshift-machine-config-operator get machineconfigs
+oc -n openshift-machine-config-operator get ds
+oc -n openshift-machine-config-operator get pods
+oc -n openshift-machine-config-operator logs deploy/machine-config-operator
+oc -n openshift-machine-config-operator logs deploy/machine-config-controller
