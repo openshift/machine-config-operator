@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
@@ -112,6 +113,15 @@ func startControllers(ctx *common.ControllerContext) error {
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 		ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
+	).Run(2, ctx.Stop)
+
+	go containerruntimeconfig.New(
+		rootOpts.templates,
+		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+		ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+		ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
+		ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),
 	).Run(2, ctx.Stop)
 
 	return nil
