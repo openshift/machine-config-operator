@@ -29,9 +29,9 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
 		{ "pools", optr.syncMachineConfigPools },
-		{ "mcc", optr.syncMachineConfigController },
 		{ "mcs", optr.syncMachineConfigServer },
 		{ "mcd", optr.syncMachineConfigDaemon },
+		{ "mcc", optr.syncMachineConfigController },
 		{ "required-pools", optr.syncRequiredMachineConfigPools },
 	}
 
