@@ -203,6 +203,8 @@ spec:
     plural: kubeletconfigs
     singular: kubeletconfig
   scope: Cluster
+  subresources:
+    status: {}
   versions:
     - name: v1
       served: true

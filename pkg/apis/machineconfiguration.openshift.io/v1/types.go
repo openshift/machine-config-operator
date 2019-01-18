@@ -404,6 +404,22 @@ type KubeletConfigSpec struct {
 
 // KubeletConfigStatus defines the observed state of a KubeletConfig
 type KubeletConfigStatus struct {
+	// Represents the latest available observations of current state.
+	Conditions []KubeletConfigCondition `json:"conditions"`
+}
+
+// KubeletConfigCondition defines the state of the KubeletConfig
+type KubeletConfigCondition struct {
+	// Status of the condition, one of ('True', 'False', 'Unknown').
+	Status corev1.ConditionStatus `json:"status"`
+
+	// Message is a human readable description of the details of the last
+	// transition, complementing reason.
+	Message string `json:"message"`
+
+	// LastTransitionTime is the timestamp corresponding to the last status
+	// change of this condition.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
