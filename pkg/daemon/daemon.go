@@ -568,6 +568,10 @@ func (dn *Daemon) CheckStateOnBoot() error {
 			if err := os.Remove(InitialNodeAnnotationsFilePath); err != nil {
 				return errors.Wrapf(err, "Removing initial node annotations file")
 			}
+			// And add the done state annotation
+			if err := dn.nodeWriter.SetUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, state.currentConfig.GetName()); err != nil {
+				return err
+			}
 		}
 	}
 

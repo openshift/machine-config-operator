@@ -59,6 +59,9 @@ func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 		annos = map[string]string{}
 		annos[daemon.CurrentMachineConfigAnnotationKey] = currentConfig
 		annos[daemon.DesiredMachineConfigAnnotationKey] = desiredConfig
+		if currentConfig == desiredConfig {
+			annos[daemon.MachineConfigDaemonStateAnnotationKey] = daemon.MachineConfigDaemonStateDone
+		}
 	}
 
 	return &corev1.Node{

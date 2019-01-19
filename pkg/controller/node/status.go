@@ -152,8 +152,13 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 		if !ok || cconfig == "" {
 			continue
 		}
+		// We won't have a state annotation on initial bootstrap
+		dstate, ok := node.Annotations[daemon.MachineConfigDaemonStateAnnotationKey]
+		if !ok {
+			dstate = ""
+		}
 
-		if dconfig == currentConfig && (dconfig != cconfig || !isNodeReady(node)) {
+		if (dstate == daemon.MachineConfigDaemonStateBootstrap) || (dconfig == currentConfig && (dconfig != cconfig || !isNodeReady(node))) {
 			unavail = append(unavail, nodes[idx])
 		}
 	}
