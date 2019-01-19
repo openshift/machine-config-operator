@@ -19,7 +19,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -232,12 +231,13 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		}
 	}
 
+	glog.Infof("MachineConfig %s deleted", mc.Name)
+
 	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
 		pool := ctrl.resolveControllerRef(controllerRef)
 		if pool == nil {
 			return
 		}
-		glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
 		ctrl.enqueueMachineConfigPool(pool)
 		return
 	}
@@ -248,7 +248,6 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -461,35 +460,36 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	gmcs, err := ctrl.mcLister.List(labels.Everything())
-	if err != nil {
-		return err
-	}
-	for _, gmc := range gmcs {
-		if gmc.Name == generated.Name {
-			continue
-		}
+	// this code is known broken
+	// gmcs, err := ctrl.mcLister.List(labels.Everything())
+	// if err != nil {
+	// 	return err
+	// }
+	// for _, gmc := range gmcs {
+	// 	if gmc.Name == generated.Name {
+	// 		continue
+	// 	}
 
-		deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, pool.UID, gmc.UID)
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Patch(gmc.Name, types.JSONPatchType, []byte(deleteOwnerRefPatch))
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// If the machineconfig no longer exists, ignore it.
-				continue
-			}
-			if errors.IsInvalid(err) {
-				// Invalid error will be returned in two cases: 1. the machineconfig
-				// has no owner reference, 2. the uid of the machineconfig doesn't
-				// match.
-				// In both cases, the error can be ignored.
-				continue
-			}
-			// Let's not make it fatal for now
-			glog.Warningf("Failed to delete ownerReference from %s: %v", gmc.Name, err)
-		} else {
-			glog.Infof("Queued for GC: %s", gmc.Name)
-		}
-	}
+	// 	deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, pool.UID, gmc.UID)
+	// 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Patch(gmc.Name, types.JSONPatchType, []byte(deleteOwnerRefPatch))
+	// 	if err != nil {
+	// 		if errors.IsNotFound(err) {
+	// 			// If the machineconfig no longer exists, ignore it.
+	// 			continue
+	// 		}
+	// 		if errors.IsInvalid(err) {
+	// 			// Invalid error will be returned in two cases: 1. the machineconfig
+	// 			// has no owner reference, 2. the uid of the machineconfig doesn't
+	// 			// match.
+	// 			// In both cases, the error can be ignored.
+	// 			continue
+	// 		}
+	// 		// Let's not make it fatal for now
+	// 		glog.Warningf("Failed to delete ownerReference from %s: %v", gmc.Name, err)
+	// 	} else {
+	// 		glog.Infof("Queued for GC: %s", gmc.Name)
+	// 	}
+	// }
 
 	return nil
 }
