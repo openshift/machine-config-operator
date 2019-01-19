@@ -24,6 +24,7 @@ contents: |
         --minimum-container-ttl-duration=6m0s \
         --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider={{cloudProvider .}} \
+        --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{.CloudProviderConfig -}} \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
