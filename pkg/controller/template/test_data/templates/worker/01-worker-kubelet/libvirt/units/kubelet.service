@@ -19,6 +19,7 @@ contents: |
         --allow-privileged \
         --node-labels=node-role.kubernetes.io/worker \
         --minimum-container-ttl-duration=6m0s \
+        --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider= \
         \
