@@ -206,9 +206,8 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 
 	// Storage section
 
-	// there are six subsections here - directories, files, and links, which we
-	// can reconcile, and disks, filesystems, and raid, which we can't. make
-	// sure the sections we can't fix aren't changed.
+	// we can only reconcile files right now. make sure the sections we can't
+	// fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
 		msg := "Ignition disks section contains changes"
 		return &msg
@@ -219,6 +218,14 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
 		msg := "Ignition raid section contains changes"
+		return &msg
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {
+		msg := "Ignition directories section contains changes"
+		return &msg
+	}
+	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
+		msg := "Ignition links section contains changes"
 		return &msg
 	}
 
