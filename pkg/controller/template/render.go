@@ -142,6 +142,9 @@ func machineConfigForOSImageURL(role string, url string) *mcfgv1.MachineConfig {
 	}
 }
 
+// Temporary hack
+var doneInitialRender map[string]bool
+
 // generateDerivedMachineConfigs is part of generateMachineConfigsForRole. It
 // takes care of generating MachineConfig objects which are derived from other
 // components of the cluster configuration. Currently, that's:
@@ -159,8 +162,16 @@ func generateDerivedMachineConfigs(config *RenderConfig, role string) ([]*mcfgv1
 	sshConfigName := "00-" + role + "-ssh"
 	cfgs = append(cfgs, MachineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig))
 
-	if config.OSImageURL != "" {
+	if doneInitialRender == nil {
+		doneInitialRender = make(map[string]bool)
+	}
+
+	isFirstRun := !doneInitialRender[role]
+	if config.OSImageURL != "" && !isFirstRun {
 		cfgs = append(cfgs, machineConfigForOSImageURL(role, config.OSImageURL))
+	}
+	if isFirstRun {
+		doneInitialRender[role] = true
 	}
 
 	return cfgs, nil
