@@ -2,9 +2,16 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"strings"
+	"time"
+
+	"github.com/coreos/go-systemd/dbus"
 )
+
+const etcPivotFile = "/etc/pivot/image-pullspec"
 
 // RpmOstreeState houses zero or more RpmOstreeDeployments
 // Subset of `rpm-ostree status --json`
@@ -84,5 +91,63 @@ func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string,
 // RunPivot executes a pivot from one deployment to another as found in the referenced
 // osImageURL. See https://github.com/openshift/pivot.
 func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
-	return Run("/bin/pivot", osImageURL)
+	if err := os.MkdirAll(filepath.Dir(etcPivotFile), os.FileMode(0755)); err != nil {
+		return fmt.Errorf("error creating leading dirs for %s: %v", etcPivotFile, err)
+	}
+
+	if err := ioutil.WriteFile(etcPivotFile, []byte(osImageURL), 0644); err != nil {
+		return fmt.Errorf("error writing to %s: %v", etcPivotFile, err)
+	}
+
+	conn, err := dbus.NewSystemdConnection()
+	if err != nil {
+		return fmt.Errorf("error creating systemd conn: %v", err)
+	}
+	defer conn.Close()
+
+	// start job
+	status := make(chan string)
+	_, err = conn.StartUnit("pivot.service", "fail", status)
+	if err != nil {
+		return fmt.Errorf("error starting job: %v", err)
+	}
+
+	select {
+	case st := <-status:
+		if st != "done" {
+			return fmt.Errorf("error queuing start job; got %s", st)
+		}
+	case <-time.After(5 * time.Minute):
+		return fmt.Errorf("timed out waiting for start job")
+	}
+
+	// wait until inactive/failed
+	var failed bool
+	eventsCh, errCh := conn.SubscribeUnits(time.Second)
+Outer:
+	for {
+		select {
+		case e := <-eventsCh:
+			if st, ok := e["pivot.service"]; ok {
+				// If the service is disabled, systemd won't keep around
+				// metadata about whether it failed/passed, etc... The bindings
+				// signal this by just using a `nil` status since it dropped out
+				// of `ListUnits()`.
+				if st == nil {
+					return errors.New("got nil while waiting for pivot; is the service enabled?")
+				}
+				failed = st.ActiveState == "failed"
+				if failed || st.ActiveState == "inactive" {
+					break Outer
+				}
+			}
+		case f := <-errCh:
+			return fmt.Errorf("error while waiting for pivot: %v", f)
+		}
+	}
+
+	if failed {
+		return errors.New("pivot service did not exit successfully")
+	}
+	return nil
 }
