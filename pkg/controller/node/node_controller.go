@@ -40,6 +40,10 @@ const (
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
+
+	// updateDelay is a pause to deal with churn in MachineConfigs; see
+	// https://github.com/openshift/machine-config-operator/issues/301
+	updateDelay = 5 * time.Second
 )
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
@@ -99,7 +103,7 @@ func New(
 	})
 
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
-	ctrl.enqueueMachineConfigPool = ctrl.enqueue
+	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
@@ -296,7 +300,7 @@ func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 }
 
 // enqueueAfter will enqueue a pool after the provided amount of time.
-func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfig, after time.Duration) {
+func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.Duration) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
@@ -304,6 +308,11 @@ func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfig, after time.Dura
 	}
 
 	ctrl.queue.AddAfter(key, after)
+}
+
+// enqueueDefault calls a default enqueue function
+func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
+	ctrl.enqueueAfter(pool, updateDelay)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
