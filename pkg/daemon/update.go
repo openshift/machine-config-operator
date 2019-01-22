@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
-	"syscall"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -23,7 +22,6 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -644,25 +642,11 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 	glog.Infof("Updating OS to %s", newURL)
 
-	// try to run pivot 5 times; in the future we'd make the tool smarter
-	// so it can always retry things it knows are transient
-	return wait.ExponentialBackoff(wait.Backoff{
-		Steps:    5,               // times to retry
-		Duration: 5 * time.Second, // sleep between tries
-		Factor:   2,               // factor by which to increase sleep
-	}, func() (bool, error) {
-		var err error
-		if err = dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
-			if exitError, ok := err.(*exec.ExitError); ok {
-				rc := exitError.Sys().(syscall.WaitStatus).ExitStatus()
-				if rc != 0 {
-					glog.Warningf("pivot exited with rc=%d; retrying...", rc)
-					return false, nil
-				}
-			}
-		}
-		return true, err
-	})
+	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
+		return fmt.Errorf("Failed to run pivot: %v", err)
+	}
+
+	return nil
 }
 
 // Log a message to the systemd journal as well as our stdout
