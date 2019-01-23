@@ -167,6 +167,8 @@ spec:
       storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  subresources:
+    status: {}
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
     plural: controllerconfigs
