@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	
+
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	installertypes "github.com/openshift/installer/pkg/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -68,6 +68,7 @@ type Operator struct {
 	crdLister       apiextlistersv1beta1.CustomResourceDefinitionLister
 	mcoconfigLister mcfglistersv1.MCOConfigLister
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
+	ccLister        mcfglistersv1.ControllerConfigLister
 	mcLister        mcfglistersv1.MachineConfigLister
 	deployLister    appslisterv1.DeploymentLister
 	daemonsetLister appslisterv1.DaemonSetLister
@@ -89,6 +90,7 @@ func New(
 	imagesFile string,
 	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	serviceAccountInfomer coreinformersv1.ServiceAccountInformer,
@@ -136,6 +138,7 @@ func New(
 	optr.mcoconfigLister = mcoconfigInformer.Lister()
 	optr.mcoconfigListerSynced = mcoconfigInformer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
+	optr.ccLister = ccInformer.Lister()
 	optr.mcLister = mcInformer.Lister()
 	optr.deployLister = deployInformer.Lister()
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
