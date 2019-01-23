@@ -17,6 +17,7 @@ contents: |
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --allow-privileged \
+        --pod-infra-container-image=quay.io/openshift/origin-pod:v4.0 \
         --node-labels=node-role.kubernetes.io/worker \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
