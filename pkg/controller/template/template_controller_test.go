@@ -54,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 	return &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Generation: 1},
 		Spec: mcfgv1.ControllerConfigSpec{
 			ClusterDNSIP: "10.3.0.1/16",
 			ClusterName:  name,
@@ -173,7 +173,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		e, _ := expected.(core.CreateAction)
 		expObject := e.GetObject()
 		object := a.GetObject()
-
+		filterTimeFromControllerStatus(object, expObject)
 		if !equality.Semantic.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
@@ -183,6 +183,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		expObject := e.GetObject()
 		object := a.GetObject()
 
+		filterTimeFromControllerStatus(object, expObject)
 		if !equality.Semantic.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
@@ -195,6 +196,17 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		if !equality.Semantic.DeepEqual(expPatch, expPatch) {
 			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expPatch, patch))
+		}
+	}
+}
+
+func filterTimeFromControllerStatus(objs ...runtime.Object) {
+	for i, o := range objs {
+		if _, ok := o.(*mcfgv1.ControllerConfig); ok {
+			cfg := objs[i].(*mcfgv1.ControllerConfig)
+			for j := range cfg.Status.Conditions {
+				cfg.Status.Conditions[j].LastTransitionTime = metav1.Time{}
+			}
 		}
 	}
 }
@@ -233,6 +245,11 @@ func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) 
 func (f *fixture) expectGetSecretAction(secret *corev1.Secret) {
 	f.kubeactions = append(f.kubeactions, core.NewGetAction(schema.GroupVersionResource{Resource: "secrets"}, secret.Namespace, secret.Name))
 }
+
+func (f *fixture) expectUpdateControllerConfigStatus(status *mcfgv1.ControllerConfig) {
+	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "controllerconfigs"}, "status", status))
+}
+
 func TestCreatesMachineConfigs(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig("test-cluster")
@@ -246,12 +263,24 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rcc := cc.DeepCopy()
+	rcc.Status.ObservedGeneration = 1
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionTrue, Reason: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 
 	for idx := range expMCs {
 		f.expectGetMachineConfigAction(expMCs[idx])
 		f.expectCreateMachineConfigAction(expMCs[idx])
 	}
+	ccc := cc.DeepCopy()
+	ccc.Status.ObservedGeneration = 1
+	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
+		{Type: mcfgv1.TemplateContollerCompleted, Status: corev1.ConditionTrue, Reason: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionFalse},
+		{Type: mcfgv1.TemplateContollerFailing, Status: corev1.ConditionFalse},
+	}
+	f.expectUpdateControllerConfigStatus(ccc)
 
 	f.run(getKey(cc, t))
 }
@@ -273,10 +302,22 @@ func TestDoNothing(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
+	rcc := cc.DeepCopy()
+	rcc.Status.ObservedGeneration = 1
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionTrue, Reason: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 	for idx := range mcs {
 		f.expectGetMachineConfigAction(mcs[idx])
 	}
+	ccc := cc.DeepCopy()
+	ccc.Status.ObservedGeneration = 1
+	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
+		{Type: mcfgv1.TemplateContollerCompleted, Status: corev1.ConditionTrue, Reason: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionFalse},
+		{Type: mcfgv1.TemplateContollerFailing, Status: corev1.ConditionFalse},
+	}
+	f.expectUpdateControllerConfigStatus(ccc)
 
 	f.run(getKey(cc, t))
 }
@@ -297,13 +338,25 @@ func TestRecreateMachineConfig(t *testing.T) {
 		f.mcLister = append(f.mcLister, mcs[idx])
 		f.objects = append(f.objects, mcs[idx])
 	}
+
+	rcc := cc.DeepCopy()
+	rcc.Status.ObservedGeneration = 1
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionTrue, Reason: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 
 	for idx := range mcs {
 		f.expectGetMachineConfigAction(mcs[idx])
 	}
 	f.expectCreateMachineConfigAction(mcs[len(mcs)-1])
-
+	ccc := cc.DeepCopy()
+	ccc.Status.ObservedGeneration = 1
+	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
+		{Type: mcfgv1.TemplateContollerCompleted, Status: corev1.ConditionTrue, Reason: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionFalse},
+		{Type: mcfgv1.TemplateContollerFailing, Status: corev1.ConditionFalse},
+	}
+	f.expectUpdateControllerConfigStatus(ccc)
 	f.run(getKey(cc, t))
 }
 
@@ -330,12 +383,23 @@ func TestUpdateMachineConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rcc := cc.DeepCopy()
+	rcc.Status.ObservedGeneration = 1
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionTrue, Reason: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 	for idx := range expmcs {
 		f.expectGetMachineConfigAction(expmcs[idx])
 	}
 	f.expectUpdateMachineConfigAction(expmcs[len(expmcs)-1])
-
+	ccc := cc.DeepCopy()
+	ccc.Status.ObservedGeneration = 1
+	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
+		{Type: mcfgv1.TemplateContollerCompleted, Status: corev1.ConditionTrue, Reason: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateContollerRunning, Status: corev1.ConditionFalse},
+		{Type: mcfgv1.TemplateContollerFailing, Status: corev1.ConditionFalse},
+	}
+	f.expectUpdateControllerConfigStatus(ccc)
 	f.run(getKey(cc, t))
 }
 
