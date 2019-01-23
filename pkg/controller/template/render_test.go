@@ -274,13 +274,17 @@ func TestInvalidPlatform(t *testing.T) {
 		}
 	}
 
+	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Platform = "_bad_"
 	_, err = generateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
-	expectErr(err, "failed to create MachineConfig for role master: platform _bad_ unsupported")
+	if err != nil {
+		t.Errorf("expect nil error, got: %v", err)
+	}
 
+	// explicitly blocked
 	controllerConfig.Spec.Platform = "_base"
 	_, err = generateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
-	expectErr(err, "platform _base unsupported")
+	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
 func TestGenerateMachineConfigs(t *testing.T) {
@@ -335,12 +339,14 @@ func TestGenerateMachineConfigsSSH(t *testing.T) {
 		for _, cfg := range cfgs {
 			name := cfg.ObjectMeta.Name
 			switch name {
-			case "00-master-ssh": {
-				masterSsh = cfg
-			}
-			case "00-worker-ssh": {
-				workerSsh = cfg
-			}
+			case "00-master-ssh":
+				{
+					masterSsh = cfg
+				}
+			case "00-worker-ssh":
+				{
+					workerSsh = cfg
+				}
 			}
 		}
 		if masterSsh == nil {
