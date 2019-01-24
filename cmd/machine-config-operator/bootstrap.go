@@ -33,6 +33,8 @@ var (
 		mccImage            string
 		mcsImage            string
 		mcdImage            string
+		etcdImage           string
+		setupEtcdEnvImage   string
 		destinationDir      string
 	}
 )
@@ -47,6 +49,8 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller. (this cannot be set if --images-json-configmap is set)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server. (this cannot be set if --images-json-configmap is set)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon. (this cannot be set if --images-json-configmap is set)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd. (this cannot be set if --images-json-configmap is set)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment. (this cannot be set if --images-json-configmap is set)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 }
 
@@ -68,8 +72,10 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if bootstrapOpts.imagesConfigMapFile != "" &&
 		(bootstrapOpts.mccImage != "" ||
 			bootstrapOpts.mcsImage != "" ||
-			bootstrapOpts.mcdImage != "") {
-		glog.Fatal("both --images-json-configmap and --machine-config-{controller,server,daemon}-image flags cannot be set")
+			bootstrapOpts.mcdImage != "" ||
+			bootstrapOpts.etcdImage != "" ||
+			bootstrapOpts.setupEtcdEnvImage != "") {
+		glog.Fatal("both --images-json-configmap and [--machine-config-{controller,server,daemon}-image, etcd-image, setup-etcd-env-image] flags cannot be set")
 	}
 
 	imgs := operator.DefaultImages()
@@ -85,6 +91,8 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		imgs.MachineConfigController = bootstrapOpts.mccImage
 		imgs.MachineConfigServer = bootstrapOpts.mcsImage
 		imgs.MachineConfigDaemon = bootstrapOpts.mcdImage
+		imgs.Etcd = bootstrapOpts.etcdImage
+		imgs.SetupEtcdEnv = bootstrapOpts.setupEtcdEnvImage
 	}
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
