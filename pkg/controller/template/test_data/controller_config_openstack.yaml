@@ -11,3 +11,6 @@ spec:
   rootCAData: ZHVtbXkgcm9vdC1jYQo=
   pullSecret:
     data: ZHVtbXkgZXRjZC1jYQo=
+  images:
+    etcd: image/etcd:1
+    setupEtcdEnv: image/setupEtcdEnv:1
