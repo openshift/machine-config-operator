@@ -137,6 +137,9 @@ type ControllerConfigSpec struct {
 	// Public SSH
 	SSHKey string `json:"sshKey"`
 
+	// Images is map of images that are used by the controller.
+	Images map[string]string `json:"images"`
+
 	// Sourced from configmap/machine-config-osimageurl
 	OSImageURL string `json:"osImageURL`
 }
