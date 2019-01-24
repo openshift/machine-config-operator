@@ -71,7 +71,7 @@ func RenderBootstrap(
 		filename: "manifests/csr-bootstrap-role-binding.yaml",
 	}}
 	for _, m := range manifests {
-		glog.Info(m)
+		glog.Info(m.name)
 
 		var b []byte
 		var err error
