@@ -257,6 +257,10 @@ func (f *fixture) expectPatchKubeletConfig(config *mcfgv1.KubeletConfig, patch [
 	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name, patch))
 }
 
+func (f *fixture) expectUpdateKubeletConfig(config *mcfgv1.KubeletConfig) {
+	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, "status", config))
+}
+
 func TestKubeletConfigCreate(t *testing.T) {
 	f := newFixture(t)
 
@@ -275,8 +279,77 @@ func TestKubeletConfigCreate(t *testing.T) {
 	f.expectGetMachineConfigAction(mcs)
 	f.expectCreateMachineConfigAction(mcs)
 	f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+	f.expectUpdateKubeletConfig(kc1)
 
 	f.run(getKey(kc1, t))
+}
+
+func TestKubeletConfigBlacklistedOptions(t *testing.T) {
+	failureTests := []struct {
+		name   string
+		config *kubeletconfigv1beta1.KubeletConfiguration
+	}{
+		{
+			name: "test banned cgroupdriver",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				CgroupDriver: "some_value",
+			},
+		},
+		{
+			name: "test banned clusterdns",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ClusterDNS: []string{"1.1.1.1"},
+			},
+		},
+		{
+			name: "test banned clusterdomain",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				ClusterDomain: "some_value",
+			},
+		},
+		{
+			name: "test banned runtimerequesttimeout",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				RuntimeRequestTimeout: metav1.Duration{Duration: 1 * time.Minute},
+			},
+		},
+		{
+			name: "test banned staticpodpath",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				StaticPodPath: "some_value",
+			},
+		},
+	}
+
+	successTests := []struct {
+		name   string
+		config *kubeletconfigv1beta1.KubeletConfiguration
+	}{
+		{
+			name: "test maxpods",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				MaxPods: 100,
+			},
+		},
+	}
+
+	// Failure Tests
+	for _, test := range failureTests {
+		kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		err := validateUserKubeletConfig(kc)
+		if err == nil {
+			t.Errorf("%s: failed", test.name)
+		}
+	}
+
+	// Successful Tests
+	for _, test := range successTests {
+		kc := newKubeletConfig(test.name, test.config, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "", ""))
+		err := validateUserKubeletConfig(kc)
+		if err != nil {
+			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
+		}
+	}
 }
 
 func getKey(config *mcfgv1.KubeletConfig, t *testing.T) string {
