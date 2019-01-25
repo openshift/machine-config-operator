@@ -2,6 +2,8 @@
 
 package v1
 
+type ContainerRuntimeConfigExpansion interface{}
+
 type ControllerConfigExpansion interface{}
 
 type KubeletConfigExpansion interface{}
