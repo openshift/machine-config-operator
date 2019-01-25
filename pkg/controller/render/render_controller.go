@@ -19,7 +19,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -425,6 +424,17 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	return ctrl.syncGeneratedMachineConfig(pool, mcs)
 }
 
+// This function will eventually contain a sane garbage collection policy for rendered MachineConfigs;
+// see https://github.com/openshift/machine-config-operator/issues/301
+// It will probably involve making sure we're only GCing a config after all nodes don't have it
+// in either desired or current config.
+func (ctrl *Controller) garbageCollectRenderedConfigs(pool *mcfgv1.MachineConfigPool) error {
+	// Temporarily until https://github.com/openshift/machine-config-operator/pull/318
+	// which depends on the strategy for https://github.com/openshift/machine-config-operator/issues/301
+	return nil
+}
+
+
 func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
 	if len(configs) == 0 {
 		return nil
@@ -461,32 +471,8 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	gmcs, err := ctrl.mcLister.List(labels.Everything())
-	if err != nil {
+	if err := ctrl.garbageCollectRenderedConfigs(pool); err != nil {
 		return err
-	}
-	for _, gmc := range gmcs {
-		if gmc.Name == generated.Name {
-			continue
-		}
-
-		deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, pool.UID, gmc.UID)
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Patch(gmc.Name, types.JSONPatchType, []byte(deleteOwnerRefPatch))
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// If the machineconfig no longer exists, ignore it.
-				continue
-			}
-			if errors.IsInvalid(err) {
-				// Invalid error will be returned in two cases: 1. the machineconfig
-				// has no owner reference, 2. the uid of the machineconfig doesn't
-				// match.
-				// In both cases, the error can be ignored.
-				continue
-			}
-			// Let's not make it fatal for now
-			glog.Warningf("Failed to delete ownerReference from %s: %v", gmc.Name, err)
-		}
 	}
 
 	return nil
