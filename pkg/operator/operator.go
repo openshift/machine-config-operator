@@ -267,7 +267,6 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	osimageurl, err := optr.getOsImageURL(namespace)
-	glog.Infof("using osimageurl: %s", osimageurl)
 	if err != nil {
 		return err
 	}
