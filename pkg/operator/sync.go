@@ -15,6 +15,7 @@ import (
 
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -152,7 +153,11 @@ func (optr *Operator) syncMachineConfigController(config renderConfig) error {
 		return err
 	}
 	if updated {
-		return optr.waitForDeploymentRollout(mcc)
+		var waitErrs []error
+		waitErrs = append(waitErrs, optr.waitForDeploymentRollout(mcc))
+		waitErrs = append(waitErrs, optr.waitForControllerConfigToBeCompleted(cc))
+		agg := utilerrors.NewAggregate(waitErrs)
+		return agg
 	}
 	return nil
 }
@@ -345,6 +350,9 @@ const (
 
 	customResourceReadyInterval = time.Second
 	customResourceReadyTimeout  = 5 * time.Minute
+
+	controllerConfigCompletedInterval = time.Second
+	controllerConfigCompletedTimeout  = time.Minute
 )
 
 func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.CustomResourceDefinition) error {
@@ -415,6 +423,23 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		glog.V(4).Infof("Daemonset %s is not ready. status: (desired: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberReady, d.Status.NumberAvailable)
 		return false, nil
 	})
+}
+
+func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.ControllerConfig) error {
+	var lastErr error
+	if err := wait.Poll(controllerConfigCompletedInterval, controllerConfigCompletedTimeout, func() (bool, error) {
+		if err := isControllerConfigCompleted(resource, optr.ccLister.Get); err != nil {
+			lastErr = fmt.Errorf("controllerconfig is not completed: %v", err)
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err.Error() == wait.ErrWaitTimeout.Error() {
+			return fmt.Errorf("%v during waitForControllerConfigToBeCompleted: %v", err, lastErr)
+		}
+		return err
+	}
+	return nil
 }
 
 const (

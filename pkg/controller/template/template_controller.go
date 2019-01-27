@@ -332,34 +332,40 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	// TODO: Deep-copy only when needed.
 	cfg := controllerconfig.DeepCopy()
 
+	if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
+		if err := ctrl.syncRunningStatus(cfg); err != nil {
+			return err
+		}
+	}
+
 	var pullSecretRaw []byte
 	if cfg.Spec.PullSecret != nil {
 		secret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(cfg.Spec.PullSecret.Name, metav1.GetOptions{})
 		if err != nil {
-			return err
+			return ctrl.syncFailingStatus(cfg, err)
 		}
 
 		if secret.Type != corev1.SecretTypeDockerConfigJson {
-			return fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, secret.Type)
+			return ctrl.syncFailingStatus(cfg, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, secret.Type))
 		}
 		pullSecretRaw = secret.Data[corev1.DockerConfigJsonKey]
 	}
 	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw)
 	if err != nil {
-		return err
+		return ctrl.syncFailingStatus(cfg, err)
 	}
 
 	for idx := range mcs {
 		_, updated, err := resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mcs[idx])
 		if err != nil {
-			return err
+			return ctrl.syncFailingStatus(cfg, err)
 		}
 		if updated {
 			glog.V(4).Infof("Machineconfig %s was updated", mcs[idx].Name)
 		}
 	}
 
-	return nil
+	return ctrl.syncCompletedStatus(cfg)
 }
 
 func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte) ([]*mcfgv1.MachineConfig, error) {

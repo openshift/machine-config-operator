@@ -69,17 +69,17 @@ func SetMachineConfigPoolCondition(status *MachineConfigPoolStatus, condition Ma
 	if currentCond != nil && currentCond.Status == condition.Status {
 		condition.LastTransitionTime = currentCond.LastTransitionTime
 	}
-	newConditions := filterOutCondition(status.Conditions, condition.Type)
+	newConditions := filterOutMachineConfigPoolCondition(status.Conditions, condition.Type)
 	status.Conditions = append(newConditions, condition)
 }
 
 // RemoveMachineConfigPoolCondition removes the MachineConfigPool condition with the provided type.
 func RemoveMachineConfigPoolCondition(status *MachineConfigPoolStatus, condType MachineConfigPoolConditionType) {
-	status.Conditions = filterOutCondition(status.Conditions, condType)
+	status.Conditions = filterOutMachineConfigPoolCondition(status.Conditions, condType)
 }
 
 // filterOutCondition returns a new slice of MachineConfigPool conditions without conditions with the provided type.
-func filterOutCondition(conditions []MachineConfigPoolCondition, condType MachineConfigPoolConditionType) []MachineConfigPoolCondition {
+func filterOutMachineConfigPoolCondition(conditions []MachineConfigPoolCondition, condType MachineConfigPoolConditionType) []MachineConfigPoolCondition {
 	var newConditions []MachineConfigPoolCondition
 	for _, c := range conditions {
 		if c.Type == condType {
@@ -118,4 +118,78 @@ func NewKubeletConfigCondition(condType KubeletConfigStatusConditionType, status
 		LastTransitionTime: metav1.Now(),
 		Message:            message,
 	}
+}
+
+// NewControllerConfigStatusCondition creates a new ControllerConfigStatus condition.
+func NewControllerConfigStatusCondition(condType ControllerConfigStatusConditionType, status corev1.ConditionStatus, reason, message string) *ControllerConfigStatusCondition {
+	return &ControllerConfigStatusCondition{
+		Type:               condType,
+		Status:             status,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+	}
+}
+
+// GetControllerConfigStatusCondition returns the condition with the provided type.
+func GetControllerConfigStatusCondition(status ControllerConfigStatus, condType ControllerConfigStatusConditionType) *ControllerConfigStatusCondition {
+	for i := range status.Conditions {
+		c := status.Conditions[i]
+		if c.Type == condType {
+			return &c
+		}
+	}
+	return nil
+}
+
+// SetControllerConfigStatusCondition updates the ControllerConfigStatus to include the provided condition. If the condition that
+// we are about to add already exists and has the same status and reason then we are not going to update.
+func SetControllerConfigStatusCondition(status *ControllerConfigStatus, condition ControllerConfigStatusCondition) {
+	currentCond := GetControllerConfigStatusCondition(*status, condition.Type)
+	if currentCond != nil && currentCond.Status == condition.Status && currentCond.Reason == condition.Reason {
+		return
+	}
+	// Do not update lastTransitionTime if the status of the condition doesn't change.
+	if currentCond != nil && currentCond.Status == condition.Status {
+		condition.LastTransitionTime = currentCond.LastTransitionTime
+	}
+	newConditions := filterOutControllerConfigStatusCondition(status.Conditions, condition.Type)
+	status.Conditions = append(newConditions, condition)
+}
+
+// RemoveControllerConfigStatusCondition removes the ControllerConfigStatus condition with the provided type.
+func RemoveControllerConfigStatusCondition(status *ControllerConfigStatus, condType ControllerConfigStatusConditionType) {
+	status.Conditions = filterOutControllerConfigStatusCondition(status.Conditions, condType)
+}
+
+// filterOutCondition returns a new slice of ControllerConfigStatus conditions without conditions with the provided type.
+func filterOutControllerConfigStatusCondition(conditions []ControllerConfigStatusCondition, condType ControllerConfigStatusConditionType) []ControllerConfigStatusCondition {
+	var newConditions []ControllerConfigStatusCondition
+	for _, c := range conditions {
+		if c.Type == condType {
+			continue
+		}
+		newConditions = append(newConditions, c)
+	}
+	return newConditions
+}
+
+// IsControllerConfigStatusConditionTrue returns true when the conditionType is present and set to `ConditionTrue`
+func IsControllerConfigStatusConditionTrue(conditions []ControllerConfigStatusCondition, conditionType ControllerConfigStatusConditionType) bool {
+	return IsControllerConfigStatusConditionPresentAndEqual(conditions, conditionType, corev1.ConditionTrue)
+}
+
+// IsControllerConfigStatusConditionFalse returns true when the conditionType is present and set to `ConditionFalse`
+func IsControllerConfigStatusConditionFalse(conditions []ControllerConfigStatusCondition, conditionType ControllerConfigStatusConditionType) bool {
+	return IsControllerConfigStatusConditionPresentAndEqual(conditions, conditionType, corev1.ConditionFalse)
+}
+
+// IsControllerConfigStatusConditionPresentAndEqual returns true when conditionType is present and equal to status.
+func IsControllerConfigStatusConditionPresentAndEqual(conditions []ControllerConfigStatusCondition, conditionType ControllerConfigStatusConditionType, status corev1.ConditionStatus) bool {
+	for _, condition := range conditions {
+		if condition.Type == conditionType {
+			return condition.Status == status
+		}
+	}
+	return false
 }
