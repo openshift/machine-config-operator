@@ -21,6 +21,7 @@ type ControllerConfigsGetter interface {
 type ControllerConfigInterface interface {
 	Create(*v1.ControllerConfig) (*v1.ControllerConfig, error)
 	Update(*v1.ControllerConfig) (*v1.ControllerConfig, error)
+	UpdateStatus(*v1.ControllerConfig) (*v1.ControllerConfig, error)
 	Delete(name string, options *metav1.DeleteOptions) error
 	DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error
 	Get(name string, options metav1.GetOptions) (*v1.ControllerConfig, error)
@@ -91,6 +92,21 @@ func (c *controllerConfigs) Update(controllerConfig *v1.ControllerConfig) (resul
 	err = c.client.Put().
 		Resource("controllerconfigs").
 		Name(controllerConfig.Name).
+		Body(controllerConfig).
+		Do().
+		Into(result)
+	return
+}
+
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+
+func (c *controllerConfigs) UpdateStatus(controllerConfig *v1.ControllerConfig) (result *v1.ControllerConfig, err error) {
+	result = &v1.ControllerConfig{}
+	err = c.client.Put().
+		Resource("controllerconfigs").
+		Name(controllerConfig.Name).
+		SubResource("status").
 		Body(controllerConfig).
 		Do().
 		Into(result)
