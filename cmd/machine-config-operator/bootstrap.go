@@ -29,6 +29,7 @@ var (
 		rootCAFile          string
 		pullSecretFile      string
 		configFile          string
+		oscontentImage      string
 		imagesConfigMapFile string
 		mccImage            string
 		mcsImage            string
@@ -49,6 +50,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller. (this overrides the image from --images-json-configmap)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server. (this overrides the image from --images-json-configmap)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd. (this overrides the image from --images-json-configmap)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment. (this overrides the image from --images-json-configmap)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
@@ -94,6 +96,10 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if bootstrapOpts.setupEtcdEnvImage != "" {
 		imgs.SetupEtcdEnv = bootstrapOpts.setupEtcdEnvImage
 	}
+	if bootstrapOpts.oscontentImage != "" {
+		imgs.MachineOSContent = bootstrapOpts.oscontentImage
+	}
+
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
 		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.pullSecretFile,
