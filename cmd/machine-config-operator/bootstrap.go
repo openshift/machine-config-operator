@@ -3,14 +3,9 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
-	"io/ioutil"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -97,17 +92,9 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 }
 
 func rawImagesFromConfigMapOnDisk(file string) ([]byte, error) {
-	data, err := ioutil.ReadFile(bootstrapOpts.imagesConfigMapFile)
+	cm, err := operator.DecodeConfigMap(file)
 	if err != nil {
 		return nil, err
-	}
-	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
-	if err != nil {
-		return nil, err
-	}
-	cm, ok := obji.(*corev1.ConfigMap)
-	if !ok {
-		return nil, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
 	}
 	return []byte(cm.Data["images.json"]), nil
 }

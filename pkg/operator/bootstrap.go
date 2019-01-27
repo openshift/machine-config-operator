@@ -98,6 +98,23 @@ func RenderBootstrap(
 	return nil
 }
 
+/// DecodeConfigMap converts a file on disk into a ConfigMap
+func DecodeConfigMap(file string) (*corev1.ConfigMap, error) {
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
+	if err != nil {
+		return nil, err
+	}
+	cm, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return nil, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+	return cm, nil
+}
+
 func getInstallConfigFromFile(cmData []byte) installConfigGetter {
 	return func() (installertypes.InstallConfig, error) {
 		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), cmData)
