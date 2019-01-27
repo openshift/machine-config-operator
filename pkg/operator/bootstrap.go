@@ -17,7 +17,7 @@ import (
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
 	etcdCAFile, rootCAFile string, pullSecretFile string,
-	imgs Images,
+	imgs Images, osimgConfigMapFile string,
 	destinationDir string,
 ) error {
 	filesData := map[string][]byte{}
@@ -37,12 +37,21 @@ func RenderBootstrap(
 		filesData[file] = data
 	}
 
+	var osimageurl string
+	if osimgConfigMapFile != "" {
+		cm, err := DecodeConfigMap(osimgConfigMapFile)
+		if err != nil {
+			return err
+		}
+		osimageurl = cm.Data["osImageURL"]
+	}
+
 	mcoconfig, err := discoverMCOConfig(getInstallConfigFromFile(filesData[clusterConfigConfigMapFile]))
 	if err != nil {
 		return fmt.Errorf("error discovering MCOConfig from %q: %v", clusterConfigConfigMapFile, err)
 	}
 
-	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], nil, imgs, "")
+	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], nil, imgs, osimageurl)
 
 	manifests := []struct {
 		name     string

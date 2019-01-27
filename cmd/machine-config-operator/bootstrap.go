@@ -24,6 +24,7 @@ var (
 		rootCAFile          string
 		pullSecretFile      string
 		configFile          string
+		osimgConfigMapFile  string
 		imagesConfigMapFile string
 		mccImage            string
 		mcsImage            string
@@ -43,6 +44,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server. (this cannot be set if --images-json-configmap is set)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon. (this cannot be set if --images-json-configmap is set)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.osimgConfigMapFile, "osimg-config-file", "", "ConfigMap containing osImageURL")
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -81,10 +83,11 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		imgs.MachineConfigServer = bootstrapOpts.mcsImage
 		imgs.MachineConfigDaemon = bootstrapOpts.mcdImage
 	}
+
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
 		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.pullSecretFile,
-		imgs,
+		imgs, bootstrapOpts.osimgConfigMapFile,
 		bootstrapOpts.destinationDir,
 	); err != nil {
 		glog.Fatalf("error rendering bootstrap manifests: %v", err)
