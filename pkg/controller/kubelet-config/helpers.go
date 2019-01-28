@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	kubeletconfigscheme "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme"
-	kubeletconfigv1beta1 "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1beta1"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+	kubeletconfigscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
 )
 
 func createNewKubeletIgnition(ymlconfig []byte) ignv2_2types.Config {
