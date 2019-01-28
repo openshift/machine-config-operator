@@ -88,10 +88,6 @@ required = [
   branch = "master"
 
 [[constraint]]
-  name = "github.com/openshift/cluster-version-operator"
-  branch = "master"
-
-[[constraint]]
   branch = "master"
   name = "github.com/openshift/installer"
 
@@ -113,10 +109,6 @@ required = [
 
 [[constraint]]
   name = "k8s.io/apiextensions-apiserver"
-  version = "kubernetes-1.11.1"
-
-[[constraint]]
-  name = "k8s.io/apimachinery"
   version = "kubernetes-1.11.1"
 
 [[constraint]]
@@ -149,3 +141,9 @@ required = [
 [[override]]
   name = "k8s.io/gengo"
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
+
+# importing install-config is importing cluster-network-operator which adds sigs.k8s.io/controller-runtime as dependency.
+# sigs.k8s.io/controller-runtime needs 1.12.3
+[[override]]
+  name = "k8s.io/apimachinery"
+  version = "kubernetes-1.11.1"
