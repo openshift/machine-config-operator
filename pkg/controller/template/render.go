@@ -49,14 +49,6 @@ const (
 //                                    /files/hostname.tmpl
 //
 func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
-	if config.Platform == "" {
-		return nil, fmt.Errorf("cannot generateMachineConfigs with an empty Platform")
-	}
-
-	if config.Platform == "_base" {
-		return nil, fmt.Errorf("platform _base unsupported")
-	}
-
 	infos, err := ioutil.ReadDir(templateDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", templateDir, err)
@@ -124,9 +116,29 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 	return cfgs, nil
 }
 
+func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, error) {
+	switch ic.Platform {
+	case "":
+		return "", fmt.Errorf("cannot generateMachineConfigs with an empty platform field")
+	case "_base":
+		return "", fmt.Errorf("platform _base unsupported")
+	case "aws", "openstack", "libvirt", "none":
+		// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
+		return ic.Platform, nil
+	default:
+		glog.Warningf("Warning: the controller config referenced a platform other than 'aws', 'libvirt', 'openstack', or 'none': %s", ic.Platform)
+		return "none", nil
+	}
+}
+
 func generateMachineConfigForName(config *RenderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
+	platform, err := platformFromControllerConfigSpec(config.ControllerConfigSpec)
+	if err != nil {
+		return nil, err
+	}
+
 	platformDirs := []string{}
-	for _, dir := range []string{"_base", config.Platform} {
+	for _, dir := range []string{"_base", platform} {
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
 		if err != nil {
