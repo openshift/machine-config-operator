@@ -590,7 +590,7 @@
   version = "kubernetes-1.11.1"
 
 [[projects]]
-  digest = "1:82327daaffa8cd2a1f3e4d4c2c98288bbcfa7a46a508c0ee93158eac5f7e3a76"
+  digest = "1:d78ce315c8eda92080c4a715a20565d917fa27ccf27e4bf0f58b367a8f498eb0"
   name = "k8s.io/apiextensions-apiserver"
   packages = [
     "pkg/apis/apiextensions",
@@ -603,6 +603,7 @@
     "pkg/client/informers/externalversions/apiextensions/v1beta1",
     "pkg/client/informers/externalversions/internalinterfaces",
     "pkg/client/listers/apiextensions/v1beta1",
+    "pkg/features",
   ]
   pruneopts = "NUT"
   revision = "06dfdaae5c2bd89e1243151ff65b9bf8ee050f28"
@@ -661,6 +662,17 @@
   pruneopts = "NUT"
   revision = "103fd098999dc9c0c88536f5c9ad2e5da39373ae"
   version = "kubernetes-1.11.1"
+
+[[projects]]
+  branch = "master"
+  digest = "1:a3f2df4f37e6aa2701bd01b1928cf2e65ac83ca4ed3c3323278bbaff987dc201"
+  name = "k8s.io/apiserver"
+  packages = [
+    "pkg/features",
+    "pkg/util/feature",
+  ]
+  pruneopts = "NUT"
+  revision = "df67e6c3edfa39a766c9ba6a6e4d21cc00ee9ed6"
 
 [[projects]]
   digest = "1:3e18248dc0673da91a73f5d21ad615d2a1c7b2bfcec730a5d42d633159cd54da"
@@ -861,6 +873,14 @@
   revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
 
 [[projects]]
+  digest = "1:9cc257b3c9ff6a0158c9c661ab6eebda1fe8a4a4453cd5c4044dc9a2ebfb992b"
+  name = "k8s.io/klog"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "a5bc97fbc634d635061f3146511332c7e313a55a"
+  version = "v0.1.0"
+
+[[projects]]
   branch = "master"
   digest = "1:a2c842a1e0aed96fd732b535514556323a6f5edfded3b63e5e0ab1bce188aa54"
   name = "k8s.io/kube-openapi"
@@ -869,22 +889,38 @@
   revision = "d8ea2fe547a448256204cfc68dfee7b26c720acb"
 
 [[projects]]
-  digest = "1:8a95d26ceb1368cecc12b5f67a5e9ec920c9de3035db321b52f452db88419549"
+  digest = "1:3779973ba544114a6c2b9799b1b4997f5e6e34253537f39b5baeff46d6b0131b"
+  name = "k8s.io/kubelet"
+  packages = ["config/v1beta1"]
+  pruneopts = "NUT"
+  revision = "dbc73c1cf0484128518b1f3821cc2de24523de47"
+  version = "kubernetes-1.12.5"
+
+[[projects]]
+  digest = "1:fe9e881b39618eccb2e9f07d9f35b1d68ae05179fdb2e07c528b0f98b32aaf7c"
   name = "k8s.io/kubernetes"
   packages = [
     "pkg/apis/core",
     "pkg/apis/core/v1/helper/qos",
     "pkg/apis/scheduling",
-    "pkg/kubelet/apis/kubeletconfig",
-    "pkg/kubelet/apis/kubeletconfig/scheme",
-    "pkg/kubelet/apis/kubeletconfig/v1beta1",
+    "pkg/features",
+    "pkg/kubelet/apis/config",
+    "pkg/kubelet/apis/config/scheme",
+    "pkg/kubelet/apis/config/v1beta1",
     "pkg/kubelet/qos",
     "pkg/kubelet/types",
     "pkg/master/ports",
-    "pkg/util/pointer",
   ]
   pruneopts = "NUT"
-  revision = "v1.11.2"
+  revision = "v1.12.5"
+
+[[projects]]
+  branch = "master"
+  digest = "1:ff54706d46de40c865b5fcfc4bde1087c02510cd12e0150de8e405ab427d9907"
+  name = "k8s.io/utils"
+  packages = ["pointer"]
+  pruneopts = "NUT"
+  revision = "2b1ea019a3702bf220bab28c8e86b48cf0b05e5e"
 
 [[projects]]
   digest = "1:84a8609383bec11b71d52dd813f33f1d16614b91966940bdc2aa79bea864fa25"
@@ -976,8 +1012,8 @@
     "k8s.io/client-go/util/workqueue",
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/gengo/types",
-    "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme",
-    "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1beta1",
+    "k8s.io/kubelet/config/v1beta1",
+    "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
