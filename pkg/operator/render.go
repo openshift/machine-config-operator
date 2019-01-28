@@ -9,6 +9,7 @@ import (
 	"github.com/Masterminds/sprig"
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/ghodss/yaml"
+	"github.com/golang/glog"
 	installertypes "github.com/openshift/installer/pkg/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
@@ -62,30 +63,36 @@ func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
 		return nil, err
 	}
 
+	platform, err := platformFromInstallConfig(ic)
+	if err != nil {
+		glog.Warningf("Warning: %v, using %s", err, platform)
+	}
+
 	return &mcfgv1.MCOConfig{
 		Spec: mcfgv1.MCOConfigSpec{
 			ClusterDNSIP:        dnsIP,
 			CloudProviderConfig: "",
 			ClusterName:         ic.ObjectMeta.Name,
-			Platform:            platformFromInstallConfig(ic),
+			Platform:            platform,
 			BaseDomain:          ic.BaseDomain,
 			SSHKey:              ic.SSHKey,
 		},
 	}, nil
 }
 
-func platformFromInstallConfig(ic installertypes.InstallConfig) string {
+func platformFromInstallConfig(ic installertypes.InstallConfig) (string, error) {
+	// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
 	switch {
 	case ic.Platform.AWS != nil:
-		return "aws"
+		return "aws", nil
 	case ic.Platform.OpenStack != nil:
-		return "openstack"
+		return "openstack", nil
 	case ic.Libvirt != nil:
-		return "libvirt"
+		return "libvirt", nil
 	case ic.None != nil:
-		return "none"
+		return "none", nil
 	default:
-		panic("invalid platform")
+		return "none", fmt.Errorf("the install config referenced a platform other than 'aws', 'libvirt', 'openstack', or 'none'")
 	}
 }
 

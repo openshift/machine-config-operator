@@ -262,26 +262,31 @@ func (f *fixture) expectUpdateKubeletConfig(config *mcfgv1.KubeletConfig) {
 }
 
 func TestKubeletConfigCreate(t *testing.T) {
-	f := newFixture(t)
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
 
-	cc := newControllerConfig("test-cluster")
-	mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
-	mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
-	kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-	mcs := newMachineConfig(getManagedKey(mcp, kc1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			cc := newControllerConfig("test-cluster")
+			cc.Spec.Platform = platform
+			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
+			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
+			mcs := newMachineConfig(getManagedKey(mcp, kc1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
 
-	f.ccLister = append(f.ccLister, cc)
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.mcpLister = append(f.mcpLister, mcp2)
-	f.mckLister = append(f.mckLister, kc1)
-	f.objects = append(f.objects, kc1)
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
 
-	f.expectGetMachineConfigAction(mcs)
-	f.expectCreateMachineConfigAction(mcs)
-	f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
-	f.expectUpdateKubeletConfig(kc1)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectUpdateKubeletConfig(kc1)
 
-	f.run(getKey(kc1, t))
+			f.run(getKey(kc1, t))
+		})
+	}
 }
 
 func TestKubeletConfigBlacklistedOptions(t *testing.T) {
