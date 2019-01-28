@@ -347,22 +347,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:eea2525811ae00259877526b7a895caa7e85d8683b921daf46595314b32aff8a"
-  name = "github.com/openshift/cluster-version-operator"
-  packages = [
-    "pkg/apis",
-    "pkg/apis/clusterversion.openshift.io/v1",
-    "pkg/apis/operatorstatus.openshift.io/v1",
-    "pkg/generated/clientset/versioned",
-    "pkg/generated/clientset/versioned/scheme",
-    "pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1",
-    "pkg/generated/clientset/versioned/typed/operatorstatus.openshift.io/v1",
-  ]
-  pruneopts = "NUT"
-  revision = "a5a76d5118048d0e969e6bd3d40cb4c36591d171"
-
-[[projects]]
-  branch = "master"
   digest = "1:cbb8020eac6e8a28e087a73ad96e8325c6d35383dd46cefb0e5dd6b33fee49c6"
   name = "github.com/openshift/installer"
   packages = [
@@ -460,10 +444,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:7c335f12c7a49ee399afb1af500c6acd86857507848740836564e047a2bbd1b2"
+  digest = "1:e92818058cf315736d986a45f81e40b06629012d8654c0aba004df4aded15423"
   name = "golang.org/x/net"
   packages = [
     "context",
+    "context/ctxhttp",
     "http/httpguts",
     "http2",
     "http2/hpack",
@@ -471,6 +456,17 @@
   ]
   pruneopts = "NUT"
   revision = "3673e40ba22529d22c3fd7c93e97b0ce50fa7bdd"
+
+[[projects]]
+  branch = "master"
+  digest = "1:9822dde4525c2bc0130c4b8d209cb08b3ab68d4865972b20fe213fc2f732d9db"
+  name = "golang.org/x/oauth2"
+  packages = [
+    ".",
+    "internal",
+  ]
+  pruneopts = "NUT"
+  revision = "5dab4167f31cbd76b407f1486c86b40748bc5073"
 
 [[projects]]
   branch = "master"
@@ -527,6 +523,22 @@
   revision = "0bf5a322479700bd87eed5ce5e010ba369fe7161"
 
 [[projects]]
+  digest = "1:34c10243da5972105edd1b4b883e2bd918fbb3f73fbe14d6af6929e547173494"
+  name = "google.golang.org/appengine"
+  packages = [
+    "internal",
+    "internal/base",
+    "internal/datastore",
+    "internal/log",
+    "internal/remote_api",
+    "internal/urlfetch",
+    "urlfetch",
+  ]
+  pruneopts = "NUT"
+  revision = "e9657d882bb81064595ca3b56cbe2546bbabf7b1"
+  version = "v1.4.0"
+
+[[projects]]
   digest = "1:1b91ae0dc69a41d4c2ed23ea5cffb721ea63f5037ca4b81e6d6771fbb8f45129"
   name = "gopkg.in/fsnotify.v1"
   packages = ["."]
@@ -552,7 +564,7 @@
   version = "v2.2.1"
 
 [[projects]]
-  digest = "1:ef716a2116d8a040e16fbcd7fca71d3354915a94720de6af22c7a09970234296"
+  digest = "1:4485f6050feae6844efd79bce3f5b35e5ed4a21dd79ef6a2dbbee263531cea09"
   name = "k8s.io/api"
   packages = [
     "admissionregistration/v1alpha1",
@@ -566,10 +578,12 @@
     "authorization/v1beta1",
     "autoscaling/v1",
     "autoscaling/v2beta1",
+    "autoscaling/v2beta2",
     "batch/v1",
     "batch/v1beta1",
     "batch/v2alpha1",
     "certificates/v1beta1",
+    "coordination/v1beta1",
     "core/v1",
     "events/v1beta1",
     "extensions/v1beta1",
@@ -586,11 +600,11 @@
     "storage/v1beta1",
   ]
   pruneopts = "NUT"
-  revision = "2d6f90ab1293a1fb871cf149423ebb72aa7423aa"
-  version = "kubernetes-1.11.1"
+  revision = "6db15a15d2d3874a6c3ddb2140ac9f3bc7058428"
+  version = "kubernetes-1.12.5"
 
 [[projects]]
-  digest = "1:82327daaffa8cd2a1f3e4d4c2c98288bbcfa7a46a508c0ee93158eac5f7e3a76"
+  digest = "1:2443333d72c1d0eb9e023f73211e448c31bcb4c6dac90c6fbae3d1d9e01f0e3a"
   name = "k8s.io/apiextensions-apiserver"
   packages = [
     "pkg/apis/apiextensions",
@@ -603,13 +617,14 @@
     "pkg/client/informers/externalversions/apiextensions/v1beta1",
     "pkg/client/informers/externalversions/internalinterfaces",
     "pkg/client/listers/apiextensions/v1beta1",
+    "pkg/features",
   ]
   pruneopts = "NUT"
-  revision = "06dfdaae5c2bd89e1243151ff65b9bf8ee050f28"
-  version = "kubernetes-1.11.1"
+  revision = "a384d17938fe55d54a52d5668bf0ff40044daef0"
+  version = "kubernetes-1.12.5"
 
 [[projects]]
-  digest = "1:5fe9b815ecb0b60391873116d19280ccadb4198bbdd005a2e3a051b78c67a728"
+  digest = "1:7b19d7b2fca082a81e234b33077705bc2b871f588b65ba12a1050dccb855b7cd"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -643,6 +658,7 @@
     "pkg/util/json",
     "pkg/util/jsonmergepatch",
     "pkg/util/mergepatch",
+    "pkg/util/naming",
     "pkg/util/net",
     "pkg/util/rand",
     "pkg/util/runtime",
@@ -659,11 +675,22 @@
     "third_party/forked/golang/reflect",
   ]
   pruneopts = "NUT"
-  revision = "103fd098999dc9c0c88536f5c9ad2e5da39373ae"
-  version = "kubernetes-1.11.1"
+  revision = "49ce2735e5074ffc3f8190c8406cf51a96302dad"
+  version = "kubernetes-1.12.5"
 
 [[projects]]
-  digest = "1:3e18248dc0673da91a73f5d21ad615d2a1c7b2bfcec730a5d42d633159cd54da"
+  digest = "1:1a3edfee5fc152984cf5870d5f76bafc67519971908cfd49554418d63f62c0db"
+  name = "k8s.io/apiserver"
+  packages = [
+    "pkg/features",
+    "pkg/util/feature",
+  ]
+  pruneopts = "NUT"
+  revision = "a748535592ba957da14f6279ebd43cfb2fe44463"
+  version = "kubernetes-1.12.5"
+
+[[projects]]
+  digest = "1:01dea39f0993df6e0b4c53af8d434b12d2de09380dac8505df2ff85167b1dd18"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -679,12 +706,15 @@
     "informers/autoscaling",
     "informers/autoscaling/v1",
     "informers/autoscaling/v2beta1",
+    "informers/autoscaling/v2beta2",
     "informers/batch",
     "informers/batch/v1",
     "informers/batch/v1beta1",
     "informers/batch/v2alpha1",
     "informers/certificates",
     "informers/certificates/v1beta1",
+    "informers/coordination",
+    "informers/coordination/v1beta1",
     "informers/core",
     "informers/core/v1",
     "informers/events",
@@ -734,6 +764,8 @@
     "kubernetes/typed/autoscaling/v1/fake",
     "kubernetes/typed/autoscaling/v2beta1",
     "kubernetes/typed/autoscaling/v2beta1/fake",
+    "kubernetes/typed/autoscaling/v2beta2",
+    "kubernetes/typed/autoscaling/v2beta2/fake",
     "kubernetes/typed/batch/v1",
     "kubernetes/typed/batch/v1/fake",
     "kubernetes/typed/batch/v1beta1",
@@ -742,6 +774,8 @@
     "kubernetes/typed/batch/v2alpha1/fake",
     "kubernetes/typed/certificates/v1beta1",
     "kubernetes/typed/certificates/v1beta1/fake",
+    "kubernetes/typed/coordination/v1beta1",
+    "kubernetes/typed/coordination/v1beta1/fake",
     "kubernetes/typed/core/v1",
     "kubernetes/typed/core/v1/fake",
     "kubernetes/typed/events/v1beta1",
@@ -777,10 +811,12 @@
     "listers/apps/v1beta2",
     "listers/autoscaling/v1",
     "listers/autoscaling/v2beta1",
+    "listers/autoscaling/v2beta2",
     "listers/batch/v1",
     "listers/batch/v1beta1",
     "listers/batch/v2alpha1",
     "listers/certificates/v1beta1",
+    "listers/coordination/v1beta1",
     "listers/core/v1",
     "listers/events/v1beta1",
     "listers/extensions/v1beta1",
@@ -826,11 +862,11 @@
     "util/workqueue",
   ]
   pruneopts = "NUT"
-  revision = "7d04d0e2a0a1a4d4a1cd6baa432a2301492e4e65"
-  version = "v8.0.0"
+  revision = "1638f8970cefaa404ff3a62950f88b08292b2696"
+  version = "v9.0.0"
 
 [[projects]]
-  digest = "1:43ef9a37919f7a8948b7de4c05d20692f763adc40f15c9d330c544ae05d93947"
+  digest = "1:8108815d1aef9159daabdb3f0fcef04a88765536daf0c0cd29a31fdba135ee54"
   name = "k8s.io/code-generator"
   packages = [
     "cmd/client-gen",
@@ -844,8 +880,8 @@
     "pkg/util",
   ]
   pruneopts = ""
-  revision = "6702109cc68eb6fe6350b83e14407c8d7309fd1a"
-  version = "kubernetes-1.11.1"
+  revision = "b1289fc74931d4b6b04bd1a259acfc88a2cb0a66"
+  version = "kubernetes-1.12.5"
 
 [[projects]]
   digest = "1:f3ce5a03c50cf794f17d331fa9d8741db6fd8aeb5ec07d2a68eb039619f22967"
@@ -869,22 +905,38 @@
   revision = "d8ea2fe547a448256204cfc68dfee7b26c720acb"
 
 [[projects]]
-  digest = "1:8a95d26ceb1368cecc12b5f67a5e9ec920c9de3035db321b52f452db88419549"
+  digest = "1:3779973ba544114a6c2b9799b1b4997f5e6e34253537f39b5baeff46d6b0131b"
+  name = "k8s.io/kubelet"
+  packages = ["config/v1beta1"]
+  pruneopts = "NUT"
+  revision = "dbc73c1cf0484128518b1f3821cc2de24523de47"
+  version = "kubernetes-1.12.5"
+
+[[projects]]
+  digest = "1:fe9e881b39618eccb2e9f07d9f35b1d68ae05179fdb2e07c528b0f98b32aaf7c"
   name = "k8s.io/kubernetes"
   packages = [
     "pkg/apis/core",
     "pkg/apis/core/v1/helper/qos",
     "pkg/apis/scheduling",
-    "pkg/kubelet/apis/kubeletconfig",
-    "pkg/kubelet/apis/kubeletconfig/scheme",
-    "pkg/kubelet/apis/kubeletconfig/v1beta1",
+    "pkg/features",
+    "pkg/kubelet/apis/config",
+    "pkg/kubelet/apis/config/scheme",
+    "pkg/kubelet/apis/config/v1beta1",
     "pkg/kubelet/qos",
     "pkg/kubelet/types",
     "pkg/master/ports",
-    "pkg/util/pointer",
   ]
   pruneopts = "NUT"
-  revision = "v1.11.2"
+  revision = "v1.12.5"
+
+[[projects]]
+  branch = "master"
+  digest = "1:ff54706d46de40c865b5fcfc4bde1087c02510cd12e0150de8e405ab427d9907"
+  name = "k8s.io/utils"
+  packages = ["pointer"]
+  pruneopts = "NUT"
+  revision = "2b1ea019a3702bf220bab28c8e86b48cf0b05e5e"
 
 [[projects]]
   digest = "1:84a8609383bec11b71d52dd813f33f1d16614b91966940bdc2aa79bea864fa25"
@@ -913,7 +965,6 @@
     "github.com/imdario/mergo",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
-    "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
     "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
     "github.com/pkg/errors",
@@ -976,8 +1027,8 @@
     "k8s.io/client-go/util/workqueue",
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/gengo/types",
-    "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/scheme",
-    "k8s.io/kubernetes/pkg/kubelet/apis/kubeletconfig/v1beta1",
+    "k8s.io/kubelet/config/v1beta1",
+    "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

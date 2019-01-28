@@ -5,7 +5,6 @@ import (
 
 	"github.com/golang/glog"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	cvoclientset "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -39,12 +38,6 @@ func (cb *ClientBuilder) ConfigClientOrDie(name string) configclientset.Interfac
 // ClientOrDie returns the kubernetes client interface for extended kubernetes objects.
 func (cb *ClientBuilder) APIExtClientOrDie(name string) apiext.Interface {
 	return apiext.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
-}
-
-// ClusterversionClientOrDie returns the kubernetes client interface for cluster version objects.
-// TODO(yifan): Just return the client for the Operator Status objects.
-func (cb *ClientBuilder) ClusterversionClientOrDie(name string) cvoclientset.Interface {
-	return cvoclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // NewClientBuilder returns a *ClientBuilder with the given kubeconfig.
