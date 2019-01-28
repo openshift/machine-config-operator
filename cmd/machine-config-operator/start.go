@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	"github.com/golang/glog"
@@ -46,24 +47,22 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		glog.Fatalf("error creating clients: %v", err)
 	}
-	stopCh := make(chan struct{})
-	run := func(stop <-chan struct{}) {
-
-		ctx := common.CreateControllerContext(cb, stopCh, componentNamespace)
-		if err := startControllers(ctx); err != nil {
+	run := func(ctx context.Context) {
+		ctrlctx := common.CreateControllerContext(cb, ctx.Done(), componentNamespace)
+		if err := startControllers(ctrlctx); err != nil {
 			glog.Fatalf("error starting controllers: %v", err)
 		}
 
-		ctx.NamespacedInformerFactory.Start(ctx.Stop)
-		ctx.KubeInformerFactory.Start(ctx.Stop)
-		ctx.KubeNamespacedInformerFactory.Start(ctx.Stop)
-		ctx.APIExtInformerFactory.Start(ctx.Stop)
-		close(ctx.KubeInformersStarted)
+		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
+		close(ctrlctx.KubeInformersStarted)
 
 		select {}
 	}
 
-	leaderelection.RunOrDie(leaderelection.LeaderElectionConfig{
+	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
 		Lock:          common.CreateResourceLock(cb, componentNamespace, componentName),
 		LeaseDuration: common.LeaseDuration,
 		RenewDeadline: common.RenewDeadline,
