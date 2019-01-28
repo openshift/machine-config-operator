@@ -347,22 +347,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:eea2525811ae00259877526b7a895caa7e85d8683b921daf46595314b32aff8a"
-  name = "github.com/openshift/cluster-version-operator"
-  packages = [
-    "pkg/apis",
-    "pkg/apis/clusterversion.openshift.io/v1",
-    "pkg/apis/operatorstatus.openshift.io/v1",
-    "pkg/generated/clientset/versioned",
-    "pkg/generated/clientset/versioned/scheme",
-    "pkg/generated/clientset/versioned/typed/clusterversion.openshift.io/v1",
-    "pkg/generated/clientset/versioned/typed/operatorstatus.openshift.io/v1",
-  ]
-  pruneopts = "NUT"
-  revision = "a5a76d5118048d0e969e6bd3d40cb4c36591d171"
-
-[[projects]]
-  branch = "master"
   digest = "1:cbb8020eac6e8a28e087a73ad96e8325c6d35383dd46cefb0e5dd6b33fee49c6"
   name = "github.com/openshift/installer"
   packages = [
@@ -949,7 +933,6 @@
     "github.com/imdario/mergo",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
-    "github.com/openshift/cluster-version-operator/pkg/generated/clientset/versioned",
     "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
     "github.com/pkg/errors",
