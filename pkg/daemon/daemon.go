@@ -22,6 +22,7 @@ import (
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
+	fsnotify "gopkg.in/fsnotify.v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,7 +33,6 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	fsnotify "gopkg.in/fsnotify.v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -505,11 +505,11 @@ func (dn *Daemon) setupFileWatcher(watcher *fsnotify.Watcher) error {
 // applySSHTaint calls nodewriter to apply the specified ssh taint
 func (dn *Daemon) applySSHTaint() error {
 	glog.Infof("Detected ssh! The node is being tainted with: %v=%v:%v",
-	MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
+		MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
 
-	taint := &corev1.Taint {
-		Key: MachineConfigDaemonSSHTaintKey,
-		Value: MachineConfigDaemonSSHTaintValue,
+	taint := &corev1.Taint{
+		Key:    MachineConfigDaemonSSHTaintKey,
+		Value:  MachineConfigDaemonSSHTaintValue,
 		Effect: corev1.TaintEffectNoSchedule,
 	}
 	return dn.nodeWriter.SetTaint(dn.kubeClient.CoreV1().Nodes(), dn.name, taint)
@@ -783,10 +783,10 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 		return false
 	}
 	// And the rest of the disk state
-	if !dn.checkFiles(currentConfig.Spec.Config.Storage.Files) {
+	if !checkFiles(currentConfig.Spec.Config.Storage.Files) {
 		return false
 	}
-	if !dn.checkUnits(currentConfig.Spec.Config.Systemd.Units) {
+	if !checkUnits(currentConfig.Spec.Config.Systemd.Units) {
 		return false
 	}
 	return true
@@ -812,7 +812,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 
 // checkUnits validates the contents of all the units in the
 // target config and retursn true if they match.
-func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
+func checkUnits(units []ignv2_2types.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
@@ -847,8 +847,14 @@ func (dn *Daemon) checkUnits(units []ignv2_2types.Unit) bool {
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func (dn *Daemon) checkFiles(files []ignv2_2types.File) bool {
-	for _, f := range files {
+func checkFiles(files []ignv2_2types.File) bool {
+	checkedFiles := make(map[string]bool)
+	for i := len(files) - 1; i >= 0; i-- {
+		f := files[i]
+		// skip over checked validated files
+		if _, ok := checkedFiles[f.Path]; ok {
+			continue
+		}
 		mode := DefaultFilePermissions
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
@@ -861,6 +867,7 @@ func (dn *Daemon) checkFiles(files []ignv2_2types.File) bool {
 		if status := checkFileContentsAndMode(f.Path, string(contents.Data), mode); !status {
 			return false
 		}
+		checkedFiles[f.Path] = true
 	}
 	return true
 }
