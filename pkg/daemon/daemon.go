@@ -22,6 +22,7 @@ import (
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
+	fsnotify "gopkg.in/fsnotify.v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,7 +33,6 @@ import (
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	fsnotify "gopkg.in/fsnotify.v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -505,11 +505,11 @@ func (dn *Daemon) setupFileWatcher(watcher *fsnotify.Watcher) error {
 // applySSHTaint calls nodewriter to apply the specified ssh taint
 func (dn *Daemon) applySSHTaint() error {
 	glog.Infof("Detected ssh! The node is being tainted with: %v=%v:%v",
-	MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
+		MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
 
-	taint := &corev1.Taint {
-		Key: MachineConfigDaemonSSHTaintKey,
-		Value: MachineConfigDaemonSSHTaintValue,
+	taint := &corev1.Taint{
+		Key:    MachineConfigDaemonSSHTaintKey,
+		Value:  MachineConfigDaemonSSHTaintValue,
 		Effect: corev1.TaintEffectNoSchedule,
 	}
 	return dn.nodeWriter.SetTaint(dn.kubeClient.CoreV1().Nodes(), dn.name, taint)
