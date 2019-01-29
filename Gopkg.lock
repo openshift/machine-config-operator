@@ -320,15 +320,15 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:ed29ecf1c5dd11cf07819a0fac7bbbd38688b9eef4427d4e6f791d76ed4a03f4"
+  digest = "1:1f25979b12588648720041882e8fabcbcfa4e9de934047679aef520680b3c356"
   name = "github.com/openshift/api"
   packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "ffac7eec5e7f87c6a9fcbc766e3b024ed3ef39ea"
+  revision = "677153041bd22c1aa01fef67b68a8502ab1333d5"
 
 [[projects]]
   branch = "master"
-  digest = "1:fdda79460918fcab1410b47dd23e33eb1f78f80e65cb7bc80352d23d72df8893"
+  digest = "1:9b36e103bff05a4057fa060dc76376fc6cb80354be0d25e91f87f8626b00cc6c"
   name = "github.com/openshift/client-go"
   packages = [
     "config/clientset/versioned",
@@ -336,7 +336,7 @@
     "config/clientset/versioned/typed/config/v1",
   ]
   pruneopts = "NUT"
-  revision = "960f72aa32a8e9b4dd769b90ff1cb5bd4c898eec"
+  revision = "1540772775fa910515f0ff094d83ef41735d470b"
 
 [[projects]]
   digest = "1:f9c1fc8da2b44ba323ec3b338f0da9f375e26c787bc3a6ea241f9cb3f191cb62"
@@ -366,6 +366,14 @@
   packages = ["."]
   pruneopts = "NUT"
   revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
+
+[[projects]]
+  branch = "master"
+  digest = "1:a32828cebfa63f79265d9062005c23f3c737def9e8a956ddd5dc3fd5f4caffe6"
+  name = "github.com/openshift/library-go"
+  packages = ["pkg/config/clusteroperator/v1helpers"]
+  pruneopts = "NUT"
+  revision = "86f3eb4ba0e678146cf47f61010c34c638cea2d2"
 
 [[projects]]
   digest = "1:cce3a18fb0b96b5015cd8ca03a57d20a662679de03c4dc4b6ff5f17ea2050fa6"
@@ -967,6 +975,7 @@
     "github.com/openshift/client-go/config/clientset/versioned",
     "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
+    "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
     "github.com/pkg/errors",
     "github.com/spf13/cobra",
     "github.com/vincent-petithory/dataurl",
