@@ -5,13 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-systemd/dbus"
+	"github.com/coreos/go-systemd/sdjournal"
+	"github.com/golang/glog"
 )
 
-const etcPivotFile = "/etc/pivot/image-pullspec"
+const (
+	pivotUnit      = "pivot.service"
+	rpmostreedUnit = "rpm-ostreed.service"
+	etcPivotFile   = "/etc/pivot/image-pullspec"
+)
 
 // RpmOstreeState houses zero or more RpmOstreeDeployments
 // Subset of `rpm-ostree status --json`
@@ -99,6 +107,10 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 		return fmt.Errorf("error writing to %s: %v", etcPivotFile, err)
 	}
 
+	journalStopCh := make(chan time.Time)
+	defer close(journalStopCh)
+	go followPivotJournalLogs(journalStopCh)
+
 	conn, err := dbus.NewSystemdConnection()
 	if err != nil {
 		return fmt.Errorf("error creating systemd conn: %v", err)
@@ -150,4 +162,42 @@ Outer:
 		return errors.New("pivot service did not exit successfully")
 	}
 	return nil
+}
+
+// Proxy pivot and rpm-ostree daemon journal logs until told to stop. Warns if
+// we encounter an error.
+func followPivotJournalLogs(stopCh <-chan time.Time) {
+	reader, err := sdjournal.NewJournalReader(
+		sdjournal.JournalReaderConfig{
+			Since: time.Duration(1) * time.Second,
+			Matches: []sdjournal.Match{
+				{
+					Field: sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT,
+					Value: pivotUnit,
+				},
+				{
+					Field: sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT,
+					Value: rpmostreedUnit,
+				},
+			},
+			Formatter: func(entry *sdjournal.JournalEntry) (string, error) {
+				msg, ok := entry.Fields["MESSAGE"]
+				if !ok {
+					return "", fmt.Errorf("missing MESSAGE field in entry")
+				}
+				return fmt.Sprintf("%s: %s\n", entry.Fields[sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT], msg), nil
+			},
+		})
+	if err != nil {
+		glog.Warningf("Failed to open journal: %v", err)
+		return
+	}
+	defer reader.Close()
+
+	// We're kinda abusing the API here. The idea is that the stop channel is
+	// used with time.After(), hence the `chan time.Time` type. But really, it
+	// works to just never output anything and just close it as we do here.
+	if err := reader.Follow(stopCh, os.Stdout); err != sdjournal.ErrExpired {
+		glog.Warningf("Failed to follow journal: %v", err)
+	}
 }
