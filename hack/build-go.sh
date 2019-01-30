@@ -30,5 +30,10 @@ fi
 
 mkdir -p ${BIN_PATH}
 
+CGO_ENABLED=0
+if [[ $WHAT == "machine-config-daemon" ]]; then
+    CGO_ENABLED=1
+fi
+
 echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE})"
-CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build ${GOFLAGS} -ldflags "${GLDFLAGS}" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}
+CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build ${GOFLAGS} -ldflags "${GLDFLAGS}" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}
