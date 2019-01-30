@@ -7,11 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/golang/glog"
-	installertypes "github.com/openshift/installer/pkg/types"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
@@ -45,10 +42,6 @@ func RenderBootstrap(
 	}
 
 	// create ControllerConfigSpec
-	ic, err := getInstallConfigFromFile(filesData[clusterConfigConfigMapFile])
-	if err != nil {
-		return fmt.Errorf("error reading InstallConfig from file %q", clusterConfigConfigMapFile)
-	}
 	obji, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[infraFile])
 	if err != nil {
 		return err
@@ -81,7 +74,6 @@ func RenderBootstrap(
 	spec.EtcdCAData = filesData[etcdCAFile]
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
-	spec.SSHKey = ic.SSHKey
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:            imgs.Etcd,
@@ -144,17 +136,4 @@ func RenderBootstrap(
 		}
 	}
 	return nil
-}
-
-func getInstallConfigFromFile(cmData []byte) (installertypes.InstallConfig, error) {
-	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), cmData)
-	if err != nil {
-		return installertypes.InstallConfig{}, err
-	}
-	cm, ok := obji.(*corev1.ConfigMap)
-	if !ok {
-		return installertypes.InstallConfig{}, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-	}
-
-	return icFromClusterConfig(cm)
 }
