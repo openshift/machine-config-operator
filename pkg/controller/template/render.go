@@ -95,14 +95,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
 	}
 
-	sshMachineConfigForRole, err := generateSSHConfig(config.SSHKey, role)
-	if err != nil {
-		return nil, err
-	}
-
 	cfgs := []*mcfgv1.MachineConfig{}
-	cfgs = append(cfgs, sshMachineConfigForRole)
-
 	for _, info := range infos {
 		if !info.IsDir() {
 			glog.Infof("ignoring non-directory path %q", info.Name())
@@ -118,23 +111,6 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 	}
 
 	return cfgs, nil
-}
-
-// for each role a machine config is created containing the sshauthorized keys to allow for ssh access
-// ex: role = worker -> machine config "00-worker-ssh" created containing user core and ssh key
-func generateSSHConfig(sshKey string, role string) (*mcfgv1.MachineConfig, error) {
-	// Using cttypes.Config and then ctc.config.Covert allows us to create a properly structured
-	// validated Ignition Config (instead of creating one by hand) that is then added to a
-	// MachineConfig.
-	var tempctCfg cttypes.Config
-	tempUser := cttypes.User{Name: "core", SSHAuthorizedKeys: []string{sshKey}}
-	tempctCfg.Passwd.Users = append(tempctCfg.Passwd.Users, tempUser)
-	tempIgnConfig, rep := ctconfig.Convert(tempctCfg, "", nil)
-	if rep.IsFatal() {
-		return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
-	}
-	sshConfigName := "00-" + role + "-ssh"
-	return MachineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig), nil
 }
 
 func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, error) {

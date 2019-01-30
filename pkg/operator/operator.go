@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -33,7 +32,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
-	installertypes "github.com/openshift/installer/pkg/types"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -304,10 +302,6 @@ func (optr *Operator) sync(key string) error {
 	imgs.MachineOSContent = osimageurl
 
 	// sync up the ControllerConfigSpec
-	ic, err := optr.getInstallConfig()
-	if err != nil {
-		return err
-	}
 	infra, network, err := optr.getGlobalConfig()
 	if err != nil {
 		return err
@@ -320,7 +314,6 @@ func (optr *Operator) sync(key string) error {
 	spec.EtcdCAData = etcdCA
 	spec.RootCAData = bundle
 	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
-	spec.SSHKey = ic.SSHKey
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:            imgs.Etcd,
@@ -371,18 +364,6 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 	}
 }
 
-func (optr *Operator) getInstallConfig() (installertypes.InstallConfig, error) {
-	var (
-		clusterConfigNamespace = "kube-system"
-		clusterConfigName      = "cluster-config-v1"
-	)
-	clusterConfig, err := optr.kubeClient.CoreV1().ConfigMaps(clusterConfigNamespace).Get(clusterConfigName, metav1.GetOptions{})
-	if err != nil {
-		return installertypes.InstallConfig{}, err
-	}
-	return icFromClusterConfig(clusterConfig)
-}
-
 // getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
 // Each type of global configuration is named `cluster` for easy discovery in the cluster.
 func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, error) {
@@ -395,22 +376,6 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 		return nil, nil, err
 	}
 	return infra, network, nil
-}
-
-func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error) {
-	var (
-		icKey = "install-config"
-		ic    installertypes.InstallConfig
-	)
-	icData, ok := cm.Data[icKey]
-	if !ok {
-		return ic, fmt.Errorf("%s doesn't exist", icKey)
-	}
-
-	if err := yaml.Unmarshal([]byte(icData), &ic); err != nil {
-		return ic, err
-	}
-	return ic, nil
 }
 
 func getRenderConfig(tnamespace string, ccSpec *mcfgv1.ControllerConfigSpec, imgs Images, apiServerURL string) renderConfig {
