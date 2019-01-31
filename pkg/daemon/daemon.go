@@ -22,7 +22,6 @@ import (
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
-	fsnotify "gopkg.in/fsnotify.v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -102,8 +101,6 @@ const (
 	pathDevNull = "/dev/null"
 	// pathStateJSON is where we store temporary state across config changes
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
-	// pathSSHTaint is the runtime file that notifies the MCD to taint the node
-	pathSSHTaint = "/var/tmp/ssh-taint"
 )
 
 const (
@@ -284,13 +281,8 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 			return
 		case msg := <-sessionNewCh:
 			glog.Infof("Detected a new logged in session: %v", msg)
-			glog.Infof("Login session taints node")
-			err := replaceFileContentsAtomically(pathSSHTaint, []byte("tainted"))
-			if err != nil {
-				glog.Errorf("Writing taint file: %v", err)
-			}
 			if err := dn.applySSHTaint(); err != nil {
-				glog.Errorf("Error during taint: cannot apply taint due to: %v", err)
+				exitCh <- fmt.Errorf("Error during taint: cannot apply taint due to: %v", err)
 			}
 		}
 	}
