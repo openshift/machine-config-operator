@@ -302,7 +302,6 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["skip"] = skipMissing
 	funcs["etcdServerCertDNSNames"] = etcdServerCertDNSNames
 	funcs["etcdPeerCertDNSNames"] = etcdPeerCertDNSNames
-	funcs["apiServerURL"] = apiServerURL
 	funcs["cloudProvider"] = cloudProvider
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
@@ -330,10 +329,6 @@ func skipMissing(key string) (interface{}, error) {
 
 // Process the {{etcdPeerCertDNSNames}} and {{etcdServerCertDNSNames}}
 func etcdServerCertDNSNames(cfg RenderConfig) (interface{}, error) {
-	if cfg.BaseDomain == "" {
-		return nil, fmt.Errorf("invalid configuration")
-	}
-
 	var dnsNames = []string{
 		"localhost",
 		"etcd.kube-system.svc",               // sign for the local etcd service name that cluster-network apiservers use to communicate
@@ -344,23 +339,15 @@ func etcdServerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 }
 
 func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
-	if cfg.ClusterName == "" || cfg.BaseDomain == "" {
+	if cfg.EtcdDiscoveryDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
 
 	var dnsNames = []string{
 		"${ETCD_DNS_NAME}",
-		fmt.Sprintf("%s.%s", cfg.ClusterName, cfg.BaseDomain), // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
+		cfg.EtcdDiscoveryDomain, // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
 	}
 	return strings.Join(dnsNames, ","), nil
-}
-
-// generate apiserver url using cluster-name, basename
-func apiServerURL(cfg RenderConfig) (interface{}, error) {
-	if cfg.ClusterName == "" || cfg.BaseDomain == "" {
-		return nil, fmt.Errorf("invalid configuration")
-	}
-	return fmt.Sprintf("https://%s-api.%s:6443", cfg.ClusterName, cfg.BaseDomain), nil
 }
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
