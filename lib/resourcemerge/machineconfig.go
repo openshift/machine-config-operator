@@ -54,9 +54,8 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {
 	setStringIfSet(modified, &existing.ClusterDNSIP, required.ClusterDNSIP)
 	setStringIfSet(modified, &existing.CloudProviderConfig, required.CloudProviderConfig)
-	setStringIfSet(modified, &existing.ClusterName, required.ClusterName)
 	setStringIfSet(modified, &existing.Platform, required.Platform)
-	setStringIfSet(modified, &existing.BaseDomain, required.BaseDomain)
+	setStringIfSet(modified, &existing.EtcdDiscoveryDomain, required.EtcdDiscoveryDomain)
 	setStringIfSet(modified, &existing.SSHKey, required.SSHKey)
 	setStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
 
