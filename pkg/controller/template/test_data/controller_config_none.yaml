@@ -3,8 +3,7 @@ kind: "ControllerConfig"
 spec:
   clusterDNSIP: "10.3.0.10"
   cloudProviderConfig: ""
-  clusterName: "my-test-cluster"
-  baseDomain: "installer.team.coreos.systems"
+  etcdDiscoveryDomain: "my-test-cluster.installer.team.coreos.systems"
   etcdInitialCount: 3
   platform: "none"
   etcdCAData: ZHVtbXkgZXRjZC1jYQo=
