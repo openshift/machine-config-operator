@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -76,8 +77,7 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
-			ClusterName: name,
-			BaseDomain:  "tt.testing",
+			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
 		},
 	}
 	return cc
