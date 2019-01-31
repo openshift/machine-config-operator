@@ -67,4 +67,6 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 		existing.PullSecret = required.PullSecret
 		*modified = true
 	}
+
+	mergeMap(modified, &existing.Images, required.Images)
 }

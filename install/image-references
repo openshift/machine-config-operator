@@ -19,6 +19,14 @@ spec:
     from:
       kind: DockerImage
       name: docker.io/openshift/origin-machine-config-daemon:v4.0.0
+  - name: etcd
+    from:
+      kind: DockerImage
+      name: quay.io/coreos/etcd:v3.3.10
+  - name: setup-etcd-environment
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment
   # This one is special, it's the OS payload
   # https://github.com/openshift/machine-config-operator/issues/183
   # See the machine-config-osimageurl configmap.

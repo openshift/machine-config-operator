@@ -33,6 +33,8 @@ var (
 		mccImage            string
 		mcsImage            string
 		mcdImage            string
+		etcdImage           string
+		setupEtcdEnvImage   string
 		destinationDir      string
 	}
 )
@@ -44,9 +46,11 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imagesConfigMapFile, "images-json-configmap", "", "ConfigMap that contains images.json for MCO.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller. (this cannot be set if --images-json-configmap is set)")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server. (this cannot be set if --images-json-configmap is set)")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon. (this cannot be set if --images-json-configmap is set)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment. (this overrides the image from --images-json-configmap)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 }
 
@@ -65,13 +69,6 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		glog.Fatal("--config-file cannot be empty")
 	}
 
-	if bootstrapOpts.imagesConfigMapFile != "" &&
-		(bootstrapOpts.mccImage != "" ||
-			bootstrapOpts.mcsImage != "" ||
-			bootstrapOpts.mcdImage != "") {
-		glog.Fatal("both --images-json-configmap and --machine-config-{controller,server,daemon}-image flags cannot be set")
-	}
-
 	imgs := operator.DefaultImages()
 	if bootstrapOpts.imagesConfigMapFile != "" {
 		imgsRaw, err := rawImagesFromConfigMapOnDisk(bootstrapOpts.imagesConfigMapFile)
@@ -81,10 +78,21 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		if err := json.Unmarshal([]byte(imgsRaw), &imgs); err != nil {
 			glog.Fatal(err)
 		}
-	} else {
+	}
+	if bootstrapOpts.mccImage != "" {
 		imgs.MachineConfigController = bootstrapOpts.mccImage
+	}
+	if bootstrapOpts.mcsImage != "" {
 		imgs.MachineConfigServer = bootstrapOpts.mcsImage
+	}
+	if bootstrapOpts.mcdImage != "" {
 		imgs.MachineConfigDaemon = bootstrapOpts.mcdImage
+	}
+	if bootstrapOpts.etcdImage != "" {
+		imgs.Etcd = bootstrapOpts.etcdImage
+	}
+	if bootstrapOpts.setupEtcdEnvImage != "" {
+		imgs.SetupEtcdEnv = bootstrapOpts.setupEtcdEnvImage
 	}
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
