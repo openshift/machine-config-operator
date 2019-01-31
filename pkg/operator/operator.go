@@ -32,6 +32,7 @@ import (
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	installertypes "github.com/openshift/installer/pkg/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -346,6 +347,10 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1
 		PullSecret:          ps,
 		SSHKey:              mc.Spec.SSHKey,
 		OSImageURL:          osimageurl,
+		Images: map[string]string{
+			templatectrl.EtcdImageKey:    imgs.Etcd,
+			templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
+		},
 	}
 	return renderConfig{
 		TargetNamespace:  mc.GetNamespace(),

@@ -91,6 +91,13 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		*out = new(corev1.ObjectReference)
 		**out = **in
 	}
+	if in.Images != nil {
+		in, out := &in.Images, &out.Images
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	return
 }
 
