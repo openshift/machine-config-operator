@@ -4,6 +4,8 @@ By default, the OpenShift 4.0 installer creates a single user named `core` (deri
 
 This operator supports updating the SSH keys of user `core` via a MachineConfig object. The SSH keys are updated for all members of the MachineConfig pool specified in the MachineConfig, for example: all worker nodes.
 
+Please note that RHCOS nodes will be [annotated](https://github.com/openshift/machine-config-operator/blob/master/docs/MachineConfigDaemon.md#annotating-on-ssh-access) when accessed via SSH. 
+
 ## Unsupported Operations
 
 - The MCD will not add any new users.
