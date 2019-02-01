@@ -22,7 +22,6 @@ import (
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
-	fsnotify "gopkg.in/fsnotify.v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -102,8 +101,6 @@ const (
 	pathDevNull = "/dev/null"
 	// pathStateJSON is where we store temporary state across config changes
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
-	// pathSSHTaint is the runtime file that notifies the MCD to taint the node
-	pathSSHTaint = "/var/tmp/ssh-taint"
 )
 
 const (
@@ -261,19 +258,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		}
 	}
 
-	// Set up the file watcher for SSH taint
-	fileWatcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		glog.Errorf("Error creating file watcher: %v", err)
-		return dn.nodeWriter.SetUpdateDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
-	}
-	defer fileWatcher.Close()
-
-	err = dn.setupFileWatcher(fileWatcher)
-	if err != nil {
-		glog.Errorf("Error setting up file watcher: %v", err)
-		return dn.nodeWriter.SetUpdateDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
-	}
+	go dn.runLoginMonitor(stopCh, dn.exitCh)
 
 	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced) {
 		return dn.nodeWriter.SetUpdateDegradedMsgIgnoreErr("failed to sync cache", dn.kubeClient.CoreV1().Nodes(), dn.name)
@@ -283,9 +268,25 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	// handleNodeUpdate(). If a failure happens there, it writes to the channel.
 	// The HealthzMonitor goroutine also writes to this channel if the threshold
 	// is reached.
-	err = <-exitCh
+	err := <-exitCh
 
 	return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
+}
+
+func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
+	sessionNewCh := dn.loginClient.Subscribe("SessionNew")
+	for {
+		select {
+		case <-stopCh:
+			return
+		case msg := <-sessionNewCh:
+			glog.Infof("Detected a new login session: %v", msg)
+			glog.Infof("Login access is discouraged! Applying annotation: %v", MachineConfigDaemonSSHAccessAnnotationKey)
+			if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+				exitCh <- fmt.Errorf("Error: cannot apply annotation for SSH access due to: %v", err)
+			}
+		}
+	}
 }
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
@@ -445,75 +446,6 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", p.PendingConfig, dn.bootID)
 	}
 	return p.PendingConfig, nil
-}
-
-// setupFileWatcher sets up a watch on the SSH taint file via a goroutine,
-// and applies a NoSchedule taint to the node when it detects a write to
-// the file (performed by sshd)
-func (dn *Daemon) setupFileWatcher(watcher *fsnotify.Watcher) error {
-	go func() {
-		for {
-			select {
-			// watch for events on the file
-			case event := <-watcher.Events:
-				glog.V(2).Infof("Taint file watcher received event: %#v\n", event)
-				fileInfo, err := os.Stat(pathSSHTaint)
-				if err != nil {
-					glog.Error("Error during taint: cannot get fileInfo in Stat function.")
-				}
-
-				// Check if the ssh script wrote to the file
-				if fileInfo.Size() != 0 {
-					if err := dn.applySSHTaint(); err != nil {
-						glog.Errorf("Error during taint: cannot apply taint due to: %v", err)
-					}
-					// Now that the taint has been applied, we truncate the file to watch for future ssh's
-					_, err = os.Create(pathSSHTaint)
-					if err != nil {
-						glog.Infof("Error during taint: cannot truncate the file.")
-					}
-				}
-				// Re-watch the file for future SSH access
-				watcher.Add(pathSSHTaint)
-
-			case err := <-watcher.Errors:
-				glog.Errorf("Error watching runtime file: %v", err)
-			}
-		}
-	}()
-
-	// first check if there was a taint from before the reboot that we did not catch
-	if fileInfo, err := os.Stat(pathSSHTaint); !os.IsNotExist(err) && fileInfo.Size() != 0 {
-		if err = dn.applySSHTaint(); err != nil {
-			glog.Errorf("Error during taint: cannot apply taint due to: %v", err)
-		}
-
-	}
-
-	// Now create (truncate) the file to set up the watcher
-	if _, err := os.Create(pathSSHTaint); err != nil {
-		return err
-	}
-
-	if err := watcher.Add(pathSSHTaint); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// applySSHTaint calls nodewriter to apply the specified ssh taint
-func (dn *Daemon) applySSHTaint() error {
-	glog.Infof("Detected ssh! The node is being tainted with: %v=%v:%v",
-		MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
-
-	taint := &corev1.Taint{
-		Key:    MachineConfigDaemonSSHTaintKey,
-		Value:  MachineConfigDaemonSSHTaintValue,
-		Effect: corev1.TaintEffectNoSchedule,
-	}
-	return dn.nodeWriter.SetTaint(dn.kubeClient.CoreV1().Nodes(), dn.name, taint)
-
 }
 
 // CheckStateOnBoot is a core entrypoint for our state machine.

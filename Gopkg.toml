@@ -40,10 +40,6 @@ required = [
     unused-packages = false
 
 [[constraint]]
-  name = "gopkg.in/fsnotify.v1"
-  source = "gopkg.in/fsnotify/fsnotify.v1"
-
-[[constraint]]
   name = "github.com/apparentlymart/go-cidr"
   version = "1.0.0"
 

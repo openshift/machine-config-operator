@@ -14,6 +14,8 @@
 
 MachineConfigDaemon is scheduled on the machines in a cluster as a DaemonSet. This daemon is responsible for performing machine updates in OpenShift 4. The update will include tasks related to the systemd units, files on disk, operating system upgrades etc. The MachineConfigDaemon updates a machine to configuration defined by MachineConfig as instructed by the MachineConfigController.
 
+The MachineConfigDaemon is also responsible for annotating a node with `machineconfiguration.openshift.io/ssh=accessed` when it detects an SSH access to the machine.
+
 ## Supported vs Unsupported Ignition config changes
 
 The MachineConfigDaemon receives machine configuration in the form of a "rendered" or merged MachineConfig which is generated from applicable fragments by the controller.
@@ -129,3 +131,7 @@ The draining of pods on the only master node will not evict the control plane as
 ### Node drain etcd static pods on masters
 
 Etcd is co-located on master nodes as static pods. The draining behavior defined above prevents draining of static pods to prevent interference to etcd cluster by the daemon.
+
+## Annotating on SSH access
+
+RHCOS nodes in Openshift are not meant to be manually accessed via SSH. MCD uses logind to watch for login sessions, which, upon detection, warns the user and annotates the node with `machineconfiguration.openshift.io/ssh=accessed`. This in turn will be used to warn cluster admins.
