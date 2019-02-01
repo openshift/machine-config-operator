@@ -358,6 +358,7 @@ func (dn *Daemon) EnterDegradedState(err error) {
 //
 // If any of the object names are the same, they will be pointer-equal.
 type stateAndConfigs struct {
+	bootstrapping bool
 	state         string
 	currentConfig *mcfgv1.MachineConfig
 	pendingConfig *mcfgv1.MachineConfig
@@ -365,14 +366,18 @@ type stateAndConfigs struct {
 }
 
 func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
-	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true)
+	_, err := os.Lstat(InitialNodeAnnotationsFilePath)
+	bootstrapping := false
 	if err != nil {
-		return nil, err
-	}
-	// Temporary hack: the MCS used to not write the state=done annotation
-	// key.  If it's unset, let's write it now.
-	if state == "" {
-		state = MachineConfigDaemonStateDone
+		if os.IsNotExist(err) {
+			// The node annotation file (laid down by the MCS)
+			// doesn't exist, we must not be bootstrapping
+		} else {
+			return nil, err
+		}
+	} else {
+		bootstrapping = true
+		glog.Infof("In bootstrap mode")
 	}
 
 	currentConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
@@ -387,6 +392,16 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	if err != nil {
 		return nil, err
 	}
+	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true)
+	if err != nil {
+		return nil, err
+	}
+	// Temporary hack: the MCS used to not write the state=done annotation
+	// key.  If it's unset, let's write it now.
+	if state == "" {
+		state = MachineConfigDaemonStateDone
+	}
+
 	var desiredConfig *mcfgv1.MachineConfig
 	if currentConfigName == desiredConfigName {
 		desiredConfig = currentConfig
@@ -416,6 +431,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	}
 
 	return &stateAndConfigs{
+		bootstrapping: bootstrapping,
 		currentConfig: currentConfig,
 		pendingConfig: pendingConfig,
 		desiredConfig: desiredConfig,
@@ -470,6 +486,22 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		// (Though we should probably serialize the reason as an annotation)
 		glog.Info("Node is degraded; going to sleep")
 		select {}
+	}
+
+	if state.bootstrapping {
+		if !dn.checkOS(state.currentConfig.Spec.OSImageURL) {
+			glog.Infof("Bootstrap pivot required")
+			// This only returns on error
+			return dn.updateOSAndReboot(state.currentConfig)
+		} else {
+			glog.Infof("No bootstrap pivot required; unlinking bootstrap node annotations")
+			// Delete the bootstrap node annotations; the
+			// currentConfig's osImageURL should now be *truth*.
+			// In other words if it drifts somehow, we go degraded.
+			if err := os.Remove(InitialNodeAnnotationsFilePath); err != nil {
+				return errors.Wrapf(err, "Removing initial node annotations file")
+			}
+		}
 	}
 
 	// Validate the on-disk state against what we *expect*.
@@ -674,10 +706,6 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
-	if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
-		return err
-	}
-
 	if currentConfig == nil {
 		ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
 		if err != nil {
