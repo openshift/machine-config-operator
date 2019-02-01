@@ -274,8 +274,9 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
+	imgs.MachineOSContent = osimageurl
 
-	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}, imgs, osimageurl)
+	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}, imgs)
 	return optr.syncAll(rc)
 }
 
@@ -335,7 +336,7 @@ func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error)
 	return ic, nil
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1.ObjectReference, imgs Images, osimageurl string) renderConfig {
+func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1.ObjectReference, imgs Images) renderConfig {
 	controllerconfig := mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
 		CloudProviderConfig: mc.Spec.CloudProviderConfig,
@@ -346,7 +347,7 @@ func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1
 		RootCAData:          rootCAData,
 		PullSecret:          ps,
 		SSHKey:              mc.Spec.SSHKey,
-		OSImageURL:          osimageurl,
+		OSImageURL:          imgs.MachineOSContent,
 		Images: map[string]string{
 			templatectrl.EtcdImageKey:    imgs.Etcd,
 			templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
