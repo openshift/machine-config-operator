@@ -238,7 +238,11 @@ func generateMachineConfigForName(config *RenderConfig, role, name, path string)
 		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
 	}
 
-	return MachineConfigFromIgnConfig(role, name, ignCfg), nil
+	mcfg := MachineConfigFromIgnConfig(role, name, ignCfg)
+	// And inject the osimageurl here
+	mcfg.Spec.OSImageURL = config.OSImageURL
+
+	return mcfg, nil
 }
 
 const (
