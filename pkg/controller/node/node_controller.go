@@ -384,7 +384,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	pool := machineconfigpool.DeepCopy()
 	everything := metav1.LabelSelector{}
 	if reflect.DeepEqual(pool.Spec.MachineSelector, &everything) {
-		ctrl.eventRecorder.Eventf(pool, v1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machines. A non-empty selector is require.")
+		ctrl.eventRecorder.Eventf(pool, v1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machines. A non-empty selector is required.")
 		return nil
 	}
 
