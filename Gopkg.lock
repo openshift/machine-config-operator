@@ -330,23 +330,28 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:1f25979b12588648720041882e8fabcbcfa4e9de934047679aef520680b3c356"
+  digest = "1:f5576684f0b7beec89acd50a6d2c994dc283f6b3f174bed169517ffed644bada"
   name = "github.com/openshift/api"
   packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "677153041bd22c1aa01fef67b68a8502ab1333d5"
+  revision = "4912e102a00fa8bb4bf27f83808dce6ef1b6887d"
 
 [[projects]]
   branch = "master"
-  digest = "1:9b36e103bff05a4057fa060dc76376fc6cb80354be0d25e91f87f8626b00cc6c"
+  digest = "1:4241aef3caf317fe26568856891fef34c6b0d33c04a6426c2f7336462e87bbdd"
   name = "github.com/openshift/client-go"
   packages = [
     "config/clientset/versioned",
     "config/clientset/versioned/scheme",
     "config/clientset/versioned/typed/config/v1",
+    "config/informers/externalversions",
+    "config/informers/externalversions/config",
+    "config/informers/externalversions/config/v1",
+    "config/informers/externalversions/internalinterfaces",
+    "config/listers/config/v1",
   ]
   pruneopts = "NUT"
-  revision = "1540772775fa910515f0ff094d83ef41735d470b"
+  revision = "43eeb8cff295868f3cd8faa3347bcfbdc9b2a9c0"
 
 [[projects]]
   digest = "1:f9c1fc8da2b44ba323ec3b338f0da9f375e26c787bc3a6ea241f9cb3f191cb62"
@@ -976,6 +981,10 @@
     "github.com/imdario/mergo",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
+    "github.com/openshift/client-go/config/clientset/versioned/scheme",
+    "github.com/openshift/client-go/config/informers/externalversions",
+    "github.com/openshift/client-go/config/informers/externalversions/config/v1",
+    "github.com/openshift/client-go/config/listers/config/v1",
     "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
