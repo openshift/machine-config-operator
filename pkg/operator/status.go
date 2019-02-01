@@ -3,10 +3,10 @@ package operator
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
+	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,16 +26,19 @@ func (optr *Operator) syncAvailableStatus() error {
 	if co == nil {
 		return nil
 	}
-	now := metav1.Now()
+
+	optrVersion, _ := optr.vStore.Get("operator")
 	// set available
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionTrue, LastTransitionTime: now})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorAvailable, Status: configv1.ConditionTrue,
+		Message: fmt.Sprintf("Cluster is available at %s", optrVersion),
+	})
 	// clear progressing
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, LastTransitionTime: now})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 	// clear failure
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse, LastTransitionTime: now})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
 
-	co.Status.Version = version.Version.String()
-
+	co.Status.Versions = optr.vStore.GetAll()
 	optr.setMachineConfigPoolStatuses(&co.Status)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
@@ -50,23 +53,20 @@ func (optr *Operator) syncProgressingStatus() error {
 	if co == nil {
 		return nil
 	}
-	now := metav1.Now()
-	// clear the available condition
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse, LastTransitionTime: now})
 
-	// preserve the most recent failing condition
-	if IsClusterOperatorStatusConditionNotIn(co.Status.Conditions, configv1.OperatorFailing, configv1.ConditionTrue) {
-		SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse, LastTransitionTime: now})
-	}
-
-	// set progressing
-	if c := FindClusterOperatorStatusCondition(co.Status.Conditions, configv1.OperatorFailing); c != nil && c.Status == configv1.ConditionTrue {
-		SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", version.Version.String()), LastTransitionTime: now})
+	optrVersion, _ := optr.vStore.Get("operator")
+	var message string
+	if optr.vStore.Equal(co.Status.Versions) {
+		// syncing the state to existing version.
+		message = fmt.Sprintf("Running resync for %s", optrVersion)
 	} else {
-		SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Progressing towards %s", version.Version.String()), LastTransitionTime: now})
+		message = fmt.Sprintf("Progressing towards %s", optrVersion)
 	}
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue,
+		Message: message,
+	})
 
-	co.Status.Version = version.Version.String()
 	optr.setMachineConfigPoolStatuses(&co.Status)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
@@ -84,21 +84,29 @@ func (optr *Operator) syncFailingStatus(ierr error) error {
 	if co == nil {
 		return nil
 	}
-	now := metav1.Now()
-	// clear the available condition
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse, LastTransitionTime: now})
 
+	optrVersion, _ := optr.vStore.Get("operator")
+	var message string
+	if optr.vStore.Equal(co.Status.Versions) {
+		// syncing the state to exiting version.
+		message = fmt.Sprintf("Failed to resync %s because: %v", optrVersion, ierr.Error())
+	} else {
+		message = fmt.Sprintf("Failed when progressing towards %s because: %v", optrVersion, ierr.Error())
+	}
 	// set failing condition
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionTrue, Message: ierr.Error(), LastTransitionTime: now})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorFailing, Status: configv1.ConditionTrue,
+		Message: message,
+		Reason:  ierr.Error(),
+	})
 
 	// set progressing
-	if IsClusterOperatorStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
-		SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", version.Version.String()), LastTransitionTime: now})
+	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", version.Version.String())})
 	} else {
-		SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", version.Version.String()), LastTransitionTime: now})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", version.Version.String())})
 	}
 
-	co.Status.Version = version.Version.String()
 	optr.setMachineConfigPoolStatuses(&co.Status)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
@@ -127,10 +135,9 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	if err != nil {
 		return nil, err
 	}
-	now := metav1.Now()
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse, LastTransitionTime: now})
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, LastTransitionTime: now})
-	SetClusterOperatorStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse, LastTransitionTime: now})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
 	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 }
 
@@ -238,84 +245,4 @@ func machineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) string {
 	default:
 		return "<unknown>"
 	}
-}
-
-// From https://github.com/openshift/library-go/pull/97
-
-// SetClusterOperatorStatusCondition sets the corresponding condition in conditions to newCondition.
-func SetClusterOperatorStatusCondition(conditions *[]configv1.ClusterOperatorStatusCondition, newCondition configv1.ClusterOperatorStatusCondition) {
-	if conditions == nil {
-		conditions = &[]configv1.ClusterOperatorStatusCondition{}
-	}
-	existingCondition := FindClusterOperatorStatusCondition(*conditions, newCondition.Type)
-	if existingCondition == nil {
-		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
-		*conditions = append(*conditions, newCondition)
-		return
-	}
-	if existingCondition.Status != newCondition.Status {
-		existingCondition.Status = newCondition.Status
-		existingCondition.LastTransitionTime = newCondition.LastTransitionTime
-	}
-	existingCondition.Reason = newCondition.Reason
-	existingCondition.Message = newCondition.Message
-}
-
-// RemoveClusterOperatorStatusCondition removes the corresponding conditionType from conditions.
-func RemoveClusterOperatorStatusCondition(conditions *[]configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType) {
-	if conditions == nil {
-		conditions = &[]configv1.ClusterOperatorStatusCondition{}
-	}
-	newConditions := []configv1.ClusterOperatorStatusCondition{}
-	for _, condition := range *conditions {
-		if condition.Type != conditionType {
-			newConditions = append(newConditions, condition)
-		}
-	}
-	*conditions = newConditions
-}
-
-// FindClusterOperatorStatusCondition finds the conditionType in conditions.
-func FindClusterOperatorStatusCondition(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType) *configv1.ClusterOperatorStatusCondition {
-	for i := range conditions {
-		if conditions[i].Type == conditionType {
-			return &conditions[i]
-		}
-	}
-	return nil
-}
-
-// IsClusterOperatorStatusConditionTrue returns true when the conditionType is present and set to `configv1.ConditionTrue`
-func IsClusterOperatorStatusConditionTrue(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType) bool {
-	return IsClusterOperatorStatusConditionPresentAndEqual(conditions, conditionType, configv1.ConditionTrue)
-}
-
-// IsClusterOperatorStatusConditionFalse returns true when the conditionType is present and set to `configv1.ConditionFalse`
-func IsClusterOperatorStatusConditionFalse(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType) bool {
-	return IsClusterOperatorStatusConditionPresentAndEqual(conditions, conditionType, configv1.ConditionFalse)
-}
-
-// IsClusterOperatorStatusConditionPresentAndEqual returns true when conditionType is present and equal to status.
-func IsClusterOperatorStatusConditionPresentAndEqual(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType, status configv1.ConditionStatus) bool {
-	for _, condition := range conditions {
-		if condition.Type == conditionType {
-			return condition.Status == status
-		}
-	}
-	return false
-}
-
-// IsClusterOperatorStatusConditionNotIn returns true when the conditionType does not match the status.
-func IsClusterOperatorStatusConditionNotIn(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType, status ...configv1.ConditionStatus) bool {
-	for _, condition := range conditions {
-		if condition.Type == conditionType {
-			for _, s := range status {
-				if s == condition.Status {
-					return false
-				}
-			}
-			return true
-		}
-	}
-	return true
 }

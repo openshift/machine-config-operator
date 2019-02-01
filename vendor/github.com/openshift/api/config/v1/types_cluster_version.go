@@ -37,7 +37,8 @@ type ClusterVersionSpec struct {
 	// the current version does not match the desired version). The set of
 	// recommended update values is listed as part of available updates in
 	// status, and setting values outside that range may cause the upgrade
-	// to fail.
+	// to fail. You may specify the version field without setting image if
+	// an update exists with that version in the availableUpdates or history.
 	//
 	// If an upgrade fails the operator will halt and report status
 	// about the failing component. Setting the desired update value back to
@@ -73,17 +74,24 @@ type ClusterVersionSpec struct {
 // progress, or is failing.
 // +k8s:deepcopy-gen=true
 type ClusterVersionStatus struct {
-	// current is the version that the cluster will be reconciled to. This
-	// value may be empty during cluster startup, and then will be set whenever
-	// a new update is being applied. Use the conditions array to know whether
-	// the update is complete.
-	Current Update `json:"current"`
+	// desired is the version that the cluster is reconciling towards.
+	// If the cluster is not yet fully initialized desired will be set
+	// with the information available, which may be an image or a tag.
+	Desired Update `json:"desired"`
 
-	// generation reports which version of the spec is being processed.
-	// If this value is not equal to metadata.generation, then the
-	// current and conditions fields have not yet been updated to reflect
-	// the latest request.
-	Generation int64 `json:"generation"`
+	// history contains a list of the most recent versions applied to the cluster.
+	// This value may be empty during cluster startup, and then will be updated
+	// when a new update is being applied. The newest update is first in the
+	// list and it is ordered by recency. Updates in the history have state
+	// Completed if the rollout completed - if an update was failing or halfway
+	// applied the state will be Partial. Only a limited amount of update history
+	// is preserved.
+	History []UpdateHistory `json:"history"`
+
+	// observedGeneration reports which version of the spec is being synced.
+	// If this value is not equal to metadata.generation, then the desired
+	// and conditions fields may represent from a previous version.
+	ObservedGeneration int64 `json:"observedGeneration"`
 
 	// versionHash is a fingerprint of the content that the cluster will be
 	// updated with. It is used by the operator to avoid unnecessary work
@@ -104,6 +112,46 @@ type ClusterVersionStatus struct {
 	// if the update service is unavailable, or if an invalid channel has
 	// been specified.
 	AvailableUpdates []Update `json:"availableUpdates"`
+}
+
+// UpdateState is a constant representing whether an update was successfully
+// applied to the cluster or not.
+type UpdateState string
+
+const (
+	// CompletedUpdate indicates an update was successfully applied
+	// to the cluster (all resource updates were successful).
+	CompletedUpdate UpdateState = "Completed"
+	// PartialUpdate indicates an update was never completely applied
+	// or is currently being applied.
+	PartialUpdate UpdateState = "Partial"
+)
+
+// UpdateHistory is a single attempted update to the cluster.
+type UpdateHistory struct {
+	// state reflects whether the update was fully applied. The Partial state
+	// indicates the update is not fully applied, while the Completed state
+	// indicates the update was successfully rolled out at least once (all
+	// parts of the update successfully applied).
+	State UpdateState `json:"state"`
+
+	// startedTime is the time at which the update was started.
+	StartedTime metav1.Time `json:"startedTime"`
+	// completionTime, if set, is when the update was fully applied. The update
+	// that is currently being applied will have a null completion time.
+	// Completion time will always be set for entries that are not the current
+	// update (usually to the started time of the next update).
+	CompletionTime *metav1.Time `json:"completionTime"`
+
+	// version is a semantic versioning identifying the update version. If the
+	// requested image does not define a version, or if a failure occurs
+	// retrieving the image, this value may be empty.
+	//
+	// +optional
+	Version string `json:"version"`
+	// image is a container image location that contains the update. This value
+	// is always populated.
+	Image string `json:"image"`
 }
 
 // ClusterID is string RFC4122 uuid.
@@ -134,20 +182,20 @@ type ComponentOverride struct {
 type URL string
 
 // Update represents a release of the ClusterVersionOperator, referenced by the
-// Payload member.
+// Image member.
 // +k8s:deepcopy-gen=true
 type Update struct {
 	// version is a semantic versioning identifying the update version. When this
-	// field is part of spec, version is optional if payload is specified.
+	// field is part of spec, version is optional if image is specified.
 	//
 	// +optional
 	Version string `json:"version"`
-	// payload is a container image location that contains the update. When this
-	// field is part of spec, payload is optional if version is specified and the
+	// image is a container image location that contains the update. When this
+	// field is part of spec, image is optional if version is specified and the
 	// availableUpdates field contains a matching version.
 	//
 	// +optional
-	Payload string `json:"payload"`
+	Image string `json:"image"`
 }
 
 // RetrievedUpdates reports whether available updates have been retrieved from
