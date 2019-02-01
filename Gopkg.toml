@@ -96,6 +96,10 @@ required = [
   revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
 
 [[constraint]]
+  name = "github.com/openshift/library-go"
+  branch = "master"
+
+[[constraint]]
   name = "github.com/spf13/cobra"
   version = "v0.0.3"
 

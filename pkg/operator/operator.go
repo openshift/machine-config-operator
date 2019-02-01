@@ -58,6 +58,8 @@ type Operator struct {
 
 	imagesFile string
 
+	vStore *versionStore
+
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
 	apiExtClient  apiextclientset.Interface
@@ -114,6 +116,7 @@ func New(
 		namespace:     namespace,
 		name:          name,
 		imagesFile:    imagesFile,
+		vStore:        newVersionStore(),
 		client:        client,
 		kubeClient:    kubeClient,
 		apiExtClient:  apiExtClient,
@@ -121,6 +124,9 @@ func New(
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigoperator"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
+
+	// set operator version in version store
+	optr.vStore.Set("operator", version.Version.String())
 
 	mcoconfigInformer.Informer().AddEventHandler(optr.eventHandler())
 	controllerConfigInformer.Informer().AddEventHandler(optr.eventHandler())
