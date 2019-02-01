@@ -31,8 +31,8 @@ const (
 	// MachineConfigOnceFromLocalConfig denotes that the config was found locally
 	MachineConfigOnceFromLocalConfig = "LOCAL"
 
-	// MachineConfigDaemonSSHTaintKey is the taint key applied when ssh access is detected
-	MachineConfigDaemonSSHTaintKey = "rhcosSsh"
-	// MachineConfigDaemonSSHTaintValue is the taint value applied when ssh access is detecte
-	MachineConfigDaemonSSHTaintValue = "accessed"
+	// MachineConfigSSHAccessAnnotationKey is used to mark a node after it has been accessed via SSH
+	MachineConfigDaemonSSHAccessAnnotationKey = "machineconfiguration.openshift.io/ssh"
+	// MachineConfigDaemonSSHAccessValue is the annotation value applied when ssh access is detected
+	MachineConfigDaemonSSHAccessValue = "accessed"
 )
