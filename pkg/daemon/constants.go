@@ -31,7 +31,7 @@ const (
 	// MachineConfigOnceFromLocalConfig denotes that the config was found locally
 	MachineConfigOnceFromLocalConfig = "LOCAL"
 
-	// MachineConfigSSHAccessAnnotationKey is used to mark a node after it has been accessed via SSH
+	// MachineConfigDaemonSSHAccessAnnotationKey is used to mark a node after it has been accessed via SSH
 	MachineConfigDaemonSSHAccessAnnotationKey = "machineconfiguration.openshift.io/ssh"
 	// MachineConfigDaemonSSHAccessValue is the annotation value applied when ssh access is detected
 	MachineConfigDaemonSSHAccessValue = "accessed"

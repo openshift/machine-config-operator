@@ -103,9 +103,9 @@ func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, 
 // node to degraded due to that error.
 func (nw *NodeWriter) SetUpdateDegradedIgnoreErr(err error, client corev1.NodeInterface, node string) error {
 	// log error here since the caller won't look at it
-	degraded_err := nw.SetUpdateDegraded(err, client, node)
-	if degraded_err != nil {
-		glog.Errorf("Error while setting degraded: %v", degraded_err)
+	degradedErr := nw.SetUpdateDegraded(err, client, node)
+	if degradedErr != nil {
+		glog.Errorf("Error while setting degraded: %v", degradedErr)
 	}
 	return err
 }
@@ -119,17 +119,17 @@ func (nw *NodeWriter) SetUpdateDegradedMsgIgnoreErr(msg string, client corev1.No
 
 // SetSSHAccessed sets the ssh annotation to accessed
 func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) error {
-        annos := map[string]string{
-                MachineConfigDaemonSSHAccessAnnotationKey: MachineConfigDaemonSSHAccessValue,
-        }
-        respChan := make(chan error, 1)
-        nw.writer <- message{
-                client:          client,
-                node:            node,
-                annos:           annos,
-                responseChannel: respChan,
-        }
-        return <-respChan
+	annos := map[string]string{
+		MachineConfigDaemonSSHAccessAnnotationKey: MachineConfigDaemonSSHAccessValue,
+	}
+	respChan := make(chan error, 1)
+	nw.writer <- message{
+		client:          client,
+		node:            node,
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	return <-respChan
 }
 
 // updateNodeRetry calls f to update a node object in Kubernetes.

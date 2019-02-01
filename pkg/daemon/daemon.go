@@ -250,7 +250,8 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			glog.V(2).Info("Daemon running directly from Ignition")
 			ignConfig := genericConfig.(ignv2_2types.Config)
 			return dn.runOnceFromIgnition(ignConfig)
-		} else if configType == MachineConfigMCFileType {
+		}
+		if configType == MachineConfigMCFileType {
 			glog.V(2).Info("Daemon running directly from MachineConfig")
 			mcConfig := genericConfig.(*(mcfgv1.MachineConfig))
 			// this already sets the node as degraded on error in the in-cluster path
@@ -367,17 +368,16 @@ type stateAndConfigs struct {
 
 func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
 	_, err := os.Lstat(InitialNodeAnnotationsFilePath)
-	bootstrapping := false
+	var bootstrapping bool
 	if err != nil {
-		if os.IsNotExist(err) {
-			// The node annotation file (laid down by the MCS)
-			// doesn't exist, we must not be bootstrapping
-		} else {
+		if !os.IsNotExist(err) {
 			return nil, err
 		}
+		// The node annotation file (laid down by the MCS)
+		// doesn't exist, we must not be bootstrapping
 	} else {
 		bootstrapping = true
-		glog.Infof("In bootstrap mode")
+		glog.Info("In bootstrap mode")
 	}
 
 	currentConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
@@ -449,9 +449,8 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return "", errors.Wrapf(err, "Loading transient state")
-		} else {
-			return "", nil
 		}
+		return "", nil
 	}
 	var p pendingConfigState
 	if err := json.Unmarshal([]byte(s), &p); err != nil {
@@ -490,17 +489,16 @@ func (dn *Daemon) CheckStateOnBoot() error {
 
 	if state.bootstrapping {
 		if !dn.checkOS(state.currentConfig.Spec.OSImageURL) {
-			glog.Infof("Bootstrap pivot required")
+			glog.Info("Bootstrap pivot required")
 			// This only returns on error
 			return dn.updateOSAndReboot(state.currentConfig)
-		} else {
-			glog.Infof("No bootstrap pivot required; unlinking bootstrap node annotations")
-			// Delete the bootstrap node annotations; the
-			// currentConfig's osImageURL should now be *truth*.
-			// In other words if it drifts somehow, we go degraded.
-			if err := os.Remove(InitialNodeAnnotationsFilePath); err != nil {
-				return errors.Wrapf(err, "Removing initial node annotations file")
-			}
+		}
+		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
+		// Delete the bootstrap node annotations; the
+		// currentConfig's osImageURL should now be *truth*.
+		// In other words if it drifts somehow, we go degraded.
+		if err := os.Remove(InitialNodeAnnotationsFilePath); err != nil {
+			return errors.Wrapf(err, "Removing initial node annotations file")
 		}
 	}
 
@@ -521,9 +519,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	}
 	if isOnDiskValid := dn.validateOnDiskState(expectedConfig); !isOnDiskValid {
 		return errors.New("Unexpected on-disk state")
-	} else {
-		glog.Info("Validated on-disk state")
 	}
+	glog.Info("Validated on-disk state")
 
 	// We've validated our state.  In the case where we had a pendingConfig,
 	// make that now currentConfig.  We update the node annotation, delete the
@@ -559,15 +556,10 @@ func (dn *Daemon) CheckStateOnBoot() error {
 
 		// All good!
 		return nil
-	} else {
-		// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
-		// Kick off an update.
-		if err := dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig); err != nil {
-			return err
-		}
 	}
-
-	return nil
+	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
+	// Kick off an update.
+	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 }
 
 // runOnceFromMachineConfig utilizes a parsed machineConfig and executes in onceFrom
@@ -579,7 +571,8 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
-		} else if needUpdate == false {
+		}
+		if !needUpdate {
 			return nil
 		}
 		// At this point we have verified we need to update
@@ -587,8 +580,8 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		}
 		return nil
-
-	} else if contentFrom == MachineConfigOnceFromLocalConfig {
+	}
+	if contentFrom == MachineConfigOnceFromLocalConfig {
 		// NOTE: This case expects that the cluster is NOT CREATED YET.
 		oldConfig := mcfgv1.MachineConfig{}
 		// Execute update without hitting the cluster
@@ -644,9 +637,11 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 // update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
-	if state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey); err != nil {
+	state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey)
+	if err != nil {
 		return false, err
-	} else if state == MachineConfigDaemonStateDegraded {
+	}
+	if state == MachineConfigDaemonStateDegraded {
 		return false, fmt.Errorf("state is already degraded")
 	}
 
@@ -676,7 +671,7 @@ func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv
 
 	// we managed to update the machine without rebooting. in this case,
 	// continue as usual waiting for the next update
-	glog.V(2).Infof("Successfully updated without reboot")
+	glog.V(2).Info("Successfully updated without reboot")
 	return nil
 }
 
@@ -764,7 +759,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	// XXX: The installer doesn't pivot yet so for now, just make ""
 	// mean "unset, don't pivot". See also: https://github.com/openshift/installer/issues/281
 	if dn.isUnspecifiedOS(osImageURL) {
-		glog.Infof(`No target osImageURL provided`)
+		glog.Info(`No target osImageURL provided`)
 		return true
 	}
 	return dn.bootedOSImageURL == osImageURL
@@ -865,7 +860,7 @@ func (dn *Daemon) Close() {
 
 func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {
 	// Retry for 5 minutes to get a MachineConfig in case of transient errors.
-	var mc *mcfgv1.MachineConfig = nil
+	var mc *mcfgv1.MachineConfig
 	err := wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
 		var err error
 		mc, err = client.Get(name, metav1.GetOptions{})
@@ -926,7 +921,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 	// Try each supported parser
 	ignConfig, _, err := ignv2.Parse(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
-		glog.V(2).Infof("onceFrom file is of type Ignition")
+		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, MachineConfigIgnitionFileType, contentFrom, nil
 	}
 
@@ -935,7 +930,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 	// Try to parse as a machine config
 	mc, err := resourceread.ReadMachineConfigV1(content)
 	if err == nil {
-		glog.V(2).Infof("onceFrom file is of type MachineConfig")
+		glog.V(2).Info("onceFrom file is of type MachineConfig")
 		return mc, MachineConfigMCFileType, contentFrom, nil
 	}
 
