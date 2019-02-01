@@ -8,14 +8,21 @@ import (
 
 	"github.com/golang/glog"
 	installertypes "github.com/openshift/installer/pkg/types"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
+
+	configv1 "github.com/openshift/api/config/v1"
+	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+
+	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
+	infraFile, networkFile string,
 	etcdCAFile, rootCAFile string, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
@@ -23,11 +30,8 @@ func RenderBootstrap(
 	filesData := map[string][]byte{}
 	files := []string{
 		clusterConfigConfigMapFile,
-		rootCAFile,
-		etcdCAFile,
-	}
-	if pullSecretFile != "" {
-		files = append(files, pullSecretFile)
+		infraFile, networkFile,
+		rootCAFile, etcdCAFile, pullSecretFile,
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -37,12 +41,43 @@ func RenderBootstrap(
 		filesData[file] = data
 	}
 
-	mcoconfig, err := discoverMCOConfig(getInstallConfigFromFile(filesData[clusterConfigConfigMapFile]))
+	// create ControllerConfigSpec
+	ic, err := getInstallConfigFromFile(filesData[clusterConfigConfigMapFile])
 	if err != nil {
-		return fmt.Errorf("error discovering MCOConfig from %q: %v", clusterConfigConfigMapFile, err)
+		return fmt.Errorf("error reading InstallConfig from file %q", clusterConfigConfigMapFile)
+	}
+	obji, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[infraFile])
+	if err != nil {
+		return err
+	}
+	infra, ok := obji.(*configv1.Infrastructure)
+	if !ok {
+		return fmt.Errorf("expected *configv1.Infrastructure found %T", obji)
 	}
 
-	config := getRenderConfig(mcoconfig, filesData[etcdCAFile], filesData[rootCAFile], nil, imgs)
+	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[networkFile])
+	if err != nil {
+		return err
+	}
+	network, ok := obji.(*configv1.Network)
+	if !ok {
+		return fmt.Errorf("expected *configv1.Network found %T", obji)
+	}
+	spec, err := createDiscoveredControllerConfigSpec(infra, network)
+	if err != nil {
+		return err
+	}
+	spec.EtcdCAData = filesData[etcdCAFile]
+	spec.RootCAData = filesData[rootCAFile]
+	spec.PullSecret = nil
+	spec.SSHKey = ic.SSHKey
+	spec.OSImageURL = imgs.MachineOSContent
+	spec.Images = map[string]string{
+		templatectrl.EtcdImageKey:    imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
+	}
+
+	config := getRenderConfig("", spec, imgs, infra.Status.APIServerURL)
 
 	manifests := []struct {
 		name     string
@@ -98,17 +133,15 @@ func RenderBootstrap(
 	return nil
 }
 
-func getInstallConfigFromFile(cmData []byte) installConfigGetter {
-	return func() (installertypes.InstallConfig, error) {
-		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), cmData)
-		if err != nil {
-			return installertypes.InstallConfig{}, err
-		}
-		cm, ok := obji.(*corev1.ConfigMap)
-		if !ok {
-			return installertypes.InstallConfig{}, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-		}
-
-		return icFromClusterConfig(cm)
+func getInstallConfigFromFile(cmData []byte) (installertypes.InstallConfig, error) {
+	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), cmData)
+	if err != nil {
+		return installertypes.InstallConfig{}, err
 	}
+	cm, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return installertypes.InstallConfig{}, fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+
+	return icFromClusterConfig(cm)
 }

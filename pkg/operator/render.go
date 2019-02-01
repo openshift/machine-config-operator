@@ -9,8 +9,9 @@ import (
 	"github.com/Masterminds/sprig"
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/ghodss/yaml"
-	"github.com/golang/glog"
-	installertypes "github.com/openshift/installer/pkg/types"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 )
@@ -19,6 +20,7 @@ type renderConfig struct {
 	TargetNamespace  string
 	Version          string
 	ControllerConfig mcfgv1.ControllerConfigSpec
+	APIServerURL     string
 	Images           Images
 }
 
@@ -51,49 +53,31 @@ func toYAML(i interface{}) []byte {
 	return out
 }
 
-type installConfigGetter func() (installertypes.InstallConfig, error)
-
-func discoverMCOConfig(f installConfigGetter) (*mcfgv1.MCOConfig, error) {
-	ic, err := f()
+func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, network *configv1.Network) (*mcfgv1.ControllerConfigSpec, error) {
+	if len(network.Spec.ServiceNetwork) == 0 {
+		return nil, fmt.Errorf("service cidr is empty in Network")
+	}
+	dnsIP, err := clusterDNSIP(network.Spec.ServiceNetwork[0])
 	if err != nil {
 		return nil, err
 	}
-	dnsIP, err := clusterDNSIP(ic.Networking.ServiceCIDR.String())
-	if err != nil {
-		return nil, err
+
+	platform := "none"
+	switch infra.Status.Platform {
+	case configv1.AWSPlatform:
+		platform = "aws"
+	case configv1.OpenStackPlatform:
+		platform = "openstack"
+	case configv1.LibvirtPlatform:
+		platform = "libvirt"
 	}
 
-	platform, err := platformFromInstallConfig(ic)
-	if err != nil {
-		glog.Warningf("Warning: %v, using %s", err, platform)
-	}
-
-	return &mcfgv1.MCOConfig{
-		Spec: mcfgv1.MCOConfigSpec{
-			ClusterDNSIP:        dnsIP,
-			CloudProviderConfig: "",
-			ClusterName:         ic.ObjectMeta.Name,
-			Platform:            platform,
-			BaseDomain:          ic.BaseDomain,
-			SSHKey:              ic.SSHKey,
-		},
+	return &mcfgv1.ControllerConfigSpec{
+		ClusterDNSIP:        dnsIP,
+		CloudProviderConfig: "",
+		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
+		Platform:            platform,
 	}, nil
-}
-
-func platformFromInstallConfig(ic installertypes.InstallConfig) (string, error) {
-	// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
-	switch {
-	case ic.Platform.AWS != nil:
-		return "aws", nil
-	case ic.Platform.OpenStack != nil:
-		return "openstack", nil
-	case ic.Libvirt != nil:
-		return "libvirt", nil
-	case ic.None != nil:
-		return "none", nil
-	default:
-		return "none", fmt.Errorf("the install config referenced a platform other than 'aws', 'libvirt', 'openstack', or 'none'")
-	}
 }
 
 func clusterDNSIP(iprange string) (string, error) {
