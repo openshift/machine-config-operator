@@ -280,9 +280,10 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 		case <-stopCh:
 			return
 		case msg := <-sessionNewCh:
-			glog.Infof("Detected a new logged in session: %v", msg)
-			if err := dn.applySSHTaint(); err != nil {
-				exitCh <- fmt.Errorf("Error during taint: cannot apply taint due to: %v", err)
+			glog.Infof("Detected a new login session: %v", msg)
+			glog.Infof("Login access is discouraged! Applying annotation: %v", MachineConfigDaemonSSHAccessAnnotationKey)
+			if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+				exitCh <- fmt.Errorf("Error: cannot apply annotation for SSH access due to: %v", err)
 			}
 		}
 	}
@@ -445,22 +446,6 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", p.PendingConfig, dn.bootID)
 	}
 	return p.PendingConfig, nil
-}
-
-// applySSHTaint calls nodewriter to apply the specified ssh taint
-// (or it will in the future)
-func (dn *Daemon) applySSHTaint() error {
-	glog.Infof("NOTE: In a future version of RHCOS this will taint the node")
-	return nil
-	// glog.Infof("Detected ssh! The node is being tainted with: %v=%v:%v",
-	// MachineConfigDaemonSSHTaintKey, MachineConfigDaemonSSHTaintValue, corev1.TaintEffectNoSchedule)
-
-	// taint := &corev1.Taint {
-	// 	Key: MachineConfigDaemonSSHTaintKey,
-	// 	Value: MachineConfigDaemonSSHTaintValue,
-	// 	Effect: corev1.TaintEffectNoSchedule,
-	// }
-	// return dn.nodeWriter.SetTaint(dn.kubeClient.CoreV1().Nodes(), dn.name, taint)
 }
 
 // CheckStateOnBoot is a core entrypoint for our state machine.
