@@ -66,9 +66,7 @@ func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
-	var err error
-
-	if err = dn.updateOS(newConfig); err != nil {
+	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
 
@@ -92,7 +90,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 		if err != nil {
 			return err
 		}
-		glog.V(2).Infof("Node successfully drained")
+		glog.V(2).Info("Node successfully drained")
 	}
 
 	// reboot. this function shouldn't actually return.
@@ -101,10 +99,8 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	var err error
-
 	if dn.nodeWriter != nil {
-		if err = dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 			return err
 		}
 	}
@@ -125,15 +121,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	// update files on disk that need updating
-	if err = dn.updateFiles(oldConfig, newConfig); err != nil {
+	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
 		return err
 	}
 
-	if err = dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
+	if err := dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
 		return err
 	}
 
-	if err = dn.writePendingState(newConfig); err != nil {
+	if err := dn.writePendingState(newConfig); err != nil {
 		return errors.Wrapf(err, "writing pending state")
 	}
 
@@ -154,7 +150,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Infof("Missing kind in old config. Assuming no prior state.")
+		glog.Info("Missing kind in old config. Assuming no prior state.")
 		return nil
 	}
 	oldIgn := oldConfig.Spec.Config
@@ -253,7 +249,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// we can reconcile any state changes in the systemd section.
 
 	// we made it through all the checks. reconcile away!
-	glog.V(2).Infof("Configs are reconcilable")
+	glog.V(2).Info("Configs are reconcilable")
 	return nil
 }
 
@@ -303,15 +299,12 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 	if err := dn.writeFiles(newConfig.Spec.Config.Storage.Files); err != nil {
 		return err
 	}
-
 	if err := dn.writeUnits(newConfig.Spec.Config.Systemd.Units); err != nil {
 		return err
 	}
-
 	if err := dn.deleteStaleData(oldConfig, newConfig); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -330,12 +323,12 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		if _, ok := newFileSet[f.Path]; !ok {
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			if err := dn.fileSystemClient.Remove(f.Path); err != nil {
-				new_err := fmt.Errorf("Unable to delete %s: %s", f.Path, err)
+				newErr := fmt.Errorf("Unable to delete %s: %s", f.Path, err)
 				if !os.IsNotExist(err) {
-					return new_err
+					return newErr
 				}
 				// otherwise, just warn
-				glog.Warningf("%v", new_err)
+				glog.Warningf("%v", newErr)
 			}
 		}
 	}
@@ -357,12 +350,12 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 			if _, ok := newDropinSet[path]; !ok {
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := dn.fileSystemClient.Remove(path); err != nil {
-					new_err := fmt.Errorf("Unable to delete %s: %s", path, err)
+					newErr := fmt.Errorf("Unable to delete %s: %s", path, err)
 					if !os.IsNotExist(err) {
-						return new_err
+						return newErr
 					}
 					// otherwise, just warn
-					glog.Warningf("%v", new_err)
+					glog.Warningf("%v", newErr)
 				}
 			}
 		}
@@ -373,12 +366,12 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			if err := dn.fileSystemClient.Remove(path); err != nil {
-				new_err := fmt.Errorf("Unable to delete %s: %s", path, err)
+				newErr := fmt.Errorf("Unable to delete %s: %s", path, err)
 				if !os.IsNotExist(err) {
-					return new_err
+					return newErr
 				}
 				// otherwise, just warn
-				glog.Warningf("%v", new_err)
+				glog.Warningf("%v", newErr)
 			}
 		}
 	}
@@ -455,7 +448,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		// check if the unit is masked. if it is, we write a symlink to
 		// /dev/null and continue
 		if u.Mask {
-			glog.V(2).Infof("Systemd unit masked.")
+			glog.V(2).Info("Systemd unit masked")
 			if err := dn.fileSystemClient.RemoveAll(path); err != nil {
 				return fmt.Errorf("Failed to remove unit %q: %v", u.Name, err)
 			}
@@ -470,7 +463,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		// write the unit to disk
-		err := ioutil.WriteFile(path, []byte(u.Contents), os.FileMode(DefaultFilePermissions))
+		err := ioutil.WriteFile(path, []byte(u.Contents), DefaultFilePermissions)
 		if err != nil {
 			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
 		}
@@ -484,23 +477,23 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		// be fine as disableUnit is idempotent.
 		// Note: we have to check for legacy unit.Enable and honor it
 		glog.Infof("Enabling systemd unit %q", u.Name)
-		if u.Enable == true {
+		if u.Enable {
 			if err := dn.enableUnit(u); err != nil {
 				return err
 			}
-			glog.V(2).Infof("Enabled systemd unit %q: ", u.Name)
+			glog.V(2).Infof("Enabled systemd unit %q", u.Name)
 		}
 		if u.Enabled != nil {
 			if *u.Enabled {
 				if err := dn.enableUnit(u); err != nil {
 					return err
 				}
-				glog.V(2).Infof("Enabled systemd unit %q: ", u.Name)
+				glog.V(2).Infof("Enabled systemd unit %q", u.Name)
 			} else {
 				if err := dn.disableUnit(u); err != nil {
 					return err
 				}
-				glog.V(2).Infof("Disabled systemd unit %q: ", u.Name)
+				glog.V(2).Infof("Disabled systemd unit %q", u.Name)
 			}
 		}
 	}
@@ -528,8 +521,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		if err != nil {
 			return err
 		}
-		_, err = file.WriteString(string(contents.Data))
-		if err != nil {
+		if _, err = file.WriteString(string(contents.Data)); err != nil {
 			return fmt.Errorf("Failed to write inline contents to file %q: %v", f.Path, err)
 		}
 
@@ -538,8 +530,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		err = file.Chmod(mode)
-		if err != nil {
+		if err := file.Chmod(mode); err != nil {
 			return fmt.Errorf("Failed to set file mode for file %q: %v", f.Path, err)
 		}
 
@@ -549,19 +540,16 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 			if err != nil {
 				return fmt.Errorf("Failed to retrieve file ownership for file %q: %v", f.Path, err)
 			}
-			err = file.Chown(uid, gid)
-			if err != nil {
+			if err := file.Chown(uid, gid); err != nil {
 				return fmt.Errorf("Failed to set file ownership for file %q: %v", f.Path, err)
 			}
 		}
 
-		err = file.Sync()
-		if err != nil {
+		if err := file.Sync(); err != nil {
 			return fmt.Errorf("Failed to sync file %q: %v", f.Path, err)
 		}
 
-		err = file.Close()
-		if err != nil {
+		if err := file.Close(); err != nil {
 			return fmt.Errorf("Failed to close file %q: %v", f.Path, err)
 		}
 	}
@@ -636,7 +624,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		glog.V(2).Infof("Updating of non RHCOS nodes are not supported")
+		glog.V(2).Info("Updating of non RHCOS nodes are not supported")
 		return nil
 	}
 
@@ -644,7 +632,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 	// see similar logic in checkOS()
 	if dn.isUnspecifiedOS(newURL) {
-		glog.Infof(`No target osImageURL provided`)
+		glog.Info("No target osImageURL provided")
 		return nil
 	}
 
