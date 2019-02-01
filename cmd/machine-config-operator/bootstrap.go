@@ -29,6 +29,8 @@ var (
 		pullSecretFile      string
 		configFile          string
 		oscontentImage      string
+		infraConfigFile     string
+		networkConfigFile   string
 		imagesConfigMapFile string
 		mccImage            string
 		mcsImage            string
@@ -60,6 +62,8 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("setup-etcd-env-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.networkConfigFile, "network-config-file", "/assets/manifests/cluster-network-02-config.yml", "File containing network.config.openshift.io manifest.")
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -71,15 +75,16 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 
 	imgs := operator.Images{
 		MachineConfigController: bootstrapOpts.mccImage,
-		MachineConfigDaemon: bootstrapOpts.mcdImage,
-		MachineConfigServer: bootstrapOpts.mcsImage,
-		MachineOSContent: bootstrapOpts.oscontentImage,
-		Etcd: bootstrapOpts.etcdImage,
-		SetupEtcdEnv: bootstrapOpts.setupEtcdEnvImage,
+		MachineConfigDaemon:     bootstrapOpts.mcdImage,
+		MachineConfigServer:     bootstrapOpts.mcsImage,
+		MachineOSContent:        bootstrapOpts.oscontentImage,
+		Etcd:                    bootstrapOpts.etcdImage,
+		SetupEtcdEnv:            bootstrapOpts.setupEtcdEnvImage,
 	}
 
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
+		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
 		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.pullSecretFile,
 		imgs,
 		bootstrapOpts.destinationDir,
