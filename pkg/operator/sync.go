@@ -20,17 +20,20 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
-type syncFunc func(config renderConfig) error
+type syncFunc struct {
+	name string
+	fn   func(config renderConfig) error
+}
 
 func (optr *Operator) syncAll(rconfig renderConfig) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
-	syncFuncs := []syncFunc{
-		optr.syncMachineConfigPools,
-		optr.syncMachineConfigController,
-		optr.syncMachineConfigServer,
-		optr.syncMachineConfigDaemon,
-		optr.syncRequiredMachineConfigPools,
+	var syncFuncs = []syncFunc{
+		{ "pools", optr.syncMachineConfigPools },
+		{ "mcc", optr.syncMachineConfigController },
+		{ "mcs", optr.syncMachineConfigServer },
+		{ "mcd", optr.syncMachineConfigDaemon },
+		{ "required-pools", optr.syncRequiredMachineConfigPools },
 	}
 
 	if err := optr.syncProgressingStatus(); err != nil {
@@ -38,8 +41,12 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	}
 
 	var errs []error
-	for _, f := range syncFuncs {
-		errs = append(errs, f(rconfig))
+	for _, sf := range syncFuncs {
+		startTime := time.Now()
+		errs = append(errs, sf.fn(rconfig))
+		if optr.inClusterBringup {
+			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
+		}
 		optr.syncProgressingStatus()
 	}
 
@@ -48,6 +55,9 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 		errs = append(errs, optr.syncFailingStatus(agg))
 		agg = utilerrors.NewAggregate(errs)
 		return fmt.Errorf("error syncing: %v", agg.Error())
+	} else if optr.inClusterBringup {
+		glog.Infof("Initialization complete")
+		optr.inClusterBringup = false
 	}
 
 	return optr.syncAvailableStatus()
