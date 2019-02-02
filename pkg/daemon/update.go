@@ -470,7 +470,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		// write the unit to disk
-		err := ioutil.WriteFile(path, []byte(u.Contents), os.FileMode(DefaultFilePermissions))
+		err := ioutil.WriteFile(path, []byte(u.Contents), DefaultFilePermissions)
 		if err != nil {
 			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
 		}
@@ -536,7 +536,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		// chmod and chown
 		mode := DefaultFilePermissions
 		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
+			mode = os.FileMode(decToOct(*f.Mode))
 		}
 		err = file.Chmod(mode)
 		if err != nil {

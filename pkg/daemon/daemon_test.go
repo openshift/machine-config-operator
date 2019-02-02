@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"math"
 	"os"
 	"strconv"
 	"testing"
@@ -30,12 +31,27 @@ func TestValidPath(t *testing.T) {
 	}
 }
 
+func octToDec(number int) int {
+	decimal := 0
+	counter := 0.0
+	remainder := 0
+
+	for number != 0 {
+		remainder = number % 10
+		decimal += remainder * int(math.Pow(8.0, counter))
+		number = number / 10
+		counter++
+	}
+	return decimal
+}
+
 func TestOverwrittenFile(t *testing.T) {
 	fi, err := os.Lstat("fixtures/test1.txt")
 	if err != nil {
 		t.Errorf("Could not Lstat file: %v", err)
 	}
 	fileMode := int(fi.Mode().Perm())
+	fileMode = octToDec(fileMode)
 
 	// validate single file
 	files := []ignv2_2types.File{

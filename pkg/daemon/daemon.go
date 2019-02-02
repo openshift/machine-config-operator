@@ -805,6 +805,19 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 	return true
 }
 
+func decToOct(number int) int {
+	octal := 0
+	counter := 1
+	remainder := 0
+	for number != 0 {
+		remainder = number % 8
+		number = number / 8
+		octal += remainder * counter
+		counter *= 10
+	}
+	return octal
+}
+
 // checkFiles validates the contents of  all the files in the
 // target config.
 func checkFiles(files []ignv2_2types.File) bool {
@@ -817,7 +830,7 @@ func checkFiles(files []ignv2_2types.File) bool {
 		}
 		mode := DefaultFilePermissions
 		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
+			mode = os.FileMode(decToOct(*f.Mode))
 		}
 		contents, err := dataurl.DecodeString(f.Contents.Source)
 		if err != nil {
@@ -842,7 +855,7 @@ func checkFileContentsAndMode(filePath, expectedContent string, mode os.FileMode
 		glog.Errorf("could not stat file: %q, error: %v", filePath, err)
 		return false
 	}
-	if fi.Mode() != mode {
+	if fi.Mode().String() != mode.String() {
 		glog.Errorf("mode mismatch for file: %q; expected: %v; received: %v", filePath, mode, fi.Mode())
 		return false
 	}
