@@ -134,6 +134,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		if err != nil {
 			glog.Fatalf("failed to initialize daemon: %v", err)
 		}
+
+		// in the daemon case
+		if err := dn.BindPodMounts(); err != nil {
+			glog.Fatalf("binding pod mounts: %s", err)
+		}
 	}
 
 	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
