@@ -103,6 +103,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
 			exitCh,
+			stopCh,
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize single run daemon: %v", err)
@@ -130,6 +131,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
 			exitCh,
+			stopCh,
 		)
 		if err != nil {
 			glog.Fatalf("failed to initialize daemon: %v", err)
