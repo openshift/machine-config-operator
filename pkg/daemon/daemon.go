@@ -83,6 +83,9 @@ type Daemon struct {
 
 	// channel used by callbacks to signal Run() of an error
 	exitCh chan<- error
+
+	// channel used to ensure all spawned goroutines exit when we exit.
+	stopCh <-chan struct{}
 }
 
 // pendingConfigState is stored as JSON at pathStateJSON; it is only
@@ -133,6 +136,7 @@ func New(
 	kubeletHealthzEndpoint string,
 	nodeWriter *NodeWriter,
 	exitCh chan<- error,
+	stopCh <-chan struct{},
 ) (*Daemon, error) {
 
 	loginClient, err := login1.New()
@@ -170,6 +174,7 @@ func New(
 		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
 		nodeWriter:             nodeWriter,
 		exitCh:                 exitCh,
+		stopCh:                 stopCh,
 	}
 
 	return dn, nil
@@ -191,6 +196,7 @@ func NewClusterDrivenDaemon(
 	kubeletHealthzEndpoint string,
 	nodeWriter *NodeWriter,
 	exitCh chan<- error,
+	stopCh <-chan struct{},
 ) (*Daemon, error) {
 	dn, err := New(
 		rootMount,
@@ -203,6 +209,7 @@ func NewClusterDrivenDaemon(
 		kubeletHealthzEndpoint,
 		nodeWriter,
 		exitCh,
+		stopCh,
 	)
 
 	if err != nil {
@@ -221,6 +228,8 @@ func NewClusterDrivenDaemon(
 	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
 		return nil, err
 	}
+
+	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: dn.handleNodeUpdate,
@@ -259,8 +268,6 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			return dn.runOnceFromMachineConfig(*mcConfig, contentFrom)
 		}
 	}
-
-	go dn.runLoginMonitor(stopCh, dn.exitCh)
 
 	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced) {
 		return dn.nodeWriter.SetUpdateDegradedMsgIgnoreErr("failed to sync cache", dn.kubeClient.CoreV1().Nodes(), dn.name)
