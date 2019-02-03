@@ -279,7 +279,11 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 		select {
 		case <-stopCh:
 			return
-		case msg := <-sessionNewCh:
+		case msg, ok := <-sessionNewCh:
+			if !ok {
+				glog.V(4).Info("Not adding the ssh accessed annotation because the logind SessionNew channel is closed")
+				return
+			}
 			glog.Infof("Detected a new login session: %v", msg)
 			glog.Infof("Login access is discouraged! Applying annotation: %v", MachineConfigDaemonSSHAccessAnnotationKey)
 			if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
