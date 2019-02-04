@@ -20,14 +20,15 @@ func GetHostRunningOS(rootFs string) (string, error) {
 		return "", err
 	}
 	// See https://github.com/openshift/redhat-release-coreos/blob/master/redhat-release-coreos.spec
-	if or.ID == "rhcos" {
+	switch or.ID {
+	case "rhcos":
 		return MachineConfigDaemonOSRHCOS, nil
-	} else if or.ID == "rhel" {
+	case "rhel":
 		return MachineConfigDaemonOSRHEL, nil
-	} else if or.ID == "centos" {
+	case "centos":
 		return MachineConfigDaemonOSCENTOS, nil
+	default:
+		// default to unknown OS
+		return "", fmt.Errorf("An unsupported OS is being used: %s:%s", or.ID, or.VARIANT_ID)
 	}
-	// default to unknown OS
-	return "", fmt.Errorf(
-		"An unsupported OS is being used: %s:%s", or.ID, or.VARIANT_ID)
 }
