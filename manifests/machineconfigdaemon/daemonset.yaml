@@ -27,6 +27,10 @@ spec:
         volumeMounts:
           - mountPath: /rootfs
             name: rootfs
+          # For now, we chroot into /rootfs, so we're not really making use of
+          # these mount points below (it works transparently right now because
+          # the mounted path is the same as the host path). They're mostly kept
+          # for documentation purposes, and in case we stop chroot'ing.
           - mountPath: /var/run/dbus
             name: var-run-dbus
           - mountPath: /run/systemd
