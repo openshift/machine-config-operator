@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -272,6 +273,18 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	err := <-exitCh
 
 	return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
+}
+
+// BindPodMounts ensures that the daemon can still see e.g. /run/secrets/kubernetes.io
+// service account tokens after chrooting.  This function must be called before chroot.
+func (dn *Daemon) BindPodMounts() error {
+	targetSecrets := filepath.Join(dn.rootMount, "/run/secrets")
+	if err := os.MkdirAll(targetSecrets, 0755); err != nil {
+		return err
+	}
+	// This will only affect our mount namespace, not the host
+	mnt := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets)
+	return mnt.Run()
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
