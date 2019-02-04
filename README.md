@@ -52,7 +52,7 @@ One known ergonomic issue right now for supplying files is that you must encode 
 via [`data:` URIs](https://en.wikipedia.org/wiki/Data_URI_scheme). This is part of
 the current Ignition specification.
 
-Note also the `mode` is in decimal; mode `420` is octal `0644` or `rw-r--r--`.
+In the example below, the `mode` is in octal (notice the leading `0`); however, decimal is the canonical representation for `mode` when inspecting `MachineConfigs` (in the example, it's `420` below).
 
 This example MachineConfig object replaces `/etc/chrony.conf` with some
 custom NTP time servers; see
@@ -66,6 +66,30 @@ metadata:
   labels:
     machineconfiguration.openshift.io/role: worker
   name: 50-examplecorp-chrony
+spec:
+  config:
+    storage:
+      files:
+      - contents:
+          source: data:,server%20foo.example.net%20maxdelay%200.4%20offline%0Aserver%20bar.example.net%20maxdelay%200.4%20offline%0Aserver%20baz.example.net%20maxdelay%200.4%20offline
+        filesystem: root
+        mode: 0644
+        path: /etc/chrony.conf
+```
+
+```yaml
+# oc get machineconfigs -o yaml 50-examplecorp-chrony
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: 2019-02-03T16:51:18Z
+  generation: 1
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 50-examplecorp-chrony
+  resourceVersion: "24634"
+  selfLink: /apis/machineconfiguration.openshift.io/v1/machineconfigs/50-examplecorp-chrony
+  uid: ed13afd1-27d3-11e9-a281-067ebaf71038
 spec:
   config:
     storage:
