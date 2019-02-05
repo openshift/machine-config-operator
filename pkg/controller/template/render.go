@@ -89,6 +89,7 @@ func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1
 	return cfgs, nil
 }
 
+// GenerateMachineConfigsForRole creates MachineConfigs for the role provided
 func GenerateMachineConfigsForRole(config *RenderConfig, role string, path string) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
@@ -245,6 +246,7 @@ const (
 	machineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
 )
 
+// MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
 func MachineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
 	labels := map[string]string{
 		machineConfigRoleLabelKey: role,
