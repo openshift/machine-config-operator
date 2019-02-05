@@ -334,29 +334,29 @@ func TestGenerateMachineConfigsSSH(t *testing.T) {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
 
-		var masterSsh *mcfgv1.MachineConfig
-		var workerSsh *mcfgv1.MachineConfig
+		var masterSSH *mcfgv1.MachineConfig
+		var workerSSH *mcfgv1.MachineConfig
 		for _, cfg := range cfgs {
 			name := cfg.ObjectMeta.Name
 			switch name {
 			case "00-master-ssh":
 				{
-					masterSsh = cfg
+					masterSSH = cfg
 				}
 			case "00-worker-ssh":
 				{
-					workerSsh = cfg
+					workerSSH = cfg
 				}
 			}
 		}
-		if masterSsh == nil {
+		if masterSSH == nil {
 			t.Fatal("Failed to find 00-master-ssh")
 		}
-		validateSSHConfig(t, masterSsh)
-		if workerSsh == nil {
+		validateSSHConfig(t, masterSSH)
+		if workerSSH == nil {
 			t.Fatal("Failed to find 00-worker-ssh")
 		}
-		validateSSHConfig(t, workerSsh)
+		validateSSHConfig(t, workerSSH)
 	}
 }
 
