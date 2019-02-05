@@ -32,6 +32,12 @@ type RenderConfig struct {
 const (
 	filesDir = "files"
 	unitsDir = "units"
+
+	platformAWS       = "aws"
+	platformOpenstack = "openstack"
+	platformLibvirt   = "libvirt"
+	platformNone      = "none"
+	platformBase      = "_base"
 )
 
 // generateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -120,14 +126,14 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 	switch ic.Platform {
 	case "":
 		return "", fmt.Errorf("cannot generateMachineConfigs with an empty platform field")
-	case "_base":
+	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case "aws", "openstack", "libvirt", "none":
+	case platformAWS, platformOpenstack, platformLibvirt, platformNone:
 		// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
 		return ic.Platform, nil
 	default:
-		glog.Warningf("Warning: the controller config referenced a platform other than 'aws', 'libvirt', 'openstack', or 'none': %s", ic.Platform)
-		return "none", nil
+		glog.Warningf("Warning: the controller config referenced an unsupported platform: %s", ic.Platform)
+		return platformNone, nil
 	}
 }
 
@@ -170,7 +176,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, path string)
 	}
 
 	platformDirs := []string{}
-	for _, dir := range []string{"_base", platform} {
+	for _, dir := range []string{platformBase, platform} {
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
 		if err != nil {
@@ -357,10 +363,10 @@ func apiServerURL(cfg RenderConfig) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	switch cfg.Platform {
-	case "aws":
-		return "aws", nil
-	case "openstack":
-		return "openstack", nil
+	case platformAWS:
+		return platformAWS, nil
+	case platformOpenstack:
+		return platformOpenstack, nil
 	}
 	return "", nil
 }
