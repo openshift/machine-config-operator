@@ -103,7 +103,7 @@ spec:
                       --network host \
                       --user=$(id --user etcd) \
                     '${ETCD_IMAGE}' \
-                      /usr/local/bin/etcd \
+                      etcd \
                         --name=my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems \
                         --advertise-client-urls=https://my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems:2379 \
                         --cert-file=/etc/ssl/etcd/system:etcd-server:my-test-cluster-etcd-{{.etcd_index}}.installer.team.coreos.systems.crt \
