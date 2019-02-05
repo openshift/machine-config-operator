@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// we are transitioning from legacy ports 49500/49501 -> 22623/22624
+	// this can be removed once fully transitioned in the installer.
+	legacySecurePort   = 49500
+	legacyInsecurePort = 49501
+)
+
 var (
 	bootstrapCmd = &cobra.Command{
 		Use:   "bootstrap",
@@ -45,10 +52,14 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	apiHandler := server.NewServerAPIHandler(bs)
 	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
 	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
+	legacySecureServer := server.NewAPIServer(apiHandler, legacySecurePort, false, rootOpts.cert, rootOpts.key)
+	legacyInsecureServer := server.NewAPIServer(apiHandler, legacyInsecurePort, true, "", "")
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()
 	go insecureServer.Serve()
+	go legacySecureServer.Serve()
+	go legacyInsecureServer.Serve()
 	<-stopCh
 	panic("not possible")
 }

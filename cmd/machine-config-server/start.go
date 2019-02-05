@@ -45,13 +45,19 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Exitf("Machine Config Server exited with error: %v", err)
 	}
 
+	// we are transitioning from legacy ports 49500/49501 -> 22623/22624
+	// legacySecureServer/legacyInsecureServer will be removed once the installer commits port changes.
 	apiHandler := server.NewServerAPIHandler(cs)
 	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
 	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
+	legacySecureServer := server.NewAPIServer(apiHandler, legacySecurePort, false, rootOpts.cert, rootOpts.key)
+	legacyInsecureServer := server.NewAPIServer(apiHandler, legacyInsecurePort, true, "", "")
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()
 	go insecureServer.Serve()
+	go legacySecureServer.Serve()
+	go legacyInsecureServer.Serve()
 	<-stopCh
 	panic("not possible")
 }
