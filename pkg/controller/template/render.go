@@ -131,6 +131,38 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 	}
 }
 
+func filterTemplates(toFilter map[string]string, path string, config *RenderConfig) error {
+	walkFn := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// empty templates signify don't create
+		if info.Size() == 0 {
+			delete(toFilter, info.Name())
+			return nil
+		}
+
+		filedata, err := ioutil.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read file %q: %v", path, err)
+		}
+
+		// Render the template file
+		renderedData, err := renderTemplate(*config, path, filedata)
+		if err != nil {
+			return err
+		}
+		toFilter[info.Name()] = string(renderedData)
+		return nil
+	}
+
+	return filepath.Walk(path, walkFn)
+}
+
 func generateMachineConfigForName(config *RenderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
 	platform, err := platformFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
@@ -155,63 +187,30 @@ func generateMachineConfigForName(config *RenderConfig, role, name, path string)
 	units := map[string]string{}
 	// walk all role dirs, with later ones taking precedence
 	for _, platformDir := range platformDirs {
-		// magic param
-		var walkDest *map[string]string
-
-		walkFn := func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
-			}
-
-			// empty templates signify don't create
-			if info.Size() == 0 {
-				delete(*walkDest, info.Name())
-				return nil
-			}
-
-			filedata, err := ioutil.ReadFile(path)
-			if err != nil {
-				return fmt.Errorf("failed to read file %s: %v", path, err)
-			}
-
-			// Render the template file
-			renderedData, err := renderTemplate(*config, path, filedata)
-			if err != nil {
-				return err
-			}
-			(*walkDest)[info.Name()] = string(renderedData)
-			return nil
-		}
-
-		walkDest = &files
 		p := filepath.Join(platformDir, filesDir)
 		exists, err := existsDir(p)
 		if err != nil {
 			return nil, err
 		}
 		if exists {
-			if err := filepath.Walk(p, walkFn); err != nil {
+			if err := filterTemplates(files, p, config); err != nil {
 				return nil, err
 			}
 		}
 
-		walkDest = &units
 		p = filepath.Join(platformDir, unitsDir)
 		exists, err = existsDir(p)
 		if err != nil {
 			return nil, err
 		}
 		if exists {
-			if err := filepath.Walk(p, walkFn); err != nil {
+			if err := filterTemplates(units, p, config); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	// keySortV returns a list of values, sorted by key
+	// keySortVals returns a list of values, sorted by key
 	// we need the lists of files and units to have a stable ordering for the checksum
 	keySortVals := func(m map[string]string) []string {
 		ks := []string{}
@@ -291,7 +290,6 @@ func transpileToIgn(files, units []string) (*ignv2_2types.Config, error) {
 // renderTemplate renders a template file with values from a RenderConfig
 // returns the rendered file data
 func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) {
-
 	funcs := sprig.TxtFuncMap()
 	funcs["skip"] = skipMissing
 	funcs["etcdServerCertDNSNames"] = etcdServerCertDNSNames
