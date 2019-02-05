@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/login1"
+	"github.com/coreos/go-systemd/sdjournal"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
@@ -252,6 +253,48 @@ func NewClusterDrivenDaemon(
 	return dn, nil
 }
 
+const (
+	// IDs are taken from https://cgit.freedesktop.org/systemd/systemd/plain/src/systemd/sd-messages.h
+	sdMessageSessionStart = "8d45620c1a4348dbb17410da57c60c66"
+)
+
+func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
+	journal, err := sdjournal.NewJournal()
+	if err != nil {
+		return err
+	}
+	defer journal.Close()
+	if err := journal.AddMatch("MESSAGE_ID=" + sdMessageSessionStart); err != nil {
+		return err
+	}
+	if err := journal.SeekHead(); err != nil {
+		return err
+	}
+	r, err := journal.Next()
+	if err != nil {
+		return err
+	}
+	// journal EOF
+	if r == 0 {
+		return nil
+	}
+	// just one entry is enough to understand if someone jumped on the node
+	// from the very first boot
+	entry, err := journal.GetEntry()
+	if err != nil {
+		return err
+	}
+	// just sanity checking
+	if entry != nil {
+		glog.Info("Detected a login session before the daemon took over on first boot")
+		glog.Infof("Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
+		if err := dn.applySSHAccessedAnnotation(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Run finishes informer setup and then blocks, and the informer will be
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
@@ -319,11 +362,18 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 			}
 			glog.Infof("Detected a new login session: %v", msg)
 			glog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
-			if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
-				exitCh <- fmt.Errorf("Error: cannot apply annotation for SSH access due to: %v", err)
+			if err := dn.applySSHAccessedAnnotation(); err != nil {
+				exitCh <- err
 			}
 		}
 	}
+}
+
+func (dn *Daemon) applySSHAccessedAnnotation() error {
+	if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+		return fmt.Errorf("error: cannot apply annotation for SSH access due to: %v", err)
+	}
+	return nil
 }
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
@@ -502,7 +552,8 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 // CheckStateOnBoot is a core entrypoint for our state machine.
 // It determines whether we're in our desired state, or if we're
 // transitioning between states, and whether or not we need to update
-// to a new state.
+// to a new state. It also checks if someone jumped on a node before
+// the daemon took over.
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
 func (dn *Daemon) CheckStateOnBoot() error {
@@ -513,6 +564,11 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	state, err := dn.getStateAndConfigs(pendingConfigName)
 	if err != nil {
 		return err
+	}
+	if state.bootstrapping {
+		if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
+			return fmt.Errorf("error detecting early SSH accesses: %v", err)
+		}
 	}
 	if state.state == constants.MachineConfigDaemonStateDegraded {
 		// We're already degraded.  Sleep so that we don't clobber
