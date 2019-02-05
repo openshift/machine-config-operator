@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	"sync"
 
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -82,9 +83,11 @@ func (f *fixture) newController() *Controller {
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+	var readyFlag sync.WaitGroup
+	readyFlag.Add(1)
 	c := New(templateDir,
 		i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigs(),
-		f.kubeclient, f.client)
+		f.kubeclient, f.client, &readyFlag)
 
 	c.ccListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady

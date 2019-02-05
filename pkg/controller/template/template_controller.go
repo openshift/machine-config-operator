@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -47,6 +48,13 @@ type Controller struct {
 	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
+	// firstSync is in charge of closing the readyFlag WaitGroup the first time
+	// the controller is initialized on startup
+	firstSync sync.Once
+	// readyFlag is in charge of the very first sync of the controller
+	// with the others
+	readyFlag *sync.WaitGroup
+
 	syncHandler             func(ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
@@ -66,6 +74,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	readyFlag *sync.WaitGroup,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -99,6 +108,8 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+
+	ctrl.readyFlag = readyFlag
 
 	return ctrl
 }
@@ -364,6 +375,11 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 			glog.V(4).Infof("Machineconfig %s was updated", mc.Name)
 		}
 	}
+
+	ctrl.firstSync.Do(func() {
+		glog.Infof("Initial template sync done")
+		ctrl.readyFlag.Done()
+	})
 
 	return ctrl.syncCompletedStatus(cfg)
 }
