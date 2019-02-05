@@ -8,14 +8,14 @@ import (
 )
 
 const (
-	componentName      = "machine-config-operator"
+	componentName      = "machine-config"
 	componentNamespace = "openshift-machine-config-operator"
 )
 
 var (
 	rootCmd = &cobra.Command{
 		Use:   componentName,
-		Short: "Run Machine Config Controller",
+		Short: "Run Machine Config Operator",
 		Long:  "",
 	}
 
