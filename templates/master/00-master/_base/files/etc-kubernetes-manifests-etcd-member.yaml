@@ -82,7 +82,7 @@ contents:
 
           source /run/etcd/environment
 
-          /usr/local/bin/etcd \
+          etcd \
             --discovery-srv {{.ClusterName}}.{{.BaseDomain}} \
             --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
