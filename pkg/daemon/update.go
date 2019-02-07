@@ -22,6 +22,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -81,11 +82,22 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 
 		dn.recorder.Eventf(node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
-		err = drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
-			DeleteLocalData:    true,
-			Force:              true,
-			GracePeriodSeconds: 600,
-			IgnoreDaemonsets:   true,
+		err = wait.ExponentialBackoff(wait.Backoff{
+			Steps:    5,
+			Duration: 10 * time.Second,
+			Factor:   2,
+		}, func() (bool, error) {
+			err := drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
+				DeleteLocalData:    true,
+				Force:              true,
+				GracePeriodSeconds: 600,
+				IgnoreDaemonsets:   true,
+			})
+			if err != nil {
+				glog.Infof("Draining failed with: %v; retrying...", err)
+				return false, nil
+			}
+			return true, nil
 		})
 		if err != nil {
 			return err
