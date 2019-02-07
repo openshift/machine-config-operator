@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -46,14 +45,21 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.rootCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "path to root CA certificate")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imagesConfigMapFile, "images-json-configmap", "", "ConfigMap that contains images.json for MCO.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller. (this overrides the image from --images-json-configmap)")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server. (this overrides the image from --images-json-configmap)")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.MarkFlagRequired("dest-dir")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller.")
+	bootstrapCmd.MarkFlagRequired("machine-config-controller-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server.")
+	bootstrapCmd.MarkFlagRequired("machine-config-server-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon.")
+	bootstrapCmd.MarkFlagRequired("machine-config-daemon-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd. (this overrides the image from --images-json-configmap)")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment. (this overrides the image from --images-json-configmap)")
+	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
+	bootstrapCmd.MarkFlagRequired("etcd-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment.")
+	bootstrapCmd.MarkFlagRequired("setup-etcd-env-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
+	bootstrapCmd.MarkFlagRequired("config-file")
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -63,41 +69,13 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
 
-	if bootstrapOpts.destinationDir == "" {
-		glog.Fatal("--dest-dir cannot be empty")
-	}
-
-	if bootstrapOpts.configFile == "" {
-		glog.Fatal("--config-file cannot be empty")
-	}
-
-	imgs := operator.DefaultImages()
-	if bootstrapOpts.imagesConfigMapFile != "" {
-		imgsRaw, err := rawImagesFromConfigMapOnDisk(bootstrapOpts.imagesConfigMapFile)
-		if err != nil {
-			glog.Fatal(err)
-		}
-		if err := json.Unmarshal([]byte(imgsRaw), &imgs); err != nil {
-			glog.Fatal(err)
-		}
-	}
-	if bootstrapOpts.mccImage != "" {
-		imgs.MachineConfigController = bootstrapOpts.mccImage
-	}
-	if bootstrapOpts.mcsImage != "" {
-		imgs.MachineConfigServer = bootstrapOpts.mcsImage
-	}
-	if bootstrapOpts.mcdImage != "" {
-		imgs.MachineConfigDaemon = bootstrapOpts.mcdImage
-	}
-	if bootstrapOpts.etcdImage != "" {
-		imgs.Etcd = bootstrapOpts.etcdImage
-	}
-	if bootstrapOpts.setupEtcdEnvImage != "" {
-		imgs.SetupEtcdEnv = bootstrapOpts.setupEtcdEnvImage
-	}
-	if bootstrapOpts.oscontentImage != "" {
-		imgs.MachineOSContent = bootstrapOpts.oscontentImage
+	imgs := operator.Images{
+		MachineConfigController: bootstrapOpts.mccImage,
+		MachineConfigDaemon: bootstrapOpts.mcdImage,
+		MachineConfigServer: bootstrapOpts.mcsImage,
+		MachineOSContent: bootstrapOpts.oscontentImage,
+		Etcd: bootstrapOpts.etcdImage,
+		SetupEtcdEnv: bootstrapOpts.setupEtcdEnvImage,
 	}
 
 	if err := operator.RenderBootstrap(

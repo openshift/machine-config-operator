@@ -1,6 +1,12 @@
 package operator
 
-// Images allows build systems to inject images for MCO components.
+// This data is derived from what github.com/openshift/installer's
+// bootkube.sh provides.  If you want to add a new image, you need
+// to "ratchet" the change as follows:
+//
+// Add the image here and also a CLI option with a default value
+// Change the installer to pass that arg with the image from the CVO
+// (some time later) Change the option to required and drop the default
 type Images struct {
 	MachineConfigController string `json:"machineConfigController"`
 	MachineConfigDaemon     string `json:"machineConfigDaemon"`
@@ -8,16 +14,4 @@ type Images struct {
 	MachineOSContent        string `json:"machineOSContent"`
 	Etcd                    string `json:"etcd"`
 	SetupEtcdEnv            string `json:"setupEtcdEnv"`
-}
-
-// DefaultImages returns default set of images for operator.
-func DefaultImages() Images {
-	return Images{
-		MachineConfigController: "docker.io/openshift/origin-machine-config-controller:v4.0.0",
-		MachineConfigDaemon:     "docker.io/openshift/origin-machine-config-daemon:v4.0.0",
-		MachineConfigServer:     "docker.io/openshift/origin-machine-config-server:v4.0.0",
-		MachineOSContent:        "",
-		Etcd:                    "quay.io/coreos/etcd:v3.3.10",
-		SetupEtcdEnv:            "registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment",
-	}
 }
