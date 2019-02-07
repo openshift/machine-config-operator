@@ -324,7 +324,7 @@
   name = "github.com/openshift/api"
   packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "677153041bd22c1aa01fef67b68a8502ab1333d5"
+  revision = "d67473e7f1907b74d1f27706260eecf0bc9f2a52"
 
 [[projects]]
   branch = "master"
