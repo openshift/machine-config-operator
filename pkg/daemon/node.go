@@ -7,20 +7,15 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	core_v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
-const (
-	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.
-	// The Machine Config Server writes the node annotations to this path.
-	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
-)
-
 func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
-	ccAnnotation, err := getNodeAnnotation(client, node, CurrentMachineConfigAnnotationKey)
+	ccAnnotation, err := getNodeAnnotation(client, node, constants.CurrentMachineConfigAnnotationKey)
 
 	// we need to load the annotations from the file only for the
 	// first run.
@@ -30,9 +25,9 @@ func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 		return nil
 	}
 
-	d, err := ioutil.ReadFile(InitialNodeAnnotationsFilePath)
+	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
 	if err != nil {
-		return fmt.Errorf("Failed to read initial annotations from %q: %v", InitialNodeAnnotationsFilePath, err)
+		return fmt.Errorf("Failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
 	}
 
 	var initial map[string]string
@@ -41,7 +36,7 @@ func loadNodeAnnotations(client corev1.NodeInterface, node string) error {
 		return fmt.Errorf("Failed to unmarshal initial annotations: %v", err)
 	}
 
-	glog.Infof("Setting initial node config: %s", initial[CurrentMachineConfigAnnotationKey])
+	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
 	err = setNodeAnnotations(client, node, initial)
 	if err != nil {
 		return fmt.Errorf("Failed to set initial annotations: %v", err)

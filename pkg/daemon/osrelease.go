@@ -7,6 +7,15 @@ import (
 	"github.com/ashcrow/osrelease"
 )
 
+const (
+	// machineConfigDaemonOSRHCOS denotes RHCOS
+	machineConfigDaemonOSRHCOS = "RHCOS"
+	// machineConfigDaemonOSRHEL denotes RHEL
+	machineConfigDaemonOSRHEL = "RHEL"
+	// machineConfigDaemonOSCENTOS denotes CENTOS
+	machineConfigDaemonOSCENTOS = "CENTOS"
+)
+
 // GetHostRunningOS reads os-release from the rootFs prefix to return what
 // OS variant the daemon is running on. If we are unable to read the
 // os-release file OR the information doesn't match MCD supported OS's
@@ -22,11 +31,11 @@ func GetHostRunningOS(rootFs string) (string, error) {
 	// See https://github.com/openshift/redhat-release-coreos/blob/master/redhat-release-coreos.spec
 	switch or.ID {
 	case "rhcos":
-		return MachineConfigDaemonOSRHCOS, nil
+		return machineConfigDaemonOSRHCOS, nil
 	case "rhel":
-		return MachineConfigDaemonOSRHEL, nil
+		return machineConfigDaemonOSRHEL, nil
 	case "centos":
-		return MachineConfigDaemonOSCENTOS, nil
+		return machineConfigDaemonOSCENTOS, nil
 	default:
 		// default to unknown OS
 		return "", fmt.Errorf("An unsupported OS is being used: %s:%s", or.ID, or.VARIANT_ID)

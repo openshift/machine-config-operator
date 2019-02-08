@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/daemon"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,7 +91,7 @@ func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.No
 		if node.Annotations == nil {
 			continue
 		}
-		cconfig, ok := node.Annotations[daemon.CurrentMachineConfigAnnotationKey]
+		cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 		if !ok || cconfig == "" {
 			continue
 		}
@@ -144,11 +144,11 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 		if node.Annotations == nil {
 			continue
 		}
-		dconfig, ok := node.Annotations[daemon.DesiredMachineConfigAnnotationKey]
+		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
 		if !ok || dconfig == "" {
 			continue
 		}
-		cconfig, ok := node.Annotations[daemon.CurrentMachineConfigAnnotationKey]
+		cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 		if !ok || cconfig == "" {
 			continue
 		}
@@ -166,16 +166,16 @@ func getDegradedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.N
 		if node.Annotations == nil {
 			continue
 		}
-		dconfig, ok := node.Annotations[daemon.DesiredMachineConfigAnnotationKey]
+		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
 		if !ok || dconfig == "" {
 			continue
 		}
-		dstate, ok := node.Annotations[daemon.MachineConfigDaemonStateAnnotationKey]
+		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
 		if !ok || dstate == "" {
 			continue
 		}
 
-		if dconfig == currentConfig && dstate == daemon.MachineConfigDaemonStateDegraded {
+		if dconfig == currentConfig && dstate == daemonconsts.MachineConfigDaemonStateDegraded {
 			degraded = append(degraded, nodes[idx])
 		}
 	}

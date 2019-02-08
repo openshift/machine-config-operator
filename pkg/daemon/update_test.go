@@ -29,7 +29,7 @@ func TestUpdateOS(t *testing.T) {
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
 		client:            fake.NewSimpleClientset(),
@@ -63,7 +63,7 @@ func TestUpdateOS(t *testing.T) {
 func TestReconcilable(t *testing.T) {
 	d := Daemon{
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: nil,
 		loginClient:       nil,
 		client:            nil,
@@ -201,7 +201,7 @@ func TestReconcilableSSH(t *testing.T) {
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
 		client:            fake.NewSimpleClientset(),
@@ -283,7 +283,7 @@ func TestUpdateSSHKeys(t *testing.T) {
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
 		client:            fake.NewSimpleClientset(),

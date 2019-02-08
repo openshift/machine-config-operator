@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -13,6 +14,11 @@ import (
 const (
 	// defaultWriterQueue the number of pending writes to queue
 	defaultWriterQueue = 25
+
+	// machineConfigDaemonSSHAccessAnnotationKey is used to mark a node after it has been accessed via SSH
+	machineConfigDaemonSSHAccessAnnotationKey = "machineconfiguration.openshift.io/ssh"
+	// MachineConfigDaemonSSHAccessValue is the annotation value applied when ssh access is detected
+	machineConfigDaemonSSHAccessValue = "accessed"
 )
 
 // message wraps a client and responseChannel
@@ -51,8 +57,8 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 // SetUpdateDone Sets the state to UpdateDone.
 func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, node string, dcAnnotation string) error {
 	annos := map[string]string{
-		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDone,
-		CurrentMachineConfigAnnotationKey:     dcAnnotation,
+		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
+		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
@@ -67,7 +73,7 @@ func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, node string, dc
 // SetUpdateWorking Sets the state to UpdateWorking.
 func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, node string) error {
 	annos := map[string]string{
-		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateWorking,
+		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
@@ -84,7 +90,7 @@ func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, node string)
 func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, node string) error {
 	glog.Errorf("Marking degraded due to: %v", err)
 	annos := map[string]string{
-		MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDegraded,
+		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDegraded,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
@@ -120,7 +126,7 @@ func (nw *NodeWriter) SetUpdateDegradedMsgIgnoreErr(msg string, client corev1.No
 // SetSSHAccessed sets the ssh annotation to accessed
 func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) error {
 	annos := map[string]string{
-		MachineConfigDaemonSSHAccessAnnotationKey: MachineConfigDaemonSSHAccessValue,
+		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
