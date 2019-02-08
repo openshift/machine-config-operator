@@ -19,6 +19,7 @@ import (
 	drain "github.com/openshift/kubernetes-drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
@@ -105,6 +106,16 @@ const (
 	pathDevNull = "/dev/null"
 	// pathStateJSON is where we store temporary state across config changes
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
+
+	// machineConfigMCFileType denotes when an MC config has been provided
+	machineConfigMCFileType = "MACHINECONFIG"
+	// machineConfigIgnitionFileType denotes when an Ignition config has provided
+	machineConfigIgnitionFileType = "IGNITION"
+
+	// machineConfigOnceFromRemoteConfig denotes that the config was pulled from a remote source
+	machineConfigOnceFromRemoteConfig = "REMOTE"
+	// machineConfigOnceFromLocalConfig denotes that the config was found locally
+	machineConfigOnceFromLocalConfig = "LOCAL"
 )
 
 const (
@@ -147,7 +158,7 @@ func New(
 	osImageURL := ""
 	osVersion := ""
 	// Only pull the osImageURL from OSTree when we are on RHCOS
-	if operatingSystem == MachineConfigDaemonOSRHCOS {
+	if operatingSystem == machineConfigDaemonOSRHCOS {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 		if err != nil {
 			return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
@@ -256,12 +267,12 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			glog.Warningf("Unable to decipher onceFrom config type: %s", err)
 			return err
 		}
-		if configType == MachineConfigIgnitionFileType {
+		if configType == machineConfigIgnitionFileType {
 			glog.V(2).Info("Daemon running directly from Ignition")
 			ignConfig := genericConfig.(ignv2_2types.Config)
 			return dn.runOnceFromIgnition(ignConfig)
 		}
-		if configType == MachineConfigMCFileType {
+		if configType == machineConfigMCFileType {
 			glog.V(2).Info("Daemon running directly from MachineConfig")
 			mcConfig := genericConfig.(*(mcfgv1.MachineConfig))
 			// this already sets the node as degraded on error in the in-cluster path
@@ -306,7 +317,7 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 				return
 			}
 			glog.Infof("Detected a new login session: %v", msg)
-			glog.Infof("Login access is discouraged! Applying annotation: %v", MachineConfigDaemonSSHAccessAnnotationKey)
+			glog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
 			if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 				exitCh <- fmt.Errorf("Error: cannot apply annotation for SSH access due to: %v", err)
 			}
@@ -391,7 +402,7 @@ type stateAndConfigs struct {
 }
 
 func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
-	_, err := os.Lstat(InitialNodeAnnotationsFilePath)
+	_, err := os.Lstat(constants.InitialNodeAnnotationsFilePath)
 	var bootstrapping bool
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -404,11 +415,11 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		glog.Info("In bootstrap mode")
 	}
 
-	currentConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
+	currentConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, err
 	}
-	desiredConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, DesiredMachineConfigAnnotationKey)
+	desiredConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.DesiredMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, err
 	}
@@ -416,14 +427,14 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	if err != nil {
 		return nil, err
 	}
-	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey, true)
+	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.MachineConfigDaemonStateAnnotationKey, true)
 	if err != nil {
 		return nil, err
 	}
 	// Temporary hack: the MCS used to not write the state=done annotation
 	// key.  If it's unset, let's write it now.
 	if state == "" {
-		state = MachineConfigDaemonStateDone
+		state = constants.MachineConfigDaemonStateDone
 	}
 
 	var desiredConfig *mcfgv1.MachineConfig
@@ -502,7 +513,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	if err != nil {
 		return err
 	}
-	if state.state == MachineConfigDaemonStateDegraded {
+	if state.state == constants.MachineConfigDaemonStateDegraded {
 		// We're already degraded.  Sleep so that we don't clobber
 		// output of previous run which probably contains the real
 		// reason why we marked the node as degraded in the first place
@@ -521,7 +532,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		// Delete the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
 		// In other words if it drifts somehow, we go degraded.
-		if err := os.Remove(InitialNodeAnnotationsFilePath); err != nil {
+		if err := os.Remove(constants.InitialNodeAnnotationsFilePath); err != nil {
 			return errors.Wrapf(err, "Removing initial node annotations file")
 		}
 	}
@@ -590,7 +601,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 // mode. If the content was remote, it executes cluster calls, otherwise it assumes
 // no cluster is present yet.
 func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, contentFrom string) error {
-	if contentFrom == MachineConfigOnceFromRemoteConfig {
+	if contentFrom == machineConfigOnceFromRemoteConfig {
 		// NOTE: This case expects a cluster to exists already.
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
@@ -605,7 +616,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		}
 		return nil
 	}
-	if contentFrom == MachineConfigOnceFromLocalConfig {
+	if contentFrom == machineConfigOnceFromLocalConfig {
 		// NOTE: This case expects that the cluster is NOT CREATED YET.
 		oldConfig := mcfgv1.MachineConfig{}
 		// Execute update without hitting the cluster
@@ -661,11 +672,11 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 // update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
-	state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, MachineConfigDaemonStateAnnotationKey)
+	state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
 		return false, err
 	}
-	if state == MachineConfigDaemonStateDegraded {
+	if state == constants.MachineConfigDaemonStateDegraded {
 		return false, fmt.Errorf("state is already degraded")
 	}
 
@@ -676,7 +687,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	}
 
 	// Detect if there is an update
-	if node.Annotations[DesiredMachineConfigAnnotationKey] == node.Annotations[CurrentMachineConfigAnnotationKey] {
+	if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == node.Annotations[constants.CurrentMachineConfigAnnotationKey] {
 		// No actual update to the config
 		glog.V(2).Info("No updating is required")
 		return false, nil
@@ -726,7 +737,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
 	if currentConfig == nil {
-		ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, CurrentMachineConfigAnnotationKey)
+		ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {
 			return err
 		}
@@ -737,7 +748,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 	}
 
 	if desiredConfig == nil {
-		dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, DesiredMachineConfigAnnotationKey)
+		dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.DesiredMachineConfigAnnotationKey)
 		if err != nil {
 			return err
 		}
@@ -917,7 +928,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 	var contentFrom string
 	// Read the content from a remote endpoint if requested
 	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
-		contentFrom = MachineConfigOnceFromRemoteConfig
+		contentFrom = machineConfigOnceFromRemoteConfig
 		resp, err := http.Get(dn.onceFrom)
 		if err != nil {
 			return nil, "", contentFrom, err
@@ -930,7 +941,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 		}
 	} else {
 		// Otherwise read it from a local file
-		contentFrom = MachineConfigOnceFromLocalConfig
+		contentFrom = machineConfigOnceFromLocalConfig
 		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
 		if err != nil {
 			return nil, "", contentFrom, err
@@ -946,7 +957,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 	ignConfig, _, err := ignv2.Parse(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
 		glog.V(2).Info("onceFrom file is of type Ignition")
-		return ignConfig, MachineConfigIgnitionFileType, contentFrom, nil
+		return ignConfig, machineConfigIgnitionFileType, contentFrom, nil
 	}
 
 	glog.V(2).Infof("%s is not an Ignition config: %s. Trying MachineConfig.", dn.onceFrom, err)
@@ -955,7 +966,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 	mc, err := resourceread.ReadMachineConfigV1(content)
 	if err == nil {
 		glog.V(2).Info("onceFrom file is of type MachineConfig")
-		return mc, MachineConfigMCFileType, contentFrom, nil
+		return mc, machineConfigMCFileType, contentFrom, nil
 	}
 
 	return nil, "", "", fmt.Errorf("unable to decipher onceFrom config type: %s", err)
