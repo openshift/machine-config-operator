@@ -353,7 +353,6 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 			lastErr = fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d)", p.Name, p.Status.MachineCount, p.Status.UpdatedMachineCount, p.Status.UnavailableMachineCount)
 			return false, nil
 		}
-
 		return true, nil
 	}); err != nil {
 		if err.Error() == wait.ErrWaitTimeout.Error() {
@@ -379,10 +378,11 @@ const (
 )
 
 func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.CustomResourceDefinition) error {
-	return wait.Poll(customResourceReadyInterval, customResourceReadyTimeout, func() (bool, error) {
+	var lastErr error
+	if err := wait.Poll(customResourceReadyInterval, customResourceReadyTimeout, func() (bool, error) {
 		crd, err := optr.crdLister.Get(resource.Name)
 		if err != nil {
-			glog.Errorf("error getting CustomResourceDefinition %s: %v", resource.Name, err)
+			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %v", resource.Name, err)
 			return false, nil
 		}
 
@@ -391,13 +391,20 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.Cu
 				return true, nil
 			}
 		}
-		glog.V(4).Infof("CustomResourceDefinition %s is not ready. conditions: %v", crd.Name, crd.Status.Conditions)
+		lastErr = fmt.Errorf("CustomResourceDefinition %s is not ready. conditions: %v", crd.Name, crd.Status.Conditions)
 		return false, nil
-	})
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return fmt.Errorf("%v during syncCustomResourceDefinitions: %v", err, lastErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) error {
-	return wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
+	var lastErr error
+	if err := wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
 		d, err := optr.deployLister.Deployments(resource.Namespace).Get(resource.Name)
 		if apierrors.IsNotFound(err) {
 			// exit early to recreate the deployment.
@@ -406,7 +413,7 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
-			glog.Errorf("error getting Deployment %s during rollout: %v", resource.Name, err)
+			lastErr = fmt.Errorf("error getting Deployment %s during rollout: %v", resource.Name, err)
 			return false, nil
 		}
 
@@ -417,13 +424,20 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 		if d.Generation <= d.Status.ObservedGeneration && d.Status.UpdatedReplicas == d.Status.Replicas && d.Status.UnavailableReplicas == 0 {
 			return true, nil
 		}
-		glog.V(4).Infof("Deployment %s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
+		lastErr = fmt.Errorf("Deployment %s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
 		return false, nil
-	})
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return fmt.Errorf("%v during waitForDeploymentRollout: %v", err, lastErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error {
-	return wait.Poll(daemonsetRolloutPollInterval, daemonsetRolloutTimeout, func() (bool, error) {
+	var lastErr error
+	if err := wait.Poll(daemonsetRolloutPollInterval, daemonsetRolloutTimeout, func() (bool, error) {
 		d, err := optr.daemonsetLister.DaemonSets(resource.Namespace).Get(resource.Name)
 		if apierrors.IsNotFound(err) {
 			// exit early to recreate the daemonset.
@@ -432,7 +446,7 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
-			glog.Errorf("error getting Daemonset %s during rollout: %v", resource.Name, err)
+			lastErr = fmt.Errorf("error getting Daemonset %s during rollout: %v", resource.Name, err)
 			return false, nil
 		}
 
@@ -443,9 +457,15 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		if d.Generation <= d.Status.ObservedGeneration && d.Status.UpdatedNumberScheduled == d.Status.DesiredNumberScheduled && d.Status.NumberUnavailable == 0 {
 			return true, nil
 		}
-		glog.V(4).Infof("Daemonset %s is not ready. status: (desired: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberReady, d.Status.NumberAvailable)
+		lastErr = fmt.Errorf("Daemonset %s is not ready. status: (desired: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberReady, d.Status.NumberAvailable)
 		return false, nil
-	})
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return fmt.Errorf("%v during waitForDaemonsetRollout: %v", err, lastErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.ControllerConfig) error {
@@ -457,7 +477,7 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 		}
 		return true, nil
 	}); err != nil {
-		if err.Error() == wait.ErrWaitTimeout.Error() {
+		if err == wait.ErrWaitTimeout {
 			return fmt.Errorf("%v during waitForControllerConfigToBeCompleted: %v", err, lastErr)
 		}
 		return err
