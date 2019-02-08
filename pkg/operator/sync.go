@@ -29,11 +29,11 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
-		{ "pools", optr.syncMachineConfigPools },
-		{ "mcc", optr.syncMachineConfigController },
-		{ "mcs", optr.syncMachineConfigServer },
-		{ "mcd", optr.syncMachineConfigDaemon },
-		{ "required-pools", optr.syncRequiredMachineConfigPools },
+		{"pools", optr.syncMachineConfigPools},
+		{"mcc", optr.syncMachineConfigController},
+		{"mcs", optr.syncMachineConfigServer},
+		{"mcd", optr.syncMachineConfigDaemon},
+		{"required-pools", optr.syncRequiredMachineConfigPools},
 	}
 
 	if err := optr.syncProgressingStatus(); err != nil {
@@ -329,7 +329,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 		return err
 	}
 	var lastErr error
-	if err := wait.Poll(time.Second, 5*time.Minute, func() (bool, error) {
+	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
 		pools, err := optr.mcpLister.List(sel)
 		if apierrors.IsNotFound(err) {
 			return false, err
@@ -355,7 +355,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 		}
 		return true, nil
 	}); err != nil {
-		if err.Error() == wait.ErrWaitTimeout.Error() {
+		if err == wait.ErrWaitTimeout {
 			return fmt.Errorf("%v during syncRequiredMachineConfigPools: %v", err, lastErr)
 		}
 		return err
@@ -365,16 +365,16 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 
 const (
 	deploymentRolloutPollInterval = time.Second
-	deploymentRolloutTimeout      = 5 * time.Minute
+	deploymentRolloutTimeout      = 10 * time.Minute
 
 	daemonsetRolloutPollInterval = time.Second
-	daemonsetRolloutTimeout      = 5 * time.Minute
+	daemonsetRolloutTimeout      = 10 * time.Minute
 
 	customResourceReadyInterval = time.Second
-	customResourceReadyTimeout  = 5 * time.Minute
+	customResourceReadyTimeout  = 10 * time.Minute
 
 	controllerConfigCompletedInterval = time.Second
-	controllerConfigCompletedTimeout  = time.Minute
+	controllerConfigCompletedTimeout  = 5 * time.Minute
 )
 
 func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.CustomResourceDefinition) error {
