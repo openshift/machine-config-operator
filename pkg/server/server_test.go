@@ -11,7 +11,7 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/daemon"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 )
 
@@ -87,7 +87,7 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, daemon.InitialNodeAnnotationsFilePath, anno)
+	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 
 	// initialize bootstrap server and get config.
 	bs := &bootstrapServer{
@@ -170,7 +170,7 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, daemon.InitialNodeAnnotationsFilePath, anno)
+	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 
 	res, err := csc.GetConfig(poolRequest{
 		machinePool: testPool,

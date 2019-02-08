@@ -7,7 +7,7 @@ import (
 	"net/url"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/openshift/machine-config-operator/pkg/daemon"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/vincent-petithory/dataurl"
 )
 
@@ -58,15 +58,15 @@ func appendNodeAnnotations(conf *ignv2_2types.Config, currConf string) error {
 	if err != nil {
 		return err
 	}
-	appendFileToIgnition(conf, daemon.InitialNodeAnnotationsFilePath, string(anno))
+	appendFileToIgnition(conf, daemonconsts.InitialNodeAnnotationsFilePath, string(anno))
 	return nil
 }
 
 func getNodeAnnotation(conf string) (string, error) {
 	nodeAnnotations := map[string]string{
-		daemon.CurrentMachineConfigAnnotationKey: conf,
-		daemon.DesiredMachineConfigAnnotationKey: conf,
-		daemon.MachineConfigDaemonStateAnnotationKey: daemon.MachineConfigDaemonStateDone,
+		daemonconsts.CurrentMachineConfigAnnotationKey:     conf,
+		daemonconsts.DesiredMachineConfigAnnotationKey:     conf,
+		daemonconsts.MachineConfigDaemonStateAnnotationKey: daemonconsts.MachineConfigDaemonStateDone,
 	}
 	contents, err := json.Marshal(nodeAnnotations)
 	if err != nil {
