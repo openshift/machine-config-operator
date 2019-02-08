@@ -635,7 +635,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
 		glog.V(2).Info("Updating of non RHCOS nodes are not supported")
 		return nil
 	}
