@@ -120,6 +120,9 @@ contents:
           containerPort: 2379
           protocol: TCP
       hostNetwork: true
+      priorityClassName: system-node-critical
+      tolerations:
+      - operator: "Exists"
       restartPolicy: Always
       volumes:
       - name: certs
