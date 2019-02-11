@@ -67,9 +67,6 @@ type Daemon struct {
 	// recorder sends events to the apiserver
 	recorder record.EventRecorder
 
-	// filesystemClient allows interaction with the local filesystm
-	fileSystemClient FileSystemClient
-
 	// rootMount is the location for the MCD to chroot in
 	rootMount string
 
@@ -96,6 +93,9 @@ type Daemon struct {
 	// node is the current instance of the node being processed through handleNodeUpdate
 	// or the very first instance grabbed when the daemon starts
 	node *corev1.Node
+
+	// remove the funcs below once proper e2e testing is done for updating ssh keys
+	atomicSSHKeysWriter func(ignv2_2types.PasswdUser, string) error
 }
 
 // pendingConfigState is stored as JSON at pathStateJSON; it is only
@@ -150,7 +150,6 @@ func New(
 	nodeName string,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
-	fileSystemClient FileSystemClient,
 	onceFrom string,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -186,7 +185,6 @@ func New(
 		NodeUpdaterClient:      nodeUpdaterClient,
 		loginClient:            loginClient,
 		rootMount:              rootMount,
-		fileSystemClient:       fileSystemClient,
 		bootID:                 bootID,
 		bootedOSImageURL:       osImageURL,
 		onceFrom:               onceFrom,
@@ -196,6 +194,7 @@ func New(
 		exitCh:                 exitCh,
 		stopCh:                 stopCh,
 	}
+	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
 
 	return dn, nil
 }
@@ -209,7 +208,6 @@ func NewClusterDrivenDaemon(
 	nodeUpdaterClient NodeUpdaterClient,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
-	fileSystemClient FileSystemClient,
 	onceFrom string,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
@@ -223,7 +221,6 @@ func NewClusterDrivenDaemon(
 		nodeName,
 		operatingSystem,
 		nodeUpdaterClient,
-		fileSystemClient,
 		onceFrom,
 		kubeletHealthzEnabled,
 		kubeletHealthzEndpoint,
@@ -1070,7 +1067,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 		}
 		defer resp.Body.Close()
 		// Read the body content from the request
-		content, err = dn.fileSystemClient.ReadAll(resp.Body)
+		content, err = ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return nil, "", contentFrom, err
 		}
@@ -1082,7 +1079,7 @@ func (dn *Daemon) SenseAndLoadOnceFrom() (interface{}, string, string, error) {
 			return nil, "", contentFrom, err
 		}
 
-		content, err = dn.fileSystemClient.ReadFile(absoluteOnceFrom)
+		content, err = ioutil.ReadFile(absoluteOnceFrom)
 		if err != nil {
 			return nil, "", contentFrom, err
 		}

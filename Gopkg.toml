@@ -48,6 +48,10 @@ required = [
   version = "1.0.0"
 
 [[constraint]]
+  name = "github.com/google/renameio"
+  version = "v0.1.0"
+
+[[constraint]]
   name = "github.com/ashcrow/osrelease"
   version = "1.0.0"
 

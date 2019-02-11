@@ -294,7 +294,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 			// Second rrun will return our expected error
 			expectedError},
 	}
-	mockFS := &FsClientMock{MkdirAllReturns: []error{nil}, WriteFileReturns: []error{nil}}
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
@@ -305,7 +304,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
-		fileSystemClient:  mockFS,
 	}
 	// Set up machineconfigs that are identical except for SSH keys
 	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234", "4567"}}
@@ -319,6 +317,9 @@ func TestUpdateSSHKeys(t *testing.T) {
 			},
 		},
 	}
+
+	d.atomicSSHKeysWriter = func(user ignv2_2types.PasswdUser, keys string) error { return nil }
+
 	err := d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
@@ -348,7 +349,6 @@ func TestInvalidIgnConfig(t *testing.T) {
 			// Second rrun will return our expected error
 			expectedError},
 	}
-	mockFS := &FsClientMock{MkdirAllReturns: []error{nil}, WriteFileReturns: []error{nil}}
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
@@ -359,7 +359,6 @@ func TestInvalidIgnConfig(t *testing.T) {
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
-		fileSystemClient:  mockFS,
 	}
 
 	oldMcfg := &mcfgv1.MachineConfig{
