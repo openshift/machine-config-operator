@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/pkg/errors"
 	core_v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -49,19 +50,32 @@ func getNodeAnnotation(client corev1.NodeInterface, node string, k string) (stri
 	return getNodeAnnotationExt(client, node, k, false)
 }
 
-// getNodeAnnotationExt is like getNodeAnnotation, but allows one to customize ENOENT handling
-func getNodeAnnotationExt(client corev1.NodeInterface, node string, k string, allowNoent bool) (string, error) {
+// GetNode gets the node object.
+func GetNode(client corev1.NodeInterface, node string) (*core_v1.Node, error) {
+	var lastErr error
 	var n *core_v1.Node
 	err := wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-		var err error
-		n, err = client.Get(node, metav1.GetOptions{})
-		if err == nil {
+		n, lastErr = client.Get(node, metav1.GetOptions{})
+		if lastErr == nil {
 			return true, nil
 		}
+		glog.Warningf("Failed to fetch node %s (%v); retrying...", node, lastErr)
 		return false, nil
 	})
 	if err != nil {
-		return "", err
+		if err == wait.ErrWaitTimeout {
+			return nil, errors.Wrapf(lastErr, "Timed out trying to fetch node %s", node)
+		}
+		return nil, err
+	}
+	return n, nil
+}
+
+// getNodeAnnotationExt is like getNodeAnnotation, but allows one to customize ENOENT handling
+func getNodeAnnotationExt(client corev1.NodeInterface, node string, k string, allowNoent bool) (string, error) {
+	n, err := GetNode(client, node)
+	if err != nil {
+		return "", fmt.Errorf("Failed fetching node %s: %v", node, err)
 	}
 
 	v, ok := n.Annotations[k]
