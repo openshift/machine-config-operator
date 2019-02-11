@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/util/retry"
 )
@@ -145,7 +144,7 @@ func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) e
 // a retry is necessary.
 func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node)) error {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, getErr := client.Get(node, metav1.GetOptions{})
+		n, getErr := GetNode(client, node)
 		if getErr != nil {
 			return getErr
 		}
