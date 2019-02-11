@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"os/user"
-	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -20,6 +18,7 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
+	"github.com/google/renameio"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	errors "github.com/pkg/errors"
@@ -40,24 +39,38 @@ const (
 	coreUserSSHPath = "/home/core/.ssh/"
 )
 
-// Someone please tell me this actually lives in the stdlib somewhere
-func replaceFileContentsAtomically(fpath string, b []byte) error {
-	f, err := ioutil.TempFile(path.Dir(fpath), "")
+func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
+	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
+}
+
+// writeFileAtomically uses the renameio package to provide atomic file writing, we can't use renameio.WriteFile
+// directly since we need to 1) Chown 2) go through a buffer since files provided can be big
+func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, uid, gid int) error {
+	if err := os.MkdirAll(filepath.Dir(fpath), dirMode); err != nil {
+		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(fpath), err)
+	}
+	t, err := renameio.TempFile("", fpath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	n, err := f.Write(b)
-	if err == nil && n < len(b) {
-		err = io.ErrShortWrite
-	}
-	if err != nil {
+	defer t.Cleanup()
+	// Set permissions before writing data, in case the data is sensitive.
+	if err := t.Chmod(fileMode); err != nil {
 		return err
 	}
-	if err := os.Rename(f.Name(), fpath); err != nil {
+	w := bufio.NewWriter(t)
+	if _, err := w.Write(b); err != nil {
 		return err
 	}
-	return nil
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	if uid != -1 && gid != -1 {
+		if err := t.Chown(uid, gid); err != nil {
+			return err
+		}
+	}
+	return t.CloseAtomicallyReplace()
 }
 
 func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
@@ -69,7 +82,7 @@ func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return err
 	}
-	return replaceFileContentsAtomically(pathStateJSON, b)
+	return writeFileAtomicallyWithDefaults(pathStateJSON, b)
 }
 
 // updateOSAndReboot is the last step in an update(), and it can also
@@ -359,7 +372,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
-			if err := dn.fileSystemClient.Remove(f.Path); err != nil {
+			if err := os.Remove(f.Path); err != nil {
 				newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
 				if !os.IsNotExist(err) {
 					return newErr
@@ -386,7 +399,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
-				if err := dn.fileSystemClient.Remove(path); err != nil {
+				if err := os.Remove(path); err != nil {
 					newErr := fmt.Errorf("unable to delete %s: %s", path, err)
 					if !os.IsNotExist(err) {
 						return newErr
@@ -402,7 +415,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 				glog.Warningf("Unable to disable %s: %s", u.Name, err)
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
-			if err := dn.fileSystemClient.Remove(path); err != nil {
+			if err := os.Remove(path); err != nil {
 				newErr := fmt.Errorf("unable to delete %s: %s", path, err)
 				if !os.IsNotExist(err) {
 					return newErr
@@ -421,13 +434,13 @@ func (dn *Daemon) enableUnit(unit ignv2_2types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check that we don't return an error when the link already exists
-	if _, err := dn.fileSystemClient.Stat(wantsPath); err == nil {
+	if _, err := os.Stat(wantsPath); err == nil {
 		glog.Infof("%s already exists. Not making a new symlink", wantsPath)
 		return nil
 	}
 	// The originating file to link
 	servicePath := filepath.Join(pathSystemd, unit.Name)
-	err := dn.fileSystemClient.Symlink(servicePath, wantsPath)
+	err := renameio.Symlink(servicePath, wantsPath)
 	if err != nil {
 		glog.Warningf("Cannot enable unit %s: %s", unit.Name, err)
 	} else {
@@ -442,33 +455,27 @@ func (dn *Daemon) disableUnit(unit ignv2_2types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check so we don't return an error when the unit was already disabled
-	if _, err := dn.fileSystemClient.Stat(wantsPath); err != nil {
+	if _, err := os.Stat(wantsPath); err != nil {
 		glog.Infof("%s was not present. No need to remove", wantsPath)
 		return nil
 	}
 	glog.V(2).Infof("Disabling unit at %s", wantsPath)
 
-	return dn.fileSystemClient.Remove(wantsPath)
+	return os.Remove(wantsPath)
 }
 
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
-	var path string
 	for _, u := range units {
 		// write the dropin to disk
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
-			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), defaultDirectoryPermissions); err != nil {
-				return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(path), err)
-			}
-			glog.V(2).Infof("Created directory: %s", path)
-
-			err := ioutil.WriteFile(path, []byte(u.Dropins[i].Contents), os.FileMode(0644))
-			if err != nil {
+			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+			if err := writeFileAtomicallyWithDefaults(dpath, []byte(u.Dropins[i].Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
 			}
-			glog.V(2).Infof("Wrote systemd unit dropin at %s", path)
+
+			glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
 		}
 
 		if u.Contents == "" {
@@ -476,22 +483,19 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		glog.Infof("Writing systemd unit %q", u.Name)
-		path = filepath.Join(pathSystemd, u.Name)
-		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), defaultDirectoryPermissions); err != nil {
-			return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(path), err)
-		}
-		glog.V(2).Infof("Created directory: %s", path)
+
+		fpath := filepath.Join(pathSystemd, u.Name)
 
 		// check if the unit is masked. if it is, we write a symlink to
 		// /dev/null and continue
 		if u.Mask {
 			glog.V(2).Info("Systemd unit masked")
-			if err := dn.fileSystemClient.RemoveAll(path); err != nil {
+			if err := os.RemoveAll(fpath); err != nil {
 				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
 			}
 			glog.V(2).Infof("Removed unit %q", u.Name)
 
-			if err := dn.fileSystemClient.Symlink(pathDevNull, path); err != nil {
+			if err := renameio.Symlink(pathDevNull, fpath); err != nil {
 				return fmt.Errorf("failed to symlink unit %q to %s: %v", u.Name, pathDevNull, err)
 			}
 			glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
@@ -500,10 +504,10 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		// write the unit to disk
-		err := ioutil.WriteFile(path, []byte(u.Contents), defaultFilePermissions)
-		if err != nil {
+		if err := writeFileAtomicallyWithDefaults(fpath, []byte(u.Contents)); err != nil {
 			return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 		}
+
 		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
 
 		// if the unit doesn't note if it should be enabled or disabled then
@@ -540,57 +544,29 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
-	for _, f := range files {
-		glog.Infof("Writing file %q", f.Path)
-		// create any required directories for the file
-		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), defaultDirectoryPermissions); err != nil {
-			return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(f.Path), err)
-		}
+	for _, file := range files {
+		glog.Infof("Writing file %q", file.Path)
 
-		// create the file
-		file, err := dn.fileSystemClient.Create(f.Path)
-		if err != nil {
-			return fmt.Errorf("failed to create file %q: %v", f.Path, err)
-		}
-		defer file.Close()
-
-		// write the file to disk, using the inlined file contents
-		contents, err := dataurl.DecodeString(f.Contents.Source)
+		contents, err := dataurl.DecodeString(file.Contents.Source)
 		if err != nil {
 			return err
 		}
-		w := bufio.NewWriter(file)
-		if _, err := w.Write(contents.Data); err != nil {
-			return fmt.Errorf("failed to write inline contents to file %q: %v", f.Path, err)
-		}
-		w.Flush()
-
-		// chmod and chown
 		mode := defaultFilePermissions
-		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
+		if file.Mode != nil {
+			mode = os.FileMode(*file.Mode)
 		}
-		if err := file.Chmod(mode); err != nil {
-			return fmt.Errorf("failed to set file mode for file %q: %v", f.Path, err)
-		}
-
+		var (
+			uid, gid = -1, -1
+		)
 		// set chown if file information is provided
-		if f.User != nil || f.Group != nil {
-			uid, gid, err := getFileOwnership(f)
+		if file.User != nil || file.Group != nil {
+			uid, gid, err = getFileOwnership(file)
 			if err != nil {
-				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", f.Path, err)
-			}
-			if err := file.Chown(uid, gid); err != nil {
-				return fmt.Errorf("failed to set file ownership for file %q: %v", f.Path, err)
+				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
 			}
 		}
-
-		if err := file.Sync(); err != nil {
-			return fmt.Errorf("failed to sync file %q: %v", f.Path, err)
-		}
-
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("failed to close file %q: %v", f.Path, err)
+		if err := writeFileAtomically(file.Path, contents.Data, defaultDirectoryPermissions, mode, uid, gid); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -626,32 +602,38 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 	return uid, gid, nil
 }
 
+func (dn *Daemon) atomicallyWriteSSHKey(newUser ignv2_2types.PasswdUser, keys string) error {
+	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+
+	// Keys should only be written to "/home/core/.ssh"
+	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
+	glog.Infof("Writing SSHKeys at %q", authKeyPath)
+
+	if err := writeFileAtomicallyWithDefaults(authKeyPath, []byte(keys)); err != nil {
+		return err
+	}
+
+	glog.V(2).Infof("Wrote SSHKeys at %s", authKeyPath)
+
+	return nil
+}
+
 // Update a given PasswdUser's SSHKey
 func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 	if len(newUsers) == 0 {
 		return nil
 	}
 
-	// Keys should only be written to "/home/core/.ssh"
-	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
-	glog.Infof("Writing SSHKeys at %q", coreUserSSHPath)
-	if err := dn.fileSystemClient.MkdirAll(coreUserSSHPath, os.FileMode(0600)); err != nil {
-		return fmt.Errorf("failed to create directory %q: %v", coreUserSSHPath, err)
-	}
-	glog.V(2).Infof("Created directory: %s", coreUserSSHPath)
-
-	authkeypath := filepath.Join(coreUserSSHPath, "authorized_keys")
+	// we're also appending all keys for any user to core, so for now
+	// we pass this to atomicallyWriteSSHKeys to write.
 	var concatSSHKeys string
 	for _, k := range newUsers[len(newUsers)-1].SSHAuthorizedKeys {
 		concatSSHKeys = concatSSHKeys + string(k) + "\n"
 	}
-
-	if err := dn.fileSystemClient.WriteFile(authkeypath, []byte(concatSSHKeys), os.FileMode(0600)); err != nil {
-		return fmt.Errorf("failed to write ssh key: %v", err)
+	// newUsers[0] is currently unused since we write keys only for the core user
+	if err := dn.atomicSSHKeysWriter(newUsers[0], concatSSHKeys); err != nil {
+		return err
 	}
-
-	glog.V(2).Infof("Wrote SSHKeys at %s", coreUserSSHPath)
-
 	return nil
 }
 
