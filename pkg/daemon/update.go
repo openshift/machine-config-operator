@@ -527,6 +527,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		if err != nil {
 			return fmt.Errorf("Failed to create file %q: %v", f.Path, err)
 		}
+		defer file.Close()
 
 		// write the file to disk, using the inlined file contents
 		contents, err := dataurl.DecodeString(f.Contents.Source)
