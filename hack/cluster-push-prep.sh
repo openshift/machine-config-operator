@@ -15,7 +15,7 @@ if ! oc get -n openshift-image-registry route/image-registry &>/dev/null; then
 fi
 oc patch -n openshift-image-registry route/image-registry -p '{"spec": {"tls": {"insecureEdgeTerminationPolicy": "Redirect", "termination": "reencrypt"}}}'
 registry=$(oc get -n openshift-image-registry -o json route/image-registry | jq -r ".spec.host")
-if ! curl -k --head https://"${registry}" >/dev/null; then
+if ! curl -k -s --head https://"${registry}" >/dev/null; then
     if ! grep -q "${registry}" /etc/hosts; then
         set +x
         echo "error: Failed to contact the registry"

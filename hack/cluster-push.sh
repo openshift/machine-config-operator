@@ -14,7 +14,7 @@ if [ "${1:-}" = "-n" ]; then
 fi
 
 registry=$(oc get -n openshift-image-registry -o json route/image-registry | jq -r ".spec.host")
-curl -k --head https://"${registry}" >/dev/null
+curl -k -s --head https://"${registry}" >/dev/null
 
 WHAT=${WHAT:-machine-config-daemon}
 LOCAL_IMGNAME=localhost/${WHAT}
