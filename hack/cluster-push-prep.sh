@@ -9,7 +9,11 @@
 
 set -xeuo pipefail
 
-oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
+# XXX: --type merge completely overrides any previous "overrides" array
+#      find a way to just append? json op: add isn't working at all
+#      if there's not an overrides array already, that's why we use merge
+oc patch clusterversions.config.openshift.io/version --type merge -p '{"spec":{"overrides": [{"kind": "Deployment","name": "machine-config-operator", "namespace": "openshift-machine-config-operator", "unmanaged": true}, {"kind": "ConfigMap","name": "machine-config-operator-images", "namespace": "openshift-machine-config-operator", "unmanaged": true}]}}'
+
 if ! oc get -n openshift-image-registry route/image-registry &>/dev/null; then
     oc expose -n openshift-image-registry svc/image-registry
 fi
