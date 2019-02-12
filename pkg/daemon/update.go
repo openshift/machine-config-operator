@@ -82,11 +82,13 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 
 		dn.recorder.Eventf(node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
-		err = wait.ExponentialBackoff(wait.Backoff{
+		backoff := wait.Backoff{
 			Steps:    5,
 			Duration: 10 * time.Second,
 			Factor:   2,
-		}, func() (bool, error) {
+		}
+		var lastErr error
+		wait.ExponentialBackoff(backoff, func() (bool, error) {
 			err := drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
 				DeleteLocalData:    true,
 				Force:              true,
@@ -94,13 +96,14 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 				IgnoreDaemonsets:   true,
 			})
 			if err != nil {
-				glog.Infof("Draining failed with: %v; retrying...", err)
+				lastErr = err
 				return false, nil
 			}
+			lastErr = nil
 			return true, nil
 		})
-		if err != nil {
-			return err
+		if lastErr != nil {
+			return errors.Wrapf(lastErr, "Failed to drain node (%s tries)", backoff.Steps)
 		}
 		glog.V(2).Info("Node successfully drained")
 	}
