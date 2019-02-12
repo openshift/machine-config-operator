@@ -96,6 +96,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 				IgnoreDaemonsets:   true,
 			})
 			if err != nil {
+				glog.Infof("Draining failed with: %v; retrying...", err)
 				lastErr = err
 				return false, nil
 			}
@@ -103,7 +104,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 			return true, nil
 		})
 		if lastErr != nil {
-			return errors.Wrapf(lastErr, "Failed to drain node (%s tries)", backoff.Steps)
+			return errors.Wrapf(lastErr, "Failed to drain node (%d tries)", backoff.Steps)
 		}
 		glog.V(2).Info("Node successfully drained")
 	}
