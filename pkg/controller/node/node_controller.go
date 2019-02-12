@@ -429,6 +429,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
+	glog.Infof("Setting node %s to desired config %s", nodeName, currentConfig)
 	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
 		if err != nil {
