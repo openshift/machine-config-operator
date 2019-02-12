@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -538,9 +539,11 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		if err != nil {
 			return err
 		}
-		if _, err = file.WriteString(string(contents.Data)); err != nil {
+		w := bufio.NewWriter(file)
+		if _, err := w.Write(contents.Data); err != nil {
 			return fmt.Errorf("Failed to write inline contents to file %q: %v", f.Path, err)
 		}
+		w.Flush()
 
 		// chmod and chown
 		mode := DefaultFilePermissions
