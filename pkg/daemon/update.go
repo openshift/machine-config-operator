@@ -31,6 +31,10 @@ const (
 	defaultDirectoryPermissions os.FileMode = 0755
 	// defaultFilePermissions houses the default mode to use when no file permissions are provided
 	defaultFilePermissions os.FileMode = 0644
+	// coreUser is "core" and currently the only permissible user name
+	coreUserName = "core"
+	// SSH Keys for user "core" will only be written at /home/core/.ssh
+	coreUserSSHPath = "/home/core/.ssh"
 )
 
 // Someone please tell me this actually lives in the stdlib somewhere
@@ -210,7 +214,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 				// there is an update to Users, we must verify that it is ONLY making an acceptable
 				// change to the SSHAuthorizedKeys for the user "core"
 				for _, user := range newIgn.Passwd.Users {
-					if user.Name != "core" {
+					if user.Name != coreUserName {
 						return errors.New("Ignition passwd user section contains unsupported changes: non-core user")
 					}
 				}
@@ -267,7 +271,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 func verifyUserFields(pwdUser ignv2_2types.PasswdUser) error {
 	emptyUser := ignv2_2types.PasswdUser{}
 	tempUser := pwdUser
-	if tempUser.Name == "core" && len(tempUser.SSHAuthorizedKeys) >= 1 {
+	if tempUser.Name == coreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
@@ -601,15 +605,14 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
-	sshDirPath := filepath.Join("/home", "core", ".ssh")
-	glog.Infof("Writing SSHKeys at %q", sshDirPath)
+	glog.Infof("Writing SSHKeys at %q", coreUserSSHPath)
 
-	if err := dn.fileSystemClient.MkdirAll(filepath.Dir(sshDirPath), os.FileMode(0600)); err != nil {
-		return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(sshDirPath), err)
+	if err := dn.fileSystemClient.MkdirAll(filepath.Dir(coreUserSSHPath), os.FileMode(0600)); err != nil {
+		return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(coreUserSSHPath), err)
 	}
-	glog.V(2).Infof("Created directory: %s", sshDirPath)
+	glog.V(2).Infof("Created directory: %s", coreUserSSHPath)
 
-	authkeypath := filepath.Join(sshDirPath, "authorized_keys")
+	authkeypath := filepath.Join(coreUserSSHPath, "authorized_keys")
 	var concatSSHKeys string
 	for _, k := range newUsers[len(newUsers)-1].SSHAuthorizedKeys {
 		concatSSHKeys = concatSSHKeys + string(k) + "\n"
@@ -619,7 +622,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 		return fmt.Errorf("Failed to write ssh key: %v", err)
 	}
 
-	glog.V(2).Infof("Wrote SSHKeys at %s", sshDirPath)
+	glog.V(2).Infof("Wrote SSHKeys at %s", coreUserSSHPath)
 
 	return nil
 }
