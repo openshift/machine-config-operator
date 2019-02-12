@@ -807,7 +807,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if status := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), DefaultFilePermissions); !status {
+			if status := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); !status {
 				return false
 			}
 		}
@@ -828,7 +828,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 				return false
 			}
 		}
-		if status := checkFileContentsAndMode(path, []byte(u.Contents), DefaultFilePermissions); !status {
+		if status := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); !status {
 			return false
 		}
 
@@ -846,7 +846,7 @@ func checkFiles(files []ignv2_2types.File) bool {
 		if _, ok := checkedFiles[f.Path]; ok {
 			continue
 		}
-		mode := DefaultFilePermissions
+		mode := defaultFilePermissions
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}

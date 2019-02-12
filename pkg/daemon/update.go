@@ -27,10 +27,10 @@ import (
 )
 
 const (
-	// DefaultDirectoryPermissions houses the default mode to use when no directory permissions are provided
-	DefaultDirectoryPermissions os.FileMode = 0755
-	// DefaultFilePermissions houses the default mode to use when no file permissions are provided
-	DefaultFilePermissions os.FileMode = 0644
+	// defaultDirectoryPermissions houses the default mode to use when no directory permissions are provided
+	defaultDirectoryPermissions os.FileMode = 0755
+	// defaultFilePermissions houses the default mode to use when no file permissions are provided
+	defaultFilePermissions os.FileMode = 0644
 )
 
 // Someone please tell me this actually lives in the stdlib somewhere
@@ -426,7 +426,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), DefaultDirectoryPermissions); err != nil {
+			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), defaultDirectoryPermissions); err != nil {
 				return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 			}
 			glog.V(2).Infof("Created directory: %s", path)
@@ -444,7 +444,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 
 		glog.Infof("Writing systemd unit %q", u.Name)
 		path = filepath.Join(pathSystemd, u.Name)
-		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), DefaultDirectoryPermissions); err != nil {
+		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), defaultDirectoryPermissions); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
 		}
 		glog.V(2).Infof("Created directory: %s", path)
@@ -467,7 +467,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		}
 
 		// write the unit to disk
-		err := ioutil.WriteFile(path, []byte(u.Contents), DefaultFilePermissions)
+		err := ioutil.WriteFile(path, []byte(u.Contents), defaultFilePermissions)
 		if err != nil {
 			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
 		}
@@ -510,7 +510,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 	for _, f := range files {
 		glog.Infof("Writing file %q", f.Path)
 		// create any required directories for the file
-		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), DefaultDirectoryPermissions); err != nil {
+		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), defaultDirectoryPermissions); err != nil {
 			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(f.Path), err)
 		}
 
@@ -533,7 +533,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		w.Flush()
 
 		// chmod and chown
-		mode := DefaultFilePermissions
+		mode := defaultFilePermissions
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
