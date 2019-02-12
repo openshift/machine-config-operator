@@ -376,7 +376,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if machineconfigpool.Status.Configuration.Name == "" {
-		return fmt.Errorf("Empty Current MachineConfig")
+		delay := 5 * time.Second
+		// Previously we spammed the logs about empty pools.
+		// Let's just pause for a bit here to let the renderer
+		// initialize them.
+		glog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, delay)
+		time.Sleep(delay)
+		return nil
 	}
 
 	// Deep-copy otherwise we are mutating our cache.
