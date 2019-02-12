@@ -275,7 +275,7 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
-	imgs := DefaultImages()
+	imgs := Images{}
 	if err := json.Unmarshal(imgsRaw, &imgs); err != nil {
 		return err
 	}
