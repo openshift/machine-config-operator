@@ -133,12 +133,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	reconcilableError := dn.reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
-		msg := fmt.Sprintf("Can't reconcile config %v with %v: %v", oldConfigName, newConfigName, *reconcilableError)
+		wrappedErr := fmt.Errorf("Can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
 		if dn.recorder != nil {
-			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", msg)
+			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
-		dn.logSystem(msg)
-		return fmt.Errorf("%s", msg)
+		dn.logSystem(wrappedErr.Error())
+		return wrappedErr
 	}
 
 	// update files on disk that need updating
@@ -162,7 +162,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // directories, links, and systemd units sections of the included ignition
 // config currently.
 
-func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *string {
+func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Checking if configs are reconcilable")
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
@@ -178,9 +178,8 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// if the config versions are different, all bets are off. this probably
 	// shouldn't happen, but if it does, we can't deal with it.
 	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
-		msg := fmt.Sprintf("Ignition version mismatch between old and new config: old: %s new: %s",
+		return fmt.Errorf("Ignition version mismatch between old and new config: old: %s new: %s",
 			oldIgn.Ignition.Version, newIgn.Ignition.Version)
-		return &msg
 	}
 	// everything else in the ignition section doesn't matter to us, since the
 	// rest of the stuff in this section has to do with fetching remote
@@ -192,8 +191,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// we don't currently configure the network in place. we can't fix it if
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
-		msg := "Ignition networkd section contains changes"
-		return &msg
+		return errors.New("Ignition networkd section contains changes")
 	}
 
 	// Passwd section
@@ -203,8 +201,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// otherwise we can't fix it if something changed here.
 	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
 		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
-			msg := "Ignition Passwd Groups section contains changes"
-			return &msg
+			return errors.New("Ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
 			// check if the prior config is empty and that this is the first time running.
@@ -214,14 +211,12 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 				// change to the SSHAuthorizedKeys for the user "core"
 				for _, user := range newIgn.Passwd.Users {
 					if user.Name != "core" {
-						msg := "Ignition passwd user section contains unsupported changes: non-core user"
-						return &msg
+						return errors.New("Ignition passwd user section contains unsupported changes: non-core user")
 					}
 				}
 				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
-				msg := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
-				if msg != "" {
-					return &msg
+				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
+					return err
 				}
 			}
 		}
@@ -232,32 +227,26 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 	// we can only reconcile files right now. make sure the sections we can't
 	// fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
-		msg := "Ignition disks section contains changes"
-		return &msg
+		return errors.New("Ignition disks section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
-		msg := "Ignition filesystems section contains changes"
-		return &msg
+		return errors.New("Ignition filesystems section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
-		msg := "Ignition raid section contains changes"
-		return &msg
+		return errors.New("Ignition raid section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {
-		msg := "Ignition directories section contains changes"
-		return &msg
+		return errors.New("Ignition directories section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
-		msg := "Ignition links section contains changes"
-		return &msg
+		return errors.New("Ignition links section contains changes")
 	}
 
 	// Special case files append: if the new config wants us to append, then we
 	// have to force a reprovision since it's not idempotent
 	for _, f := range newIgn.Storage.Files {
 		if f.Append {
-			msg := fmt.Sprintf("Ignition file %v includes append", f.Path)
-			return &msg
+			return fmt.Errorf("Ignition file %v includes append", f.Path)
 		}
 	}
 
@@ -272,25 +261,23 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) *stri
 
 // verifyUserFields returns nil if the user Name = "core", if 1 or more SSHKeys exist for
 // this user and if all other fields in User are empty.
-// Otherwise, an error msg will be returned and the proposed config will not be reconcilable.
+// Otherwise, an error will be returned and the proposed config will not be reconcilable.
 // At this time we do not support non-"core" users or any changes to the "core" user
 // outside of SSHAuthorizedKeys.
-func verifyUserFields(pwdUser ignv2_2types.PasswdUser) string {
-	var msg string
+func verifyUserFields(pwdUser ignv2_2types.PasswdUser) error {
 	emptyUser := ignv2_2types.PasswdUser{}
 	tempUser := pwdUser
 	if tempUser.Name == "core" && len(tempUser.SSHAuthorizedKeys) >= 1 {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
-			msg = "Ignition passwd user section contains unsupported changes: non-sshKey changes"
-		} else {
-			glog.Info("SSH Keys reconcilable")
+			return errors.New("Ignition passwd user section contains unsupported changes: non-sshKey changes")
 		}
+		glog.Info("SSH Keys reconcilable")
 	} else {
-		msg = "Ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys"
+		return errors.New("Ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
 	}
-	return msg
+	return nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
