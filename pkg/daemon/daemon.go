@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -806,7 +807,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if status := checkFileContentsAndMode(path, u.Dropins[j].Contents, DefaultFilePermissions); !status {
+			if status := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), DefaultFilePermissions); !status {
 				return false
 			}
 		}
@@ -827,7 +828,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 				return false
 			}
 		}
-		if status := checkFileContentsAndMode(path, u.Contents, DefaultFilePermissions); !status {
+		if status := checkFileContentsAndMode(path, []byte(u.Contents), DefaultFilePermissions); !status {
 			return false
 		}
 
@@ -854,7 +855,7 @@ func checkFiles(files []ignv2_2types.File) bool {
 			glog.Errorf("couldn't parse file: %v", err)
 			return false
 		}
-		if status := checkFileContentsAndMode(f.Path, string(contents.Data), mode); !status {
+		if status := checkFileContentsAndMode(f.Path, contents.Data, mode); !status {
 			return false
 		}
 		checkedFiles[f.Path] = true
@@ -866,7 +867,7 @@ func checkFiles(files []ignv2_2types.File) bool {
 // contents and mode with the expectedContent and mode parameters. It logs an
 // error in case of an error or mismatch and returns the status of the
 // evaluation.
-func checkFileContentsAndMode(filePath, expectedContent string, mode os.FileMode) bool {
+func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) bool {
 	fi, err := os.Lstat(filePath)
 	if err != nil {
 		glog.Errorf("could not stat file: %q, error: %v", filePath, err)
@@ -881,8 +882,8 @@ func checkFileContentsAndMode(filePath, expectedContent string, mode os.FileMode
 		glog.Errorf("could not read file: %q, error: %v", filePath, err)
 		return false
 	}
-	if strings.Compare(string(contents), expectedContent) != 0 {
-		glog.Errorf("content mismatch for file: %q; expected: %v; received: %v", filePath, expectedContent, string(contents))
+	if !bytes.Equal(contents, expectedContent) {
+		glog.Errorf("content mismatch for file: %q", filePath)
 		return false
 	}
 	return true
