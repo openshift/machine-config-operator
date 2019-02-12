@@ -601,13 +601,9 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
-	if newUsers[0].Name != "core" {
-		// Double checking that we are only writing SSH Keys for user "core"
-		return fmt.Errorf("Expecting user core. Got %s instead", newUsers[0].Name)
-	}
-	sshDirPath := filepath.Join("/home", newUsers[0].Name, ".ssh")
-	// we are only dealing with the "core" User at this time, so only dealing with the first entry in Users[]
+	sshDirPath := filepath.Join("/home", "core", ".ssh")
 	glog.Infof("Writing SSHKeys at %q", sshDirPath)
+
 	if err := dn.fileSystemClient.MkdirAll(filepath.Dir(sshDirPath), os.FileMode(0600)); err != nil {
 		return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(sshDirPath), err)
 	}
