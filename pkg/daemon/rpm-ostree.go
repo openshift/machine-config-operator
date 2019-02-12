@@ -2,8 +2,23 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/coreos/go-systemd/dbus"
+	"github.com/coreos/go-systemd/sdjournal"
+	"github.com/golang/glog"
+)
+
+const (
+	pivotUnit      = "pivot.service"
+	rpmostreedUnit = "rpm-ostreed.service"
+	etcPivotFile   = "/etc/pivot/image-pullspec"
 )
 
 // RpmOstreeState houses zero or more RpmOstreeDeployments
@@ -84,5 +99,105 @@ func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string,
 // RunPivot executes a pivot from one deployment to another as found in the referenced
 // osImageURL. See https://github.com/openshift/pivot.
 func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
-	return Run("/bin/pivot", osImageURL)
+	if err := os.MkdirAll(filepath.Dir(etcPivotFile), os.FileMode(0755)); err != nil {
+		return fmt.Errorf("error creating leading dirs for %s: %v", etcPivotFile, err)
+	}
+
+	if err := ioutil.WriteFile(etcPivotFile, []byte(osImageURL), 0644); err != nil {
+		return fmt.Errorf("error writing to %s: %v", etcPivotFile, err)
+	}
+
+	journalStopCh := make(chan time.Time)
+	defer close(journalStopCh)
+	go followPivotJournalLogs(journalStopCh)
+
+	conn, err := dbus.NewSystemdConnection()
+	if err != nil {
+		return fmt.Errorf("error creating systemd conn: %v", err)
+	}
+	defer conn.Close()
+
+	// start job
+	status := make(chan string)
+	_, err = conn.StartUnit("pivot.service", "fail", status)
+	if err != nil {
+		return fmt.Errorf("error starting job: %v", err)
+	}
+
+	select {
+	case st := <-status:
+		if st != "done" {
+			return fmt.Errorf("error queuing start job; got %s", st)
+		}
+	case <-time.After(5 * time.Minute):
+		return fmt.Errorf("timed out waiting for start job")
+	}
+
+	// wait until inactive/failed
+	var failed bool
+	eventsCh, errCh := conn.SubscribeUnits(time.Second)
+Outer:
+	for {
+		select {
+		case e := <-eventsCh:
+			if st, ok := e["pivot.service"]; ok {
+				// If the service is disabled, systemd won't keep around
+				// metadata about whether it failed/passed, etc... The bindings
+				// signal this by just using a `nil` status since it dropped out
+				// of `ListUnits()`.
+				if st == nil {
+					return errors.New("got nil while waiting for pivot; is the service enabled?")
+				}
+				failed = st.ActiveState == "failed"
+				if failed || st.ActiveState == "inactive" {
+					break Outer
+				}
+			}
+		case f := <-errCh:
+			return fmt.Errorf("error while waiting for pivot: %v", f)
+		}
+	}
+
+	if failed {
+		return errors.New("pivot service did not exit successfully")
+	}
+	return nil
+}
+
+// Proxy pivot and rpm-ostree daemon journal logs until told to stop. Warns if
+// we encounter an error.
+func followPivotJournalLogs(stopCh <-chan time.Time) {
+	reader, err := sdjournal.NewJournalReader(
+		sdjournal.JournalReaderConfig{
+			Since: time.Duration(1) * time.Second,
+			Matches: []sdjournal.Match{
+				{
+					Field: sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT,
+					Value: pivotUnit,
+				},
+				{
+					Field: sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT,
+					Value: rpmostreedUnit,
+				},
+			},
+			Formatter: func(entry *sdjournal.JournalEntry) (string, error) {
+				msg, ok := entry.Fields["MESSAGE"]
+				if !ok {
+					return "", fmt.Errorf("missing MESSAGE field in entry")
+				}
+				return fmt.Sprintf("%s: %s\n", entry.Fields[sdjournal.SD_JOURNAL_FIELD_SYSTEMD_UNIT], msg), nil
+			},
+		})
+	if err != nil {
+		glog.Warningf("Failed to open journal: %v", err)
+		return
+	}
+	defer reader.Close()
+
+	// We're kinda abusing the API here. The idea is that the stop channel is
+	// used with time.After(), hence the `chan time.Time` type. But really, it
+	// works to just never output anything and just close it as we do here.
+	if err := reader.Follow(stopCh, os.Stdout); err != sdjournal.ErrExpired {
+		glog.Warningf("Failed to follow journal: %v", err)
+	}
 }
