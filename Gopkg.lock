@@ -97,10 +97,12 @@
   version = "v0.2.0"
 
 [[projects]]
-  digest = "1:13627d07034a944b5ea1aefa8e6e909f49d56315a539e66a7c1dd35b0896ef43"
+  digest = "1:cfa4b11b74c67149a1966ce3c7d02f94a4f75d86accefdf332340a40bf3041ea"
   name = "github.com/coreos/go-systemd"
   packages = [
+    "dbus",
     "login1",
+    "sdjournal",
     "unit",
   ]
   pruneopts = "NUT"
@@ -131,6 +133,14 @@
   pruneopts = "NUT"
   revision = "76107251acd117c6d3e5b4dae2b47f82f944984b"
   version = "v0.26.0"
+
+[[projects]]
+  digest = "1:6e2ff82d2fe11ee35ec8dceb4346b8144a761f1c8655592c4ebe99a92fcec327"
+  name = "github.com/coreos/pkg"
+  packages = ["dlopen"]
+  pruneopts = "NUT"
+  revision = "97fdf19511ea361ae1c100dd393cc47f8dcfa1e1"
+  version = "v4"
 
 [[projects]]
   digest = "1:a2c1d0e43bd3baaa071d1b9ed72c27d78169b2b269f71c105ac4ba34b1be4a39"
@@ -955,7 +965,9 @@
     "github.com/blang/semver",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
+    "github.com/coreos/go-systemd/dbus",
     "github.com/coreos/go-systemd/login1",
+    "github.com/coreos/go-systemd/sdjournal",
     "github.com/coreos/ignition/config/v2_2",
     "github.com/coreos/ignition/config/v2_2/types",
     "github.com/davecgh/go-spew/spew",
