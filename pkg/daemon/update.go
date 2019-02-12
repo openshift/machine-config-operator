@@ -105,6 +105,10 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 		glog.V(2).Info("Node successfully drained")
 	}
 
+	if err := dn.writePendingState(newConfig); err != nil {
+		return errors.Wrapf(err, "writing pending state")
+	}
+
 	// reboot. this function shouldn't actually return.
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
 }
@@ -139,10 +143,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 
 	if err := dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
 		return err
-	}
-
-	if err := dn.writePendingState(newConfig); err != nil {
-		return errors.Wrapf(err, "writing pending state")
 	}
 
 	return dn.updateOSAndReboot(newConfig)
