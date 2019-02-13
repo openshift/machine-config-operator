@@ -53,6 +53,10 @@ func toYAML(i interface{}) []byte {
 	return out
 }
 
+// createDiscoveredControllerConfigSpec uses the Infrastructure and Network global configuration to discover various
+// fields for the controller spec.
+// Infrastructure provides information about the platform, etcd discovery domain.
+// Network provides the service network that is used to calculate the cluster DNS IP.
 func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, network *configv1.Network) (*mcfgv1.ControllerConfigSpec, error) {
 	if len(network.Spec.ServiceNetwork) == 0 {
 		return nil, fmt.Errorf("service cidr is empty in Network")
