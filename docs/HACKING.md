@@ -157,3 +157,46 @@ the operator since the MCD daemonset will be overwritten:
 ```
 oc scale deployment machine-config-operator --replicas=0
 ```
+
+# The test suites
+
+We have a few contexts that run on pull requests. `unit` runs `make test-unit`.
+The `e2e-aws` job is common across most OpenShift repos; it runs the installer
+with a custom update payload using code from the PR, and then runs the e2e test
+suite from [OpenShift Origin](https://github.com/openshift/origin/).
+
+Finally, [recently we added](https://github.com/openshift/release/pull/2577) an
+`e2e-aws-op` job. This one also generates a cluster with the code, but runs
+`make test-e2e` from our own repo rather than Origin's test suite. We can run
+destructive tests here.
+
+## Debugging a test suite
+
+When a PR is first created, Prow will create a Kubernetes namespace (or possibly
+reuse an existing one).  Click on "... Skipping 47 lines ..." to expand it, and
+you will see a line like: `2019/02/13 18:56:22 Using namespace ci-op-ydnn8xvi`.
+The different parts of a build/test run are all inside that namespace that
+runs in the https://api.ci.openshift.org/ cluster.
+
+When a PR is complete you'll see a lot of information more nicely rendered, including
+artifacts. The `pods/` directory for example has the logs for the various
+pods.  Lists of some important objects are extracted to JSON; for example `nodes.json` has
+a list of the node state.  For this project, the the `machineconfigs.json` and `machineconfigpools.json`
+are commonly useful.
+
+## Logging into a cluster live
+
+Login: `oc login https://api.ci.openshift.org/console/`
+
+In the pull request, you'll see a "project" or Kubernetes namespace, so you can e.g.: `oc project ci-op-zgctgrpy`
+You can watch the installer logs via e.g. `oc logs -c setup e2e-aws`.
+
+Now, you can get the Kubernetes credentials back to your machine:
+
+```
+oc rsh -c test e2e-aws cat /tmp/artifacts/installer/auth/kubeconfig > $XDG_RUNTIME_DIR/kubeconfig
+export KUBECONFIG=$XDG_RUNTIME_DIR/kubeconfig
+````
+
+And from there debug the cluster live while the tests are running. Though be
+aware that it will be quickly torn down as soon as the tests succeed or fail.
