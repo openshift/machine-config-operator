@@ -33,4 +33,4 @@ spec:
   - name: machine-os-content
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/rhcos/maipo@sha256:83a6d461628380f1dcc057ffef4909992f593b72c5aa4db2e01c0b130004afea
+      name: registry.svc.ci.openshift.org/rhcos/maipo@sha256:61dc83d62cfb5054c4c5532bd2478742a0711075ef5151572e63f94babeacc1a
