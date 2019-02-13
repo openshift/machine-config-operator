@@ -365,6 +365,8 @@ func (optr *Operator) getInstallConfig() (installertypes.InstallConfig, error) {
 	return icFromClusterConfig(clusterConfig)
 }
 
+// getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
+// Each type of global configuration is named `cluster` for easy discovery in the cluster.
 func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, error) {
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
