@@ -23,7 +23,7 @@ import (
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
 	infraFile, networkFile string,
-	etcdCAFile, rootCAFile string, pullSecretFile string,
+	etcdCAFile, rootCAFile string, kubeCAFile string, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
 ) error {
@@ -32,6 +32,9 @@ func RenderBootstrap(
 		clusterConfigConfigMapFile,
 		infraFile, networkFile,
 		rootCAFile, etcdCAFile, pullSecretFile,
+	}
+	if kubeCAFile != "" {
+		files = append(files, kubeCAFile)
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -67,8 +70,16 @@ func RenderBootstrap(
 	if err != nil {
 		return err
 	}
+
+	bundle := make([]byte, 0)
+	bundle = append(bundle, filesData[rootCAFile]...)
+	// Append the kube-ca if given.
+	if _, ok := filesData[kubeCAFile]; ok {
+		bundle = append(bundle, filesData[kubeCAFile]...)
+	}
+
 	spec.EtcdCAData = filesData[etcdCAFile]
-	spec.RootCAData = filesData[rootCAFile]
+	spec.RootCAData = bundle
 	spec.PullSecret = nil
 	spec.SSHKey = ic.SSHKey
 	spec.OSImageURL = imgs.MachineOSContent

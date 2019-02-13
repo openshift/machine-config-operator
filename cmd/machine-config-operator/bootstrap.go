@@ -26,6 +26,7 @@ var (
 	bootstrapOpts struct {
 		etcdCAFile          string
 		rootCAFile          string
+		kubeCAFile          string
 		pullSecretFile      string
 		configFile          string
 		oscontentImage      string
@@ -45,6 +46,7 @@ func init() {
 	rootCmd.AddCommand(bootstrapCmd)
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdCAFile, "etcd-ca", "/etc/ssl/etcd/ca.crt", "path to etcd CA certificate")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.rootCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "path to root CA certificate")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeCAFile, "kube-ca", "/assets/tls/kube-ca.crt", "path to kube CA certificate")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.MarkFlagRequired("dest-dir")
@@ -85,7 +87,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
 		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
-		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.pullSecretFile,
+		bootstrapOpts.etcdCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		imgs,
 		bootstrapOpts.destinationDir,
 	); err != nil {
