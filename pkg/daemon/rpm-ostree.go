@@ -13,12 +13,13 @@ import (
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/coreos/go-systemd/sdjournal"
 	"github.com/golang/glog"
+
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 const (
 	pivotUnit      = "pivot.service"
 	rpmostreedUnit = "rpm-ostreed.service"
-	etcPivotFile   = "/etc/pivot/image-pullspec"
 )
 
 // RpmOstreeState houses zero or more RpmOstreeDeployments
@@ -99,12 +100,12 @@ func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string,
 // RunPivot executes a pivot from one deployment to another as found in the referenced
 // osImageURL. See https://github.com/openshift/pivot.
 func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
-	if err := os.MkdirAll(filepath.Dir(etcPivotFile), os.FileMode(0755)); err != nil {
-		return fmt.Errorf("error creating leading dirs for %s: %v", etcPivotFile, err)
+	if err := os.MkdirAll(filepath.Dir(constants.EtcPivotFile), os.FileMode(0755)); err != nil {
+		return fmt.Errorf("error creating leading dirs for %s: %v", constants.EtcPivotFile, err)
 	}
 
-	if err := ioutil.WriteFile(etcPivotFile, []byte(osImageURL), 0644); err != nil {
-		return fmt.Errorf("error writing to %s: %v", etcPivotFile, err)
+	if err := ioutil.WriteFile(constants.EtcPivotFile, []byte(osImageURL), 0644); err != nil {
+		return fmt.Errorf("error writing to %s: %v", constants.EtcPivotFile, err)
 	}
 
 	journalStopCh := make(chan time.Time)
