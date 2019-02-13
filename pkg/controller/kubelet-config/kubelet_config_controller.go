@@ -152,7 +152,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 func (ctrl *Controller) updateKubeletConfig(old, cur interface{}) {
 	oldConfig := old.(*mcfgv1.KubeletConfig)
 	newConfig := cur.(*mcfgv1.KubeletConfig)
-	if !reflect.DeepEqual(oldConfig.Spec, newConfig.Spec) {
+	if !reflect.DeepEqual(oldConfig, newConfig) {
 		glog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
 		ctrl.enqueueKubeletConfig(newConfig)
 	}
