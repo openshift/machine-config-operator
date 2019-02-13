@@ -325,16 +325,14 @@ func TestUpdateSSHKeys(t *testing.T) {
 }
 
 // checkReconcilableResults is a shortcut for verifying results that should be reconcilable
-func checkReconcilableResults(t *testing.T, key string, reconcilableError *string) {
-
+func checkReconcilableResults(t *testing.T, key string, reconcilableError error) {
 	if reconcilableError != nil {
-		t.Errorf("Expected the same %s values would be reconcilable. Received error: %v", key, *reconcilableError)
+		t.Errorf("Expected the same %s values would be reconcilable. Received error: %v", key, reconcilableError)
 	}
 }
 
 // checkIrreconcilableResults is a shortcut for verifing results that should be irreconcilable
-func checkIrreconcilableResults(t *testing.T, key string, reconcilableError *string) {
-
+func checkIrreconcilableResults(t *testing.T, key string, reconcilableError error) {
 	if reconcilableError == nil {
 		t.Errorf("Expected different %s values would not be reconcilable.", key)
 	}
