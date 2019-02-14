@@ -376,7 +376,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if machineconfigpool.Status.Configuration.Name == "" {
-		return fmt.Errorf("Empty Current MachineConfig")
+		delay := 5 * time.Second
+		// Previously we spammed the logs about empty pools.
+		// Let's just pause for a bit here to let the renderer
+		// initialize them.
+		glog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, delay)
+		time.Sleep(delay)
+		return nil
 	}
 
 	// Deep-copy otherwise we are mutating our cache.
@@ -423,6 +429,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
+	glog.Infof("Setting node %s to desired config %s", nodeName, currentConfig)
 	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
 		if err != nil {

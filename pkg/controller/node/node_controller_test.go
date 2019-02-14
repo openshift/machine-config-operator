@@ -780,7 +780,7 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "")
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
-	f.runExpectError(getKey(mcp, t))
+	f.run(getKey(mcp, t))
 }
 
 func TestPaused(t *testing.T) {
