@@ -200,3 +200,73 @@ export KUBECONFIG=$XDG_RUNTIME_DIR/kubeconfig
 
 And from there debug the cluster live while the tests are running. Though be
 aware that it will be quickly torn down as soon as the tests succeed or fail.
+
+# Building and installing a custom release image for testing the MCO
+
+During the MCO development there are certain test scenarios
+that require a cluster running with a custom release to properly test your
+code (i.e. test the interaction of the MCO with the CVO).
+
+In those situations, you will need to:
+
+1) build the MCO components images you're interested in testing
+2) build a custom release payload
+3) install a cluster with your custom release payload
+
+## Build the MCO components images
+
+To build the image for any component run:
+
+```
+make image-{component}
+```
+
+`{component}` can be either `operator`, `daemon`, `controller` or `server`.
+After the build is complete, make sure to push the image to a registry (i.e. `quay.io/user/machine-config-{component}`).
+
+Note, quay.io or any other public registry isn't strictly required, you can use a local
+registry for this flow to still work as long as those images are pullable.
+
+## Build a custom release payload
+
+Now that your have your custom component images, to build a custom release payload, run:
+
+```
+oc adm release new -n openshift --server https://api.ci.openshift.org \
+                                --from-image-stream "origin-v4.0" \
+                                --to-image quay.io/user/origin-release:v4.0 \
+                                machine-config-{component}=quay.io/user/machine-config-{component}
+```
+
+There's currently a [known limitation](https://github.com/openshift/machine-config-operator/issues/421) which prevents
+you from building a custom release payload using only a subset of the MCO components. You can work that around by
+creating a payload which contains all of them:
+
+```
+oc adm release new -n openshift --server https://api.ci.openshift.org \
+                                --from-image-stream "origin-v4.0" \
+                                --to-image quay.io/user/origin-release:v4.0 \
+                                machine-config-operator=quay.io/user/machine-config-operator \
+                                machine-config-controller=quay.io/user/machine-config-controller \
+                                machine-config-daemon=quay.io/user/machine-config-daemon \
+                                machine-config-server=quay.io/user/machine-config-server
+```
+
+Note, make sure you're using a relatively new `oc` binary from `openshift/origin`. Note also that the
+image must be pullable by remote resources (nodes), therefore using a local registry might not work.
+
+When the command above finishes, your custom release payload is going to be available
+at the location you specified via the `--to-image` flag for the installer to be consumed.
+
+Note for quay.io users: images pushed to your personal account are going to be
+private by default. If you want to keep the release payload image private you will need to provide
+the secret to pull it in the `install-config.yaml` configuration (`pullSecret` section specifically).
+
+## Install a cluster with a custom release payload
+
+In order to use your new custom release payload to install a new cluster, simply run the creation process with
+the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
+
+```
+OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v4.0 bin/openshift-install create cluster --log-level=debug
+```
