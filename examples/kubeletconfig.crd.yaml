@@ -3,5 +3,8 @@ kind: KubeletConfig
 metadata:
   name: set-max-pods
 spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      custom-kubelet: small-pods
   kubeletConfig:
     maxPods: 100
