@@ -16,7 +16,7 @@ contents:
         image: "{{.Images.setupEtcdEnv}}"
         args:
         - "run"
-        - "--discovery-srv={{.ClusterName}}.{{.BaseDomain}}"
+        - "--discovery-srv={{.EtcdDiscoveryDomain}}"
         - "--output-file=/run/etcd/environment"
         - "--v=4"
         securityContext:
@@ -83,7 +83,7 @@ contents:
           source /run/etcd/environment
 
           etcd \
-            --discovery-srv {{.ClusterName}}.{{.BaseDomain}} \
+            --discovery-srv {{.EtcdDiscoveryDomain}} \
             --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
             --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \

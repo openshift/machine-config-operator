@@ -159,7 +159,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			dn.EnterDegradedState(errors.Wrapf(err, "Checking initial state"))
 		}
 		ctx.KubeInformerFactory.Start(stopCh)
-		close(ctx.KubeInformersStarted)
+		close(ctx.InformersStarted)
 	}
 
 	glog.Info("Starting MachineConfigDaemon")

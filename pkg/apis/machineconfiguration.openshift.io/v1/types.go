@@ -51,16 +51,6 @@ type MCOConfig struct {
 
 // MCOConfigSpec is the spec for MCOConfig resource.
 type MCOConfigSpec struct {
-	ClusterDNSIP        string `json:"clusterDNSIP"`
-	CloudProviderConfig string `json:"cloudProviderConfig"`
-	ClusterName         string `json:"clusterName"`
-
-	// The openshift platform, e.g. "libvirt", "openstack", "aws", or "none"
-	Platform string `json:"platform"`
-
-	BaseDomain string `json:"baseDomain"`
-
-	SSHKey string `json:"sshKey"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -120,12 +110,11 @@ type ControllerConfig struct {
 type ControllerConfigSpec struct {
 	ClusterDNSIP        string `json:"clusterDNSIP"`
 	CloudProviderConfig string `json:"cloudProviderConfig"`
-	ClusterName         string `json:"clusterName"`
 
 	// The openshift platform, e.g. "libvirt", "openstack", "aws", or "none"
 	Platform string `json:"platform"`
 
-	BaseDomain string `json:"baseDomain"`
+	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain"`
 
 	// CAs
 	EtcdCAData []byte `json:"etcdCAData"`

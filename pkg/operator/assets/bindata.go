@@ -957,7 +957,7 @@ spec:
         image: {{.Images.MachineConfigServer}}
         args:
           - "start"
-          - "--apiserver-url=https://{{.ControllerConfig.ClusterName}}-api.{{.ControllerConfig.BaseDomain}}:6443"
+          - "--apiserver-url={{.APIServerURL}}"
         resources:
           requests:
             cpu: 20m
