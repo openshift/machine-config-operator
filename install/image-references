@@ -27,9 +27,9 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment
-  # This one is special, it's the OS payload
+  # This one is special, it's the OS payload.
   # https://github.com/openshift/machine-config-operator/issues/183
-  # See the machine-config-osimageurl configmap.
+  # See the machine-config-osimageurl configmap (which must match exactly).
   - name: machine-os-content
     from:
       kind: DockerImage

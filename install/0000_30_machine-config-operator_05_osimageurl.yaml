@@ -6,4 +6,7 @@ metadata:
 data:
   # The OS payload, managed by the daemon + pivot + rpm-ostree
   # https://github.com/openshift/machine-config-operator/issues/183
-  osImageURL: "registry.svc.ci.openshift.org/rhcos/maipo@sha256:61dc83d62cfb5054c4c5532bd2478742a0711075ef5151572e63f94babeacc1a"
+  # This gets substituted in at release payload creation time by the
+  # machine-os-content imagestream specified in image-references (the string
+  # here must match exactly).
+  osImageURL: "registry.svc.ci.openshift.org/rhcos/maipo@sha256:83a6d461628380f1dcc057ffef4909992f593b72c5aa4db2e01c0b130004afea"
