@@ -186,10 +186,10 @@ are commonly useful.
 
 ## Logging into a cluster live
 
-Login: `oc login https://api.ci.openshift.org/console/`
+Login: `oc login --server=https://api.ci.openshift.org`
 
 In the pull request, you'll see a "project" or Kubernetes namespace, so you can e.g.: `oc project ci-op-zgctgrpy`
-You can watch the installer logs via e.g. `oc logs -c setup e2e-aws`.
+You can watch the installer logs via e.g. `oc logs -f -c setup e2e-aws`.
 
 Now, you can get the Kubernetes credentials back to your machine:
 
