@@ -24,13 +24,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
-	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
+	configv1 "github.com/openshift/api/config/v1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	installertypes "github.com/openshift/installer/pkg/types"
+
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -77,13 +80,15 @@ type Operator struct {
 	mcLister        mcfglistersv1.MachineConfigLister
 	deployLister    appslisterv1.DeploymentLister
 	daemonsetLister appslisterv1.DaemonSetLister
-	cmLister        corelisterv1.ConfigMapLister
+	infraLister     configlistersv1.InfrastructureLister
+	networkLister   configlistersv1.NetworkLister
 
 	crdListerSynced       cache.InformerSynced
 	mcoconfigListerSynced cache.InformerSynced
 	deployListerSynced    cache.InformerSynced
 	daemonsetListerSynced cache.InformerSynced
-	cmListerSynced        cache.InformerSynced
+	infraListerSynced     cache.InformerSynced
+	networkListerSynced   cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -105,6 +110,8 @@ func New(
 	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
 	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
 	cmInformer coreinformersv1.ConfigMapInformer,
+	infraInformer configinformersv1.InfrastructureInformer,
+	networkInformer configinformersv1.NetworkInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
@@ -139,6 +146,8 @@ func New(
 	clusterRoleInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleBindingInformer.Informer().AddEventHandler(optr.eventHandler())
 	cmInformer.Informer().AddEventHandler(optr.eventHandler())
+	infraInformer.Informer().AddEventHandler(optr.eventHandler())
+	networkInformer.Informer().AddEventHandler(optr.eventHandler())
 
 	optr.syncHandler = optr.sync
 
@@ -153,8 +162,10 @@ func New(
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
 	optr.daemonsetLister = daemonsetInformer.Lister()
 	optr.daemonsetListerSynced = daemonsetInformer.Informer().HasSynced
-	optr.cmLister = cmInformer.Lister()
-	optr.cmListerSynced = cmInformer.Informer().HasSynced
+	optr.infraLister = infraInformer.Lister()
+	optr.infraListerSynced = infraInformer.Informer().HasSynced
+	optr.networkLister = networkInformer.Lister()
+	optr.networkListerSynced = networkInformer.Informer().HasSynced
 
 	return optr
 }
@@ -182,8 +193,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.crdListerSynced,
 		optr.mcoconfigListerSynced,
 		optr.deployListerSynced,
-		optr.cmListerSynced,
-		optr.daemonsetListerSynced) {
+		optr.daemonsetListerSynced,
+		optr.infraListerSynced,
+		optr.networkListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}
@@ -252,25 +264,12 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	namespace, _, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
 
-	var obj *mcfgv1.MCOConfig
-	obj, err = optr.mcoconfigLister.MCOConfigs(namespace).Get(name)
-	if apierrors.IsNotFound(err) {
-		obj, err = discoverMCOConfig(optr.getInstallConfig)
-		if err == nil {
-			obj.SetNamespace(namespace)
-			obj.SetName(name)
-		}
-	}
-	if err != nil {
-		return err
-	}
-	mcoconfig := obj.DeepCopy()
-
+	// sync up the images used by operands.
 	imgsRaw, err := ioutil.ReadFile(optr.imagesFile)
 	if err != nil {
 		return err
@@ -280,6 +279,7 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
+	// sync up CAs
 	etcdCA, err := optr.getCAsFromConfigMap("kube-system", "etcd-serving-ca", "ca-bundle.crt")
 	if err != nil {
 		return err
@@ -289,13 +289,39 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
+	// sync up os image url
+	// TODO: this should probably be part of the imgs
 	osimageurl, err := optr.getOsImageURL(namespace)
 	if err != nil {
 		return err
 	}
 	imgs.MachineOSContent = osimageurl
 
-	rc := getRenderConfig(mcoconfig, etcdCA, rootCA, &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}, imgs)
+	// sync up the ControllerConfigSpec
+	ic, err := optr.getInstallConfig()
+	if err != nil {
+		return err
+	}
+	infra, network, err := optr.getGlobalConfig()
+	if err != nil {
+		return err
+	}
+	spec, err := createDiscoveredControllerConfigSpec(infra, network)
+	if err != nil {
+		return err
+	}
+	spec.EtcdCAData = etcdCA
+	spec.RootCAData = rootCA
+	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
+	spec.SSHKey = ic.SSHKey
+	spec.OSImageURL = imgs.MachineOSContent
+	spec.Images = map[string]string{
+		templatectrl.EtcdImageKey:    imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
+	}
+
+	// create renderConfig
+	rc := getRenderConfig(namespace, spec, imgs, infra.Status.APIServerURL)
 	return optr.syncAll(rc)
 }
 
@@ -339,6 +365,20 @@ func (optr *Operator) getInstallConfig() (installertypes.InstallConfig, error) {
 	return icFromClusterConfig(clusterConfig)
 }
 
+// getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
+// Each type of global configuration is named `cluster` for easy discovery in the cluster.
+func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, error) {
+	infra, err := optr.infraLister.Get("cluster")
+	if err != nil {
+		return nil, nil, err
+	}
+	network, err := optr.networkLister.Get("cluster")
+	if err != nil {
+		return nil, nil, err
+	}
+	return infra, network, nil
+}
+
 func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error) {
 	var (
 		icKey = "install-config"
@@ -355,27 +395,12 @@ func icFromClusterConfig(cm *v1.ConfigMap) (installertypes.InstallConfig, error)
 	return ic, nil
 }
 
-func getRenderConfig(mc *mcfgv1.MCOConfig, etcdCAData, rootCAData []byte, ps *v1.ObjectReference, imgs Images) renderConfig {
-	controllerconfig := mcfgv1.ControllerConfigSpec{
-		ClusterDNSIP:        mc.Spec.ClusterDNSIP,
-		CloudProviderConfig: mc.Spec.CloudProviderConfig,
-		ClusterName:         mc.Spec.ClusterName,
-		Platform:            mc.Spec.Platform,
-		BaseDomain:          mc.Spec.BaseDomain,
-		EtcdCAData:          etcdCAData,
-		RootCAData:          rootCAData,
-		PullSecret:          ps,
-		SSHKey:              mc.Spec.SSHKey,
-		OSImageURL:          imgs.MachineOSContent,
-		Images: map[string]string{
-			templatectrl.EtcdImageKey:    imgs.Etcd,
-			templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
-		},
-	}
+func getRenderConfig(tnamespace string, ccSpec *mcfgv1.ControllerConfigSpec, imgs Images, apiServerURL string) renderConfig {
 	return renderConfig{
-		TargetNamespace:  mc.GetNamespace(),
+		TargetNamespace:  tnamespace,
 		Version:          version.Raw,
-		ControllerConfig: controllerconfig,
+		ControllerConfig: *ccSpec,
 		Images:           imgs,
+		APIServerURL:     apiServerURL,
 	}
 }
