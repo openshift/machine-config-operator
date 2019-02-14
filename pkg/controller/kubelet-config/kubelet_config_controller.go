@@ -281,7 +281,10 @@ func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2type
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
-	cfg.Status.Conditions = append(cfg.Status.Conditions, wrapErrorWithCondition(err, args...))
+	if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
+		cfg.Status.ObservedGeneration = cfg.GetGeneration()
+		cfg.Status.Conditions = append(cfg.Status.Conditions, wrapErrorWithCondition(err, args...))
+	}
 	_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(cfg)
 	return lerr
 }
@@ -318,6 +321,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if len(cfg.GetFinalizers()) > 0 {
 			return ctrl.cascadeDelete(cfg)
 		}
+		return nil
+	}
+
+	// If we have seen this generation then skip
+	if cfg.Status.ObservedGeneration >= cfg.Generation {
 		return nil
 	}
 
