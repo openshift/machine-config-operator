@@ -150,6 +150,10 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
+	// RelatedObjects are consumed by https://github.com/openshift/must-gather
+	co.Status.RelatedObjects = []configv1.ObjectReference{
+		{Resource: "namespaces", Name: "openshift-machine-config-operator"},
+	}
 	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 }
 
