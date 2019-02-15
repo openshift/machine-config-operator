@@ -80,7 +80,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
 
-		node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+		node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
 		if err != nil {
 			return err
 		}
@@ -113,7 +113,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 			}
 			return errors.Wrap(err, "failed to drain node")
 		}
-		glog.V(2).Info("Node successfully drained")
+		glog.Info("Node successfully drained")
 	}
 
 	if err := dn.writePendingState(newConfig); err != nil {

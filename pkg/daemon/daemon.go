@@ -738,7 +738,7 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	}
 
 	// Grab the node instance
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	if err != nil {
 		return false, err
 	}
@@ -776,7 +776,7 @@ func (dn *Daemon) executeUpdateFromCluster() error {
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
 func (dn *Daemon) completeUpdate(desiredConfigName string) error {
-	node, err := dn.kubeClient.CoreV1().Nodes().Get(dn.name, metav1.GetOptions{})
+	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
 	if err != nil {
 		return err
 	}
