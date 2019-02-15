@@ -459,13 +459,13 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 	})
 }
 
-func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, error) {
+func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
 	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
 		return 0, err
 	}
-	unavail := int32(len(getUnavailableMachines(pool.Status.Configuration.Name, nodes)))
-	progress := int32(0)
+	unavail := len(getUnavailableMachines(pool.Status.Configuration.Name, nodes))
+	progress := 0
 	if unavail < maxunavail {
 		progress = maxunavail - unavail
 	}
@@ -473,7 +473,7 @@ func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, 
 	return progress, nil
 }
 
-func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, progress int32) []*corev1.Node {
+func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, progress int) []*corev1.Node {
 	acted := getReadyMachines(pool.Status.Configuration.Name, nodes)
 	acted = append(acted, getUnavailableMachines(pool.Status.Configuration.Name, nodes)...)
 
@@ -483,19 +483,19 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, 
 	}
 
 	var candidates []*corev1.Node
-	for idx, node := range nodes {
+	for _, node := range nodes {
 		if _, ok := actedMap[node.Name]; !ok {
-			candidates = append(candidates, nodes[idx])
+			candidates = append(candidates, node)
 		}
 	}
 
-	if int32(len(candidates)) <= progress {
+	if len(candidates) <= progress {
 		return candidates
 	}
 	return candidates[:progress]
 }
 
-func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32, error) {
+func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
 	intOrPercent := intstrutil.FromInt(1)
 	if pool.Spec.MaxUnavailable != nil {
 		intOrPercent = *pool.Spec.MaxUnavailable
@@ -508,5 +508,5 @@ func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int32
 	if maxunavail == 0 {
 		maxunavail = 1
 	}
-	return int32(maxunavail), nil
+	return maxunavail, nil
 }
