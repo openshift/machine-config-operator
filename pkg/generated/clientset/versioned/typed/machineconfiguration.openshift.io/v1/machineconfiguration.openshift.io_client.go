@@ -11,6 +11,7 @@ import (
 
 type MachineconfigurationV1Interface interface {
 	RESTClient() rest.Interface
+	ContainerRuntimeConfigsGetter
 	ControllerConfigsGetter
 	KubeletConfigsGetter
 	MCOConfigsGetter
@@ -21,6 +22,10 @@ type MachineconfigurationV1Interface interface {
 // MachineconfigurationV1Client is used to interact with features provided by the machineconfiguration.openshift.io group.
 type MachineconfigurationV1Client struct {
 	restClient rest.Interface
+}
+
+func (c *MachineconfigurationV1Client) ContainerRuntimeConfigs() ContainerRuntimeConfigInterface {
+	return newContainerRuntimeConfigs(c)
 }
 
 func (c *MachineconfigurationV1Client) ControllerConfigs() ControllerConfigInterface {

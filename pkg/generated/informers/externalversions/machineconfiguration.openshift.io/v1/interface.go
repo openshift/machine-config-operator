@@ -8,6 +8,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// ContainerRuntimeConfigs returns a ContainerRuntimeConfigInformer.
+	ContainerRuntimeConfigs() ContainerRuntimeConfigInformer
 	// ControllerConfigs returns a ControllerConfigInformer.
 	ControllerConfigs() ControllerConfigInformer
 	// KubeletConfigs returns a KubeletConfigInformer.
@@ -29,6 +31,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// ContainerRuntimeConfigs returns a ContainerRuntimeConfigInformer.
+func (v *version) ContainerRuntimeConfigs() ContainerRuntimeConfigInformer {
+	return &containerRuntimeConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // ControllerConfigs returns a ControllerConfigInformer.
