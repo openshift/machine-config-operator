@@ -99,7 +99,7 @@ func newMachineConfigPool(name string, labels map[string]string, selector *metav
 func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfiguration, selector *metav1.LabelSelector) *mcfgv1.KubeletConfig {
 	return &mcfgv1.KubeletConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Spec: mcfgv1.KubeletConfigSpec{
 			KubeletConfig:             kubeconf,
 			MachineConfigPoolSelector: selector,
