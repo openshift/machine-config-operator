@@ -87,7 +87,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 
 func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var updated []*corev1.Node
-	for idx, node := range nodes {
+	for _, node := range nodes {
 		if node.Annotations == nil {
 			continue
 		}
@@ -97,7 +97,7 @@ func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.No
 		}
 
 		if cconfig == currentConfig {
-			updated = append(updated, nodes[idx])
+			updated = append(updated, node)
 		}
 	}
 	return updated
@@ -106,9 +106,9 @@ func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.No
 func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	updated := getUpdatedMachines(currentConfig, nodes)
 	var ready []*corev1.Node
-	for idx, node := range updated {
+	for _, node := range updated {
 		if isNodeReady(node) {
-			ready = append(ready, updated[idx])
+			ready = append(ready, node)
 		}
 	}
 	return ready
@@ -140,7 +140,7 @@ func isNodeReady(node *corev1.Node) bool {
 
 func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
-	for idx, node := range nodes {
+	for _, node := range nodes {
 		if node.Annotations == nil {
 			continue
 		}
@@ -154,7 +154,7 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 		}
 
 		if dconfig == currentConfig && (dconfig != cconfig || !isNodeReady(node)) {
-			unavail = append(unavail, nodes[idx])
+			unavail = append(unavail, node)
 		}
 	}
 	return unavail
@@ -162,7 +162,7 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 
 func getDegradedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var degraded []*corev1.Node
-	for idx, node := range nodes {
+	for _, node := range nodes {
 		if node.Annotations == nil {
 			continue
 		}
@@ -176,7 +176,7 @@ func getDegradedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.N
 		}
 
 		if dconfig == currentConfig && dstate == daemonconsts.MachineConfigDaemonStateDegraded {
-			degraded = append(degraded, nodes[idx])
+			degraded = append(degraded, node)
 		}
 	}
 	return degraded

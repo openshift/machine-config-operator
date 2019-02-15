@@ -355,13 +355,13 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		return ctrl.syncFailingStatus(cfg, err)
 	}
 
-	for idx := range mcs {
-		_, updated, err := resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mcs[idx])
+	for _, mc := range mcs {
+		_, updated, err := resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mc)
 		if err != nil {
 			return ctrl.syncFailingStatus(cfg, err)
 		}
 		if updated {
-			glog.V(4).Infof("Machineconfig %s was updated", mcs[idx].Name)
+			glog.V(4).Infof("Machineconfig %s was updated", mc.Name)
 		}
 	}
 
@@ -382,9 +382,9 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		return nil, err
 	}
 
-	for i := range mcs {
+	for _, mc := range mcs {
 		oref := metav1.NewControllerRef(config, controllerKind)
-		mcs[i].SetOwnerReferences([]metav1.OwnerReference{*oref})
+		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
 	}
 
 	sort.Slice(mcs, func(i, j int) bool { return mcs[i].Name < mcs[j].Name })
