@@ -3,6 +3,7 @@ package v1
 import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
@@ -479,4 +480,110 @@ type KubeletConfigList struct {
 	metav1.ListMeta `json:"metadata"`
 
 	Items []KubeletConfig `json:"items"`
+}
+
+// CustomResourceDefinition for ContainerRuntimeConfig
+// apiVersion: apiextensions.k8s.io/v1beta1
+// kind: CustomResourceDefinition
+// metadata:
+//   # name must match the spec fields below, and be in the form: <plural>.<group>
+//   name: containerruntimeconfigs.machineconfiguration.openshift.io
+// spec:
+//   # group name to use for REST API: /apis/<group>/<version>
+//   group: machineconfiguration.openshift.io
+//   # list of versions supported by this CustomResourceDefinition
+//   versions:
+//     - name: v1
+//       # Each version can be enabled/disabled by Served flag.
+//       served: true
+//       # One and only one version must be marked as the storage version.
+//       storage: true
+//   # either Namespaced or Cluster
+//   scope: Cluster
+//   names:
+//     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+//     plural: containerruntimeconfigs
+//     # singular name to be used as an alias on the CLI and for display
+//     singular: containerruntimeconfig
+//     # kind is normally the CamelCased singular type. Your resource manifests use this.
+//     kind: ContainerRuntimeConfig
+//     # shortNames allow shorter string to match your resource on the CLI
+//     shortNames: ['ctrcfg']
+//
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ContainerRuntimeConfig describes a customized Container Runtime configuration.
+type ContainerRuntimeConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   ContainerRuntimeConfigSpec   `json:"spec,omitempty"`
+	Status ContainerRuntimeConfigStatus `json:"status,omitempty"`
+}
+
+// ContainerRuntimeConfigSpec defines the desired state of ContainerRuntimeConfig
+type ContainerRuntimeConfigSpec struct {
+	MachineConfigPoolSelector *metav1.LabelSelector          `json:"machineConfigPoolSelector,omitempty"`
+	ContainerRuntimeConfig    *ContainerRuntimeConfiguration `json:"containerRuntimeConfig,omitempty"`
+}
+
+// ContainerRuntimeConfiguration defines the tuneables of the container runtime
+type ContainerRuntimeConfiguration struct {
+	PidsLimit   int64             `json:"pidsLimit,omitempty"`
+	LogLevel    string            `json:"logLevel,omitempty"`
+	LogSizeMax  resource.Quantity `json:"logSizeMax,omitempty"`
+	InfraImage  string            `json:"infraImage,omitempty"`
+	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
+}
+
+// ContainerRuntimeConfigStatus defines the observed state of a ContainerRuntimeConfig
+type ContainerRuntimeConfigStatus struct {
+	// The generation observed by the controller.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Represents the latest available observations of current state.
+	Conditions []ContainerRuntimeConfigCondition `json:"conditions"`
+}
+
+// ContainerRuntimeConfigCondition defines the state of the ContainerRuntimeConfig
+type ContainerRuntimeConfigCondition struct {
+	// type specifies the state of the operator's reconciliation functionality.
+	Type ContainerRuntimeConfigStatusConditionType `json:"type"`
+
+	// status of the condition, one of True, False, Unknown.
+	Status corev1.ConditionStatus `json:"status"`
+
+	// lastTransitionTime is the time of the last update to the current status object.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+
+	// reason is the reason for the condition's last transition.  Reasons are CamelCase
+	Reason string `json:"reason,omitempty"`
+
+	// message provides additional information about the current condition.
+	// This is only to be consumed by humans.
+	Message string `json:"message,omitempty"`
+}
+
+// ContainerRuntimeConfigStatusConditionType is the state of the operator's reconciliation functionality.
+type ContainerRuntimeConfigStatusConditionType string
+
+const (
+	// ContainerRuntimeConfigSuccess designates a successful application of a ContainerRuntimeConfig CR.
+	ContainerRuntimeConfigSuccess ContainerRuntimeConfigStatusConditionType = "Success"
+
+	// ContainerRuntimeConfigFailure designates a failure applying a ContainerRuntimeConfig CR.
+	ContainerRuntimeConfigFailure ContainerRuntimeConfigStatusConditionType = "Failure"
+)
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ContainerRuntimeConfigList is a list of ContainerRuntimeConfig resources
+type ContainerRuntimeConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []ContainerRuntimeConfig `json:"items"`
 }

@@ -120,6 +120,16 @@ func NewKubeletConfigCondition(condType KubeletConfigStatusConditionType, status
 	}
 }
 
+// NewContainerRuntimeConfigCondition returns an instance of a ContainerRuntimeConfigCondition
+func NewContainerRuntimeConfigCondition(condType ContainerRuntimeConfigStatusConditionType, status corev1.ConditionStatus, message string) *ContainerRuntimeConfigCondition {
+	return &ContainerRuntimeConfigCondition{
+		Type:               condType,
+		Status:             status,
+		LastTransitionTime: metav1.Now(),
+		Message:            message,
+	}
+}
+
 // NewControllerConfigStatusCondition creates a new ControllerConfigStatus condition.
 func NewControllerConfigStatusCondition(condType ControllerConfigStatusConditionType, status corev1.ConditionStatus, reason, message string) *ControllerConfigStatusCondition {
 	return &ControllerConfigStatusCondition{

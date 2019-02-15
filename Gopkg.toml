@@ -151,3 +151,15 @@ required = [
 [[override]]
   name = "k8s.io/apiserver"
   version = "kubernetes-1.12.5"
+
+[[constraint]]
+  branch = "release-1.12"
+  name = "github.com/kubernetes-sigs/cri-o"
+
+[[constraint]]
+  revision = "0b67c788f2d234c9fecc3d372d93160869381166"
+  name = "github.com/containers/storage"
+
+[[override]]
+  name = "github.com/opencontainers/runtime-spec"
+  revision = "29686dbc5559d93fb1ef402eeda3e35c38d75af4"

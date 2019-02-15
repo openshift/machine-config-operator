@@ -2,6 +2,10 @@
 
 package v1
 
+// ContainerRuntimeConfigListerExpansion allows custom methods to be added to
+// ContainerRuntimeConfigLister.
+type ContainerRuntimeConfigListerExpansion interface{}
+
 // ControllerConfigListerExpansion allows custom methods to be added to
 // ControllerConfigLister.
 type ControllerConfigListerExpansion interface{}

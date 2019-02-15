@@ -12,6 +12,10 @@ type FakeMachineconfigurationV1 struct {
 	*testing.Fake
 }
 
+func (c *FakeMachineconfigurationV1) ContainerRuntimeConfigs() v1.ContainerRuntimeConfigInterface {
+	return &FakeContainerRuntimeConfigs{c}
+}
+
 func (c *FakeMachineconfigurationV1) ControllerConfigs() v1.ControllerConfigInterface {
 	return &FakeControllerConfigs{c}
 }

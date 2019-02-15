@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  digest = "1:5d72bbcc9c8667b11c3dc3cbe681c5a6f71e5096744c0bf7726ab5c6425d5dc4"
+  name = "github.com/BurntSushi/toml"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "3012a1dbe2e4bd1391d42b32f0577cb7bbc7f005"
+  version = "v0.3.1"
+
+[[projects]]
   digest = "1:a26f8da48b22e6176c1c6a2459904bb30bd0c49ada04b2963c2c3a203e81a620"
   name = "github.com/Masterminds/semver"
   packages = ["."]
@@ -16,6 +24,14 @@
   pruneopts = "NUT"
   revision = "6b2a58267f6a8b1dc8e2eb5519b984008fa85e8c"
   version = "v2.15.0"
+
+[[projects]]
+  digest = "1:2be791e7b333ff7c06f8fb3dc18a7d70580e9399dbdffd352621d067ff260b6e"
+  name = "github.com/Microsoft/go-winio"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "97e4973ce50b2ff5f09635a57e2b88a037aae829"
+  version = "v0.4.11"
 
 [[projects]]
   branch = "go15"
@@ -71,6 +87,27 @@
   pruneopts = "NUT"
   revision = "2ee87856327ba09384cabd113bc6b5d174e9ec0f"
   version = "v3.5.1"
+
+[[projects]]
+  branch = "master"
+  digest = "1:b231af2081fbc401a79fa354f41812d4e975f78dab6c9603a2fa5e1c76456e57"
+  name = "github.com/containerd/cgroups"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "39b18af02c4120960f517a3a4c2588fabb61d02c"
+
+[[projects]]
+  digest = "1:490deff6409bd7c1e531e143c3adc5bf5e5ff39a7bad6a69f41d5efe95a7ec07"
+  name = "github.com/containers/storage"
+  packages = [
+    "pkg/config",
+    "pkg/fileutils",
+    "pkg/idtools",
+    "pkg/mount",
+    "pkg/system",
+  ]
+  pruneopts = "NUT"
+  revision = "0b67c788f2d234c9fecc3d372d93160869381166"
 
 [[projects]]
   digest = "1:beedaa1ce9cb1ddb4dc511a68d9d128773e6ada0a1bd8b9bc4b7d7026617b535"
@@ -151,6 +188,22 @@
   version = "v1.1.0"
 
 [[projects]]
+  digest = "1:c18eb4734a9775d861238a8ca4920a57fa94fa608e07c0043196fefd00c13ecf"
+  name = "github.com/docker/docker"
+  packages = ["pkg/signal"]
+  pruneopts = "NUT"
+  revision = "d3446258471733fe667f0abdf015ee3ebd2f3485"
+  version = "v1.3.3"
+
+[[projects]]
+  digest = "1:4340101f42556a9cb2f7a360a0e95a019bfef6247d92e6c4c46f2433cf86a482"
+  name = "github.com/docker/go-units"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "47565b4f722fb6ceae66b95f853feed578a4a51c"
+  version = "v0.3.3"
+
+[[projects]]
   digest = "1:32598368f409bbee79deb9d43569fcd92b9fb27f39155f5e166b3371217f051f"
   name = "github.com/evanphx/json-patch"
   packages = ["."]
@@ -183,10 +236,12 @@
   version = "v4.1.0"
 
 [[projects]]
-  digest = "1:8679b8a64f3613e9749c5640c3535c83399b8e69f67ce54d91dc73f6d77373af"
+  digest = "1:cd4f86461732066e277335465962660cbf02999e18d5bbb5e9285eac4608b970"
   name = "github.com/gogo/protobuf"
   packages = [
+    "gogoproto",
     "proto",
+    "protoc-gen-gogo/descriptor",
     "sortkeys",
   ]
   pruneopts = "NUT"
@@ -313,6 +368,27 @@
   version = "1.1.4"
 
 [[projects]]
+  digest = "1:4059c14e87a2de3a434430340521b5feece186c1469eff0834c29a63870de3ed"
+  name = "github.com/konsorten/go-windows-terminal-sequences"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
+  version = "v1.0.1"
+
+[[projects]]
+  branch = "release-1.12"
+  digest = "1:586055d6fbea67a7cac1f36523ebe9e085c2fead657bb7162b6dd886d0e09fad"
+  name = "github.com/kubernetes-sigs/cri-o"
+  packages = [
+    "oci",
+    "pkg/config",
+    "pkg/findprocess",
+    "utils",
+  ]
+  pruneopts = "NUT"
+  revision = "84179cb1b3ac633a7434cec72966aba698216229"
+
+[[projects]]
   digest = "1:2f42fa12d6911c7b7659738758631bec870b7e9b4c6be5444f963cdcfccc191f"
   name = "github.com/modern-go/concurrent"
   packages = ["."]
@@ -327,6 +403,21 @@
   pruneopts = "NUT"
   revision = "4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd"
   version = "1.0.1"
+
+[[projects]]
+  digest = "1:918dbd46ad099418ce9760291bb156ebf23d441aad4cb682dd9bf09e2d3c0c7b"
+  name = "github.com/opencontainers/runc"
+  packages = ["libcontainer/user"]
+  pruneopts = "NUT"
+  revision = "baf6536d6259209c3edfa2b22237af82942d3dfa"
+  version = "v0.1.1"
+
+[[projects]]
+  digest = "1:7a58202c5cdf3d2c1eb0621fe369315561cea7f036ad10f0f0479ac36bcc95eb"
+  name = "github.com/opencontainers/runtime-spec"
+  packages = ["specs-go"]
+  pruneopts = "NUT"
+  revision = "29686dbc5559d93fb1ef402eeda3e35c38d75af4"
 
 [[projects]]
   branch = "master"
@@ -423,6 +514,14 @@
   version = "v0.8.0"
 
 [[projects]]
+  digest = "1:e256b859ab89f005f2f639f5ed9807d0873d9135e27c6382f419b840ff9abe71"
+  name = "github.com/sirupsen/logrus"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "e1e72e9de974bd926e5c56f83753fba2df402ce5"
+  version = "v1.3.0"
+
+[[projects]]
   digest = "1:343d44e06621142ab09ae0c76c1799104cdfddd3ffb445d78b1adf8dc3ffaf3d"
   name = "github.com/spf13/cobra"
   packages = ["."]
@@ -467,7 +566,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e92818058cf315736d986a45f81e40b06629012d8654c0aba004df4aded15423"
+  digest = "1:416fe347569c8eaa3b91c877f8d1107ea4a23bbfff11c17b656cae327ced21a3"
   name = "golang.org/x/net"
   packages = [
     "context",
@@ -476,6 +575,8 @@
     "http2",
     "http2/hpack",
     "idna",
+    "internal/timeseries",
+    "trace",
   ]
   pruneopts = "NUT"
   revision = "3673e40ba22529d22c3fd7c93e97b0ce50fa7bdd"
@@ -560,6 +661,54 @@
   pruneopts = "NUT"
   revision = "e9657d882bb81064595ca3b56cbe2546bbabf7b1"
   version = "v1.4.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:077c1c599507b3b3e9156d17d36e1e61928ee9b53a5b420f10f28ebd4a0b275c"
+  name = "google.golang.org/genproto"
+  packages = ["googleapis/rpc/status"]
+  pruneopts = "NUT"
+  revision = "4b09977fb92221987e99d190c8f88f2c92727a29"
+
+[[projects]]
+  digest = "1:4837585442801f3c7ebd044a96fce852242529a73bdd96fcba2119ff74987b0b"
+  name = "google.golang.org/grpc"
+  packages = [
+    ".",
+    "balancer",
+    "balancer/base",
+    "balancer/roundrobin",
+    "binarylog/grpc_binarylog_v1",
+    "codes",
+    "connectivity",
+    "credentials",
+    "credentials/internal",
+    "encoding",
+    "encoding/proto",
+    "grpclog",
+    "internal",
+    "internal/backoff",
+    "internal/binarylog",
+    "internal/channelz",
+    "internal/envconfig",
+    "internal/grpcrand",
+    "internal/grpcsync",
+    "internal/syscall",
+    "internal/transport",
+    "keepalive",
+    "metadata",
+    "naming",
+    "peer",
+    "resolver",
+    "resolver/dns",
+    "resolver/passthrough",
+    "stats",
+    "status",
+    "tap",
+  ]
+  pruneopts = "NUT"
+  revision = "a02b0774206b209466313a0b525d2c738fe407eb"
+  version = "v1.18.0"
 
 [[projects]]
   digest = "1:2d1fbdc6777e5408cabeb02bf336305e724b925ff4546ded0fa8715a7267922a"
@@ -927,7 +1076,7 @@
   version = "kubernetes-1.12.5"
 
 [[projects]]
-  digest = "1:fe9e881b39618eccb2e9f07d9f35b1d68ae05179fdb2e07c528b0f98b32aaf7c"
+  digest = "1:72e4d1d67d286cb07446cc4e91a485d76e9939cf33da804cf38c569c3b70bbfa"
   name = "k8s.io/kubernetes"
   packages = [
     "pkg/apis/core",
@@ -937,6 +1086,7 @@
     "pkg/kubelet/apis/config",
     "pkg/kubelet/apis/config/scheme",
     "pkg/kubelet/apis/config/v1beta1",
+    "pkg/kubelet/apis/cri/runtime/v1alpha2",
     "pkg/kubelet/qos",
     "pkg/kubelet/types",
     "pkg/master/ports",
@@ -964,10 +1114,12 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/BurntSushi/toml",
     "github.com/Masterminds/sprig",
     "github.com/apparentlymart/go-cidr/cidr",
     "github.com/ashcrow/osrelease",
     "github.com/blang/semver",
+    "github.com/containers/storage/pkg/config",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
     "github.com/coreos/go-systemd/dbus",
@@ -979,6 +1131,7 @@
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
     "github.com/imdario/mergo",
+    "github.com/kubernetes-sigs/cri-o/pkg/config",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
     "github.com/openshift/client-go/config/clientset/versioned/scheme",
@@ -1003,6 +1156,7 @@
     "k8s.io/apimachinery/pkg/api/equality",
     "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/api/meta",
+    "k8s.io/apimachinery/pkg/api/resource",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
     "k8s.io/apimachinery/pkg/labels",
     "k8s.io/apimachinery/pkg/runtime",
