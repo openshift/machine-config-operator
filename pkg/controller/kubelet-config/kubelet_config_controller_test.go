@@ -91,12 +91,14 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 }
 
-func newControllerConfig(name string) *mcfgv1.ControllerConfig {
+func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
+	name = fmt.Sprintf("%s-%s", name, platform)
 	cc := &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
 			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+			Platform:            platform,
 		},
 	}
 	return cc
@@ -274,8 +276,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster")
-			cc.Spec.Platform = platform
+			cc := newControllerConfig("test-cluster-configcreate", platform)
 			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
@@ -302,8 +303,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster")
-			cc.Spec.Platform = platform
+			cc := newControllerConfig("test-cluster-configupdate", platform)
 			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
@@ -336,13 +336,14 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f = newFixture(t)
 
 			// Modify config
-			kc1.Spec.KubeletConfig.MaxPods = 101
+			kcUpdate := kc1.DeepCopy()
+			kcUpdate.Spec.KubeletConfig.MaxPods = 101
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mckLister = append(f.mckLister, kc1)
-			f.objects = append(f.objects, mcs, kc1) // MachineConfig exists
+			f.objects = append(f.objects, mcs, kcUpdate) // MachineConfig exists
 
 			c, i = f.newController()
 			stopCh = make(chan struct{})
@@ -351,15 +352,15 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			glog.Info("Applying update")
 
 			// Apply update
-			err = c.syncHandler(getKey(kc1, t))
+			err = c.syncHandler(getKey(kcUpdate, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateMachineConfigAction(mcs)
-			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x6d, 0x77, 0x77, 0x74, 0x67, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
-			f.expectUpdateKubeletConfig(kc1)
+			f.expectPatchKubeletConfig(kcUpdate, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x6d, 0x77, 0x77, 0x74, 0x67, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectUpdateKubeletConfig(kcUpdate)
 
 			f.validateActions()
 
