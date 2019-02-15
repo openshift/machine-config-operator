@@ -288,6 +288,13 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
+	kubeCA, err := optr.getCAsFromConfigMap("openshift-config", "initial-client-ca", "ca-bundle.crt")
+	if err != nil {
+		return err
+	}
+	bundle := make([]byte, 0)
+	bundle = append(bundle, rootCA...)
+	bundle = append(bundle, kubeCA...)
 
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
@@ -311,7 +318,7 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 	spec.EtcdCAData = etcdCA
-	spec.RootCAData = rootCA
+	spec.RootCAData = bundle
 	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
 	spec.SSHKey = ic.SSHKey
 	spec.OSImageURL = imgs.MachineOSContent
