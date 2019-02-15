@@ -28,15 +28,22 @@ func (optr *Operator) syncAvailableStatus() error {
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
+	progressing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing)
+	failing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorFailing)
+	message := fmt.Sprintf("Cluster has deployed %s", optrVersion)
+
+	available := configv1.ConditionTrue
+
+	if failing && !progressing {
+		available = configv1.ConditionFalse
+		message = fmt.Sprintf("Cluster not available for %s", optrVersion)
+	}
+
 	// set available
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorAvailable, Status: configv1.ConditionTrue,
-		Message: fmt.Sprintf("Cluster is available at %s", optrVersion),
+		Type: configv1.OperatorAvailable, Status: available,
+		Message: message,
 	})
-	// clear progressing
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
-	// clear failure
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
 
 	co.Status.Versions = optr.vStore.GetAll()
 	optr.setMachineConfigPoolStatuses(&co.Status)
@@ -55,15 +62,20 @@ func (optr *Operator) syncProgressingStatus() error {
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
-	var message string
+	progressing := configv1.ConditionFalse
+	message := fmt.Sprintf("Cluster version is %s", optrVersion)
+
 	if optr.vStore.Equal(co.Status.Versions) {
-		// syncing the state to existing version.
-		message = fmt.Sprintf("Running resync for %s", optrVersion)
+		if optr.inClusterBringup {
+			progressing = configv1.ConditionTrue
+		}
 	} else {
-		message = fmt.Sprintf("Progressing towards %s", optrVersion)
+		message = fmt.Sprintf("Working towards %s", optrVersion)
+		progressing = configv1.ConditionTrue
 	}
+
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue,
+		Type: configv1.OperatorProgressing, Status: progressing,
 		Message: message,
 	})
 
@@ -91,7 +103,7 @@ func (optr *Operator) syncFailingStatus(ierr error) error {
 		// syncing the state to exiting version.
 		message = fmt.Sprintf("Failed to resync %s because: %v", optrVersion, ierr.Error())
 	} else {
-		message = fmt.Sprintf("Failed when progressing towards %s because: %v", optrVersion, ierr.Error())
+		message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.Error())
 	}
 	// set failing condition
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{

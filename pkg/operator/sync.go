@@ -47,7 +47,6 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 		if optr.inClusterBringup {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
-		optr.syncProgressingStatus()
 	}
 
 	agg := utilerrors.NewAggregate(errs)
@@ -55,7 +54,8 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 		errs = append(errs, optr.syncFailingStatus(agg))
 		agg = utilerrors.NewAggregate(errs)
 		return fmt.Errorf("error syncing: %v", agg.Error())
-	} else if optr.inClusterBringup {
+	}
+	if optr.inClusterBringup {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
