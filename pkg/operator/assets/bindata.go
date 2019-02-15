@@ -337,6 +337,9 @@ rules:
 - apiGroups: [""]
   resources: ["configmaps", "secrets"]
   verbs: ["*"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["images"]
+  verbs: ["*"]
 `)
 
 func manifestsMachineconfigcontrollerClusterroleYamlBytes() ([]byte, error) {

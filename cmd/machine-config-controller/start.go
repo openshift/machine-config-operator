@@ -56,8 +56,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			glog.Fatalf("error starting controllers: %v", err)
 		}
 
+		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
 		select {}
@@ -120,8 +122,10 @@ func startControllers(ctx *common.ControllerContext) error {
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 		ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 		ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
+		ctx.ConfigInformerFactory.Config().V1().Images(),
 		ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
 		ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),
+		ctx.ClientBuilder.ConfigClientOrDie("container-runtime-config-controller"),
 	).Run(2, ctx.Stop)
 
 	return nil

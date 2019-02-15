@@ -25,6 +25,10 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -55,9 +59,11 @@ type Controller struct {
 	templatesDir string
 
 	client        mcfgclientset.Interface
+	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                   func(mcp string) error
+	syncImgHandler                func(mcp string) error
 	enqueueContainerRuntimeConfig func(*mcfgv1.ContainerRuntimeConfig)
 
 	ccLister       mcfglistersv1.ControllerConfigLister
@@ -66,10 +72,14 @@ type Controller struct {
 	mccrLister       mcfglistersv1.ContainerRuntimeConfigLister
 	mccrListerSynced cache.InformerSynced
 
+	imgLister       cligolistersv1.ImageLister
+	imgListerSynced cache.InformerSynced
+
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
-	queue workqueue.RateLimitingInterface
+	queue    workqueue.RateLimitingInterface
+	imgQueue workqueue.RateLimitingInterface
 }
 
 // New returns a new container runtime config controller
@@ -78,8 +88,10 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
+	imgInformer cligoinformersv1.ImageInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	configClient configclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -88,8 +100,10 @@ func New(
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
+		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-containerruntimeconfigcontroller"),
+		imgQueue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -98,7 +112,14 @@ func New(
 		DeleteFunc: ctrl.deleteContainerRuntimeConfig,
 	})
 
+	imgInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.imageConfAdded,
+		UpdateFunc: ctrl.imageConfUpdated,
+		DeleteFunc: ctrl.imageConfDeleted,
+	})
+
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
+	ctrl.syncImgHandler = ctrl.syncImageConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
 
 	ctrl.mcpLister = mcpInformer.Lister()
@@ -110,6 +131,9 @@ func New(
 	ctrl.mccrLister = mcrInformer.Lister()
 	ctrl.mccrListerSynced = mcrInformer.Informer().HasSynced
 
+	ctrl.imgLister = imgInformer.Lister()
+	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -117,11 +141,12 @@ func New(
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
+	defer ctrl.imgQueue.ShutDown()
 
 	glog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
 	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced, ctrl.imgListerSynced) {
 		return
 	}
 
@@ -129,7 +154,22 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
 	}
 
+	// Just need one worker for the image config
+	go wait.Until(ctrl.imgWorker, time.Second, stopCh)
+
 	<-stopCh
+}
+
+func (ctrl *Controller) imageConfAdded(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) imageConfUpdated(oldObj interface{}, newObj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) imageConfDeleted(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
 }
 
 func (ctrl *Controller) updateContainerRuntimeConfig(oldObj interface{}, newObj interface{}) {
@@ -204,6 +244,11 @@ func (ctrl *Controller) worker() {
 	}
 }
 
+func (ctrl *Controller) imgWorker() {
+	for ctrl.processNextImgWorkItem() {
+	}
+}
+
 func (ctrl *Controller) processNextWorkItem() bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
@@ -213,6 +258,19 @@ func (ctrl *Controller) processNextWorkItem() bool {
 
 	err := ctrl.syncHandler(key.(string))
 	ctrl.handleErr(err, key)
+
+	return true
+}
+
+func (ctrl *Controller) processNextImgWorkItem() bool {
+	key, quit := ctrl.imgQueue.Get()
+	if quit {
+		return false
+	}
+	defer ctrl.imgQueue.Done(key)
+
+	err := ctrl.syncImgHandler(key.(string))
+	ctrl.handleImgErr(err, key)
 
 	return true
 }
@@ -235,27 +293,45 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
+func (ctrl *Controller) handleImgErr(err error, key interface{}) {
+	if err == nil {
+		ctrl.imgQueue.Forget(key)
+		return
+	}
+
+	if ctrl.imgQueue.NumRequeues(key) < maxRetries {
+		glog.V(2).Infof("Error syncing image config %v: %v", key, err)
+		ctrl.imgQueue.AddRateLimited(key)
+		return
+	}
+
+	utilruntime.HandleError(err)
+	glog.V(2).Infof("Dropping image config %q out of the queue: %v", key, err)
+	ctrl.imgQueue.Forget(key)
+	ctrl.imgQueue.AddAfter(key, 1*time.Minute)
+}
+
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*ignv2_2types.File, *ignv2_2types.File, error) {
+func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*ignv2_2types.File, *ignv2_2types.File, *ignv2_2types.File, error) {
 	// Enumerate the controller config
 	cc, err := ctrl.ccLister.List(labels.Everything())
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not enumerate ControllerConfig %s", err)
+		return nil, nil, nil, fmt.Errorf("could not enumerate ControllerConfig %s", err)
 	}
 	if len(cc) == 0 {
-		return nil, nil, fmt.Errorf("controllerConfigList is empty")
+		return nil, nil, nil, fmt.Errorf("controllerConfigList is empty")
 	}
 	// Render the default templates
 	tmplPath := filepath.Join(ctrl.templatesDir, role)
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc[0].Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, tmplPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
+		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
 	}
 	// Find generated storage.config, and crio.config
 	var (
-		config, gmcStorageConfig, gmcCRIOConfig *ignv2_2types.File
-		errStorage, errCRIO                     error
+		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig *ignv2_2types.File
+		errStorage, errCRIO, errRegistries                           error
 	)
 	// Find storage config
 	for _, gmc := range generatedConfigs {
@@ -273,11 +349,19 @@ func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*i
 			break
 		}
 	}
-	if errStorage != nil || errCRIO != nil {
-		return nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v", errStorage, errCRIO)
+	// Find Registries config
+	for _, gmc := range generatedConfigs {
+		config, errRegistries = findRegistriesConfig(gmc)
+		if errRegistries == nil {
+			gmcRegistriesConfig = config
+			break
+		}
+	}
+	if errStorage != nil || errCRIO != nil || errRegistries != nil {
+		return nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v, %v", errStorage, errCRIO, errRegistries)
 	}
 
-	return gmcStorageConfig, gmcCRIOConfig, nil
+	return gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, nil
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
@@ -349,7 +433,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey := getManagedKey(pool, cfg)
+		managedKey := getManagedKeyCtrCfg(pool, cfg)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
@@ -357,7 +441,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 			isNotFound := errors.IsNotFound(err)
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, originalCRIOIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
+			originalStorageIgn, originalCRIOIgn, _, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 			}
@@ -424,6 +508,91 @@ func (ctrl *Controller) mergeConfigChanges(origFile *ignv2_2types.File, cfg *mcf
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not update container runtime config with new changes: %v", err)
 	}
 	return cfgTOML, ctrl.syncStatusOnly(cfg, nil)
+}
+
+func (ctrl *Controller) syncImageConfig(key string) error {
+	startTime := time.Now()
+	glog.V(4).Infof("Started syncing ImageConfig %q (%v)", key, startTime)
+	defer func() {
+		glog.V(4).Infof("Finished syncing ImageConfig %q (%v)", key, time.Since(startTime))
+	}()
+
+	// Fetch the ImageConfig
+	imgcfg, err := ctrl.imgLister.Get("cluster")
+	if errors.IsNotFound(err) {
+		glog.V(2).Infof("ImageConfig doesn't exist or has been deleted")
+		fmt.Println("ImageConfig doesn't exist or has been deleted")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Deep-copy otherwise we are mutating our cache.
+	imgcfg = imgcfg.DeepCopy()
+
+	// Find all the MachineConfig pools
+	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	for _, pool := range mcpPools {
+		role := pool.Name
+		// Get MachineConfig
+		managedKey := getManagedKeyReg(pool, imgcfg)
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return fmt.Errorf("could not find MachineConfig: %v", err)
+			}
+			isNotFound := errors.IsNotFound(err)
+			// Generate the original registries config
+			_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
+			if err != nil {
+				return fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
+			}
+
+			var registriesTOML []byte
+			if imgcfg.Spec.RegistrySources.InsecureRegistries != nil || imgcfg.Spec.RegistrySources.BlockedRegistries != nil {
+				dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+				if err != nil {
+					return fmt.Errorf("could not decode original registries config: %v", err)
+				}
+				registriesTOML, err = updateRegistriesConfig(dataURL.Data, imgcfg.Spec)
+				if err != nil {
+					return fmt.Errorf("could not update container runtime config with new changes: %v", err)
+				}
+			}
+			if isNotFound {
+				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
+			}
+			mc.Spec.Config = createNewRegistriesConfigIgnition(registriesTOML)
+			mc.ObjectMeta.Annotations = map[string]string{
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
+			}
+			mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+				metav1.OwnerReference{
+					APIVersion: apicfgv1.SchemeGroupVersion.String(),
+					Kind:       "Image",
+					Name:       imgcfg.Name,
+					UID:        imgcfg.UID,
+				},
+			}
+			// Create or Update, on conflict retry
+			if isNotFound {
+				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Create(mc)
+			} else {
+				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Update(mc)
+			}
+
+			return err
+		}); err != nil {
+			return fmt.Errorf("could not Create/Update MachineConfig: %v", err)
+		}
+		glog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
+	}
+
+	return nil
 }
 
 func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig) error {
