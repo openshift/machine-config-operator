@@ -40,7 +40,7 @@ func runbootstrapCmd(cmd *cobra.Command, args []string) {
 	glog.Infof("Version: %+v", version.Version)
 
 	if bootstrapOpts.manifestsDir == "" || bootstrapOpts.destinationDir == "" {
-		glog.Fatalf("--dest-dir or --mainfest-dir not set")
+		glog.Fatalf("--dest-dir or --manifest-dir not set")
 	}
 
 	if err := bootstrap.New(rootOpts.templates, bootstrapOpts.manifestsDir, bootstrapOpts.pullSecretFile).Run(bootstrapOpts.destinationDir); err != nil {
