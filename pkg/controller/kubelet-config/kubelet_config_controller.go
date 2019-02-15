@@ -355,11 +355,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "Could not find MachineConfig: %v", managedKey)
 		}
 		isNotFound := errors.IsNotFound(err)
-		// If the managed MachineConfig exists then try the next pool. This
-		// prevents an infinite recursion of recreating MachineConfigs.
-		if err == nil && !isNotFound && mc != nil {
-			continue
-		}
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
 		if err != nil {
