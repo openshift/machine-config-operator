@@ -309,12 +309,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 		t.Errorf("Expected no error. Got %s.", err)
 
 	}
-	// Until users are supported should not be writing keys for any user not named "core"
-	newMcfg.Spec.Config.Passwd.Users[0].Name = "not_core"
-	err = d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
-	if err == nil {
-		t.Errorf("Expected error, user is not core")
-	}
 
 	// if Users is empty, nothing should happen and no error should ever be generated
 	newMcfg2 := &mcfgv1.MachineConfig{}
