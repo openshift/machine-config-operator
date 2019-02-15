@@ -89,23 +89,25 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 			Factor:   2,
 		}
 		var lastErr error
-		wait.ExponentialBackoff(backoff, func() (bool, error) {
+		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 			err := drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
 				DeleteLocalData:    true,
 				Force:              true,
 				GracePeriodSeconds: 600,
 				IgnoreDaemonsets:   true,
 			})
-			if err != nil {
-				glog.Infof("Draining failed with: %v; retrying...", err)
-				lastErr = err
-				return false, nil
+			if err == nil {
+				return true, nil
 			}
-			lastErr = nil
-			return true, nil
-		})
-		if lastErr != nil {
-			return errors.Wrapf(lastErr, "Failed to drain node (%d tries)", backoff.Steps)
+			lastErr = err
+			glog.Infof("Draining failed with: %v, retrying", err)
+			return false, nil
+
+		}); err != nil {
+			if err == wait.ErrWaitTimeout {
+				return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
+			}
+			return errors.Wrap(err, "failed to drain node")
 		}
 		glog.V(2).Info("Node successfully drained")
 	}
