@@ -95,13 +95,15 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
 	}
+	
 	// for each role a machine config is created containing the sshauthorized keys to allow for ssh access
 	// ex: role = worker -> machine config "00-worker-ssh" created containing user core and ssh key
-	var tempIgnConfig ignv2_2types.Config
+	tempIgnConfig := &ignv2_2types.Config{}
 	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{ignv2_2types.SSHAuthorizedKey(config.SSHKey)}}
 	tempIgnConfig.Passwd.Users = append(tempIgnConfig.Passwd.Users, tempUser)
+
 	sshConfigName := "00-" + role + "-ssh"
-	sshMachineConfigForRole := MachineConfigFromIgnConfig(role, sshConfigName, &tempIgnConfig)
+	sshMachineConfigForRole := generateMachineConfigForName(config, tempIgnConfig, role, sshConfigName)
 
 	cfgs := []*mcfgv1.MachineConfig{}
 	cfgs = append(cfgs, sshMachineConfigForRole)
@@ -113,10 +115,11 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 		}
 		name := info.Name()
 		namePath := filepath.Join(path, name)
-		nameConfig, err := generateMachineConfigForName(config, role, name, namePath)
+		ignCfg, err := generateIgnConfigForName(config, namePath)
 		if err != nil {
 			return nil, err
 		}
+		nameConfig := generateMachineConfigForName(config, ignCfg, role, name)
 		cfgs = append(cfgs, nameConfig)
 	}
 
@@ -170,7 +173,7 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 	return filepath.Walk(path, walkFn)
 }
 
-func generateMachineConfigForName(config *RenderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
+func generateIgnConfigForName(config *RenderConfig, path string) (*ignv2_2types.Config, error) {
 	platform, err := platformFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
 		return nil, err
@@ -238,12 +241,14 @@ func generateMachineConfigForName(config *RenderConfig, role, name, path string)
 	if err != nil {
 		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
 	}
+	return ignCfg, nil
+}
 
+func generateMachineConfigForName(config *RenderConfig, ignCfg *ignv2_2types.Config, role, name string) *mcfgv1.MachineConfig {
 	mcfg := MachineConfigFromIgnConfig(role, name, ignCfg)
 	// And inject the osimageurl here
 	mcfg.Spec.OSImageURL = config.OSImageURL
-
-	return mcfg, nil
+	return mcfg
 }
 
 const (
