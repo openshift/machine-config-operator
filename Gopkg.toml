@@ -40,6 +40,10 @@ required = [
     unused-packages = false
 
 [[constraint]]
+  name = "github.com/stretchr/testify"
+  version = "v1.3.0"
+
+[[constraint]]
   name = "github.com/apparentlymart/go-cidr"
   version = "1.0.0"
 
