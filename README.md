@@ -118,4 +118,4 @@ a single MC apply to multiple labels, inline file encoding, etc.
 
 # Developing the MCO
 
-See [HACKING.md](HACKING.md).
+See [HACKING.md](docs/HACKING.md).
