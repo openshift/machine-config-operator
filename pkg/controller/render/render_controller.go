@@ -504,8 +504,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
 	)
-	for idx := range pools {
-		pool := pools[idx]
+	for _, pool := range pools {
 		pcs, err := getMachineConfigsForPool(pool, configs)
 		if err != nil {
 			return nil, nil, err
