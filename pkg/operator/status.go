@@ -47,7 +47,7 @@ func (optr *Operator) syncAvailableStatus() error {
 
 	co.Status.Versions = optr.vStore.GetAll()
 	optr.setMachineConfigPoolStatuses(&co.Status)
-	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	_, err = optr.configClient.UpdateStatus(co)
 	return err
 }
 
@@ -80,7 +80,7 @@ func (optr *Operator) syncProgressingStatus() error {
 	})
 
 	optr.setMachineConfigPoolStatuses(&co.Status)
-	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	_, err = optr.configClient.UpdateStatus(co)
 	return err
 }
 
@@ -123,12 +123,12 @@ func (optr *Operator) syncFailingStatus(ierr error) (err error) {
 	})
 
 	optr.setMachineConfigPoolStatuses(&co.Status)
-	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	_, err = optr.configClient.UpdateStatus(co)
 	return err
 }
 
 func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(optr.name, metav1.GetOptions{})
+	co, err := optr.configClient.Get(optr.name, metav1.GetOptions{})
 	if meta.IsNoMatchError(err) {
 		return nil, nil
 	}
@@ -142,7 +142,7 @@ func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) 
 }
 
 func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Create(&configv1.ClusterOperator{
+	co, err := optr.configClient.Create(&configv1.ClusterOperator{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: optr.name,
 		},
@@ -157,7 +157,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	co.Status.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: "openshift-machine-config-operator"},
 	}
-	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	return optr.configClient.UpdateStatus(co)
 }
 
 func (optr *Operator) setMachineConfigPoolStatuses(status *configv1.ClusterOperatorStatus) {
