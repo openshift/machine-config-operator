@@ -50,17 +50,20 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	}
 
 	agg := utilerrors.NewAggregate(errs)
-	if agg != nil {
-		errs = append(errs, optr.syncFailingStatus(agg))
-		agg = utilerrors.NewAggregate(errs)
-		return fmt.Errorf("error syncing: %v", agg.Error())
+	if err := optr.syncFailingStatus(agg); err != nil {
+		return fmt.Errorf("error syncing failing status: %v", err)
 	}
-	if optr.inClusterBringup {
+
+	if err := optr.syncAvailableStatus(); err != nil {
+		return fmt.Errorf("error syncing available status: %v", err)
+	}
+
+	if optr.inClusterBringup && agg == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
 
-	return optr.syncAvailableStatus()
+	return agg
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {
