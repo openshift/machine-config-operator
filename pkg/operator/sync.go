@@ -50,11 +50,14 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	}
 
 	agg := utilerrors.NewAggregate(errs)
-	if agg != nil {
-		errs = append(errs, optr.syncFailingStatus(agg))
-		agg = utilerrors.NewAggregate(errs)
-		return fmt.Errorf("error syncing: %v", agg.Error())
+	err := optr.syncFailingStatus(agg)
+	if err != nil {
+		return fmt.Errorf("error syncing failing status: %v", err)
 	}
+	if agg != nil {
+		return fmt.Errorf("error syncing: %v", agg)
+	}
+
 	if optr.inClusterBringup {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
