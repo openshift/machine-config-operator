@@ -303,7 +303,7 @@ func TestMaxUnavailable(t *testing.T) {
 	tests := []struct {
 		maxUnavail *intstr.IntOrString
 
-		expected int32
+		expected int
 		err      bool
 	}{{
 		maxUnavail: nil,
@@ -359,7 +359,7 @@ func TestMaxUnavailable(t *testing.T) {
 func TestGetCandidateMachines(t *testing.T) {
 	tests := []struct {
 		nodes    []*corev1.Node
-		progress int32
+		progress int
 
 		expected []*corev1.Node
 	}{{
@@ -443,7 +443,7 @@ func TestMakeProgress(t *testing.T) {
 		nodes []*corev1.Node
 		max   intstr.IntOrString
 
-		expected int32
+		expected int
 	}{{
 		// no progress can be made
 		nodes: []*corev1.Node{
