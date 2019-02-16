@@ -8,7 +8,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -174,5 +176,66 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 				t.Fatalf("expected %v got %v", test.err, err)
 			}
 		})
+	}
+}
+
+type mockMCPLister struct{}
+
+func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfigPool, err error) {
+	return nil, nil
+}
+func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err error) {
+	return nil, nil
+}
+
+type mockClusterOperatorsClient struct{
+	co *configv1.ClusterOperator
+}
+
+func (coc *mockClusterOperatorsClient) Create(co *configv1.ClusterOperator) (*configv1.ClusterOperator, error) {
+	return coc.co, nil
+}
+func (coc *mockClusterOperatorsClient) UpdateStatus(co *configv1.ClusterOperator) (*configv1.ClusterOperator, error) {
+	return coc.co, nil
+}
+func (coc *mockClusterOperatorsClient) Get(name string, options metav1.GetOptions) (*configv1.ClusterOperator, error) {
+	return coc.co, nil
+}
+
+func TestOperatorFailingStatusClearsOut(t *testing.T) {
+	optr := &Operator{}
+	optr.vStore = newVersionStore()
+	optr.vStore.Set("operator", "test-version")
+	optr.mcpLister = &mockMCPLister{}
+	co := &configv1.ClusterOperator{}
+	optr.configClient = &mockClusterOperatorsClient{co: co}
+
+	fn1 := func(config renderConfig) error {
+		return errors.New("mocked fn1")
+	}
+	fn2 := func(config renderConfig) error {
+		return nil
+	}
+	err := optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}, {name: "mock2", fn: fn2}})
+	if err == nil {
+		t.Error("expected syncAll to have failed but it didn't")
+	}
+	for _, cond := range co.Status.Conditions {
+		if cond.Type == configv1.OperatorFailing && cond.Status != configv1.ConditionTrue {
+			t.Error("expected failing operator")
+		}
+	}
+	fn1 = func(config renderConfig) error {
+		return nil
+	}
+	err = optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}, {name: "mock2", fn: fn2}})
+	if err != nil {
+		t.Errorf("expected syncAll to have passed but got %v", err)
+	}
+	// Failing condition must be False now
+	for _, cond := range co.Status.Conditions {
+		if cond.Type == configv1.OperatorFailing && cond.Status != configv1.ConditionFalse {
+			t.Error("expected operator to have cleared failing condition")
+		}
 	}
 }
