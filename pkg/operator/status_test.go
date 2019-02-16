@@ -576,3 +576,29 @@ func TestOperatorSyncStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestInClusterBringUpStayOnErr(t *testing.T) {
+	optr := &Operator{}
+	optr.vStore = newVersionStore()
+	optr.vStore.Set("operator", "test-version")
+	optr.mcpLister = &mockMCPLister{}
+	co := &configv1.ClusterOperator{}
+	optr.configClient = &mockClusterOperatorsClient{co: co}
+	optr.inClusterBringup = true
+
+	fn1 := func(config renderConfig) error {
+		return errors.New("mocked fn1")
+	}
+	err := optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	assert.NotNil(t, err, "expected syncAll to fail")
+
+	assert.True(t, optr.inClusterBringup)
+
+	fn1 = func(config renderConfig) error {
+		return nil
+	}
+	err = optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	assert.Nil(t, err, "expected syncAll to pass")
+
+	assert.False(t, optr.inClusterBringup)
+}
