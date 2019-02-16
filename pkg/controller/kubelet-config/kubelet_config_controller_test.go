@@ -58,6 +58,25 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
+func (f *fixture) validateActions() {
+	actions := filterInformerActions(f.client.Actions())
+	for i, action := range actions {
+		glog.Infof("  Action: %v", action)
+
+		if len(f.actions) < i+1 {
+			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
+			break
+		}
+
+		expectedAction := f.actions[i]
+		checkAction(expectedAction, action, f.t)
+	}
+
+	if len(f.actions) > len(actions) {
+		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
+	}
+}
+
 func newMachineConfig(name string, labels map[string]string, osurl string, files []ignv2_2types.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
@@ -72,12 +91,14 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 }
 
-func newControllerConfig(name string) *mcfgv1.ControllerConfig {
+func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
+	name = fmt.Sprintf("%s-%s", name, platform)
 	cc := &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
 			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+			Platform:            platform,
 		},
 	}
 	return cc
@@ -159,22 +180,7 @@ func (f *fixture) runController(mcpname string, startInformers bool, expectError
 		f.t.Error("expected error syncing kubeletconfigs, got nil")
 	}
 
-	actions := filterInformerActions(f.client.Actions())
-	for i, action := range actions {
-		glog.Infof("  Action: %v", action)
-
-		if len(f.actions) < i+1 {
-			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
-			break
-		}
-
-		expectedAction := f.actions[i]
-		checkAction(expectedAction, action, f.t)
-	}
-
-	if len(f.actions) > len(actions) {
-		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
-	}
+	f.validateActions()
 }
 
 // filterInformerActions filters list and watch actions for testing resources.
@@ -253,6 +259,10 @@ func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
+func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+}
+
 func (f *fixture) expectPatchKubeletConfig(config *mcfgv1.KubeletConfig, patch []byte) {
 	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name, patch))
 }
@@ -266,8 +276,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster")
-			cc.Spec.Platform = platform
+			cc := newControllerConfig("test-cluster-configcreate", platform)
 			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
@@ -285,6 +294,77 @@ func TestKubeletConfigCreate(t *testing.T) {
 			f.expectUpdateKubeletConfig(kc1)
 
 			f.run(getKey(kc1, t))
+		})
+	}
+}
+
+func TestKubeletConfigUpdates(t *testing.T) {
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig("test-cluster-configupdate", platform)
+			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
+			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
+			mcs := newMachineConfig(getManagedKey(mcp, kc1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectUpdateKubeletConfig(kc1)
+
+			c, i := f.newController()
+			stopCh := make(chan struct{})
+			i.Start(stopCh)
+
+			err := c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			// Perform Update
+			f = newFixture(t)
+
+			// Modify config
+			kcUpdate := kc1.DeepCopy()
+			kcUpdate.Spec.KubeletConfig.MaxPods = 101
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, mcs, kcUpdate) // MachineConfig exists
+
+			c, i = f.newController()
+			stopCh = make(chan struct{})
+			i.Start(stopCh)
+
+			glog.Info("Applying update")
+
+			// Apply update
+			err = c.syncHandler(getKey(kcUpdate, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kcUpdate, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x6d, 0x77, 0x77, 0x74, 0x67, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectUpdateKubeletConfig(kcUpdate)
+
+			f.validateActions()
+
+			close(stopCh)
 		})
 	}
 }
