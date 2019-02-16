@@ -28,13 +28,12 @@ func (optr *Operator) syncAvailableStatus() error {
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
-	progressing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing)
 	failing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorFailing)
 	message := fmt.Sprintf("Cluster has deployed %s", optrVersion)
 
 	available := configv1.ConditionTrue
 
-	if failing && !progressing {
+	if failing {
 		available = configv1.ConditionFalse
 		message = fmt.Sprintf("Cluster not available for %s", optrVersion)
 	}
@@ -67,6 +66,7 @@ func (optr *Operator) syncProgressingStatus() error {
 
 	if optr.vStore.Equal(co.Status.Versions) {
 		if optr.inClusterBringup {
+			message = fmt.Sprintf("Cluster is bootstrapping %s", optrVersion)
 			progressing = configv1.ConditionTrue
 		}
 	} else {
@@ -85,10 +85,7 @@ func (optr *Operator) syncProgressingStatus() error {
 }
 
 // syncFailingStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncFailingStatus(ierr error) error {
-	if ierr == nil {
-		return nil
-	}
+func (optr *Operator) syncFailingStatus(ierr error) (err error) {
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -98,26 +95,32 @@ func (optr *Operator) syncFailingStatus(ierr error) error {
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
-	var message string
-	if optr.vStore.Equal(co.Status.Versions) {
-		// syncing the state to exiting version.
-		message = fmt.Sprintf("Failed to resync %s because: %v", optrVersion, ierr.Error())
+	failing := configv1.ConditionTrue
+	var message, reason string
+	if ierr == nil {
+		failing = configv1.ConditionFalse
 	} else {
-		message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.Error())
+		if optr.vStore.Equal(co.Status.Versions) {
+			// syncing the state to exiting version.
+			message = fmt.Sprintf("Failed to resync %s because: %v", optrVersion, ierr.Error())
+		} else {
+			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.Error())
+		}
+		reason = ierr.Error()
+
+		// set progressing
+		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", version.Version.String())})
+		} else {
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", version.Version.String())})
+		}
 	}
 	// set failing condition
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorFailing, Status: configv1.ConditionTrue,
+		Type: configv1.OperatorFailing, Status: failing,
 		Message: message,
-		Reason:  ierr.Error(),
+		Reason:  reason,
 	})
-
-	// set progressing
-	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
-		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", version.Version.String())})
-	} else {
-		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", version.Version.String())})
-	}
 
 	optr.setMachineConfigPoolStatuses(&co.Status)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
