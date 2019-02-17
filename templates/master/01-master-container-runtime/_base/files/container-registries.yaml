@@ -1,0 +1,13 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/containers/registries.conf"
+contents:
+  inline: |
+    [registries.search]
+    registries = ['registry.access.redhat.com', 'docker.io']
+
+    [registries.insecure]
+    registries = []
+
+    [registries.block]
+    registries = []
