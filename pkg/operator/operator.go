@@ -29,11 +29,12 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	configv1 "github.com/openshift/api/config/v1"
-	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	installertypes "github.com/openshift/installer/pkg/types"
 
+	// TODO(runcom): move to pkg
+	"github.com/openshift/machine-config-operator/cmd/common"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -68,7 +69,7 @@ type Operator struct {
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
 	apiExtClient  apiextclientset.Interface
-	configClient  configclientset.Interface
+	configClient  common.ClusterOperatorsClientInterface
 	eventRecorder record.EventRecorder
 
 	syncHandler func(ic string) error
@@ -115,7 +116,7 @@ func New(
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
-	configClient configclientset.Interface,
+	configClient common.ClusterOperatorsClientInterface,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -329,7 +330,16 @@ func (optr *Operator) sync(key string) error {
 
 	// create renderConfig
 	rc := getRenderConfig(namespace, spec, imgs, infra.Status.APIServerURL)
-	return optr.syncAll(rc)
+	// syncFuncs is the list of sync functions that are executed in order.
+	// any error marks sync as failure but continues to next syncFunc
+	var syncFuncs = []syncFunc{
+		{"pools", optr.syncMachineConfigPools},
+		{"mcc", optr.syncMachineConfigController},
+		{"mcs", optr.syncMachineConfigServer},
+		{"mcd", optr.syncMachineConfigDaemon},
+		{"required-pools", optr.syncRequiredMachineConfigPools},
+	}
+	return optr.syncAll(rc, syncFuncs)
 }
 
 func (optr *Operator) getOsImageURL(namespace string) (string, error) {

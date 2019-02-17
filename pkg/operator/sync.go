@@ -25,17 +25,7 @@ type syncFunc struct {
 	fn   func(config renderConfig) error
 }
 
-func (optr *Operator) syncAll(rconfig renderConfig) error {
-	// syncFuncs is the list of sync functions that are executed in order.
-	// any error marks sync as failure but continues to next syncFunc
-	var syncFuncs = []syncFunc{
-		{"pools", optr.syncMachineConfigPools},
-		{"mcc", optr.syncMachineConfigController},
-		{"mcs", optr.syncMachineConfigServer},
-		{"mcd", optr.syncMachineConfigDaemon},
-		{"required-pools", optr.syncRequiredMachineConfigPools},
-	}
-
+func (optr *Operator) syncAll(rconfig renderConfig, syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
@@ -50,17 +40,20 @@ func (optr *Operator) syncAll(rconfig renderConfig) error {
 	}
 
 	agg := utilerrors.NewAggregate(errs)
-	if agg != nil {
-		errs = append(errs, optr.syncFailingStatus(agg))
-		agg = utilerrors.NewAggregate(errs)
-		return fmt.Errorf("error syncing: %v", agg.Error())
+	if err := optr.syncFailingStatus(agg); err != nil {
+		return fmt.Errorf("error syncing failing status: %v", err)
 	}
-	if optr.inClusterBringup {
+
+	if err := optr.syncAvailableStatus(); err != nil {
+		return fmt.Errorf("error syncing available status: %v", err)
+	}
+
+	if optr.inClusterBringup && agg == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
 
-	return optr.syncAvailableStatus()
+	return agg
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {

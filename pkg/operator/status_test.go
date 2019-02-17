@@ -8,7 +8,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/stretchr/testify/assert"
+
+	configv1 "github.com/openshift/api/config/v1"
+	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
@@ -175,4 +180,425 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockMCPLister struct{}
+
+func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfigPool, err error) {
+	return nil, nil
+}
+func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err error) {
+	return nil, nil
+}
+
+type mockClusterOperatorsClient struct {
+	co *configv1.ClusterOperator
+}
+
+func (coc *mockClusterOperatorsClient) Create(co *configv1.ClusterOperator) (*configv1.ClusterOperator, error) {
+	return coc.co, nil
+}
+func (coc *mockClusterOperatorsClient) UpdateStatus(co *configv1.ClusterOperator) (*configv1.ClusterOperator, error) {
+	return coc.co, nil
+}
+func (coc *mockClusterOperatorsClient) Get(name string, options metav1.GetOptions) (*configv1.ClusterOperator, error) {
+	return coc.co, nil
+}
+
+func TestOperatorSyncStatus(t *testing.T) {
+	type syncCase struct {
+		syncFuncs          []syncFunc
+		expectOperatorFail bool
+		cond               []configv1.ClusterOperatorStatusCondition
+		operatorVersions   []configv1.OperandVersion
+		inClusterBringUp   bool
+	}
+	for idx, testCase := range []struct {
+		syncs []syncCase
+	}{
+		// 0. test that Failing status clears out if the next sync call is successful
+		{
+			syncs: []syncCase{
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return errors.New("got err") },
+						},
+					},
+					expectOperatorFail: true,
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+			},
+		},
+		// 1. test that progressing is true while bootstrapping and false after the first sync
+		{
+			syncs: []syncCase{
+				{
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+			},
+		},
+		// 2. test that progressing is true while moving forward in versions
+		{
+			syncs: []syncCase{
+				{
+					operatorVersions: []configv1.OperandVersion{
+						{
+							Name:    "operator",
+							Version: "test-version-2",
+						},
+					},
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+			},
+		},
+		// 3. test that if progressing fails, we report available=false because state of the operator
+		//    might have changed in the various sync calls
+		{
+			syncs: []syncCase{
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+				{
+					operatorVersions: []configv1.OperandVersion{
+						{
+							Name:    "operator",
+							Version: "test-version-2",
+						},
+					},
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionTrue,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return errors.New("mock error") },
+						},
+					},
+				},
+			},
+		},
+		// 4. test that if progressing fails during bringup, we still report failing and not available
+		{
+			syncs: []syncCase{
+				{
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionTrue,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return errors.New("error") },
+						},
+					},
+				},
+				{
+					// we're still bringing up and we need to set this in mock
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionTrue,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return errors.New("error") },
+						},
+					},
+				},
+			},
+		},
+		// 5. test status flipping between available and failing
+		{
+			syncs: []syncCase{
+				{
+					inClusterBringUp: true,
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionTrue,
+						},
+					},
+					expectOperatorFail: true,
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return errors.New("error") },
+						},
+					},
+				},
+				{
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
+						},
+					},
+				},
+			},
+		},
+	} {
+		optr := &Operator{}
+		optr.vStore = newVersionStore()
+		optr.vStore.Set("operator", fmt.Sprintf("test-version"))
+		optr.mcpLister = &mockMCPLister{}
+		co := &configv1.ClusterOperator{}
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
+		optr.configClient = &mockClusterOperatorsClient{co: co}
+
+		for j, sync := range testCase.syncs {
+			optr.inClusterBringup = sync.inClusterBringUp
+			if sync.operatorVersions == nil {
+				co.Status.Versions = []configv1.OperandVersion{
+					{
+						Name:    "operator",
+						Version: "test-version",
+					},
+				}
+			} else {
+				co.Status.Versions = sync.operatorVersions
+			}
+			err := optr.syncAll(renderConfig{}, sync.syncFuncs)
+			if sync.expectOperatorFail {
+				assert.NotNil(t, err, "test case %d, sync call %d, expected an error", idx, j)
+			} else {
+				assert.Nil(t, err, "test case %d, expected no error", idx, j)
+			}
+			for _, cond := range sync.cond {
+				var condition configv1.ClusterOperatorStatusCondition
+				for _, coCondition := range co.Status.Conditions {
+					if cond.Type == coCondition.Type {
+						condition = coCondition
+						break
+					}
+				}
+				assert.Equal(t, cond.Status, condition.Status, "test case %d, sync call %d, expected condition %v to be %v, but got %v", idx, j, condition.Type, cond.Status, condition.Status)
+			}
+		}
+	}
+}
+
+func TestInClusterBringUpStayOnErr(t *testing.T) {
+	optr := &Operator{}
+	optr.vStore = newVersionStore()
+	optr.vStore.Set("operator", "test-version")
+	optr.mcpLister = &mockMCPLister{}
+	co := &configv1.ClusterOperator{}
+	optr.configClient = &mockClusterOperatorsClient{co: co}
+	optr.inClusterBringup = true
+
+	fn1 := func(config renderConfig) error {
+		return errors.New("mocked fn1")
+	}
+	err := optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	assert.NotNil(t, err, "expected syncAll to fail")
+
+	assert.True(t, optr.inClusterBringup)
+
+	fn1 = func(config renderConfig) error {
+		return nil
+	}
+	err = optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	assert.Nil(t, err, "expected syncAll to pass")
+
+	assert.False(t, optr.inClusterBringup)
 }
