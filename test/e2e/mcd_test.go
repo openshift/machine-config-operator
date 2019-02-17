@@ -12,9 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/machine-config-operator/cmd/common"
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
@@ -104,7 +106,7 @@ func TestMCDeployed(t *testing.T) {
 
 	// grab the latest worker- MC
 	var newMCName string
-	err = wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
 		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -116,33 +118,41 @@ func TestMCDeployed(t *testing.T) {
 			}
 		}
 		return false, nil
-	})
-
-	listOptions := metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
+	}); err != nil {
+		t.Errorf("machine config hasn't been picked by the pool: %v", err)
 	}
 
-	err = wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
-		mcdList, err := k.CoreV1().Pods("openshift-machine-config-operator").List(listOptions)
+	visited := make(map[string]bool)
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		nodes, err := getNodesByRole(k, "worker")
 		if err != nil {
 			return false, err
 		}
-
-		for _, pod := range mcdList.Items {
-			res, err := k.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{}).DoRaw()
-			if err != nil {
-				// do not error out, we may be rebooting, that's why we list at every iteration
-				return false, nil
+		for _, node := range nodes {
+			if visited[node.Name] {
+				continue
 			}
-			for _, line := range strings.Split(string(res), "\n") {
-				if strings.Contains(line, "completed update for config "+newMCName) {
+			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName {
+				visited[node.Name] = true
+				if len(visited) == len(nodes) {
 					return true, nil
 				}
+				continue
 			}
 		}
 		return false, nil
-	})
-	if err != nil {
+	}); err != nil {
 		t.Errorf("machine config didn't result in file being on any worker: %v", err)
 	}
+}
+
+func getNodesByRole(k kubernetes.Interface, role string) ([]v1.Node, error) {
+	listOptions := metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
+	}
+	nodes, err := k.CoreV1().Nodes().List(listOptions)
+	if err != nil {
+		return nil, err
+	}
+	return nodes.Items, nil
 }
