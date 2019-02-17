@@ -350,8 +350,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		},
-		// 3. test that if progressing fails, we report available=false because state of the operator
-		//    might have changed in the various sync calls
+		// 3. test that if progressing fails, we report available=true for the current version
 		{
 			syncs: []syncCase{
 				{
@@ -390,7 +389,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						},
 						{
 							Type:   configv1.OperatorAvailable,
-							Status: configv1.ConditionFalse,
+							Status: configv1.ConditionTrue,
 						},
 						{
 							Type:   configv1.OperatorFailing,
@@ -402,6 +401,31 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							name: "fn1",
 							fn:   func(config renderConfig) error { return errors.New("mock error") },
+						},
+					},
+				},
+				{
+					// we mock the fact that we are at operator=test-version-2 after the previous sync
+					// so we don't provide any operatorVersions to mock that situation but in reality
+					// we are back at operator=test-version (we'll find a way to better do this...)
+					cond: []configv1.ClusterOperatorStatusCondition{
+						{
+							Type:   configv1.OperatorProgressing,
+							Status: configv1.ConditionFalse,
+						},
+						{
+							Type:   configv1.OperatorAvailable,
+							Status: configv1.ConditionTrue,
+						},
+						{
+							Type:   configv1.OperatorFailing,
+							Status: configv1.ConditionFalse,
+						},
+					},
+					syncFuncs: []syncFunc{
+						{
+							name: "fn1",
+							fn:   func(config renderConfig) error { return nil },
 						},
 					},
 				},

@@ -29,11 +29,12 @@ func (optr *Operator) syncAvailableStatus() error {
 
 	optrVersion, _ := optr.vStore.Get("operator")
 	failing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorFailing)
+	progressing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing)
 	message := fmt.Sprintf("Cluster has deployed %s", optrVersion)
 
 	available := configv1.ConditionTrue
 
-	if failing {
+	if (failing && !progressing) || (failing && optr.inClusterBringup) {
 		available = configv1.ConditionFalse
 		message = fmt.Sprintf("Cluster not available for %s", optrVersion)
 	}
