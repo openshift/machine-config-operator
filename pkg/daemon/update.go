@@ -34,7 +34,7 @@ const (
 	// coreUser is "core" and currently the only permissible user name
 	coreUserName = "core"
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
-	coreUserSSHPath = "/home/core/.ssh"
+	coreUserSSHPath = "/home/core/.ssh/"
 )
 
 // Someone please tell me this actually lives in the stdlib somewhere
@@ -608,9 +608,8 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", coreUserSSHPath)
-
-	if err := dn.fileSystemClient.MkdirAll(filepath.Dir(coreUserSSHPath), os.FileMode(0600)); err != nil {
-		return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(coreUserSSHPath), err)
+	if err := dn.fileSystemClient.MkdirAll(coreUserSSHPath, os.FileMode(0600)); err != nil {
+		return fmt.Errorf("Failed to create directory %q: %v", coreUserSSHPath, err)
 	}
 	glog.V(2).Infof("Created directory: %s", coreUserSSHPath)
 
