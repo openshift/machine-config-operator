@@ -24,6 +24,9 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	apicfgv1 "github.com/openshift/api/config/v1"
+	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
@@ -41,15 +44,18 @@ const (
 type fixture struct {
 	t *testing.T
 
-	client *fake.Clientset
+	client    *fake.Clientset
+	imgClient *fakeconfigv1client.Clientset
 
 	ccLister   []*mcfgv1.ControllerConfig
 	mcpLister  []*mcfgv1.MachineConfigPool
 	mccrLister []*mcfgv1.ContainerRuntimeConfig
+	imgLister  []*apicfgv1.Image
 
 	actions []core.Action
 
-	objects []runtime.Object
+	objects    []runtime.Object
+	imgObjects []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -109,19 +115,37 @@ func newContainerRuntimeConfig(name string, ctrconf *mcfgv1.ContainerRuntimeConf
 	}
 }
 
-func (f *fixture) newController() (*Controller, informers.SharedInformerFactory) {
+func newImageConfig(name string, regconf *apicfgv1.RegistrySources) *apicfgv1.Image {
+	return &apicfgv1.Image{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Spec: apicfgv1.ImageSpec{
+			RegistrySources: *regconf,
+		},
+	}
+}
+
+// func fakeConfigClient(objects ...runtime.Object) configv1client.Interface {
+// 	return fakeconfigv1client.NewSimpleClientset(objects...)
+// }
+
+func (f *fixture) newController() (*Controller, informers.SharedInformerFactory, configv1informer.SharedInformerFactory) {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	f.imgClient = fakeconfigv1client.NewSimpleClientset(f.imgObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+	ci := configv1informer.NewSharedInformerFactory(f.imgClient, noResyncPeriodFunc())
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
-		k8sfake.NewSimpleClientset(), f.client)
+		ci.Config().V1().Images(),
+		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
+	c.imgListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	for _, c := range f.ccLister {
@@ -133,8 +157,11 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 	for _, c := range f.mccrLister {
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs().Informer().GetIndexer().Add(c)
 	}
+	for _, c := range f.imgLister {
+		ci.Config().V1().Images().Informer().GetIndexer().Add(c)
+	}
 
-	return c, i
+	return c, i, ci
 }
 
 func (f *fixture) run(mcpname string) {
@@ -146,14 +173,22 @@ func (f *fixture) runExpectError(mcpname string) {
 }
 
 func (f *fixture) runController(mcpname string, startInformers bool, expectError bool) {
-	c, i := f.newController()
+	c, i, ci := f.newController()
 	if startInformers {
 		stopCh := make(chan struct{})
 		defer close(stopCh)
 		i.Start(stopCh)
+		ci.Start(stopCh)
 	}
 
-	err := c.syncHandler(mcpname)
+	err := c.syncImgHandler(mcpname)
+	if !expectError && err != nil {
+		f.t.Errorf("error syncing image config: %v", err)
+	} else if expectError && err == nil {
+		f.t.Error("expected error syncing image config, got nil")
+	}
+
+	err = c.syncHandler(mcpname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing containerruntimeconfigs: %v", err)
 	} else if expectError && err == nil {
@@ -172,6 +207,7 @@ func (f *fixture) runController(mcpname string, startInformers bool, expectError
 		expectedAction := f.actions[i]
 		checkAction(expectedAction, action, f.t)
 	}
+
 	if len(f.actions) > len(actions) {
 		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
 	}
@@ -179,7 +215,7 @@ func (f *fixture) runController(mcpname string, startInformers bool, expectError
 
 // filterInformerActions filters list and watch actions for testing resources.
 // Since list and watch don't change resource state we can filter it to lower
-// nose level in our tests.
+// noise level in our tests.
 func filterInformerActions(actions []core.Action) []core.Action {
 	ret := []core.Action{}
 	for _, action := range actions {
@@ -271,7 +307,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs := newMachineConfig(getManagedKey(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs1 := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -279,10 +315,10 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
 
-			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
-			f.expectCreateMachineConfigAction(mcs)
+			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x73, 0x78, 0x32, 0x76, 0x72, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x72, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x22, 0x5d, 0x7d, 0x7d})
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 

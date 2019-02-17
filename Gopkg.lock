@@ -97,6 +97,17 @@
   revision = "39b18af02c4120960f517a3a4c2588fabb61d02c"
 
 [[projects]]
+  digest = "1:e51434f97e46ce42b9f08ebb433e2416d0cb341f3cfb6c714ce12fbf57afab6b"
+  name = "github.com/containers/image"
+  packages = [
+    "docker/reference",
+    "pkg/sysregistriesv2",
+    "types",
+  ]
+  pruneopts = "NUT"
+  revision = "1c10a197331c71709754037e2b7f7e7fc94c65cf"
+
+[[projects]]
   digest = "1:490deff6409bd7c1e531e143c3adc5bf5e5ff39a7bad6a69f41d5efe95a7ec07"
   name = "github.com/containers/storage"
   packages = [
@@ -405,6 +416,25 @@
   version = "1.0.1"
 
 [[projects]]
+  digest = "1:e0cc8395ea893c898ff5eb0850f4d9851c1f57c78c232304a026379a47a552d0"
+  name = "github.com/opencontainers/go-digest"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "279bed98673dd5bef374d3b6e4b09e2af76183bf"
+  version = "v1.0.0-rc1"
+
+[[projects]]
+  digest = "1:11db38d694c130c800d0aefb502fb02519e514dc53d9804ce51d1ad25ec27db6"
+  name = "github.com/opencontainers/image-spec"
+  packages = [
+    "specs-go",
+    "specs-go/v1",
+  ]
+  pruneopts = "NUT"
+  revision = "d60099175f88c47cd379c4738d158884749ed235"
+  version = "v1.0.1"
+
+[[projects]]
   digest = "1:918dbd46ad099418ce9760291bb156ebf23d441aad4cb682dd9bf09e2d3c0c7b"
   name = "github.com/opencontainers/runc"
   packages = ["libcontainer/user"]
@@ -421,20 +451,22 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f5576684f0b7beec89acd50a6d2c994dc283f6b3f174bed169517ffed644bada"
+  digest = "1:7f57930803fe29a3ca6558775b81b0fc6492ebc91d3eef7a653ceb66356e1f22"
   name = "github.com/openshift/api"
   packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "4912e102a00fa8bb4bf27f83808dce6ef1b6887d"
+  revision = "58462523f67ade6127870c5862444d6ff7d36585"
 
 [[projects]]
   branch = "master"
-  digest = "1:4241aef3caf317fe26568856891fef34c6b0d33c04a6426c2f7336462e87bbdd"
+  digest = "1:2baea934e74e87b04304237c43e76b8125e73e54b24d983d6abec09b261ac857"
   name = "github.com/openshift/client-go"
   packages = [
     "config/clientset/versioned",
+    "config/clientset/versioned/fake",
     "config/clientset/versioned/scheme",
     "config/clientset/versioned/typed/config/v1",
+    "config/clientset/versioned/typed/config/v1/fake",
     "config/informers/externalversions",
     "config/informers/externalversions/config",
     "config/informers/externalversions/config/v1",
@@ -442,7 +474,7 @@
     "config/listers/config/v1",
   ]
   pruneopts = "NUT"
-  revision = "43eeb8cff295868f3cd8faa3347bcfbdc9b2a9c0"
+  revision = "31ef839c86359881d2c312c4f0131febc6662400"
 
 [[projects]]
   digest = "1:f9c1fc8da2b44ba323ec3b338f0da9f375e26c787bc3a6ea241f9cb3f191cb62"
@@ -1119,6 +1151,7 @@
     "github.com/apparentlymart/go-cidr/cidr",
     "github.com/ashcrow/osrelease",
     "github.com/blang/semver",
+    "github.com/containers/image/pkg/sysregistriesv2",
     "github.com/containers/storage/pkg/config",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
@@ -1134,6 +1167,7 @@
     "github.com/kubernetes-sigs/cri-o/pkg/config",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
+    "github.com/openshift/client-go/config/clientset/versioned/fake",
     "github.com/openshift/client-go/config/clientset/versioned/scheme",
     "github.com/openshift/client-go/config/informers/externalversions",
     "github.com/openshift/client-go/config/informers/externalversions/config/v1",
