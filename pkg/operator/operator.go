@@ -10,6 +10,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	"k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
@@ -33,8 +34,6 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	installertypes "github.com/openshift/installer/pkg/types"
 
-	// TODO(runcom): move to pkg
-	"github.com/openshift/machine-config-operator/cmd/common"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -69,7 +68,7 @@ type Operator struct {
 	client        mcfgclientset.Interface
 	kubeClient    kubernetes.Interface
 	apiExtClient  apiextclientset.Interface
-	configClient  common.ClusterOperatorsClientInterface
+	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler func(ic string) error
@@ -116,7 +115,7 @@ func New(
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
-	configClient common.ClusterOperatorsClientInterface,
+	configClient configclientset.Interface,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
