@@ -846,8 +846,18 @@ func (dn *Daemon) isUnspecifiedOS(osImageURL string) bool {
 	return osImageURL == "" || osImageURL == "://dummy"
 }
 
-// checkOS validates the OS image URL and returns true if they match.
+// checkOS determines whether the booted system matches the target
+// osImageURL and if not whether we need to take action.  This function
+// returns `true` if no action is required, which is the case if we're
+// not running RHCOS, or if the target osImageURL is "" (unspecified).
+// Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) bool {
+	// Nothing to do if we're not on RHCOS
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+		glog.Infof(`Not booted into Red Hat CoreOS, ignoring target OSImageURL %s`, osImageURL)
+		return true
+	}
+
 	// XXX: The installer doesn't pivot yet so for now, just make ""
 	// mean "unset, don't pivot". See also: https://github.com/openshift/installer/issues/281
 	if dn.isUnspecifiedOS(osImageURL) {
