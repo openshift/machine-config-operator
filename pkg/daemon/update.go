@@ -71,7 +71,7 @@ func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
-func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateOSAndReboot(node *corev1.Node, newConfig *mcfgv1.MachineConfig) error {
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
@@ -79,11 +79,6 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	// Skip draining of the node when we're not cluster driven
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
-
-		node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
-		if err != nil {
-			return err
-		}
 
 		dn.recorder.Eventf(node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
@@ -125,7 +120,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 }
 
 // update the node to the provided node configuration.
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) update(node *corev1.Node, oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	if dn.nodeWriter != nil {
 		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 			return err
@@ -156,7 +151,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
-	return dn.updateOSAndReboot(newConfig)
+	return dn.updateOSAndReboot(node, newConfig)
 }
 
 // reconcilable checks the configs to make sure that the only changes requested

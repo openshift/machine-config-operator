@@ -452,7 +452,7 @@ type stateAndConfigs struct {
 	desiredConfig *mcfgv1.MachineConfig
 }
 
-func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
+func (dn *Daemon) getStateAndConfigs(node *corev1.Node, pendingConfigName string) (*stateAndConfigs, error) {
 	_, err := os.Lstat(constants.InitialNodeAnnotationsFilePath)
 	var bootstrapping bool
 	if err != nil {
@@ -466,11 +466,11 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		glog.Info("In bootstrap mode")
 	}
 
-	currentConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.CurrentMachineConfigAnnotationKey)
+	currentConfigName, err := getNodeAnnotation(node, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, err
 	}
-	desiredConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.DesiredMachineConfigAnnotationKey)
+	desiredConfigName, err := getNodeAnnotation(node, constants.DesiredMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +478,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	if err != nil {
 		return nil, err
 	}
-	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.MachineConfigDaemonStateAnnotationKey, true)
+	state, err := getNodeAnnotationExt(node, constants.MachineConfigDaemonStateAnnotationKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +561,11 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	if err != nil {
 		return err
 	}
-	state, err := dn.getStateAndConfigs(pendingConfigName)
+	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
+	if err != nil {
+		return err
+	}
+	state, err := dn.getStateAndConfigs(node, pendingConfigName)
 	if err != nil {
 		return err
 	}
@@ -583,7 +587,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		if !dn.checkOS(state.currentConfig.Spec.OSImageURL) {
 			glog.Info("Bootstrap pivot required")
 			// This only returns on error
-			return dn.updateOSAndReboot(state.currentConfig)
+			return dn.updateOSAndReboot(node, state.currentConfig)
 		}
 		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
 		// Delete the bootstrap node annotations; the
@@ -639,7 +643,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 			// Great, we've successfully rebooted for the desired config,
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
-			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
+			if err := dn.completeUpdate(node, state.pendingConfig.GetName()); err != nil {
 				return err
 			}
 		}
@@ -651,16 +655,20 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+	return dn.triggerUpdateWithMachineConfig(node, state.currentConfig, state.desiredConfig)
 }
 
 // runOnceFromMachineConfig utilizes a parsed machineConfig and executes in onceFrom
 // mode. If the content was remote, it executes cluster calls, otherwise it assumes
 // no cluster is present yet.
 func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, contentFrom string) error {
+	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
+	if err != nil {
+		return err
+	}
 	if contentFrom == machineConfigOnceFromRemoteConfig {
 		// NOTE: This case expects a cluster to exists already.
-		needUpdate, err := dn.prepUpdateFromCluster()
+		needUpdate, err := dn.prepUpdateFromCluster(node)
 		if err != nil {
 			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		}
@@ -668,7 +676,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.executeUpdateFromClusterWithMachineConfig(&machineConfig); err != nil {
+		if err := dn.executeUpdateFromClusterWithMachineConfig(node, &machineConfig); err != nil {
 			return dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 		}
 		return nil
@@ -677,7 +685,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		// NOTE: This case expects that the cluster is NOT CREATED YET.
 		oldConfig := mcfgv1.MachineConfig{}
 		// Execute update without hitting the cluster
-		return dn.update(&oldConfig, &machineConfig)
+		return dn.update(node, &oldConfig, &machineConfig)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
@@ -705,7 +713,7 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	// First check if the node that was updated is this daemon's node
 	if node.Name == dn.name {
 		// Pass to the shared update prep method
-		needUpdate, err := dn.prepUpdateFromCluster()
+		needUpdate, err := dn.prepUpdateFromCluster(node)
 		if err != nil {
 			glog.Infof("Unable to prep update: %s", err)
 			dn.exitCh <- err
@@ -713,7 +721,7 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 		}
 		// Only executeUpdateFromCluster when we need to update
 		if needUpdate {
-			if err = dn.executeUpdateFromCluster(); err != nil {
+			if err = dn.executeUpdateFromCluster(node); err != nil {
 				glog.Infof("Unable to apply update: %s", err)
 				dn.exitCh <- err
 				return
@@ -727,20 +735,14 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 // prepUpdateFromCluster handles the shared update prepping functionality for
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
-func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
+func (dn *Daemon) prepUpdateFromCluster(node *corev1.Node) (bool, error) {
 	// Then check we're not already in a degraded state.
-	state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.MachineConfigDaemonStateAnnotationKey)
+	state, err := getNodeAnnotation(node, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
 		return false, err
 	}
 	if state == constants.MachineConfigDaemonStateDegraded {
 		return false, fmt.Errorf("state is already degraded")
-	}
-
-	// Grab the node instance
-	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
-	if err != nil {
-		return false, err
 	}
 
 	// Detect if there is an update
@@ -755,9 +757,9 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 // executeUpdateFromClusterWithMachineConfig starts the actual update process. The provided config
 // will be used as the desired config, while the current config will be pulled from the cluster. If
 // you want both pulled from the cluster please use executeUpdateFromCluster().
-func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(node *corev1.Node, desiredConfig *mcfgv1.MachineConfig) error {
 	// The desired machine config has changed, trigger update
-	if err := dn.triggerUpdateWithMachineConfig(nil, desiredConfig); err != nil {
+	if err := dn.triggerUpdateWithMachineConfig(node, nil, desiredConfig); err != nil {
 		return err
 	}
 
@@ -768,20 +770,15 @@ func (dn *Daemon) executeUpdateFromClusterWithMachineConfig(desiredConfig *mcfgv
 }
 
 // executeUpdateFromCluster starts the actual update process using configs from the cluster.
-func (dn *Daemon) executeUpdateFromCluster() error {
-	return dn.executeUpdateFromClusterWithMachineConfig(nil)
+func (dn *Daemon) executeUpdateFromCluster(node *corev1.Node) error {
+	return dn.executeUpdateFromClusterWithMachineConfig(node, nil)
 }
 
 // completeUpdate marks the node as schedulable again, then deletes the
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
-func (dn *Daemon) completeUpdate(desiredConfigName string) error {
-	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
-	if err != nil {
-		return err
-	}
-	err = drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil)
-	if err != nil {
+func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
+	if err := drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil); err != nil {
 		return err
 	}
 
@@ -792,9 +789,9 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
-func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) triggerUpdateWithMachineConfig(node *corev1.Node, currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
 	if currentConfig == nil {
-		ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.CurrentMachineConfigAnnotationKey)
+		ccAnnotation, err := getNodeAnnotation(node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {
 			return err
 		}
@@ -805,7 +802,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 	}
 
 	if desiredConfig == nil {
-		dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.DesiredMachineConfigAnnotationKey)
+		dcAnnotation, err := getNodeAnnotation(node, constants.DesiredMachineConfigAnnotationKey)
 		if err != nil {
 			return err
 		}
@@ -816,7 +813,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 	}
 
 	// run the update process. this function doesn't currently return.
-	return dn.update(currentConfig, desiredConfig)
+	return dn.update(node, currentConfig, desiredConfig)
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration
