@@ -129,7 +129,7 @@ func newImageConfig(name string, regconf *apicfgv1.RegistrySources) *apicfgv1.Im
 // 	return fakeconfigv1client.NewSimpleClientset(objects...)
 // }
 
-func (f *fixture) newController() (*Controller, informers.SharedInformerFactory, configv1informer.SharedInformerFactory) {
+func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.imgClient = fakeconfigv1client.NewSimpleClientset(f.imgObjects...)
 
@@ -148,6 +148,13 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory,
 	c.imgListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	i.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+	ci.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
 	}
@@ -161,25 +168,19 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory,
 		ci.Config().V1().Images().Informer().GetIndexer().Add(c)
 	}
 
-	return c, i, ci
+	return c
 }
 
 func (f *fixture) run(mcpname string) {
-	f.runController(mcpname, true, false)
+	f.runController(mcpname, false)
 }
 
 func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true, true)
+	f.runController(mcpname, true)
 }
 
-func (f *fixture) runController(mcpname string, startInformers bool, expectError bool) {
-	c, i, ci := f.newController()
-	if startInformers {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		i.Start(stopCh)
-		ci.Start(stopCh)
-	}
+func (f *fixture) runController(mcpname string, expectError bool) {
+	c := f.newController()
 
 	err := c.syncImgHandler(mcpname)
 	if !expectError && err != nil {
