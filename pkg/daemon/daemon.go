@@ -634,6 +634,8 @@ func (dn *Daemon) CheckStateOnBoot() (retErr error) {
 		if err := dn.nodeWriter.SetUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.name, state.pendingConfig.GetName()); err != nil {
 			return errors.Wrapf(constants.ErrTransient, "error setting state done to node: %v", err)
 		}
+		// TODO(runcom): roll back if we fail later on with a transient error
+		
 		defer func() {
 			if retErr == nil || (retErr != nil && errors.Cause(retErr) != constants.ErrTransient) {
 				// And remove the pending state file

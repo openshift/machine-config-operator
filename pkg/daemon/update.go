@@ -126,6 +126,7 @@ func (dn *Daemon) update(node *corev1.Node, oldConfig, newConfig *mcfgv1.Machine
 		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
 			return errors.Wrapf(constants.ErrTransient, "failed to set state working on node %q: %v", dn.name, err)
 		}
+		// TODO(runcom): roll back if we fail later on with a transient error
 	}
 
 	oldConfigName := oldConfig.GetName()
