@@ -75,7 +75,7 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 }
 
-func (f *fixture) newController() (*Controller, informers.SharedInformerFactory) {
+func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
@@ -86,6 +86,11 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 	c.mcListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	i.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
 	}
@@ -94,24 +99,19 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
 	}
 
-	return c, i
+	return c
 }
 
 func (f *fixture) run(mcpname string) {
-	f.runController(mcpname, true, false)
+	f.runController(mcpname, false)
 }
 
 func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true, true)
+	f.runController(mcpname, true)
 }
 
-func (f *fixture) runController(mcpname string, startInformers bool, expectError bool) {
-	c, i := f.newController()
-	if startInformers {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		i.Start(stopCh)
-	}
+func (f *fixture) runController(mcpname string, expectError bool) {
+	c := f.newController()
 
 	err := c.syncHandler(mcpname)
 	if !expectError && err != nil {

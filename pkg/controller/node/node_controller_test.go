@@ -69,7 +69,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavai
 	}
 }
 
-func (f *fixture) newController() (*Controller, informers.SharedInformerFactory, kubeinformers.SharedInformerFactory) {
+func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
@@ -82,6 +82,13 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory,
 	c.nodeListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	i.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+	k8sI.Start(stopCh)
+	k8sI.WaitForCacheSync(stopCh)
+
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
 	}
@@ -90,25 +97,19 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory,
 		k8sI.Core().V1().Nodes().Informer().GetIndexer().Add(m)
 	}
 
-	return c, i, k8sI
+	return c
 }
 
 func (f *fixture) run(pool string) {
-	f.runController(pool, true, false)
+	f.runController(pool, false)
 }
 
 func (f *fixture) runExpectError(pool string) {
-	f.runController(pool, true, true)
+	f.runController(pool, true)
 }
 
-func (f *fixture) runController(pool string, startInformers bool, expectError bool) {
-	c, i, k8sI := f.newController()
-	if startInformers {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		i.Start(stopCh)
-		k8sI.Start(stopCh)
-	}
+func (f *fixture) runController(pool string, expectError bool) {
+	c := f.newController()
 
 	err := c.syncHandler(pool)
 	if !expectError && err != nil {
@@ -272,11 +273,7 @@ func TestGetPoolForNode(t *testing.T) {
 				f.objects = append(f.objects, test.pools[idx])
 			}
 
-			c, i, k8sI := f.newController()
-			stopCh := make(chan struct{})
-			defer close(stopCh)
-			i.Start(stopCh)
-			k8sI.Start(stopCh)
+			c := f.newController()
 
 			got, err := c.getPoolForNode(node)
 			if err != nil && !test.err {
@@ -720,11 +717,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 			f.nodeLister = append(f.nodeLister, test.node)
 			f.kubeobjects = append(f.kubeobjects, test.node)
 
-			c, i, k8sI := f.newController()
-			stopCh := make(chan struct{})
-			defer close(stopCh)
-			i.Start(stopCh)
-			k8sI.Start(stopCh)
+			c := f.newController()
 
 			err := c.setDesiredMachineConfigAnnotation(test.node.Name, "v1")
 			if err != nil {
