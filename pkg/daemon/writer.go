@@ -48,7 +48,8 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			msg.responseChannel <- setNodeAnnotations(msg.client, msg.node, msg.annos)
+			_, err := setNodeAnnotations(msg.client, msg.node, msg.annos)
+			msg.responseChannel <- err
 		}
 	}
 }
@@ -142,9 +143,10 @@ func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) e
 // number of times.
 // f will be called each time since the node object will likely have changed if
 // a retry is necessary.
-func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node)) error {
+func updateNodeRetry(client corev1.NodeInterface, nodeName string, f func(*v1.Node)) (*v1.Node, error) {
+	var node *v1.Node
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, getErr := GetNode(client, node)
+		n, getErr := getNode(client, nodeName)
 		if getErr != nil {
 			return getErr
 		}
@@ -152,22 +154,23 @@ func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node))
 		// Call the node modifier.
 		f(n)
 
-		_, err := client.Update(n)
+		var err error
+		node, err = client.Update(n)
 		return err
 	})
 	if err != nil {
 		// may be conflict if max retries were hit
-		return fmt.Errorf("Unable to update node %q: %v", node, err)
+		return nil, fmt.Errorf("Unable to update node %q: %v", node, err)
 	}
 
-	return nil
+	return node, nil
 }
 
-// setConfig sets the given annotation key, value pair.
-func setNodeAnnotations(client corev1.NodeInterface, node string, m map[string]string) error {
-	return updateNodeRetry(client, node, func(node *v1.Node) {
+func setNodeAnnotations(client corev1.NodeInterface, nodeName string, m map[string]string) (*v1.Node, error) {
+	node, err := updateNodeRetry(client, nodeName, func(node *v1.Node) {
 		for k, v := range m {
 			node.Annotations[k] = v
 		}
 	})
+	return node, err
 }
