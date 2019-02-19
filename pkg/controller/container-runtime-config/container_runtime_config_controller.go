@@ -521,7 +521,6 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	imgcfg, err := ctrl.imgLister.Get("cluster")
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("ImageConfig doesn't exist or has been deleted")
-		fmt.Println("ImageConfig doesn't exist or has been deleted")
 		return nil
 	}
 	if err != nil {
