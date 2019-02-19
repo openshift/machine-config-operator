@@ -156,7 +156,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if startOpts.onceFrom == "" {
 		err = dn.CheckStateOnBoot()
 		if err != nil {
-			dn.EnterDegradedState(errors.Wrapf(err, "Checking initial state"))
+			dn.EnterDegradedState(errors.Wrapf(err, "checking initial state"))
 		}
 		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)

@@ -104,9 +104,9 @@ func (dn *Daemon) updateOSAndReboot(node *corev1.Node, newConfig *mcfgv1.Machine
 
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
-				return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
+				return errors.Wrapf(errTransient, "failed to drain node (%d tries, timeout err: %v): %v", backoff.Steps, err, lastErr)
 			}
-			return errors.Wrap(err, "failed to drain node")
+			return errors.Wrapf(errTransient, "failed to drain node: %v", err)
 		}
 		glog.Info("Node successfully drained")
 	}
@@ -123,7 +123,7 @@ func (dn *Daemon) updateOSAndReboot(node *corev1.Node, newConfig *mcfgv1.Machine
 func (dn *Daemon) update(node *corev1.Node, oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	if dn.nodeWriter != nil {
 		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
-			return err
+			return errors.Wrapf(errTransient, "failed to set state working on node %q: %v", dn.name, err)
 		}
 	}
 
@@ -151,7 +151,20 @@ func (dn *Daemon) update(node *corev1.Node, oldConfig, newConfig *mcfgv1.Machine
 		return err
 	}
 
-	return dn.updateOSAndReboot(node, newConfig)
+	if err := dn.updateOSAndReboot(node, newConfig); err != nil {
+		if errors.Cause(err) == errTransient {
+			// rollback configs, if we fail rolling back, let's just degrade
+			if err := dn.updateFiles(newConfig, oldConfig); err != nil {
+				return err
+			}
+			if err := dn.updateSSHKeys(oldConfig.Spec.Config.Passwd.Users); err != nil {
+				return err
+			}
+		}
+		return err
+	}
+
+	return nil
 }
 
 // reconcilable checks the configs to make sure that the only changes requested
