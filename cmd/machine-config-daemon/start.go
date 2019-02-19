@@ -8,6 +8,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -154,10 +155,18 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if startOpts.onceFrom == "" {
-		err = dn.CheckStateOnBoot()
-		if err != nil {
-			dn.EnterDegradedState(errors.Wrapf(err, "checking initial state"))
+		for {
+			if err := dn.CheckStateOnBoot(); err != nil {
+				if errors.Cause(err) == constants.ErrTransient {
+					glog.Warningf("Retrying update, transient error: %v", err)
+					continue
+				}
+				dn.EnterDegradedState(errors.Wrapf(err, "checking initial state"))
+			} else {
+				break
+			}
 		}
+
 		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)
 	}

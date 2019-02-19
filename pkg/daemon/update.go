@@ -19,6 +19,7 @@ import (
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -104,9 +105,9 @@ func (dn *Daemon) updateOSAndReboot(node *corev1.Node, newConfig *mcfgv1.Machine
 
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
-				return errors.Wrapf(errTransient, "failed to drain node (%d tries, timeout err: %v): %v", backoff.Steps, err, lastErr)
+				return errors.Wrapf(constants.ErrTransient, "failed to drain node (%d tries, timeout err: %v): %v", backoff.Steps, err, lastErr)
 			}
-			return errors.Wrapf(errTransient, "failed to drain node: %v", err)
+			return errors.Wrapf(constants.ErrTransient, "failed to drain node: %v", err)
 		}
 		glog.Info("Node successfully drained")
 	}
@@ -123,7 +124,7 @@ func (dn *Daemon) updateOSAndReboot(node *corev1.Node, newConfig *mcfgv1.Machine
 func (dn *Daemon) update(node *corev1.Node, oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	if dn.nodeWriter != nil {
 		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
-			return errors.Wrapf(errTransient, "failed to set state working on node %q: %v", dn.name, err)
+			return errors.Wrapf(constants.ErrTransient, "failed to set state working on node %q: %v", dn.name, err)
 		}
 	}
 
@@ -152,7 +153,7 @@ func (dn *Daemon) update(node *corev1.Node, oldConfig, newConfig *mcfgv1.Machine
 	}
 
 	if err := dn.updateOSAndReboot(node, newConfig); err != nil {
-		if errors.Cause(err) == errTransient {
+		if errors.Cause(err) == constants.ErrTransient {
 			// rollback configs, if we fail rolling back, let's just degrade
 			if err := dn.updateFiles(newConfig, oldConfig); err != nil {
 				return err

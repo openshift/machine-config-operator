@@ -1,5 +1,7 @@
 package constants
 
+import "errors"
+
 const (
 	// XXX
 	//
@@ -27,4 +29,9 @@ const (
 	// EtcPivotFile is used by the `pivot` command
 	// For more information, see https://github.com/openshift/pivot/pull/25/commits/c77788a35d7ee4058d1410e89e6c7937bca89f6c#diff-04c6e90faac2675aa89e2176d2eec7d8R44
 	EtcPivotFile = "/etc/pivot/image-pullspec"
+)
+
+var (
+	// ErrTransiet is an error which must be retried before giving up
+	ErrTransient = errors.New("transiet error")
 )

@@ -142,7 +142,7 @@ func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) e
 // number of times.
 // f will be called each time since the node object will likely have changed if
 // a retry is necessary.
-func  updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node)) error {
+func updateNodeRetry(client corev1.NodeInterface, node string, f func(*v1.Node)) error {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		n, getErr := GetNode(client, node)
 		if getErr != nil {
