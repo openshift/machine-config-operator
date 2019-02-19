@@ -82,12 +82,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
 
-		node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
-		if err != nil {
-			return err
-		}
-
-		dn.recorder.Eventf(node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+		dn.recorder.Eventf(dn.node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
 		backoff := wait.Backoff{
 			Steps:    5,
@@ -96,7 +91,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 		}
 		var lastErr error
 		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-			err := drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
+			err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
 				DeleteLocalData:    true,
 				Force:              true,
 				GracePeriodSeconds: 600,
