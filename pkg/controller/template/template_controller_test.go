@@ -77,7 +77,7 @@ func newPullSecret(name string, contents []byte) *corev1.Secret {
 	}
 }
 
-func (f *fixture) newController() (*Controller, informers.SharedInformerFactory) {
+func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
@@ -90,6 +90,11 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 	c.mcListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	i.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
 	}
@@ -98,24 +103,19 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
 	}
 
-	return c, i
+	return c
 }
 
 func (f *fixture) run(ccname string) {
-	f.runController(ccname, true, false)
+	f.runController(ccname, false)
 }
 
 func (f *fixture) runExpectError(ccname string) {
-	f.runController(ccname, true, true)
+	f.runController(ccname, true)
 }
 
-func (f *fixture) runController(ccname string, startInformers bool, expectError bool) {
-	c, i := f.newController()
-	if startInformers {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		i.Start(stopCh)
-	}
+func (f *fixture) runController(ccname string, expectError bool) {
+	c := f.newController()
 
 	err := c.syncHandler(ccname)
 	if !expectError && err != nil {
