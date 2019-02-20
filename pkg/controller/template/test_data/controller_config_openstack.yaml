@@ -13,3 +13,4 @@ spec:
   images:
     etcd: image/etcd:1
     setupEtcdEnv: image/setupEtcdEnv:1
+    infraImage: image/infraImage:1

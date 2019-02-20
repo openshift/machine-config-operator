@@ -14,4 +14,5 @@ type Images struct {
 	MachineOSContent        string `json:"machineOSContent"`
 	Etcd                    string `json:"etcd"`
 	SetupEtcdEnv            string `json:"setupEtcdEnv"`
+	InfraImage              string `json:"infraImage"`
 }
