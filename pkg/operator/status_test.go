@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
 	configv1 "github.com/openshift/api/config/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -260,6 +260,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 			syncs: []syncCase{
 				{
 					inClusterBringUp: true,
+					operatorVersions: []configv1.OperandVersion{
+						{
+							Name:    "operator",
+							Version: "test-version-2",
+						},
+					},
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
 							Type:   configv1.OperatorProgressing,
@@ -400,6 +406,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 			syncs: []syncCase{
 				{
 					inClusterBringUp: true,
+					operatorVersions: []configv1.OperandVersion{
+						{
+							Name:    "operator",
+							Version: "test-version-2",
+						},
+					},
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
 							Type:   configv1.OperatorProgressing,
@@ -425,6 +437,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 				{
 					// we're still bringing up and we need to set this in mock
 					inClusterBringUp: true,
+					operatorVersions: []configv1.OperandVersion{
+						{
+							Name:    "operator",
+							Version: "test-version-2",
+						},
+					},
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
 							Type:   configv1.OperatorProgressing,
@@ -454,6 +472,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 			syncs: []syncCase{
 				{
 					inClusterBringUp: true,
+					operatorVersions: []configv1.OperandVersion{
+						{
+							Name:    "operator",
+							Version: "test-version-2",
+						},
+					},
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
 							Type:   configv1.OperatorProgressing,

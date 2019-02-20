@@ -67,7 +67,7 @@ func (optr *Operator) syncProgressingStatus() error {
 	if optr.vStore.Equal(co.Status.Versions) {
 		if optr.inClusterBringup {
 			message = fmt.Sprintf("Cluster is bootstrapping %s", optrVersion)
-			progressing = configv1.ConditionTrue
+			progressing = configv1.ConditionFalse
 		}
 	} else {
 		message = fmt.Sprintf("Working towards %s", optrVersion)
