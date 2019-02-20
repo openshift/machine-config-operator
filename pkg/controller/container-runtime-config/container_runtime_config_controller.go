@@ -10,6 +10,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -536,15 +537,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 	for _, pool := range mcpPools {
+		// To keep track of whether we "actually" got an updated image config
+		applied := true
 		role := pool.Name
 		// Get MachineConfig
 		managedKey := getManagedKeyReg(pool, imgcfg)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
-			if err != nil && !errors.IsNotFound(err) {
-				return fmt.Errorf("could not find MachineConfig: %v", err)
-			}
-			isNotFound := errors.IsNotFound(err)
 			// Generate the original registries config
 			_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
 			if err != nil {
@@ -559,8 +557,18 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				}
 				registriesTOML, err = updateRegistriesConfig(dataURL.Data, imgcfg.Spec)
 				if err != nil {
-					return fmt.Errorf("could not update container runtime config with new changes: %v", err)
+					return fmt.Errorf("could not update registries config with new changes: %v", err)
 				}
+			}
+			mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return fmt.Errorf("could not find MachineConfig: %v", err)
+			}
+			isNotFound := errors.IsNotFound(err)
+			rci := createNewRegistriesConfigIgnition(registriesTOML)
+			if !isNotFound && equality.Semantic.DeepEqual(rci, mc.Spec.Config) {
+				applied = false
+				return nil
 			}
 			if isNotFound {
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
@@ -588,7 +596,9 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		}); err != nil {
 			return fmt.Errorf("could not Create/Update MachineConfig: %v", err)
 		}
-		glog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
+		if applied {
+			glog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
+		}
 	}
 
 	return nil
