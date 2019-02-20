@@ -29,8 +29,7 @@ import (
 )
 
 var (
-	alwaysReady        = func() bool { return true }
-	noResyncPeriodFunc = func() time.Duration { return 0 }
+	alwaysReady = func() bool { return true }
 )
 
 const (
@@ -129,10 +128,10 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 	}
 }
 
-func (f *fixture) newController() (*Controller, informers.SharedInformerFactory) {
+func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 
-	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+	i := informers.NewSharedInformerFactory(f.client, 0)
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
@@ -144,6 +143,11 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 	c.ccListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	i.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+
 	for _, c := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
 	}
@@ -154,24 +158,19 @@ func (f *fixture) newController() (*Controller, informers.SharedInformerFactory)
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(c)
 	}
 
-	return c, i
+	return c
 }
 
 func (f *fixture) run(mcpname string) {
-	f.runController(mcpname, true, false)
+	f.runController(mcpname, false)
 }
 
 func (f *fixture) runExpectError(mcpname string) {
-	f.runController(mcpname, true, true)
+	f.runController(mcpname, true)
 }
 
-func (f *fixture) runController(mcpname string, startInformers bool, expectError bool) {
-	c, i := f.newController()
-	if startInformers {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-		i.Start(stopCh)
-	}
+func (f *fixture) runController(mcpname string, expectError bool) {
+	c := f.newController()
 
 	err := c.syncHandler(mcpname)
 	if !expectError && err != nil {
@@ -320,9 +319,8 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
 			f.expectUpdateKubeletConfig(kc1)
 
-			c, i := f.newController()
+			c := f.newController()
 			stopCh := make(chan struct{})
-			i.Start(stopCh)
 
 			err := c.syncHandler(getKey(kc1, t))
 			if err != nil {
@@ -345,9 +343,8 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, mcs, kcUpdate) // MachineConfig exists
 
-			c, i = f.newController()
+			c = f.newController()
 			stopCh = make(chan struct{})
-			i.Start(stopCh)
 
 			glog.Info("Applying update")
 
