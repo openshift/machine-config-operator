@@ -10,9 +10,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"github.com/stretchr/testify/assert"
 
 	configv1 "github.com/openshift/api/config/v1"
+	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -189,20 +191,6 @@ func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.Machine
 }
 func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err error) {
 	return nil, nil
-}
-
-type mockClusterOperatorsClient struct {
-	co *configv1.ClusterOperator
-}
-
-func (coc *mockClusterOperatorsClient) Create(co *configv1.ClusterOperator) (*configv1.ClusterOperator, error) {
-	return coc.co, nil
-}
-func (coc *mockClusterOperatorsClient) UpdateStatus(co *configv1.ClusterOperator) (*configv1.ClusterOperator, error) {
-	return coc.co, nil
-}
-func (coc *mockClusterOperatorsClient) Get(name string, options metav1.GetOptions) (*configv1.ClusterOperator, error) {
-	return coc.co, nil
 }
 
 func TestOperatorSyncStatus(t *testing.T) {
@@ -539,11 +527,11 @@ func TestOperatorSyncStatus(t *testing.T) {
 		optr.vStore = newVersionStore()
 		optr.vStore.Set("operator", fmt.Sprintf("test-version"))
 		optr.mcpLister = &mockMCPLister{}
-		co := &configv1.ClusterOperator{}
+		coName := fmt.Sprintf("test-%s", uuid.NewUUID())
+		co := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: coName}}
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
-		optr.configClient = &mockClusterOperatorsClient{co: co}
 
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
@@ -557,15 +545,18 @@ func TestOperatorSyncStatus(t *testing.T) {
 			} else {
 				co.Status.Versions = sync.operatorVersions
 			}
+			optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
 			err := optr.syncAll(renderConfig{}, sync.syncFuncs)
 			if sync.expectOperatorFail {
 				assert.NotNil(t, err, "test case %d, sync call %d, expected an error", idx, j)
 			} else {
 				assert.Nil(t, err, "test case %d, expected no error", idx, j)
 			}
+			o, err := optr.configClient.ConfigV1().ClusterOperators().Get(coName, metav1.GetOptions{})
+			assert.Nil(t, err)
 			for _, cond := range sync.cond {
 				var condition configv1.ClusterOperatorStatusCondition
-				for _, coCondition := range co.Status.Conditions {
+				for _, coCondition := range o.Status.Conditions {
 					if cond.Type == coCondition.Type {
 						condition = coCondition
 						break
@@ -583,7 +574,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{}
 	co := &configv1.ClusterOperator{}
-	optr.configClient = &mockClusterOperatorsClient{co: co}
+	optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
 	optr.inClusterBringup = true
 
 	fn1 := func(config renderConfig) error {
