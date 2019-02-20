@@ -99,7 +99,7 @@ func startControllers(ctx *common.ControllerContext) error {
 		ctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 		ctx.ClientBuilder.KubeClientOrDie(componentName),
 		ctx.ClientBuilder.APIExtClientOrDie(componentName),
-		ctx.ClientBuilder.ClusterOperatorsClientOrDie(componentName),
+		ctx.ClientBuilder.ConfigClientOrDie(componentName),
 	).Run(2, ctx.Stop)
 
 	return nil
