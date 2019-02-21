@@ -9,6 +9,8 @@
 
 set -xeuo pipefail
 
+podman=${podman:-podman}
+
 oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
 if ! oc get -n openshift-image-registry route/image-registry &>/dev/null; then
     oc expose -n openshift-image-registry svc/image-registry
@@ -28,7 +30,7 @@ builder_secretid=$(oc get -n openshift-machine-config-operator secret | egrep '^
 echo "podman login ${registry} ..."
 set +x
 secret="$(oc get -n openshift-machine-config-operator -o json secret/${builder_secretid} | jq -r '.data.token' | base64 -d)"
-podman login --tls-verify=false -u unused -p "${secret}" "${registry}"
+$podman login --tls-verify=false -u unused -p "${secret}" "${registry}"
 set -x
 
 # And allow everything to pull from our namespace
