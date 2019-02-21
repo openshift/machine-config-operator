@@ -21,9 +21,10 @@ import (
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
-	clusterConfigConfigMapFile string,
-	infraFile, networkFile string,
-	etcdCAFile, rootCAFile string, kubeCAFile string, pullSecretFile string,
+	clusterConfigConfigMapFile,
+	infraFile, networkFile,
+	etcdCAFile, rootCAFile,
+	kubeCAFile, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
 ) error {
