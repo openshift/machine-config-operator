@@ -65,6 +65,25 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
+func (f *fixture) validateActions() {
+	actions := filterInformerActions(f.client.Actions())
+	for i, action := range actions {
+		glog.Infof("Action: %v", action)
+
+		if len(f.actions) < i+1 {
+			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
+			break
+		}
+
+		expectedAction := f.actions[i]
+		checkAction(expectedAction, action, f.t)
+	}
+
+	if len(f.actions) > len(actions) {
+		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
+	}
+}
+
 func newMachineConfig(name string, labels map[string]string, osurl string, files []ignv2_2types.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
@@ -79,12 +98,13 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 }
 
-func newControllerConfig(name string) *mcfgv1.ControllerConfig {
+func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
 	cc := &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
 			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+			Platform:            platform,
 		},
 	}
 	return cc
@@ -124,10 +144,6 @@ func newImageConfig(name string, regconf *apicfgv1.RegistrySources) *apicfgv1.Im
 		},
 	}
 }
-
-// func fakeConfigClient(objects ...runtime.Object) configv1client.Interface {
-// 	return fakeconfigv1client.NewSimpleClientset(objects...)
-// }
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
@@ -196,22 +212,7 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 		f.t.Error("expected error syncing containerruntimeconfigs, got nil")
 	}
 
-	actions := filterInformerActions(f.client.Actions())
-	for i, action := range actions {
-		glog.Infof("  Action: %v", action)
-
-		if len(f.actions) < i+1 {
-			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
-			break
-		}
-
-		expectedAction := f.actions[i]
-		checkAction(expectedAction, action, f.t)
-	}
-
-	if len(f.actions) > len(actions) {
-		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
-	}
+	f.validateActions()
 }
 
 // filterInformerActions filters list and watch actions for testing resources.
@@ -290,6 +291,10 @@ func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
+func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+}
+
 func (f *fixture) expectPatchContainerRuntimeConfig(config *mcfgv1.ContainerRuntimeConfig, patch []byte) {
 	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, config.Name, patch))
 }
@@ -298,13 +303,17 @@ func (f *fixture) expectUpdateContainerRuntimeConfig(config *mcfgv1.ContainerRun
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, "status", config))
 }
 
+// The pathc bytes to expect when creating/updating a containerruntimeconfig
+var ctrcfgPatchBytes = []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x73, 0x78, 0x32, 0x76, 0x72, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x72, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x22, 0x5d, 0x7d, 0x7d}
+
+// TestContainerRuntimeConfigCreate ensures that a create happens when an existing containerruntime config is created.
+// It tests that the necessary get, create, and update steps happen in the correct order.
 func TestContainerRuntimeConfigCreate(t *testing.T) {
 	for _, platform := range []string{"aws", "none", "unrecognized"} {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster")
-			cc.Spec.Platform = platform
+			cc := newControllerConfig("test-cluster", platform)
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
@@ -320,7 +329,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
-			f.expectPatchContainerRuntimeConfig(ctrcfg1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x73, 0x78, 0x32, 0x76, 0x72, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x72, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 
 			f.run(getKey(ctrcfg1, t))
@@ -328,6 +337,186 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 	}
 }
 
+// TestContainerRuntimeConfigUpdate ensures that an update happens when an existing containerruntime config is updated.
+// It tests that the necessary get, create, and update steps happen in the correct order.
+func TestContainerRuntimeConfigUpdate(t *testing.T) {
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig("test-cluster", platform)
+			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
+			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
+			mcs := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mccrLister = append(f.mccrLister, ctrcfg1)
+			f.objects = append(f.objects, ctrcfg1)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
+			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
+			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
+
+			c := f.newController()
+			stopCh := make(chan struct{})
+
+			err := c.syncHandler(getKey(ctrcfg1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			// Perform Update
+			f = newFixture(t)
+
+			// Modify config
+			ctrcfgUpdate := ctrcfg1.DeepCopy()
+			ctrcfgUpdate.Spec.ContainerRuntimeConfig.LogLevel = "warn"
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mccrLister = append(f.mccrLister, ctrcfg1)
+			f.objects = append(f.objects, mcs, ctrcfgUpdate)
+
+			c = f.newController()
+			stopCh = make(chan struct{})
+
+			glog.Info("Applying update")
+
+			// Apply update
+			err = c.syncHandler(getKey(ctrcfgUpdate, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
+			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
+			f.expectUpdateMachineConfigAction(mcs)
+			f.expectPatchContainerRuntimeConfig(ctrcfgUpdate, ctrcfgPatchBytes)
+			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
+
+			f.validateActions()
+
+			close(stopCh)
+		})
+	}
+}
+
+// TestImageConfigCreate ensures that a create happens when an image config is created.
+// It tests that the necessary get, create, and update steps happen in the correct order.
+func TestImageConfigCreate(t *testing.T) {
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig("test-cluster", platform)
+			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
+			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectCreateMachineConfigAction(mcs2)
+
+			f.run("cluster")
+		})
+	}
+}
+
+// TestImageConfigUpdate ensures that an update happens when an existing image config is updated.
+// It tests that the necessary get, create, and update steps happen in the correct order.
+func TestImageConfigUpdate(t *testing.T) {
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig("test-cluster", platform)
+			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
+			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectCreateMachineConfigAction(mcs2)
+
+			c := f.newController()
+			stopCh := make(chan struct{})
+
+			err := c.syncImgHandler("cluster")
+			if err != nil {
+				t.Errorf("syncImgHandler returned %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			// Perform Update
+			f = newFixture(t)
+
+			// Modify config
+			imgcfgUpdate := imgcfg1.DeepCopy()
+			imgcfgUpdate.Spec.RegistrySources.InsecureRegistries = []string{"test.io"}
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.objects = append(f.objects, mcs1, mcs2)
+
+			c = f.newController()
+			stopCh = make(chan struct{})
+
+			glog.Info("Applying update")
+
+			// Apply update
+			err = c.syncImgHandler("")
+			if err != nil {
+				t.Errorf("syncImgHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectUpdateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectUpdateMachineConfigAction(mcs2)
+
+			f.validateActions()
+
+			close(stopCh)
+		})
+	}
+}
+
+// TestContainerRuntimeConfigOptions tests the validity of allowed and not allowed values
+// for the options in containerruntime config
 func TestContainerRuntimeConfigOptions(t *testing.T) {
 	failureTests := []struct {
 		name   string
