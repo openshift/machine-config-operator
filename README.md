@@ -12,7 +12,7 @@ The MCO (for short) interacts closely with
 both [the installer](https://github.com/openshift/installer/) as well as Red Hat
 CoreOS. See also [the machine-api-operator](https://github.com/openshift/machine-api-operator)
 which handles provisioning of new machines - once the machine-api-operator
-provisions a machine (with a "pristine" base Red hat CoreOS), the MCO will take
+provisions a machine (with a "pristine" base Red Hat CoreOS), the MCO will take
 care of configuring it.
 
 One way to view the MCO is to treat the operating system itself as "just another
