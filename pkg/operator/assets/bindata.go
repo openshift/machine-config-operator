@@ -283,10 +283,6 @@ spec:
   - JSONPath: .metadata.creationTimestamp
     name: Created
     type: date
-  - JSONPath: .spec.osImageURL
-    description: URL for the RPM OS-tree image. This is optional and can be empty.
-    name: OSImageURL
-    type: string
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
