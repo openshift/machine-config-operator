@@ -21,7 +21,7 @@ _build-%:
 # Example:
 #    make _image-machine-config-daemon
 _image-%:
-	@which podman 2> /dev/null &>1 || { echo "podman must be installed to build an image";  exit 1; }
+	@which podman 2> /dev/null >&1 || { echo "podman must be installed to build an image";  exit 1; }
 	WHAT=$* hack/build-image.sh
 
 # Build + push + deploy image for a component. Intended to be called via another target.
