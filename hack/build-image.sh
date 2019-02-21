@@ -43,6 +43,10 @@ if [ ${WHAT} == "all" ]; then
 else
 	# Otherwise WHAT should be valid at this point
 	TOBUILD="Dockerfile.${WHAT}"
+  # See Dockerfile.machine-config-daemon.upstream for why this exists
+  if [ -f "$TOBUILD.upstream" ]; then
+      TOBUILD="${TOBUILD}.upstream"
+  fi
 fi
 
 # Check that the target is valid
