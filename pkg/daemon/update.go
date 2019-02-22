@@ -8,11 +8,13 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/signal"
 	"os/user"
 	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"syscall"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -124,6 +126,28 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
 }
 
+// isUpdating returns true if the MCD is actively applying an update
+func (dn *Daemon) catchIgnoreSIGTERM() {
+	if dn.installedSigterm {
+		return
+	}
+
+	termChan := make(chan os.Signal, 1)
+	signal.Notify(termChan, syscall.SIGTERM)
+
+	dn.installedSigterm = true
+
+	// Catch SIGTERM - if we're actively updating, we should avoid
+	// having the process be killed.
+	// https://github.com/openshift/machine-config-operator/issues/407
+	go func() {
+		for {
+			<-termChan
+			glog.Info("Got SIGTERM, but actively updating")
+		}
+	}()
+}
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	if dn.nodeWriter != nil {
@@ -131,6 +155,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 			return err
 		}
 	}
+
+	dn.catchIgnoreSIGTERM()
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
