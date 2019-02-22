@@ -2,6 +2,8 @@
 
 set -eu
 
+podman=${podman:-podman}
+
 # Print errors to stderr
 function print_error {
 	echo "ERROR: $1" >&2
@@ -41,6 +43,10 @@ if [ ${WHAT} == "all" ]; then
 else
 	# Otherwise WHAT should be valid at this point
 	TOBUILD="Dockerfile.${WHAT}"
+  # See Dockerfile.machine-config-daemon.upstream for why this exists
+  if [ -f "$TOBUILD.upstream" ]; then
+      TOBUILD="${TOBUILD}.upstream"
+  fi
 fi
 
 # Check that the target is valid
@@ -63,5 +69,5 @@ fi
 for IMAGE_TO_BUILD in $TOBUILD; do
 	NAME="${IMAGE_TO_BUILD#Dockerfile.}"
 	set -x
-	podman build -t "${NAME}:${VERSION}" -f "${IMAGE_TO_BUILD}" --no-cache
+	$podman build -t "${NAME}:${VERSION}" -f "${IMAGE_TO_BUILD}" --no-cache
 done

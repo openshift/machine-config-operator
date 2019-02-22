@@ -8,6 +8,8 @@
 
 set -xeuo pipefail
 
+podman=${podman:-podman}
+
 do_build=1
 if [ "${1:-}" = "-n" ]; then
     do_build=0
@@ -20,9 +22,10 @@ WHAT=${WHAT:-machine-config-daemon}
 LOCAL_IMGNAME=localhost/${WHAT}
 REMOTE_IMGNAME=openshift-machine-config-operator/${WHAT}
 if [ "${do_build}" = 1 ]; then
-    podman build -t "${LOCAL_IMGNAME}" -f Dockerfile.${WHAT} --no-cache
-    podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
+    export WHAT
+    ./hack/build-image.sh
 fi
+$podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
 
 digest=$(skopeo inspect --tls-verify=false docker://${registry}/${REMOTE_IMGNAME} | jq -r .Digest)
 imageid=${REMOTE_IMGNAME}@${digest}
