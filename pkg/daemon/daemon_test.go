@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/vincent-petithory/dataurl"
 )
 
@@ -85,4 +86,29 @@ func TestOverwrittenFile(t *testing.T) {
 	if status := checkFiles(files); !status {
 		t.Errorf("Validating an overwritten file failed")
 	}
+}
+
+func TestDaemonOnceFromNoPanic(t *testing.T) {
+	exitCh := make(chan error)
+	defer close(exitCh)
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	// This is how a onceFrom daemon is initialized
+	// and it shouldn't panic assuming kubeClient is there
+	dn, err := New(
+		"/",
+		"testnodename",
+		"testos",
+		NewNodeUpdaterClient(),
+		NewFileSystemClient(),
+		"test",
+		false,
+		"",
+		NewNodeWriter(),
+		exitCh,
+		stopCh,
+	)
+	assert.Nil(t, err)
+	assert.NotPanics(t, func() { dn.triggerUpdateWithMachineConfig(nil, nil) })
 }
