@@ -45,6 +45,7 @@ type RpmOstreeDeployment struct {
 // NodeUpdaterClient is an interface describing how to interact with the host
 // around content deployment
 type NodeUpdaterClient interface {
+	GetStatus() (string, error)
 	GetBootedOSImageURL(string) (string, string, error)
 	RunPivot(string) error
 }
@@ -77,6 +78,17 @@ func (r *RpmOstreeClient) getBootedDeployment(rootMount string) (*RpmOstreeDeplo
 	}
 
 	return nil, fmt.Errorf("Not currently booted in a deployment")
+}
+
+
+// GetStatus returns multi-line human-readable text describing system status
+func (r *RpmOstreeClient) GetStatus() (string, error) {
+	output, err := RunGetOut("rpm-ostree", "status")
+	if err != nil {
+		return "", err
+	}
+
+	return string(output), nil
 }
 
 // GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
