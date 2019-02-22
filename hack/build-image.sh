@@ -59,15 +59,10 @@ for IMAGE_TO_BUILD in $TOBUILD; do
   fi
 done
 
-
-if [ -z ${VERSION+a} ]; then
-        print_info "Using version from git..."
-        VERSION=$(git describe --abbrev=8 --dirty --always)
-fi
-
 # Build all images requested
 for IMAGE_TO_BUILD in $TOBUILD; do
 	NAME="${IMAGE_TO_BUILD#Dockerfile.}"
+  NAME="${NAME//.upstream}"
 	set -x
-	$podman build -t "${NAME}:${VERSION}" -f "${IMAGE_TO_BUILD}" --no-cache
+	$podman build -t "localhost/${NAME}:latest" -f "${IMAGE_TO_BUILD}" --no-cache
 done
