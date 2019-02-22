@@ -82,6 +82,8 @@ type Daemon struct {
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
 
+	installedSigterm bool
+
 	nodeWriter *NodeWriter
 
 	// channel used by callbacks to signal Run() of an error
