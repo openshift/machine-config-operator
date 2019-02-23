@@ -7,6 +7,7 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	"github.com/stretchr/testify/assert"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -77,7 +78,7 @@ func TestReconcilable(t *testing.T) {
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: ignv2_2types.Config{
 				Ignition: ignv2_2types.Ignition{
-					Version: "0.0",
+					Version: "2.0.0",
 				},
 			},
 		},
@@ -88,7 +89,7 @@ func TestReconcilable(t *testing.T) {
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: ignv2_2types.Config{
 				Ignition: ignv2_2types.Ignition{
-					Version: "1.0",
+					Version: "2.2.0",
 				},
 			},
 		},
@@ -96,75 +97,78 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Ignition version changes react as expected
 	isReconcilable := d.reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "ignition", isReconcilable)
+	checkIrreconcilableResults(t, "Ignition", isReconcilable)
 
 	// Match ignition versions
-	oldConfig.Spec.Config.Ignition.Version = "1.0"
+	oldConfig.Spec.Config.Ignition.Version = "2.2.0"
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "ignition", isReconcilable)
+	checkReconcilableResults(t, "Ignition", isReconcilable)
 
 	// Verify Networkd unit changes react as expected
 	oldConfig.Spec.Config.Networkd = ignv2_2types.Networkd{}
 	newConfig.Spec.Config.Networkd = ignv2_2types.Networkd{
 		Units: []ignv2_2types.Networkdunit{
 			ignv2_2types.Networkdunit{
-				Name: "test",
+				Name: "test.network",
 			},
 		},
 	}
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "networkd", isReconcilable)
+	checkIrreconcilableResults(t, "Networkd", isReconcilable)
 
 	// Match Networkd
 	oldConfig.Spec.Config.Networkd = newConfig.Spec.Config.Networkd
 
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "networkd", isReconcilable)
+	checkReconcilableResults(t, "Networkd", isReconcilable)
 
 	// Verify Disk changes react as expected
 	oldConfig.Spec.Config.Storage.Disks = []ignv2_2types.Disk{
 		ignv2_2types.Disk{
-			Device: "one",
+			Device: "/one",
 		},
 	}
 
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "disk", isReconcilable)
+	checkIrreconcilableResults(t, "Disk", isReconcilable)
 
 	// Match storage disks
 	newConfig.Spec.Config.Storage.Disks = oldConfig.Spec.Config.Storage.Disks
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "disk", isReconcilable)
+	checkReconcilableResults(t, "Disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
+	oldFSPath := "/foo/bar"
 	oldConfig.Spec.Config.Storage.Filesystems = []ignv2_2types.Filesystem{
 		ignv2_2types.Filesystem{
-			Name: "test",
+			Name: "user",
+			Path: &oldFSPath,
 		},
 	}
 
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "filesystem", isReconcilable)
+	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Match Storage filesystems
 	newConfig.Spec.Config.Storage.Filesystems = oldConfig.Spec.Config.Storage.Filesystems
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "filesystem", isReconcilable)
+	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
 	oldConfig.Spec.Config.Storage.Raid = []ignv2_2types.Raid{
 		ignv2_2types.Raid{
-			Name: "test",
+			Name:  "data",
+			Level: "stripe",
 		},
 	}
 
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "raid", isReconcilable)
+	checkIrreconcilableResults(t, "Raid", isReconcilable)
 
 	// Match storage raid
 	newConfig.Spec.Config.Storage.Raid = oldConfig.Spec.Config.Storage.Raid
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "raid", isReconcilable)
+	checkReconcilableResults(t, "Raid", isReconcilable)
 
 	// Verify Passwd Groups changes unsupported
 	oldConfig = &mcfgv1.MachineConfig{}
@@ -179,7 +183,7 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 	isReconcilable = d.reconcilable(oldConfig, newMcfg)
-	checkIrreconcilableResults(t, "passwdGroups", isReconcilable)
+	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
 
 }
 
@@ -212,11 +216,22 @@ func TestReconcilableSSH(t *testing.T) {
 
 	// Check that updating SSH Key of user core supported
 	//tempUser1 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234"}}
-	oldMcfg := &mcfgv1.MachineConfig{}
+	oldMcfg := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ignv2_2types.Config{
+				Ignition: ignv2_2types.Ignition{
+					Version: "2.2.0",
+				},
+			},
+		},
+	}
 	tempUser1 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678", "abc"}}
 	newMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: ignv2_2types.Config{
+				Ignition: ignv2_2types.Ignition{
+					Version: "2.2.0",
+				},
 				Passwd: ignv2_2types.Passwd{
 					Users: []ignv2_2types.PasswdUser{tempUser1},
 				},
@@ -225,7 +240,7 @@ func TestReconcilableSSH(t *testing.T) {
 	}
 
 	errMsg := d.reconcilable(oldMcfg, newMcfg)
-	checkReconcilableResults(t, "ssh", errMsg)
+	checkReconcilableResults(t, "SSH", errMsg)
 
 	// 	Check that updating User with User that is not core is not supported
 	tempUser2 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234"}}
@@ -234,21 +249,21 @@ func TestReconcilableSSH(t *testing.T) {
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser3
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
-	checkIrreconcilableResults(t, "ssh", errMsg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
 	tempUser4 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser4
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
-	checkIrreconcilableResults(t, "ssh", errMsg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot add a user or have len(Passwd.Users)> 1
 	tempUser5 := ignv2_2types.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users = append(newMcfg.Spec.Config.Passwd.Users, tempUser5)
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
-	checkIrreconcilableResults(t, "ssh", errMsg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that user is not attempting to remove the only sshkey from core user
 	tempUser6 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{}}
@@ -256,13 +271,13 @@ func TestReconcilableSSH(t *testing.T) {
 	newMcfg.Spec.Config.Passwd.Users = newMcfg.Spec.Config.Passwd.Users[:len(newMcfg.Spec.Config.Passwd.Users)-1]
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
-	checkIrreconcilableResults(t, "ssh", errMsg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	//check that empty Users does not generate error/degrade node
 	newMcfg.Spec.Config.Passwd.Users = nil
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
-	checkReconcilableResults(t, "ssh", errMsg)
+	checkReconcilableResults(t, "SSH", errMsg)
 
 }
 
@@ -318,16 +333,81 @@ func TestUpdateSSHKeys(t *testing.T) {
 	}
 }
 
+// This test should fail until Ignition validation enabled.
+// Ignition validation does not permit writing files to relative paths.
+func TestInvalidIgnConfig(t *testing.T) {
+	// expectedError is the error we will use when expecting an error to return
+	expectedError := fmt.Errorf("broken")
+	// testClient is the NodeUpdaterClient mock instance that will front
+	// calls to update the host.
+	testClient := RpmOstreeClientMock{
+		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+		RunPivotReturns: []error{
+			// First run will return no error
+			nil,
+			// Second rrun will return our expected error
+			expectedError},
+	}
+	mockFS := &FsClientMock{MkdirAllReturns: []error{nil}, WriteFileReturns: []error{nil}}
+	// Create a Daemon instance with mocked clients
+	d := Daemon{
+		name:              "nodeName",
+		OperatingSystem:   machineConfigDaemonOSRHCOS,
+		NodeUpdaterClient: testClient,
+		loginClient:       nil, // set to nil as it will not be used within tests
+		client:            fake.NewSimpleClientset(),
+		kubeClient:        k8sfake.NewSimpleClientset(),
+		rootMount:         "/",
+		bootedOSImageURL:  "test",
+		fileSystemClient:  mockFS,
+	}
+
+	oldMcfg := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ignv2_2types.Config{
+				Ignition: ignv2_2types.Ignition{
+					Version: "2.2.0",
+				},
+			},
+		},
+	}
+	// create file to write that contains an impermissable relative path
+	tempFileContents := ignv2_2types.FileContents{Source: "data:,hello%20world%0A"}
+	tempMode := 420
+	newMcfg := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ignv2_2types.Config{
+				Ignition: ignv2_2types.Ignition{
+					Version: "2.2.0",
+				},
+				Storage: ignv2_2types.Storage{
+					Files: []ignv2_2types.File{
+						{Node: ignv2_2types.Node{Path: "home/core/test", Filesystem: "root"},
+							FileEmbedded1: ignv2_2types.FileEmbedded1{Contents: tempFileContents, Mode: &tempMode}},
+					},
+				},
+			},
+		},
+	}
+	err := d.reconcilable(oldMcfg, newMcfg)
+	assert.NotNil(t, err, "Expected error. Relative Paths should fail general ignition validation")
+
+	newMcfg.Spec.Config.Storage.Files[0].Node.Path = "/home/core/test"
+	err = d.reconcilable(oldMcfg, newMcfg)
+	assert.Nil(t, err, "Expected no error. Absolute paths should not fail general ignition validation")
+
+}
+
 // checkReconcilableResults is a shortcut for verifying results that should be reconcilable
 func checkReconcilableResults(t *testing.T, key string, reconcilableError error) {
 	if reconcilableError != nil {
-		t.Errorf("Expected the same %s values would be reconcilable. Received error: %v", key, reconcilableError)
+		t.Errorf("%s values should be reconcilable. Received error: %v", key, reconcilableError)
 	}
 }
 
 // checkIrreconcilableResults is a shortcut for verifing results that should be irreconcilable
 func checkIrreconcilableResults(t *testing.T, key string, reconcilableError error) {
 	if reconcilableError == nil {
-		t.Errorf("Expected different %s values would not be reconcilable.", key)
+		t.Errorf("Different %s values should not be reconcilable.", key)
 	}
 }
