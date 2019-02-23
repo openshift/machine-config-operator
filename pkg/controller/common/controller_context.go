@@ -1,18 +1,31 @@
 package common
 
 import (
+	"math/rand"
 	"time"
 
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/openshift/machine-config-operator/internal/clients"
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	apiextinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 )
 
+const (
+	minResyncPeriod = 20 * time.Minute
+)
+
+func resyncPeriod() func() time.Duration {
+	return func() time.Duration {
+		factor := rand.Float64() + 1
+		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
+	}
+}
+
 // ControllerContext stores all the informers for a variety of kubernetes objects.
 type ControllerContext struct {
-	ClientBuilder *ClientBuilder
+	ClientBuilder *clients.Builder
 
 	NamespacedInformerFactory     mcfginformers.SharedInformerFactory
 	InformerFactory               mcfginformers.SharedInformerFactory
@@ -31,7 +44,7 @@ type ControllerContext struct {
 }
 
 // CreateControllerContext creates the ControllerContext with the ClientBuilder.
-func CreateControllerContext(cb *ClientBuilder, stop <-chan struct{}, targetNamespace string) *ControllerContext {
+func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNamespace string) *ControllerContext {
 	client := cb.MachineConfigClientOrDie("machine-config-shared-informer")
 	kubeClient := cb.KubeClientOrDie("kube-shared-informer")
 	apiExtClient := cb.APIExtClientOrDie("apiext-shared-informer")
@@ -51,8 +64,8 @@ func CreateControllerContext(cb *ClientBuilder, stop <-chan struct{}, targetName
 		KubeNamespacedInformerFactory: kubeNamespacedSharedInformer,
 		APIExtInformerFactory:         apiExtSharedInformer,
 		ConfigInformerFactory:         configSharedInformer,
-		Stop:             stop,
-		InformersStarted: make(chan struct{}),
-		ResyncPeriod:     resyncPeriod(),
+		Stop:                          stop,
+		InformersStarted:              make(chan struct{}),
+		ResyncPeriod:                  resyncPeriod(),
 	}
 }
