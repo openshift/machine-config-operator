@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/kubernetes"
 )
 
 var (
@@ -69,7 +70,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		if os.IsNotExist(err) {
 			glog.Fatalf("rootMount %s does not exist", startOpts.rootMount)
 		}
-		glog.Fatalf("unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
+		glog.Fatalf("Unable to verify rootMount %s exists: %s", startOpts.rootMount, err)
 	}
 
 	// This channel is used to ensure all spawned goroutines exit when we exit.
@@ -82,22 +83,44 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	exitCh := make(chan error)
 	defer close(exitCh)
 
-	var dn *daemon.Daemon
-	var ctx *controllercommon.ControllerContext
-
-	glog.Info("starting node writer")
+	glog.Info("Starting node writer")
 	nodeWriter := daemon.NewNodeWriter()
 	go nodeWriter.Run(stopCh)
+
+	cb, err := clients.NewBuilder(startOpts.kubeconfig)
+	if err != nil {
+		if startOpts.onceFrom != "" {
+			glog.Info("Cannot initialize ClientBuilder, likely in onceFrom mode with Ignition")
+		} else {
+			glog.Fatalf("Failed to initialize ClientBuilder: %v", err)
+		}
+	}
+
+	var kubeClient kubernetes.Interface
+	if cb != nil {
+		kubeClient, err = cb.KubeClient(componentName)
+		if err != nil {
+			glog.Info("Cannot initialize kubeClient, likely in onceFrom mode with Ignition")
+		}
+	}
+
+	var dn *daemon.Daemon
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
+		mcClient, err := cb.MachineConfigClient(componentName)
+		if err != nil {
+			glog.Info("Cannot initialize MC client, likely in onceFrom mode with Ignition")
+		}
 		dn, err = daemon.New(
 			startOpts.rootMount,
 			startOpts.nodeName,
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
 			startOpts.onceFrom,
+			mcClient,
+			kubeClient,
 			startOpts.kubeletHealthzEnabled,
 			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
@@ -105,15 +128,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			stopCh,
 		)
 		if err != nil {
-			glog.Fatalf("failed to initialize single run daemon: %v", err)
+			glog.Fatalf("Failed to initialize single run daemon: %v", err)
 		}
 		// Else we use the cluster driven daemon
 	} else {
-		cb, err := clients.NewBuilder(startOpts.kubeconfig)
-		if err != nil {
-			glog.Fatalf("failed to initialize ClientBuilder: %v", err)
+		if kubeClient == nil {
+			panic("Running in cluster mode without a kubeClient")
 		}
-		ctx = controllercommon.CreateControllerContext(cb, stopCh, componentName)
+		ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
 		// create the daemon instance. this also initializes kube client items
 		// which need to come from the container and not the chroot.
 		dn, err = daemon.NewClusterDrivenDaemon(
@@ -122,7 +144,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-			cb.KubeClientOrDie(componentName),
+			kubeClient,
 			startOpts.onceFrom,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			startOpts.kubeletHealthzEnabled,
@@ -132,35 +154,33 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			stopCh,
 		)
 		if err != nil {
-			glog.Fatalf("failed to initialize daemon: %v", err)
+			glog.Fatalf("Failed to initialize daemon: %v", err)
 		}
 
 		// in the daemon case
 		if err := dn.BindPodMounts(); err != nil {
-			glog.Fatalf("binding pod mounts: %s", err)
+			glog.Fatalf("Binding pod mounts: %s", err)
 		}
+
+		ctx.KubeInformerFactory.Start(stopCh)
+		ctx.InformerFactory.Start(stopCh)
+		close(ctx.InformersStarted)
 	}
 
 	glog.Infof(`Calling chroot("%s")`, startOpts.rootMount)
 	if err := syscall.Chroot(startOpts.rootMount); err != nil {
-		glog.Fatalf("unable to chroot to %s: %s", startOpts.rootMount, err)
+		glog.Fatalf("Unable to chroot to %s: %s", startOpts.rootMount, err)
 	}
 
 	glog.V(2).Infof("Moving to / inside the chroot")
 	if err := os.Chdir("/"); err != nil {
-		glog.Fatalf("unable to change directory to /: %s", err)
-	}
-
-	if startOpts.onceFrom == "" {
-		ctx.KubeInformerFactory.Start(stopCh)
-		ctx.InformerFactory.Start(stopCh)
-		close(ctx.InformersStarted)
+		glog.Fatalf("Unable to change directory to /: %s", err)
 	}
 
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
-		glog.Fatalf("failed to run: %v", err)
+		glog.Fatalf("Failed to run: %v", err)
 	}
 }

@@ -6,7 +6,10 @@ import (
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
 var pathtests = []struct {
@@ -107,4 +110,30 @@ func TestCompareOSImageURL(t *testing.T) {
 	if m || err == nil {
 		t.Fatalf("Expected err")
 	}
+}
+
+func TestDaemonOnceFromNoPanic(t *testing.T) {
+	exitCh := make(chan error)
+	defer close(exitCh)
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	// This is how a onceFrom daemon is initialized
+	// and it shouldn't panic assuming kubeClient is there
+	dn, err := New(
+		"/",
+		"testnodename",
+		"testos",
+		NewNodeUpdaterClient(),
+		"test",
+		nil,
+		k8sfake.NewSimpleClientset(),
+		false,
+		"",
+		nil,
+		exitCh,
+		stopCh,
+	)
+	require.Nil(t, err)
+	require.NotPanics(t, func() { dn.triggerUpdateWithMachineConfig(&mcfgv1.MachineConfig{}, &mcfgv1.MachineConfig{}) })
 }
