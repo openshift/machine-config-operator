@@ -7,37 +7,31 @@ import (
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-
-	"github.com/openshift/machine-config-operator/cmd/common"
-	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
 func TestMCDToken(t *testing.T) {
-	cb, err := common.NewClientBuilder("")
-	if err != nil {
-		t.Errorf("%#v", err)
-	}
-	k := cb.KubeClientOrDie("mcd-token-test")
+	cs := framework.NewClientSet("")
 
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
 	}
 
-	mcdList, err := k.CoreV1().Pods("openshift-machine-config-operator").List(listOptions)
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
 
 	for _, pod := range mcdList.Items {
-		res, err := k.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{}).DoRaw()
+		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{}).DoRaw()
 		if err != nil {
 			t.Errorf("%s", err)
 		}
@@ -95,18 +89,13 @@ func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 }
 
 func TestMCDeployed(t *testing.T) {
-	cb, err := common.NewClientBuilder("")
-	if err != nil {
-		t.Errorf("%#v", err)
-	}
-	mcClient := cb.MachineConfigClientOrDie("mc-file-add")
-	k := cb.KubeClientOrDie("mc-file-add")
+	cs := framework.NewClientSet("")
 
 	for i := 0; i < 10; i++ {
 		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
 
 		// create the dummy MC now
-		_, err = mcClient.MachineconfigurationV1().MachineConfigs().Create(mcadd)
+		_, err := cs.MachineConfigs().Create(mcadd)
 		if err != nil {
 			t.Errorf("failed to create machine config %v", err)
 		}
@@ -114,7 +103,7 @@ func TestMCDeployed(t *testing.T) {
 		// grab the latest worker- MC
 		var newMCName string
 		if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-			mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+			mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 			if err != nil {
 				return false, err
 			}
@@ -131,7 +120,7 @@ func TestMCDeployed(t *testing.T) {
 
 		visited := make(map[string]bool)
 		if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-			nodes, err := getNodesByRole(k, "worker")
+			nodes, err := getNodesByRole(cs, "worker")
 			if err != nil {
 				return false, err
 			}
@@ -154,11 +143,11 @@ func TestMCDeployed(t *testing.T) {
 	}
 }
 
-func getNodesByRole(k kubernetes.Interface, role string) ([]v1.Node, error) {
+func getNodesByRole(cs *framework.ClientSet, role string) ([]v1.Node, error) {
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
 	}
-	nodes, err := k.CoreV1().Nodes().List(listOptions)
+	nodes, err := cs.Nodes().List(listOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -166,12 +155,7 @@ func getNodesByRole(k kubernetes.Interface, role string) ([]v1.Node, error) {
 }
 
 func TestReconcileAfterBadMC(t *testing.T) {
-	cb, err := common.NewClientBuilder("")
-	if err != nil {
-		t.Errorf("%#v", err)
-	}
-	mcClient := cb.MachineConfigClientOrDie("mc-file-add")
-	k := cb.KubeClientOrDie("mc-file-add")
+	cs := framework.NewClientSet("")
 
 	// create a bad MC w/o a filesystem field which is going to fail reconciling
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
@@ -179,14 +163,14 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
 	// and we need it for the final check
-	mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 	if err != nil {
 		t.Error(err)
 	}
 	workerOldMc := mcp.Status.Configuration.Name
 
 	// create the dummy MC now
-	_, err = mcClient.MachineconfigurationV1().MachineConfigs().Create(mcadd)
+	_, err = cs.MachineConfigs().Create(mcadd)
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
@@ -194,7 +178,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	// grab the latest worker- MC
 	var newMCName string
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -211,7 +195,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// verify that one node picked the above up
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		nodes, err := getNodesByRole(k, "worker")
+		nodes, err := getNodesByRole(cs, "worker")
 		if err != nil {
 			return false, err
 		}
@@ -227,7 +211,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// verify that we got indeed an unavailable machine in the pool
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -240,13 +224,13 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	}
 
 	// now delete the bad MC and watch the nodes reconciling as expected
-	if err := mcClient.MachineconfigurationV1().MachineConfigs().Delete(mcadd.Name, &metav1.DeleteOptions{}); err != nil {
+	if err := cs.MachineConfigs().Delete(mcadd.Name, &metav1.DeleteOptions{}); err != nil {
 		t.Error(err)
 	}
 
 	// wait for the mcp to go back to previous config
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -260,11 +244,11 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	visited := make(map[string]bool)
 	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
-		nodes, err := getNodesByRole(k, "worker")
+		nodes, err := getNodesByRole(cs, "worker")
 		if err != nil {
 			return false, err
 		}
-		mcp, err = mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err = cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
