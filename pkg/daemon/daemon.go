@@ -859,11 +859,11 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 func getRefDigest(ref string) (string, error) {
 	refParsed, err := imgref.ParseNamed(ref)
 	if err != nil {
-		return "", err
+		return "", errors.Wrapf(err, "parsing reference: %q", ref)
 	}
 	canon, ok := refParsed.(imgref.Canonical)
 	if !ok {
-		return "", fmt.Errorf("Not canonical form: %s", ref)
+		return "", fmt.Errorf("not canonical form: %q", ref)
 	}
 
 	return canon.Digest().String(), nil
@@ -894,7 +894,7 @@ func compareOSImageURL(current, desired string) (bool, error) {
 	}
 
 	if bootedDigest == desiredDigest {
-		glog.Infof("Current and target osImageURL have matching digest %s", bootedDigest)
+		glog.Infof("Current and target osImageURL have matching digest %q", bootedDigest)
 		return true, nil
 	}
 
