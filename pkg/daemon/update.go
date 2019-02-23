@@ -662,19 +662,15 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	newURL := config.Spec.OSImageURL
-
-	// see similar logic in checkOS()
-	if dn.isUnspecifiedOS(newURL) {
-		glog.Info("No target osImageURL provided")
-		return nil
+	osMatch, err := compareOSImageURL(dn.bootedOSImageURL, newURL)
+	if err != nil {
+		return err
 	}
-
-	if newURL == dn.bootedOSImageURL {
+	if osMatch {
 		return nil
 	}
 
 	glog.Infof("Updating OS to %s", newURL)
-
 	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
 		return fmt.Errorf("Failed to run pivot: %v", err)
 	}

@@ -26,6 +26,7 @@ import (
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
+	imgref "github.com/containers/image/docker/reference"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -582,8 +583,13 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	}
 
 	if state.bootstrapping {
-		if !dn.checkOS(state.currentConfig.Spec.OSImageURL) {
-			glog.Info("Bootstrap pivot required")
+		targetOSImageURL := state.currentConfig.Spec.OSImageURL
+		osMatch, err := dn.checkOS(targetOSImageURL)
+		if err != nil {
+			return err
+		}
+		if !osMatch {
+			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
 			// This only returns on error
 			return dn.updateOSAndReboot(state.currentConfig)
 		}
@@ -827,7 +833,12 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 // degraded.
 func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool {
 	// Be sure we're booted into the OS we expect
-	if !dn.checkOS(currentConfig.Spec.OSImageURL) {
+	osMatch, err := dn.checkOS(currentConfig.Spec.OSImageURL)
+	if err != nil {
+		glog.Errorf("%s", err);
+		return false
+	}
+	if !osMatch {
 		glog.Errorf("Expected target osImageURL %s", currentConfig.Spec.OSImageURL)
 		return false
 	}
@@ -841,32 +852,69 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 	return true
 }
 
-// isUnspecifiedOS says whether an osImageURL is "unspecified",
-// i.e. we should not try to change the current state.
-func (dn *Daemon) isUnspecifiedOS(osImageURL string) bool {
+
+// getRefDigest parses a Docker/OCI image reference and returns
+// its digest, or an error if the string fails to parse as
+// a "canonical" image reference with a digest.
+func getRefDigest(ref string) (string, error) {
+	refParsed, err := imgref.ParseNamed(ref)
+	if err != nil {
+		return "", err
+	}
+	canon, ok := refParsed.(imgref.Canonical)
+	if !ok {
+		return "", fmt.Errorf("Not canonical form: %s", ref)
+	}
+
+	return canon.Digest().String(), nil
+}
+
+// compareOSImageURL is the backend for checkOS.
+func compareOSImageURL(current, desired string) (bool, error) {
+	// Since https://github.com/openshift/machine-config-operator/pull/426 landed
+	// we don't use the "unspecified" osImageURL anymore, but let's keep supporting
+	// it for now.
 	// The ://dummy syntax is legacy
-	return osImageURL == "" || osImageURL == "://dummy"
+	if desired == "" || desired == "://dummy" {
+		glog.Info(`No target osImageURL provided`)
+		return true, nil
+	}
+
+	if current == desired {
+		return true, nil
+	}
+
+	bootedDigest, err := getRefDigest(current)
+	if err != nil {
+		return false, errors.Wrap(err, "parsing booted osImageURL")
+	}
+	desiredDigest, err := getRefDigest(desired)
+	if err != nil {
+		return false, errors.Wrap(err, "parsing desired osImageURL")
+	}
+
+	if bootedDigest == desiredDigest {
+		glog.Infof("Current and target osImageURL have matching digest %s", bootedDigest)
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
-// not running RHCOS, or if the target osImageURL is "" (unspecified).
+// not running RHCOS, or if the target osImageURL is "" (unspecified),
+// or if the digests match.
 // Otherwise if `false` is returned, then we need to perform an update.
-func (dn *Daemon) checkOS(osImageURL string) bool {
+func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 	// Nothing to do if we're not on RHCOS
 	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
 		glog.Infof(`Not booted into Red Hat CoreOS, ignoring target OSImageURL %s`, osImageURL)
-		return true
+		return true, nil
 	}
 
-	// XXX: The installer doesn't pivot yet so for now, just make ""
-	// mean "unset, don't pivot". See also: https://github.com/openshift/installer/issues/281
-	if dn.isUnspecifiedOS(osImageURL) {
-		glog.Info(`No target osImageURL provided`)
-		return true
-	}
-	return dn.bootedOSImageURL == osImageURL
+	return compareOSImageURL(dn.bootedOSImageURL, osImageURL)
 }
 
 // checkUnits validates the contents of all the units in the
