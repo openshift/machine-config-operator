@@ -19,7 +19,7 @@ registry=$(oc get -n openshift-image-registry -o json route/image-registry | jq 
 curl -k --head https://"${registry}" >/dev/null
 
 WHAT=${WHAT:-machine-config-daemon}
-LOCAL_IMGNAME=localhost/${WHAT}
+LOCAL_IMGNAME=localhost/${WHAT}:latest
 REMOTE_IMGNAME=openshift-machine-config-operator/${WHAT}
 if [ "${do_build}" = 1 ]; then
     export WHAT
