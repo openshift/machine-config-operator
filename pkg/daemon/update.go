@@ -718,6 +718,12 @@ func (dn *Daemon) reboot(rationale string) error {
 	}
 	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
 
+	// Now that everything is done, avoid delaying shutdown.
+	if dn.installedSigterm {
+		signal.Reset(syscall.SIGTERM)
+		dn.installedSigterm = false
+	}
+
 	// reboot
 	dn.loginClient.Reboot(false)
 
