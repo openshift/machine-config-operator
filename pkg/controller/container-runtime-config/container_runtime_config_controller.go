@@ -567,8 +567,13 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			isNotFound := errors.IsNotFound(err)
 			rci := createNewRegistriesConfigIgnition(registriesTOML)
 			if !isNotFound && equality.Semantic.DeepEqual(rci, mc.Spec.Config) {
-				applied = false
-				return nil
+				// if the configuration for the registries is equal, we still need to compare
+				// the generated controller version because during an upgrade we need a new one
+				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
+				if mcCtrlVersion == version.Version.String() {
+					applied = false
+					return nil
+				}
 			}
 			if isNotFound {
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
