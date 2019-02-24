@@ -40,3 +40,7 @@ func (r RpmOstreeClientMock) RunPivot(string) error {
 	}
 	return err
 }
+
+func (r RpmOstreeClientMock) GetStatus() (string, error) {
+	return "rpm-ostree mock: blah blah some status here", nil
+}
