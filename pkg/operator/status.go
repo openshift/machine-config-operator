@@ -245,7 +245,7 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 		if t.versionCheckRequired && !ok {
 			return fmt.Errorf("%s must be created by controller version %s", t.name, version)
 		}
-		if ok && v != version {
+		if ok && t.versionCheckRequired && v != version {
 			return fmt.Errorf("controller version mismatch for %s expected %s has %s", t.name, version, v)
 		}
 	}
