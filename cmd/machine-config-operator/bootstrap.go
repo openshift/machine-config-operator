@@ -38,6 +38,7 @@ var (
 		mcdImage            string
 		etcdImage           string
 		setupEtcdEnvImage   string
+		infraImage          string
 		destinationDir      string
 	}
 )
@@ -62,6 +63,7 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("etcd-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment.")
 	bootstrapCmd.MarkFlagRequired("setup-etcd-env-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "quay.io/openshift/origin-pod:v4.0", "Image for Infra Containers.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
