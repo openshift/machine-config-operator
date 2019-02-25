@@ -15,6 +15,8 @@ if [ "${1:-}" = "-n" ]; then
     do_build=0
 fi
 
+oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
+
 registry=$(oc get -n openshift-image-registry -o json route/image-registry | jq -r ".spec.host")
 curl -k --head https://"${registry}" >/dev/null
 

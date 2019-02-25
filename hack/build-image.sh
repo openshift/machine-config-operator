@@ -15,7 +15,7 @@ function print_info {
 
 # Warn when unprivileged
 if [ `id --user` -ne 0 ]; then
-	print_error "Note: Building unprivileged may fail due to permissions"
+	print_info "Building unprivileged may fail due to permissions"
 fi
 
 # Record all images files
@@ -35,6 +35,13 @@ if [ -z ${WHAT+a} ]; then
 	exit 1
 fi
 
+# Our change detection uses the git sha1
+# if ! git diff --quiet --exit-code; then
+#     print_error "Outstanding uncommitted changes found (git diff)"
+#     exit 1
+# fi
+
+VERSION=$(git describe --tags --abbrev=12 --always)
 
 # If all is the WHAT target then set TOBUILD to all the images found
 if [ ${WHAT} == "all" ]; then
@@ -64,5 +71,10 @@ for IMAGE_TO_BUILD in $TOBUILD; do
 	NAME="${IMAGE_TO_BUILD#Dockerfile.}"
   NAME="${NAME//.upstream}"
 	set -x
-	$podman build -t "localhost/${NAME}:latest" -f "${IMAGE_TO_BUILD}" --no-cache
+  imgname="localhost/${NAME}:${VERSION}"
+  if $podman inspect ${imgname} &>/dev/null; then
+      echo "Already built ${imgname}"
+  else
+	    $podman build -t "${imgname}" -f "${IMAGE_TO_BUILD}" --no-cache
+  fi
 done

@@ -11,7 +11,6 @@ set -xeuo pipefail
 
 podman=${podman:-podman}
 
-oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
 if ! oc get -n openshift-image-registry route/image-registry &>/dev/null; then
     oc expose -n openshift-image-registry svc/image-registry
 fi
