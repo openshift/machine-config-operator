@@ -154,12 +154,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if startOpts.onceFrom == "" {
-		status, err := dn.NodeUpdaterClient.GetStatus()
-		if err != nil {
-			glog.Fatalf("unable to get rpm-ostree status: %s", err)
-		}
-		glog.Info(status)
-
 		err = dn.CheckStateOnBoot()
 		if err != nil {
 			dn.EnterDegradedState(errors.Wrapf(err, "Checking initial state"))
