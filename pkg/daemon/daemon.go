@@ -560,6 +560,15 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
 func (dn *Daemon) CheckStateOnBoot() error {
+	// Print status if available
+	if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
+		status, err := dn.NodeUpdaterClient.GetStatus()
+		if err != nil {
+			glog.Fatalf("unable to get rpm-ostree status: %s", err)
+		}
+		glog.Info(status)
+	}
+
 	pendingConfigName, err := dn.getPendingConfig()
 	if err != nil {
 		return err
