@@ -88,7 +88,6 @@ spec:
     - "--pull-secret=/etc/mcc/bootstrap/machineconfigcontroller-pull-secret"
     resources:
       limits:
-        cpu: 20m
         memory: 50Mi
       requests:
         cpu: 20m
@@ -428,7 +427,6 @@ spec:
         - "--v=2"
         resources:
           limits:
-            cpu: 20m
             memory: 50Mi
           requests:
             cpu: 20m
@@ -597,6 +595,7 @@ spec:
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
+      terminationGracePeriodSeconds: 300
       tolerations:
         - key: node-role.kubernetes.io/master
           operator: Exists
