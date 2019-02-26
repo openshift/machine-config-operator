@@ -14,7 +14,6 @@ spec:
     - "--pull-secret=/etc/mcc/bootstrap/machineconfigcontroller-pull-secret"
     resources:
       limits:
-        cpu: 20m
         memory: 50Mi
       requests:
         cpu: 20m
