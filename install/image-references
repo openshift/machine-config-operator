@@ -23,6 +23,10 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/coreos/etcd:v3.3.10
+  - name: pod
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/pod:v4.0
   - name: setup-etcd-environment
     from:
       kind: DockerImage
