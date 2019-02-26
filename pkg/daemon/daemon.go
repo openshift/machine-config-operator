@@ -92,6 +92,10 @@ type Daemon struct {
 
 	// channel used to ensure all spawned goroutines exit when we exit.
 	stopCh <-chan struct{}
+
+	// node is the current instance of the node being processed through handleNodeUpdate
+	// or the very first instance grabbed when the daemon starts
+	node *corev1.Node
 }
 
 // pendingConfigState is stored as JSON at pathStateJSON; it is only
@@ -241,7 +245,11 @@ func NewClusterDrivenDaemon(
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
 	glog.Infof("Managing node: %s", nodeName)
-	if err = loadNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), nodeName); err != nil {
+
+	if err := dn.setInitialNode(nodeName); err != nil {
+		return nil, err
+	}
+	if err = dn.loadNodeAnnotations(); err != nil {
 		return nil, err
 	}
 
@@ -469,11 +477,11 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		glog.Info("In bootstrap mode")
 	}
 
-	currentConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.CurrentMachineConfigAnnotationKey)
+	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, err
 	}
-	desiredConfigName, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.DesiredMachineConfigAnnotationKey)
+	desiredConfigName, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +489,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	if err != nil {
 		return nil, err
 	}
-	state, err := getNodeAnnotationExt(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.MachineConfigDaemonStateAnnotationKey, true)
+	state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +664,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 			// Great, we've successfully rebooted for the desired config,
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
-			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
+			if err := dn.completeUpdate(dn.node, state.pendingConfig.GetName()); err != nil {
 				return err
 			}
 		}
@@ -721,6 +729,8 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 
 	// First check if the node that was updated is this daemon's node
 	if node.Name == dn.name {
+		// stash the current node being processed
+		dn.node = node
 		// Pass to the shared update prep method
 		needUpdate, err := dn.prepUpdateFromCluster()
 		if err != nil {
@@ -746,7 +756,7 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 // update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	// Then check we're not already in a degraded state.
-	state, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.MachineConfigDaemonStateAnnotationKey)
+	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
 		return false, err
 	}
@@ -754,14 +764,19 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 		return false, fmt.Errorf("state is already degraded")
 	}
 
-	// Grab the node instance
-	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
+	desiredConfigName, err := getNodeAnnotationExt(dn.node, constants.DesiredMachineConfigAnnotationKey, true)
+	if err != nil {
+		return false, err
+	}
+	// currentConfig is always expected to be there as loadNodeAnnotations
+	// is one of the very first calls when the daemon starts.
+	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
 		return false, err
 	}
 
 	// Detect if there is an update
-	if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == node.Annotations[constants.CurrentMachineConfigAnnotationKey] {
+	if desiredConfigName == currentConfigName {
 		// No actual update to the config
 		glog.V(2).Info("No updating is required")
 		return false, nil
@@ -792,13 +807,8 @@ func (dn *Daemon) executeUpdateFromCluster() error {
 // completeUpdate marks the node as schedulable again, then deletes the
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
-func (dn *Daemon) completeUpdate(desiredConfigName string) error {
-	node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
-	if err != nil {
-		return err
-	}
-	err = drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil)
-	if err != nil {
+func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
+	if err := drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil); err != nil {
 		return err
 	}
 
@@ -811,7 +821,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
 	if currentConfig == nil {
-		ccAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.CurrentMachineConfigAnnotationKey)
+		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {
 			return err
 		}
@@ -822,7 +832,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 	}
 
 	if desiredConfig == nil {
-		dcAnnotation, err := getNodeAnnotation(dn.kubeClient.CoreV1().Nodes(), dn.name, constants.DesiredMachineConfigAnnotationKey)
+		dcAnnotation, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
 		if err != nil {
 			return err
 		}
