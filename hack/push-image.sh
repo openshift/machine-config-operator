@@ -55,7 +55,6 @@ fi
 for IMAGE_TO_PUSH in $TOPUSH; do
 	NAME="${IMAGE_TO_PUSH#Dockerfile.}"
 	set -x
-	podman push "${NAME}:${VERSION}" "${REPO}/origin-${NAME}:${VERSION}"
-	podman push "${NAME}:${VERSION}" "${REPO}/origin-${NAME}:latest"
+	podman push "localhost/${NAME}:latest" "${REPO}/origin-${NAME}:latest"
 	set +x
 done
