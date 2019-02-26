@@ -19,9 +19,6 @@ spec:
         - "start"
         - "--resourcelock-namespace=kube-system"
         resources:
-          limits:
-            cpu: 20m
-            memory: 50Mi
           requests:
             cpu: 20m
             memory: 50Mi
