@@ -42,6 +42,7 @@ test-unit:
 #    make update
 update:
 	hack/update-codegen.sh
+	hack/update-generated-bindata.sh
 
 # Run verification steps
 # Example:
