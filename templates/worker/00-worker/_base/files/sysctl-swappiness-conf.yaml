@@ -1,0 +1,6 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/sysctl.d/swappiness.conf"
+contents:
+  inline: |
+    vm.swappiness=0
