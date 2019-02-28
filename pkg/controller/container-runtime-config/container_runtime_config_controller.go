@@ -565,8 +565,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				return fmt.Errorf("could not find MachineConfig: %v", err)
 			}
 			isNotFound := errors.IsNotFound(err)
-			rci := createNewRegistriesConfigIgnition(registriesTOML)
-			if !isNotFound && equality.Semantic.DeepEqual(rci, mc.Spec.Config) {
+			registriesIgn := createNewRegistriesConfigIgnition(registriesTOML)
+			if !isNotFound && equality.Semantic.DeepEqual(registriesIgn, mc.Spec.Config) {
 				// if the configuration for the registries is equal, we still need to compare
 				// the generated controller version because during an upgrade we need a new one
 				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
@@ -578,7 +578,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			if isNotFound {
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
 			}
-			mc.Spec.Config = createNewRegistriesConfigIgnition(registriesTOML)
+			mc.Spec.Config = registriesIgn
 			mc.ObjectMeta.Annotations = map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
 			}
