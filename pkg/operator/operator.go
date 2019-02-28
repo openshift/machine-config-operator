@@ -325,6 +325,7 @@ func (optr *Operator) sync(key string) error {
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:    imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
+		templatectrl.InfraImageKey:   imgs.InfraImage,
 	}
 
 	// create renderConfig
