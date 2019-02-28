@@ -50,17 +50,17 @@ func TestStringEncode(t *testing.T) {
 // when it's running in bootstrap mode.
 // The test does the following:
 //
-// 1. Fetch the machine-pool from the testdata.
-// 2. Fetch the machine-config from the testdata.
+// 1. Fetch the MachineConfigPool from the testdata.
+// 2. Fetch the MachineConfig from the testdata.
 // 3. Manually update the ignition config from Step 2 by adding
-//    the node-annotations file, the kubeconfig file(which is read
-//    from the testdata). This ignition config is then
+//    the NodeAnnotations file, the kubeconfig file (which is read
+//    from the testdata). This Ignition config is then
 //    labeled as expected Ignition config.
 // 4. Call the Bootstrap GetConfig method by passing the reference to the
-//    machine pool present in the testdata folder.
+//    MachineConfigPool present in the testdata folder.
 // 5. Compare the Ignition configs from Step 3 and Step 4.
 func TestBootstrapServer(t *testing.T) {
-	mp, err := getTestMachinePool()
+	mp, err := getTestMachineConfigPool()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := bs.GetConfig(poolRequest{
-		machinePool: testPool,
+		machineConfigPool: testPool,
 	})
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
@@ -113,18 +113,18 @@ func TestBootstrapServer(t *testing.T) {
 // when it's running within the cluster.
 // The test does the following:
 //
-// 1. Fetch the machine-pool from the testdata.
-// 2. Fetch the machine-config from the testdata, call this origMC.
+// 1. Fetch the MachineConfigPool from the testdata.
+// 2. Fetch the MachineConfig from the testdata, call this origMC.
 // 3. Manually update the ignition config from Step 2 by adding
-//    the node-annotations file, the kubeconfig file(which is read
-//    from the testdata). This ignition config is then
+//    the NodeAnnotations file, the kubeconfig file (which is read
+//    from the testdata). This Ignition config is then
 //    labeled as expected Ignition config (mc).
-// 4. Use the Kubernetes fake client to Create the machine pool and the config
-//    objects from Step 1, 2 inside the cluster.
+// 4. Use the Kubernetes fake client to Create the MachineConfigPool
+//    and the MachineConfig objects from Step 1, 2 inside the cluster.
 // 5. Call the Cluster GetConfig method.
 // 6. Compare the Ignition configs from Step 3 and Step 5.
 func TestClusterServer(t *testing.T) {
-	mp, err := getTestMachinePool()
+	mp, err := getTestMachineConfigPool()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestClusterServer(t *testing.T) {
 	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 
 	res, err := csc.GetConfig(poolRequest{
-		machinePool: testPool,
+		machineConfigPool: testPool,
 	})
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
@@ -234,7 +234,7 @@ func createFileMap(files []ignv2_2types.File) map[string]ignv2_2types.File {
 	return m
 }
 
-func getTestMachinePool() (*v1.MachineConfigPool, error) {
+func getTestMachineConfigPool() (*v1.MachineConfigPool, error) {
 	mpPath := path.Join(testDir, "machine-pools", testPool+".yaml")
 	mpData, err := ioutil.ReadFile(mpPath)
 	if err != nil {
