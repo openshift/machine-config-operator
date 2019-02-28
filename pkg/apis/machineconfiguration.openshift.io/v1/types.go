@@ -294,7 +294,7 @@ type MachineConfigPoolSpec struct {
 	// Label selector for Machines.
 	MachineSelector *metav1.LabelSelector `json:"machineSelector,omitempty"`
 
-	// If true, changes to this machine pool should be stopped.
+	// If true, changes to this machine config pool should be stopped.
 	// This includes generating new desiredMachineConfig and update of machines.
 	Paused bool `json:"paused"`
 
@@ -308,10 +308,10 @@ type MachineConfigPoolStatus struct {
 	// The generation observed by the controller.
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// The current MachineConfig object for the machine pool.
+	// The current MachineConfig object for the machine config pool.
 	Configuration MachineConfigPoolStatusConfiguration `json:"configuration"`
 
-	// Total number of machines in the machine pool.
+	// Total number of machines in the machine config pool.
 	MachineCount int32 `json:"machineCount"`
 
 	// Total number of machines targeted by the pool that have the CurrentMachineConfig as their config.
