@@ -223,9 +223,6 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	if internal.LogLevel != "" {
 		tomlConf.Crio.Runtime.LogLevel = internal.LogLevel
 	}
-	if internal.InfraImage != "" {
-		tomlConf.Crio.Image.PauseImage = internal.InfraImage
-	}
 	// For some reason, when the crio.conf file is created storage_option is not included
 	// in the file. Noticed the same thing for all fields in the struct that are of type []string
 	// and are empty. This is a dumb hack for now to ensure that cri-o doesn't blow up when

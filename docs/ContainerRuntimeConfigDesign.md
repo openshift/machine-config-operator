@@ -18,8 +18,6 @@ The following goals should not require explicit knowledge of a customer to know 
 
 3. Setting max log size
 
-4. Setting the infra image
-
 ## Non-Goals
 
 # Proposal

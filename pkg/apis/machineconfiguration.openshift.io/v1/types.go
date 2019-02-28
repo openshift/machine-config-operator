@@ -535,7 +535,6 @@ type ContainerRuntimeConfiguration struct {
 	PidsLimit   int64             `json:"pidsLimit,omitempty"`
 	LogLevel    string            `json:"logLevel,omitempty"`
 	LogSizeMax  resource.Quantity `json:"logSizeMax,omitempty"`
-	InfraImage  string            `json:"infraImage,omitempty"`
 	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
 }
 
