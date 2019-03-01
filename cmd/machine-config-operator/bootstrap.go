@@ -85,7 +85,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		MachineOSContent:        bootstrapOpts.oscontentImage,
 		Etcd:                    bootstrapOpts.etcdImage,
 		SetupEtcdEnv:            bootstrapOpts.setupEtcdEnvImage,
-		InfraImage:              bootstrapOpts.infraImage,
+		InfraImage:              "quay.io/openshift/origin-pod:v4.0",
 	}
 
 	if err := operator.RenderBootstrap(
