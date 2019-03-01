@@ -480,14 +480,14 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, 
 	acted := getReadyMachines(pool.Status.Configuration.Name, nodes)
 	acted = append(acted, getUnavailableMachines(pool.Status.Configuration.Name, nodes)...)
 
-	actedMap := map[string]struct{}{}
+	actedMap := map[string]bool{}
 	for _, node := range acted {
-		actedMap[node.Name] = struct{}{}
+		actedMap[node.Name] = true
 	}
 
 	var candidates []*corev1.Node
 	for _, node := range nodes {
-		if _, ok := actedMap[node.Name]; !ok {
+		if !actedMap[node.Name] {
 			candidates = append(candidates, node)
 		}
 	}
