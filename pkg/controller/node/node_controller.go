@@ -444,6 +444,9 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 		if newNode.Annotations == nil {
 			newNode.Annotations = map[string]string{}
 		}
+		if newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == currentConfig {
+			return nil
+		}
 		newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = currentConfig
 		newData, err := json.Marshal(newNode)
 		if err != nil {
