@@ -59,6 +59,7 @@ spec:
           effect: NoSchedule
       nodeSelector:
         beta.kubernetes.io/os: linux
+      priorityClassName: "system-node-critical"
       volumes:
         - name: rootfs
           hostPath:
