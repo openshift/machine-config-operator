@@ -11,6 +11,5 @@ data:
       "machineConfigServer": "docker.io/openshift/origin-machine-config-server:v4.0.0",
       "etcd": "registry.svc.ci.openshift.org/openshift/origin-v4.0:etcd",
       "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment",
-      "dummyImage": "quay.io/tectonicshift/pod:42",
       "infraImage": "quay.io/openshift/origin-pod:v4.0"
     }
