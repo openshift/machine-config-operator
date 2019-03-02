@@ -79,13 +79,11 @@ func NewServerAPIHandler(s Server) *APIHandler {
 // API handler.
 func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
 	if r.URL.Path == "" {
-		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -96,7 +94,6 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
-		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
 		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
 		return
@@ -107,24 +104,15 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := json.Marshal(conf)
-	if err != nil {
-		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("failed to marshal %v config: %v", cr, err)
-		return
-	}
-
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	w.Header().Set("Content-Type", "application/json")
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	_, err = w.Write(data)
-	if err != nil {
-		glog.Errorf("failed to write %v response: %v", cr, err)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(conf); err != nil {
+		glog.Errorf("failed to marshal %v config: %v", cr, err)
+		return
 	}
 }
 
