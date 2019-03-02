@@ -34,6 +34,7 @@ spec:
           mountPath: /etc/mco/images
       nodeSelector:
         node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
       restartPolicy: Always
       securityContext:
         runAsNonRoot: true
