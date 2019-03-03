@@ -434,6 +434,7 @@ spec:
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
       restartPolicy: Always
       tolerations:
       - key: "node-role.kubernetes.io/master"
@@ -605,6 +606,7 @@ spec:
           effect: NoSchedule
       nodeSelector:
         beta.kubernetes.io/os: linux
+      priorityClassName: "system-node-critical"
       volumes:
         - name: rootfs
           hostPath:
@@ -988,6 +990,7 @@ spec:
       hostNetwork: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
       serviceAccountName: machine-config-server
       tolerations:
         - key: node-role.kubernetes.io/master

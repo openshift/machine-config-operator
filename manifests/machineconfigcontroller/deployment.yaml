@@ -28,6 +28,7 @@ spec:
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
       restartPolicy: Always
       tolerations:
       - key: "node-role.kubernetes.io/master"
