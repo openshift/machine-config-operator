@@ -63,6 +63,9 @@ var blacklistKubeletConfigurationFields = []string{
 	"CgroupDriver",
 	"ClusterDNS",
 	"ClusterDomain",
+	// Bugfix to force cache based configmap and secret watches
+	//   https://github.com/kubernetes/kubernetes/issues/74412
+	"ConfigMapAndSecretChangeDetectionStrategy",
 	"RuntimeRequestTimeout",
 	"StaticPodPath",
 }

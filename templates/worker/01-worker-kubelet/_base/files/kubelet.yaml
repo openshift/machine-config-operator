@@ -9,6 +9,8 @@ contents:
     clusterDNS:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
+    # 1.12, 1.13 ConfigMap watch fix https://github.com/kubernetes/kubernetes/issues/74412#issuecomment-468437599
+    configMapAndSecretChangeDetectionStrategy: "Cache"
     maxPods: 250
     rotateCertificates: true
     runtimeRequestTimeout: 10m
