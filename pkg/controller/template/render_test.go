@@ -8,10 +8,12 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/coreos/ignition/config/validate"
 	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -295,6 +297,12 @@ func validateSSHConfig(t *testing.T, mc *mcfgv1.MachineConfig) {
 	if mc.Spec.Config.Passwd.Users[0].Name != "core" && mc.Spec.Config.Passwd.Users[0].SSHAuthorizedKeys[0] != "1234" {
 		t.Fatalf("Failed to create SSH machine config with user core and sshkey 1234, Got: %v", mc.Spec.Config.Passwd.Users[0])
 	}
+
+	rpt := validate.ValidateWithoutSource(reflect.ValueOf(mc.Spec.Config))
+	if rpt.IsFatal() {
+		t.Fatalf("Invalid Ignition config found: %v", rpt)
+	}
+
 }
 
 func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
