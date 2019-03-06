@@ -110,9 +110,9 @@ func (optr *Operator) syncFailingStatus(ierr error) (err error) {
 
 		// set progressing
 		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", version.Version.String())})
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", optrVersion)})
 		} else {
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", version.Version.String())})
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", optrVersion)})
 		}
 	}
 	// set failing condition
@@ -157,6 +157,10 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	co.Status.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: "openshift-machine-config-operator"},
 	}
+	// During an installation we report the RELEASE_VERSION as soon as the component is created
+	// whether for normal runs and upgrades this code isn't hit and we get the right version every
+	// time. This also only contains the operator RELEASE_VERSION when we're here.
+	co.Status.Versions = optr.vStore.GetAll()
 	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 }
 

@@ -3,3 +3,7 @@ kind: ClusterOperator
 metadata:
   name: machine-config
 spec: {}
+status:
+  versions:
+    - name: operator
+      version: "0.0.1-snapshot"
