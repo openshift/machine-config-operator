@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
 	configv1 "github.com/openshift/api/config/v1"
 	fakeconfigclientset "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -198,7 +198,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 		syncFuncs          []syncFunc
 		expectOperatorFail bool
 		cond               []configv1.ClusterOperatorStatusCondition
-		operatorVersions   []configv1.OperandVersion
+		nextVersion        string
 		inClusterBringUp   bool
 	}
 	for idx, testCase := range []struct {
@@ -309,12 +309,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 		{
 			syncs: []syncCase{
 				{
-					operatorVersions: []configv1.OperandVersion{
-						{
-							Name:    "operator",
-							Version: "test-version-2",
-						},
-					},
+					nextVersion: "test-version-2",
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
 							Type:   configv1.OperatorProgressing,
@@ -365,12 +360,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					},
 				},
 				{
-					operatorVersions: []configv1.OperandVersion{
-						{
-							Name:    "operator",
-							Version: "test-version-2",
-						},
-					},
+					nextVersion: "test-version-2",
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
 							Type:   configv1.OperatorProgressing,
@@ -525,25 +515,20 @@ func TestOperatorSyncStatus(t *testing.T) {
 	} {
 		optr := &Operator{}
 		optr.vStore = newVersionStore()
-		optr.vStore.Set("operator", fmt.Sprintf("test-version"))
 		optr.mcpLister = &mockMCPLister{}
 		coName := fmt.Sprintf("test-%s", uuid.NewUUID())
 		co := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: coName}}
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
+		co.Status.Versions = append(co.Status.Versions, configv1.OperandVersion{Name: "operator", Version: "test-version"})
 
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
-			if sync.operatorVersions == nil {
-				co.Status.Versions = []configv1.OperandVersion{
-					{
-						Name:    "operator",
-						Version: "test-version",
-					},
-				}
+			if sync.nextVersion != "" {
+				optr.vStore.Set("operator", sync.nextVersion)
 			} else {
-				co.Status.Versions = sync.operatorVersions
+				optr.vStore.Set("operator", "test-version")
 			}
 			optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
 			err := optr.syncAll(renderConfig{}, sync.syncFuncs)
