@@ -434,7 +434,6 @@ func (ctrl *Controller) garbageCollectRenderedConfigs(pool *mcfgv1.MachineConfig
 	return nil
 }
 
-
 func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
 	if len(configs) == 0 {
 		return nil
