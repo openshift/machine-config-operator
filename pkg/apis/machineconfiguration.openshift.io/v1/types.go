@@ -324,6 +324,10 @@ type MachineConfigPoolStatus struct {
 	// A node is marked unavailable if it is in updating state or NodeReady condition is false.
 	UnavailableMachineCount int32 `json:"unavailableMachineCount"`
 
+	// Total number of machines marked degraded.
+	// A node is marked degraded if applying a configuration failed..
+	DegradedMachineCount int32 `json:"degradedMachineCount"`
+
 	// Represents the latest available observations of current state.
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
 }
