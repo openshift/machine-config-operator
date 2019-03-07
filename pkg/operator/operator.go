@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -134,9 +135,6 @@ func New(
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
-	// set operator version in version store
-	optr.vStore.Set("operator", version.Version.String())
-
 	mcoconfigInformer.Informer().AddEventHandler(optr.eventHandler())
 	controllerConfigInformer.Informer().AddEventHandler(optr.eventHandler())
 	serviceAccountInfomer.Informer().AddEventHandler(optr.eventHandler())
@@ -166,6 +164,8 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
+
+	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
 	return optr
 }
@@ -325,6 +325,7 @@ func (optr *Operator) sync(key string) error {
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:    imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
+		templatectrl.InfraImageKey:   imgs.InfraImage,
 	}
 
 	// create renderConfig

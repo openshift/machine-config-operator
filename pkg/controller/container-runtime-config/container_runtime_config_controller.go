@@ -455,7 +455,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
 				}
 			}
-			if ctrcfg.LogLevel != "" || ctrcfg.InfraImage != "" || ctrcfg.PidsLimit != 0 || ctrcfg.LogSizeMax != (resource.Quantity{}) {
+			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != 0 || ctrcfg.LogSizeMax != (resource.Quantity{}) {
 				crioTOML, err = ctrl.mergeConfigChanges(originalCRIOIgn, cfg, mc, role, managedKey, isNotFound, updateCRIOConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to crio.conf: %v", err)

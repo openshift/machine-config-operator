@@ -18,6 +18,7 @@ import (
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -82,12 +83,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
 
-		node, err := GetNode(dn.kubeClient.CoreV1().Nodes(), dn.name)
-		if err != nil {
-			return err
-		}
-
-		dn.recorder.Eventf(node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+		dn.recorder.Eventf(dn.node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
 		backoff := wait.Backoff{
 			Steps:    5,
@@ -96,7 +92,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 		}
 		var lastErr error
 		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-			err := drain.Drain(dn.kubeClient, []*corev1.Node{node}, &drain.DrainOptions{
+			err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
 				DeleteLocalData:    true,
 				Force:              true,
 				GracePeriodSeconds: 600,
@@ -206,6 +202,11 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	newIgn := newConfig.Spec.Config
 
 	// Ignition section
+	// First check if this is a generally valid Ignition Config
+	rpt := validate.ValidateWithoutSource(reflect.ValueOf(newIgn))
+	if rpt.IsFatal() {
+		return errors.Errorf("Invalid Ignition config found: %v", rpt)
+	}
 
 	// if the config versions are different, all bets are off. this probably
 	// shouldn't happen, but if it does, we can't deal with it.

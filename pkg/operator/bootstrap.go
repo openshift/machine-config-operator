@@ -86,6 +86,7 @@ func RenderBootstrap(
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:    imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
+		templatectrl.InfraImageKey:   imgs.InfraImage,
 	}
 
 	config := getRenderConfig("", spec, imgs, infra.Status.APIServerURL)

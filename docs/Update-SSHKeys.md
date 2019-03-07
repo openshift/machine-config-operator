@@ -1,10 +1,10 @@
 # Updating SSH Keys with the MCD
 
-By default, the OpenShift 4.0 installer creates a single user named `core` (derived in spirit from CoreOS Container Linux) with optional SSH keys specified at install time.  
+By default, the OpenShift 4.0 installer creates a single user named `core` (derived in spirit from CoreOS Container Linux) with optional SSH keys specified at install time.
 
 This operator supports updating the SSH keys of user `core` via a MachineConfig object. The SSH keys are updated for all members of the MachineConfig pool specified in the MachineConfig, for example: all worker nodes.
 
-Please note that RHCOS nodes will be [annotated](https://github.com/openshift/machine-config-operator/blob/master/docs/MachineConfigDaemon.md#annotating-on-ssh-access) when accessed via SSH. 
+Please note that RHCOS nodes will be [annotated](https://github.com/openshift/machine-config-operator/blob/master/docs/MachineConfigDaemon.md#annotating-on-ssh-access) when accessed via SSH.
 
 ## Unsupported Operations
 
@@ -12,11 +12,11 @@ Please note that RHCOS nodes will be [annotated](https://github.com/openshift/ma
 
 - The MCD will not delete the user `core`.
 
-- The MCD will not make any changes to any other User fields for user `core` other than `sshAuthorizedKeys`. 
+- The MCD will not make any changes to any other User fields for user `core` other than `sshAuthorizedKeys`.
 
 ## Info you will need
 
-You will need the following information for the MachineConfig that will be used to update your SSHKeys. 
+You will need the following information for the MachineConfig that will be used to update your SSHKeys.
 
 - `machineconfiguration.openshift.io/role:` the MachineConfig that is created will be applied to all nodes with the role specified here. For example: `master` or `worker`
 
@@ -39,12 +39,13 @@ spec:
       users:
       - name: core
         sshAuthorizedKeys:
-        - ssh rsa ABC123....
-        - ssh rsa XYZ7890....
+        - ssh-rsa ABC123....
+        - ssh-ed25519 XYZ7890....
+        - ecdsa-sha2-nistp256 AAAAE2....
 
  ```
  ## Common MachineConfig Pitfalls
- - Assuming that the name of the file is the name of the MachineConfig: If you choose to modify one of your existing MachineConfigs, do not forget to change the `metadata: name:` field. 
+ - Assuming that the name of the file is the name of the MachineConfig: If you choose to modify one of your existing MachineConfigs, do not forget to change the `metadata: name:` field.
 
  - Thinking that you will retain an old SSH key when you apply an SSH update: New SSH updates completely overwrite existing keys. If you would like to add an additional SSH key and retain the current SSH Key, you must add *both* the old and new SSH keys into the new MachineConfig.
 

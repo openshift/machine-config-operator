@@ -659,46 +659,24 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 	}, {
 		node: newNode("node-0", "v0", "v1"),
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
+			if len(actions) != 1 {
 				t.Fatal(actions)
 			}
 
 			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
 				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
 			}
 		},
 	}, {
 		node:       newNode("node-0", "v0", "v1"),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
+			if len(actions) != 1 {
 				t.Fatal(actions)
 			}
 
 			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
 				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
 			}
 		},
 	}}

@@ -9,6 +9,7 @@ data:
       "machineConfigController": "docker.io/openshift/origin-machine-config-controller:v4.0.0",
       "machineConfigDaemon": "docker.io/openshift/origin-machine-config-daemon:v4.0.0",
       "machineConfigServer": "docker.io/openshift/origin-machine-config-server:v4.0.0",
-      "etcd": "quay.io/coreos/etcd:v3.3.10",
-      "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment"
+      "etcd": "registry.svc.ci.openshift.org/openshift/origin-v4.0:etcd",
+      "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment",
+      "infraImage": "quay.io/openshift/origin-pod:v4.0"
     }

@@ -21,7 +21,6 @@ spec:
         - "--v=2"
         resources:
           limits:
-            cpu: 20m
             memory: 50Mi
           requests:
             cpu: 20m
@@ -29,6 +28,7 @@ spec:
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
       restartPolicy: Always
       tolerations:
       - key: "node-role.kubernetes.io/master"

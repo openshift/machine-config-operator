@@ -77,12 +77,11 @@ func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1
 	}
 
 	// tag all the machineconfigs with version of the controller.
-	ctrlv := version.Version
 	for _, cfg := range cfgs {
 		if cfg.Annotations == nil {
 			cfg.Annotations = map[string]string{}
 		}
-		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = ctrlv.String()
+		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Version.String()
 	}
 
 	return cfgs, nil

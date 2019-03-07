@@ -22,7 +22,11 @@ spec:
   - name: etcd
     from:
       kind: DockerImage
-      name: quay.io/coreos/etcd:v3.3.10
+      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:etcd
+  - name: pod
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-pod:v4.0
   - name: setup-etcd-environment
     from:
       kind: DockerImage
