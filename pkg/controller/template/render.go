@@ -18,6 +18,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,7 +74,11 @@ func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
 		}
+		if len(roleConfigs) > 0 {
+			injectDockerConfigKubeletAuthSymlink(roleConfigs[0])
+		}
 		cfgs = append(cfgs, roleConfigs...)
+
 	}
 
 	// tag all the machineconfigs with version of the controller.
@@ -85,6 +90,24 @@ func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1
 	}
 
 	return cfgs, nil
+}
+
+// injectDockerConfigKubeletAuthSymlink is a hack to symlink /var/lib/kubelet/auth.json -> ~/.docker/config.json
+// See https://bugzilla.redhat.com/show_bug.cgi?id=1686556
+// https://github.com/containers/skopeo/pull/612
+func injectDockerConfigKubeletAuthSymlink(cfg *mcfgv1.MachineConfig) {
+	authLink := ignv2_2types.Link{
+		Node: ignv2_2types.Node{
+			Filesystem: "root",
+			Path:       "/root/.docker/config.json",
+			Overwrite:  resourcemerge.BoolPtr(false),
+		},
+		LinkEmbedded1: ignv2_2types.LinkEmbedded1{
+			Hard:   false,
+			Target: "/var/lib/kubelet/config.json",
+		},
+	}
+	cfg.Spec.Config.Storage.Links = append(cfg.Spec.Config.Storage.Links, authLink)
 }
 
 // GenerateMachineConfigsForRole creates MachineConfigs for the role provided
