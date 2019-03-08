@@ -325,7 +325,7 @@ func (optr *Operator) sync(key string) error {
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:    imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
-		templatectrl.InfraImageKey:   imgs.InfraImage,
+		templatectrl.InfraImageKey:   "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:810ded5c25b9ec252dba6a2497d1eff9ad13a19cc3ac290ef8943b7d658803f2",
 	}
 
 	// create renderConfig

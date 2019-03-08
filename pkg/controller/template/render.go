@@ -75,7 +75,7 @@ func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
 		}
 		if len(roleConfigs) > 0 {
-			injectDockerConfigKubeletAuthSymlink(roleConfigs[0])
+			injectDockerConfigKubeletAuthSymlink(roleConfigs[len(roleConfigs)-1])
 		}
 		cfgs = append(cfgs, roleConfigs...)
 
