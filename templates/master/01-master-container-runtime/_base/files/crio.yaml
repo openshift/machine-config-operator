@@ -205,6 +205,10 @@ contents:
     # pause_image is the image which we use to instantiate infra containers.
     pause_image = "{{.Images.infraImage}}"
 
+    # If not empty, the path to a docker/config.json-like file containing credentials
+    # necessary for pulling the image specified by pause_image above.
+    pause_image_auth_file = "/var/lib/kubelet/config.json"
+
     # pause_command is the command to run in a pause_image to have a container just
     # sit there.  If the image contains the necessary information, this value need
     # not be specified.
