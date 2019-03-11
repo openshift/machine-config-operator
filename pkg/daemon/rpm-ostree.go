@@ -68,7 +68,7 @@ func (r *RpmOstreeClient) getBootedDeployment(rootMount string) (*RpmOstreeDeplo
 	}
 
 	if err := json.Unmarshal(output, &rosState); err != nil {
-		return nil, fmt.Errorf("Failed to parse `rpm-ostree status --json` output: %v", err)
+		return nil, fmt.Errorf("failed to parse `rpm-ostree status --json` output: %v", err)
 	}
 
 	for _, deployment := range rosState.Deployments {
@@ -77,9 +77,8 @@ func (r *RpmOstreeClient) getBootedDeployment(rootMount string) (*RpmOstreeDeplo
 		}
 	}
 
-	return nil, fmt.Errorf("Not currently booted in a deployment")
+	return nil, fmt.Errorf("not currently booted in a deployment")
 }
-
 
 // GetStatus returns multi-line human-readable text describing system status
 func (r *RpmOstreeClient) GetStatus() (string, error) {
