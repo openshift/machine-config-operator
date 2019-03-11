@@ -84,9 +84,10 @@ func RenderBootstrap(
 	spec.SSHKey = ic.SSHKey
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
-		templatectrl.EtcdImageKey:    imgs.Etcd,
-		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
-		templatectrl.InfraImageKey:   imgs.InfraImage,
+		templatectrl.EtcdImageKey:            imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey:         imgs.SetupEtcdEnv,
+		templatectrl.InfraImageKey:           imgs.InfraImage,
+		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 	}
 
 	config := getRenderConfig("", spec, imgs, infra.Status.APIServerURL)
