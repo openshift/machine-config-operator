@@ -9,4 +9,7 @@ const (
 
 	// InfraImageKey is the key that references the infra image in the controller for crio.conf
 	InfraImageKey string = "infraImage"
+
+	// KubeClientAgentImageKey is the key that references the kube-client-agent image in the controller
+	KubeClientAgentImageKey string = "kubeClientAgentImage"
 )

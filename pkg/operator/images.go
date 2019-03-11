@@ -15,4 +15,5 @@ type Images struct {
 	Etcd                    string `json:"etcd"`
 	SetupEtcdEnv            string `json:"setupEtcdEnv"`
 	InfraImage              string `json:"infraImage"`
+	KubeClientAgent         string `json:"kubeClientAgentImage"`
 }

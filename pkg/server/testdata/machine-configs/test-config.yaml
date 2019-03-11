@@ -38,7 +38,7 @@ spec:
               [Service]
               Type=oneshot
               RemainAfterExit=yes
-              Environment="SIGNER_IMAGE=quay.io/coreos/kube-client-agent:678cc8e6841e2121ebfdb6e2db568fce290b67d6"
+              Environment="SIGNER_IMAGE=registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent"
               ExecStart=/usr/bin/docker \
                 run \
                   --rm \
