@@ -161,7 +161,7 @@ func New(
 
 	loginClient, err := login1.New()
 	if err != nil {
-		return nil, fmt.Errorf("Error establishing connection to logind dbus: %v", err)
+		return nil, fmt.Errorf("error establishing connection to logind dbus: %v", err)
 	}
 
 	osImageURL := ""
@@ -170,7 +170,7 @@ func New(
 	if operatingSystem == machineConfigDaemonOSRHCOS {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 		if err != nil {
-			return nil, fmt.Errorf("Error reading osImageURL from rpm-ostree: %v", err)
+			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
 		}
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
@@ -398,7 +398,7 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 				glog.Warningf("Failed kubelet health check: %v", err)
 				failureCount++
 				if failureCount >= kubeletHealthzFailureThreshold {
-					exitCh <- fmt.Errorf("Kubelet health failure threshold reached")
+					exitCh <- fmt.Errorf("kubelet health failure threshold reached")
 				}
 			} else {
 				failureCount = 0 // reset failure count on success
@@ -443,7 +443,7 @@ func (dn *Daemon) getHealth() error {
 // EnterDegradedState causes the MCD to update the annotations
 // to note that we're degraded, and sleep forever.
 func (dn *Daemon) EnterDegradedState(err error) {
-	glog.Errorf("Fatal error checking initial state of node: %v", err)
+	glog.Errorf("fatal error checking initial state of node: %v", err)
 	dn.nodeWriter.SetUpdateDegradedIgnoreErr(err, dn.kubeClient.CoreV1().Nodes(), dn.name)
 	glog.Info("Entering degraded state; going to sleep")
 	select {}
@@ -545,13 +545,13 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 	s, err := ioutil.ReadFile(pathStateJSON)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return "", errors.Wrapf(err, "Loading transient state")
+			return "", errors.Wrapf(err, "loading transient state")
 		}
 		return "", nil
 	}
 	var p pendingConfigState
 	if err := json.Unmarshal([]byte(s), &p); err != nil {
-		return "", errors.Wrapf(err, "Parsing transient state")
+		return "", errors.Wrapf(err, "parsing transient state")
 	}
 
 	if p.BootID == dn.bootID {
@@ -615,7 +615,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		// currentConfig's osImageURL should now be *truth*.
 		// In other words if it drifts somehow, we go degraded.
 		if err := os.Remove(constants.InitialNodeAnnotationsFilePath); err != nil {
-			return errors.Wrapf(err, "Removing initial node annotations file")
+			return errors.Wrapf(err, "removing initial node annotations file")
 		}
 	}
 
@@ -635,7 +635,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		expectedConfig = state.currentConfig
 	}
 	if isOnDiskValid := dn.validateOnDiskState(expectedConfig); !isOnDiskValid {
-		return errors.New("Unexpected on-disk state")
+		return errors.New("unexpected on-disk state")
 	}
 	glog.Info("Validated on-disk state")
 
@@ -652,7 +652,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		}
 		// And remove the pending state file
 		if err := os.Remove(pathStateJSON); err != nil {
-			return errors.Wrapf(err, "Removing transient state file")
+			return errors.Wrapf(err, "removing transient state file")
 		}
 
 		state.currentConfig = state.pendingConfig
@@ -854,11 +854,11 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 	// Be sure we're booted into the OS we expect
 	osMatch, err := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if err != nil {
-		glog.Errorf("%s", err);
+		glog.Errorf("%s", err)
 		return false
 	}
 	if !osMatch {
-		glog.Errorf("Expected target osImageURL %s", currentConfig.Spec.OSImageURL)
+		glog.Errorf("expected target osImageURL %s", currentConfig.Spec.OSImageURL)
 		return false
 	}
 	// And the rest of the disk state
@@ -870,7 +870,6 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 	}
 	return true
 }
-
 
 // getRefDigest parses a Docker/OCI image reference and returns
 // its digest, or an error if the string fails to parse as

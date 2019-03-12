@@ -88,7 +88,7 @@ func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, node string)
 // SetUpdateDegraded logs the error and sets the state to UpdateDegraded.
 // Returns an error if it couldn't set the annotation.
 func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, node string) error {
-	glog.Errorf("Marking degraded due to: %v", err)
+	glog.Errorf("marking degraded due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDegraded,
 	}
@@ -111,7 +111,7 @@ func (nw *NodeWriter) SetUpdateDegradedIgnoreErr(err error, client corev1.NodeIn
 	// log error here since the caller won't look at it
 	degradedErr := nw.SetUpdateDegraded(err, client, node)
 	if degradedErr != nil {
-		glog.Errorf("Error while setting degraded: %v", degradedErr)
+		glog.Errorf("error while setting degraded: %v", degradedErr)
 	}
 	return err
 }
@@ -160,7 +160,7 @@ func updateNodeRetry(client corev1.NodeInterface, nodeName string, f func(*v1.No
 	})
 	if err != nil {
 		// may be conflict if max retries were hit
-		return nil, fmt.Errorf("Unable to update node %q: %v", node, err)
+		return nil, fmt.Errorf("unable to update node %q: %v", node, err)
 	}
 
 	return node, nil
