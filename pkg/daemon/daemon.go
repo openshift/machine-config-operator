@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,7 +16,6 @@ import (
 
 	imgref "github.com/containers/image/docker/reference"
 	"github.com/coreos/go-systemd/login1"
-	"github.com/coreos/go-systemd/sdjournal"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
@@ -422,34 +422,13 @@ const (
 	sdMessageSessionStart = "8d45620c1a4348dbb17410da57c60c66"
 )
 
+// detectEarlySSHAccessesFromBoot taints the node if we find a login before the daemon started up.
 func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
-	journal, err := sdjournal.NewJournal()
+	journalOutput, err := exec.Command("journalctl", "-b", "-o", "cat", "MESSAGE_ID="+sdMessageSessionStart).CombinedOutput()
 	if err != nil {
 		return err
 	}
-	defer journal.Close()
-	if err := journal.AddMatch("MESSAGE_ID=" + sdMessageSessionStart); err != nil {
-		return err
-	}
-	if err := journal.SeekHead(); err != nil {
-		return err
-	}
-	r, err := journal.Next()
-	if err != nil {
-		return err
-	}
-	// journal EOF
-	if r == 0 {
-		return nil
-	}
-	// just one entry is enough to understand if someone jumped on the node
-	// from the very first boot
-	entry, err := journal.GetEntry()
-	if err != nil {
-		return err
-	}
-	// just sanity checking
-	if entry != nil {
+	if len(journalOutput) > 0 {
 		glog.Info("Detected a login session before the daemon took over on first boot")
 		glog.Infof("Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
 		if err := dn.applySSHAccessedAnnotation(); err != nil {
@@ -521,22 +500,47 @@ func (dn *Daemon) BindPodMounts() error {
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
-	sessionNewCh := dn.loginClient.Subscribe("SessionNew")
-	for {
-		select {
-		case <-stopCh:
-			return
-		case msg, ok := <-sessionNewCh:
-			if !ok {
-				glog.V(4).Info("Not adding the ssh accessed annotation because the logind SessionNew channel is closed")
-				return
-			}
-			glog.Infof("Detected a new login session: %v", msg)
-			glog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
-			if err := dn.applySSHAccessedAnnotation(); err != nil {
-				exitCh <- err
-			}
-		}
+	cmd := exec.Command("journalctl", "-b", "-f", "-o", "cat", "MESSAGE_ID="+sdMessageSessionStart)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		exitCh <- err
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		exitCh <- err
+		return
+	}
+	worker := make(chan struct{})
+ 	go func() {
+		for {
+			select {
+			case <-worker:
+ 				return
+			default:
+				buf := make([]byte, 1024)
+				l, err := stdout.Read(buf)
+				if err != nil {
+					if err == io.EOF {
+						return
+					}
+					exitCh <- err
+					return
+				}
+				if l > 0 {
+					line := strings.Split(string(buf), "\n")[0]
+					glog.Infof("Detected a new login session: %s", line)
+					glog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
+					if err := dn.applySSHAccessedAnnotation(); err != nil {
+						exitCh <- err
+					}
+				}
+ 			}
+ 		}
+ 	}()
+	select {
+	case <-stopCh:
+		close(worker)
+		cmd.Process.Kill()
 	}
 }
 
@@ -736,10 +740,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	if err != nil {
 		return err
 	}
-	if state.bootstrapping {
-		if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
-			return fmt.Errorf("error detecting early SSH accesses: %v", err)
-		}
+	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
+		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
 	}
 
 	if state.bootstrapping {
