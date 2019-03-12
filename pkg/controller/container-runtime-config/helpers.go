@@ -14,6 +14,7 @@ import (
 	crioconfig "github.com/kubernetes-sigs/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
 
 	"k8s.io/api/core/v1"
@@ -59,7 +60,7 @@ type tomlConfigRegistries struct {
 type updateConfig func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
 
 func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte) ignv2_2types.Config {
-	var tempIgnConfig ignv2_2types.Config
+	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
 	// Create storage.conf ignition
 	if storageTOMLConfig != nil {
@@ -103,7 +104,7 @@ func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte)
 }
 
 func createNewRegistriesConfigIgnition(registriesTOMLConfig []byte) ignv2_2types.Config {
-	var tempIgnConfig ignv2_2types.Config
+	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
 	// Create Registries ignition
 	if registriesTOMLConfig != nil {
