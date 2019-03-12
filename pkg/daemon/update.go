@@ -746,14 +746,17 @@ func (dn *Daemon) reboot(rationale string) error {
 	// Now that everything is done, avoid delaying shutdown.
 	dn.cancelSIGTERM()
 
-	// reboot
-	dn.loginClient.Reboot(false)
+	// reboot, executed async via systemd-run so that the reboot command is executed
+	// in the context of the host asynchronously from us
+	err := exec.Command("reboot").Run()
+	if err != nil {
+		return errors.Wrapf(err, "Failed to reboot")
+	}
 
-	// cleanup
 	dn.Close()
 
-	// cross fingers
-	time.Sleep(24 * 7 * time.Hour)
+	// wait to be killed via SIGTERM from the kubelet shutting down
+	time.Sleep(24 * time.Hour)
 
 	// if everything went well, this should be unreachable.
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
