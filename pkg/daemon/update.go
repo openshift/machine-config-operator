@@ -161,7 +161,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	reconcilableError := dn.reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
-		wrappedErr := fmt.Errorf("Can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
+		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
 		if dn.recorder != nil {
 			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
@@ -205,13 +205,13 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// First check if this is a generally valid Ignition Config
 	rpt := validate.ValidateWithoutSource(reflect.ValueOf(newIgn))
 	if rpt.IsFatal() {
-		return errors.Errorf("Invalid Ignition config found: %v", rpt)
+		return errors.Errorf("invalid Ignition config found: %v", rpt)
 	}
 
 	// if the config versions are different, all bets are off. this probably
 	// shouldn't happen, but if it does, we can't deal with it.
 	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
-		return fmt.Errorf("Ignition version mismatch between old and new config: old: %s new: %s",
+		return fmt.Errorf("ignition version mismatch between old and new config: old: %s new: %s",
 			oldIgn.Ignition.Version, newIgn.Ignition.Version)
 	}
 	// everything else in the ignition section doesn't matter to us, since the
@@ -224,7 +224,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// we don't currently configure the network in place. we can't fix it if
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
-		return errors.New("Ignition networkd section contains changes")
+		return errors.New("ignition networkd section contains changes")
 	}
 
 	// Passwd section
@@ -234,7 +234,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// otherwise we can't fix it if something changed here.
 	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
 		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
-			return errors.New("Ignition Passwd Groups section contains changes")
+			return errors.New("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
 			// check if the prior config is empty and that this is the first time running.
@@ -244,7 +244,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 				// change to the SSHAuthorizedKeys for the user "core"
 				for _, user := range newIgn.Passwd.Users {
 					if user.Name != coreUserName {
-						return errors.New("Ignition passwd user section contains unsupported changes: non-core user")
+						return errors.New("ignition passwd user section contains unsupported changes: non-core user")
 					}
 				}
 				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
@@ -260,26 +260,26 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// we can only reconcile files right now. make sure the sections we can't
 	// fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
-		return errors.New("Ignition disks section contains changes")
+		return errors.New("ignition disks section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
-		return errors.New("Ignition filesystems section contains changes")
+		return errors.New("ignition filesystems section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
-		return errors.New("Ignition raid section contains changes")
+		return errors.New("ignition raid section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {
-		return errors.New("Ignition directories section contains changes")
+		return errors.New("ignition directories section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
-		return errors.New("Ignition links section contains changes")
+		return errors.New("ignition links section contains changes")
 	}
 
 	// Special case files append: if the new config wants us to append, then we
 	// have to force a reprovision since it's not idempotent
 	for _, f := range newIgn.Storage.Files {
 		if f.Append {
-			return fmt.Errorf("Ignition file %v includes append", f.Path)
+			return fmt.Errorf("ignition file %v includes append", f.Path)
 		}
 	}
 
@@ -304,11 +304,11 @@ func verifyUserFields(pwdUser ignv2_2types.PasswdUser) error {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
-			return errors.New("Ignition passwd user section contains unsupported changes: non-sshKey changes")
+			return errors.New("ignition passwd user section contains unsupported changes: non-sshKey changes")
 		}
 		glog.Info("SSH Keys reconcilable")
 	} else {
-		return errors.New("Ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
+		return errors.New("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
 	}
 	return nil
 }
@@ -360,7 +360,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		if _, ok := newFileSet[f.Path]; !ok {
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			if err := dn.fileSystemClient.Remove(f.Path); err != nil {
-				newErr := fmt.Errorf("Unable to delete %s: %s", f.Path, err)
+				newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
 				if !os.IsNotExist(err) {
 					return newErr
 				}
@@ -387,7 +387,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 			if _, ok := newDropinSet[path]; !ok {
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := dn.fileSystemClient.Remove(path); err != nil {
-					newErr := fmt.Errorf("Unable to delete %s: %s", path, err)
+					newErr := fmt.Errorf("unable to delete %s: %s", path, err)
 					if !os.IsNotExist(err) {
 						return newErr
 					}
@@ -403,7 +403,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			if err := dn.fileSystemClient.Remove(path); err != nil {
-				newErr := fmt.Errorf("Unable to delete %s: %s", path, err)
+				newErr := fmt.Errorf("unable to delete %s: %s", path, err)
 				if !os.IsNotExist(err) {
 					return newErr
 				}
@@ -460,13 +460,13 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			path = filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
 			if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), defaultDirectoryPermissions); err != nil {
-				return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
+				return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(path), err)
 			}
 			glog.V(2).Infof("Created directory: %s", path)
 
 			err := ioutil.WriteFile(path, []byte(u.Dropins[i].Contents), os.FileMode(0644))
 			if err != nil {
-				return fmt.Errorf("Failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
+				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
 			}
 			glog.V(2).Infof("Wrote systemd unit dropin at %s", path)
 		}
@@ -478,7 +478,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		glog.Infof("Writing systemd unit %q", u.Name)
 		path = filepath.Join(pathSystemd, u.Name)
 		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(path), defaultDirectoryPermissions); err != nil {
-			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(path), err)
+			return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(path), err)
 		}
 		glog.V(2).Infof("Created directory: %s", path)
 
@@ -487,12 +487,12 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		if u.Mask {
 			glog.V(2).Info("Systemd unit masked")
 			if err := dn.fileSystemClient.RemoveAll(path); err != nil {
-				return fmt.Errorf("Failed to remove unit %q: %v", u.Name, err)
+				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
 			}
 			glog.V(2).Infof("Removed unit %q", u.Name)
 
 			if err := dn.fileSystemClient.Symlink(pathDevNull, path); err != nil {
-				return fmt.Errorf("Failed to symlink unit %q to %s: %v", u.Name, pathDevNull, err)
+				return fmt.Errorf("failed to symlink unit %q to %s: %v", u.Name, pathDevNull, err)
 			}
 			glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
 
@@ -502,7 +502,7 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 		// write the unit to disk
 		err := ioutil.WriteFile(path, []byte(u.Contents), defaultFilePermissions)
 		if err != nil {
-			return fmt.Errorf("Failed to write systemd unit %q: %v", u.Name, err)
+			return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 		}
 		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
 
@@ -544,13 +544,13 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		glog.Infof("Writing file %q", f.Path)
 		// create any required directories for the file
 		if err := dn.fileSystemClient.MkdirAll(filepath.Dir(f.Path), defaultDirectoryPermissions); err != nil {
-			return fmt.Errorf("Failed to create directory %q: %v", filepath.Dir(f.Path), err)
+			return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(f.Path), err)
 		}
 
 		// create the file
 		file, err := dn.fileSystemClient.Create(f.Path)
 		if err != nil {
-			return fmt.Errorf("Failed to create file %q: %v", f.Path, err)
+			return fmt.Errorf("failed to create file %q: %v", f.Path, err)
 		}
 		defer file.Close()
 
@@ -561,7 +561,7 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 		}
 		w := bufio.NewWriter(file)
 		if _, err := w.Write(contents.Data); err != nil {
-			return fmt.Errorf("Failed to write inline contents to file %q: %v", f.Path, err)
+			return fmt.Errorf("failed to write inline contents to file %q: %v", f.Path, err)
 		}
 		w.Flush()
 
@@ -571,26 +571,26 @@ func (dn *Daemon) writeFiles(files []ignv2_2types.File) error {
 			mode = os.FileMode(*f.Mode)
 		}
 		if err := file.Chmod(mode); err != nil {
-			return fmt.Errorf("Failed to set file mode for file %q: %v", f.Path, err)
+			return fmt.Errorf("failed to set file mode for file %q: %v", f.Path, err)
 		}
 
 		// set chown if file information is provided
 		if f.User != nil || f.Group != nil {
 			uid, gid, err := getFileOwnership(f)
 			if err != nil {
-				return fmt.Errorf("Failed to retrieve file ownership for file %q: %v", f.Path, err)
+				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", f.Path, err)
 			}
 			if err := file.Chown(uid, gid); err != nil {
-				return fmt.Errorf("Failed to set file ownership for file %q: %v", f.Path, err)
+				return fmt.Errorf("failed to set file ownership for file %q: %v", f.Path, err)
 			}
 		}
 
 		if err := file.Sync(); err != nil {
-			return fmt.Errorf("Failed to sync file %q: %v", f.Path, err)
+			return fmt.Errorf("failed to sync file %q: %v", f.Path, err)
 		}
 
 		if err := file.Close(); err != nil {
-			return fmt.Errorf("Failed to close file %q: %v", f.Path, err)
+			return fmt.Errorf("failed to close file %q: %v", f.Path, err)
 		}
 	}
 	return nil
@@ -605,7 +605,7 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 		} else if file.User.Name != "" {
 			osUser, err := user.Lookup(file.User.Name)
 			if err != nil {
-				return uid, gid, fmt.Errorf("Failed to retrieve UserID for username: %s", file.User.Name)
+				return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %s", file.User.Name)
 			}
 			glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, file.User.Name)
 			uid, _ = strconv.Atoi(osUser.Uid)
@@ -617,7 +617,7 @@ func getFileOwnership(file ignv2_2types.File) (int, int, error) {
 		} else if file.Group.Name != "" {
 			osGroup, err := user.LookupGroup(file.Group.Name)
 			if err != nil {
-				return uid, gid, fmt.Errorf("Failed to retrieve GroupID for group: %s", file.Group.Name)
+				return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %s", file.Group.Name)
 			}
 			glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, file.Group.Name)
 			gid, _ = strconv.Atoi(osGroup.Gid)
@@ -636,7 +636,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", coreUserSSHPath)
 	if err := dn.fileSystemClient.MkdirAll(coreUserSSHPath, os.FileMode(0600)); err != nil {
-		return fmt.Errorf("Failed to create directory %q: %v", coreUserSSHPath, err)
+		return fmt.Errorf("failed to create directory %q: %v", coreUserSSHPath, err)
 	}
 	glog.V(2).Infof("Created directory: %s", coreUserSSHPath)
 
@@ -647,7 +647,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ignv2_2types.PasswdUser) error {
 	}
 
 	if err := dn.fileSystemClient.WriteFile(authkeypath, []byte(concatSSHKeys), os.FileMode(0600)); err != nil {
-		return fmt.Errorf("Failed to write ssh key: %v", err)
+		return fmt.Errorf("failed to write ssh key: %v", err)
 	}
 
 	glog.V(2).Infof("Wrote SSHKeys at %s", coreUserSSHPath)
@@ -673,7 +673,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 	glog.Infof("Updating OS to %s", newURL)
 	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
-		return fmt.Errorf("Failed to run pivot: %v", err)
+		return fmt.Errorf("failed to run pivot: %v", err)
 	}
 
 	return nil
@@ -690,7 +690,7 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	logger := exec.Command("logger")
 	stdin, err := logger.StdinPipe()
 	if err != nil {
-		glog.Errorf("Failed to get stdin pipe: %v", err)
+		glog.Errorf("failed to get stdin pipe: %v", err)
 		return
 	}
 
@@ -700,7 +700,7 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	}()
 	err = logger.Run()
 	if err != nil {
-		glog.Errorf("Failed to invoke logger: %v", err)
+		glog.Errorf("failed to invoke logger: %v", err)
 		return
 	}
 }
@@ -731,5 +731,5 @@ func (dn *Daemon) reboot(rationale string) error {
 	time.Sleep(24 * 7 * time.Hour)
 
 	// if everything went well, this should be unreachable.
-	return fmt.Errorf("Reboot failed; this error should be unreachable, something is seriously wrong")
+	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }

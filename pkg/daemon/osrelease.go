@@ -38,6 +38,6 @@ func GetHostRunningOS(rootFs string) (string, error) {
 		return machineConfigDaemonOSCENTOS, nil
 	default:
 		// default to unknown OS
-		return "", fmt.Errorf("An unsupported OS is being used: %s:%s", or.ID, or.VARIANT_ID)
+		return "", fmt.Errorf("an unsupported OS is being used: %s:%s", or.ID, or.VARIANT_ID)
 	}
 }

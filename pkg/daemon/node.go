@@ -27,19 +27,19 @@ func (dn *Daemon) loadNodeAnnotations() error {
 
 	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
 	if err != nil {
-		return fmt.Errorf("Failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
+		return fmt.Errorf("failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
 	}
 
 	var initial map[string]string
 	err = json.Unmarshal(d, &initial)
 	if err != nil {
-		return fmt.Errorf("Failed to unmarshal initial annotations: %v", err)
+		return fmt.Errorf("failed to unmarshal initial annotations: %v", err)
 	}
 
 	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
 	node, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.node.Name, initial)
 	if err != nil {
-		return fmt.Errorf("Failed to set initial annotations: %v", err)
+		return fmt.Errorf("failed to set initial annotations: %v", err)
 	}
 	dn.node = node
 
@@ -65,7 +65,7 @@ func getNode(client corev1.NodeInterface, nodeName string) (*core_v1.Node, error
 	})
 	if err != nil {
 		if err == wait.ErrWaitTimeout {
-			return nil, errors.Wrapf(lastErr, "Timed out trying to fetch node %s", nodeName)
+			return nil, errors.Wrapf(lastErr, "timed out trying to fetch node %s", nodeName)
 		}
 		return nil, err
 	}
