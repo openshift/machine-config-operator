@@ -31,7 +31,6 @@ func TestUpdateOS(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
-		loginClient:       nil, // set to nil as it will not be used within tests
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -64,7 +63,6 @@ func TestReconcilable(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: nil,
-		loginClient:       nil,
 		kubeClient:        nil,
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -204,7 +202,6 @@ func TestReconcilableSSH(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
-		loginClient:       nil, // set to nil as it will not be used within tests
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -295,7 +292,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
-		loginClient:       nil, // set to nil as it will not be used within tests
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -349,7 +345,6 @@ func TestInvalidIgnConfig(t *testing.T) {
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
-		loginClient:       nil, // set to nil as it will not be used within tests
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",

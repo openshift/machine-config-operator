@@ -15,7 +15,6 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	"github.com/coreos/go-systemd/login1"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
@@ -58,10 +57,6 @@ type Daemon struct {
 
 	// bootedOSImageURL is the currently booted URL of the operating system
 	bootedOSImageURL string
-
-	// login client talks to the systemd-logind service for rebooting the
-	// machine
-	loginClient *login1.Conn
 
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
@@ -178,15 +173,11 @@ func New(
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
 
-	loginClient, err := login1.New()
-	if err != nil {
-		return nil, fmt.Errorf("error establishing connection to logind dbus: %v", err)
-	}
-
 	osImageURL := ""
 	osVersion := ""
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == machineConfigDaemonOSRHCOS {
+		var err error
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL(rootMount)
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -203,7 +194,6 @@ func New(
 		name:                   nodeName,
 		OperatingSystem:        operatingSystem,
 		NodeUpdaterClient:      nodeUpdaterClient,
-		loginClient:            loginClient,
 		rootMount:              rootMount,
 		bootID:                 bootID,
 		bootedOSImageURL:       osImageURL,
@@ -1121,7 +1111,6 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 
 // Close closes all the connections the node agent has open for it's lifetime
 func (dn *Daemon) Close() {
-	dn.loginClient.Close()
 }
 
 // ValidPath attempts to see if the path provided is indeed an acceptable
