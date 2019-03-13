@@ -158,14 +158,19 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 }
 
 // update the node to the provided node configuration.
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if dn.nodeWriter != nil {
-		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.name); err != nil {
+		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
 			return err
 		}
 	}
 
 	dn.catchIgnoreSIGTERM()
+	defer func() {
+		if retErr != nil {
+			dn.cancelSIGTERM()
+		}
+	}()
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
@@ -187,9 +192,27 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateFiles(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back files writes %v", err)
+				return
+			}
+		}
+	}()
+
 	if err := dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
 		return err
 	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateSSHKeys(oldConfig.Spec.Config.Passwd.Users); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back SSH keys updates %v", err)
+				return
+			}
+		}
+	}()
 
 	return dn.updateOSAndReboot(newConfig)
 }
@@ -687,6 +710,13 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	}
 }
 
+func (dn *Daemon) cancelSIGTERM() {
+	if dn.installedSigterm {
+		signal.Reset(syscall.SIGTERM)
+		dn.installedSigterm = false
+	}
+}
+
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
@@ -698,10 +728,7 @@ func (dn *Daemon) reboot(rationale string) error {
 	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
 
 	// Now that everything is done, avoid delaying shutdown.
-	if dn.installedSigterm {
-		signal.Reset(syscall.SIGTERM)
-		dn.installedSigterm = false
-	}
+	dn.cancelSIGTERM()
 
 	// reboot
 	dn.loginClient.Reboot(false)

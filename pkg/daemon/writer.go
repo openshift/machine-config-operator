@@ -1,12 +1,16 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/util/retry"
 )
 
@@ -23,6 +27,7 @@ const (
 // message wraps a client and responseChannel
 type message struct {
 	client          corev1.NodeInterface
+	lister          corelisterv1.NodeLister
 	node            string
 	annos           map[string]string
 	responseChannel chan error
@@ -48,14 +53,14 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			_, err := setNodeAnnotations(msg.client, msg.node, msg.annos)
+			_, err := setNodeAnnotations(msg.client, msg.lister, msg.node, msg.annos)
 			msg.responseChannel <- err
 		}
 	}
 }
 
 // SetUpdateDone Sets the state to UpdateDone.
-func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, node string, dcAnnotation string) error {
+func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string, dcAnnotation string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
@@ -63,6 +68,7 @@ func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, node string, dc
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
+		lister:          lister,
 		node:            node,
 		annos:           annos,
 		responseChannel: respChan,
@@ -71,13 +77,14 @@ func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, node string, dc
 }
 
 // SetUpdateWorking Sets the state to UpdateWorking.
-func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, node string) error {
+func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
+		lister:          lister,
 		node:            node,
 		annos:           annos,
 		responseChannel: respChan,
@@ -85,9 +92,9 @@ func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, node string)
 	return <-respChan
 }
 
-// SetUpdateDegraded logs the error and sets the state to UpdateDegraded.
+// SetDegraded logs the error and sets the state to UpdateDegraded.
 // Returns an error if it couldn't set the annotation.
-func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, node string) error {
+func (nw *NodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	glog.Errorf("marking degraded due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDegraded,
@@ -95,42 +102,25 @@ func (nw *NodeWriter) SetUpdateDegraded(err error, client corev1.NodeInterface, 
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
+		lister:          lister,
 		node:            node,
 		annos:           annos,
 		responseChannel: respChan,
 	}
-	return <-respChan
-}
-
-// SetUpdateDegradedIgnoreErr logs the error and sets the state to
-// UpdateDegraded. Logs an error if if couldn't set the annotation. Always
-// returns the same error that it was passed. This is useful in situations
-// where one just wants to return an error to its caller after having set the
-// node to degraded due to that error.
-func (nw *NodeWriter) SetUpdateDegradedIgnoreErr(err error, client corev1.NodeInterface, node string) error {
-	// log error here since the caller won't look at it
-	degradedErr := nw.SetUpdateDegraded(err, client, node)
-	if degradedErr != nil {
-		glog.Errorf("error while setting degraded: %v", degradedErr)
-	}
-	return err
-}
-
-// SetUpdateDegradedMsgIgnoreErr is like SetUpdateDegradedMsgIgnoreErr but
-// takes a string and constructs the error object itself.
-func (nw *NodeWriter) SetUpdateDegradedMsgIgnoreErr(msg string, client corev1.NodeInterface, node string) error {
-	err := fmt.Errorf(msg)
-	return nw.SetUpdateDegradedIgnoreErr(err, client, node)
+	clientErr := <-respChan
+	glog.Errorf("Error setting degraded annotation for node %s: %v", node, clientErr)
+	return clientErr
 }
 
 // SetSSHAccessed sets the ssh annotation to accessed
-func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) error {
+func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
+		lister:          lister,
 		node:            node,
 		annos:           annos,
 		responseChannel: respChan,
@@ -143,31 +133,42 @@ func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, node string) e
 // number of times.
 // f will be called each time since the node object will likely have changed if
 // a retry is necessary.
-func updateNodeRetry(client corev1.NodeInterface, nodeName string, f func(*v1.Node)) (*v1.Node, error) {
+func updateNodeRetry(client corev1.NodeInterface, lister corelisterv1.NodeLister, nodeName string, f func(*v1.Node)) (*v1.Node, error) {
 	var node *v1.Node
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, getErr := getNode(client, nodeName)
-		if getErr != nil {
-			return getErr
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		n, err := lister.Get(nodeName)
+		if err != nil {
+			return err
+		}
+		oldNode, err := json.Marshal(n)
+		if err != nil {
+			return err
 		}
 
-		// Call the node modifier.
-		f(n)
+		nodeClone := n.DeepCopy()
+		f(nodeClone)
 
-		var err error
-		node, err = client.Update(n)
+		newNode, err := json.Marshal(nodeClone)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, v1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+		}
+
+		node, err = client.Patch(nodeName, types.StrategicMergePatchType, patchBytes)
 		return err
-	})
-	if err != nil {
+	}); err != nil {
 		// may be conflict if max retries were hit
 		return nil, fmt.Errorf("unable to update node %q: %v", node, err)
 	}
-
 	return node, nil
 }
 
-func setNodeAnnotations(client corev1.NodeInterface, nodeName string, m map[string]string) (*v1.Node, error) {
-	node, err := updateNodeRetry(client, nodeName, func(node *v1.Node) {
+func setNodeAnnotations(client corev1.NodeInterface, lister corelisterv1.NodeLister, nodeName string, m map[string]string) (*v1.Node, error) {
+	node, err := updateNodeRetry(client, lister, nodeName, func(node *v1.Node) {
 		for k, v := range m {
 			node.Annotations[k] = v
 		}

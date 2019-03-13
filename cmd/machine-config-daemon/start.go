@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -152,10 +151,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if startOpts.onceFrom == "" {
-		err = dn.CheckStateOnBoot()
-		if err != nil {
-			dn.EnterDegradedState(errors.Wrapf(err, "Checking initial state"))
-		}
 		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)
 	}
@@ -163,8 +158,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err = dn.Run(stopCh, exitCh)
-	if err != nil {
+	if err := dn.Run(stopCh, exitCh); err != nil {
 		glog.Fatalf("failed to run: %v", err)
 	}
 }
