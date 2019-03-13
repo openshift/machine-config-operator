@@ -35,7 +35,6 @@ var (
 func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.PersistentFlags().StringVar(&runOpts.discoverySRV, "discovery-srv", "", "DNS domain used to bootstrap initial etcd cluster.")
-	rootCmd.PersistentFlags().StringVar(&runOpts.ifName, "if-name", "eth0", "The network interface that should be used for getting local ip address.")
 	rootCmd.PersistentFlags().StringVar(&runOpts.outputFile, "output-file", "", "file where the envs are written. If empty, prints to Stdout.")
 }
 
@@ -50,24 +49,28 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		return errors.New("--discovery-srv cannot be empty")
 	}
 
-	ip, err := ipAddrForIf(runOpts.ifName)
+	ips, err := ipAddrs()
 	if err != nil {
 		return err
 	}
-	glog.Infof("ip addr is %s", ip)
 
 	var dns string
-	if err := wait.PollImmediate(1*time.Minute, 5*time.Minute, func() (bool, error) {
-		found, err := reverseLookupSelf("etcd-server-ssl", "tcp", runOpts.discoverySRV, ip)
-		if err != nil {
-			glog.Errorf("error looking up self: %v", err)
-			return false, nil
+	var ip string
+	if err := wait.PollImmediate(30*time.Second, 5*time.Minute, func() (bool, error) {
+		for _, cand := range ips {
+			found, err := reverseLookupSelf("etcd-server-ssl", "tcp", runOpts.discoverySRV, cand)
+			if err != nil {
+				glog.Errorf("error looking up self: %v", err)
+				continue
+			}
+			if found != "" {
+				dns = found
+				ip = cand
+				return true, nil
+			}
+			glog.V(4).Infof("no matching dns for %s", cand)
 		}
-		if found != "" {
-			dns = found
-			return true, nil
-		}
-		return false, errors.New("found dns is invalid")
+		return false, nil
 	}); err != nil {
 		return fmt.Errorf("could not find self: %v", err)
 	}
@@ -89,42 +92,34 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}, out)
 }
 
-func ipAddrForIf(ifname string) (string, error) {
-	ifaces, err := net.Interfaces()
+func ipAddrs() ([]string, error) {
+	var ips []string
+	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		return "", err
+		return ips, err
 	}
-	for _, i := range ifaces {
-		if i.Name != ifname {
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil {
 			continue
 		}
-
-		addrs, err := i.Addrs()
-		if err != nil {
-			return "", err
+		ip = ip.To4()
+		if ip == nil {
+			continue // not an ipv4 address
 		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil {
-				continue
-			}
-			ip = ip.To4()
-			if ip == nil {
-				continue // not an ipv4 address
-			}
-			if !ip.IsGlobalUnicast() {
-				continue // we only want global unicast address
-			}
-			return ip.String(), nil
+		if !ip.IsGlobalUnicast() {
+			continue // we only want global unicast address
 		}
+		ips = append(ips, ip.String())
 	}
-	return "", fmt.Errorf("could not find ip address for %s", ifname)
+
+	return ips, nil
 }
 
 // returns the target from the SRV record that resolves to self.
