@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -161,6 +162,16 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+func ctrConfigTriggerObjectChange(old, new *mcfgv1.ContainerRuntimeConfig) bool {
+	if old.DeletionTimestamp != new.DeletionTimestamp {
+		return true
+	}
+	if !reflect.DeepEqual(old.Spec, new.Spec) {
+		return true
+	}
+	return false
+}
+
 func (ctrl *Controller) imageConfAdded(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
@@ -177,8 +188,10 @@ func (ctrl *Controller) updateContainerRuntimeConfig(oldObj interface{}, newObj 
 	oldCtrCfg := oldObj.(*mcfgv1.ContainerRuntimeConfig)
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
 
-	glog.V(4).Infof("Update ContainerRuntimeConfig %s", oldCtrCfg.Name)
-	ctrl.enqueueContainerRuntimeConfig(newCtrCfg)
+	if ctrConfigTriggerObjectChange(oldCtrCfg, newCtrCfg) {
+		glog.V(4).Infof("Update ContainerRuntimeConfig %s", oldCtrCfg.Name)
+		ctrl.enqueueContainerRuntimeConfig(newCtrCfg)
+	}
 }
 
 func (ctrl *Controller) addContainerRuntimeConfig(obj interface{}) {
@@ -366,12 +379,26 @@ func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*i
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
-	if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
-		cfg.Status.ObservedGeneration = cfg.GetGeneration()
-		cfg.Status.Conditions = append(cfg.Status.Conditions, wrapErrorWithCondition(err, args...))
+	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+		if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
+			cfg.Status.ObservedGeneration = cfg.GetGeneration()
+			cfg.Status.Conditions = append(cfg.Status.Conditions, wrapErrorWithCondition(err, args...))
+		} else if cfg.GetGeneration() == cfg.Status.ObservedGeneration && err == nil {
+			// If the CR was created before a matching label was added, the CR would be in failure state
+			// However the observed generation would be the same, so check if err is nil as well
+			// Which means that, the ctrcfg was finally successfully able to sync. In that case update the status
+			// to success and clear the previous failure status
+			cfg.Status.Conditions = []mcfgv1.ContainerRuntimeConfigCondition{wrapErrorWithCondition(err, args...)}
+		}
+		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(cfg)
+		return updateErr
+	})
+	// If an error occured in updating the status just log it
+	if statusUpdateErr != nil {
+		glog.Warningf("error updating container runtime config status: %v", statusUpdateErr)
 	}
-	_, lerr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(cfg)
-	return lerr
+	// Want to return the actual error received from the sync function
+	return err
 }
 
 // syncContainerRuntimeConfig will sync the ContainerRuntimeconfig with the given key.
@@ -409,8 +436,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return nil
 	}
 
-	// If we have seen this generation then skip
-	if cfg.Status.ObservedGeneration >= cfg.Generation {
+	// If we have seen this generation and the sync didn't fail, then skip
+	if cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
 		return nil
 	}
 
@@ -610,51 +637,65 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig) error {
-	curJSON, err := json.Marshal(ctrCfg)
-	if err != nil {
-		return err
-	}
-
-	ctrCfgTmp := ctrCfg.DeepCopy()
-	ctrCfgTmp.Finalizers = append(ctrCfg.Finalizers[:0], ctrCfg.Finalizers[1:]...)
-
-	modJSON, err := json.Marshal(ctrCfgTmp)
-	if err != nil {
-		return err
-	}
-
-	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-	if err != nil {
-		return err
-	}
-
 	return retry.RetryOnConflict(updateBackoff, func() error {
+		newcfg, err := ctrl.mccrLister.Get(ctrCfg.Name)
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		curJSON, err := json.Marshal(newcfg)
+		if err != nil {
+			return err
+		}
+
+		ctrCfgTmp := newcfg.DeepCopy()
+		ctrCfgTmp.Finalizers = append(ctrCfg.Finalizers[:0], ctrCfg.Finalizers[1:]...)
+
+		modJSON, err := json.Marshal(ctrCfgTmp)
+		if err != nil {
+			return err
+		}
+
+		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
+		if err != nil {
+			return err
+		}
 		_, err = ctrl.client.Machineconfiguration().ContainerRuntimeConfigs().Patch(ctrCfg.Name, types.MergePatchType, patch)
 		return err
 	})
 }
 
 func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig) error {
-	curJSON, err := json.Marshal(ctrCfg)
-	if err != nil {
-		return err
-	}
-
-	ctrCfgTmp := ctrCfg.DeepCopy()
-	ctrCfgTmp.Finalizers = append(ctrCfgTmp.Finalizers, mc.Name)
-
-	modJSON, err := json.Marshal(ctrCfgTmp)
-	if err != nil {
-		return err
-	}
-
-	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-	if err != nil {
-		return err
-	}
-
 	return retry.RetryOnConflict(updateBackoff, func() error {
-		_, err := ctrl.client.Machineconfiguration().ContainerRuntimeConfigs().Patch(ctrCfg.Name, types.MergePatchType, patch)
+		newcfg, err := ctrl.mccrLister.Get(ctrCfg.Name)
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		curJSON, err := json.Marshal(newcfg)
+		if err != nil {
+			return err
+		}
+
+		ctrCfgTmp := newcfg.DeepCopy()
+		ctrCfgTmp.Finalizers = append(ctrCfgTmp.Finalizers, mc.Name)
+
+		modJSON, err := json.Marshal(ctrCfgTmp)
+		if err != nil {
+			return err
+		}
+
+		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
+		if err != nil {
+			return err
+		}
+		_, err = ctrl.client.Machineconfiguration().ContainerRuntimeConfigs().Patch(ctrCfg.Name, types.MergePatchType, patch)
 		return err
 	})
 }
