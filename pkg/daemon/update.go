@@ -416,6 +416,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 				// otherwise, just warn
 				glog.Warningf("%v", newErr)
 			}
+			glog.Infof("Removed stale file %q", f.Path)
 		}
 	}
 
@@ -443,6 +444,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 					// otherwise, just warn
 					glog.Warningf("%v", newErr)
 				}
+				glog.Infof("Removed stale systemd dropin %q", path)
 			}
 		}
 		path := filepath.Join(pathSystemd, u.Name)
@@ -459,6 +461,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 				// otherwise, just warn
 				glog.Warningf("%v", newErr)
 			}
+			glog.Infof("Removed stale systemd unit %q", path)
 		}
 	}
 
