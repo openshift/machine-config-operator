@@ -108,7 +108,9 @@ func (nw *NodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister
 		responseChannel: respChan,
 	}
 	clientErr := <-respChan
-	glog.Errorf("Error setting degraded annotation for node %s: %v", node, clientErr)
+	if  clientErr != nil {
+		glog.Errorf("Error setting degraded annotation for node %s: %v", node, clientErr)
+	}
 	return clientErr
 }
 
