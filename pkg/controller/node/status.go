@@ -44,6 +44,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	unavailableMachineCount := int32(len(unavailableMachines))
 
 	degradedMachines := getDegradedMachines(pool.Status.Configuration.Name, nodes)
+	degradedMachineCount := int32(len(degradedMachines))
 
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,
@@ -51,6 +52,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		UpdatedMachineCount:     updatedMachineCount,
 		ReadyMachineCount:       readyMachineCount,
 		UnavailableMachineCount: unavailableMachineCount,
+		DegradedMachineCount:    degradedMachineCount,
 	}
 
 	status.Configuration = pool.Status.Configuration
