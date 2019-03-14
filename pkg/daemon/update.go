@@ -24,7 +24,7 @@ import (
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -85,6 +85,14 @@ func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
 	return writeFileAtomicallyWithDefaults(pathStateJSON, b)
 }
 
+func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
+	return &corev1.ObjectReference{
+		Kind: "Node",
+		Name: node.GetName(),
+		UID:  types.UID(node.GetUID()),
+	}
+}
+
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
@@ -96,7 +104,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
 
-		dn.recorder.Eventf(dn.node, corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
 		backoff := wait.Backoff{
 			Steps:    5,
@@ -181,7 +189,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	if reconcilableError != nil {
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
 		if dn.recorder != nil {
-			dn.recorder.Eventf(newConfig, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+			mcRef := &corev1.ObjectReference{
+				Kind: "MachineConfig",
+				Name: newConfig.GetName(),
+				UID: newConfig.GetUID(),
+			}
+			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
 		dn.logSystem(wrappedErr.Error())
 		return wrappedErr
@@ -723,7 +736,7 @@ func (dn *Daemon) cancelSIGTERM() {
 func (dn *Daemon) reboot(rationale string) error {
 	// We'll only have a recorder if we're cluster driven
 	if dn.recorder != nil {
-		dn.recorder.Eventf(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: dn.name}}, corev1.EventTypeNormal, "Reboot", rationale)
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
 	}
 	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
 
