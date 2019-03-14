@@ -48,6 +48,10 @@ func (optr *Operator) syncAll(rconfig renderConfig, syncFuncs []syncFunc) error 
 		return fmt.Errorf("error syncing available status: %v", err)
 	}
 
+	if err := optr.syncVersion(); err != nil {
+		return fmt.Errorf("error syncing version: %v", err)
+	}
+
 	if optr.inClusterBringup && agg == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
@@ -322,37 +326,19 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 	if err != nil {
 		return err
 	}
-	var lastErr error
-	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
-		pools, err := optr.mcpLister.List(sel)
-		if apierrors.IsNotFound(err) {
-			return false, err
-		}
-		if err != nil {
-			lastErr = err
-			return false, nil
-		}
-
-		for _, pool := range pools {
-			p := pool.DeepCopy()
-			err := isMachineConfigPoolConfigurationValid(p, version.Version.String(), optr.mcLister.Get)
-			if err != nil {
-				lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v", p.Name, err)
-				return false, nil
-			}
-
-			if p.Generation <= p.Status.ObservedGeneration && p.Status.MachineCount == p.Status.UpdatedMachineCount && p.Status.UnavailableMachineCount == 0 {
-				continue
-			}
-			lastErr = fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d, degraded: %d)", p.Name, p.Status.MachineCount, p.Status.UpdatedMachineCount, p.Status.UnavailableMachineCount, p.Status.DegradedMachineCount)
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("%v during syncRequiredMachineConfigPools: %v", err, lastErr)
-		}
+	pools, err := optr.mcpLister.List(sel)
+	if err != nil {
 		return err
+	}
+
+	for _, pool := range pools {
+		if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
+			return fmt.Errorf("pool %s has not progressed to latest configuration: %v", pool.Name, err)
+		}
+		if pool.Generation <= pool.Status.ObservedGeneration && pool.Status.MachineCount == pool.Status.UpdatedMachineCount && pool.Status.UnavailableMachineCount == 0 {
+			continue
+		}
+		return fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
 	}
 	return nil
 }
