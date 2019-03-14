@@ -120,7 +120,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.nodeName,
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
-			cb.MachineConfigClientOrDie(componentName),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			cb.KubeClientOrDie(componentName),
 			startOpts.onceFrom,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
@@ -152,6 +152,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	if startOpts.onceFrom == "" {
 		ctx.KubeInformerFactory.Start(stopCh)
+		ctx.InformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)
 	}
 

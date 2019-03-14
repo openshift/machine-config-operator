@@ -23,13 +23,12 @@ import (
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -64,7 +63,6 @@ type Daemon struct {
 	// machine
 	loginClient *login1.Conn
 
-	client mcfgclientset.Interface
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 	// recorder sends events to the apiserver
@@ -74,9 +72,12 @@ type Daemon struct {
 	rootMount string
 
 	// nodeLister is used to watch for updates via the informer
-	nodeLister corelisterv1.NodeLister
-
+	nodeLister       corelisterv1.NodeLister
 	nodeListerSynced cache.InformerSynced
+
+	mcLister       mcfglistersv1.MachineConfigLister
+	mcListerSynced cache.InformerSynced
+
 	// onceFrom defines where the source config is to run the daemon once and exit
 	onceFrom string
 
@@ -225,7 +226,7 @@ func NewClusterDrivenDaemon(
 	nodeName string,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
-	client mcfgclientset.Interface,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	kubeClient kubernetes.Interface,
 	onceFrom string,
 	nodeInformer coreinformersv1.NodeInformer,
@@ -253,7 +254,6 @@ func NewClusterDrivenDaemon(
 	}
 
 	dn.kubeClient = kubeClient
-	dn.client = client
 	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigdaemon")
 
 	eventBroadcaster := record.NewBroadcaster()
@@ -270,6 +270,8 @@ func NewClusterDrivenDaemon(
 	})
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
+	dn.mcLister = mcInformer.Lister()
+	dn.mcListerSynced = mcInformer.Informer().HasSynced
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
@@ -489,7 +491,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		}
 	}
 
-	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced) {
 		return errors.New("failed to sync initial listers cache")
 	}
 
@@ -634,7 +636,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	if err != nil {
 		return nil, err
 	}
-	currentConfig, err := getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), currentConfigName)
+	currentConfig, err := dn.mcLister.Get(currentConfigName)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +655,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		desiredConfig = currentConfig
 		glog.Infof("Current+desired config: %s", currentConfigName)
 	} else {
-		desiredConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), desiredConfigName)
+		desiredConfig, err = dn.mcLister.Get(desiredConfigName)
 		if err != nil {
 			return nil, err
 		}
@@ -668,7 +670,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	if pendingConfigName == desiredConfigName {
 		pendingConfig = desiredConfig
 	} else if pendingConfigName != "" {
-		pendingConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), pendingConfigName)
+		pendingConfig, err = dn.mcLister.Get(pendingConfigName)
 		if err != nil {
 			return nil, err
 		}
@@ -917,7 +919,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 		if err != nil {
 			return err
 		}
-		currentConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), ccAnnotation)
+		currentConfig, err = dn.mcLister.Get(ccAnnotation)
 		if err != nil {
 			return err
 		}
@@ -928,7 +930,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineCo
 		if err != nil {
 			return err
 		}
-		desiredConfig, err = getMachineConfig(dn.client.MachineconfigurationV1().MachineConfigs(), dcAnnotation)
+		desiredConfig, err = dn.mcLister.Get(dcAnnotation)
 		if err != nil {
 			return err
 		}
@@ -1118,21 +1120,6 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 // Close closes all the connections the node agent has open for it's lifetime
 func (dn *Daemon) Close() {
 	dn.loginClient.Close()
-}
-
-func getMachineConfig(client mcfgclientv1.MachineConfigInterface, name string) (*mcfgv1.MachineConfig, error) {
-	// Retry for 5 minutes to get a MachineConfig in case of transient errors.
-	var mc *mcfgv1.MachineConfig
-	err := wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-		var err error
-		mc, err = client.Get(name, metav1.GetOptions{})
-		if err == nil {
-			return true, nil
-		}
-		glog.Infof("While getting MachineConfig %s, got: %v. Retrying...", name, err)
-		return false, nil
-	})
-	return mc, err
 }
 
 // ValidPath attempts to see if the path provided is indeed an acceptable

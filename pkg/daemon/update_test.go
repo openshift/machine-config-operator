@@ -6,7 +6,6 @@ import (
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
@@ -33,7 +32,6 @@ func TestUpdateOS(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -67,7 +65,6 @@ func TestReconcilable(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: nil,
 		loginClient:       nil,
-		client:            nil,
 		kubeClient:        nil,
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -208,7 +205,6 @@ func TestReconcilableSSH(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -300,7 +296,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -355,7 +350,6 @@ func TestInvalidIgnConfig(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
