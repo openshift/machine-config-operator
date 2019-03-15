@@ -439,7 +439,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return nil
 	}
 
-	generated, err := generateMachineConfig(pool, configs)
+	generated, err := generateRenderedMachineConfig(pool, configs)
 	if err != nil {
 		return err
 	}
@@ -477,7 +477,8 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	return nil
 }
 
-func generateMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
+// generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
+func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
 	merged := mcfgv1.MergeMachineConfigs(configs)
 	hashedName, err := getMachineConfigHashedName(pool, merged)
 	if err != nil {
@@ -509,7 +510,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		generated, err := generateMachineConfig(pool, pcs)
+		generated, err := generateRenderedMachineConfig(pool, pcs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -521,7 +522,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 	return opools, oconfigs, nil
 }
 
-// getMachineConfigsForPool returns configs that match label from configs for a pool.
+// getMachineConfigsForPool is called by RunBootstrap and returns configs that match label from configs for a pool.
 func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfig, error) {
 	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineConfigSelector)
 	if err != nil {
