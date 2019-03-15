@@ -263,7 +263,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	gmc, err := generateMachineConfig(mcp, mcs)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.mcLister = append(f.mcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
-	expmc, err := generateMachineConfig(mcp, mcs)
+	expmc, err := generateRenderedMachineConfig(mcp, mcs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestDoNothing(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	gmc, err := generateMachineConfig(mcp, mcs)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs)
 	if err != nil {
 		t.Fatal(err)
 	}
