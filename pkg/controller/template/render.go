@@ -17,8 +17,8 @@ import (
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/lib/resourcemerge"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +41,7 @@ const (
 	platformBase      = "_base"
 )
 
-// generateMachineConfigs returns MachineConfig objects from the templateDir and a config object
+// generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
 // expected directory structure for correctly templating machine configs: <templatedir>/<role>/<name>/<platform>/<type>/<tmpl_file>
 //
 // All files from platform _base are always included, and may be overridden or
@@ -55,7 +55,7 @@ const (
 //                /master/00-master/_base/units/kubelet.tmpl
 //                                    /files/hostname.tmpl
 //
-func generateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
+func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ioutil.ReadDir(templateDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", templateDir, err)
