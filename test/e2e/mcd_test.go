@@ -55,7 +55,7 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabels
 }
 
-func createMCFile(path, content string, mode int) ignv2_2types.File {
+func createIgnFile(path, content string, mode int) ignv2_2types.File {
 	return ignv2_2types.File{
 		FileEmbedded1: ignv2_2types.FileEmbedded1{
 			Contents: ignv2_2types.FileContents{
@@ -70,19 +70,13 @@ func createMCFile(path, content string, mode int) ignv2_2types.File {
 	}
 }
 
-func TestMCDeployed(t *testing.T) {
-	cb, err := common.NewClientBuilder("")
-	if err != nil {
-		t.Errorf("%#v", err)
-	}
-	mcClient := cb.MachineConfigClientOrDie("mc-file-add")
-	k := cb.KubeClientOrDie("mc-file-add")
-
+func createMCToAddFile(name, filename, data string) *mcv1.MachineConfig {
 	// create a dummy MC
-	mcName := fmt.Sprintf("00-0add-a-file-%s", uuid.NewUUID())
+	mcName := fmt.Sprintf("%s-%s", name, uuid.NewUUID())
 	mcadd := &mcv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name:   mcName,
+		Name: mcName,
+		// TODO(runcom): hardcoded to workers for safety
 		Labels: mcLabelForWorkers(),
 	}
 	mcadd.Spec = mcv1.MachineConfigSpec{
@@ -92,57 +86,70 @@ func TestMCDeployed(t *testing.T) {
 			},
 			Storage: ignv2_2types.Storage{
 				Files: []ignv2_2types.File{
-					createMCFile("/etc/mytestconf", "data:,test", 420),
+					createIgnFile(filename, "data:,"+data, 420),
 				},
 			},
 		},
 	}
+	return mcadd
+}
 
-	// create the dummy MC now
-	_, err = mcClient.MachineconfigurationV1().MachineConfigs().Create(mcadd)
+func TestMCDeployed(t *testing.T) {
+	cb, err := common.NewClientBuilder("")
 	if err != nil {
-		t.Errorf("failed to create machine config %v", err)
+		t.Errorf("%#v", err)
 	}
+	mcClient := cb.MachineConfigClientOrDie("mc-file-add")
+	k := cb.KubeClientOrDie("mc-file-add")
 
-	// grab the latest worker- MC
-	var newMCName string
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		for _, mc := range mcp.Status.Configuration.Source {
-			if mc.Name == mcName {
-				newMCName = mcp.Status.Configuration.Name
-				return true, nil
-			}
-		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config hasn't been picked by the pool: %v", err)
-	}
+	for i := 0; i < 10; i++ {
+		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
 
-	visited := make(map[string]bool)
-	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		nodes, err := getNodesByRole(k, "worker")
+		// create the dummy MC now
+		_, err = mcClient.MachineconfigurationV1().MachineConfigs().Create(mcadd)
 		if err != nil {
-			return false, err
+			t.Errorf("failed to create machine config %v", err)
 		}
-		for _, node := range nodes {
-			if visited[node.Name] {
-				continue
+
+		// grab the latest worker- MC
+		var newMCName string
+		if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+			mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+			if err != nil {
+				return false, err
 			}
-			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName {
-				visited[node.Name] = true
-				if len(visited) == len(nodes) {
+			for _, mc := range mcp.Status.Configuration.Source {
+				if mc.Name == mcadd.Name {
+					newMCName = mcp.Status.Configuration.Name
 					return true, nil
 				}
-				continue
 			}
+			return false, nil
+		}); err != nil {
+			t.Errorf("machine config hasn't been picked by the pool: %v", err)
 		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config didn't result in file being on any worker: %v", err)
+		visited := make(map[string]bool)
+		if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+			nodes, err := getNodesByRole(k, "worker")
+			if err != nil {
+				return false, err
+			}
+			for _, node := range nodes {
+				if visited[node.Name] {
+					continue
+				}
+				if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName {
+					visited[node.Name] = true
+					if len(visited) == len(nodes) {
+						return true, nil
+					}
+					continue
+				}
+			}
+			return false, nil
+		}); err != nil {
+			t.Errorf("machine config didn't result in file being on any worker: %v", err)
+		}
 	}
 }
 
