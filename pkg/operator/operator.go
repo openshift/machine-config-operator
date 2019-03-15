@@ -318,9 +318,6 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
-	// TODO hexfusion: uncomment after flag is merged from installer.
-	imgs.KubeClientAgent = "registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent"
-
 	spec.EtcdCAData = etcdCA
 	spec.RootCAData = bundle
 	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
