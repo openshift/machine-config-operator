@@ -16,10 +16,6 @@ spec:
     description: When at least one of machine is not either not updated or is in the process of updating to the desired machine config.
     name: Updating
     type: string
-  - JSONPath: .status.conditions[?(@.type=="Degraded")].status
-    description: When the update for one of the machine is not progressig due to an error.
-    name: Degraded
-    type: string
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition

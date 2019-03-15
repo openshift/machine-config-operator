@@ -138,6 +138,7 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	ctrl.enqueueMachineConfigPool(pool)
 
 }
+
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	oldPool := old.(*mcfgv1.MachineConfigPool)
 	curPool := cur.(*mcfgv1.MachineConfigPool)
@@ -145,6 +146,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
 }
+
 func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	pool, ok := obj.(*mcfgv1.MachineConfigPool)
 	if !ok {
@@ -242,6 +244,10 @@ func nodeChanged(old, cur *corev1.Node) bool {
 
 	if old.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != cur.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] ||
 		old.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != cur.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
+		return true
+	}
+
+	if old.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] != cur.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] {
 		return true
 	}
 
@@ -376,12 +382,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if machineconfigpool.Status.Configuration.Name == "" {
-		delay := 5 * time.Second
 		// Previously we spammed the logs about empty pools.
 		// Let's just pause for a bit here to let the renderer
 		// initialize them.
-		glog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, delay)
-		time.Sleep(delay)
+		glog.Infof("Pool %s is unconfigured, pausing %v for renderer to initialize", name, updateDelay)
+		time.Sleep(updateDelay)
 		return nil
 	}
 
