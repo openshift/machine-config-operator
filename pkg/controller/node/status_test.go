@@ -59,6 +59,7 @@ func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 		annos = map[string]string{}
 		annos[daemonconsts.CurrentMachineConfigAnnotationKey] = currentConfig
 		annos[daemonconsts.DesiredMachineConfigAnnotationKey] = desiredConfig
+		annos[daemonconsts.MachineConfigDaemonStateAnnotationKey] = daemonconsts.MachineConfigDaemonStateDone
 	}
 
 	return &corev1.Node{
@@ -318,21 +319,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}, {
@@ -369,21 +361,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}, {
@@ -420,21 +403,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}, {
@@ -471,21 +445,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionTrue; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}, {
@@ -522,21 +487,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}, {
@@ -573,21 +529,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}, {
@@ -624,21 +571,12 @@ func TestCalculateStatus(t *testing.T) {
 				t.Fatal("updated condition not found")
 			}
 
-			conddegrad := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolDegraded)
-			if condupdating == nil {
-				t.Fatal("updated condition not found")
-			}
-
 			if got, want := condupdated.Status, corev1.ConditionTrue; got != want {
 				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
-			}
-
-			if got, want := conddegrad.Status, corev1.ConditionFalse; got != want {
-				t.Fatalf("mismatch conddegrad.Status: got %s want: %s", got, want)
 			}
 		},
 	}}

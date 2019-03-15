@@ -55,7 +55,7 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabels
 }
 
-func createIgnFile(path, content string, mode int) ignv2_2types.File {
+func createIgnFile(path, content, fs string, mode int) ignv2_2types.File {
 	return ignv2_2types.File{
 		FileEmbedded1: ignv2_2types.FileEmbedded1{
 			Contents: ignv2_2types.FileContents{
@@ -64,13 +64,13 @@ func createIgnFile(path, content string, mode int) ignv2_2types.File {
 			Mode: &mode,
 		},
 		Node: ignv2_2types.Node{
-			Filesystem: "root",
+			Filesystem: fs,
 			Path:       path,
 		},
 	}
 }
 
-func createMCToAddFile(name, filename, data string) *mcv1.MachineConfig {
+func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 	// create a dummy MC
 	mcName := fmt.Sprintf("%s-%s", name, uuid.NewUUID())
 	mcadd := &mcv1.MachineConfig{}
@@ -86,7 +86,7 @@ func createMCToAddFile(name, filename, data string) *mcv1.MachineConfig {
 			},
 			Storage: ignv2_2types.Storage{
 				Files: []ignv2_2types.File{
-					createIgnFile(filename, "data:,"+data, 420),
+					createIgnFile(filename, "data:,"+data, fs, 420),
 				},
 			},
 		},
@@ -103,7 +103,7 @@ func TestMCDeployed(t *testing.T) {
 	k := cb.KubeClientOrDie("mc-file-add")
 
 	for i := 0; i < 10; i++ {
-		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
+		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
 
 		// create the dummy MC now
 		_, err = mcClient.MachineconfigurationV1().MachineConfigs().Create(mcadd)
@@ -128,6 +128,7 @@ func TestMCDeployed(t *testing.T) {
 		}); err != nil {
 			t.Errorf("machine config hasn't been picked by the pool: %v", err)
 		}
+
 		visited := make(map[string]bool)
 		if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
 			nodes, err := getNodesByRole(k, "worker")
@@ -138,7 +139,7 @@ func TestMCDeployed(t *testing.T) {
 				if visited[node.Name] {
 					continue
 				}
-				if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName {
+				if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
 					visited[node.Name] = true
 					if len(visited) == len(nodes) {
 						return true, nil
@@ -162,4 +163,124 @@ func getNodesByRole(k kubernetes.Interface, role string) ([]v1.Node, error) {
 		return nil, err
 	}
 	return nodes.Items, nil
+}
+
+func TestReconcileAfterBadMC(t *testing.T) {
+	cb, err := common.NewClientBuilder("")
+	if err != nil {
+		t.Errorf("%#v", err)
+	}
+	mcClient := cb.MachineConfigClientOrDie("mc-file-add")
+	k := cb.KubeClientOrDie("mc-file-add")
+
+	// create a bad MC w/o a filesystem field which is going to fail reconciling
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
+
+	// grab the initial machineconfig used by the worker pool
+	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
+	// and we need it for the final check
+	mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	workerOldMc := mcp.Status.Configuration.Name
+
+	// create the dummy MC now
+	_, err = mcClient.MachineconfigurationV1().MachineConfigs().Create(mcadd)
+	if err != nil {
+		t.Errorf("failed to create machine config %v", err)
+	}
+
+	// grab the latest worker- MC
+	var newMCName string
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, mc := range mcp.Status.Configuration.Source {
+			if mc.Name == mcadd.Name {
+				newMCName = mcp.Status.Configuration.Name
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config hasn't been picked by the pool: %v", err)
+	}
+
+	// verify that one node picked the above up
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		nodes, err := getNodesByRole(k, "worker")
+		if err != nil {
+			return false, err
+		}
+		for _, node := range nodes {
+			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config didn't result in file being on any worker: %v", err)
+	}
+
+	// verify that we got indeed an unavailable machine in the pool
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcp.Status.UnavailableMachineCount == 1 {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("MCP isn't reporting unavailable with a bad MC: %v", err)
+	}
+
+	// now delete the bad MC and watch the nodes reconciling as expected
+	if err := mcClient.MachineconfigurationV1().MachineConfigs().Delete(mcadd.Name, &metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	// wait for the mcp to go back to previous config
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcp.Status.Configuration.Name == workerOldMc {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("old machine config hasn't been picked by the pool: %v", err)
+	}
+
+	visited := make(map[string]bool)
+	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
+		nodes, err := getNodesByRole(k, "worker")
+		if err != nil {
+			return false, err
+		}
+		mcp, err = mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, node := range nodes {
+			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == workerOldMc && node.Annotations[constants.DesiredMachineConfigAnnotationKey] == workerOldMc && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
+				visited[node.Name] = true
+				if len(visited) == len(nodes) {
+					if mcp.Status.UnavailableMachineCount == 0 && mcp.Status.ReadyMachineCount == int32(len(nodes)) && mcp.Status.UpdatedMachineCount == int32(len(nodes)) {
+						return true, nil
+					}
+				}
+				continue
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config didn't roll back on any worker: %v", err)
+	}
 }

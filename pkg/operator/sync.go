@@ -338,7 +338,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 		if pool.Generation <= pool.Status.ObservedGeneration && pool.Status.MachineCount == pool.Status.UpdatedMachineCount && pool.Status.UnavailableMachineCount == 0 {
 			continue
 		}
-		return fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+		return fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 	}
 	return nil
 }

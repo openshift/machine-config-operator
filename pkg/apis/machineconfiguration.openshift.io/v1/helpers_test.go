@@ -26,17 +26,9 @@ var (
 		}
 	}
 
-	condDegraded = func() MachineConfigPoolCondition {
-		return MachineConfigPoolCondition{
-			Type:   MachineConfigPoolDegraded,
-			Status: corev1.ConditionTrue,
-			Reason: "ForSomeReason",
-		}
-	}
-
 	status = func() *MachineConfigPoolStatus {
 		return &MachineConfigPoolStatus{
-			Conditions: []MachineConfigPoolCondition{condUpdatedFalse(), condDegraded()},
+			Conditions: []MachineConfigPoolCondition{condUpdatedFalse()},
 		}
 	}
 )
@@ -84,11 +76,6 @@ func TestSetMachineConfigPoolCondition(t *testing.T) {
 		expectedStatus: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatedTrue()}},
 	}, {
 		status: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatedFalse()}},
-		cond:   condDegraded(),
-
-		expectedStatus: status(),
-	}, {
-		status: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatedFalse()}},
 		cond:   condUpdatedTrue(),
 
 		expectedStatus: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatedTrue()}},
@@ -111,12 +98,6 @@ func TestRemoveMachineConfigPoolCondition(t *testing.T) {
 
 		expectedStatus *MachineConfigPoolStatus
 	}{
-		{
-			status:   &MachineConfigPoolStatus{},
-			condType: MachineConfigPoolDegraded,
-
-			expectedStatus: &MachineConfigPoolStatus{},
-		},
 		{
 			status:   &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatedTrue()}},
 			condType: MachineConfigPoolUpdated,
