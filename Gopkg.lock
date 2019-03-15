@@ -305,6 +305,14 @@
   revision = "24818f796faf91cd76ec7bddd72458fbced7a6c1"
 
 [[projects]]
+  digest = "1:dcb52a1496f6b1ceeb0c123c0a557bc04bd8f17071f45bc5492aa88ec2638401"
+  name = "github.com/google/renameio"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "f0e32980c006571efd537032e5f9cd8c1a92819e"
+  version = "v0.1.0"
+
+[[projects]]
   digest = "1:1bb197a3b5db4e06e00b7560f8e89836c486627f2a0338332ed37daa003d259e"
   name = "github.com/google/uuid"
   packages = ["."]
@@ -1179,6 +1187,7 @@
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
+    "github.com/google/renameio",
     "github.com/imdario/mergo",
     "github.com/kubernetes-sigs/cri-o/pkg/config",
     "github.com/openshift/api/config/v1",
