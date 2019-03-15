@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -479,6 +480,13 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
 func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
+	// Before merging all MCs for a specific pool, let's make sure each contains a valid Ignition Config
+	for _, config := range configs {
+		rpt := validate.ValidateWithoutSource(reflect.ValueOf(config.Spec.Config.Ignition))
+		if rpt.IsFatal() {
+			return nil, fmt.Errorf("machine config: %v contains invalid ignition config: %v", config.ObjectMeta.Name, rpt)
+		}
+	}
 	merged := mcfgv1.MergeMachineConfigs(configs)
 	hashedName, err := getMachineConfigHashedName(pool, merged)
 	if err != nil {
