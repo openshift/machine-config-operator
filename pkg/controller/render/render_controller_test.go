@@ -7,6 +7,7 @@ import (
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -65,12 +66,14 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 	if labels == nil {
 		labels = map[string]string{}
 	}
+	ignCfg := ctrlcommon.NewIgnConfig()
+	ignCfg.Storage.Files = files
 	return &mcfgv1.MachineConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: osurl,
-			Config:     ignv2_2types.Config{Storage: ignv2_2types.Storage{Files: files}},
+			Config:     ignCfg,
 		},
 	}
 }
@@ -244,6 +247,35 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	}
 }
 
+// Testing that ignition validation in generateRenderedMachineConfig() correctly finds MCs that contain invalid ignconfigs.
+// generateRenderedMachineConfig should return an error when one of the MCs in configs contains an invalid ignconfig.
+func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
+	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
+	files := []ignv2_2types.File{{
+		Node: ignv2_2types.Node{
+			Path: "/dummy/0",
+		},
+	}, {
+		Node: ignv2_2types.Node{
+			Path: "/dummy/1",
+		},
+	}}
+	mcs := []*mcfgv1.MachineConfig{
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+	}
+	_, err := generateRenderedMachineConfig(mcp, mcs)
+	if err != nil {
+		t.Fatalf("expected no error. Got: %v", err)
+	}
+
+	mcs[1].Spec.Config.Ignition.Version = ""
+	_, err = generateRenderedMachineConfig(mcp, mcs)
+	if err == nil {
+		t.Fatalf("expected error. mcs contains a machine config with invalid ignconfig version")
+	}
+}
+
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
@@ -260,7 +292,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	gmc, err := generateMachineConfig(mcp, mcs)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +308,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.mcLister = append(f.mcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
-	expmc, err := generateMachineConfig(mcp, mcs)
+	expmc, err := generateRenderedMachineConfig(mcp, mcs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +335,7 @@ func TestDoNothing(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	gmc, err := generateMachineConfig(mcp, mcs)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,6 +353,43 @@ func TestDoNothing(t *testing.T) {
 	f.expectGetMachineConfigAction(gmc)
 
 	f.run(getKey(mcp, t))
+}
+
+func TestGetMachineConfigsForPool(t *testing.T) {
+	masterPool := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
+	files := []ignv2_2types.File{{
+		Node: ignv2_2types.Node{
+			Path: "/dummy/0",
+		},
+	}, {
+		Node: ignv2_2types.Node{
+			Path: "/dummy/1",
+		},
+	}, {
+		Node: ignv2_2types.Node{
+			Path: "/dummy/2",
+		},
+	}}
+	mcs := []*mcfgv1.MachineConfig{
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+		newMachineConfig("00-test-cluster-worker", map[string]string{"node-role": "worker"}, "dummy://2", []ignv2_2types.File{files[2]}),
+	}
+	masterConfigs, err := getMachineConfigsForPool(masterPool, mcs)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	// check that only the master MCs were selected
+	if len(masterConfigs) != 2 {
+		t.Fatalf("expected to select 2 configs for pool master got: %v", len(masterConfigs))
+	}
+
+	// search for a worker config in an array of MCs with no worker configs
+	workerPool := newMachineConfigPool("test-cluster-worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "")
+	_, err = getMachineConfigsForPool(workerPool, mcs[:2])
+	if err == nil {
+		t.Fatalf("expected error, no worker configs found")
+	}
 }
 
 func getKey(config *mcfgv1.MachineConfigPool, t *testing.T) string {
