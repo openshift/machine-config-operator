@@ -247,6 +247,35 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	}
 }
 
+// Testing that ignition validation in generateRenderedMachineConfig() correctly finds MCs that contain invalid ignconfigs.
+// generateRenderedMachineConfig should return an error when one of the MCs in configs contains an invalid ignconfig.
+func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
+	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
+	files := []ignv2_2types.File{{
+		Node: ignv2_2types.Node{
+			Path: "/dummy/0",
+		},
+	}, {
+		Node: ignv2_2types.Node{
+			Path: "/dummy/1",
+		},
+	}}
+	mcs := []*mcfgv1.MachineConfig{
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+	}
+	_, err := generateRenderedMachineConfig(mcp, mcs)
+	if err != nil {
+		t.Fatalf("expected no error. Got: %v", err)
+	}
+
+	mcs[1].Spec.Config.Ignition.Version = ""
+	_, err = generateRenderedMachineConfig(mcp, mcs)
+	if err == nil {
+		t.Fatalf("expected error. mcs contains a machine config with invalid ignconfig version")
+	}
+}
+
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
