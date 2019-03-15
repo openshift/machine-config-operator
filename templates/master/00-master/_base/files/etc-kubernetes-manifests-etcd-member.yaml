@@ -25,7 +25,7 @@ contents:
         - name: discovery
           mountPath: /run/etcd/
       - name: certs
-        image: "quay.io/coreos/kube-client-agent:36c62ccd7b16b522450c61e96fc556b217ee24f5" ## FIXME(abhinav): these images should be replacable by release image.
+        image: "{{.Images.kubeClientAgentImage}}"
         command:
         - /bin/sh
         - -c
@@ -37,7 +37,7 @@ contents:
 
           [ -e /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt -a \
             -e /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key ] || \
-            /usr/local/bin/kube-client-agent \
+            kube-client-agent \
               request \
                 --kubeconfig=/etc/kubernetes/kubeconfig \
                 --orgname=system:etcd-servers \
@@ -48,7 +48,7 @@ contents:
 
           [ -e /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt -a \
             -e /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key ] || \
-            /usr/local/bin/kube-client-agent \
+            kube-client-agent \
               request \
                 --kubeconfig=/etc/kubernetes/kubeconfig \
                 --orgname=system:etcd-peers \

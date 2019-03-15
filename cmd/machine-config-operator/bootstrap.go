@@ -24,22 +24,23 @@ var (
 	}
 
 	bootstrapOpts struct {
-		etcdCAFile          string
-		rootCAFile          string
-		kubeCAFile          string
-		pullSecretFile      string
-		configFile          string
-		oscontentImage      string
-		infraConfigFile     string
-		networkConfigFile   string
-		imagesConfigMapFile string
-		mccImage            string
-		mcsImage            string
-		mcdImage            string
-		etcdImage           string
-		setupEtcdEnvImage   string
-		infraImage          string
-		destinationDir      string
+		etcdCAFile           string
+		rootCAFile           string
+		kubeCAFile           string
+		pullSecretFile       string
+		configFile           string
+		oscontentImage       string
+		infraConfigFile      string
+		networkConfigFile    string
+		imagesConfigMapFile  string
+		mccImage             string
+		mcsImage             string
+		mcdImage             string
+		etcdImage            string
+		setupEtcdEnvImage    string
+		infraImage           string
+		kubeClientAgentImage string
+		destinationDir       string
 	}
 )
 
@@ -61,8 +62,11 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
 	bootstrapCmd.MarkFlagRequired("etcd-image")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup Etcd Environment.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup etcd Environment.")
 	bootstrapCmd.MarkFlagRequired("setup-etcd-env-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
+	// TODO hexfusion: uncomment after flag is merged from installer.
+	// bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
@@ -78,6 +82,9 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v", version.Version)
 
+	// TODO hexfusion: uncomment after flag is merged from installer.
+	bootstrapOpts.kubeClientAgentImage = "registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent"
+
 	imgs := operator.Images{
 		MachineConfigController: bootstrapOpts.mccImage,
 		MachineConfigDaemon:     bootstrapOpts.mcdImage,
@@ -86,6 +93,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		Etcd:                    bootstrapOpts.etcdImage,
 		SetupEtcdEnv:            bootstrapOpts.setupEtcdEnvImage,
 		InfraImage:              bootstrapOpts.infraImage,
+		KubeClientAgent:         bootstrapOpts.kubeClientAgentImage,
 	}
 
 	if err := operator.RenderBootstrap(
