@@ -317,15 +317,20 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
+
+	// TODO hexfusion: uncomment after flag is merged from installer.
+	imgs.KubeClientAgent = "registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent"
+
 	spec.EtcdCAData = etcdCA
 	spec.RootCAData = bundle
 	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
 	spec.SSHKey = ic.SSHKey
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
-		templatectrl.EtcdImageKey:    imgs.Etcd,
-		templatectrl.SetupEtcdEnvKey: imgs.SetupEtcdEnv,
-		templatectrl.InfraImageKey:   imgs.InfraImage,
+		templatectrl.EtcdImageKey:            imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey:         imgs.SetupEtcdEnv,
+		templatectrl.InfraImageKey:           imgs.InfraImage,
+		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 	}
 
 	// create renderConfig
