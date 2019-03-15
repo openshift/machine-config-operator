@@ -153,10 +153,21 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
+	if old.DeletionTimestamp != new.DeletionTimestamp {
+		return true
+	}
+	if !reflect.DeepEqual(old.Spec, new.Spec) {
+		return true
+	}
+	return false
+}
+
 func (ctrl *Controller) updateKubeletConfig(old, cur interface{}) {
 	oldConfig := old.(*mcfgv1.KubeletConfig)
 	newConfig := cur.(*mcfgv1.KubeletConfig)
-	if !reflect.DeepEqual(oldConfig, newConfig) {
+
+	if kubeletConfigTriggerObjectChange(oldConfig, newConfig) {
 		glog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
 		ctrl.enqueueKubeletConfig(newConfig)
 	}
@@ -285,12 +296,15 @@ func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2type
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
-	if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
-		cfg.Status.ObservedGeneration = cfg.GetGeneration()
-		cfg.Status.Conditions = append(cfg.Status.Conditions, wrapErrorWithCondition(err, args...))
-	}
-	_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(cfg)
-	return lerr
+	return retry.RetryOnConflict(updateBackoff, func() error {
+		newcfg, err := ctrl.mckLister.Get(cfg.Name)
+		if err != nil {
+			return err
+		}
+		newcfg.Status.Conditions = append(newcfg.Status.Conditions, wrapErrorWithCondition(err, args...))
+		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(newcfg)
+		return lerr
+	})
 }
 
 // syncKubeletConfig will sync the kubeletconfig with the given key.
@@ -420,51 +434,64 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 }
 
 func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
-	curJSON, err := json.Marshal(kc)
-	if err != nil {
-		return err
-	}
-
-	kcTmp := kc.DeepCopy()
-	kcTmp.Finalizers = append(kc.Finalizers[:0], kc.Finalizers[1:]...)
-
-	modJSON, err := json.Marshal(kcTmp)
-	if err != nil {
-		return err
-	}
-
-	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-	if err != nil {
-		return err
-	}
-
 	return retry.RetryOnConflict(updateBackoff, func() error {
-		_, err = ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(kc.Name, types.MergePatchType, patch)
+		newcfg, err := ctrl.mckLister.Get(kc.Name)
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		curJSON, err := json.Marshal(newcfg)
+		if err != nil {
+			return err
+		}
+
+		kcTmp := newcfg.DeepCopy()
+		kcTmp.Finalizers = append(kc.Finalizers[:0], kc.Finalizers[1:]...)
+
+		modJSON, err := json.Marshal(kcTmp)
+		if err != nil {
+			return err
+		}
+
+		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
+		if err != nil {
+			return err
+		}
+		_, err = ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(newcfg.Name, types.MergePatchType, patch)
 		return err
 	})
 }
 
 func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
-	curJSON, err := json.Marshal(kc)
-	if err != nil {
-		return err
-	}
-
-	kcTmp := kc.DeepCopy()
-	kcTmp.Finalizers = append(kcTmp.Finalizers, mc.Name)
-
-	modJSON, err := json.Marshal(kcTmp)
-	if err != nil {
-		return err
-	}
-
-	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-	if err != nil {
-		return err
-	}
-
 	return retry.RetryOnConflict(updateBackoff, func() error {
-		_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(kc.Name, types.MergePatchType, patch)
+		newcfg, err := ctrl.mckLister.Get(kc.Name)
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		curJSON, err := json.Marshal(newcfg)
+		if err != nil {
+			return err
+		}
+
+		kcTmp := newcfg.DeepCopy()
+		kcTmp.Finalizers = append(kcTmp.Finalizers, mc.Name)
+
+		modJSON, err := json.Marshal(kcTmp)
+		if err != nil {
+			return err
+		}
+		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
+		if err != nil {
+			return err
+		}
+		_, err = ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(newcfg.Name, types.MergePatchType, patch)
 		return err
 	})
 }
