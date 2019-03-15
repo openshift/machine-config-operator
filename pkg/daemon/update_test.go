@@ -6,7 +6,6 @@ import (
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
@@ -33,7 +32,6 @@ func TestUpdateOS(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -67,7 +65,6 @@ func TestReconcilable(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: nil,
 		loginClient:       nil,
-		client:            nil,
 		kubeClient:        nil,
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -208,7 +205,6 @@ func TestReconcilableSSH(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
@@ -294,18 +290,15 @@ func TestUpdateSSHKeys(t *testing.T) {
 			// Second rrun will return our expected error
 			expectedError},
 	}
-	mockFS := &FsClientMock{MkdirAllReturns: []error{nil}, WriteFileReturns: []error{nil}}
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
-		fileSystemClient:  mockFS,
 	}
 	// Set up machineconfigs that are identical except for SSH keys
 	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234", "4567"}}
@@ -319,6 +312,9 @@ func TestUpdateSSHKeys(t *testing.T) {
 			},
 		},
 	}
+
+	d.atomicSSHKeysWriter = func(user ignv2_2types.PasswdUser, keys string) error { return nil }
+
 	err := d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
@@ -348,18 +344,15 @@ func TestInvalidIgnConfig(t *testing.T) {
 			// Second rrun will return our expected error
 			expectedError},
 	}
-	mockFS := &FsClientMock{MkdirAllReturns: []error{nil}, WriteFileReturns: []error{nil}}
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		loginClient:       nil, // set to nil as it will not be used within tests
-		client:            fake.NewSimpleClientset(),
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		rootMount:         "/",
 		bootedOSImageURL:  "test",
-		fileSystemClient:  mockFS,
 	}
 
 	oldMcfg := &mcfgv1.MachineConfig{

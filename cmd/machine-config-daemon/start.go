@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -97,7 +96,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.nodeName,
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
-			daemon.NewFileSystemClient(),
 			startOpts.onceFrom,
 			startOpts.kubeletHealthzEnabled,
 			startOpts.kubeletHealthzEndpoint,
@@ -122,9 +120,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.nodeName,
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
-			cb.MachineConfigClientOrDie(componentName),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			cb.KubeClientOrDie(componentName),
-			daemon.NewFileSystemClient(),
 			startOpts.onceFrom,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			startOpts.kubeletHealthzEnabled,
@@ -154,19 +151,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if startOpts.onceFrom == "" {
-		err = dn.CheckStateOnBoot()
-		if err != nil {
-			dn.EnterDegradedState(errors.Wrapf(err, "Checking initial state"))
-		}
 		ctx.KubeInformerFactory.Start(stopCh)
+		ctx.InformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)
 	}
 
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	err = dn.Run(stopCh, exitCh)
-	if err != nil {
+	if err := dn.Run(stopCh, exitCh); err != nil {
 		glog.Fatalf("failed to run: %v", err)
 	}
 }
