@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 
+	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
@@ -43,16 +44,12 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	unavailableMachines := getUnavailableMachines(pool.Status.Configuration.Name, nodes)
 	unavailableMachineCount := int32(len(unavailableMachines))
 
-	degradedMachines := getDegradedMachines(pool.Status.Configuration.Name, nodes)
-	degradedMachineCount := int32(len(degradedMachines))
-
 	status := mcfgv1.MachineConfigPoolStatus{
 		ObservedGeneration:      pool.Generation,
 		MachineCount:            machineCount,
 		UpdatedMachineCount:     updatedMachineCount,
 		ReadyMachineCount:       readyMachineCount,
 		UnavailableMachineCount: unavailableMachineCount,
-		DegradedMachineCount:    degradedMachineCount,
 	}
 
 	status.Configuration = pool.Status.Configuration
@@ -76,14 +73,6 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, fmt.Sprintf("All nodes are updating to %s", pool.Status.Configuration.Name), "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 	}
-
-	if len(degradedMachines) > 0 {
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on update. Cannot proceed.", len(degradedMachines)), "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
-	} else {
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
-		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
-	}
 	return status
 }
 
@@ -97,8 +86,17 @@ func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.No
 		if !ok || cconfig == "" {
 			continue
 		}
+		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+		if !ok || cconfig == "" {
+			continue
+		}
 
-		if cconfig == currentConfig {
+		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+		if !ok || dstate == "" {
+			continue
+		}
+
+		if cconfig == currentConfig && dconfig == currentConfig && dstate == daemonconsts.MachineConfigDaemonStateDone {
 			updated = append(updated, node)
 		}
 	}
@@ -155,31 +153,11 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 			continue
 		}
 
-		if dconfig == currentConfig && (dconfig != cconfig || !isNodeReady(node)) {
+		nodeNotReady := !isNodeReady(node)
+		if dconfig == currentConfig && (dconfig != cconfig || nodeNotReady) {
 			unavail = append(unavail, node)
+			glog.V(2).Infof("Node %s unavailable: different configs %v or node not ready %v", node.Name, dconfig != cconfig, nodeNotReady)
 		}
 	}
 	return unavail
-}
-
-func getDegradedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
-	var degraded []*corev1.Node
-	for _, node := range nodes {
-		if node.Annotations == nil {
-			continue
-		}
-		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-		if !ok || dconfig == "" {
-			continue
-		}
-		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
-		if !ok || dstate == "" {
-			continue
-		}
-
-		if dconfig == currentConfig && dstate == daemonconsts.MachineConfigDaemonStateDegraded {
-			degraded = append(degraded, node)
-		}
-	}
-	return degraded
 }

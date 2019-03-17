@@ -17,6 +17,27 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
+// syncVersion handles reporting the version to the clusteroperator
+func (optr *Operator) syncVersion() error {
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
+	}
+	if co == nil {
+		return nil
+	}
+
+	// keep the old version and progressing if we fail progressing
+	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) && cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorFailing) {
+		return nil
+	}
+
+	co.Status.Versions = optr.vStore.GetAll()
+	optr.setMachineConfigPoolStatuses(&co.Status)
+	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	return err
+}
+
 // syncAvailableStatus applies the new condition to the mco's ClusterOperator object.
 func (optr *Operator) syncAvailableStatus() error {
 	co, err := optr.fetchClusterOperator()
@@ -258,9 +279,6 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 
 func machineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) string {
 	switch {
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded):
-		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolDegraded)
-		return fmt.Sprintf("pool is degraded because of %s", cond.Reason)
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated):
 		return fmt.Sprintf("all %d nodes are at latest configuration %s", pool.Status.MachineCount, pool.Status.Configuration.Name)
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating):

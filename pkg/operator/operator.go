@@ -240,8 +240,6 @@ func (optr *Operator) handleErr(err error, key interface{}) {
 		return
 	}
 
-	optr.syncFailingStatus(err)
-
 	if optr.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing operator %v: %v", key, err)
 		optr.queue.AddRateLimited(key)
@@ -251,6 +249,7 @@ func (optr *Operator) handleErr(err error, key interface{}) {
 	utilruntime.HandleError(err)
 	glog.V(2).Infof("Dropping operator %q out of the queue: %v", key, err)
 	optr.queue.Forget(key)
+	optr.queue.AddAfter(key, 1*time.Minute)
 }
 
 func (optr *Operator) sync(key string) error {
