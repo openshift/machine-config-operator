@@ -121,6 +121,7 @@ func createControllers(ctx *controllercommon.ControllerContext) []controllercomm
 		render.New(
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 		),

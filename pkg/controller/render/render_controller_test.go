@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ type fixture struct {
 
 	mcpLister []*mcfgv1.MachineConfigPool
 	mcLister  []*mcfgv1.MachineConfig
+	ccLister  []*mcfgv1.ControllerConfig
 
 	actions []core.Action
 
@@ -82,11 +84,12 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
-	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
+	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().ControllerConfigs(),
 		k8sfake.NewSimpleClientset(), f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
+	c.ccListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -94,10 +97,12 @@ func (f *fixture) newController() *Controller {
 	i.Start(stopCh)
 	i.WaitForCacheSync(stopCh)
 
+	for _, c := range f.ccLister {
+		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
+	}
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
 	}
-
 	for _, m := range f.mcLister {
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
 	}
@@ -192,6 +197,8 @@ func filterInformerActions(actions []core.Action) []core.Action {
 		if len(action.GetNamespace()) == 0 &&
 			(action.Matches("list", "machineconfigpools") ||
 				action.Matches("watch", "machineconfigpools") ||
+				action.Matches("list", "controllerconfigs") ||
+				action.Matches("watch", "controllerconfigs") ||
 				action.Matches("list", "machineconfigs") ||
 				action.Matches("watch", "machineconfigs")) {
 			continue
@@ -222,6 +229,24 @@ func (f *fixture) expectUpdateMachineConfigPoolStatus(pool *mcfgv1.MachineConfig
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool))
 }
 
+func newControllerConfig(name string) *mcfgv1.ControllerConfig {
+	return &mcfgv1.ControllerConfig{
+		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
+		Spec: mcfgv1.ControllerConfigSpec{
+			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+		},
+		Status: mcfgv1.ControllerConfigStatus{
+			Conditions: []mcfgv1.ControllerConfigStatusCondition{
+				{
+					Type: mcfgv1.TemplateContollerCompleted,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+}
+
 func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
@@ -238,6 +263,8 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
+	cc := newControllerConfig("test-cluster-configcreate")
+	f.ccLister = append(f.ccLister, cc)
 
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
@@ -299,6 +326,9 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	gmc.Spec.OSImageURL = "why-did-you-change-it"
 	mcp.Status.Configuration.Name = gmc.Name
 
+	cc := newControllerConfig("test-cluster-configcreate")
+	f.ccLister = append(f.ccLister, cc)
+
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.mcLister = append(f.mcLister, mcs...)
@@ -340,6 +370,9 @@ func TestDoNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	mcp.Status.Configuration.Name = gmc.Name
+
+	cc := newControllerConfig("test-cluster-configcreate")
+	f.ccLister = append(f.ccLister, cc)
 
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
