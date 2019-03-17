@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -134,7 +135,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	configs = append(configs, &MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "3"},
 		Spec: MachineConfigSpec{
-			OSImageURL:"example.com/os@sha256:notthetarget",
+			OSImageURL: "example.com/os@sha256:notthetarget",
 		},
 	})
 
@@ -163,5 +164,63 @@ func TestMergeMachineConfigs(t *testing.T) {
 	merged := MergeMachineConfigs(configs)
 	if merged.Spec.OSImageURL != targetOSImageURL {
 		t.Errorf("OSImageURL expected: %s, received: %s", targetOSImageURL, merged.Spec.OSImageURL)
+	}
+}
+
+func TestIsControllerConfigCompleted(t *testing.T) {
+	tests := []struct {
+		obsrvdGen int64
+		completed bool
+		running   bool
+		failing   bool
+
+		err error
+	}{{
+		obsrvdGen: 0,
+		err:       errors.New("status for ControllerConfig dummy is being reported for 0, expecting it for 1"),
+	}, {
+		obsrvdGen: 1,
+		running:   true,
+		err:       errors.New("ControllerConfig has not completed: completed(false) running(true) failing(false)"),
+	}, {
+		obsrvdGen: 1,
+		completed: true,
+	}, {
+		obsrvdGen: 1,
+		completed: true,
+		running:   true,
+		err:       errors.New("ControllerConfig has not completed: completed(true) running(true) failing(false)"),
+	}, {
+		obsrvdGen: 1,
+		failing:   true,
+		err:       errors.New("ControllerConfig has not completed: completed(false) running(false) failing(true)"),
+	}}
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("#%d", idx), func(t *testing.T) {
+			getter := func(name string) (*ControllerConfig, error) {
+				var conds []ControllerConfigStatusCondition
+				if test.completed {
+					conds = append(conds, *NewControllerConfigStatusCondition(TemplateContollerCompleted, corev1.ConditionTrue, "", ""))
+				}
+				if test.running {
+					conds = append(conds, *NewControllerConfigStatusCondition(TemplateContollerRunning, corev1.ConditionTrue, "", ""))
+				}
+				if test.failing {
+					conds = append(conds, *NewControllerConfigStatusCondition(TemplateContollerFailing, corev1.ConditionTrue, "", ""))
+				}
+				return &ControllerConfig{
+					ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: name},
+					Status: ControllerConfigStatus{
+						ObservedGeneration: test.obsrvdGen,
+						Conditions:         conds,
+					},
+				}, nil
+			}
+
+			err := IsControllerConfigCompleted(&ControllerConfig{ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: "dummy"}}, getter)
+			if !reflect.DeepEqual(err, test.err) {
+				t.Fatalf("expected %v got %v", test.err, err)
+			}
+		})
 	}
 }

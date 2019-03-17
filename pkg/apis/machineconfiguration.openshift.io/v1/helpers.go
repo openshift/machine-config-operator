@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"fmt"
 	"sort"
 
 	ignv2_2 "github.com/coreos/ignition/config/v2_2"
@@ -202,4 +203,26 @@ func IsControllerConfigStatusConditionPresentAndEqual(conditions []ControllerCon
 		}
 	}
 	return false
+}
+
+// IsControllerConfigCompleted checks whether a ControllerConfig is completed by the Template Controller
+func IsControllerConfigCompleted(cc *ControllerConfig, ccGetter func(string) (*ControllerConfig, error)) error {
+	cur, err := ccGetter(cc.GetName())
+	if err != nil {
+		return err
+	}
+
+	if cur.Generation != cur.Status.ObservedGeneration {
+		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", cc.GetName(), cur.Status.ObservedGeneration, cur.Generation)
+	}
+
+	completed := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerCompleted)
+	running := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerRunning)
+	failing := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerFailing)
+	if completed &&
+		!running &&
+		!failing {
+		return nil
+	}
+	return fmt.Errorf("ControllerConfig has not completed: completed(%v) running(%v) failing(%v)", completed, running, failing)
 }

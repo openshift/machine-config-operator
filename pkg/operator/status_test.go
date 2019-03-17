@@ -126,64 +126,6 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 	}
 }
 
-func TestIsControllerConfigCompleted(t *testing.T) {
-	tests := []struct {
-		obsrvdGen int64
-		completed bool
-		running   bool
-		failing   bool
-
-		err error
-	}{{
-		obsrvdGen: 0,
-		err:       errors.New("status for ControllerConfig dummy is being reported for 0, expecting it for 1"),
-	}, {
-		obsrvdGen: 1,
-		running:   true,
-		err:       errors.New("ControllerConfig has not completed: as completed(false) running(true) failing(false)"),
-	}, {
-		obsrvdGen: 1,
-		completed: true,
-	}, {
-		obsrvdGen: 1,
-		completed: true,
-		running:   true,
-		err:       errors.New("ControllerConfig has not completed: as completed(true) running(true) failing(false)"),
-	}, {
-		obsrvdGen: 1,
-		failing:   true,
-		err:       errors.New("ControllerConfig has not completed: as completed(false) running(false) failing(true)"),
-	}}
-	for idx, test := range tests {
-		t.Run(fmt.Sprintf("#%d", idx), func(t *testing.T) {
-			getter := func(name string) (*mcfgv1.ControllerConfig, error) {
-				var conds []mcfgv1.ControllerConfigStatusCondition
-				if test.completed {
-					conds = append(conds, *mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerCompleted, corev1.ConditionTrue, "", ""))
-				}
-				if test.running {
-					conds = append(conds, *mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerRunning, corev1.ConditionTrue, "", ""))
-				}
-				if test.failing {
-					conds = append(conds, *mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerFailing, corev1.ConditionTrue, "", ""))
-				}
-				return &mcfgv1.ControllerConfig{
-					ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: name},
-					Status: mcfgv1.ControllerConfigStatus{
-						ObservedGeneration: test.obsrvdGen,
-						Conditions:         conds,
-					},
-				}, nil
-			}
-
-			err := isControllerConfigCompleted(&mcfgv1.ControllerConfig{ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: "dummy"}}, getter)
-			if !reflect.DeepEqual(err, test.err) {
-				t.Fatalf("expected %v got %v", test.err, err)
-			}
-		})
-	}
-}
-
 type mockMCPLister struct{}
 
 func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfigPool, err error) {
