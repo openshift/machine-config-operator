@@ -387,6 +387,7 @@ func (dn *Daemon) syncNode(key string) error {
 				return err
 			}
 		}
+		glog.V(2).Infof("Node %s is already synced", node.Name)
 	}
 	return nil
 }
@@ -880,9 +881,13 @@ func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
+	if err != nil {
+		return false, err
+	}
 
 	// Detect if there is an update
-	if desiredConfigName == currentConfigName {
+	if desiredConfigName == currentConfigName && state == constants.MachineConfigDaemonStateDone {
 		// No actual update to the config
 		glog.V(2).Info("No updating is required")
 		return false, nil
