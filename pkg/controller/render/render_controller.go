@@ -448,25 +448,7 @@ func (ctrl *Controller) isControllerConfigCompleted() error {
 	if len(cc) == 0 {
 		return fmt.Errorf("controllerConfigList is empty")
 	}
-
-	cur, err := ctrl.ccLister.Get(cc[0].GetName())
-	if err != nil {
-		return err
-	}
-
-	if cur.Generation != cur.Status.ObservedGeneration {
-		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", cc[0].GetName(), cur.Status.ObservedGeneration, cur.Generation)
-	}
-
-	completed := mcfgv1.IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateContollerCompleted)
-	running := mcfgv1.IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateContollerRunning)
-	failing := mcfgv1.IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateContollerFailing)
-	if completed &&
-		!running &&
-		!failing {
-		return nil
-	}
-	return fmt.Errorf("ControllerConfig has not completed: completed(%v) running(%v) failing(%v)", completed, running, failing)
+	return mcfgv1.IsControllerConfigCompleted(cc[0], ctrl.ccLister.Get)
 }
 
 // This function will eventually contain a sane garbage collection policy for rendered MachineConfigs;
