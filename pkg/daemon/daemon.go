@@ -433,9 +433,6 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
-	defer utilruntime.HandleCrash()
-	defer dn.queue.ShutDown()
-
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
@@ -460,6 +457,9 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			return dn.runOnceFromMachineConfig(*mcConfig, contentFrom)
 		}
 	}
+
+	defer utilruntime.HandleCrash()
+	defer dn.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced) {
 		return errors.New("failed to sync initial listers cache")
