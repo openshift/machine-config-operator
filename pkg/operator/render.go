@@ -74,6 +74,8 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		platform = "openstack"
 	case configv1.LibvirtPlatform:
 		platform = "libvirt"
+	case configv1.VSpherePlatform:
+		platform = "vsphere"
 	}
 
 	return &mcfgv1.ControllerConfigSpec{

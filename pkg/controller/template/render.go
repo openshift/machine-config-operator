@@ -38,6 +38,7 @@ const (
 	platformOpenstack = "openstack"
 	platformLibvirt   = "libvirt"
 	platformNone      = "none"
+	platformVSphere   = "vsphere"
 	platformBase      = "_base"
 )
 
@@ -396,6 +397,8 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 		return platformAWS, nil
 	case platformOpenstack:
 		return platformOpenstack, nil
+	case platformVSphere:
+		return platformVSphere, nil
 	}
 	return "", nil
 }
