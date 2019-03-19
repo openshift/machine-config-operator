@@ -21,6 +21,7 @@ import (
 	"github.com/google/renameio"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -168,8 +169,14 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if dn.nodeWriter != nil {
-		if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
+		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
+		if err != nil {
 			return err
+		}
+		if state != constants.MachineConfigDaemonStateDegraded {
+			if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -192,7 +199,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			mcRef := &corev1.ObjectReference{
 				Kind: "MachineConfig",
 				Name: newConfig.GetName(),
-				UID: newConfig.GetUID(),
+				UID:  newConfig.GetUID(),
 			}
 			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
