@@ -1,47 +1,46 @@
-package common
+package clients
 
 import (
 	"os"
 
 	"github.com/golang/glog"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
-// ClientBuilder can create a variety of kubernetes client interface
+// Builder can create a variety of kubernetes client interface
 // with its embeded rest.Config.
-type ClientBuilder struct {
+type Builder struct {
 	config *rest.Config
 }
 
 // MachineConfigClientOrDie returns the kubernetes client interface for machine config.
-func (cb *ClientBuilder) MachineConfigClientOrDie(name string) mcfgclientset.Interface {
+func (cb *Builder) MachineConfigClientOrDie(name string) mcfgclientset.Interface {
 	return mcfgclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // KubeClientOrDie returns the kubernetes client interface for general kubernetes objects.
-func (cb *ClientBuilder) KubeClientOrDie(name string) kubernetes.Interface {
+func (cb *Builder) KubeClientOrDie(name string) kubernetes.Interface {
 	return kubernetes.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // ConfigClientOrDie returns the kubernetes client interface for security related kubernetes objects
 // such as pod security policy, security context.
-func (cb *ClientBuilder) ConfigClientOrDie(name string) configclientset.Interface {
+func (cb *Builder) ConfigClientOrDie(name string) configclientset.Interface {
 	return configclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // APIExtClientOrDie returns the kubernetes client interface for extended kubernetes objects.
-func (cb *ClientBuilder) APIExtClientOrDie(name string) apiext.Interface {
+func (cb *Builder) APIExtClientOrDie(name string) apiext.Interface {
 	return apiext.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
-// NewClientBuilder returns a *ClientBuilder with the given kubeconfig.
-func NewClientBuilder(kubeconfig string) (*ClientBuilder, error) {
+// NewBuilder returns a *ClientBuilder with the given kubeconfig.
+func NewBuilder(kubeconfig string) (*Builder, error) {
 	var config *rest.Config
 	var err error
 
@@ -60,7 +59,7 @@ func NewClientBuilder(kubeconfig string) (*ClientBuilder, error) {
 		return nil, err
 	}
 
-	return &ClientBuilder{
+	return &Builder{
 		config: config,
 	}, nil
 }

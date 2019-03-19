@@ -63,6 +63,9 @@ type Controller struct {
 	mcpListerSynced cache.InformerSynced
 	mcListerSynced  cache.InformerSynced
 
+	ccLister       mcfglistersv1.ControllerConfigLister
+	ccListerSynced cache.InformerSynced
+
 	queue workqueue.RateLimitingInterface
 }
 
@@ -70,6 +73,7 @@ type Controller struct {
 func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	ccInformer mcfginformersv1.ControllerConfigInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -101,6 +105,8 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+	ctrl.ccLister = ccInformer.Lister()
+	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -113,7 +119,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	glog.Info("Starting MachineConfigController-RenderController")
 	defer glog.Info("Shutting down MachineConfigController-RenderController")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
 		return
 	}
 
@@ -130,6 +136,7 @@ func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	ctrl.enqueueMachineConfigPool(pool)
 
 }
+
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	oldPool := old.(*mcfgv1.MachineConfigPool)
 	curPool := cur.(*mcfgv1.MachineConfigPool)
@@ -137,6 +144,7 @@ func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {
 	glog.V(4).Infof("Updating MachineConfigPool %s", oldPool.Name)
 	ctrl.enqueueMachineConfigPool(curPool)
 }
+
 func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	pool, ok := obj.(*mcfgv1.MachineConfigPool)
 	if !ok {
@@ -183,6 +191,7 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 		ctrl.enqueueMachineConfigPool(p)
 	}
 }
+
 func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
@@ -216,6 +225,7 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 		ctrl.enqueueMachineConfigPool(p)
 	}
 }
+
 func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	mc, ok := obj.(*mcfgv1.MachineConfig)
 
@@ -414,6 +424,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	// TODO(runcom): add tests in render_controller_test.go for this condition
+	if err := ctrl.isControllerConfigCompleted(); err != nil {
+		return err
+	}
+
 	mcs, err := ctrl.mcLister.List(selector)
 	if err != nil {
 		return err
@@ -423,6 +438,17 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	return ctrl.syncGeneratedMachineConfig(pool, mcs)
+}
+
+func (ctrl *Controller) isControllerConfigCompleted() error {
+	cc, err := ctrl.ccLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("could not enumerate ControllerConfig %s", err)
+	}
+	if len(cc) == 0 {
+		return fmt.Errorf("controllerConfigList is empty")
+	}
+	return mcfgv1.IsControllerConfigCompleted(cc[0], ctrl.ccLister.Get)
 }
 
 // This function will eventually contain a sane garbage collection policy for rendered MachineConfigs;

@@ -217,27 +217,6 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 	return ret, nil
 }
 
-func isControllerConfigCompleted(cc *mcfgv1.ControllerConfig, ccGetter func(string) (*mcfgv1.ControllerConfig, error)) error {
-	cur, err := ccGetter(cc.GetName())
-	if err != nil {
-		return err
-	}
-
-	if cur.Generation != cur.Status.ObservedGeneration {
-		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", cc.GetName(), cur.Status.ObservedGeneration, cur.Generation)
-	}
-
-	completed := mcfgv1.IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateContollerCompleted)
-	running := mcfgv1.IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateContollerRunning)
-	failing := mcfgv1.IsControllerConfigStatusConditionTrue(cur.Status.Conditions, mcfgv1.TemplateContollerFailing)
-	if completed &&
-		!running &&
-		!failing {
-		return nil
-	}
-	return fmt.Errorf("ControllerConfig has not completed: as completed(%v) running(%v) failing(%v)", completed, running, failing)
-}
-
 // isMachineConfigPoolConfigurationValid returns nil error when the configuration of a `pool` is created by the controller at version `version`.
 func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
 	// both .status.configuration.name and .status.configuration.source must be set.

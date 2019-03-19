@@ -1,10 +1,10 @@
 package common
 
 import (
-	"math/rand"
 	"os"
 	"time"
 
+	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,19 +21,10 @@ const (
 	RenewDeadline = 60 * time.Second
 	// RetryPeriod is the default duration for the leader electrion retrial.
 	RetryPeriod = 30 * time.Second
-
-	minResyncPeriod = 20 * time.Minute
 )
 
-func resyncPeriod() func() time.Duration {
-	return func() time.Duration {
-		factor := rand.Float64() + 1
-		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
-	}
-}
-
 // CreateResourceLock returns an interface for the resource lock.
-func CreateResourceLock(cb *ClientBuilder, componentNamespace, componentName string) resourcelock.Interface {
+func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName string) resourcelock.Interface {
 	recorder := record.
 		NewBroadcaster().
 		NewRecorder(runtime.NewScheme(), v1.EventSource{Component: componentName})
