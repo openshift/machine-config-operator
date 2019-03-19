@@ -281,6 +281,7 @@ func (dn *Daemon) processNextWorkItem() bool {
 	if dn.booting {
 		// any error here in bootstrap will cause a retry
 		if err := dn.bootstrapNode(); err != nil {
+			dn.updateErrorState(err)
 			glog.Warningf("Booting the MCD errored with %v", err)
 		}
 		return true
@@ -304,10 +305,6 @@ func (dn *Daemon) processNextWorkItem() bool {
 func (dn *Daemon) bootstrapNode() error {
 	node, err := dn.nodeLister.Get(dn.name)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			glog.V(2).Infof("can't find node %s: %v", dn.name, err)
-			return nil
-		}
 		return err
 	}
 	node, err = dn.loadNodeAnnotations(node)
@@ -335,12 +332,21 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 		return
 	}
 
-	dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+	dn.updateErrorState(err)
 
 	utilruntime.HandleError(err)
 	glog.V(2).Infof("Dropping node %q out of the queue: %v", key, err)
 	dn.queue.Forget(key)
 	dn.queue.AddAfter(key, 1*time.Minute)
+}
+
+func (dn *Daemon) updateErrorState(err error) {
+	switch errors.Cause(err) {
+	case errUnreconcilable:
+		dn.nodeWriter.SetUnreconcilable(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+	default:
+		dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+	}
 }
 
 func (dn *Daemon) syncNode(key string) error {
@@ -502,11 +508,11 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 		return
 	}
 	worker := make(chan struct{})
- 	go func() {
+	go func() {
 		for {
 			select {
 			case <-worker:
- 				return
+				return
 			default:
 				buf := make([]byte, 1024)
 				l, err := stdout.Read(buf)
@@ -525,9 +531,9 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 						exitCh <- err
 					}
 				}
- 			}
- 		}
- 	}()
+			}
+		}
+	}()
 	select {
 	case <-stopCh:
 		close(worker)
@@ -784,7 +790,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
 	if state.pendingConfig != nil {
-		if err := dn.nodeWriter.SetUpdateDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
+		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
 			return err
 		}
 		// And remove the pending state file

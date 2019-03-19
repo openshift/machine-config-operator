@@ -166,6 +166,8 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 	}()
 }
 
+var errUnreconcilable = errors.New("unreconcilable")
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if dn.nodeWriter != nil {
@@ -173,8 +175,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		if err != nil {
 			return err
 		}
-		if state != constants.MachineConfigDaemonStateDegraded {
-			if err := dn.nodeWriter.SetUpdateWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
+		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
+			if err := dn.nodeWriter.SetWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
 				return err
 			}
 		}
@@ -204,7 +206,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
 		dn.logSystem(wrappedErr.Error())
-		return wrappedErr
+		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
 
 	// update files on disk that need updating
