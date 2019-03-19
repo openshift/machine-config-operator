@@ -23,9 +23,21 @@ func (cb *Builder) MachineConfigClientOrDie(name string) mcfgclientset.Interface
 	return mcfgclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
+// MachineConfigClient is used in onceFrom mode where we can or cannot have a cluster ready
+// based on the configuration provided
+func (cb *Builder) MachineConfigClient(name string) (mcfgclientset.Interface, error) {
+	return mcfgclientset.NewForConfig(rest.AddUserAgent(cb.config, name))
+}
+
 // KubeClientOrDie returns the kubernetes client interface for general kubernetes objects.
 func (cb *Builder) KubeClientOrDie(name string) kubernetes.Interface {
 	return kubernetes.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+// KubeClient is used in onceFrom mode where we can or cannot have a cluster ready
+// based on the configuration provided
+func (cb *Builder) KubeClient(name string) (kubernetes.Interface, error) {
+	return kubernetes.NewForConfig(rest.AddUserAgent(cb.config, name))
 }
 
 // ConfigClientOrDie returns the kubernetes client interface for security related kubernetes objects
