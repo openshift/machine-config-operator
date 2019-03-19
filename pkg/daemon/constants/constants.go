@@ -18,8 +18,11 @@ const (
 	MachineConfigDaemonStateWorking = "Working"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.
 	MachineConfigDaemonStateDone = "Done"
-	// MachineConfigDaemonStateDegraded is set by daemon when update cannot be applied.
+	// MachineConfigDaemonStateDegraded is set by daemon when an error not caused by a bad MachineConfig
+	// is thrown during an udpate.
 	MachineConfigDaemonStateDegraded = "Degraded"
+	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
+	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
 	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.
 	// The Machine Config Server writes the node annotations to this path.
 	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"

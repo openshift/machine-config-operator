@@ -59,8 +59,8 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 	}
 }
 
-// SetUpdateDone Sets the state to UpdateDone.
-func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string, dcAnnotation string) error {
+// SetDone sets the state to Done.
+func (nw *NodeWriter) SetDone(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string, dcAnnotation string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
@@ -76,8 +76,8 @@ func (nw *NodeWriter) SetUpdateDone(client corev1.NodeInterface, lister corelist
 	return <-respChan
 }
 
-// SetUpdateWorking Sets the state to UpdateWorking.
-func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
+// SetWorking Sets the state to Working.
+func (nw *NodeWriter) SetWorking(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
@@ -92,10 +92,31 @@ func (nw *NodeWriter) SetUpdateWorking(client corev1.NodeInterface, lister corel
 	return <-respChan
 }
 
-// SetDegraded logs the error and sets the state to UpdateDegraded.
+// SetUnreconcilable Sets the state to Unreconcilable.
+func (nw *NodeWriter) SetUnreconcilable(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
+	glog.Errorf("Marking Unreconcilable due to: %v", err)
+	annos := map[string]string{
+		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateUnreconcilable,
+	}
+	respChan := make(chan error, 1)
+	nw.writer <- message{
+		client:          client,
+		lister:          lister,
+		node:            node,
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	clientErr := <-respChan
+	if  clientErr != nil {
+		glog.Errorf("Error setting Unreconcilable annotation for node %s: %v", node, clientErr)
+	}
+	return clientErr
+}
+
+// SetDegraded logs the error and sets the state to Degraded.
 // Returns an error if it couldn't set the annotation.
 func (nw *NodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
-	glog.Errorf("marking degraded due to: %v", err)
+	glog.Errorf("Marking Degraded due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDegraded,
 	}
@@ -109,7 +130,7 @@ func (nw *NodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister
 	}
 	clientErr := <-respChan
 	if  clientErr != nil {
-		glog.Errorf("Error setting degraded annotation for node %s: %v", node, clientErr)
+		glog.Errorf("Error setting Degraded annotation for node %s: %v", node, clientErr)
 	}
 	return clientErr
 }
