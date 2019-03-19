@@ -3,25 +3,20 @@ package e2e_test
 import (
 	"testing"
 
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/openshift/machine-config-operator/cmd/common"
 )
 
 func TestOSImageURL(t *testing.T) {
-	cb, err := common.NewClientBuilder("")
-	if err != nil {
-		t.Fatalf("%#v", err)
-	}
-	mcClient := cb.MachineConfigClientOrDie("mc-file-add")
+	cs := framework.NewClientSet("")
 
 	// grab the latest worker- MC
-	mcp, err := mcClient.MachineconfigurationV1().MachineConfigPools().Get("worker", metav1.GetOptions{})
+	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
 
-	mc, err := mcClient.MachineconfigurationV1().MachineConfigs().Get(mcp.Status.Configuration.Name, metav1.GetOptions{})
+	mc, err := cs.MachineConfigs().Get(mcp.Status.Configuration.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
@@ -31,11 +26,11 @@ func TestOSImageURL(t *testing.T) {
 	}
 
 	// grab the latest master- MC
-	mcp, err = mcClient.MachineconfigurationV1().MachineConfigPools().Get("master", metav1.GetOptions{})
+	mcp, err = cs.MachineConfigPools().Get("master", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
-	mc, err = mcClient.MachineconfigurationV1().MachineConfigs().Get(mcp.Status.Configuration.Name, metav1.GetOptions{})
+	mc, err = cs.MachineConfigs().Get(mcp.Status.Configuration.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}

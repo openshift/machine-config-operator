@@ -6,6 +6,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
+	"github.com/openshift/machine-config-operator/internal/clients"
+	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -43,15 +45,35 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatal("--images-json cannot be empty")
 	}
 
-	cb, err := common.NewClientBuilder(startOpts.kubeconfig)
+	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
 		glog.Fatalf("error creating clients: %v", err)
 	}
 	run := func(ctx context.Context) {
-		ctrlctx := common.CreateControllerContext(cb, ctx.Done(), componentNamespace)
-		if err := startControllers(ctrlctx); err != nil {
-			glog.Fatalf("error starting controllers: %v", err)
-		}
+		ctrlctx := controllercommon.CreateControllerContext(cb, ctx.Done(), componentNamespace)
+
+		controller := operator.New(
+			componentNamespace, componentName,
+			startOpts.imagesFile,
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
+			ctrlctx.APIExtInformerFactory.Apiextensions().V1beta1().CustomResourceDefinitions(),
+			ctrlctx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
+			ctrlctx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
+			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
+			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
+			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctrlctx.ConfigInformerFactory.Config().V1().Networks(),
+			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
+			ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
+			ctrlctx.ClientBuilder.APIExtClientOrDie(componentName),
+			ctrlctx.ClientBuilder.ConfigClientOrDie(componentName),
+		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
@@ -59,6 +81,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
+
+		go controller.Run(2, ctrlctx.Stop)
 
 		select {}
 	}
@@ -76,31 +100,4 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		},
 	})
 	panic("unreachable")
-}
-
-func startControllers(ctx *common.ControllerContext) error {
-	go operator.New(
-		componentNamespace, componentName,
-		startOpts.imagesFile,
-		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
-		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
-		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-		ctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
-		ctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-		ctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
-		ctx.APIExtInformerFactory.Apiextensions().V1beta1().CustomResourceDefinitions(),
-		ctx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
-		ctx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
-		ctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
-		ctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
-		ctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
-		ctx.ConfigInformerFactory.Config().V1().Infrastructures(),
-		ctx.ConfigInformerFactory.Config().V1().Networks(),
-		ctx.ClientBuilder.MachineConfigClientOrDie(componentName),
-		ctx.ClientBuilder.KubeClientOrDie(componentName),
-		ctx.ClientBuilder.APIExtClientOrDie(componentName),
-		ctx.ClientBuilder.ConfigClientOrDie(componentName),
-	).Run(2, ctx.Stop)
-
-	return nil
 }

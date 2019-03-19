@@ -6,7 +6,8 @@ import (
 	"syscall"
 
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/cmd/common"
+	"github.com/openshift/machine-config-operator/internal/clients"
+	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -82,7 +83,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	defer close(exitCh)
 
 	var dn *daemon.Daemon
-	var ctx *common.ControllerContext
+	var ctx *controllercommon.ControllerContext
 
 	glog.Info("starting node writer")
 	nodeWriter := daemon.NewNodeWriter()
@@ -108,11 +109,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 		// Else we use the cluster driven daemon
 	} else {
-		cb, err := common.NewClientBuilder(startOpts.kubeconfig)
+		cb, err := clients.NewBuilder(startOpts.kubeconfig)
 		if err != nil {
 			glog.Fatalf("failed to initialize ClientBuilder: %v", err)
 		}
-		ctx = common.CreateControllerContext(cb, stopCh, componentName)
+		ctx = controllercommon.CreateControllerContext(cb, stopCh, componentName)
 		// create the daemon instance. this also initializes kube client items
 		// which need to come from the container and not the chroot.
 		dn, err = daemon.NewClusterDrivenDaemon(
