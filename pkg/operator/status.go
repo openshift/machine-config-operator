@@ -65,7 +65,6 @@ func (optr *Operator) syncAvailableStatus() error {
 		Message: message,
 	})
 
-	co.Status.Versions = optr.vStore.GetAll()
 	optr.setMachineConfigPoolStatuses(&co.Status)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
