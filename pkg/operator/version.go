@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	configv1 "github.com/openshift/api/config/v1"
-	corev1 "k8s.io/api/core/v1"
 )
 
 // versionStore stores versions for important components.
@@ -65,13 +64,4 @@ func (vs *versionStore) Equal(opvs []configv1.OperandVersion) bool {
 		return false
 	}
 	return true
-}
-
-func imageForContainer(name string, containers []corev1.Container) string {
-	for _, c := range containers {
-		if c.Name == name {
-			return c.Image
-		}
-	}
-	return ""
 }
