@@ -152,7 +152,13 @@ func generateSSHConfig(sshKey string, role string) (*mcfgv1.MachineConfig, error
 	// validated Ignition Config (instead of creating one by hand) that is then added to a
 	// MachineConfig.
 	var tempctCfg cttypes.Config
-	tempUser := cttypes.User{Name: "core", SSHAuthorizedKeys: []string{sshKey}}
+
+	// Keep the set of groups here in sync with `coreos-useradd-core.service`
+	// from https://github.com/coreos/fedora-coreos-config
+	// This list is also referenced in the installer.
+	tempUser := cttypes.User{Name: "core",
+		Groups: []string{"wheel", "sudo", "adm", "systemd-journal"},
+		SSHAuthorizedKeys: []string{sshKey}}
 	tempctCfg.Passwd.Users = append(tempctCfg.Passwd.Users, tempUser)
 	tempIgnConfig, rep := ctconfig.Convert(tempctCfg, "", nil)
 	if rep.IsFatal() {
