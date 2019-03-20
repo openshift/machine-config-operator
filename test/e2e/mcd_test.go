@@ -119,7 +119,7 @@ func TestMCDeployed(t *testing.T) {
 		}
 
 		visited := make(map[string]bool)
-		if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
 			nodes, err := getNodesByRole(cs, "worker")
 			if err != nil {
 				return false, err
