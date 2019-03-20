@@ -118,13 +118,15 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
 	}
 
-	sshMachineConfigForRole, err := generateSSHConfig(config.SSHKey, role)
-	if err != nil {
-		return nil, err
-	}
-
 	cfgs := []*mcfgv1.MachineConfig{}
-	cfgs = append(cfgs, sshMachineConfigForRole)
+
+	if config.SSHKey != "" {
+		sshMachineConfigForRole, err := generateSSHConfig(config.SSHKey, role)
+		if err != nil {
+			return nil, err
+		}
+		cfgs = append(cfgs, sshMachineConfigForRole)
+	}
 
 	for _, info := range infos {
 		if !info.IsDir() {
