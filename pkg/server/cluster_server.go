@@ -37,7 +37,7 @@ type clusterServer struct {
 }
 
 // NewClusterServer is used to initialize the machine config
-// server that will be used to fetch the requested machine pool
+// server that will be used to fetch the requested MachineConfigPool
 // objects from within the cluster.
 // It accepts the kubeConfig which is not required when it's
 // run from within the cluster(useful in testing).
@@ -58,7 +58,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
 func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
-	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machinePool, metav1.GetOptions{})
+	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}

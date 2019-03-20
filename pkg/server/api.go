@@ -10,7 +10,7 @@ import (
 )
 
 type poolRequest struct {
-	machinePool string
+	machineConfigPool string
 }
 
 // APIServer provides the HTTP(s) endpoint
@@ -91,7 +91,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cr := poolRequest{
-		machinePool: path.Base(r.URL.Path),
+		machineConfigPool: path.Base(r.URL.Path),
 	}
 
 	conf, err := sh.server.GetConfig(cr)

@@ -16,11 +16,11 @@ The machine can request specific configuration by pointing Ignition to MachineCo
 
 ### Endpoint
 
-MachineConfigServer serves Ignition at `/config/<machine-pool-name>` endpoint.
+MachineConfigServer serves Ignition at `/config/<machine-config-pool-name>` endpoint.
 
-* If the server finds the machine pool requested in the URL, it returns the Ignition config stored in the MachineConfig object referenced at `.status.currentMachineConfig` in the MachinePool object.
+* If the server finds the machine config pool requested in the URL, it returns the Ignition config stored in the MachineConfig object referenced at `.status.currentMachineConfig` in the MachineConfigPool object.
 
-* If the server cannot find the machine pool requested in the URL, the server returns HTTP Status Code 404 with an empty response.
+* If the server cannot find the machine config pool requested in the URL, the server returns HTTP Status Code 404 with an empty response.
 
 ### Ignition config from MachineConfig
 
