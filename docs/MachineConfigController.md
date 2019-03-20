@@ -22,18 +22,18 @@
 
 4. `KubeletConfigController` is responsible for wrapping custom Kubelet configurations within a CRD. The available options are documented within the KubeletConfiguration (https://github.com/kubernetes/kubernetes/blob/release-1.11/pkg/kubelet/apis/kubeletconfig/v1beta1/types.go#L45).
 
-## MachinePool
+## MachineConfigPool
 
 ```go
-type MachinePool struct {
+type MachineConfigPool struct {
     metav1.TypeMeta `json:",inline"`
     metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    Spec MachinePoolSpec `json:"spec"`
-    Status MachinePoolStatus `json:"status"`
+    Spec MachineConfigPoolSpec `json:"spec"`
+    Status MachineConfigPoolStatus `json:"status"`
 }
 
-type MachinePoolSpec struct {
+type MachineConfigPoolSpec struct {
     // Label selector for MachineConfigs.
     // Refer https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ on how label and selectors work.
     MachineConfigSelector *metav1.LabelSelector `json:"machineConfigSelector,omitempty"`
@@ -41,7 +41,7 @@ type MachinePoolSpec struct {
     // Label selector for Machines.
     MachineSelector *metav1.LabelSelector `json:"machineSelector,omitempty"`
 
-    // If true, changes to this machine pool should be stopped.
+    // If true, changes to this machine config pool should be stopped.
     // This includes generating new desiredMachineConfig and update of machines.
     Paused bool `json:"paused"`
 
@@ -50,14 +50,14 @@ type MachinePoolSpec struct {
     MaxUnavailable *intstr.IntOrString `json:"maxUnavailable"`
 }
 
-type MachinePoolStatus struct {
+type MachineConfigPoolStatus struct {
     // The generation observed by the controller.
     ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-    // The current MachineConfig object for the machine pool.
+    // The current MachineConfig object for the machine config pool.
     CurrentMachineConfig string `json:"currentMachineConfig"`
 
-    // Total number of machines in the machine pool.
+    // Total number of machines in the machine config pool.
     MachineCount int32 `json:"machineCount"`
 
     // Total number of machines targeted by the pool that have the CurrentMachineConfig as their config.
@@ -71,15 +71,15 @@ type MachinePoolStatus struct {
     UnavailableMachineCount int32 `json:"unavailableMachines"`
 
     // Represents the latest available observations of current state.
-    Conditions []MachinePoolConditions `json:"conditions"`
+    Conditions []MachineConfigPoolConditions `json:"conditions"`
 }
 ```
 
-## MachineSets vs MachinePool
+## MachineSets vs MachineConfigPool
 
-- MachineSets describe nodes with respect to cloud / machine provider. MachinePool allows MachineConfigController components to define and provide status of machines in context of upgrades.
+- MachineSets describe nodes with respect to cloud / machine provider. MachineConfigPool allows MachineConfigController components to define and provide status of machines in context of upgrades.
 
-- MachinePool also allows users to configure how upgrades are rolled out to the machines in a pool.
+- MachineConfigPool also allows users to configure how upgrades are rolled out to the machines in a pool.
 
 - MachineSelector can be replaced with reference to MachineSet.
 
@@ -95,11 +95,11 @@ The TemplateController uses `internal templates` and a `configuration object` to
 
 ## RenderController
 
-The RenderController generates the desired MachineConfig object based on the MachineConfigSelector defined in MachinePool.
+The RenderController generates the desired MachineConfig object based on the MachineConfigSelector defined in MachineConfigPool.
 
-- RenderController watches for changes on MachinePool object to find all the MachineConfig objects using `MachineConfigSelector` and updating the `CurrentMachineConfig` with the generated MachineConfig.
+- RenderController watches for changes on MachineConfigPool object to find all the MachineConfig objects using `MachineConfigSelector` and updating the `CurrentMachineConfig` with the generated MachineConfig.
 
-- RenderController watches for changes on all the MachineConfig objects and syncs all the MachinePool objects with new `CurrentMachineConfig`.
+- RenderController watches for changes on all the MachineConfig objects and syncs all the MachineConfigPool objects with new `CurrentMachineConfig`.
 
 ### Finding MachineConfigs
 
@@ -115,9 +115,9 @@ The render controller sorts all the other MachineConfigs based on the lexicograp
 
 ## UpdateController
 
-The UpdateController coordinates upgrade for machines in a machine pool. UpdateController uses annotations on node objects to coordinate with the `MachineConfigDaemon` running on each machine to upgrade each machine to the desired Machine Configuration.
+The UpdateController coordinates upgrade for machines in a MachineConfigPool. UpdateController uses annotations on node objects to coordinate with the `MachineConfigDaemon` running on each machine to upgrade each machine to the desired Machine Configuration.
 
-UpdateController watches for changes on MachinePool and runs update if,
+UpdateController watches for changes on MachineConfigPool and runs update if,
 
 1. If the `.Status.CurrentMachineConfig` has been updated.
 

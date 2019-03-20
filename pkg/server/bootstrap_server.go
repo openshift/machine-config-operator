@@ -21,7 +21,7 @@ var _ = Server(&bootstrapServer{})
 type bootstrapServer struct {
 
 	// serverBaseDir is the root, relative to which
-	// the machine pool, configs will be picked
+	// the MachineConfigPool configs will be picked
 	serverBaseDir string
 
 	kubeconfigFunc kubeconfigFunc
@@ -59,7 +59,7 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
 
 	// 1. Read the Machine Config Pool object.
-	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machinePool+".yaml")
+	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machineConfigPool+".yaml")
 	glog.Infof("reading file %q", fileName)
 	data, err := ioutil.ReadFile(fileName)
 	if os.IsNotExist(err) {
