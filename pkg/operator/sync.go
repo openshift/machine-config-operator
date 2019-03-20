@@ -157,9 +157,6 @@ func (optr *Operator) syncMachineConfigController(config renderConfig) error {
 	}
 	mcc := resourceread.ReadDeploymentV1OrDie(mccBytes)
 
-	// store version of machineconfigcontroller
-	optr.vStore.Set("machineconfigcontroller", imageForContainer("machine-config-controller", mcc.Spec.Template.Spec.Containers))
-
 	_, updated, err := resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
 	if err != nil {
 		return err
@@ -230,9 +227,6 @@ func (optr *Operator) syncMachineConfigDaemon(config renderConfig) error {
 		return err
 	}
 	mcd := resourceread.ReadDaemonSetV1OrDie(mcdBytes)
-
-	// store version of machineconfigdaemon
-	optr.vStore.Set("machineconfigdaemon", imageForContainer("machine-config-daemon", mcd.Spec.Template.Spec.Containers))
 
 	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcd)
 	if err != nil {
@@ -305,9 +299,6 @@ func (optr *Operator) syncMachineConfigServer(config renderConfig) error {
 	}
 
 	mcs := resourceread.ReadDaemonSetV1OrDie(mcsBytes)
-
-	// store version of machineconfigserver
-	optr.vStore.Set("machineconfigserver", imageForContainer("machine-config-server", mcs.Spec.Template.Spec.Containers))
 
 	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcs)
 	if err != nil {
