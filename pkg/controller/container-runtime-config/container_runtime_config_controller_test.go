@@ -51,6 +51,7 @@ type fixture struct {
 	mcpLister  []*mcfgv1.MachineConfigPool
 	mccrLister []*mcfgv1.ContainerRuntimeConfig
 	imgLister  []*apicfgv1.Image
+	cvLister   []*apicfgv1.ClusterVersion
 
 	actions []core.Action
 
@@ -145,6 +146,18 @@ func newImageConfig(name string, regconf *apicfgv1.RegistrySources) *apicfgv1.Im
 	}
 }
 
+func newClusterVersionConfig(name, desiredImage string) *apicfgv1.ClusterVersion {
+	return &apicfgv1.ClusterVersion{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Status: apicfgv1.ClusterVersionStatus{
+			Desired: apicfgv1.Update{
+				Image: desiredImage,
+			},
+		},
+	}
+}
+
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.imgClient = fakeconfigv1client.NewSimpleClientset(f.imgObjects...)
@@ -156,12 +169,14 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		ci.Config().V1().Images(),
+		ci.Config().V1().ClusterVersions(),
 		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.imgListerSynced = alwaysReady
+	c.clusterVersionListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -182,6 +197,9 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, c := range f.imgLister {
 		ci.Config().V1().Images().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.cvLister {
+		ci.Config().V1().ClusterVersions().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -423,6 +441,7 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
 			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
 
@@ -430,6 +449,7 @@ func TestImageConfigCreate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.imgLister = append(f.imgLister, imgcfg1)
+			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 
 			f.expectGetMachineConfigAction(mcs1)
@@ -453,6 +473,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
 			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
 
@@ -460,6 +481,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.imgLister = append(f.imgLister, imgcfg1)
+			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 
 			f.expectGetMachineConfigAction(mcs1)
@@ -489,6 +511,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.imgLister = append(f.imgLister, imgcfg1)
+			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.objects = append(f.objects, mcs1, mcs2)
 
@@ -512,6 +535,72 @@ func TestImageConfigUpdate(t *testing.T) {
 
 			close(stopCh)
 		})
+	}
+}
+
+// TestRegistriesValidation tests the validity of registries allowed to be listed
+// under blocked registries
+func TestRegistriesValidation(t *testing.T) {
+	failureTests := []struct {
+		name   string
+		config *apicfgv1.RegistrySources
+	}{
+		{
+			name: "adding registry used by payload to blocked registries",
+			config: &apicfgv1.RegistrySources{
+				BlockedRegistries:  []string{"blah.io", "docker.io"},
+				InsecureRegistries: []string{"test.io"},
+			},
+		},
+	}
+
+	successTests := []struct {
+		name   string
+		config *apicfgv1.RegistrySources
+	}{
+		{
+			name: "adding registry used by payload to blocked registries",
+			config: &apicfgv1.RegistrySources{
+				BlockedRegistries:  []string{"docker.io"},
+				InsecureRegistries: []string{"blah.io"},
+			},
+		},
+	}
+
+	// Failure Tests
+	for _, test := range failureTests {
+		imgcfg := newImageConfig(test.name, test.config)
+		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
+		insecure, blocked, err := getValidRegistries(&cvcfg.Status, &imgcfg.Spec)
+		if err == nil {
+			t.Errorf("%s: failed", test.name)
+		}
+		for _, reg := range blocked {
+			if reg == "blah.io" {
+				t.Errorf("%s: failed to filter out registry being used by payload", test.name)
+			}
+		}
+		if len(insecure) == 0 {
+			t.Errorf("%s: failed to copy over the insecure registries from the image spec", test.name)
+		}
+	}
+
+	// Successful Tests
+	for _, test := range successTests {
+		imgcfg := newImageConfig(test.name, test.config)
+		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
+		insecure, blocked, err := getValidRegistries(&cvcfg.Status, &imgcfg.Spec)
+		if err != nil {
+			t.Errorf("%s: failed", test.name)
+		}
+		for _, reg := range blocked {
+			if reg == "blah.io" {
+				t.Errorf("%s: failed to filter out registry being used by payload", test.name)
+			}
+		}
+		if len(insecure) == 0 {
+			t.Errorf("%s: failed to copy over the insecure registries from the image spec", test.name)
+		}
 	}
 }
 
