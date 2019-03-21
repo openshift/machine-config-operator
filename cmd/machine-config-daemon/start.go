@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -109,9 +110,12 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
-		mcClient, err := cb.MachineConfigClient(componentName)
-		if err != nil {
-			glog.Info("Cannot initialize MC client, likely in onceFrom mode with Ignition")
+		var mcClient mcfgclientset.Interface
+		if cb != nil {
+			mcClient, err = cb.MachineConfigClient(componentName)
+			if err != nil {
+				glog.Info("Cannot initialize MC client, likely in onceFrom mode with Ignition")
+			}
 		}
 		dn, err = daemon.New(
 			startOpts.rootMount,
