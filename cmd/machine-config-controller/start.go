@@ -112,6 +112,7 @@ func createControllers(ctx *controllercommon.ControllerContext) []controllercomm
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().Images(),
+			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 			ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.ConfigClientOrDie("container-runtime-config-controller"),
