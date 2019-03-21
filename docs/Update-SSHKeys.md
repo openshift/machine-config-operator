@@ -20,7 +20,7 @@ You will need the following information for the MachineConfig that will be used 
 
 - `machineconfiguration.openshift.io/role:` the MachineConfig that is created will be applied to all nodes with the role specified here. For example: `master` or `worker`
 
-- `name:` each MachineConfig that you create must have a unique name. Do not reuse the same MachineConfig name. MachineConfigs are culmulative and applied in alphabetical/lexicographic order so that the last MachineConfig will be the final one applied. We recommend using a naming scheme that accounts for this such as: `ssh-workers-01`, `ssh-workers-02`, `ssh-master-01`, `ssh-masters-02`, etc...
+- `name:` each MachineConfig that you create must have a unique name. Do not reuse the same MachineConfig name. MachineConfigs are cumulative and applied in alphabetical/lexicographic order so that the last MachineConfig will be the final one applied. We recommend using a naming scheme that accounts for this such as: `ssh-workers-01`, `ssh-workers-02`, `ssh-master-01`, `ssh-masters-02`, etc...
 
 - `sshAuthorizedKeys:` you will need one or more public keys to be assigned to user `core`.  Multiple SSH Keys should begin on different lines and each be preceded by `-`.
 
@@ -58,21 +58,25 @@ Now with your new MachineConfig yaml file (using the example above):
     oc create -f example-ssh-update.yaml
 ```
 
-You should see the new MachineConfig name appear immediately, from our example config:
+You should see the new MachineConfig name appear almost immediately, from our example config:
 ```sh
     oc get machineconfigs
 
-    NAME                                      AGE
-    00-master                                 1h
-    00-worker                                 1h
-    01-master-kubelet                         1h
-    01-worker-kubelet                         1h
-    master-5f2f745c8182f910df286ccf01b9aecb   1h
-    master-79f1c73c1d9df168421612112efc1dde   1h
-    ssh-workers-01                            5s
-    worker-2d688eed7f057feb95d9beef6af93732   1h
-    worker-52df682dc5cb3976b063ef3f197ead5e   5s
-
+    NAME                                                        GENERATEDBYCONTROLLER              IGNITIONVERSION   CREATED
+    00-master                                                   4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    00-master-ssh                                               4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    00-worker                                                   4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    00-worker-ssh                                               4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    01-master-container-runtime                                 4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    01-master-kubelet                                           4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    01-worker-container-runtime                                 4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    01-worker-kubelet                                           4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    99-master-9c65f9fb-41d0-11e9-994d-02360d172130-registries   4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             84m
+    99-worker-9c67b221-41d0-11e9-994d-02360d172130-registries   4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             84m
+    rendered-master-a1884339a91f02f19898fe9c5929256b            4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    rendered-worker-777a036887bb25188f47c6d3219eabb9            4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             2s
+    rendered-worker-e99b9948bccfd387c71397b31e2c985e            4.0.0-alpha.0-83-g0a84145f-dirty   2.2.0             87m
+    ssh-workers-01                                                                                                   7s
 ```
 
 You are then able to monitor the MCD logs of a worker or master (whichever the config applied to), which should check the proposed changes and reboot into the new config:
