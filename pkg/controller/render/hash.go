@@ -21,7 +21,7 @@ var (
 )
 
 // Given a config from a pool, generate a name for the config
-// of the form <poolname>-<hash>
+// of the form rendered-<poolname>-<hash>
 func getMachineConfigHashedName(pool *mcfgv1.MachineConfigPool, config *mcfgv1.MachineConfig) (string, error) {
 	if config == nil {
 		return "", fmt.Errorf("empty machineconfig object")
@@ -36,7 +36,7 @@ func getMachineConfigHashedName(pool *mcfgv1.MachineConfigPool, config *mcfgv1.M
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s-%x", pool.GetName(), h), nil
+	return fmt.Sprintf("rendered-%s-%x", pool.GetName(), h), nil
 }
 
 func hashData(data []byte) ([]byte, error) {
