@@ -386,7 +386,7 @@
 
 [[projects]]
   branch = "release-1.12"
-  digest = "1:586055d6fbea67a7cac1f36523ebe9e085c2fead657bb7162b6dd886d0e09fad"
+  digest = "1:dcd7ddc83a6a34ba9cb0c98d8a849d5cc351e02e17c88056e6f2844b889a8ea5"
   name = "github.com/kubernetes-sigs/cri-o"
   packages = [
     "oci",
@@ -395,7 +395,7 @@
     "utils",
   ]
   pruneopts = "NUT"
-  revision = "84179cb1b3ac633a7434cec72966aba698216229"
+  revision = "0809b248a4691e5b82c192ad3c6c84d4705c1d89"
 
 [[projects]]
   digest = "1:2f42fa12d6911c7b7659738758631bec870b7e9b4c6be5444f963cdcfccc191f"
