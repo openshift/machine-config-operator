@@ -80,6 +80,9 @@ type Controller struct {
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
+	clusterVersionLister       cligolistersv1.ClusterVersionLister
+	clusterVersionListerSynced cache.InformerSynced
+
 	queue    workqueue.RateLimitingInterface
 	imgQueue workqueue.RateLimitingInterface
 }
@@ -91,6 +94,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
+	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configClient configclientset.Interface,
@@ -136,6 +140,9 @@ func New(
 	ctrl.imgLister = imgInformer.Lister()
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
 
+	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
+	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -148,7 +155,8 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	glog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
 	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced, ctrl.imgListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
+		ctrl.imgListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -548,15 +556,33 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	// Fetch the ImageConfig
 	imgcfg, err := ctrl.imgLister.Get("cluster")
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("ImageConfig doesn't exist or has been deleted")
+		glog.V(2).Infof("ImageConfig 'cluster' does not exist or has been deleted")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// Deep-copy otherwise we are mutating our cache.
+	imgcfg = imgcfg.DeepCopy()
+
+	// Fetch the ClusterVersionConfig needed to get the registry being used by the payload
+	// so that we can avoid adding that registry to blocked registries in /etc/containers/registries.conf
+	clusterVersionCfg, err := ctrl.clusterVersionLister.Get("version")
+	if errors.IsNotFound(err) {
+		glog.Infof("ClusterVersionConfig 'version' does not exist or has been deleted")
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	// Deep-copy otherwise we are mutating our cache.
-	imgcfg = imgcfg.DeepCopy()
+	// Go through the registries in the image spec to get and validate the registries
+	insecureRegs, blockedRegs, err := getValidRegistries(&clusterVersionCfg.Status, &imgcfg.Spec)
+	if err != nil && err != errParsingReference {
+		glog.V(2).Infof("%v, skipping....", err)
+	} else if err == errParsingReference {
+		return err
+	}
 
 	// Find all the MachineConfig pools
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
@@ -577,12 +603,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 
 			var registriesTOML []byte
-			if imgcfg.Spec.RegistrySources.InsecureRegistries != nil || imgcfg.Spec.RegistrySources.BlockedRegistries != nil {
+			if insecureRegs != nil || blockedRegs != nil {
 				dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
 				if err != nil {
 					return fmt.Errorf("could not decode original registries config: %v", err)
 				}
-				registriesTOML, err = updateRegistriesConfig(dataURL.Data, imgcfg.Spec)
+				registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs)
 				if err != nil {
 					return fmt.Errorf("could not update registries config with new changes: %v", err)
 				}
