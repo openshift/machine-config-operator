@@ -2,12 +2,12 @@ package containerruntimeconfig
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	"github.com/BurntSushi/toml"
+	"github.com/containers/image/docker/reference"
 	"github.com/containers/image/pkg/sysregistriesv2"
 	storageconfig "github.com/containers/storage/pkg/config"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -16,8 +16,8 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
-
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -27,6 +27,8 @@ const (
 	storageConfigPath    = "/etc/containers/storage.conf"
 	registriesConfigPath = "/etc/containers/registries.conf"
 )
+
+var errParsingReference error = errors.New("error parsing reference of desired image from cluster version config")
 
 // TOML-friendly explicit tables used for conversions.
 type tomlConfigStorage struct {
@@ -240,17 +242,17 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	return newData.Bytes(), nil
 }
 
-func updateRegistriesConfig(data []byte, internal apicfgv1.ImageSpec) ([]byte, error) {
+func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string) ([]byte, error) {
 	tomlConf := new(tomlConfigRegistries)
 	if _, err := toml.Decode(string(data), tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
 	}
 
-	if internal.RegistrySources.InsecureRegistries != nil {
-		tomlConf.Insecure = sysregistriesv2.V1TOMLregistries{Registries: internal.RegistrySources.InsecureRegistries}
+	if internalInsecure != nil {
+		tomlConf.Insecure = sysregistriesv2.V1TOMLregistries{Registries: internalInsecure}
 	}
-	if internal.RegistrySources.BlockedRegistries != nil {
-		tomlConf.Block = sysregistriesv2.V1TOMLregistries{Registries: internal.RegistrySources.BlockedRegistries}
+	if internalBlocked != nil {
+		tomlConf.Block = sysregistriesv2.V1TOMLregistries{Registries: internalBlocked}
 	}
 
 	var newData bytes.Buffer
@@ -295,4 +297,34 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 	}
 
 	return nil
+}
+
+// getValidRegistries gets the insecure and blocked registries in the image spec and validates that the user is not adding
+// the registry being used by the payload to the list of blocked registries.
+// If the user is, we drop that registry and continue with syncing the registries.conf with the other registry options
+func getValidRegistries(clusterVersionStatus *apicfgv1.ClusterVersionStatus, imgSpec *apicfgv1.ImageSpec) ([]string, []string, error) {
+	if clusterVersionStatus == nil || imgSpec == nil {
+		return nil, nil, nil
+	}
+
+	var blockedRegs []string
+	// Copy the insecure registries from the spec
+	insecureRegs := imgSpec.RegistrySources.InsecureRegistries
+
+	// Get the registry being used by the payload from the clusterversion config
+	ref, err := reference.ParseNamed(clusterVersionStatus.Desired.Image)
+	if err != nil {
+		return nil, nil, errParsingReference
+	}
+	payloadReg := reference.Domain(ref)
+	for i, reg := range imgSpec.RegistrySources.BlockedRegistries {
+		// if there is a match, return all the blocked registries except the one that matched and return an error as well
+		if reg == payloadReg {
+			blockedRegs = append(blockedRegs, imgSpec.RegistrySources.BlockedRegistries[i+1:]...)
+			return insecureRegs, blockedRegs, fmt.Errorf("error adding %q to blocked registries, cannot block the registry being used by the payload", payloadReg)
+		}
+		// Was not a match to the registry being used by the payload, so add to valid blocked registries
+		blockedRegs = append(blockedRegs, reg)
+	}
+	return insecureRegs, blockedRegs, nil
 }
