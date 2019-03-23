@@ -47,7 +47,11 @@ func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
 	return nil, fmt.Errorf("Could not find Kubelet Config")
 }
 
-func getManagedKey(pool *mcfgv1.MachineConfigPool, config *mcfgv1.KubeletConfig) string {
+func getManagedFeaturesKey(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("98-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
+}
+
+func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
 }
 
@@ -65,7 +69,7 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		if !v.IsValid() {
 			continue
 		}
-		err := fmt.Errorf("%v is not allowed to be set.", bannedFieldName)
+		err := fmt.Errorf("%v is not allowed to be set", bannedFieldName)
 		switch v.Kind() {
 		case reflect.Slice:
 			if v.Len() > 0 {
@@ -89,6 +93,10 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 				if d.Duration.String() != "0s" {
 					return err
 				}
+			}
+		case reflect.Map:
+			if len(v.MapKeys()) > 0 {
+				return err
 			}
 		default:
 			return fmt.Errorf("Invalid type in field %v", bannedFieldName)

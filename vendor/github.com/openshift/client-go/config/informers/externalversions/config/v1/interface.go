@@ -20,10 +20,10 @@ type Interface interface {
 	ClusterVersions() ClusterVersionInformer
 	// Consoles returns a ConsoleInformer.
 	Consoles() ConsoleInformer
-	// DNSs returns a DNSInformer.
-	DNSs() DNSInformer
-	// Features returns a FeaturesInformer.
-	Features() FeaturesInformer
+	// DNSes returns a DNSInformer.
+	DNSes() DNSInformer
+	// FeatureGates returns a FeatureGateInformer.
+	FeatureGates() FeatureGateInformer
 	// Images returns a ImageInformer.
 	Images() ImageInformer
 	// Infrastructures returns a InfrastructureInformer.
@@ -38,8 +38,8 @@ type Interface interface {
 	Projects() ProjectInformer
 	// Proxies returns a ProxyInformer.
 	Proxies() ProxyInformer
-	// Schedulings returns a SchedulingInformer.
-	Schedulings() SchedulingInformer
+	// Schedulers returns a SchedulerInformer.
+	Schedulers() SchedulerInformer
 }
 
 type version struct {
@@ -83,14 +83,14 @@ func (v *version) Consoles() ConsoleInformer {
 	return &consoleInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// DNSs returns a DNSInformer.
-func (v *version) DNSs() DNSInformer {
+// DNSes returns a DNSInformer.
+func (v *version) DNSes() DNSInformer {
 	return &dNSInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Features returns a FeaturesInformer.
-func (v *version) Features() FeaturesInformer {
-	return &featuresInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+// FeatureGates returns a FeatureGateInformer.
+func (v *version) FeatureGates() FeatureGateInformer {
+	return &featureGateInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // Images returns a ImageInformer.
@@ -128,7 +128,7 @@ func (v *version) Proxies() ProxyInformer {
 	return &proxyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// Schedulings returns a SchedulingInformer.
-func (v *version) Schedulings() SchedulingInformer {
-	return &schedulingInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+// Schedulers returns a SchedulerInformer.
+func (v *version) Schedulers() SchedulerInformer {
+	return &schedulerInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

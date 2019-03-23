@@ -61,6 +61,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+
 		close(ctrlctx.InformersStarted)
 
 		for _, c := range controllers {
@@ -103,6 +104,7 @@ func createControllers(ctx *controllercommon.ControllerContext) []controllercomm
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
+			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
 			ctx.ClientBuilder.KubeClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("kubelet-config-controller"),
 		),
