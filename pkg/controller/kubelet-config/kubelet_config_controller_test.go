@@ -22,7 +22,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
+	osev1 "github.com/openshift/api/config/v1"
+	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
+
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
@@ -39,21 +43,25 @@ const (
 type fixture struct {
 	t *testing.T
 
-	client *fake.Clientset
+	client    *fake.Clientset
+	oseclient *oseconfigfake.Clientset
 
-	ccLister  []*mcfgv1.ControllerConfig
-	mcpLister []*mcfgv1.MachineConfigPool
-	mckLister []*mcfgv1.KubeletConfig
+	ccLister   []*mcfgv1.ControllerConfig
+	mcpLister  []*mcfgv1.MachineConfigPool
+	mckLister  []*mcfgv1.KubeletConfig
+	featLister []*osev1.FeatureGate
 
 	actions []core.Action
 
-	objects []runtime.Object
+	objects    []runtime.Object
+	oseobjects []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
 	f := &fixture{}
 	f.t = t
 	f.objects = []runtime.Object{}
+	f.oseobjects = []runtime.Object{}
 	return f
 }
 
@@ -87,6 +95,17 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 			OSImageURL: osurl,
 			Config:     ignv2_2types.Config{Storage: ignv2_2types.Storage{Files: files}},
 		},
+	}
+}
+
+func newFeatures(name string, enabled, disabled []string, labels map[string]string) *osev1.FeatureGate {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return &osev1.FeatureGate{
+		TypeMeta:   metav1.TypeMeta{APIVersion: osev1.GroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
+		Spec:       osev1.FeatureGateSpec{FeatureSet: ""},
 	}
 }
 
@@ -130,17 +149,23 @@ func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfigu
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, 0)
+	featinformer := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
+
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
-		k8sfake.NewSimpleClientset(), f.client)
-
+		featinformer.Config().V1().FeatureGates(),
+		k8sfake.NewSimpleClientset(),
+		f.client,
+	)
 	c.mcpListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
+	c.featListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -156,6 +181,9 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, c := range f.mckLister {
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.featLister {
+		featinformer.Config().V1().FeatureGates().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -202,6 +230,17 @@ func filterInformerActions(actions []core.Action) []core.Action {
 		ret = append(ret, action)
 	}
 
+	return ret
+}
+
+// filterOSEActions filters list and watch actions for testing resources.
+// Since list and watch don't change resource state we can filter it to lower
+// nose level in our tests.
+func filterOSEActions(actions []core.Action) []core.Action {
+	ret := []core.Action{}
+	for _, action := range actions {
+		ret = append(ret, action)
+	}
 	return ret
 }
 
@@ -279,7 +318,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := newMachineConfig(getManagedKey(mcp, kc1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs := newMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -306,7 +345,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := newMachineConfig(getManagedKey(mcp, kc1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs := newMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -401,6 +440,14 @@ func TestKubeletConfigBlacklistedOptions(t *testing.T) {
 				StaticPodPath: "some_value",
 			},
 		},
+		{
+			name: "user cannot supply features gates",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				FeatureGates: map[string]bool{
+					"SomeFeatureGate": true,
+				},
+			},
+		},
 	}
 
 	successTests := []struct {
@@ -431,6 +478,36 @@ func TestKubeletConfigBlacklistedOptions(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: failed with %v. should have succeeded", test.name, err)
 		}
+	}
+}
+
+func TestKubeletFeatureExists(t *testing.T) {
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig("test-cluster", platform)
+			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
+			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
+			mcs := newMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			features := newFeatures("cluster", []string{"DynamicAuditing"}, []string{"ExpandPersistentVolumes"}, nil)
+			f.featLister = append(f.featLister, features)
+
+			f.expectGetMachineConfigAction(mcs)
+			f.expectCreateMachineConfigAction(mcs)
+			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
+			f.expectUpdateKubeletConfig(kc1)
+
+			f.run(getKey(kc1, t))
+		})
 	}
 }
 

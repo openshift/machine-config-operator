@@ -30,9 +30,9 @@ type ConsoleListerExpansion interface{}
 // DNSLister.
 type DNSListerExpansion interface{}
 
-// FeaturesListerExpansion allows custom methods to be added to
-// FeaturesLister.
-type FeaturesListerExpansion interface{}
+// FeatureGateListerExpansion allows custom methods to be added to
+// FeatureGateLister.
+type FeatureGateListerExpansion interface{}
 
 // ImageListerExpansion allows custom methods to be added to
 // ImageLister.
@@ -62,6 +62,6 @@ type ProjectListerExpansion interface{}
 // ProxyLister.
 type ProxyListerExpansion interface{}
 
-// SchedulingListerExpansion allows custom methods to be added to
-// SchedulingLister.
-type SchedulingListerExpansion interface{}
+// SchedulerListerExpansion allows custom methods to be added to
+// SchedulerLister.
+type SchedulerListerExpansion interface{}
