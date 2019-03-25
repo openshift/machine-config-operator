@@ -12,26 +12,21 @@ import (
 // MergeMachineConfigs combines multiple machineconfig objects into one object.
 // It sorts all the configs in increasing order of their name.
 // It uses the Ign config from first object as base and appends all the rest.
-// It uses the first non-empty OSImageURL.
-func MergeMachineConfigs(configs []*MachineConfig) *MachineConfig {
+// It uses only the OSImageURL provided by the CVO and ignores any MC provided OSImageURL.
+func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineConfig {
 	if len(configs) == 0 {
 		return nil
 	}
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
-	outOSImageURL := configs[0].Spec.OSImageURL
 	outIgn := configs[0].Spec.Config
 	for idx := 1; idx < len(configs); idx++ {
-		config := configs[idx]
-		if outOSImageURL == "" {
-			outOSImageURL = config.Spec.OSImageURL
-		}
-		outIgn = ignv2_2.Append(outIgn, config.Spec.Config)
+		outIgn = ignv2_2.Append(outIgn, configs[idx].Spec.Config)
 	}
 
 	return &MachineConfig{
 		Spec: MachineConfigSpec{
-			OSImageURL: outOSImageURL,
+			OSImageURL: osImageURL,
 			Config:     outIgn,
 		},
 	}

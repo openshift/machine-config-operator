@@ -466,7 +466,15 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return nil
 	}
 
-	generated, err := generateRenderedMachineConfig(pool, configs)
+	cc, err := ctrl.ccLister.List(labels.Everything())
+	if err != nil {
+		return fmt.Errorf("could not enumerate ControllerConfig %s", err)
+	}
+	if len(cc) == 0 {
+		return fmt.Errorf("ControllerConfigList is empty")
+	}
+
+	generated, err := generateRenderedMachineConfig(pool, configs, cc[0])
 	if err != nil {
 		return err
 	}
@@ -505,7 +513,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 }
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
-func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, error) {
+func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	// Before merging all MCs for a specific pool, let's make sure each contains a valid Ignition Config
 	for _, config := range configs {
 		rpt := validate.ValidateWithoutSource(reflect.ValueOf(config.Spec.Config.Ignition))
@@ -513,7 +521,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 			return nil, fmt.Errorf("machine config: %v contains invalid ignition config: %v", config.ObjectMeta.Name, rpt)
 		}
 	}
-	merged := mcfgv1.MergeMachineConfigs(configs)
+	merged := mcfgv1.MergeMachineConfigs(configs, cconfig.Spec.OSImageURL)
 	hashedName, err := getMachineConfigHashedName(pool, merged)
 	if err != nil {
 		return nil, err
@@ -533,7 +541,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
@@ -544,7 +552,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		generated, err := generateRenderedMachineConfig(pool, pcs)
+		generated, err := generateRenderedMachineConfig(pool, pcs, cconfig)
 		if err != nil {
 			return nil, nil, err
 		}

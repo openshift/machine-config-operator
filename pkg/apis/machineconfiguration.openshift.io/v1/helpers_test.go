@@ -122,51 +122,6 @@ func TestRemoveMachineConfigPoolCondition(t *testing.T) {
 		})
 	}
 }
-
-func TestMergeMachineConfigs(t *testing.T) {
-	var configs []*MachineConfig
-	configs = append(configs, &MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "4"},
-		Spec: MachineConfigSpec{
-			OSImageURL: "",
-		},
-	})
-
-	configs = append(configs, &MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "3"},
-		Spec: MachineConfigSpec{
-			OSImageURL: "example.com/os@sha256:notthetarget",
-		},
-	})
-
-	configs = append(configs, &MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "0"},
-		Spec: MachineConfigSpec{
-			OSImageURL: "",
-		},
-	})
-
-	targetOSImageURL := "example.com/os@sha256:thetarget"
-	configs = append(configs, &MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "1"},
-		Spec: MachineConfigSpec{
-			OSImageURL: targetOSImageURL,
-		},
-	})
-
-	configs = append(configs, &MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "2"},
-		Spec: MachineConfigSpec{
-			OSImageURL: "",
-		},
-	})
-
-	merged := MergeMachineConfigs(configs)
-	if merged.Spec.OSImageURL != targetOSImageURL {
-		t.Errorf("OSImageURL expected: %s, received: %s", targetOSImageURL, merged.Spec.OSImageURL)
-	}
-}
-
 func TestIsControllerConfigCompleted(t *testing.T) {
 	tests := []struct {
 		obsrvdGen int64
