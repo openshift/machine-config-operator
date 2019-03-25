@@ -333,7 +333,7 @@ rules:
   resources: ["configmaps", "secrets"]
   verbs: ["*"]
 - apiGroups: ["config.openshift.io"]
-  resources: ["images", "clusterversions"]
+  resources: ["images", "clusterversions", "featuregates"]
   verbs: ["*"]
 `)
 
