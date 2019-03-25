@@ -310,17 +310,13 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 }
 
 func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2types.File, error) {
-	// Enumerate the controller config
-	cc, err := ctrl.ccLister.List(labels.Everything())
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return nil, fmt.Errorf("could not enumerate ControllerConfig %s", err)
-	}
-	if len(cc) == 0 {
-		return nil, fmt.Errorf("ControllerConfigList is empty")
+		return nil, fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 	// Render the default templates
 	tmplPath := filepath.Join(ctrl.templatesDir, role)
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc[0].Spec}
+	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, tmplPath)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error %s", err)

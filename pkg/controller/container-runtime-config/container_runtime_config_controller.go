@@ -335,17 +335,13 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
 func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*ignv2_2types.File, *ignv2_2types.File, *ignv2_2types.File, error) {
-	// Enumerate the controller config
-	cc, err := ctrl.ccLister.List(labels.Everything())
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not enumerate ControllerConfig %s", err)
-	}
-	if len(cc) == 0 {
-		return nil, nil, nil, fmt.Errorf("controllerConfigList is empty")
+		return nil, nil, nil, fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 	// Render the default templates
 	tmplPath := filepath.Join(ctrl.templatesDir, role)
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc[0].Spec}
+	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, tmplPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)

@@ -270,8 +270,8 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	cc := newControllerConfig("test")
 	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
@@ -298,8 +298,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	cc := newControllerConfig("test")
-
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
 	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
@@ -329,7 +328,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	cc := newControllerConfig("test")
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
@@ -367,7 +366,7 @@ func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
 		newMachineConfig("00-test-cluster-master-0", map[string]string{"node-role": "master"}, "dummy-change", []ignv2_2types.File{}),
 	}
 
-	cc := newControllerConfig("test")
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
@@ -392,7 +391,7 @@ func TestDoNothing(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	cc := newControllerConfig("test")
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
 	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
