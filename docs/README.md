@@ -68,6 +68,8 @@ metadata:
   name: 50-examplecorp-chrony
 spec:
   config:
+    ignition:
+      version: 2.2.0
     storage:
       files:
       - contents:
@@ -82,21 +84,22 @@ spec:
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: 2019-02-03T16:51:18Z
+  creationTimestamp: 2019-03-25T18:25:39Z
   generation: 1
   labels:
     machineconfiguration.openshift.io/role: worker
   name: 50-examplecorp-chrony
-  resourceVersion: "24634"
+  resourceVersion: "186713"
   selfLink: /apis/machineconfiguration.openshift.io/v1/machineconfigs/50-examplecorp-chrony
-  uid: ed13afd1-27d3-11e9-a281-067ebaf71038
+  uid: 6445154f-4f2b-11e9-91e1-021aaf2ce4c0
 spec:
   config:
+    ignition:
+      version: 2.2.0
     storage:
       files:
       - contents:
           source: data:,server%20foo.example.net%20maxdelay%200.4%20offline%0Aserver%20bar.example.net%20maxdelay%200.4%20offline%0Aserver%20baz.example.net%20maxdelay%200.4%20offline
-          verification: {}
         filesystem: root
         mode: 420
         path: /etc/chrony.conf
