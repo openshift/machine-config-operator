@@ -254,6 +254,9 @@ func nodeChanged(old, cur *corev1.Node) bool {
 	return false
 }
 
+// getPoolForNode chooses the MachineConfigPool that should be used for a given node.
+// It disambiguates in the case where e.g. a node has both master/worker roles applied,
+// and where a custom role may be used.
 func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfigPool, error) {
 	pl, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -279,10 +282,37 @@ func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfig
 		// This is not an error, as there might be nodes in cluster that are not managed by machineconfigpool.
 		return nil, nil
 	}
-	if len(pools) > 1 {
-		return nil, fmt.Errorf("node %s belongs to more than one MachineConfigPool, cannot proceed with this Node", node.Name)
+
+	var master, worker *mcfgv1.MachineConfigPool
+	var custom []*mcfgv1.MachineConfigPool
+	for _, pool := range pools {
+		if pool.Name == "master" {
+			master = pool
+		} else if pool.Name == "worker" {
+			worker = pool
+		} else {
+			custom = append(custom, pool)
+		}
 	}
-	return pools[0], nil
+
+	if len(custom) > 1 {
+		return nil, fmt.Errorf("node %s belongs to %d custom roles, cannot proceed with this Node", node.Name, len(custom))
+	} else if len(custom) == 1 {
+		// We don't support making custom pools for masters
+		if master != nil {
+			return nil, fmt.Errorf("node %s has both master role and custom role %s", node.Name, custom[0].Name)
+		}
+		// One custom role, let's use its pool
+		return custom[0], nil
+	} else if master != nil {
+		// In the case where a node is both master/worker, have it live under
+		// the master pool. This occurs in CodeReadyContainers and general
+		// "single node" deployments, which one may want to do for testing bare
+		// metal, etc.
+		return master, nil
+	}
+	// Otherwise, it's a worker with no custom roles.
+	return worker, nil
 }
 
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
