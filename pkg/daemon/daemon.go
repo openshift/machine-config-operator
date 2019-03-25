@@ -319,9 +319,15 @@ func (dn *Daemon) bootstrapNode() error {
 		return err
 	}
 	dn.node = node
+	if _, err := os.Stat("/etc/defaults/rhcos/reboot-needed"); err == nil {
+		if err := os.Remove("/etc/defaults/rhcos/reboot-needed"); err != nil {
+			return err
+		}
+	}
 	if err := dn.CheckStateOnBoot(); err != nil {
 		return err
 	}
+
 	// finished syncing node for the first time
 	dn.booting = false
 	return nil
@@ -330,6 +336,8 @@ func (dn *Daemon) bootstrapNode() error {
 func (dn *Daemon) handleErr(err error, key interface{}) {
 	if err == nil {
 		dn.queue.Forget(key)
+		// This is a workaround to have the controller keep calling the syncHandler for the MCD reboot signaling
+		dn.queue.AddAfter(key, 5*time.Minute)
 		return
 	}
 
@@ -397,6 +405,18 @@ func (dn *Daemon) syncNode(key string) error {
 		if needUpdate {
 			if err := dn.triggerUpdateWithMachineConfig(nil, nil); err != nil {
 				glog.Infof("Unable to apply update: %s", err)
+				return err
+			}
+		}
+		// FIXME: this is a temporary workaround, remove once an MCD signaling system is in place
+		if _, err := os.Stat("/etc/defaults/rhcos/reboot-needed"); err == nil {
+			dn.catchIgnoreSIGTERM()
+			if err := dn.drainNode(); err != nil {
+				dn.cancelSIGTERM()
+				return err
+			}
+			if err := dn.reboot("rebooting due to another component signaling"); err != nil {
+				dn.catchIgnoreSIGTERM()
 				return err
 			}
 		}

@@ -94,6 +94,45 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
+func (dn *Daemon) drainNode() error {
+	// Skip draining of the node when we're not cluster driven
+	if dn.onceFrom != "" {
+		return nil
+	}
+
+	glog.Info("Update prepared; draining the node")
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 10 * time.Second,
+		Factor:   2,
+	}
+	var lastErr error
+	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
+			DeleteLocalData:    true,
+			Force:              true,
+			GracePeriodSeconds: 600,
+			IgnoreDaemonsets:   true,
+		})
+		if err == nil {
+			return true, nil
+		}
+		lastErr = err
+		glog.Infof("Draining failed with: %v, retrying", err)
+		return false, nil
+
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
+		}
+		return errors.Wrap(err, "failed to drain node")
+	}
+	glog.Info("Node successfully drained")
+	return nil
+}
+
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
@@ -101,39 +140,8 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 		return err
 	}
 
-	// Skip draining of the node when we're not cluster driven
-	if dn.onceFrom == "" {
-		glog.Info("Update prepared; draining the node")
-
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
-
-		backoff := wait.Backoff{
-			Steps:    5,
-			Duration: 10 * time.Second,
-			Factor:   2,
-		}
-		var lastErr error
-		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-			err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
-				DeleteLocalData:    true,
-				Force:              true,
-				GracePeriodSeconds: 600,
-				IgnoreDaemonsets:   true,
-			})
-			if err == nil {
-				return true, nil
-			}
-			lastErr = err
-			glog.Infof("Draining failed with: %v, retrying", err)
-			return false, nil
-
-		}); err != nil {
-			if err == wait.ErrWaitTimeout {
-				return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
-			}
-			return errors.Wrap(err, "failed to drain node")
-		}
-		glog.Info("Node successfully drained")
+	if err := dn.drainNode(); err != nil {
+		return err
 	}
 
 	if err := dn.writePendingState(newConfig); err != nil {
