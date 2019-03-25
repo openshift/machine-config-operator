@@ -1,5 +1,6 @@
 # machine-config-operator
 
+
 This operator is an integral part of the operator-focused OpenShift 4 platform.
 It manages and applies configuration and updates of the base operating system
 and container runtime; essentially everything between the kernel and kubelet.
