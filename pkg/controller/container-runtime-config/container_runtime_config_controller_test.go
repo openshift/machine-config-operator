@@ -29,6 +29,7 @@ import (
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 )
 
@@ -331,7 +332,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster", platform)
+			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
@@ -362,7 +363,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster", platform)
+			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
@@ -437,7 +438,7 @@ func TestImageConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster", platform)
+			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
@@ -469,7 +470,7 @@ func TestImageConfigUpdate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig("test-cluster", platform)
+			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
