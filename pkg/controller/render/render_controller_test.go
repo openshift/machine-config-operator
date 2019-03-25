@@ -11,6 +11,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,8 +85,9 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
-	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(), i.Machineconfiguration().V1().ControllerConfigs(),
-		k8sfake.NewSimpleClientset(), f.client)
+
+	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
+		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -105,6 +107,10 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, m := range f.mcLister {
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
+	}
+
+	for _, m := range f.ccLister {
+		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(m)
 	}
 
 	return c
@@ -235,6 +241,7 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
 			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+			OSImageURL: "dummy",
 		},
 		Status: mcfgv1.ControllerConfigStatus{
 			Conditions: []mcfgv1.ControllerConfigStatusCondition{
@@ -263,9 +270,9 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	cc := newControllerConfig("test-cluster-configcreate")
-	f.ccLister = append(f.ccLister, cc)
 
+	cc := newControllerConfig("test")
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.mcLister = append(f.mcLister, mcs...)
@@ -291,13 +298,16 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	_, err := generateRenderedMachineConfig(mcp, mcs)
+	cc := newControllerConfig("test")
+
+
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
 		t.Fatalf("expected no error. Got: %v", err)
 	}
 
 	mcs[1].Spec.Config.Ignition.Version = ""
-	_, err = generateRenderedMachineConfig(mcp, mcs)
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
 	if err == nil {
 		t.Fatalf("expected error. mcs contains a machine config with invalid ignconfig version")
 	}
@@ -319,14 +329,15 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	gmc, err := generateRenderedMachineConfig(mcp, mcs)
+	cc := newControllerConfig("test")
+
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gmc.Spec.OSImageURL = "why-did-you-change-it"
 	mcp.Status.Configuration.Name = gmc.Name
 
-	cc := newControllerConfig("test-cluster-configcreate")
 	f.ccLister = append(f.ccLister, cc)
 
 	f.mcpLister = append(f.mcpLister, mcp)
@@ -338,7 +349,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.mcLister = append(f.mcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
-	expmc, err := generateRenderedMachineConfig(mcp, mcs)
+	expmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,6 +358,22 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.expectUpdateMachineConfigAction(expmc)
 
 	f.run(getKey(mcp, t))
+}
+
+func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
+	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
+	mcs := []*mcfgv1.MachineConfig{
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy-test-1", []ignv2_2types.File{}),
+		newMachineConfig("00-test-cluster-master-0", map[string]string{"node-role": "master"}, "dummy-change", []ignv2_2types.File{}),
+	}
+
+	cc := newControllerConfig("test")
+
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "dummy", gmc.Spec.OSImageURL)
 }
 
 func TestDoNothing(t *testing.T) {
@@ -365,13 +392,14 @@ func TestDoNothing(t *testing.T) {
 		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
 		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
 	}
-	gmc, err := generateRenderedMachineConfig(mcp, mcs)
+	cc := newControllerConfig("test")
+
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mcp.Status.Configuration.Name = gmc.Name
 
-	cc := newControllerConfig("test-cluster-configcreate")
 	f.ccLister = append(f.ccLister, cc)
 
 	f.mcpLister = append(f.mcpLister, mcp)
