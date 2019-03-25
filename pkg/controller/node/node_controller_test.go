@@ -233,8 +233,8 @@ func TestGetPoolForNode(t *testing.T) {
 		err      bool
 	}{{
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
-			newMachineConfigPool("test-cluster-worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), nil, "v0"),
+			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
+			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), nil, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role": ""},
 
@@ -242,14 +242,55 @@ func TestGetPoolForNode(t *testing.T) {
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
-			newMachineConfigPool("test-cluster-worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), nil, "v0"),
+			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
+			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), nil, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role": "master"},
 
-		expected: newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
+		expected: newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
 		err:      false,
 	}, {
+		pools: []*mcfgv1.MachineConfigPool{
+			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
+			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
+		},
+		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": ""},
+
+		expected: newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
+		err:      false,
+	}, {
+		pools: []*mcfgv1.MachineConfigPool{
+			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
+			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
+			newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+		},
+		nodeLabel: map[string]string{"node-role/worker": "", "node-role/infra": ""},
+
+		expected: newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+		err:      false,
+	}, {
+		pools: []*mcfgv1.MachineConfigPool{
+			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
+			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
+			newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+		},
+		nodeLabel: map[string]string{"node-role/master": "", "node-role/infra": ""},
+
+		expected: nil,
+		err:      true,
+	}, {
+		pools: []*mcfgv1.MachineConfigPool{
+			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
+			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
+			newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+			newMachineConfigPool("infra2", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), nil, "v0"),
+		},
+		nodeLabel: map[string]string{"node-role/infra": "", "node-role/infra2": ""},
+
+		expected: nil,
+		err:      true,
+	}, {
+
 		pools: []*mcfgv1.MachineConfigPool{
 			newMachineConfigPool("test-cluster-pool-1", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
 			newMachineConfigPool("test-cluster-pool-2", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
