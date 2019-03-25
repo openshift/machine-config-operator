@@ -441,14 +441,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 }
 
 func (ctrl *Controller) isControllerConfigCompleted() error {
-	cc, err := ctrl.ccLister.List(labels.Everything())
+	cc, err := ctrl.ccLister.Get(common.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not enumerate ControllerConfig %s", err)
+		return fmt.Errorf("could not get ControllerConfig %v", err)
 	}
-	if len(cc) == 0 {
-		return fmt.Errorf("controllerConfigList is empty")
-	}
-	return mcfgv1.IsControllerConfigCompleted(cc[0], ctrl.ccLister.Get)
+	return mcfgv1.IsControllerConfigCompleted(cc, ctrl.ccLister.Get)
 }
 
 // This function will eventually contain a sane garbage collection policy for rendered MachineConfigs;
