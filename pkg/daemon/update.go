@@ -330,7 +330,12 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		return errors.New("ignition directories section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
-		return errors.New("ignition links section contains changes")
+		// This means links have been added, as opposed as being removed as it happened with
+		// https://bugzilla.redhat.com/show_bug.cgi?id=1677198. This doesn't really change behavior
+		// since we still don't support links but we allow old MC to remove links when upgrading.
+		if len(newIgn.Storage.Links) != 0 {
+			return errors.New("ignition links section contains changes")
+		}
 	}
 
 	// Special case files append: if the new config wants us to append, then we
