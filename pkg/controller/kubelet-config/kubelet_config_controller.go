@@ -457,7 +457,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not encode YAML: %v", err)
 		}
 		if isNotFound {
-			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
+			ignConfig := ctrlcommon.NewIgnConfig()
+			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
 		mc.ObjectMeta.Annotations = map[string]string{
