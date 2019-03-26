@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
@@ -88,7 +87,8 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		isNotFound := errors.IsNotFound(err)
 		if isNotFound {
-			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
+			ignConfig := ctrlcommon.NewIgnConfig()
+			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
 		}
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
