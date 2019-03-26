@@ -1,7 +1,10 @@
 package bootstrap
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,6 +13,7 @@ import (
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -63,28 +67,35 @@ func (b *Bootstrap) Run(destDir string) error {
 			continue
 		}
 
-		path := filepath.Join(b.manifestDir, info.Name())
-		raw, err := ioutil.ReadFile(path)
+		file, err := os.Open(filepath.Join(b.manifestDir, info.Name()))
 		if err != nil {
-			return err
+			return fmt.Errorf("error opening %s: %v", file.Name(), err)
+		}
+		defer file.Close()
+
+		manifests, err := parseManifests(file.Name(), file)
+		if err != nil {
+			return fmt.Errorf("error parsing manifests from %s: %v", file.Name(), err)
 		}
 
-		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(v1.SchemeGroupVersion), raw)
-		if err != nil {
-			glog.V(4).Infof("skipping path because of error: %v", err)
-			// don't care
-			continue
-		}
+		for idx, m := range manifests {
+			obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(v1.SchemeGroupVersion), m.Raw)
+			if err != nil {
+				glog.V(4).Infof("skipping path %q [%d] manifest because of error: %v", file.Name(), idx+1, err)
+				// don't care
+				continue
+			}
 
-		switch obj := obji.(type) {
-		case *v1.MachineConfigPool:
-			pools = append(pools, obj)
-		case *v1.MachineConfig:
-			configs = append(configs, obj)
-		case *v1.ControllerConfig:
-			cconfig = obj
-		default:
-			glog.Infof("skipping %q %T", path, obji)
+			switch obj := obji.(type) {
+			case *v1.MachineConfigPool:
+				pools = append(pools, obj)
+			case *v1.MachineConfig:
+				configs = append(configs, obj)
+			case *v1.ControllerConfig:
+				cconfig = obj
+			default:
+				glog.Infof("skipping %q [%d] manifest because %T", file.Name(), idx+1, obji)
+			}
 		}
 	}
 
@@ -147,4 +158,49 @@ func getPullSecretFromSecret(sData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, s.Type)
 	}
 	return s.Data[corev1.DockerConfigJsonKey], nil
+}
+
+type manifest struct {
+	Raw []byte
+}
+
+// UnmarshalJSON unmarshals bytes of single kubernetes object to manifest.
+func (m *manifest) UnmarshalJSON(in []byte) error {
+	if m == nil {
+		return errors.New("Manifest: UnmarshalJSON on nil pointer")
+	}
+
+	// This happens when marshalling
+	// <yaml>
+	// ---	(this between two `---`)
+	// ---
+	// <yaml>
+	if bytes.Equal(in, []byte("null")) {
+		m.Raw = nil
+		return nil
+	}
+
+	m.Raw = append(m.Raw[0:0], in...)
+	return nil
+}
+
+// parseManifests parses a YAML or JSON document that may contain one or more
+// kubernetes resources.
+func parseManifests(filename string, r io.Reader) ([]manifest, error) {
+	d := yamlutil.NewYAMLOrJSONDecoder(r, 1024)
+	var manifests []manifest
+	for {
+		m := manifest{}
+		if err := d.Decode(&m); err != nil {
+			if err == io.EOF {
+				return manifests, nil
+			}
+			return manifests, fmt.Errorf("error parsing %q: %v", filename, err)
+		}
+		m.Raw = bytes.TrimSpace(m.Raw)
+		if len(m.Raw) == 0 || bytes.Equal(m.Raw, []byte("null")) {
+			continue
+		}
+		manifests = append(manifests, m)
+	}
 }
