@@ -81,9 +81,12 @@ func (b *Bootstrap) Run(destDir string) error {
 		for idx, m := range manifests {
 			obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(v1.SchemeGroupVersion), m.Raw)
 			if err != nil {
-				glog.V(4).Infof("skipping path %q [%d] manifest because of error: %v", file.Name(), idx+1, err)
-				// don't care
-				continue
+				if runtime.IsNotRegisteredError(err) {
+					// don't care
+					glog.V(4).Infof("skipping path %q [%d] manifest because it is not part of expected api group: %v", file.Name(), idx+1, err)
+					continue
+				}
+				return fmt.Errorf("error parsing %q [%d] manifest: %v", file.Name(), idx+1, err)
 			}
 
 			switch obj := obji.(type) {
@@ -94,7 +97,7 @@ func (b *Bootstrap) Run(destDir string) error {
 			case *v1.ControllerConfig:
 				cconfig = obj
 			default:
-				glog.Infof("skipping %q [%d] manifest because %T", file.Name(), idx+1, obji)
+				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
 		}
 	}
