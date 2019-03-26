@@ -324,12 +324,12 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 
 	for _, pool := range pools {
 		if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
-			return fmt.Errorf("pool %s has not progressed to latest configuration: %v", pool.Name, err)
+			return fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
 		}
 		if pool.Generation <= pool.Status.ObservedGeneration && pool.Status.MachineCount == pool.Status.UpdatedMachineCount && pool.Status.UnavailableMachineCount == 0 {
 			continue
 		}
-		return fmt.Errorf("error pool %s is not ready. status: (total: %d, updated: %d, unavailable: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+		return fmt.Errorf("error pool %s is not ready, retrying. Status: (total: %d, updated: %d, unavailable: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 	}
 	return nil
 }
