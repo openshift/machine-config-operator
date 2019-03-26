@@ -475,28 +475,6 @@
   revision = "8ae2a9c33ba2a3d2ed5dc13d536ca935fc9625b9"
 
 [[projects]]
-  digest = "1:f9c1fc8da2b44ba323ec3b338f0da9f375e26c787bc3a6ea241f9cb3f191cb62"
-  name = "github.com/openshift/cluster-network-operator"
-  packages = ["pkg/apis/networkoperator/v1"]
-  pruneopts = "NUT"
-  revision = "fb8b55a1072436a51b153de9acf5bf5525efcf83"
-
-[[projects]]
-  branch = "master"
-  digest = "1:cbb8020eac6e8a28e087a73ad96e8325c6d35383dd46cefb0e5dd6b33fee49c6"
-  name = "github.com/openshift/installer"
-  packages = [
-    "pkg/ipnet",
-    "pkg/types",
-    "pkg/types/aws",
-    "pkg/types/libvirt",
-    "pkg/types/none",
-    "pkg/types/openstack",
-  ]
-  pruneopts = "NUT"
-  revision = "9a710427c0d79a27dd0f0446b2e44cd263a476c7"
-
-[[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
   name = "github.com/openshift/kubernetes-drain"
   packages = ["."]
@@ -1151,14 +1129,6 @@
   pruneopts = "NUT"
   revision = "2b1ea019a3702bf220bab28c8e86b48cf0b05e5e"
 
-[[projects]]
-  digest = "1:84a8609383bec11b71d52dd813f33f1d16614b91966940bdc2aa79bea864fa25"
-  name = "sigs.k8s.io/controller-runtime"
-  packages = ["pkg/runtime/scheme"]
-  pruneopts = "NUT"
-  revision = "c63ebda0bf4be5f0a8abd4003e4ea546032545ba"
-  version = "v0.1.8"
-
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -1190,7 +1160,6 @@
     "github.com/openshift/client-go/config/informers/externalversions",
     "github.com/openshift/client-go/config/informers/externalversions/config/v1",
     "github.com/openshift/client-go/config/listers/config/v1",
-    "github.com/openshift/installer/pkg/types",
     "github.com/openshift/kubernetes-drain",
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
     "github.com/pkg/errors",
@@ -1212,6 +1181,7 @@
     "k8s.io/apimachinery/pkg/api/meta",
     "k8s.io/apimachinery/pkg/api/resource",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
+    "k8s.io/apimachinery/pkg/fields",
     "k8s.io/apimachinery/pkg/labels",
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
