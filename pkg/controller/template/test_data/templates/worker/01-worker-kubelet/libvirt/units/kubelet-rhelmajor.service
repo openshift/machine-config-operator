@@ -1,0 +1,16 @@
+contents: |
+  [Unit]
+  Description=Generate rhelmajor version for kubelet
+  Before=kubelet.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  EnvironmentFile=/etc/os-release
+  # Really we should fix VERSION_ID in rhcos but that requires rpm-ostree changes
+  ExecStart=/bin/sh -c '(echo -n RHELMAJOR= && if [ "${ID}" = rhcos ]; then echo ${VERSION} | cut -d . -f 2; else echo ${VERSION_ID} | cut -d . -f 1; fi) > /run/kubelet-rhelmajor'
+
+  [Install]
+  WantedBy=multi-user.target
+enabled: true
+name: kubelet-rhelmajor.service
