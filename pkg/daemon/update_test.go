@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/assert"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
@@ -71,8 +71,8 @@ func TestReconcilable(t *testing.T) {
 	// oldConfig is the current config of the fake system
 	oldConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Ignition: ignv2_2types.Ignition{
+			Config: igntypes.Config{
+				Ignition: igntypes.Ignition{
 					Version: "2.0.0",
 				},
 			},
@@ -82,9 +82,9 @@ func TestReconcilable(t *testing.T) {
 	// newConfig is the config that is being requested to apply to the system
 	newConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Ignition: ignv2_2types.Ignition{
-					Version: "2.2.0",
+			Config: igntypes.Config{
+				Ignition: igntypes.Ignition{
+					Version: "3.0.0",
 				},
 			},
 		},
@@ -95,31 +95,13 @@ func TestReconcilable(t *testing.T) {
 	checkIrreconcilableResults(t, "Ignition", isReconcilable)
 
 	// Match ignition versions
-	oldConfig.Spec.Config.Ignition.Version = "2.2.0"
+	oldConfig.Spec.Config.Ignition.Version = "3.0.0"
 	isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Ignition", isReconcilable)
 
-	// Verify Networkd unit changes react as expected
-	oldConfig.Spec.Config.Networkd = ignv2_2types.Networkd{}
-	newConfig.Spec.Config.Networkd = ignv2_2types.Networkd{
-		Units: []ignv2_2types.Networkdunit{
-			ignv2_2types.Networkdunit{
-				Name: "test.network",
-			},
-		},
-	}
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "Networkd", isReconcilable)
-
-	// Match Networkd
-	oldConfig.Spec.Config.Networkd = newConfig.Spec.Config.Networkd
-
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "Networkd", isReconcilable)
-
 	// Verify Disk changes react as expected
-	oldConfig.Spec.Config.Storage.Disks = []ignv2_2types.Disk{
-		ignv2_2types.Disk{
+	oldConfig.Spec.Config.Storage.Disks = []igntypes.Disk{
+		igntypes.Disk{
 			Device: "/one",
 		},
 	}
@@ -133,11 +115,11 @@ func TestReconcilable(t *testing.T) {
 	checkReconcilableResults(t, "Disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
-	oldFSPath := "/foo/bar"
-	oldConfig.Spec.Config.Storage.Filesystems = []ignv2_2types.Filesystem{
-		ignv2_2types.Filesystem{
-			Name: "user",
-			Path: &oldFSPath,
+	oldConfig.Spec.Config.Storage.Filesystems = []igntypes.Filesystem{
+		igntypes.Filesystem{
+			Path:   returnStrPtr("/foo/bar"),
+			Format: returnStrPtr("ext4"),
+			Device: "/my_device",
 		},
 	}
 
@@ -150,8 +132,8 @@ func TestReconcilable(t *testing.T) {
 	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
-	oldConfig.Spec.Config.Storage.Raid = []ignv2_2types.Raid{
-		ignv2_2types.Raid{
+	oldConfig.Spec.Config.Storage.Raid = []igntypes.Raid{
+		igntypes.Raid{
 			Name:  "data",
 			Level: "stripe",
 		},
@@ -167,12 +149,12 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Passwd Groups changes unsupported
 	oldConfig = &mcfgv1.MachineConfig{}
-	tempGroup := ignv2_2types.PasswdGroup{Name: "testGroup"}
+	tempGroup := igntypes.PasswdGroup{Name: "testGroup"}
 	newMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Passwd: ignv2_2types.Passwd{
-					Groups: []ignv2_2types.PasswdGroup{tempGroup},
+			Config: igntypes.Config{
+				Passwd: igntypes.Passwd{
+					Groups: []igntypes.PasswdGroup{tempGroup},
 				},
 			},
 		},
@@ -208,25 +190,25 @@ func TestReconcilableSSH(t *testing.T) {
 	}
 
 	// Check that updating SSH Key of user core supported
-	//tempUser1 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234"}}
+	//tempUser1 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"1234"}}
 	oldMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Ignition: ignv2_2types.Ignition{
-					Version: "2.2.0",
+			Config: igntypes.Config{
+				Ignition: igntypes.Ignition{
+					Version: "3.0.0",
 				},
 			},
 		},
 	}
-	tempUser1 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678", "abc"}}
+	tempUser1 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678", "abc"}}
 	newMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Ignition: ignv2_2types.Ignition{
-					Version: "2.2.0",
+			Config: igntypes.Config{
+				Ignition: igntypes.Ignition{
+					Version: "3.0.0",
 				},
-				Passwd: ignv2_2types.Passwd{
-					Users: []ignv2_2types.PasswdUser{tempUser1},
+				Passwd: igntypes.Passwd{
+					Users: []igntypes.PasswdUser{tempUser1},
 				},
 			},
 		},
@@ -236,30 +218,30 @@ func TestReconcilableSSH(t *testing.T) {
 	checkReconcilableResults(t, "SSH", errMsg)
 
 	// 	Check that updating User with User that is not core is not supported
-	tempUser2 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234"}}
+	tempUser2 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"1234"}}
 	oldMcfg.Spec.Config.Passwd.Users = append(oldMcfg.Spec.Config.Passwd.Users, tempUser2)
-	tempUser3 := ignv2_2types.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
+	tempUser3 := igntypes.PasswdUser{Name: "another user", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser3
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
-	tempUser4 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
+	tempUser4 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}, HomeDir: returnStrPtr("somedir")}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser4
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot add a user or have len(Passwd.Users)> 1
-	tempUser5 := ignv2_2types.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
+	tempUser5 := igntypes.PasswdUser{Name: "some user", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users = append(newMcfg.Spec.Config.Passwd.Users, tempUser5)
 
 	errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that user is not attempting to remove the only sshkey from core user
-	tempUser6 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{}}
+	tempUser6 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{}}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser6
 	newMcfg.Spec.Config.Passwd.Users = newMcfg.Spec.Config.Passwd.Users[:len(newMcfg.Spec.Config.Passwd.Users)-1]
 
@@ -297,19 +279,19 @@ func TestUpdateSSHKeys(t *testing.T) {
 		bootedOSImageURL:  "test",
 	}
 	// Set up machineconfigs that are identical except for SSH keys
-	tempUser := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234", "4567"}}
+	tempUser := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"1234", "4567"}}
 
 	newMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Passwd: ignv2_2types.Passwd{
-					Users: []ignv2_2types.PasswdUser{tempUser},
+			Config: igntypes.Config{
+				Passwd: igntypes.Passwd{
+					Users: []igntypes.PasswdUser{tempUser},
 				},
 			},
 		},
 	}
 
-	d.atomicSSHKeysWriter = func(user ignv2_2types.PasswdUser, keys string) error { return nil }
+	d.atomicSSHKeysWriter = func(user igntypes.PasswdUser, keys string) error { return nil }
 
 	err := d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
 	if err != nil {
@@ -352,26 +334,26 @@ func TestInvalidIgnConfig(t *testing.T) {
 
 	oldMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Ignition: ignv2_2types.Ignition{
-					Version: "2.2.0",
+			Config: igntypes.Config{
+				Ignition: igntypes.Ignition{
+					Version: "3.0.0",
 				},
 			},
 		},
 	}
 	// create file to write that contains an impermissable relative path
-	tempFileContents := ignv2_2types.FileContents{Source: "data:,hello%20world%0A"}
+	tempFileContents := igntypes.FileContents{Source: returnStrPtr("data:,hello%20world%0A")}
 	tempMode := 420
 	newMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ignv2_2types.Config{
-				Ignition: ignv2_2types.Ignition{
-					Version: "2.2.0",
+			Config: igntypes.Config{
+				Ignition: igntypes.Ignition{
+					Version: "3.0.0",
 				},
-				Storage: ignv2_2types.Storage{
-					Files: []ignv2_2types.File{
-						{Node: ignv2_2types.Node{Path: "home/core/test", Filesystem: "root"},
-							FileEmbedded1: ignv2_2types.FileEmbedded1{Contents: tempFileContents, Mode: &tempMode}},
+				Storage: igntypes.Storage{
+					Files: []igntypes.File{
+						{Node: igntypes.Node{Path: "home/core/test"},
+							FileEmbedded1: igntypes.FileEmbedded1{Contents: tempFileContents, Mode: &tempMode}},
 					},
 				},
 			},
@@ -398,4 +380,8 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 	if reconcilableError == nil {
 		t.Errorf("Different %s values should not be reconcilable.", key)
 	}
+}
+
+func returnStrPtr(somestring string) *string {
+	return &somestring
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
@@ -18,19 +18,19 @@ import (
 	kubeletconfigscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
 )
 
-func createNewKubeletIgnition(ymlconfig []byte) ignv2_2types.Config {
+func createNewKubeletIgnition(ymlconfig []byte) igntypes.Config {
 	mode := 0644
 	du := dataurl.New(ymlconfig, "text/plain")
 	du.Encoding = dataurl.EncodingASCII
-	tempFile := ignv2_2types.File{
-		Node: ignv2_2types.Node{
-			Filesystem: "root",
-			Path:       "/etc/kubernetes/kubelet.conf",
+	duString := du.String()
+	tempFile := igntypes.File{
+		Node: igntypes.Node{
+			Path: "/etc/kubernetes/kubelet.conf",
 		},
-		FileEmbedded1: ignv2_2types.FileEmbedded1{
+		FileEmbedded1: igntypes.FileEmbedded1{
 			Mode: &mode,
-			Contents: ignv2_2types.FileContents{
-				Source: du.String(),
+			Contents: igntypes.FileContents{
+				Source: &duString,
 			},
 		},
 	}
@@ -39,7 +39,7 @@ func createNewKubeletIgnition(ymlconfig []byte) ignv2_2types.Config {
 	return tempIgnConfig
 }
 
-func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
+func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	for _, c := range mc.Spec.Config.Storage.Files {
 		if c.Path == "/etc/kubernetes/kubelet.conf" {
 			return &c, nil

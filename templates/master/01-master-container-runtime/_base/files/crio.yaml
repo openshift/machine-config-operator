@@ -1,8 +1,7 @@
-filesystem: "root"
 mode: 0644
 path: "/etc/crio/crio.conf"
 contents:
-  inline: |
+  source: |
     # The "crio" table contains all of the server options.
     [crio]
 

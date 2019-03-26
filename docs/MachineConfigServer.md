@@ -60,7 +60,6 @@ It is recommended that the MachineConfigServer is run as a DaemonSet on all `mas
         "timeouts": {},
         "version": "2.2.0"
     },
-    "networkd": {},
     "passwd": {},
     "storage": {
         "files": [
@@ -168,7 +167,6 @@ It is recommended that the MachineConfigServer is run as a DaemonSet on all `mas
         "timeouts": {},
         "version": "2.2.0"
     },
-    "networkd": {},
     "passwd": {},
     "storage": {
         "files": [{

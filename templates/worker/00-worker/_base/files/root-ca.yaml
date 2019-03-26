@@ -2,5 +2,5 @@ filesystem: "root"
 mode: 0644
 path: "/etc/kubernetes/ca.crt"
 contents:
-  inline: |
+  source: |
 {{.RootCAData | toString | indent 4}}

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
@@ -39,16 +39,18 @@ func TestOverwrittenFile(t *testing.T) {
 		t.Errorf("Could not Lstat file: %v", err)
 	}
 	fileMode := int(fi.Mode().Perm())
+	contentsSource1 := dataurl.EncodeBytes([]byte("hello world\n"))
+	contentsSource2 := dataurl.EncodeBytes([]byte("hello\n"))
 
 	// validate single file
-	files := []ignv2_2types.File{
+	files := []igntypes.File{
 		{
-			Node: ignv2_2types.Node{
+			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
-				Contents: ignv2_2types.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello world\n")),
+			FileEmbedded1: igntypes.FileEmbedded1{
+				Contents: igntypes.FileContents{
+					Source: &contentsSource1,
 				},
 				Mode: &fileMode,
 			},
@@ -60,25 +62,25 @@ func TestOverwrittenFile(t *testing.T) {
 	}
 
 	// validate overwritten file
-	files = []ignv2_2types.File{
+	files = []igntypes.File{
 		{
-			Node: ignv2_2types.Node{
+			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
-				Contents: ignv2_2types.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello\n")),
+			FileEmbedded1: igntypes.FileEmbedded1{
+				Contents: igntypes.FileContents{
+					Source: &contentsSource2,
 				},
 				Mode: &fileMode,
 			},
 		},
 		{
-			Node: ignv2_2types.Node{
+			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
-				Contents: ignv2_2types.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello world\n")),
+			FileEmbedded1: igntypes.FileEmbedded1{
+				Contents: igntypes.FileContents{
+					Source: &contentsSource1,
 				},
 				Mode: &fileMode,
 			},

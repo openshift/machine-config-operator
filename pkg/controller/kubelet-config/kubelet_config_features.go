@@ -87,15 +87,19 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		isNotFound := errors.IsNotFound(err)
 		if isNotFound {
-			ignConfig := ctrlcommon.NewIgnConfig()
-			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
+			cfg := ctrlcommon.NewIgnConfig()
+			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &cfg)
 		}
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
 		if err != nil {
 			return err
 		}
-		dataURL, err := dataurl.DecodeString(originalKubeletIgn.Contents.Source)
+		sourceData := ctrlcommon.StrFromStrPtr(originalKubeletIgn.Contents.Source)
+		if len(sourceData) == 0 {
+			sourceData = "data:,"
+		}
+		dataURL, err := dataurl.DecodeString(sourceData)
 		if err != nil {
 			return err
 		}

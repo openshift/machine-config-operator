@@ -1,36 +1,3 @@
-contents: |
-  [Unit]
-  Description=Kubernetes Kubelet
-  Wants=rpc-statd.service
-
-  [Service]
-  Type=notify
-  ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
-  ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
-  EnvironmentFile=/etc/os-release
-  EnvironmentFile=-/etc/kubernetes/kubelet-workaround
-  EnvironmentFile=-/etc/kubernetes/kubelet-env
-
-  ExecStart=/usr/bin/hyperkube \
-      kubelet \
-        --config=/etc/kubernetes/kubelet.conf \
-        --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
-        --kubeconfig=/var/lib/kubelet/kubeconfig \
-        --container-runtime=remote \
-        --container-runtime-endpoint=/var/run/crio/crio.sock \
-        --allow-privileged \
-        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_version=${VERSION_ID},node.openshift.io/os_id=${ID} \
-        --minimum-container-ttl-duration=6m0s \
-        --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
-        --client-ca-file=/etc/kubernetes/ca.crt \
-        --cloud-provider= \
-        \
-        --anonymous-auth=false \
-
-  Restart=always
-  RestartSec=10
-
-  [Install]
-  WantedBy=multi-user.target
+contents: data:text/plain,%5BUnit%5D%0ADescription%3DKubernetes%20Kubelet%0AWants%3Drpc-statd.service%0A%0A%5BService%5D%0AType%3Dnotify%0AExecStartPre%3D%2Fbin%2Fmkdir%20--parents%20%2Fetc%2Fkubernetes%2Fmanifests%0AExecStartPre%3D%2Fbin%2Frm%20-f%20%2Fvar%2Flib%2Fkubelet%2Fcpu_manager_state%0AEnvironmentFile%3D%2Fetc%2Fos-release%0AEnvironmentFile%3D-%2Fetc%2Fkubernetes%2Fkubelet-workaround%0AEnvironmentFile%3D-%2Fetc%2Fkubernetes%2Fkubelet-env%0A%0AExecStart%3D%2Fusr%2Fbin%2Fhyperkube%20%5C%0A%20%20%20%20kubelet%20%5C%0A%20%20%20%20%20%20--config%3D%2Fetc%2Fkubernetes%2Fkubelet.conf%20%5C%0A%20%20%20%20%20%20--bootstrap-kubeconfig%3D%2Fetc%2Fkubernetes%2Fkubeconfig%20%5C%0A%20%20%20%20%20%20--kubeconfig%3D%2Fvar%2Flib%2Fkubelet%2Fkubeconfig%20%5C%0A%20%20%20%20%20%20--container-runtime%3Dremote%20%5C%0A%20%20%20%20%20%20--container-runtime-endpoint%3D%2Fvar%2Frun%2Fcrio%2Fcrio.sock%20%5C%0A%20%20%20%20%20%20--allow-privileged%20%5C%0A%20%20%20%20%20%20--node-labels%3Dnode-role.kubernetes.io%2Fworker%2Cnode.openshift.io%2Fos_version%3D%24%7BVERSION_ID%7D%2Cnode.openshift.io%2Fos_id%3D%24%7BID%7D%20%5C%0A%20%20%20%20%20%20--minimum-container-ttl-duration%3D6m0s%20%5C%0A%20%20%20%20%20%20--volume-plugin-dir%3D%2Fetc%2Fkubernetes%2Fkubelet-plugins%2Fvolume%2Fexec%20%5C%0A%20%20%20%20%20%20--client-ca-file%3D%2Fetc%2Fkubernetes%2Fca.crt%20%5C%0A%20%20%20%20%20%20--cloud-provider%3D%20%5C%0A%20%20%20%20%20%20%5C%0A%20%20%20%20%20%20--anonymous-auth%3Dfalse%20%5C%0A%0ARestart%3Dalways%0ARestartSec%3D10%0A%0A%5BInstall%5D%0AWantedBy%3Dmulti-user.target%0A
 enabled: true
 name: kubelet.service

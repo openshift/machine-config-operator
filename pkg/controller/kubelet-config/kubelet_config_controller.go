@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
@@ -309,7 +309,7 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2types.File, error) {
+func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*igntypes.File, error) {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get ControllerConfig %v", err)
@@ -429,7 +429,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
 		}
-		dataURL, err := dataurl.DecodeString(originalKubeletIgn.Contents.Source)
+		sourceData := ctrlcommon.StrFromStrPtr(originalKubeletIgn.Contents.Source)
+		if len(sourceData) == 0 {
+			sourceData = "data:,"
+		}
+		dataURL, err := dataurl.DecodeString(sourceData)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
 		}
@@ -453,8 +457,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not encode YAML: %v", err)
 		}
 		if isNotFound {
-			ignConfig := ctrlcommon.NewIgnConfig()
-			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
+			cfg := ctrlcommon.NewIgnConfig()
+			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &cfg)
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
 		mc.ObjectMeta.Annotations = map[string]string{

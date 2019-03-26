@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	ignv2_2 "github.com/coreos/ignition/config/v2_2"
+	ign "github.com/coreos/ignition/config/v3_0"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -21,7 +21,7 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 
 	outIgn := configs[0].Spec.Config
 	for idx := 1; idx < len(configs); idx++ {
-		outIgn = ignv2_2.Append(outIgn, configs[idx].Spec.Config)
+		outIgn = ign.Merge(outIgn, configs[idx].Spec.Config)
 	}
 
 	return &MachineConfig{

@@ -12,14 +12,13 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
-	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
-	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -82,7 +81,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 		if cfg.Annotations == nil {
 			cfg.Annotations = map[string]string{}
 		}
-		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Version.String()
+		cfg.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Version.String()
 	}
 
 	return cfgs, nil
@@ -241,7 +240,7 @@ const (
 )
 
 // MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
-func MachineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
+func MachineConfigFromIgnConfig(role string, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
 	labels := map[string]string{
 		machineConfigRoleLabelKey: role,
 	}
@@ -257,33 +256,39 @@ func MachineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.C
 	}
 }
 
-func transpileToIgn(files, units []string) (*ignv2_2types.Config, error) {
-	var ctCfg cttypes.Config
+func transpileToIgn(files, units []string) (*igntypes.Config, error) {
+	ignCfg := ctrlcommon.NewIgnConfig()
 
 	// Convert data to Ignition resources
 	for _, d := range files {
-		f := new(cttypes.File)
-		if err := yaml.Unmarshal([]byte(d), f); err != nil {
+		var f igntypes.File
+		if err := yaml.Unmarshal([]byte(d), &f); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
 		}
+		regdu := dataurl.New([]byte(*f.Contents.Source), "text/plain")
+		regdu.Encoding = dataurl.EncodingASCII
+		regduString := regdu.String()
+		f.Contents.Source = &regduString
+		overwrite := true
+		f.Overwrite = &overwrite
 
 		// Add the file to the config
-		ctCfg.Storage.Files = append(ctCfg.Storage.Files, *f)
+		ignCfg.Storage.Files = append(ignCfg.Storage.Files, f)
 	}
 
 	for _, d := range units {
-		u := new(cttypes.SystemdUnit)
-		if err := yaml.Unmarshal([]byte(d), u); err != nil {
+		var u igntypes.Unit
+		if err := yaml.Unmarshal([]byte(d), &u); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
 		}
 
-		// Add the unit to the config
-		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
-	}
+		regdu := dataurl.New([]byte(*u.Contents), "text/plain")
+		regdu.Encoding = dataurl.EncodingASCII
+		regduString := regdu.String()
+		u.Contents = &regduString
 
-	ignCfg, rep := ctconfig.Convert(ctCfg, "", nil)
-	if rep.IsFatal() {
-		return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
+		// Add the unit to the config
+		ignCfg.Systemd.Units = append(ignCfg.Systemd.Units, u)
 	}
 
 	return &ignCfg, nil

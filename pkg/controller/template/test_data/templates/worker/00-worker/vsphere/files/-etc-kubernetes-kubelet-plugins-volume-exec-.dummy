@@ -1,6 +1,7 @@
 contents:
-  source: data:,
+  source: data:text/plain,
   verification: {}
-filesystem: root
+group: {}
 mode: 493
 path: /etc/kubernetes/kubelet-plugins/volume/exec/.dummy
+user: {}

@@ -1,6 +1,7 @@
 contents:
-  source: data:,dummy%20etcd-ca%0A
+  source: data:text/plain,dummy%20etcd-ca%0A
   verification: {}
-filesystem: root
+group: {}
 mode: 420
 path: /etc/kubernetes/static-pod-resources/etcd-member/ca.crt
+user: {}

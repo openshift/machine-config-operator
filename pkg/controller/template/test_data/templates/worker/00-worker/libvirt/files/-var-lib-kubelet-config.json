@@ -1,6 +1,7 @@
 contents:
-  source: data:,%7B%22dummy%22%3A%22dummy%22%7D%0A
+  source: data:text/plain,%7B%22dummy%22%3A%22dummy%22%7D%0A
   verification: {}
-filesystem: root
+group: {}
 mode: 420
 path: /var/lib/kubelet/config.json
+user: {}

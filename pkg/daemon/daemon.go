@@ -15,12 +15,13 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ignv2 "github.com/coreos/ignition/config/v2_2"
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	ign "github.com/coreos/ignition/config/v3_0"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -98,7 +99,7 @@ type Daemon struct {
 	node *corev1.Node
 
 	// remove the funcs below once proper e2e testing is done for updating ssh keys
-	atomicSSHKeysWriter func(ignv2_2types.PasswdUser, string) error
+	atomicSSHKeysWriter func(igntypes.PasswdUser, string) error
 
 	queue       workqueue.RateLimitingInterface
 	enqueueNode func(*corev1.Node)
@@ -449,9 +450,9 @@ func (dn *Daemon) runOnceFrom() error {
 		return err
 	}
 	switch configi.(type) {
-	case ignv2_2types.Config:
+	case igntypes.Config:
 		glog.V(2).Info("Daemon running directly from Ignition")
-		return dn.runOnceFromIgnition(configi.(ignv2_2types.Config))
+		return dn.runOnceFromIgnition(configi.(igntypes.Config))
 	case mcfgv1.MachineConfig:
 		glog.V(2).Info("Daemon running directly from MachineConfig")
 		return dn.runOnceFromMachineConfig(configi.(mcfgv1.MachineConfig), contentFrom)
@@ -866,7 +867,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
-func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
+func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
 	// Execute update without hitting the cluster
 	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
 		return err
@@ -1046,21 +1047,22 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 
 // checkUnits validates the contents of all the units in the
 // target config and retursn true if they match.
-func checkUnits(units []ignv2_2types.Unit) bool {
+func checkUnits(units []igntypes.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if status := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); !status {
+			if status := checkFileContentsAndMode(path, []byte(ctrlcommon.StrFromStrPtr(u.Dropins[j].Contents)),
+				defaultFilePermissions); !status {
 				return false
 			}
 		}
 
-		if u.Contents == "" {
+		if ctrlcommon.StrFromStrPtr(u.Contents) == "" {
 			continue
 		}
 
 		path := filepath.Join(pathSystemd, u.Name)
-		if u.Mask {
+		if u.Mask != nil && *u.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
 				glog.Errorf("state validation: error while evaluation symlink for path: %q, err: %v", path, err)
@@ -1071,7 +1073,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 				return false
 			}
 		}
-		if status := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); !status {
+		if status := checkFileContentsAndMode(path, []byte(ctrlcommon.StrFromStrPtr(u.Contents)), defaultFilePermissions); !status {
 			return false
 		}
 
@@ -1081,7 +1083,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func checkFiles(files []ignv2_2types.File) bool {
+func checkFiles(files []igntypes.File) bool {
 	checkedFiles := make(map[string]bool)
 	for i := len(files) - 1; i >= 0; i-- {
 		f := files[i]
@@ -1093,7 +1095,7 @@ func checkFiles(files []ignv2_2types.File) bool {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := dataurl.DecodeString(f.Contents.Source)
+		contents, err := dataurl.DecodeString(ctrlcommon.StrFromStrPtr(f.Contents.Source))
 		if err != nil {
 			glog.Errorf("couldn't parse file: %v", err)
 			return false
@@ -1183,7 +1185,7 @@ func (dn *Daemon) senseAndLoadOnceFrom() (interface{}, onceFromOrigin, error) {
 	}
 
 	// Try each supported parser
-	ignConfig, _, err := ignv2.Parse(content)
+	ignConfig, _, err := ign.Parse(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
 		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil
