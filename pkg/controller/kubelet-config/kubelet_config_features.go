@@ -95,7 +95,11 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
-		dataURL, err := dataurl.DecodeString(originalKubeletIgn.Contents.Source)
+		sourceData := ctrlcommon.StrFromStrPtr(originalKubeletIgn.Contents.Source)
+		if len(sourceData) == 0 {
+			sourceData = "data:,"
+		}
+		dataURL, err := dataurl.DecodeString(sourceData)
 		if err != nil {
 			return err
 		}

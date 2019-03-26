@@ -2,7 +2,7 @@ filesystem: "root"
 mode: 0644
 path: "/etc/containers/storage.conf"
 contents:
-  inline: |
+  source: |
     # storage.conf is the configuration file for all tools
     # that share the containers/storage libraries
     # See man 5 containers-storage.conf for more information

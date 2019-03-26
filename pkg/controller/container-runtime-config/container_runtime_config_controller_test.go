@@ -23,13 +23,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 )
 
@@ -86,7 +86,7 @@ func (f *fixture) validateActions() {
 	}
 }
 
-func newMachineConfig(name string, labels map[string]string, osurl string, files []ignv2_2types.File) *mcfgv1.MachineConfig {
+func newMachineConfig(name string, labels map[string]string, osurl string, files []igntypes.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
 	}
@@ -95,7 +95,7 @@ func newMachineConfig(name string, labels map[string]string, osurl string, files
 		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: osurl,
-			Config:     ignv2_2types.Config{Storage: ignv2_2types.Storage{Files: files}},
+			Config:     igntypes.Config{Storage: igntypes.Storage{Files: files}},
 		},
 	}
 }
@@ -336,7 +336,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs1 := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs1 := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -367,7 +367,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
+			mcs := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -443,8 +443,8 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
-			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
+			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -475,8 +475,8 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
-			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
+			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)

@@ -9,8 +9,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -369,8 +369,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	//update machineconfig
-	mcs[len(mcs)-1].Spec.Config = ignv2_2types.Config{}
-
+	mcs[len(mcs)-1].Spec.Config = ctrlcommon.NewIgnConfig()
 	f.ccLister = append(f.ccLister, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 	f.objects = append(f.objects, cc)

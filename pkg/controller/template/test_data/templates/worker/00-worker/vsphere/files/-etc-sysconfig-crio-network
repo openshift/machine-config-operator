@@ -1,6 +1,8 @@
 contents:
-  source: data:,CRIO_NETWORK_OPTIONS%3D%22--cni-config-dir%3D%2Fetc%2Fkubernetes%2Fcni%2Fnet.d%20--cni-plugin-dir%3D%2Fvar%2Flib%2Fcni%2Fbin%22%0A
+  source: data:text/plain,CRIO_NETWORK_OPTIONS%3D%22--cni-config-dir%3D%2Fetc%2Fkubernetes%2Fcni%2Fnet.d%20--cni-plugin-dir%3D%2Fvar%2Flib%2Fcni%2Fbin%22%0A
   verification: {}
-filesystem: root
+group: {}
 mode: 420
+overwrite: true
 path: /etc/sysconfig/crio-network
+user: {}

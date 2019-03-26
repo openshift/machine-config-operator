@@ -52,7 +52,7 @@ type MachineConfigSpec struct {
     // fetch the OS. This must be in the canonical $name@$digest format.
     OSImageURL string `json:"osImageURL"`
     // Config is a Ignition Config object.
-    Config ignv2_2.Config `json:"config"`
+    Config igntypes.Config `json:"config"`
 }
 ```
 

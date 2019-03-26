@@ -1,7 +1,7 @@
 package v1
 
 import (
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -227,7 +227,7 @@ type MachineConfigSpec struct {
 	// fetch the OS.
 	OSImageURL string `json:"osImageURL"`
 	// Config is a Ignition Config object.
-	Config ignv2_2types.Config `json:"config"`
+	Config igntypes.Config `json:"config"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

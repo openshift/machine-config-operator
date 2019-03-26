@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -268,7 +268,7 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	return cc, nil
 }
 
-func verifyIgnFiles(files []ignv2_2types.File, dir string, update bool, t *testing.T) {
+func verifyIgnFiles(files []igntypes.File, dir string, update bool, t *testing.T) {
 	var actual [][]byte
 
 	for _, f := range files {
@@ -298,7 +298,7 @@ func verifyIgnFiles(files []ignv2_2types.File, dir string, update bool, t *testi
 	verifyIgn(actual, dir, t)
 }
 
-func verifyIgnUnits(units []ignv2_2types.Unit, dir string, update bool, t *testing.T) {
+func verifyIgnUnits(units []igntypes.Unit, dir string, update bool, t *testing.T) {
 	var actual [][]byte
 	for _, u := range units {
 		j, err := json.MarshalIndent(u, "", "  ")

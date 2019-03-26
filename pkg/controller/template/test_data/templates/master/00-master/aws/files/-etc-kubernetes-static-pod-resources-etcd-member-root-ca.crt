@@ -1,6 +1,8 @@
 contents:
-  source: data:,dummy%20root-ca%0A
+  source: data:text/plain,dummy%20root-ca%0A
   verification: {}
-filesystem: root
+group: {}
 mode: 420
+overwrite: true
 path: /etc/kubernetes/static-pod-resources/etcd-member/root-ca.crt
+user: {}

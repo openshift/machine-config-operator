@@ -1,7 +1,6 @@
-filesystem: "root"
 mode: 0644
 path: "/etc/sysctl.d/forward.conf"
 contents:
-  inline: |
+  source: |
     net.ipv4.ip_forward = 1
 

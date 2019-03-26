@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/api/core/v1"
@@ -334,7 +334,7 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*ignv2_2types.File, *ignv2_2types.File, *ignv2_2types.File, error) {
+func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("could not get ControllerConfig %v", err)
@@ -348,7 +348,7 @@ func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*i
 	}
 	// Find generated storage.config, and crio.config
 	var (
-		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig *ignv2_2types.File
+		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig *igntypes.File
 		errStorage, errCRIO, errRegistries                           error
 	)
 	// Find storage config
@@ -493,7 +493,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				}
 			}
 			if isNotFound {
-				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
+				igncfg := ctrlcommon.NewIgnConfig()
+				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &igncfg)
 			}
 			mc.Spec.Config = createNewCtrRuntimeConfigIgnition(storageTOML, crioTOML)
 			mc.ObjectMeta.Annotations = map[string]string{
@@ -530,8 +531,12 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
-func (ctrl *Controller) mergeConfigChanges(origFile *ignv2_2types.File, cfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig, role, managedKey string, isNotFound bool, update updateConfig) ([]byte, error) {
-	dataURL, err := dataurl.DecodeString(origFile.Contents.Source)
+func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig, role, managedKey string, isNotFound bool, update updateConfig) ([]byte, error) {
+	sourceData := ctrlcommon.StrFromStrPtr(origFile.Contents.Source)
+	if len(sourceData) == 0 {
+		sourceData = "data:,"
+	}
+	dataURL, err := dataurl.DecodeString(sourceData)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
 	}
@@ -600,7 +605,11 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 
 			var registriesTOML []byte
 			if insecureRegs != nil || blockedRegs != nil {
-				dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+				sourceData := ctrlcommon.StrFromStrPtr(originalRegistriesIgn.Contents.Source)
+				if len(sourceData) == 0 {
+					sourceData = "data:,"
+				}
+				dataURL, err := dataurl.DecodeString(sourceData)
 				if err != nil {
 					return fmt.Errorf("could not decode original registries config: %v", err)
 				}
@@ -625,7 +634,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				}
 			}
 			if isNotFound {
-				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignv2_2types.Config{})
+				igncfg := ctrlcommon.NewIgnConfig()
+				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &igncfg)
 			}
 			mc.Spec.Config = registriesIgn
 			mc.ObjectMeta.Annotations = map[string]string{
