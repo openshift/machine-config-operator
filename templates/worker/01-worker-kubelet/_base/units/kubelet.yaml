@@ -10,6 +10,7 @@ contents: |
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
   EnvironmentFile=/etc/os-release
+  EnvironmentFile=/run/kubelet-rhelmajor
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
 
@@ -21,7 +22,7 @@ contents: |
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --allow-privileged \
-        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_version=${VERSION_ID},node.openshift.io/os_id=${ID} \
+        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/rhelmajor=${RHELMAJOR},node.openshift.io/os_id=${ID} \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --client-ca-file=/etc/kubernetes/ca.crt \
