@@ -1,6 +1,6 @@
 package operator
 
-// This data is derived from what github.com/openshift/installer's
+// Images contain data derived from what github.com/openshift/installer's
 // bootkube.sh provides.  If you want to add a new image, you need
 // to "ratchet" the change as follows:
 //
