@@ -23,7 +23,7 @@ import (
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
 	infraFile, networkFile string,
-	etcdCAFile, rootCAFile string, kubeCAFile string, pullSecretFile string,
+	etcdCAFile, etcdMetricCAFile string, rootCAFile string, kubeCAFile string, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
 ) error {
@@ -79,6 +79,7 @@ func RenderBootstrap(
 	}
 
 	spec.EtcdCAData = filesData[etcdCAFile]
+	spec.EtcdMetricCAData = filesData[etcdMetricCAFile]
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
 	spec.SSHKey = ic.SSHKey
