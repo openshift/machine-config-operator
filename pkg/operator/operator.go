@@ -367,6 +367,15 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
+	// if the cloudConfig is set in infra read the cloud config reference
+	if infra.Spec.CloudConfig.Name != "" {
+		cc, err := optr.getCloudConfigFromConfigMap("openshift-config", infra.Spec.CloudConfig.Name, infra.Spec.CloudConfig.Key)
+		if err != nil {
+			return err
+		}
+		spec.CloudProviderConfig = cc
+	}
+
 	spec.EtcdCAData = etcdCA
 	spec.EtcdMetricCAData = etcdMetricCA
 	spec.RootCAData = bundle
@@ -418,6 +427,18 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 		return raw, nil
 	} else {
 		return nil, fmt.Errorf("%s not found in %s/%s", key, namespace, name)
+	}
+}
+
+func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
+	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
+	if err != nil {
+		return "", err
+	}
+	if cc, ok := cm.Data[key]; ok {
+		return cc, nil
+	} else {
+		return "", fmt.Errorf("%s not found in %s/%s", key, namespace, name)
 	}
 }
 

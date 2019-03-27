@@ -12,6 +12,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
+	corev1 "k8s.io/api/core/v1"
 
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
@@ -20,6 +21,7 @@ import (
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
 	infraFile, networkFile string,
+	cloudConfigFile string,
 	etcdCAFile, etcdMetricCAFile string, rootCAFile string, kubeAPIServerServingCA string, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
@@ -66,6 +68,23 @@ func RenderBootstrap(
 	spec, err := createDiscoveredControllerConfigSpec(infra, network)
 	if err != nil {
 		return err
+	}
+
+	// if the cloudConfig is set in infra read the cloudConfigFile
+	if infra.Spec.CloudConfig.Name != "" {
+		data, err := ioutil.ReadFile(cloudConfigFile)
+		if err != nil {
+			return err
+		}
+		obji, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
+		if err != nil {
+			return err
+		}
+		cm, ok := obji.(*corev1.ConfigMap)
+		if !ok {
+			return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+		}
+		spec.CloudProviderConfig = cm.Data[infra.Spec.CloudConfig.Key]
 	}
 
 	bundle := make([]byte, 0)
