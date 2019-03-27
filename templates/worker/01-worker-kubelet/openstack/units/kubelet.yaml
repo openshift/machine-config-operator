@@ -22,7 +22,7 @@ contents: |
         --node-labels=node-role.kubernetes.io/worker \
         --minimum-container-ttl-duration=6m0s \
         --client-ca-file=/etc/kubernetes/ca.crt \
-        {{.CloudProviderConfig -}} \
+        {{cloudConfigFlag . }} \
         --anonymous-auth=false \
 
   Restart=always
