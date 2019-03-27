@@ -2,7 +2,11 @@ apiVersion: "machineconfigurations.openshift.io/v1"
 kind: "ControllerConfig"
 spec:
   clusterDNSIP: "10.3.0.10"
-  cloudProviderConfig: ""
+  cloudProviderConfig: |
+    testing
+    multi-line cloud config
+    [test]
+      option = dummy
   etcdDiscoveryDomain: "my-test-cluster.installer.team.coreos.systems"
   etcdInitialCount: 3
   platform: "vsphere"
