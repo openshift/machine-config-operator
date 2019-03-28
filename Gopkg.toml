@@ -88,10 +88,6 @@ required = [
   branch = "master"
 
 [[constraint]]
-  branch = "master"
-  name = "github.com/openshift/installer"
-
-[[constraint]]
   name = "github.com/openshift/kubernetes-drain"
   revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
 
