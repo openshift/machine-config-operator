@@ -60,12 +60,8 @@ required = [
   version = "v3.5.0"
 
 [[constraint]]
-  name = "github.com/coreos/container-linux-config-transpiler"
-  version = "v0.9.0"
-
-[[constraint]]
   name = "github.com/coreos/ignition"
-  version = "0.26.0"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/ghodss/yaml"
