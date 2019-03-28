@@ -125,9 +125,6 @@ type ControllerConfigSpec struct {
 	// on all machines.
 	PullSecret *corev1.ObjectReference `json:"pullSecret,omitempty"`
 
-	// Public SSH
-	SSHKey string `json:"sshKey"`
-
 	// Images is map of images that are used by the controller.
 	Images map[string]string `json:"images"`
 
