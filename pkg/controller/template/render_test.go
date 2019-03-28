@@ -186,7 +186,7 @@ var (
 		"openstack": "./test_data/controller_config_openstack.yaml",
 		"libvirt":   "./test_data/controller_config_libvirt.yaml",
 		"none":      "./test_data/controller_config_none.yaml",
-		"vpshere":   "./test_data/controller_config_vsphere.yaml",
+		"vsphere":   "./test_data/controller_config_vsphere.yaml",
 	}
 )
 
