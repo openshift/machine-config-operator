@@ -7,6 +7,7 @@ import (
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,7 +19,6 @@ import (
 )
 
 func createNewKubeletIgnition(ymlconfig []byte) ignv2_2types.Config {
-	var tempIgnConfig ignv2_2types.Config
 	mode := 0644
 	du := dataurl.New(ymlconfig, "text/plain")
 	du.Encoding = dataurl.EncodingASCII
@@ -34,6 +34,7 @@ func createNewKubeletIgnition(ymlconfig []byte) ignv2_2types.Config {
 			},
 		},
 	}
+	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, tempFile)
 	return tempIgnConfig
 }
