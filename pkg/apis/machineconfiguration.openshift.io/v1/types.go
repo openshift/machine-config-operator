@@ -118,8 +118,9 @@ type ControllerConfigSpec struct {
 	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain"`
 
 	// CAs
-	EtcdCAData []byte `json:"etcdCAData"`
-	RootCAData []byte `json:"rootCAData"`
+	EtcdCAData       []byte `json:"etcdCAData"`
+	EtcdMetricCAData []byte `json:"etcdMetricCAData"`
+	RootCAData       []byte `json:"rootCAData"`
 
 	// PullSecret is the default pull secret that needs to be installed
 	// on all machines.

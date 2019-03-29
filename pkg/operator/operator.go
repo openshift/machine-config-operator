@@ -281,6 +281,10 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
+	etcdMetricCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-metric-serving-ca", "ca-bundle.crt")
+	if err != nil {
+		return err
+	}
 	rootCA, err := optr.getCAsFromConfigMap("kube-system", "root-ca", "ca.crt")
 	if err != nil {
 		return err
@@ -312,6 +316,7 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	spec.EtcdCAData = etcdCA
+	spec.EtcdMetricCAData = etcdMetricCA
 	spec.RootCAData = bundle
 	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
