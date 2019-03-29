@@ -59,6 +59,7 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
 
 	setBytesIfSet(modified, &existing.EtcdCAData, required.EtcdCAData)
+	setBytesIfSet(modified, &existing.EtcdMetricCAData, required.EtcdMetricCAData)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
 
 	if required.PullSecret != nil && !equality.Semantic.DeepEqual(existing.PullSecret, required.PullSecret) {
