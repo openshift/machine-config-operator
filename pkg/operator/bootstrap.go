@@ -28,7 +28,7 @@ func RenderBootstrap(
 	files := []string{
 		clusterConfigConfigMapFile,
 		infraFile, networkFile,
-		rootCAFile, etcdCAFile, pullSecretFile,
+		rootCAFile, etcdCAFile, etcdMetricCAFile, pullSecretFile,
 	}
 	if kubeCAFile != "" {
 		files = append(files, kubeCAFile)
