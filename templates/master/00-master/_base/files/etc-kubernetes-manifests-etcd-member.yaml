@@ -31,7 +31,7 @@ contents:
         - -c
         - |
           #!/bin/sh
-          set -euo pipefail
+          set -euxo pipefail
 
           source /run/etcd/environment
 
@@ -59,6 +59,7 @@ contents:
           
         securityContext:
           priviledged: true
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/
