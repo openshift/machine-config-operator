@@ -1,0 +1,10 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/systemd/system.conf.d/kubelet-cgroups.conf"
+contents:
+  inline: |
+    # Turning on Accounting helps track down performance issues.
+    [Manager]
+    DefaultCPUAccounting=yes
+    DefaultMemoryAccounting=yes
+    DefaultBlockIOAccounting=yes
