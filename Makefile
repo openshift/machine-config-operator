@@ -41,15 +41,17 @@ test-unit:
 # Example:
 #    make update
 update:
+	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to update generated code";  exit 1; }
 	hack/update-codegen.sh
 	hack/update-generated-bindata.sh
 
 # Run verification steps
 # Example:
 #    make verify
-verify: test machine-configs
-	hack/verify-style.sh
+verify:
+	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to verify generated code";  exit 1; }
 	hack/verify-codegen.sh
+	hack/verify-generated-bindata.sh
 
 # Template for defining build targets for binaries.
 define target_template =
@@ -77,12 +79,12 @@ endef
 # Generate 'image_template' for each component
 $(foreach C, $(COMPONENTS), $(eval $(call image_template,$(C))))
 
-.PHONY: machine-configs images images.rhel7
+.PHONY: binaries images images.rhel7
 
-# Build all machine-configs:
+# Build all binaries:
 # Example:
-#    make machine-configs
-machine-configs: $(mc)
+#    make binaries
+binaries: $(mc)
 
 # Build all images:
 # Example:
@@ -97,7 +99,3 @@ images.rhel7: $(imc7)
 # This was copied from https://github.com/openshift/cluster-image-registry-operato
 test-e2e:
 	GOCACHE=off go test -timeout 50m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
-
-# And this one dumps debugging stuff
-test-e2e-prow:
-	if ! GOCACHE=off go test -timeout 20m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/; then ./test/e2e/debuglog; exit 1; fi
