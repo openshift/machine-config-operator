@@ -13,7 +13,7 @@ eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
 : "${GOARCH:=${GOHOSTARCH}}"
 
 # Go to the root of the repo
-cd "$(git rev-parse --show-cdup)"
+cdup="$(git rev-parse --show-cdup)" && test -n "$cdup" && cd "$cdup"
 
 if [ -z ${VERSION_OVERRIDE+a} ]; then
 	echo "Using version from git..."
