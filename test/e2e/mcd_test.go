@@ -309,12 +309,15 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		}
 		for _, node := range nodes {
 			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
-				return true, nil
+				// just check that we have the annotation here, w/o strings checking anything that can flip fast causing flakes
+				if node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] != "" {
+					return true, nil
+				}
 			}
 		}
 		return false, nil
 	}); err != nil {
-		t.Errorf("machine config didn't result in file being on any worker: %v", err)
+		t.Errorf("machine config hasn't been picked by any MCD: %v", err)
 	}
 
 	// verify that we got indeed an unavailable machine in the pool

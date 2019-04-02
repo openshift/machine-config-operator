@@ -23,6 +23,8 @@ const (
 	MachineConfigDaemonStateDegraded = "Degraded"
 	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
+	// MachineConfigDaemonReasonAnnotationKey is set by the daemon when it needs to report a human readable reason for its state. E.g. when state flips to degraded/unreconcilable.
+	MachineConfigDaemonReasonAnnotationKey = "machineconfiguration.openshift.io/reason"
 	// InitialNodeAnnotationsFilePath defines the path at which it will find the node annotations it needs to set on the node once it comes up for the first time.
 	// The Machine Config Server writes the node annotations to this path.
 	InitialNodeAnnotationsFilePath = "/etc/machine-config-daemon/node-annotations.json"
