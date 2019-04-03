@@ -29,7 +29,15 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	newPool := pool
 	newPool.Status = newStatus
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(newPool)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if newPool.Status.UnavailableMachineCount != 0 ||
+		newPool.Status.UpdatedMachineCount != newPool.Status.MachineCount {
+		return fmt.Errorf("resync needed: unavailable machines or un-updated machine present")
+	}
+	return nil
 }
 
 func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
