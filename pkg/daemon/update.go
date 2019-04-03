@@ -25,7 +25,6 @@ import (
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -78,7 +77,7 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	return &corev1.ObjectReference{
 		Kind: "Node",
 		Name: node.GetName(),
-		UID:  types.UID(node.GetUID()),
+		UID:  node.GetUID(),
 	}
 }
 
@@ -312,7 +311,7 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
 			// check if the prior config is empty and that this is the first time running.
 			// if so, the SSHKey from the cluster config and user "core" must be added to machine config.
-			if len(oldIgn.Passwd.Users) >= 0 && len(newIgn.Passwd.Users) >= 1 {
+			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) >= 1 {
 				// there is an update to Users, we must verify that it is ONLY making an acceptable
 				// change to the SSHAuthorizedKeys for the user "core"
 				for _, user := range newIgn.Passwd.Users {

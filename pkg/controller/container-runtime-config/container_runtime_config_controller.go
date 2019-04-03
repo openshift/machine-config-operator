@@ -194,7 +194,7 @@ func (ctrl *Controller) imageConfAdded(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) imageConfUpdated(oldObj interface{}, newObj interface{}) {
+func (ctrl *Controller) imageConfUpdated(oldObj, newObj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -202,7 +202,7 @@ func (ctrl *Controller) imageConfDeleted(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
-func (ctrl *Controller) updateContainerRuntimeConfig(oldObj interface{}, newObj interface{}) {
+func (ctrl *Controller) updateContainerRuntimeConfig(oldObj, newObj interface{}) {
 	oldCtrCfg := oldObj.(*mcfgv1.ContainerRuntimeConfig)
 	newCtrCfg := newObj.(*mcfgv1.ContainerRuntimeConfig)
 
@@ -406,7 +406,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(cfg)
 		return updateErr
 	})
-	// If an error occured in updating the status just log it
+	// If an error occurred in updating the status just log it
 	if statusUpdateErr != nil {
 		glog.Warningf("error updating container runtime config status: %v", statusUpdateErr)
 	}
@@ -474,7 +474,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey := getManagedKeyCtrCfg(pool, cfg)
+		managedKey := getManagedKeyCtrCfg(pool)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
@@ -490,13 +490,13 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			var storageTOML, crioTOML []byte
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
 			if ctrcfg.OverlaySize != (resource.Quantity{}) {
-				storageTOML, err = ctrl.mergeConfigChanges(originalStorageIgn, cfg, mc, role, managedKey, isNotFound, updateStorageConfig)
+				storageTOML, err = ctrl.mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
 				}
 			}
 			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != 0 || ctrcfg.LogSizeMax != (resource.Quantity{}) {
-				crioTOML, err = ctrl.mergeConfigChanges(originalCRIOIgn, cfg, mc, role, managedKey, isNotFound, updateCRIOConfig)
+				crioTOML, err = ctrl.mergeConfigChanges(originalCRIOIgn, cfg, updateCRIOConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to crio.conf: %v", err)
 				}
@@ -506,6 +506,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
 			}
 			mc.Spec.Config = createNewCtrRuntimeConfigIgnition(storageTOML, crioTOML)
+
 			mc.SetAnnotations(map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			})
@@ -535,7 +536,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
-func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig, role, managedKey string, isNotFound bool, update updateConfig) ([]byte, error) {
+func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
 	dataURL, err := dataurl.DecodeString(origFile.Contents.Source)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
@@ -595,7 +596,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		applied := true
 		role := pool.Name
 		// Get MachineConfig
-		managedKey := getManagedKeyReg(pool, imgcfg)
+		managedKey := getManagedKeyReg(pool)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			// Generate the original registries config
 			_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
@@ -638,7 +639,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			}
 			mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
-				metav1.OwnerReference{
+				{
 					APIVersion: apicfgv1.SchemeGroupVersion.String(),
 					Kind:       "Image",
 					Name:       imgcfg.Name,

@@ -28,7 +28,7 @@ const (
 	registriesConfigPath = "/etc/containers/registries.conf"
 )
 
-var errParsingReference error = errors.New("error parsing reference of desired image from cluster version config")
+var errParsingReference = errors.New("error parsing reference of desired image from cluster version config")
 
 // TOML-friendly explicit tables used for conversions.
 type tomlConfigStorage struct {
@@ -55,11 +55,11 @@ type tomlConfigCRIO struct {
 
 type tomlConfigRegistries struct {
 	Registries []sysregistriesv2.Registry `toml:"registry"`
-	// backwards compatability to sysregistries v1
+	// backwards compatibility to sysregistries v1
 	sysregistriesv2.V1TOMLConfig `toml:"registries"`
 }
 
-type updateConfig func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
+type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
 
 func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte) igntypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
@@ -132,6 +132,7 @@ func createNewRegistriesConfigIgnition(registriesTOMLConfig []byte) igntypes.Con
 func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	for _, c := range mc.Spec.Config.Storage.Files {
 		if c.Path == storageConfigPath {
+			c := c
 			return &c, nil
 		}
 	}
@@ -141,6 +142,7 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	for _, c := range mc.Spec.Config.Storage.Files {
 		if c.Path == crioConfigPath {
+			c := c
 			return &c, nil
 		}
 	}
@@ -156,11 +158,11 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("could not find Registries Config")
 }
 
-func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, config *mcfgv1.ContainerRuntimeConfig) string {
+func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, config *apicfgv1.Image) string {
+func getManagedKeyReg(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
 }
 

@@ -470,6 +470,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
+
 		mc.SetAnnotations(map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		})

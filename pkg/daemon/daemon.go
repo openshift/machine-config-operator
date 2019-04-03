@@ -132,9 +132,8 @@ const (
 	// also retrieve the pending config after a reboot
 	pendingStateMessageID = "machine-config-daemon-pending-state"
 
-	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
-	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
-	kubeletHealthzTimeout          = time.Duration(30 * time.Second)
+	kubeletHealthzPollingInterval  = 30 * time.Second
+	kubeletHealthzTimeout          = 30 * time.Second
 	kubeletHealthzFailureThreshold = 3
 
 	// updateDelay is the baseline speed at which we react to changes.  We don't
@@ -175,7 +174,7 @@ func rebootCommand(rationale string) *exec.Cmd {
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
-	nodeName string,
+	nodeName,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
 	bootID,
@@ -447,13 +446,13 @@ func (dn *Daemon) runOnceFrom() error {
 		glog.Warningf("Unable to decipher onceFrom config type: %s", err)
 		return err
 	}
-	switch configi.(type) {
+	switch c := configi.(type) {
 	case igntypes.Config:
 		glog.V(2).Info("Daemon running directly from Ignition")
-		return dn.runOnceFromIgnition(configi.(igntypes.Config))
+		return dn.runOnceFromIgnition(c)
 	case mcfgv1.MachineConfig:
 		glog.V(2).Info("Daemon running directly from MachineConfig")
-		return dn.runOnceFromMachineConfig(configi.(mcfgv1.MachineConfig), contentFrom)
+		return dn.runOnceFromMachineConfig(c, contentFrom)
 	}
 	return errors.New("unsupported onceFrom type provided")
 }
@@ -468,6 +467,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 	// https://github.com/openshift/machine-config-operator/issues/407
 	go func() {
 		for sig := range termChan {
+			//nolint:gocritic
 			switch sig {
 			case syscall.SIGTERM:
 				dn.updateActiveLock.Lock()
@@ -727,7 +727,7 @@ func (dn *Daemon) LogSystemData() {
 		glog.Info(status)
 	}
 
-	boots, err := RunGetOut("journalctl", "--list-boots")
+	boots, err := runGetOut("journalctl", "--list-boots")
 	if err != nil {
 		glog.Errorf("Listing boots: %v", err)
 	}
@@ -767,7 +767,7 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		return "", nil
 	}
 	var p pendingConfigState
-	if err := json.Unmarshal([]byte(s), &p); err != nil {
+	if err := json.Unmarshal(s, &p); err != nil {
 		return "", errors.Wrapf(err, "parsing transient state")
 	}
 
@@ -1051,7 +1051,7 @@ func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) er
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
-func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig *mcfgv1.MachineConfig, desiredConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig) error {
 	if currentConfig == nil {
 		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {

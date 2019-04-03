@@ -16,20 +16,15 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 )
 
-const (
-	pivotUnit      = "pivot.service"
-	rpmostreedUnit = "rpm-ostreed.service"
-)
-
-// RpmOstreeState houses zero or more RpmOstreeDeployments
+// rpmOstreeState houses zero or more RpmOstreeDeployments
 // Subset of `rpm-ostree status --json`
 // https://github.com/projectatomic/rpm-ostree/blob/bce966a9812df141d38e3290f845171ec745aa4e/src/daemon/rpmostreed-deployment-utils.c#L227
-type RpmOstreeState struct {
-	Deployments []RpmOstreeDeployment
+type rpmOstreeState struct {
+	Deployments []rpmOstreeDeployment
 }
 
-// RpmOstreeDeployment represents a single deployment on a node
-type RpmOstreeDeployment struct {
+// rpmOstreeDeployment represents a single deployment on a node
+type rpmOstreeDeployment struct {
 	ID           string   `json:"id"`
 	OSName       string   `json:"osname"`
 	Serial       int32    `json:"serial"`
@@ -49,6 +44,8 @@ type NodeUpdaterClient interface {
 	RunPivot(string) error
 }
 
+// TODO(runcom): make this private to pkg/daemon!!!
+//
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
 type RpmOstreeClient struct{}
@@ -59,9 +56,9 @@ func NewNodeUpdaterClient() NodeUpdaterClient {
 }
 
 // getBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) getBootedDeployment() (*RpmOstreeDeployment, error) {
-	var rosState RpmOstreeState
-	output, err := RunGetOut("rpm-ostree", "status", "--json")
+func (r *RpmOstreeClient) getBootedDeployment() (*rpmOstreeDeployment, error) {
+	var rosState rpmOstreeState
+	output, err := runGetOut("rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +69,7 @@ func (r *RpmOstreeClient) getBootedDeployment() (*RpmOstreeDeployment, error) {
 
 	for _, deployment := range rosState.Deployments {
 		if deployment.Booted {
+			deployment := deployment
 			return &deployment, nil
 		}
 	}
@@ -81,7 +79,7 @@ func (r *RpmOstreeClient) getBootedDeployment() (*RpmOstreeDeployment, error) {
 
 // GetStatus returns multi-line human-readable text describing system status
 func (r *RpmOstreeClient) GetStatus() (string, error) {
-	output, err := RunGetOut("rpm-ostree", "status")
+	output, err := runGetOut("rpm-ostree", "status")
 	if err != nil {
 		return "", err
 	}
@@ -145,4 +143,16 @@ func followPivotJournalLogs(stopCh <-chan time.Time) {
 		<-stopCh
 		cmd.Process.Kill()
 	}()
+}
+
+// runGetOut executes a command, logging it, and return the stdout output.
+func runGetOut(command string, args ...string) ([]byte, error) {
+	glog.Infof("Running captured: %s %s\n", command, strings.Join(args, " "))
+	cmd := exec.Command(command, args...)
+	cmd.Stderr = os.Stderr
+	rawOut, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return rawOut, nil
 }

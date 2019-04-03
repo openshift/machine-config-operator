@@ -171,7 +171,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return errors.New("got err") },
+							fn:   func(config *renderConfig) error { return errors.New("got err") },
 						},
 					},
 					expectOperatorFail: true,
@@ -195,7 +195,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -223,7 +223,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -245,7 +245,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -273,7 +273,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -301,7 +301,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -325,7 +325,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return errors.New("mock error") },
+							fn:   func(config *renderConfig) error { return errors.New("mock error") },
 						},
 					},
 				},
@@ -354,7 +354,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return errors.New("error") },
+							fn:   func(config *renderConfig) error { return errors.New("error") },
 						},
 					},
 				},
@@ -379,7 +379,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return errors.New("error") },
+							fn:   func(config *renderConfig) error { return errors.New("error") },
 						},
 					},
 				},
@@ -407,7 +407,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -430,7 +430,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return errors.New("error") },
+							fn:   func(config *renderConfig) error { return errors.New("error") },
 						},
 					},
 				},
@@ -452,7 +452,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config renderConfig) error { return nil },
+							fn:   func(config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -479,7 +479,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				optr.vStore.Set("operator", "test-version")
 			}
 			optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
-			err := optr.syncAll(renderConfig{}, sync.syncFuncs)
+			err := optr.syncAll(&renderConfig{}, sync.syncFuncs)
 			if sync.expectOperatorFail {
 				assert.NotNil(t, err, "test case %d, sync call %d, expected an error", idx, j)
 			} else {
@@ -515,18 +515,18 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
 	optr.inClusterBringup = true
 
-	fn1 := func(config renderConfig) error {
+	fn1 := func(config *renderConfig) error {
 		return errors.New("mocked fn1")
 	}
-	err := optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	err := optr.syncAll(&renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
 	assert.NotNil(t, err, "expected syncAll to fail")
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config renderConfig) error {
+	fn1 = func(config *renderConfig) error {
 		return nil
 	}
-	err = optr.syncAll(renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	err = optr.syncAll(&renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)
