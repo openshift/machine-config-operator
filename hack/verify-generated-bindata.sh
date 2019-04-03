@@ -18,13 +18,13 @@ trap "cleanup" EXIT SIGINT
 cleanup
 
 mkdir -p "${TMP_DIFFROOT}"
-cp -a "${DIFFROOT}"/* "${TMP_DIFFROOT}"
+cp -R "${DIFFROOT}"/* "${TMP_DIFFROOT}"
 
 "${SCRIPT_ROOT}/hack/update-generated-bindata.sh"
 echo "diffing ${DIFFROOT} against freshly generated bindata"
 ret=0
 diff -Naupr "${DIFFROOT}" "${TMP_DIFFROOT}" || ret=$?
-cp -a "${TMP_DIFFROOT}"/* "${DIFFROOT}"
+cp -R "${TMP_DIFFROOT}"/* "${DIFFROOT}"
 if [[ $ret -eq 0 ]]
 then
   echo "${DIFFROOT} up to date."
