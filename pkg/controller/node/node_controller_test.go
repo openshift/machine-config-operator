@@ -784,7 +784,7 @@ func TestShouldMakeProgress(t *testing.T) {
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
 
-	f.run(getKey(mcp, t))
+	f.runExpectError(getKey(mcp, t))
 }
 
 func TestEmptyCurrentMachineConfig(t *testing.T) {
@@ -816,7 +816,7 @@ func TestPaused(t *testing.T) {
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
 
-	f.run(getKey(mcp, t))
+	f.runExpectError(getKey(mcp, t))
 }
 
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
@@ -858,11 +858,12 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	}
 
 	expStatus := calculateStatus(mcp, nodes)
+	t.Logf("expStatus: %v", expStatus)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
 
-	f.run(getKey(mcp, t))
+	f.runExpectError(getKey(mcp, t))
 }
 
 func TestShouldDoNothing(t *testing.T) {
