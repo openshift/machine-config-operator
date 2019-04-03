@@ -13,7 +13,7 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 )
 
 const (
@@ -21,6 +21,7 @@ const (
 	// is running on, instead of using a config passed to it.
 	inClusterConfig = ""
 
+	//nolint:gosec
 	bootstrapTokenDir = "/etc/mcs/bootstrap-token"
 )
 
@@ -70,7 +71,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}
 
-	appenders := getAppenders(cr, currConf, cs.kubeconfigFunc, mc.Spec.OSImageURL)
+	appenders := getAppenders(currConf, cs.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
 		if err := a(&mc.Spec.Config); err != nil {
 			return nil, err
@@ -89,7 +90,7 @@ func getClientConfig(path string) (*rest.Config, error) {
 	return rest.InClusterConfig()
 }
 
-func kubeconfigFromSecret(secertDir string, apiserverURL string) ([]byte, []byte, error) {
+func kubeconfigFromSecret(secertDir, apiserverURL string) ([]byte, []byte, error) {
 	caFile := filepath.Join(secertDir, corev1.ServiceAccountRootCAKey)
 	tokenFile := filepath.Join(secertDir, corev1.ServiceAccountTokenKey)
 	caData, err := ioutil.ReadFile(caFile)

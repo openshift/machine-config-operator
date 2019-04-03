@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
@@ -15,9 +14,6 @@ const (
 	// defaultMachineKubeConfPath defines the default location
 	// of the KubeConfig file on the machine.
 	defaultMachineKubeConfPath = "/etc/kubernetes/kubeconfig"
-
-	// From https://github.com/openshift/pivot/pull/25/commits/c77788a35d7ee4058d1410e89e6c7937bca89f6c#diff-04c6e90faac2675aa89e2176d2eec7d8R44
-	pivotRebootNeeded = "/run/pivot/reboot-needed"
 
 	// defaultFileSystem defines the default file system to be
 	// used for writing the ignition files created by the
@@ -37,7 +33,7 @@ type Server interface {
 	GetConfig(poolRequest) (*igntypes.Config, error)
 }
 
-func getAppenders(cr poolRequest, currMachineConfig string, f kubeconfigFunc, osimageurl string) []appenderFunc {
+func getAppenders(currMachineConfig string, f kubeconfigFunc, osimageurl string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
 		func(config *igntypes.Config) error { return appendNodeAnnotations(config, currMachineConfig) },
@@ -96,7 +92,7 @@ func appendNodeAnnotations(conf *igntypes.Config, currConf string) error {
 	if err != nil {
 		return err
 	}
-	appendFileToIgnition(conf, daemonconsts.InitialNodeAnnotationsFilePath, string(anno))
+	appendFileToIgnition(conf, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 	return nil
 }
 
@@ -111,15 +107,6 @@ func getNodeAnnotation(conf string) (string, error) {
 		return "", fmt.Errorf("could not marshal node annotations, err: %v", err)
 	}
 	return string(contents), nil
-}
-
-func copyFileToIgnition(conf *igntypes.Config, outPath, srcPath string) error {
-	contents, err := ioutil.ReadFile(srcPath)
-	if err != nil {
-		return fmt.Errorf("could not read file from: %s, err: %v", srcPath, err)
-	}
-	appendFileToIgnition(conf, outPath, string(contents))
-	return nil
 }
 
 func appendFileToIgnition(conf *igntypes.Config, outPath, contents string) {

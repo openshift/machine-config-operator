@@ -316,7 +316,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -349,7 +349,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -425,8 +425,8 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -457,8 +457,8 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)

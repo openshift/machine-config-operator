@@ -126,7 +126,7 @@ func isNodeManaged(node *corev1.Node) bool {
 	return true
 }
 
-/// isNodeDone returns true if the current == desired and the MCD has marked done.
+// isNodeDone returns true if the current == desired and the MCD has marked done.
 func isNodeDone(node *corev1.Node) bool {
 	if node.Annotations == nil {
 		return false

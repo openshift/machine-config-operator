@@ -45,9 +45,6 @@ const (
 	updateDelay = 5 * time.Second
 )
 
-// controllerKind contains the schema.GroupVersionKind for this controller type.
-var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("MachineConfigPool")
-
 var nodeUpdateBackoff = wait.Backoff{
 	Steps:    5,
 	Duration: 100 * time.Millisecond,
