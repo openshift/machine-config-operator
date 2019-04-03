@@ -56,7 +56,18 @@ contents:
                 --dnsnames={{etcdPeerCertDNSNames .}} \
                 --commonname=system:etcd-peer:${ETCD_DNS_NAME} \
                 --ipaddrs=${ETCD_IPV4_ADDRESS} \
-          
+
+          [ -e /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.crt -a \
+            -e /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.key ] || \
+            kube-client-agent \
+              request \
+                --kubeconfig=/etc/kubernetes/kubeconfig \
+                --orgname=system:etcd-metrics \
+                --assetsdir=/etc/ssl/etcd \
+                --dnsnames={{etcdServerCertDNSNames .}} \
+                --commonname=system:etcd-metric:${ETCD_DNS_NAME} \
+                --ipaddrs=${ETCD_IPV4_ADDRESS} \
+
         securityContext:
           priviledged: true
         terminationMessagePolicy: FallbackToLogsOnError
@@ -93,6 +104,7 @@ contents:
             --advertise-client-urls=https://${ETCD_IPV4_ADDRESS}:2379 \
             --listen-client-urls=https://0.0.0.0:2379 \
             --listen-peer-urls=https://0.0.0.0:2380 \
+            --listen-metrics-urls=https://0.0.0.0:9978 \
         securityContext:
           priviledged: true
         resources:
@@ -120,6 +132,37 @@ contents:
           protocol: TCP
         - name: server
           containerPort: 2379
+          protocol: TCP
+      - name: etcd-metrics
+        image: "{{.Images.etcd}}"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          #!/bin/sh
+          set -euo pipefail
+
+          source /run/etcd/environment
+
+          etcd grpc-proxy start \
+            --endpoints https://${ETCD_DNS_NAME}:9978 \
+            --metrics-addr https://0.0.0.0:9979 \
+            --listen-addr 127.0.0.1:9977 \
+            --key /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key \
+            --key-file /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.key \
+            --cert /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt \
+            --cert-file /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.crt \
+            --cacert /etc/ssl/etcd/ca.crt \
+            --trusted-ca-file /etc/ssl/etcd/metric-ca.crt \
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: discovery
+          mountPath: /run/etcd/
+        - name: certs
+          mountPath: /etc/ssl/etcd/
+        ports:
+        - name: metric
+          containerPort: 9979
           protocol: TCP
       hostNetwork: true
       priorityClassName: system-node-critical
