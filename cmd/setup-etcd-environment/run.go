@@ -128,20 +128,25 @@ func reverseLookupSelf(service, proto, name, self string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	selfTarget := ""
 	for _, srv := range srvs {
 		glog.V(4).Infof("checking against %s", srv.Target)
 		addrs, err := net.LookupHost(srv.Target)
 		if err != nil {
-			continue // don't care
+			return "", fmt.Errorf("could not resolve member %q", srv.Target)
 		}
 
 		for _, addr := range addrs {
 			if addr == self {
-				return strings.Trim(srv.Target, "."), nil
+				selfTarget = strings.Trim(srv.Target, ".")
+				break
 			}
 		}
 	}
-	return "", fmt.Errorf("could not find self")
+	if selfTarget == "" {
+		return "", fmt.Errorf("could not find self")
+	}
+	return selfTarget, nil
 }
 
 func writeEnvironmentFile(m map[string]string, w io.Writer) error {
