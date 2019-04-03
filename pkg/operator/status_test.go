@@ -501,6 +501,9 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{}
 	co := &configv1.ClusterOperator{}
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
 	optr.inClusterBringup = true
 
