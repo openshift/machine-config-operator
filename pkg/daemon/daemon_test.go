@@ -113,6 +113,10 @@ func TestCompareOSImageURL(t *testing.T) {
 }
 
 func TestDaemonOnceFromNoPanic(t *testing.T) {
+	if _, err := os.Stat("/proc/sys/kernel/random/boot_id"); os.IsNotExist(err) {
+		t.Skip("we're not on linux")
+	}
+
 	exitCh := make(chan error)
 	defer close(exitCh)
 	stopCh := make(chan struct{})

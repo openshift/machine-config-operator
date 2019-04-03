@@ -124,7 +124,7 @@ func TestMCDeployed(t *testing.T) {
 		if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
 			nodes, err := getNodesByRole(cs, "worker")
 			if err != nil {
-				return false, err
+				return false, nil
 			}
 			for _, node := range nodes {
 				if visited[node.Name] {
