@@ -1,0 +1,8 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/tmpfiles.d/cleanup-cni.conf"
+contents:
+  inline: |
+    r /etc/origin/openvswitch/conf.db
+    r /etc/cni/net.d/80-openshift-network.conf
+    r /etc/cni/net.d/10-ovn-kubernetes.conf
