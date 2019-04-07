@@ -145,17 +145,21 @@ func New(
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
-	mcoconfigInformer.Informer().AddEventHandler(optr.eventHandler())
-	controllerConfigInformer.Informer().AddEventHandler(optr.eventHandler())
-	serviceAccountInfomer.Informer().AddEventHandler(optr.eventHandler())
-	crdInformer.Informer().AddEventHandler(optr.eventHandler())
-	deployInformer.Informer().AddEventHandler(optr.eventHandler())
-	daemonsetInformer.Informer().AddEventHandler(optr.eventHandler())
-	clusterRoleInformer.Informer().AddEventHandler(optr.eventHandler())
-	clusterRoleBindingInformer.Informer().AddEventHandler(optr.eventHandler())
-	mcoCmInformer.Informer().AddEventHandler(optr.eventHandler())
-	infraInformer.Informer().AddEventHandler(optr.eventHandler())
-	networkInformer.Informer().AddEventHandler(optr.eventHandler())
+	for _, i := range []cache.SharedIndexInformer{
+		mcoconfigInformer.Informer(),
+		controllerConfigInformer.Informer(),
+		serviceAccountInfomer.Informer(),
+		crdInformer.Informer(),
+		deployInformer.Informer(),
+		daemonsetInformer.Informer(),
+		clusterRoleInformer.Informer(),
+		clusterRoleBindingInformer.Informer(),
+		mcoCmInformer.Informer(),
+		infraInformer.Informer(),
+		networkInformer.Informer(),
+	} {
+		i.AddEventHandler(optr.eventHandler())
+	}
 
 	optr.syncHandler = optr.sync
 
