@@ -12,7 +12,7 @@ import (
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
 	apiextlistersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1"
@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -82,6 +83,8 @@ type Operator struct {
 	daemonsetLister appslisterv1.DaemonSetLister
 	infraLister     configlistersv1.InfrastructureLister
 	networkLister   configlistersv1.NetworkLister
+	mcoCmLister     corelisterv1.ConfigMapLister
+	clusterCmLister corelisterv1.ConfigMapLister
 
 	crdListerSynced       cache.InformerSynced
 	mcoconfigListerSynced cache.InformerSynced
@@ -92,6 +95,8 @@ type Operator struct {
 	mcpListerSynced       cache.InformerSynced
 	ccListerSynced        cache.InformerSynced
 	mcListerSynced        cache.InformerSynced
+	mcoCmListerSynced     cache.InformerSynced
+	clusterCmListerSynced cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -114,7 +119,8 @@ func New(
 	daemonsetInformer appsinformersv1.DaemonSetInformer,
 	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
 	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
-	cmInformer coreinformersv1.ConfigMapInformer,
+	mcoCmInformer coreinformersv1.ConfigMapInformer,
+	clusterCmInfomer coreinformersv1.ConfigMapInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	networkInformer configinformersv1.NetworkInformer,
 	client mcfgclientset.Interface,
@@ -147,12 +153,16 @@ func New(
 	daemonsetInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleInformer.Informer().AddEventHandler(optr.eventHandler())
 	clusterRoleBindingInformer.Informer().AddEventHandler(optr.eventHandler())
-	cmInformer.Informer().AddEventHandler(optr.eventHandler())
+	mcoCmInformer.Informer().AddEventHandler(optr.eventHandler())
 	infraInformer.Informer().AddEventHandler(optr.eventHandler())
 	networkInformer.Informer().AddEventHandler(optr.eventHandler())
 
 	optr.syncHandler = optr.sync
 
+	optr.clusterCmLister = clusterCmInfomer.Lister()
+	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
+	optr.mcoCmLister = mcoCmInformer.Lister()
+	optr.mcoCmListerSynced = mcoCmInformer.Informer().HasSynced
 	optr.crdLister = crdInformer.Lister()
 	optr.crdListerSynced = crdInformer.Informer().HasSynced
 	optr.mcoconfigLister = mcoconfigInformer.Lister()
@@ -201,6 +211,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.deployListerSynced,
 		optr.daemonsetListerSynced,
 		optr.infraListerSynced,
+		optr.mcoCmListerSynced,
+		optr.clusterCmListerSynced,
 		optr.networkListerSynced) {
 		glog.Error("failed to sync caches")
 		return
@@ -371,7 +383,7 @@ func (optr *Operator) sync(key string) error {
 }
 
 func (optr *Operator) getOsImageURL(namespace string) (string, error) {
-	cm, err := optr.kubeClient.CoreV1().ConfigMaps(namespace).Get(osImageConfigMapName, metav1.GetOptions{})
+	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(osImageConfigMapName)
 	if err != nil {
 		return "", err
 	}
@@ -379,7 +391,7 @@ func (optr *Operator) getOsImageURL(namespace string) (string, error) {
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
-	cm, err := optr.kubeClient.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
 	if err != nil {
 		return nil, err
 	}
