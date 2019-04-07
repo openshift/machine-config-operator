@@ -75,7 +75,6 @@ type Operator struct {
 	syncHandler func(ic string) error
 
 	crdLister       apiextlistersv1beta1.CustomResourceDefinitionLister
-	mcoconfigLister mcfglistersv1.MCOConfigLister
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	ccLister        mcfglistersv1.ControllerConfigLister
 	mcLister        mcfglistersv1.MachineConfigLister
@@ -87,7 +86,6 @@ type Operator struct {
 	clusterCmLister corelisterv1.ConfigMapLister
 
 	crdListerSynced       cache.InformerSynced
-	mcoconfigListerSynced cache.InformerSynced
 	deployListerSynced    cache.InformerSynced
 	daemonsetListerSynced cache.InformerSynced
 	infraListerSynced     cache.InformerSynced
@@ -108,7 +106,6 @@ type Operator struct {
 func New(
 	namespace, name string,
 	imagesFile string,
-	mcoconfigInformer mcfginformersv1.MCOConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
@@ -146,7 +143,6 @@ func New(
 	}
 
 	for _, i := range []cache.SharedIndexInformer{
-		mcoconfigInformer.Informer(),
 		controllerConfigInformer.Informer(),
 		serviceAccountInfomer.Informer(),
 		crdInformer.Informer(),
@@ -169,8 +165,6 @@ func New(
 	optr.mcoCmListerSynced = mcoCmInformer.Informer().HasSynced
 	optr.crdLister = crdInformer.Lister()
 	optr.crdListerSynced = crdInformer.Informer().HasSynced
-	optr.mcoconfigLister = mcoconfigInformer.Lister()
-	optr.mcoconfigListerSynced = mcoconfigInformer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
 	optr.mcpListerSynced = mcpInformer.Informer().HasSynced
 	optr.ccLister = ccInformer.Lister()
