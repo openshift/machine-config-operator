@@ -3,6 +3,7 @@ package operator
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -88,9 +89,14 @@ type Operator struct {
 	daemonsetListerSynced cache.InformerSynced
 	infraListerSynced     cache.InformerSynced
 	networkListerSynced   cache.InformerSynced
+	mcpListerSynced       cache.InformerSynced
+	ccListerSynced        cache.InformerSynced
+	mcListerSynced        cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
+
+	stopCh <-chan struct{}
 }
 
 // New returns a new machine config operator.
@@ -152,8 +158,11 @@ func New(
 	optr.mcoconfigLister = mcoconfigInformer.Lister()
 	optr.mcoconfigListerSynced = mcoconfigInformer.Informer().HasSynced
 	optr.mcpLister = mcpInformer.Lister()
+	optr.mcpListerSynced = mcpInformer.Informer().HasSynced
 	optr.ccLister = ccInformer.Lister()
+	optr.ccListerSynced = ccInformer.Informer().HasSynced
 	optr.mcLister = mcInformer.Lister()
+	optr.mcListerSynced = mcInformer.Informer().HasSynced
 	optr.deployLister = deployInformer.Lister()
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
 	optr.daemonsetLister = daemonsetInformer.Lister()
@@ -189,7 +198,6 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 
 	if !cache.WaitForCacheSync(stopCh,
 		optr.crdListerSynced,
-		optr.mcoconfigListerSynced,
 		optr.deployListerSynced,
 		optr.daemonsetListerSynced,
 		optr.infraListerSynced,
@@ -197,6 +205,20 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		glog.Error("failed to sync caches")
 		return
 	}
+
+	// these can only be synced after CRDs are installed
+	if !optr.inClusterBringup {
+		if !cache.WaitForCacheSync(stopCh,
+			optr.mcpListerSynced,
+			optr.ccListerSynced,
+			optr.mcListerSynced,
+		) {
+			glog.Error("failed to sync caches")
+			return
+		}
+	}
+
+	optr.stopCh = stopCh
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(optr.worker, time.Second, stopCh)
@@ -259,6 +281,13 @@ func (optr *Operator) sync(key string) error {
 
 	if err := optr.syncCustomResourceDefinitions(); err != nil {
 		return err
+	}
+
+	if optr.inClusterBringup {
+		// sync now our own informers after having installed the CRDs
+		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
+			return errors.New("failed to sync caches for informers")
+		}
 	}
 
 	namespace, _, err := cache.SplitMetaNamespaceKey(key)
