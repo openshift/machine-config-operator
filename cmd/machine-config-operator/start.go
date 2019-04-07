@@ -55,7 +55,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		controller := operator.New(
 			componentNamespace, componentName,
 			startOpts.imagesFile,
-			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
