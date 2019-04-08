@@ -334,9 +334,9 @@ func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2type
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, err := ctrl.mckLister.Get(cfg.Name)
-		if err != nil {
-			return err
+		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
+		if getErr != nil {
+			return getErr
 		}
 		newcfg.Status.Conditions = append(newcfg.Status.Conditions, wrapErrorWithCondition(err, args...))
 		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(newcfg)
