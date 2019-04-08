@@ -243,9 +243,10 @@ contents:
     # management of CNI plugins.
     [crio.network]
 
-    # network_dir is is where CNI network configuration
-    # files are stored.
-    network_dir = "/etc/cni/net.d/"
+    # network_dir is is where CNI network configuration`
+    # files are stored.  Note this default is changed from the RPM.
+    network_dir = "/etc/kubernetes/cni/net.d/"
 
     # plugin_dir is is where CNI plugin binaries are stored.
-    plugin_dir = "/usr/libexec/cni"
+    # Note this default is changed from the RPM.
+    plugin_dir = "/var/lib/cni/bin"
