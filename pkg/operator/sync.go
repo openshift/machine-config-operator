@@ -10,6 +10,7 @@ import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	policyv1 "k8s.io/api/policy/v1beta1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -169,6 +170,28 @@ func (optr *Operator) syncMachineConfigController(config renderConfig) error {
 		return agg
 	}
 	return nil
+}
+
+func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
+	eqgBytes, err := renderAsset(config, "manifests/etcdquorumguard/deployment.yaml")
+	if err != nil {
+		return err
+	}
+	eqg := resourceread.ReadDeploymentV1OrDie(eqgBytes)
+
+	_, _, err = resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
+	if err != nil {
+		return err
+	}
+	
+	disBytes, err := renderAsset(config, "manifests/etcdquorumguard/disruptionbudget.yaml")
+	if err != nil {
+		return err
+	}
+	dis := resourceread.ReadPodDisruptionBudgetV1OrDie(disBytes)
+
+	_, _, err = resourceapply.ApplyPodDisruptionBudget(optr.kubeClient.PolicyV1beta1(), dis)
+	return err
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config renderConfig) error {
@@ -346,6 +369,9 @@ const (
 
 	controllerConfigCompletedInterval = time.Second
 	controllerConfigCompletedTimeout  = 5 * time.Minute
+
+	podDisruptionBudgetRolloutPollInterval = time.Second
+	podDisruptionBudgetRolloutTimeout      = 10 * time.Minute
 )
 
 func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.CustomResourceDefinition) error {
@@ -400,6 +426,35 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
 			return fmt.Errorf("%v during waitForDeploymentRollout: %v", err, lastErr)
+		}
+		return err
+	}
+	return nil
+}
+
+func (optr *Operator) waitForPodDisruptionBudgetRollout(resource *policyv1.PodDisruptionBudget) error {
+	var lastErr error
+	if err := wait.Poll(podDisruptionBudgetRolloutPollInterval, podDisruptionBudgetRolloutTimeout, func() (bool, error) {
+		d, err := optr.pdbLister.PodDisruptionBudgets(resource.Namespace).Get(resource.Name)
+		if apierrors.IsNotFound(err) {
+			// exit early to recreate the podDisruptionBudget.
+			return false, err
+		}
+		if err != nil {
+			// Do not return error here, as we could be updating the API Server itself, in which case we
+			// want to continue waiting.
+			lastErr = fmt.Errorf("error getting PodDisruptionBudget %s during rollout: %v", resource.Name, err)
+			return false, nil
+		}
+
+		if d.DeletionTimestamp != nil {
+			return false, fmt.Errorf("PodDisruptionBudget %s is being deleted", resource.Name)
+		}
+
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return fmt.Errorf("%v during waitForPodDisruptionBudgetRollout: %v", err, lastErr)
 		}
 		return err
 	}

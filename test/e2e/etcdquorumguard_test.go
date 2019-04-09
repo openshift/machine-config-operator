@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,8 +10,7 @@ import (
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	k8sclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
 )
 
 type podstatus struct {
@@ -26,102 +24,74 @@ var pods = make(map[string]podstatus)
 type podinfo map[string]podstatus
 
 func TestEtcdQuorumGuard(t *testing.T) {
-	kclient, err := initialize()
-	if err != nil {
+	cs := framework.NewClientSet("")
+	if err := waitForEtcdQuorumGuardDeployment(cs); err != nil {
 		fmt.Printf("No etcd-quorum-guard deployment present; assume for now it is not configured.\n")
 		return
 		//t.Fatal(err.Error())
 	}
 	fmt.Print("Make all schedulable\n")
-	if err = makeAllNodesSchedulable(kclient); err != nil {
+	if err := makeAllNodesSchedulable(cs); err != nil {
 		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
 	}
 	fmt.Print("Check for all running\n")
-	if err = waitForPods(kclient, 3, 3, 3); err != nil {
+	if err := waitForPods(cs, 3, 3, 3); err != nil {
 		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
 	}
 	fmt.Print("Make one unschedulable\n")
-	if err = makeOneNodeUnschedulable(kclient); err != nil {
+	if err := makeOneNodeUnschedulable(cs); err != nil {
 		t.Errorf("Unable to make one node unschedulable: %s", err.Error())
 	}
 	fmt.Print("Wait for 2 running\n")
-	if err = waitForPods(kclient, 3, 2, 2); err != nil {
+	if err := waitForPods(cs, 3, 2, 2); err != nil {
 		t.Errorf("Unable to get one etcd-quorum-guard pod stopped: %s", err.Error())
 	}
 	fmt.Print("Make second unschedulable\n")
-	if err = makeOneNodeUnschedulable(kclient); err == nil || !strings.Contains(err.Error(), "it would violate the pod's disruption budget") {
+	if err := makeOneNodeUnschedulable(cs); err == nil || !strings.Contains(err.Error(), "it would violate the pod's disruption budget") {
 		fmt.Print("  Pod should not have been evicted\n")
 		t.Errorf("Pod should not have been evicted because it violated disruption budget: %v", err)
 	} else {
 		fmt.Print("  Eviction correctly failed because it would violate the pod's disruption budget.\n")
 	}
 	fmt.Print("Make all schedulable\n")
-	if err = makeAllNodesSchedulable(kclient); err != nil {
+	if err := makeAllNodesSchedulable(cs); err != nil {
 		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
 	}
 	fmt.Print("Wait for all running\n")
-	if err = waitForPods(kclient, 3, 3, 3); err != nil {
+	if err := waitForPods(cs, 3, 3, 3); err != nil {
 		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
 	}
 	fmt.Print("Make one unschedulable\n")
-	if err = makeOneNodeUnschedulable(kclient); err != nil {
+	if err := makeOneNodeUnschedulable(cs); err != nil {
 		t.Errorf("Unable to make one node unschedulable: %s", err.Error())
 	}
 	fmt.Print("Wait for one not running\n")
-	if err = waitForPods(kclient, 3, 2, 2); err != nil {
+	if err := waitForPods(cs, 3, 2, 2); err != nil {
 		t.Errorf("Unable to get one etcd-quorum-guard pod stopped: %s", err.Error())
 	}
 	fmt.Print("Make all schedulable\n")
-	if err = makeAllNodesSchedulable(kclient); err != nil {
+	if err := makeAllNodesSchedulable(cs); err != nil {
 		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
 	}
 	fmt.Print("Wait for all\n")
-	if err = waitForPods(kclient, 3, 3, 3); err != nil {
+	if err := waitForPods(cs, 3, 3, 3); err != nil {
 		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
 	}
 }
 
-func initialize() (*k8sclient.Clientset, error) {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("Error initializing kubeconfig: %s\n", err.Error())
-	}
-	kclient, err := k8sclient.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("Error creating client: %s\n", err.Error())
-	}
-	err = getMasterNodes(kclient)
-	if err != nil {
-		return nil, fmt.Errorf("Error getting master nodes: %s", err.Error())
-	}
-
-	err = waitForEtcdQuorumGuardDeployment(kclient)
-	if err != nil {
-		return nil, fmt.Errorf("Error getting etcd quota guard deployment: %s", err.Error())
-	}
-	// e2e test job does not guarantee our operator is up before
-	// launching the test, so we need to do so.
-	err = getEtcdQuotaGuardPods(kclient)
-	if err != nil {
-		return nil, fmt.Errorf("Error getting pods: %s", err.Error())
-	}
-	return kclient, nil
-}
-
-func makeNodeUnSchedulableOrSchedulable(kclient *k8sclient.Clientset, node string, unschedulable bool) error {
+func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, unschedulable bool) error {
 	prefix := ""
 	if unschedulable {
 		prefix = "un"
 	}
 	for {
-		n, err := getNode(kclient, node)
+		n, err := getNode(cs, node)
 		if err != nil {
 			return err
 		}
 		if n.Spec.Unschedulable != unschedulable {
 			n.Spec.Unschedulable = !unschedulable
-			if _, err := kclient.CoreV1().Nodes().Update(n); err != nil {
+			if _, err := cs.CoreV1Interface.Nodes().Update(n); err != nil {
 				if strings.Contains(err.Error(), "the object has been modified") {
 					fmt.Print("    Node object was modified and not up to date; retrying\n")
 					continue;
@@ -135,27 +105,27 @@ func makeNodeUnSchedulableOrSchedulable(kclient *k8sclient.Clientset, node strin
 	}
 }
 
-func makeAllNodesSchedulable(kclient *k8sclient.Clientset) error {
+func makeAllNodesSchedulable(cs *framework.ClientSet) error {
 	for node, unschedulable := range nodes {
 		if unschedulable {
-			err := makeNodeUnSchedulableOrSchedulable(kclient, node, false)
+			err := makeNodeUnSchedulableOrSchedulable(cs, node, false)
 			if err != nil {
 				return err
 			}
 			nodes[node] = false
 		}
 	}
-	return getMasterNodes(kclient)
+	return getMasterNodes(cs)
 }
 
-func evictEtcdQuotaGuardPodsFromNode(kclient *k8sclient.Clientset, node string) error {
-	pods, err := getEtcdQuotaGuardPodsOnNode(kclient, node)
+func evictEtcdQuotaGuardPodsFromNode(cs *framework.ClientSet, node string) error {
+	pods, err := getEtcdQuotaGuardPodsOnNode(cs, node)
 	if err != nil {
 		return err
 	}
 	for _, pod := range pods {
 		fmt.Printf("  Evicting pod %s/%s...\n", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
-		err = kclient.CoreV1().Pods(pod.ObjectMeta.Namespace).Evict(&policyv1beta1.Eviction{metav1.TypeMeta{}, pod.ObjectMeta, &metav1.DeleteOptions{}})
+		err = cs.CoreV1Interface.Pods(pod.ObjectMeta.Namespace).Evict(&policyv1beta1.Eviction{metav1.TypeMeta{}, pod.ObjectMeta, &metav1.DeleteOptions{}})
 		if err != nil {
 			err = fmt.Errorf("     Unable to evict pod %s/%s: %s\n", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, err.Error())
 		}
@@ -163,20 +133,20 @@ func evictEtcdQuotaGuardPodsFromNode(kclient *k8sclient.Clientset, node string) 
 	return err
 }
 
-func makeOneNodeUnschedulable(kclient *k8sclient.Clientset) error {
+func makeOneNodeUnschedulable(cs *framework.ClientSet) error {
 	var err error
 	for node, unschedulable := range nodes {
 		if !unschedulable {
-			err = makeNodeUnSchedulableOrSchedulable(kclient, node, true)
+			err = makeNodeUnSchedulableOrSchedulable(cs, node, true)
 			if err != nil {
 				break
 			}
 			nodes[node] = true
-			err = evictEtcdQuotaGuardPodsFromNode(kclient, node)
+			err = evictEtcdQuotaGuardPodsFromNode(cs, node)
 			break
 		}
 	}
-	err1 := getMasterNodes(kclient)
+	err1 := getMasterNodes(cs)
 	if err != nil {
 		return err
 	}
@@ -184,13 +154,13 @@ func makeOneNodeUnschedulable(kclient *k8sclient.Clientset) error {
 
 }
 
-func getNode(kclient *k8sclient.Clientset, node string) (*corev1.Node, error) {
-	return kclient.CoreV1().Nodes().Get(node, metav1.GetOptions{})
+func getNode(cs *framework.ClientSet, node string) (*corev1.Node, error) {
+	return cs.CoreV1Interface.Nodes().Get(node, metav1.GetOptions{})
 }
 
-func waitForEtcdQuorumGuardDeployment(kclient *k8sclient.Clientset) error {
+func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 	err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := kclient.AppsV1().Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
+		_, err := cs.AppsV1Interface.Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -200,9 +170,9 @@ func waitForEtcdQuorumGuardDeployment(kclient *k8sclient.Clientset) error {
 	return err
 }
 
-func waitForPods(kclient *k8sclient.Clientset, expectedTotal, min, max int32) error {
+func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 	err := wait.PollImmediate(5*time.Second, 2*time.Minute, func() (bool, error) {
-		d, err := kclient.AppsV1().Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
+		d, err := cs.AppsV1Interface.Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err != nil {
 			// By this point the deployment should exist.
 			fmt.Printf("  error waiting for etcd-quorum-guard deployment to exist: %v\n", err)
@@ -238,8 +208,8 @@ func waitForPods(kclient *k8sclient.Clientset, expectedTotal, min, max int32) er
 	return nil
 }
 
-func getMasterNodes(kclient *k8sclient.Clientset) error {
-	n, err := kclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+func getMasterNodes(cs *framework.ClientSet) error {
+	n, err := cs.CoreV1Interface.Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil {
 		return err
 	}
@@ -249,13 +219,13 @@ func getMasterNodes(kclient *k8sclient.Clientset) error {
 	return nil
 }
 
-func getEtcdQuotaGuardPodsOnNode(kclient *k8sclient.Clientset, node string) ([]corev1.Pod, error) {
-	_, err := getNode(kclient, node)
+func getEtcdQuotaGuardPodsOnNode(cs *framework.ClientSet, node string) ([]corev1.Pod, error) {
+	_, err := getNode(cs, node)
 	var answer []corev1.Pod
 	if err != nil {
 		return answer, fmt.Errorf("No such node %s", node)
 	}
-	p, err := kclient.CoreV1().Pods("kube-system").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
+	p, err := cs.CoreV1Interface.Pods("kube-system").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
 	for _, pod := range p.Items {
 		if pod.Spec.NodeName == node {
 			answer = append(answer, pod)
@@ -264,8 +234,8 @@ func getEtcdQuotaGuardPodsOnNode(kclient *k8sclient.Clientset, node string) ([]c
 	return answer, nil
 }
 
-func getEtcdQuotaGuardPods(kclient *k8sclient.Clientset) error {
-	p, err := kclient.CoreV1().Pods("kube-system").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
+func getEtcdQuotaGuardPods(cs *framework.ClientSet) error {
+	p, err := cs.CoreV1Interface.Pods("kube-system").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
 	if err != nil {
 		return err
 	}

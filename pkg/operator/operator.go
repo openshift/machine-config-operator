@@ -27,6 +27,7 @@ import (
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	policylisterv1 "k8s.io/client-go/listers/policy/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -84,6 +85,7 @@ type Operator struct {
 	networkLister   configlistersv1.NetworkLister
 	mcoCmLister     corelisterv1.ConfigMapLister
 	clusterCmLister corelisterv1.ConfigMapLister
+	pdbLister	policylisterv1.PodDisruptionBudgetLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
