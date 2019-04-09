@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -127,6 +128,9 @@ const (
 	pathDevNull = "/dev/null"
 	// pathStateJSON is where we store temporary state across config changes
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
+	// currentConfigPath is where we store the current config on disk to validate
+	// against annotations changes
+	currentConfigPath = "/var/machine-config-daemon/currentconfig"
 
 	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
 	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
@@ -401,13 +405,13 @@ func (dn *Daemon) syncNode(key string) error {
 		// stash the current node being processed
 		dn.node = node
 		// Pass to the shared update prep method
-		needUpdate, err := dn.prepUpdateFromCluster()
+		current, desired, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			glog.Infof("Unable to prep update: %s", err)
 			return err
 		}
-		if needUpdate {
-			if err := dn.triggerUpdateWithMachineConfig(nil, nil); err != nil {
+		if current != nil || desired != nil {
+			if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
 				glog.Infof("Unable to apply update: %s", err)
 				return err
 			}
@@ -822,6 +826,15 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		state.currentConfig = state.pendingConfig
 	}
 
+	mcJSON, err := json.Marshal(state.currentConfig)
+	if err != nil {
+		return err
+	}
+	// write a file with current fingerprint overriding the previous
+	if err := writeFileAtomicallyWithDefaults(currentConfigPath, mcJSON); err != nil {
+		return err
+	}
+
 	inDesiredConfig := state.currentConfig == state.desiredConfig
 	if inDesiredConfig {
 		if state.pendingConfig != nil {
@@ -852,16 +865,16 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 			panic("running in onceFrom mode with a remote MachineConfig without a cluster")
 		}
 		// NOTE: This case expects a cluster to exists already.
-		needUpdate, err := dn.prepUpdateFromCluster()
+		current, desired, err := dn.prepUpdateFromCluster()
 		if err != nil {
 			dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
 			return err
 		}
-		if !needUpdate {
+		if current == nil || desired == nil {
 			return nil
 		}
 		// At this point we have verified we need to update
-		if err := dn.triggerUpdateWithMachineConfig(nil, &machineConfig); err != nil {
+		if err := dn.triggerUpdateWithMachineConfig(current, &machineConfig); err != nil {
 			dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
 			return err
 		}
@@ -900,29 +913,50 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 // prepUpdateFromCluster handles the shared update prepping functionality for
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
-func (dn *Daemon) prepUpdateFromCluster() (bool, error) {
+func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
 	desiredConfigName, err := getNodeAnnotationExt(dn.node, constants.DesiredMachineConfigAnnotationKey, true)
 	if err != nil {
-		return false, err
+		return nil, nil, err
+	}
+	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
+	if err != nil {
+		return nil, nil, err
 	}
 	// currentConfig is always expected to be there as loadNodeAnnotations
 	// is one of the very first calls when the daemon starts.
 	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
-		return false, err
+		return nil, nil, err
+	}
+	currentConfig, err := dn.mcLister.Get(currentConfigName)
+	if err != nil {
+		return nil, nil, err
 	}
 	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
-		return false, err
+		return nil, nil, err
+	}
+
+	mcJSON, err := os.Open(currentConfigPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer mcJSON.Close()
+	fingerprintMC := &mcfgv1.MachineConfig{}
+	if err := json.NewDecoder(bufio.NewReader(mcJSON)).Decode(fingerprintMC); err != nil {
+		return nil, nil, err
+	}
+	if fingerprintMC.GetName() != currentConfig.GetName() {
+		return fingerprintMC, desiredConfig, nil
 	}
 
 	// Detect if there is an update
 	if desiredConfigName == currentConfigName && state == constants.MachineConfigDaemonStateDone {
 		// No actual update to the config
 		glog.V(2).Info("No updating is required")
-		return false, nil
+		return nil, nil, nil
 	}
-	return true, nil
+	return currentConfig, desiredConfig, nil
 }
 
 // completeUpdate marks the node as schedulable again, then deletes the
