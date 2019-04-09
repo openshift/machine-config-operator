@@ -168,6 +168,11 @@ func (f *fixture) newController() *Controller {
 	c.featListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
+	c.patchKubeletConfigsFunc = func(name string, patch []byte) error {
+		f.client.Invokes(core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, name, types.MergePatchType, patch), nil)
+		return nil
+	}
+
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	i.Start(stopCh)
