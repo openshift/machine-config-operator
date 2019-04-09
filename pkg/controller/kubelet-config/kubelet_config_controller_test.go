@@ -302,7 +302,7 @@ func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) 
 }
 
 func (f *fixture) expectPatchKubeletConfig(config *mcfgv1.KubeletConfig, patch []byte) {
-	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name, patch))
+	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name, types.MergePatchType, patch))
 }
 
 func (f *fixture) expectUpdateKubeletConfig(config *mcfgv1.KubeletConfig) {

@@ -107,7 +107,7 @@ func (c *FakeKubeletConfigs) DeleteCollection(options *v1.DeleteOptions, listOpt
 // Patch applies the patch and returns the patched kubeletConfig.
 func (c *FakeKubeletConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(kubeletconfigsResource, name, data, subresources...), &machineconfigurationopenshiftiov1.KubeletConfig{})
+		Invokes(testing.NewRootPatchSubresourceAction(kubeletconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	if obj == nil {
 		return nil, err
 	}

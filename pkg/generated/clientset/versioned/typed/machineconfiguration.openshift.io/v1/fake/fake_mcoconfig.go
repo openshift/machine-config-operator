@@ -103,7 +103,7 @@ func (c *FakeMCOConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions
 // Patch applies the patch and returns the patched mCOConfig.
 func (c *FakeMCOConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.MCOConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(mcoconfigsResource, c.ns, name, data, subresources...), &machineconfigurationopenshiftiov1.MCOConfig{})
+		Invokes(testing.NewPatchSubresourceAction(mcoconfigsResource, c.ns, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.MCOConfig{})
 
 	if obj == nil {
 		return nil, err

@@ -68,15 +68,15 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 
 	platform := "none"
 	switch infra.Status.Platform {
-	case configv1.AWSPlatform:
+	case configv1.AWSPlatformType:
 		platform = "aws"
-	case configv1.AzurePlatform:
+	case configv1.AzurePlatformType:
 		platform = "azure"
-	case configv1.OpenStackPlatform:
+	case configv1.OpenStackPlatformType:
 		platform = "openstack"
-	case configv1.LibvirtPlatform:
+	case configv1.LibvirtPlatformType:
 		platform = "libvirt"
-	case configv1.VSpherePlatform:
+	case configv1.VSpherePlatformType:
 		platform = "vsphere"
 	}
 

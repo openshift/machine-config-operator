@@ -449,15 +449,15 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:ff4400171f9d204cbf5d22e5bba044cb661bd0815375d8a55ab0da3e81596ef4"
+  digest = "1:0d1802b8b19d3d89781268c84ca7cec7e5e048c9537c903994adfb0f813f3539"
   name = "github.com/openshift/api"
   packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "5e45fff0f89ec1edff19e0ee00a21ecbeb08d787"
+  revision = "275768afc8f66b79aeb12debf94ffc85255104ad"
 
 [[projects]]
   branch = "master"
-  digest = "1:78f51e0ae38cc19e6e118c47cc0556dd7bd0c0b6d5a4c5c86affbbdae78e30c8"
+  digest = "1:be548006c42411cba93d28f10365809319961c811ffeb7fe13e267d0c74f5f42"
   name = "github.com/openshift/client-go"
   packages = [
     "config/clientset/versioned",
@@ -472,7 +472,7 @@
     "config/listers/config/v1",
   ]
   pruneopts = "NUT"
-  revision = "8ae2a9c33ba2a3d2ed5dc13d536ca935fc9625b9"
+  revision = "53641229593ccc560f837da082350e91f51a76a5"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -754,7 +754,8 @@
   version = "v2.2.1"
 
 [[projects]]
-  digest = "1:4485f6050feae6844efd79bce3f5b35e5ed4a21dd79ef6a2dbbee263531cea09"
+  branch = "release-1.13"
+  digest = "1:c00f811aa920ece8c18e1caa7c57f155af13f7921ab7db36091d6471279a43b1"
   name = "k8s.io/api"
   packages = [
     "admissionregistration/v1alpha1",
@@ -762,6 +763,7 @@
     "apps/v1",
     "apps/v1beta1",
     "apps/v1beta2",
+    "auditregistration/v1alpha1",
     "authentication/v1",
     "authentication/v1beta1",
     "authorization/v1",
@@ -790,8 +792,7 @@
     "storage/v1beta1",
   ]
   pruneopts = "NUT"
-  revision = "6db15a15d2d3874a6c3ddb2140ac9f3bc7058428"
-  version = "kubernetes-1.12.5"
+  revision = "5cb15d34447165a97c76ed5a60e4e99c8a01ecfe"
 
 [[projects]]
   digest = "1:2443333d72c1d0eb9e023f73211e448c31bcb4c6dac90c6fbae3d1d9e01f0e3a"
@@ -880,7 +881,7 @@
   version = "kubernetes-1.12.5"
 
 [[projects]]
-  digest = "1:01dea39f0993df6e0b4c53af8d434b12d2de09380dac8505df2ff85167b1dd18"
+  digest = "1:f6a1f2ac66fd4a03e9dda70c91b42c18db4830c262b41a2c6a537852e792af89"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -893,6 +894,8 @@
     "informers/apps/v1",
     "informers/apps/v1beta1",
     "informers/apps/v1beta2",
+    "informers/auditregistration",
+    "informers/auditregistration/v1alpha1",
     "informers/autoscaling",
     "informers/autoscaling/v1",
     "informers/autoscaling/v2beta1",
@@ -942,6 +945,8 @@
     "kubernetes/typed/apps/v1beta1/fake",
     "kubernetes/typed/apps/v1beta2",
     "kubernetes/typed/apps/v1beta2/fake",
+    "kubernetes/typed/auditregistration/v1alpha1",
+    "kubernetes/typed/auditregistration/v1alpha1/fake",
     "kubernetes/typed/authentication/v1",
     "kubernetes/typed/authentication/v1/fake",
     "kubernetes/typed/authentication/v1beta1",
@@ -999,6 +1004,7 @@
     "listers/apps/v1",
     "listers/apps/v1beta1",
     "listers/apps/v1beta2",
+    "listers/auditregistration/v1alpha1",
     "listers/autoscaling/v1",
     "listers/autoscaling/v2beta1",
     "listers/autoscaling/v2beta2",
@@ -1052,11 +1058,12 @@
     "util/workqueue",
   ]
   pruneopts = "NUT"
-  revision = "1638f8970cefaa404ff3a62950f88b08292b2696"
-  version = "v9.0.0"
+  revision = "e64494209f554a6723674bd494d69445fb76a1d4"
+  version = "v10.0.0"
 
 [[projects]]
-  digest = "1:8108815d1aef9159daabdb3f0fcef04a88765536daf0c0cd29a31fdba135ee54"
+  branch = "release-1.13"
+  digest = "1:d809e6c8dfa3448ae10f5624eff4ed1ebdc906755e7cea294c44e8b7ac0b077a"
   name = "k8s.io/code-generator"
   packages = [
     "cmd/client-gen",
@@ -1070,11 +1077,10 @@
     "pkg/util",
   ]
   pruneopts = ""
-  revision = "b1289fc74931d4b6b04bd1a259acfc88a2cb0a66"
-  version = "kubernetes-1.12.5"
+  revision = "c2090bec4d9b1fb25de3812f868accc2bc9ecbae"
 
 [[projects]]
-  digest = "1:f3ce5a03c50cf794f17d331fa9d8741db6fd8aeb5ec07d2a68eb039619f22967"
+  digest = "1:ef304112ae16a07050b858a8e82ccfe9d9e0abc20aef1e55b6543b4b6df54eee"
   name = "k8s.io/gengo"
   packages = [
     "args",
@@ -1084,7 +1090,15 @@
     "types",
   ]
   pruneopts = ""
-  revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
+  revision = "51747d6e00da1fc578d5a333a93bb2abcbce7a95"
+
+[[projects]]
+  digest = "1:c263611800c3a97991dbcf9d3bc4de390f6224aaa8ca0a7226a9d734f65a416a"
+  name = "k8s.io/klog"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "71442cd4037d612096940ceb0f3fec3f7fff66e0"
+  version = "v0.2.0"
 
 [[projects]]
   branch = "master"

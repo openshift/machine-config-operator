@@ -3,6 +3,8 @@
 package v1
 
 import (
+	"time"
+
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	scheme "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,10 +59,15 @@ func (c *controllerConfigs) Get(name string, options metav1.GetOptions) (result 
 
 // List takes label and field selectors, and returns the list of ControllerConfigs that match those selectors.
 func (c *controllerConfigs) List(opts metav1.ListOptions) (result *v1.ControllerConfigList, err error) {
+	var timeout time.Duration
+	if opts.TimeoutSeconds != nil {
+		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
+	}
 	result = &v1.ControllerConfigList{}
 	err = c.client.Get().
 		Resource("controllerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
+		Timeout(timeout).
 		Do().
 		Into(result)
 	return
@@ -68,10 +75,15 @@ func (c *controllerConfigs) List(opts metav1.ListOptions) (result *v1.Controller
 
 // Watch returns a watch.Interface that watches the requested controllerConfigs.
 func (c *controllerConfigs) Watch(opts metav1.ListOptions) (watch.Interface, error) {
+	var timeout time.Duration
+	if opts.TimeoutSeconds != nil {
+		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
+	}
 	opts.Watch = true
 	return c.client.Get().
 		Resource("controllerconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
+		Timeout(timeout).
 		Watch()
 }
 
@@ -125,9 +137,14 @@ func (c *controllerConfigs) Delete(name string, options *metav1.DeleteOptions) e
 
 // DeleteCollection deletes a collection of objects.
 func (c *controllerConfigs) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
+	var timeout time.Duration
+	if listOptions.TimeoutSeconds != nil {
+		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
+	}
 	return c.client.Delete().
 		Resource("controllerconfigs").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
+		Timeout(timeout).
 		Body(options).
 		Do().
 		Error()
