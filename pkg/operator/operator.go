@@ -318,7 +318,7 @@ func (optr *Operator) sync(key string) error {
 	spec.EtcdCAData = etcdCA
 	spec.EtcdMetricCAData = etcdMetricCA
 	spec.RootCAData = bundle
-	spec.PullSecret = &v1.ObjectReference{Namespace: "kube-system", Name: "coreos-pull-secret"}
+	spec.PullSecret = &v1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:            imgs.Etcd,
