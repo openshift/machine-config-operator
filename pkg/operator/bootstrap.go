@@ -27,8 +27,12 @@ func RenderBootstrap(
 	filesData := map[string][]byte{}
 	files := []string{
 		clusterConfigConfigMapFile,
-		infraFile, networkFile,
-		rootCAFile, etcdCAFile, etcdMetricCAFile, pullSecretFile,
+		infraFile,
+		networkFile,
+		rootCAFile,
+		etcdCAFile,
+		etcdMetricCAFile,
+		pullSecretFile,
 	}
 	if kubeCAFile != "" {
 		files = append(files, kubeCAFile)
@@ -112,11 +116,10 @@ func RenderBootstrap(
 		filename: "manifests/csr-bootstrap-role-binding.yaml",
 	}}
 	for _, m := range manifests {
-		glog.Info(m.name)
-
 		var b []byte
 		var err error
 		if len(m.name) > 0 {
+			glog.Info(m.name)
 			b, err = renderAsset(config, m.name)
 			if err != nil {
 				return err
