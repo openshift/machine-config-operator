@@ -107,7 +107,7 @@ func (c *FakeMachineConfigPools) DeleteCollection(options *v1.DeleteOptions, lis
 // Patch applies the patch and returns the patched machineConfigPool.
 func (c *FakeMachineConfigPools) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(machineconfigpoolsResource, name, data, subresources...), &machineconfigurationopenshiftiov1.MachineConfigPool{})
+		Invokes(testing.NewRootPatchSubresourceAction(machineconfigpoolsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	if obj == nil {
 		return nil, err
 	}
