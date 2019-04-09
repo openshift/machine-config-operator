@@ -1,0 +1,10 @@
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  namespace: kube-system
+  name: etcd-quorum-guard
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: etcd-quorum-guard
