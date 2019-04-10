@@ -6,6 +6,6 @@ spec:
   machineConfigSelector:
     matchLabels:
       "machineconfiguration.openshift.io/role": "worker"
-  machineSelector:
+  nodeSelector:
     matchLabels:
       node-role.kubernetes.io/worker: ""

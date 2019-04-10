@@ -265,9 +265,17 @@ func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfig
 
 	var pools []*mcfgv1.MachineConfigPool
 	for _, p := range pl {
+		// first get MachineSelector
 		selector, err := metav1.LabelSelectorAsSelector(p.Spec.MachineSelector)
 		if err != nil {
 			return nil, fmt.Errorf("invalid label selector: %v", err)
+		}
+		// if MachineSelector is empty, get and use NodeSelector
+		if p.Spec.MachineSelector == nil {
+			selector, err = metav1.LabelSelectorAsSelector(p.Spec.NodeSelector)
+			if err != nil {
+				return nil, fmt.Errorf("invalid label selector: %v", err)
+			}
 		}
 
 		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
@@ -424,8 +432,9 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	// TODO: Deep-copy only when needed.
 	pool := machineconfigpool.DeepCopy()
 	everything := metav1.LabelSelector{}
-	if reflect.DeepEqual(pool.Spec.MachineSelector, &everything) {
-		ctrl.eventRecorder.Eventf(pool, v1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machines. A non-empty selector is required.")
+
+	if reflect.DeepEqual(pool.Spec.MachineSelector, &everything) && reflect.DeepEqual(pool.Spec.NodeSelector, &everything) {
+		ctrl.eventRecorder.Eventf(pool, v1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all nodes. A non-empty selector is required.")
 		return nil
 	}
 
@@ -439,6 +448,13 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineSelector)
 	if err != nil {
 		return err
+	}
+	// if MachineSelector is empty, get and use NodeSelector
+	if pool.Spec.MachineSelector == nil {
+		selector, err = metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
+		if err != nil {
+			return fmt.Errorf("invalid label selector: %v", err)
+		}
 	}
 	nodes, err := ctrl.nodeLister.List(selector)
 	if err != nil {

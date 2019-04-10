@@ -61,6 +61,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavai
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			MachineSelector: selector,
+			NodeSelector:    selector,
 			MaxUnavailable:  maxUnavail,
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
