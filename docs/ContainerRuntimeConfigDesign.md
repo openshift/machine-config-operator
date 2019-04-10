@@ -56,7 +56,9 @@ ContainerRuntimeConfig
  [ContainerRuntimeConfigurationSpec](Will have to add this in this repo)
 ```
 
-Example:
+## Example
+
+This is what an example `ctrcfg` CR would look like:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
@@ -69,6 +71,29 @@ spec:
      custom-crio: high-pid-limit
  containerRuntimeConfig:
    pidsLimit: 2048
+```
+
+Make sure to add a label under `matchLabels` in the containerRuntimeConfig CR and use that label in the machineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-crio: high-pid-limit`.
+
+To roll out the pids limit changes to all the master nodes (can switch this to worker for the worker nodes), add `custom-crio: high-pid-limit` under labels in the machineConfigPool config.  
+
+```
+oc edit machineconfigpool master
+```
+
+Snippet of the machineConfigPool config with the matching label added:
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  creationTimestamp: 2019-04-10T16:39:39Z
+  generation: 1
+  labels:
+    custom-crio: high-pid-limit
+    operator.machineconfiguration.openshift.io/required-for-upgrade: ""
+  name: master
+  ...
 ```
 
 ## Implementation Details
@@ -88,5 +113,3 @@ The ContainerRuntimeConfigController would perform the following steps:
 5. Create or Update the ignition /etc/containers/storage.conf and /etc/crio/crio.conf files within a 99-[role]-containerruntime-managed MachineConfig
 
 After deletion of the ContainerRuntimeConfig instance the config will be reverted to the original storage and crio config.
-
-
