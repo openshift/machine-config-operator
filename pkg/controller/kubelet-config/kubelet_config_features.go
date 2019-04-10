@@ -62,10 +62,13 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	// Fetch the Feature
 	features, err := ctrl.featLister.Get(name)
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("FeatureSet %v has been deleted", key)
-		return nil
-	}
-	if err != nil {
+		glog.V(2).Infof("FeatureSet %v is missing, using default", key)
+		features = &osev1.FeatureGate{
+			Spec: osev1.FeatureGateSpec{
+				FeatureSet: osev1.Default,
+			},
+		}
+	} else if err != nil {
 		return err
 	}
 	featureGates, err := ctrl.generateFeatureMap(features)
