@@ -20,7 +20,7 @@ import (
 func RenderBootstrap(
 	clusterConfigConfigMapFile string,
 	infraFile, networkFile string,
-	etcdCAFile, etcdMetricCAFile string, rootCAFile string, kubeCAFile string, pullSecretFile string,
+	etcdCAFile, etcdMetricCAFile string, rootCAFile string, kubeAPIServerServingCA string, pullSecretFile string,
 	imgs Images,
 	destinationDir string,
 ) error {
@@ -34,8 +34,8 @@ func RenderBootstrap(
 		etcdMetricCAFile,
 		pullSecretFile,
 	}
-	if kubeCAFile != "" {
-		files = append(files, kubeCAFile)
+	if kubeAPIServerServingCA != "" {
+		files = append(files, kubeAPIServerServingCA)
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -71,8 +71,8 @@ func RenderBootstrap(
 	bundle := make([]byte, 0)
 	bundle = append(bundle, filesData[rootCAFile]...)
 	// Append the kube-ca if given.
-	if _, ok := filesData[kubeCAFile]; ok {
-		bundle = append(bundle, filesData[kubeCAFile]...)
+	if _, ok := filesData[kubeAPIServerServingCA]; ok {
+		bundle = append(bundle, filesData[kubeAPIServerServingCA]...)
 	}
 
 	spec.EtcdCAData = filesData[etcdCAFile]
@@ -87,7 +87,7 @@ func RenderBootstrap(
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 	}
 
-	config := getRenderConfig("", spec, imgs, infra.Status.APIServerURL)
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, imgs, infra.Status.APIServerURL)
 
 	manifests := []struct {
 		name     string
@@ -114,6 +114,9 @@ func RenderBootstrap(
 	}, {
 		name:     "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
 		filename: "manifests/csr-bootstrap-role-binding.yaml",
+	}, {
+		name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
+		filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
 	}}
 	for _, m := range manifests {
 		var b []byte
