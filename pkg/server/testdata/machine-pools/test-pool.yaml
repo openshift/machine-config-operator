@@ -7,7 +7,7 @@ spec:
   machineConfigSelector:
     matchLabels:
       machineconfiguration.openshift.io/role: test
-  machineSelector:
+  nodeSelector:
     matchLabels:
       node-role.kubernetes.io/test: ""
   maxUnavailable: null

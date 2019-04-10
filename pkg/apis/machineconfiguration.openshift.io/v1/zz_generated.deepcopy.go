@@ -628,6 +628,11 @@ func (in *MachineConfigPoolSpec) DeepCopyInto(out *MachineConfigPoolSpec) {
 		*out = new(metav1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.NodeSelector != nil {
+		in, out := &in.NodeSelector, &out.NodeSelector
+		*out = new(metav1.LabelSelector)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.MaxUnavailable != nil {
 		in, out := &in.MaxUnavailable, &out.MaxUnavailable
 		*out = new(intstr.IntOrString)
