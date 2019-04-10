@@ -46,3 +46,94 @@ func ApplySecret(client coreclientv1.SecretsGetter, required *corev1.Secret) (*c
 	actual, err := client.Secrets(required.Namespace).Update(existing)
 	return actual, true, err
 }
+
+// ApplyConfigMap merges objectmeta, requires data
+func ApplyConfigMap(client coreclientv1.ConfigMapsGetter, required *corev1.ConfigMap) (*corev1.ConfigMap, bool, error) {
+	existing, err := client.ConfigMaps(required.Namespace).Get(required.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		actual, err := client.ConfigMaps(required.Namespace).Create(required)
+		return actual, true, err
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	modified := resourcemerge.BoolPtr(false)
+	existingCopy := existing.DeepCopy()
+
+	resourcemerge.EnsureObjectMeta(modified, &existingCopy.ObjectMeta, required.ObjectMeta)
+
+	var modifiedKeys []string
+	for existingCopyKey, existingCopyValue := range existingCopy.Data {
+		if requiredValue, ok := required.Data[existingCopyKey]; !ok || (existingCopyValue != requiredValue) {
+			modifiedKeys = append(modifiedKeys, "data."+existingCopyKey)
+		}
+	}
+	for requiredKey := range required.Data {
+		if _, ok := existingCopy.Data[requiredKey]; !ok {
+			modifiedKeys = append(modifiedKeys, "data."+requiredKey)
+		}
+	}
+
+	dataSame := len(modifiedKeys) == 0
+	if dataSame && !*modified {
+		return existingCopy, false, nil
+	}
+	existingCopy.Data = required.Data
+
+	actual, err := client.ConfigMaps(required.Namespace).Update(existingCopy)
+
+	return actual, true, err
+}
+
+// SyncConfigMap syncs ConfigMap opjectmeta from source namespace to destination
+func SyncConfigMap(client coreclientv1.ConfigMapsGetter, sourceNamespace, sourceName, targetNamespace, targetName string, ownerRefs []metav1.OwnerReference) (*corev1.ConfigMap, bool, error) {
+	source, err := client.ConfigMaps(sourceNamespace).Get(sourceName, metav1.GetOptions{})
+	sourceCopy := source.DeepCopy()
+
+	switch {
+	case apierrors.IsNotFound(err):
+		deleteErr := client.ConfigMaps(targetNamespace).Delete(targetName, nil)
+		if apierrors.IsNotFound(deleteErr) {
+			return nil, false, nil
+		}
+		if deleteErr == nil {
+			return nil, true, nil
+		}
+		return nil, false, deleteErr
+	case err != nil:
+		return nil, false, err
+	default:
+		sourceCopy.Namespace = targetNamespace
+		sourceCopy.Name = targetName
+		sourceCopy.ResourceVersion = ""
+		sourceCopy.OwnerReferences = ownerRefs
+		return ApplyConfigMap(client, sourceCopy)
+	}
+}
+
+// SyncConfigMap syncs Secret opjectmeta from source namespace to destination
+func SyncSecret(client coreclientv1.SecretsGetter, sourceNamespace, sourceName, targetNamespace, targetName string, ownerRefs []metav1.OwnerReference) (*corev1.Secret, bool, error) {
+	source, err := client.Secrets(sourceNamespace).Get(sourceName, metav1.GetOptions{})
+	sourceCopy := source.DeepCopy()
+
+	switch {
+	case apierrors.IsNotFound(err):
+		deleteErr := client.Secrets(targetNamespace).Delete(targetName, nil)
+		if apierrors.IsNotFound(deleteErr) {
+			return nil, false, nil
+		}
+		if deleteErr == nil {
+			return nil, true, nil
+		}
+		return nil, false, deleteErr
+	case err != nil:
+		return nil, false, err
+	default:
+		sourceCopy.Namespace = targetNamespace
+		sourceCopy.Name = targetName
+		sourceCopy.ResourceVersion = ""
+		sourceCopy.OwnerReferences = ownerRefs
+		return ApplySecret(client, sourceCopy)
+	}
+}
