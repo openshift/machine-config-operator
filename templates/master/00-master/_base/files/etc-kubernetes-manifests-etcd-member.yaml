@@ -19,8 +19,6 @@ contents:
         - "--discovery-srv={{.EtcdDiscoveryDomain}}"
         - "--output-file=/run/etcd/environment"
         - "--v=4"
-        securityContext:
-          priviledged: true
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/
@@ -68,8 +66,6 @@ contents:
                 --commonname=system:etcd-metric:${ETCD_DNS_NAME} \
                 --ipaddrs=${ETCD_IPV4_ADDRESS} \
 
-        securityContext:
-          priviledged: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: discovery
@@ -105,8 +101,6 @@ contents:
             --listen-client-urls=https://0.0.0.0:2379 \
             --listen-peer-urls=https://0.0.0.0:2380 \
             --listen-metrics-urls=https://0.0.0.0:9978 \
-        securityContext:
-          priviledged: true
         resources:
           requests:
             memory: 600Mi
