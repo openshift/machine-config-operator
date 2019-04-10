@@ -328,13 +328,15 @@ func (optr *Operator) sync(key string) error {
 	if err != nil {
 		return err
 	}
-	kubeCA, err := optr.getCAsFromConfigMap("openshift-config", "initial-client-ca", "ca-bundle.crt")
+	// as described by the name this is essentially static, but it no worse than what was here before.  Since changes disrupt workloads
+	// and since must perfectly match what the installer creates, this is effectively frozen in time.
+	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
 	if err != nil {
 		return err
 	}
 	bundle := make([]byte, 0)
 	bundle = append(bundle, rootCA...)
-	bundle = append(bundle, kubeCA...)
+	bundle = append(bundle, kubeAPIServerServingCABytes...)
 
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
@@ -367,7 +369,7 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	// create renderConfig
-	rc := getRenderConfig(namespace, spec, imgs, infra.Status.APIServerURL)
+	rc := getRenderConfig(namespace, string(kubeAPIServerServingCABytes), spec, imgs, infra.Status.APIServerURL)
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
@@ -422,12 +424,13 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	return infra, network, nil
 }
 
-func getRenderConfig(tnamespace string, ccSpec *mcfgv1.ControllerConfigSpec, imgs Images, apiServerURL string) renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs Images, apiServerURL string) renderConfig {
 	return renderConfig{
 		TargetNamespace:  tnamespace,
 		Version:          version.Raw,
 		ControllerConfig: *ccSpec,
 		Images:           imgs,
 		APIServerURL:     apiServerURL,
+		KubeAPIServerServingCA: kubeAPIServerServingCA,
 	}
 }

@@ -24,6 +24,7 @@
 // manifests/machineconfigserver/csr-bootstrap-role-binding.yaml
 // manifests/machineconfigserver/csr-renewal-role-binding.yaml
 // manifests/machineconfigserver/daemonset.yaml
+// manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml
 // manifests/machineconfigserver/node-bootstrapper-sa.yaml
 // manifests/machineconfigserver/node-bootstrapper-token.yaml
 // manifests/machineconfigserver/sa.yaml
@@ -1016,6 +1017,31 @@ func manifestsMachineconfigserverDaemonsetYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsMachineconfigserverKubeApiserverServingCaConfigmapYaml = []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: initial-kube-apiserver-server-ca
+  namespace: openshift-config
+data:
+  ca-bundle.crt: |
+{{.KubeAPIServerServingCA | indent 4}}
+`)
+
+func manifestsMachineconfigserverKubeApiserverServingCaConfigmapYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigserverKubeApiserverServingCaConfigmapYaml, nil
+}
+
+func manifestsMachineconfigserverKubeApiserverServingCaConfigmapYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigserverKubeApiserverServingCaConfigmapYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsMachineconfigserverNodeBootstrapperSaYaml = []byte(`apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -1217,6 +1243,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigserver/csr-bootstrap-role-binding.yaml": manifestsMachineconfigserverCsrBootstrapRoleBindingYaml,
 	"manifests/machineconfigserver/csr-renewal-role-binding.yaml": manifestsMachineconfigserverCsrRenewalRoleBindingYaml,
 	"manifests/machineconfigserver/daemonset.yaml": manifestsMachineconfigserverDaemonsetYaml,
+	"manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml": manifestsMachineconfigserverKubeApiserverServingCaConfigmapYaml,
 	"manifests/machineconfigserver/node-bootstrapper-sa.yaml": manifestsMachineconfigserverNodeBootstrapperSaYaml,
 	"manifests/machineconfigserver/node-bootstrapper-token.yaml": manifestsMachineconfigserverNodeBootstrapperTokenYaml,
 	"manifests/machineconfigserver/sa.yaml": manifestsMachineconfigserverSaYaml,
@@ -1294,6 +1321,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"csr-bootstrap-role-binding.yaml": &bintree{manifestsMachineconfigserverCsrBootstrapRoleBindingYaml, map[string]*bintree{}},
 			"csr-renewal-role-binding.yaml": &bintree{manifestsMachineconfigserverCsrRenewalRoleBindingYaml, map[string]*bintree{}},
 			"daemonset.yaml": &bintree{manifestsMachineconfigserverDaemonsetYaml, map[string]*bintree{}},
+			"kube-apiserver-serving-ca-configmap.yaml": &bintree{manifestsMachineconfigserverKubeApiserverServingCaConfigmapYaml, map[string]*bintree{}},
 			"node-bootstrapper-sa.yaml": &bintree{manifestsMachineconfigserverNodeBootstrapperSaYaml, map[string]*bintree{}},
 			"node-bootstrapper-token.yaml": &bintree{manifestsMachineconfigserverNodeBootstrapperTokenYaml, map[string]*bintree{}},
 			"sa.yaml": &bintree{manifestsMachineconfigserverSaYaml, map[string]*bintree{}},
