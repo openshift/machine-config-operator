@@ -42,6 +42,7 @@ var (
 		infraImage           string
 		kubeClientAgentImage string
 		destinationDir       string
+		etcdQuorumGuardImage string
 	}
 )
 
@@ -66,6 +67,8 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("etcd-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup etcd Environment.")
 	bootstrapCmd.MarkFlagRequired("setup-etcd-env-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdQuorumGuardImage, "etcd-quorum-guard-image", "", "Image for etcd Quorum Guard.")
+	bootstrapCmd.MarkFlagRequired("etcd-quorum-guard-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
 	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
@@ -90,6 +93,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		MachineOSContent:        bootstrapOpts.oscontentImage,
 		Etcd:                    bootstrapOpts.etcdImage,
 		SetupEtcdEnv:            bootstrapOpts.setupEtcdEnvImage,
+		EtcdQuorumGuardImage:    bootstrapOpts.etcdQuorumGuardImage,
 		InfraImage:              bootstrapOpts.infraImage,
 		KubeClientAgent:         bootstrapOpts.kubeClientAgentImage,
 	}

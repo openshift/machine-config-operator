@@ -12,4 +12,7 @@ const (
 
 	// KubeClientAgentImageKey is the key that references the kube-client-agent image in the controller
 	KubeClientAgentImageKey string = "kubeClientAgentImage"
+
+	// EtcdQuorumGuardImageKey is the key that references the etcd-quorum-guard image
+	EtcdQuorumGuardImageKey string = "etcdQuorumGuardImage"
 )

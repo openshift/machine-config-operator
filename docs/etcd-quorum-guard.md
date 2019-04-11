@@ -6,7 +6,7 @@ The etcd Quorum Guard ensures that quorum is maintained for etcd for
 For the etcd cluster to remain usable, we must maintain quorum, which
 is a majority of all etcd members.  For example, an etcd cluster with
 3 members (i.e. a 3 master deployment) must have at least 2 healthy
-etcd member to meet the quorum limit.
+etcd members to meet the quorum limit.
 
 There are situations where 2 etcd members could be down at once:
 
@@ -16,14 +16,11 @@ There are situations where 2 etcd members could be down at once:
   etcd on the previous master to become healthy again before rebooting
   the next master
 
-In short, we need a way to ensure that a drain on a master is not
-allowed to proceed if the reboot of the master would cause etcd quorum
-loss.
+The etcd Quorum Guard ensures that a drain on a master is not allowed
+to proceed if the reboot of the master would cause etcd quorum loss.
+It is implemented as a deployment, with one pod per master node.
 
-The etcd quorum guard is implemented as a deployment, with one pod per
-master node.
-
-The etcd quorum guard checks the health of etcd by querying the health
+The etcd Quorum Guard checks the health of etcd by querying the health
 endpoint of etcd; if etcd reports itself unhealthy or is not present,
 the quorum guard reports itself not ready.  A disruption budget is
 used to allow no more than one unhealthy/missing quorum guard (and

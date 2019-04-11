@@ -379,6 +379,7 @@ func (optr *Operator) sync(key string) error {
 		templatectrl.SetupEtcdEnvKey:         imgs.SetupEtcdEnv,
 		templatectrl.InfraImageKey:           imgs.InfraImage,
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
+		templatectrl.EtcdQuorumGuardImageKey: imgs.EtcdQuorumGuardImage,
 	}
 
 	// create renderConfig
