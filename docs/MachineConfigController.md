@@ -39,7 +39,7 @@ type MachineConfigPoolSpec struct {
     MachineConfigSelector *metav1.LabelSelector `json:"machineConfigSelector,omitempty"`
 
     // Label selector for Machines.
-    MachineSelector *metav1.LabelSelector `json:"machineSelector,omitempty"`
+    NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 
     // If true, changes to this machine config pool should be stopped.
     // This includes generating new desiredMachineConfig and update of machines.
@@ -81,7 +81,7 @@ type MachineConfigPoolStatus struct {
 
 - MachineConfigPool also allows users to configure how upgrades are rolled out to the machines in a pool.
 
-- MachineSelector can be replaced with reference to MachineSet.
+- NodeSelector can be replaced with reference to MachineSet.
 
 ## TemplateController
 
