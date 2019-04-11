@@ -26,9 +26,9 @@ format.  Operating system updates use [rpm-ostree](http://github.com/projectatom
 This operator is split into 4 components; the above covers
 the operator.  Here are links to design docs for the sub-components:
 
- - [machine-config-server](docs/MachineConfigServer.md)
- - [machine-config-controller](docs/MachineConfigController.md)
- - [machine-config-daemon](docs/MachineConfigDaemon.md)
+ - [machine-config-server](MachineConfigServer.md)
+ - [machine-config-controller](MachineConfigController.md)
+ - [machine-config-daemon](MachineConfigDaemon.md)
 
 # Interacting with the MCO
 
@@ -121,4 +121,4 @@ a single MC apply to multiple labels, inline file encoding, etc.
 
 # Developing the MCO
 
-See [HACKING.md](docs/HACKING.md).
+See [HACKING.md](HACKING.md).
