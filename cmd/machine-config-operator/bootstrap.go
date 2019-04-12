@@ -69,7 +69,7 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("setup-etcd-env-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdQuorumGuardImage, "etcd-quorum-guard-image", "", "Image for etcd Quorum Guard.")
 	bootstrapCmd.MarkFlagRequired("etcd-quorum-guard-image")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "registry.svc.ci.openshift.org/openshift/origin-v4.0:base", "Image for Kube Client Agent.")
 	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
@@ -93,7 +93,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		MachineOSContent:        bootstrapOpts.oscontentImage,
 		Etcd:                    bootstrapOpts.etcdImage,
 		SetupEtcdEnv:            bootstrapOpts.setupEtcdEnvImage,
-		EtcdQuorumGuardImage:    bootstrapOpts.etcdQuorumGuardImage,
+		EtcdQuorumGuardImage:    "registry.svc.ci.openshift.org/openshift/origin-v4.0:base",
 		InfraImage:              bootstrapOpts.infraImage,
 		KubeClientAgent:         bootstrapOpts.kubeClientAgentImage,
 	}
