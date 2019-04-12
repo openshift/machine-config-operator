@@ -292,6 +292,9 @@ type MachineConfigPoolSpec struct {
 	// Label selector for Machines.
 	MachineSelector *metav1.LabelSelector `json:"machineSelector,omitempty"`
 
+	// Node selector for Machines, to replace MachineSelector
+	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
+
 	// If true, changes to this machine config pool should be stopped.
 	// This includes generating new desiredMachineConfig and update of machines.
 	Paused bool `json:"paused"`
