@@ -27,6 +27,10 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-pod:v4.0
+  - name: etcd-quorum-guard-image
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:base
   - name: setup-etcd-environment
     from:
       kind: DockerImage

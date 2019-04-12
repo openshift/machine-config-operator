@@ -41,6 +41,7 @@ var (
 		setupEtcdEnvImage    string
 		infraImage           string
 		kubeClientAgentImage string
+		etcdQuorumGuardImage string
 		destinationDir       string
 	}
 )
@@ -70,6 +71,8 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdQuorumGuardImage, "etcd-quorum-guard-image", "registry.svc.ci.openshift.org/openshift/origin-v4.0:base", "Image for etcd Quorum Guard.")
+	// TODO mark the above as required afterward in https://github.com/openshift/machine-config-operator/pull/613
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
