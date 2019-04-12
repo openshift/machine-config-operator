@@ -287,7 +287,7 @@ spec:
         effect: NoExecute
         operator: Exists
       containers:
-      - image: registry.svc.ci.openshift.org/openshift/origin-v4.0:base
+      - image: "{{.Images.etcdQuorumGuardImage}}"
         imagePullPolicy: IfNotPresent
         name: etcd-quorum-guard-container
         volumeMounts:
