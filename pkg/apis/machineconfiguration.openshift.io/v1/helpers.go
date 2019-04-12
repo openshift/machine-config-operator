@@ -201,14 +201,14 @@ func IsControllerConfigStatusConditionPresentAndEqual(conditions []ControllerCon
 }
 
 // IsControllerConfigCompleted checks whether a ControllerConfig is completed by the Template Controller
-func IsControllerConfigCompleted(cc *ControllerConfig, ccGetter func(string) (*ControllerConfig, error)) error {
-	cur, err := ccGetter(cc.GetName())
+func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*ControllerConfig, error)) error {
+	cur, err := ccGetter(ccName)
 	if err != nil {
 		return err
 	}
 
 	if cur.Generation != cur.Status.ObservedGeneration {
-		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", cc.GetName(), cur.Status.ObservedGeneration, cur.Generation)
+		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", ccName, cur.Status.ObservedGeneration, cur.Generation)
 	}
 
 	completed := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerCompleted)

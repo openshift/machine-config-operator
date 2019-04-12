@@ -172,7 +172,7 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 				}, nil
 			}
 
-			err := IsControllerConfigCompleted(&ControllerConfig{ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: "dummy"}}, getter)
+			err := IsControllerConfigCompleted("dummy", getter)
 			if !reflect.DeepEqual(err, test.err) {
 				t.Fatalf("expected %v got %v", test.err, err)
 			}

@@ -425,7 +425,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	// TODO(runcom): add tests in render_controller_test.go for this condition
-	if err := ctrl.isControllerConfigCompleted(); err != nil {
+	if err := mcfgv1.IsControllerConfigCompleted(common.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
 	}
 
@@ -438,14 +438,6 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	return ctrl.syncGeneratedMachineConfig(pool, mcs)
-}
-
-func (ctrl *Controller) isControllerConfigCompleted() error {
-	cc, err := ctrl.ccLister.Get(common.ControllerConfigName)
-	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig %v", err)
-	}
-	return mcfgv1.IsControllerConfigCompleted(cc, ctrl.ccLister.Get)
 }
 
 // This function will eventually contain a sane garbage collection policy for rendered MachineConfigs;
