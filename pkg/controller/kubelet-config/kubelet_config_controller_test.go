@@ -193,6 +193,10 @@ func (f *fixture) run(mcpname string) {
 	f.runController(mcpname, false)
 }
 
+func (f *fixture) runFeature(featname string) {
+	f.runFeatureController(featname, false)
+}
+
 func (f *fixture) runExpectError(mcpname string) {
 	f.runController(mcpname, true)
 }
@@ -201,6 +205,19 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController()
 
 	err := c.syncHandler(mcpname)
+	if !expectError && err != nil {
+		f.t.Errorf("error syncing kubeletconfigs: %v", err)
+	} else if expectError && err == nil {
+		f.t.Error("expected error syncing kubeletconfigs, got nil")
+	}
+
+	f.validateActions()
+}
+
+func (f *fixture) runFeatureController(featname string, expectError bool) {
+	c := f.newController()
+
+	err := c.syncFeatureHandler(featname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing kubeletconfigs: %v", err)
 	} else if expectError && err == nil {
@@ -515,6 +532,15 @@ func getKey(config *mcfgv1.KubeletConfig, t *testing.T) string {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(config)
 	if err != nil {
 		t.Errorf("Unexpected error getting key for config %v: %v", config.Name, err)
+		return ""
+	}
+	return key
+}
+
+func getKeyFromFeatureGate(gate *osev1.FeatureGate, t *testing.T) string {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(gate)
+	if err != nil {
+		t.Errorf("Unexpected error getting key for FeatureGate %v: %v", gate.Name, err)
 		return ""
 	}
 	return key
