@@ -442,7 +442,7 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.ControllerConfig) error {
 	var lastErr error
 	if err := wait.Poll(controllerConfigCompletedInterval, controllerConfigCompletedTimeout, func() (bool, error) {
-		if err := mcfgv1.IsControllerConfigCompleted(resource, optr.ccLister.Get); err != nil {
+		if err := mcfgv1.IsControllerConfigCompleted(resource.GetName(), optr.ccLister.Get); err != nil {
 			lastErr = fmt.Errorf("controllerconfig is not completed: %v", err)
 			return false, nil
 		}
