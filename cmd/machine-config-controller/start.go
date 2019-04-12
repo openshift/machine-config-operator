@@ -8,8 +8,8 @@ import (
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
-	"github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
+	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
+	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -95,6 +95,7 @@ func createControllers(ctx *controllercommon.ControllerContext) []controllercomm
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
 		),

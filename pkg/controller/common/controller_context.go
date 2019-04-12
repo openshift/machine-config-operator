@@ -27,12 +27,13 @@ func resyncPeriod() func() time.Duration {
 type ControllerContext struct {
 	ClientBuilder *clients.Builder
 
-	NamespacedInformerFactory     mcfginformers.SharedInformerFactory
-	InformerFactory               mcfginformers.SharedInformerFactory
-	KubeInformerFactory           informers.SharedInformerFactory
-	KubeNamespacedInformerFactory informers.SharedInformerFactory
-	APIExtInformerFactory         apiextinformers.SharedInformerFactory
-	ConfigInformerFactory         configinformers.SharedInformerFactory
+	NamespacedInformerFactory                    mcfginformers.SharedInformerFactory
+	InformerFactory                              mcfginformers.SharedInformerFactory
+	KubeInformerFactory                          informers.SharedInformerFactory
+	KubeNamespacedInformerFactory                informers.SharedInformerFactory
+	OpenShiftConfigKubeNamespacedInformerFactory informers.SharedInformerFactory
+	APIExtInformerFactory                        apiextinformers.SharedInformerFactory
+	ConfigInformerFactory                        configinformers.SharedInformerFactory
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -53,19 +54,21 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), targetNamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), targetNamespace, nil)
+	openShiftConfigKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-config", nil)
 	apiExtSharedInformer := apiextinformers.NewSharedInformerFactory(apiExtClient, resyncPeriod()())
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 
 	return &ControllerContext{
-		ClientBuilder:                 cb,
-		NamespacedInformerFactory:     sharedNamespacedInformers,
-		InformerFactory:               sharedInformers,
-		KubeInformerFactory:           kubeSharedInformer,
-		KubeNamespacedInformerFactory: kubeNamespacedSharedInformer,
-		APIExtInformerFactory:         apiExtSharedInformer,
-		ConfigInformerFactory:         configSharedInformer,
-		Stop:                          stop,
-		InformersStarted:              make(chan struct{}),
-		ResyncPeriod:                  resyncPeriod(),
+		ClientBuilder:                                cb,
+		NamespacedInformerFactory:                    sharedNamespacedInformers,
+		InformerFactory:                              sharedInformers,
+		KubeInformerFactory:                          kubeSharedInformer,
+		KubeNamespacedInformerFactory:                kubeNamespacedSharedInformer,
+		OpenShiftConfigKubeNamespacedInformerFactory: openShiftConfigKubeNamespacedSharedInformer,
+		APIExtInformerFactory:                        apiExtSharedInformer,
+		ConfigInformerFactory:                        configSharedInformer,
+		Stop:                                         stop,
+		InformersStarted:                             make(chan struct{}),
+		ResyncPeriod:                                 resyncPeriod(),
 	}
 }
