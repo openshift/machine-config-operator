@@ -16,6 +16,12 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	if err != nil {
 		return err
 	}
+	if pool.Spec.MachineSelector == nil {
+		selector, err = metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
+		if err != nil {
+			return err
+		}
+	}
 	nodes, err := ctrl.nodeLister.List(selector)
 	if err != nil {
 		return err
