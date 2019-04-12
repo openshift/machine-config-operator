@@ -13,6 +13,6 @@ data:
       "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment",
       "infraImage": "quay.io/openshift/origin-pod:v4.0",
       "kubeClientAgentImage": "registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent",
-      "dummyImage": "registry.svc.ci.openshift.org/openshift/origin-v4.0:base"
+      "dummyImage": "registry.svc.ci.openshift.org/openshift/origin-v4.0:base",
       "etcdQuorumGuardImage": "registry.svc.ci.openshift.org/openshift/origin-v4.0:base"
     }
