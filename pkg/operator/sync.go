@@ -179,11 +179,19 @@ func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
 	}
 	eqg := resourceread.ReadDeploymentV1OrDie(eqgBytes)
 
-	_, _, err = resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
+	_, updated, err := resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
 	if err != nil {
 		return err
 	}
-	
+	if updated {
+		var waitErrs []error
+		waitErrs = append(waitErrs, optr.waitForDeploymentRollout(eqg))
+		if len(waitErrs) > 0 {
+			agg := utilerrors.NewAggregate(waitErrs)
+			return agg
+		}
+	}
+
 	disBytes, err := renderAsset(config, "manifests/etcdquorumguard/disruptionbudget.yaml")
 	if err != nil {
 		return err
