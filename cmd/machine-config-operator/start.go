@@ -55,7 +55,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		controller := operator.New(
 			componentNamespace, componentName,
 			startOpts.imagesFile,
-			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MCOConfigs(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
@@ -67,6 +66,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
 			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+			ctrlctx.KubeInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Networks(),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
