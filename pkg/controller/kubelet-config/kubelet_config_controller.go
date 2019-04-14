@@ -406,12 +406,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	features, err := ctrl.featLister.Get(clusterFeatureInstanceName)
-	if err != nil && !errors.IsNotFound(err) {
-		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
+	if errors.IsNotFound(err) {
+		features = createNewDefaultFeatureGate()
+	} else if err != nil {
 		glog.V(2).Infof("%v", err)
+		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
-	features = features.DeepCopy()
 	featureGates, err := ctrl.generateFeatureMap(features)
 	if err != nil {
 		err := fmt.Errorf("could not generate FeatureMap: %v", err)

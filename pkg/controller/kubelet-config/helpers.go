@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
@@ -37,6 +38,14 @@ func createNewKubeletIgnition(ymlconfig []byte) ignv2_2types.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, tempFile)
 	return tempIgnConfig
+}
+
+func createNewDefaultFeatureGate() *osev1.FeatureGate {
+	return &osev1.FeatureGate{
+		Spec: osev1.FeatureGateSpec{
+			FeatureSet: osev1.Default,
+		},
+	}
 }
 
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {

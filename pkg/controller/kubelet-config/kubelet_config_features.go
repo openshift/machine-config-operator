@@ -18,7 +18,6 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	osev1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -120,14 +119,6 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		mc.ObjectMeta.Annotations = map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
 		}
-		mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
-			metav1.OwnerReference{
-				APIVersion: mcfgv1.SchemeGroupVersion.String(),
-				Kind:       "Features",
-				Name:       features.Name,
-				UID:        features.UID,
-			},
-		}
 		// Create or Update, on conflict retry
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
@@ -189,9 +180,6 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 
 func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[string]bool, error) {
 	rv := make(map[string]bool)
-	if features == nil {
-		return &rv, nil
-	}
 	set, ok := osev1.FeatureSets[features.Spec.FeatureSet]
 	if !ok {
 		return &rv, fmt.Errorf("enabled FeatureSet %v does not have a corresponding config", features.Spec.FeatureSet)
