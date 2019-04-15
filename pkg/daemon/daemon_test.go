@@ -130,6 +130,7 @@ func TestDaemonOnceFromNoPanic(t *testing.T) {
 		"testos",
 		NewNodeUpdaterClient(),
 		"test",
+		false,
 		nil,
 		k8sfake.NewSimpleClientset(),
 		false,
