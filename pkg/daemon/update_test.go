@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"fmt"
+	"os/exec"
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -398,4 +400,20 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 	if reconcilableError == nil {
 		t.Errorf("Different %s values should not be reconcilable.", key)
 	}
+}
+
+func TestSkipReboot(t *testing.T) {
+	// skipReboot is only honored with onceFrom != ""
+	d := &Daemon{
+		onceFrom:   "test",
+		skipReboot: true,
+	}
+	require.Nil(t, d.reboot("", 0, nil))
+
+	// skipReboot in normal cluster run is just a no-op and we reboot anyway
+	d = &Daemon{
+		onceFrom:   "",
+		skipReboot: true,
+	}
+	require.NotNil(t, d.reboot("", 0, exec.Command("true")))
 }

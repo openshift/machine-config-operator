@@ -28,6 +28,7 @@ var (
 		nodeName               string
 		rootMount              string
 		onceFrom               string
+		skipReboot             bool
 		fromIgnition           bool
 		kubeletHealthzEnabled  bool
 		kubeletHealthzEndpoint string
@@ -40,6 +41,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
 	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	startCmd.PersistentFlags().StringVar(&startOpts.onceFrom, "once-from", "", "Runs the daemon once using a provided file path or URL endpoint as its machine config or ignition (.ign) file source")
+	startCmd.PersistentFlags().BoolVar(&startOpts.skipReboot, "skip-reboot", false, "Skips reboot after a sync, applies only in once-from")
 	startCmd.PersistentFlags().BoolVar(&startOpts.kubeletHealthzEnabled, "kubelet-healthz-enabled", true, "kubelet healthz endpoint monitoring")
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeletHealthzEndpoint, "kubelet-healthz-endpoint", "http://localhost:10248/healthz", "healthz endpoint to check health")
 }
@@ -123,6 +125,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
 			startOpts.onceFrom,
+			startOpts.skipReboot,
 			mcClient,
 			kubeClient,
 			startOpts.kubeletHealthzEnabled,
@@ -150,6 +153,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			kubeClient,
 			startOpts.onceFrom,
+			startOpts.skipReboot,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			startOpts.kubeletHealthzEnabled,
 			startOpts.kubeletHealthzEndpoint,

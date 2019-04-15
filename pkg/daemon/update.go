@@ -141,7 +141,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	}
 
 	// reboot. this function shouldn't actually return.
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, exec.Command(defaultRebootCommand))
 }
 
 // isUpdating returns true if the MCD is actively applying an update
@@ -750,7 +750,7 @@ func (dn *Daemon) cancelSIGTERM() {
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
-func (dn *Daemon) reboot(rationale string) error {
+func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exec.Cmd) error {
 	// We'll only have a recorder if we're cluster driven
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
@@ -760,17 +760,22 @@ func (dn *Daemon) reboot(rationale string) error {
 	// Now that everything is done, avoid delaying shutdown.
 	dn.cancelSIGTERM()
 
+	dn.Close()
+
+	if dn.skipReboot && dn.onceFrom != "" { // the dn.onceFrom check is just a triple check that we're not messing with in-cluster MCDs
+		glog.Info("MCD is not rebooting in onceFrom with --skip-reboot")
+		return nil
+	}
+
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
-	err := exec.Command("reboot").Run()
+	err := rebootCmd.Run()
 	if err != nil {
 		return errors.Wrapf(err, "Failed to reboot")
 	}
 
-	dn.Close()
-
 	// wait to be killed via SIGTERM from the kubelet shutting down
-	time.Sleep(24 * time.Hour)
+	time.Sleep(timeout)
 
 	// if everything went well, this should be unreachable.
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
