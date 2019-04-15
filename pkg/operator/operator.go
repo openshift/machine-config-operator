@@ -398,7 +398,7 @@ func (optr *Operator) sync(key string) error {
 		{"mcs", optr.syncMachineConfigServer},
 		{"mcd", optr.syncMachineConfigDaemon},
 		{"required-pools", optr.syncRequiredMachineConfigPools},
-		{"eqg", optr.syncEtcdQuorumGuard},
+		{"etcd-quorum-guard", optr.syncEtcdQuorumGuard},
 	}
 	return optr.syncAll(rc, syncFuncs)
 }
