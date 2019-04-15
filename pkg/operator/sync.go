@@ -196,7 +196,7 @@ func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
 	}
 */
 
-	disBytes, err := renderAsset(config, "manifests/etcdquorumguard/disruptionbudget.yaml")
+	disBytes, err := renderAsset(config, "manifests/etcdquorumguard/disruption-budget.yaml")
 	if err != nil {
 		return err
 	}
