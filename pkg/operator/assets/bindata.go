@@ -287,7 +287,7 @@ spec:
         effect: NoExecute
         operator: Exists
       containers:
-      - image: "{{.Images.etcdQuorumGuardImage}}"
+      - image: "{{.Images.EtcdQuorumGuardImage}}"
         imagePullPolicy: IfNotPresent
         name: etcd-quorum-guard-container
         volumeMounts:
