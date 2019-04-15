@@ -23,6 +23,7 @@ import (
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	rbacinformersv1 "k8s.io/client-go/informers/rbac/v1"
+	policyinformersv1 "k8s.io/client-go/informers/policy/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
@@ -100,6 +101,7 @@ type Operator struct {
 	serviceAccountInformerSynced     cache.InformerSynced
 	clusterRoleInformerSynced        cache.InformerSynced
 	clusterRoleBindingInformerSynced cache.InformerSynced
+	pdbListerSynced	      cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -121,6 +123,7 @@ func New(
 	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
 	clusterRoleBindingInformer rbacinformersv1.ClusterRoleBindingInformer,
 	mcoCmInformer coreinformersv1.ConfigMapInformer,
+	pdbInformer policyinformersv1.PodDisruptionBudgetInformer,
 	clusterCmInfomer coreinformersv1.ConfigMapInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	networkInformer configinformersv1.NetworkInformer,
@@ -187,6 +190,8 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
+	optr.pdbLister = pdbInformer.Lister()
+	optr.pdbListerSynced = pdbInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
@@ -219,7 +224,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.serviceAccountInformerSynced,
 		optr.clusterRoleInformerSynced,
 		optr.clusterRoleBindingInformerSynced,
-		optr.networkListerSynced) {
+		optr.networkListerSynced,
+		optr.pdbListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}
@@ -392,6 +398,7 @@ func (optr *Operator) sync(key string) error {
 		{"mcs", optr.syncMachineConfigServer},
 		{"mcd", optr.syncMachineConfigDaemon},
 		{"required-pools", optr.syncRequiredMachineConfigPools},
+		{"eqg", optr.syncEtcdQuorumGuard},
 	}
 	return optr.syncAll(rc, syncFuncs)
 }

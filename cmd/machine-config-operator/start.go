@@ -65,6 +65,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
 			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoleBindings(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+			ctrlctx.KubeNamespacedInformerFactory.Policy().V1beta1().PodDisruptionBudgets(),
 			ctrlctx.KubeInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Networks(),
