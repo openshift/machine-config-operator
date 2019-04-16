@@ -294,9 +294,10 @@ spec:
         - mountPath: /mnt/kube
           name: kubecerts
         command:
-        - "/bin/sleep"
+        - "/bin/sh"
         args:
-        - "infinity"
+        - "-c"
+        - "echo etcd-quorum-guard starting; /bin/sleep infinity"
         readinessProbe:
           exec:
             command:
@@ -309,6 +310,8 @@ spec:
                 declare -r key="${cert%.crt}.key"
                 declare -r cacert="$croot/ca.crt"
                 [[ -z $cert || -z $key ]] && exit 1
+                echo "Pinging etcd"
+                curl --max-time 2 --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint"
                 curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
             initialDelaySecond: 5
             periodSecond: 5

@@ -180,12 +180,10 @@ func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
 	eqg := resourceread.ReadDeploymentV1OrDie(eqgBytes)
 
 	// Second return value is 'updated'
-	_, _, err = resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
+	_, updated, err := resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
 	if err != nil {
 		return err
 	}
-	// Temporarily turn off the wait.
-	/*
 	if updated {
 		var waitErrs []error
 		waitErrs = append(waitErrs, optr.waitForDeploymentRollout(eqg))
@@ -194,7 +192,6 @@ func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
 			return agg
 		}
 	}
-*/
 
 	disBytes, err := renderAsset(config, "manifests/etcdquorumguard/disruption-budget.yaml")
 	if err != nil {
@@ -371,7 +368,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 
 const (
 	deploymentRolloutPollInterval = time.Second
-	deploymentRolloutTimeout      = 10 * time.Minute
+	deploymentRolloutTimeout      = 30 * time.Minute
 
 	daemonsetRolloutPollInterval = time.Second
 	daemonsetRolloutTimeout      = 10 * time.Minute
