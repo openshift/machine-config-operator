@@ -322,6 +322,10 @@ type MachineConfigPoolStatus struct {
 	// A node is marked unavailable if it is in updating state or NodeReady condition is false.
 	UnavailableMachineCount int32 `json:"unavailableMachineCount"`
 
+	// Total number of machines marked degraded (or unreconcilable).
+	// A node is marked degraded if applying a configuration failed..
+	DegradedMachineCount int32 `json:"degradedMachineCount"`
+
 	// Represents the latest available observations of current state.
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
 }
@@ -368,6 +372,10 @@ const (
 	// When at least one of machine is not either not updated or is in the process of updating
 	// to the desired machine config.
 	MachineConfigPoolUpdating MachineConfigPoolConditionType = "Updating"
+	// MachineConfigPoolDegraded means the update for one of the machine is not progressing
+	// the pool can't be configured due to an error
+	// Degraded == !render_went_well || Degraded == Updating_and_something_is_wrong_in_MCDs
+	MachineConfigPoolDegraded MachineConfigPoolConditionType = "Degraded"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

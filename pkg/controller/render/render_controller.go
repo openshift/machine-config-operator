@@ -433,7 +433,20 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return fmt.Errorf("no MachineConfigs found matching selector %v", selector)
 	}
 
-	return ctrl.syncGeneratedMachineConfig(pool, mcs)
+	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
+		return ctrl.syncFailingStatus(pool, err)
+	}
+
+	return nil
+}
+
+func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
+	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, v1.ConditionTrue, fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err), "")
+	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool); updateErr != nil {
+		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
+	}
+	return err
 }
 
 // This function will eventually contain a sane garbage collection policy for rendered MachineConfigs;
@@ -451,15 +464,12 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return nil
 	}
 
-	cc, err := ctrl.ccLister.List(labels.Everything())
+	cc, err := ctrl.ccLister.Get(common.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not enumerate ControllerConfig %s", err)
-	}
-	if len(cc) == 0 {
-		return fmt.Errorf("ControllerConfigList is empty")
+		return err
 	}
 
-	generated, err := generateRenderedMachineConfig(pool, configs, cc[0])
+	generated, err := generateRenderedMachineConfig(pool, configs, cc)
 	if err != nil {
 		return err
 	}

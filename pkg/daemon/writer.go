@@ -64,6 +64,8 @@ func (nw *NodeWriter) SetDone(client corev1.NodeInterface, lister corelisterv1.N
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
+		// clear out any Degraded/Unreconcilable reason
+		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
