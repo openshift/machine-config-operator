@@ -322,9 +322,9 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 	if err != nil {
 		return err
 	}
-	isPoolUpdated := func(pool *mcfgv1.MachineConfigPool) bool {
+	isPoolStatusConditionTrue := func(pool *mcfgv1.MachineConfigPool, conditionType mcfgv1.MachineConfigPoolConditionType) bool {
 		for _, condition := range pool.Status.Conditions {
-			if condition.Type == mcfgv1.MachineConfigPoolUpdated {
+			if condition.Type == conditionType {
 				return condition.Status == corev1.ConditionTrue
 			}
 		}
@@ -334,10 +334,13 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 		if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
 			return fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
 		}
-		if pool.Generation <= pool.Status.ObservedGeneration && isPoolUpdated(pool) {
+		degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+		if pool.Generation <= pool.Status.ObservedGeneration &&
+			isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) &&
+			!degraded {
 			continue
 		}
-		return fmt.Errorf("error pool %s is not ready, retrying. Status: (total: %d, updated: %d, unavailable: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+		return fmt.Errorf("error pool %s is not ready, retrying. Status: (total: %d, updated: %d, ready: %d, unavailable: %d, pool degraded: %v)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.ReadyMachineCount, pool.Status.UnavailableMachineCount, degraded)
 	}
 	return nil
 }

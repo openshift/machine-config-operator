@@ -11,7 +11,7 @@ import (
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -260,6 +260,52 @@ func getNodesByRole(cs *framework.ClientSet, role string) ([]v1.Node, error) {
 		return nil, err
 	}
 	return nodes.Items, nil
+}
+
+func TestPoolDegradedOnFailToRender(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
+	mcadd.Spec.Config.Ignition.Version = "" // invalid, won't render
+
+	// create the dummy MC now
+	_, err := cs.MachineConfigs().Create(mcadd)
+	if err != nil {
+		t.Errorf("failed to create machine config %v", err)
+	}
+
+	// verify the pool goes degraded
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolDegraded) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config pool never switched to Degraded on failure to render: %v", err)
+	}
+
+	// now delete the bad MC and watch pool flipping back to not degraded
+	if err := cs.MachineConfigs().Delete(mcadd.Name, &metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	// wait for the mcp to go back to previous config
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcv1.MachineConfigPoolDegraded) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config pool never switched back to Degraded=False: %v", err)
+	}
 }
 
 func TestReconcileAfterBadMC(t *testing.T) {

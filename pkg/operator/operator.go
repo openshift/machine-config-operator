@@ -155,6 +155,7 @@ func New(
 		mcoCmInformer.Informer(),
 		infraInformer.Informer(),
 		networkInformer.Informer(),
+		mcpInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
