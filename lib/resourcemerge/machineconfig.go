@@ -33,15 +33,6 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 		existing.Spec.MachineConfigSelector = required.Spec.MachineConfigSelector
 	}
 
-	if existing.Spec.MachineSelector == nil {
-		*modified = true
-		existing.Spec.MachineSelector = required.Spec.MachineSelector
-	}
-	if !equality.Semantic.DeepEqual(existing.Spec.MachineSelector, required.Spec.MachineSelector) {
-		*modified = true
-		existing.Spec.MachineSelector = required.Spec.MachineSelector
-	}
-
 	if existing.Spec.NodeSelector == nil {
 		*modified = true
 		existing.Spec.NodeSelector = required.Spec.NodeSelector
