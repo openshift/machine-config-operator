@@ -35,10 +35,7 @@ type podinfo map[string]podstatus
 func TestEtcdQuorumGuard(t *testing.T) {
 	cs := framework.NewClientSet("")
 	if err := waitForEtcdQuorumGuardDeployment(cs); err != nil {
-		// XXXXXX For production this needs to be a fatal error.
-		fmt.Printf("No etcd-quorum-guard deployment present; assume for now it is not configured.\n")
-		return
-		//t.Fatal(err.Error())
+		t.Fatalf("etcdQuotaGard deployment not present: %s", err.Error())
 	}
 	fmt.Print("Make all schedulable\n")
 	if err := makeAllNodesSchedulable(cs); err != nil {
