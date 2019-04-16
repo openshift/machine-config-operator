@@ -224,7 +224,7 @@ func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) 
 }
 
 func (f *fixture) expectPatchMachineConfigAction(config *mcfgv1.MachineConfig, patch []byte) {
-	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name, patch))
+	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name, types.MergePatchType, patch))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
@@ -241,12 +241,12 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
 			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
-			OSImageURL: "dummy",
+			OSImageURL:          "dummy",
 		},
 		Status: mcfgv1.ControllerConfigStatus{
 			Conditions: []mcfgv1.ControllerConfigStatusCondition{
 				{
-					Type: mcfgv1.TemplateContollerCompleted,
+					Type:   mcfgv1.TemplateContollerCompleted,
 					Status: corev1.ConditionTrue,
 				},
 			},

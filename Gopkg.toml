@@ -105,27 +105,27 @@ required = [
 
 [[constraint]]
   name = "k8s.io/api"
-  version = "kubernetes-1.12.5"
+  version = "kubernetes-1.13.4"
 
 [[constraint]]
   name = "k8s.io/apiextensions-apiserver"
-  version = "kubernetes-1.12.5"
+  version = "kubernetes-1.13.4"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  version = "9.0.0"
+  version = "10.0.0"
 
 [[constraint]]
   name = "k8s.io/code-generator"
-  version = "kubernetes-1.12.5"
+  version = "kubernetes-1.13.4"
 
 [[constraint]]
   name = "k8s.io/kubelet"
-  version = "kubernetes-1.12.5"
+  version = "kubernetes-1.13.4"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  revision = "v1.12.5"
+  revision = "v1.13.4"
 
 # TODO: include why the override is required
 [[override]]
@@ -140,21 +140,17 @@ required = [
 # TODO: include why the override is required
 [[override]]
   name = "k8s.io/gengo"
-  revision = "fdcf9f9480fdd5bf2b3c3df9bf4ecd22b25b87e2"
+  revision = "51747d6e00da1fc578d5a333a93bb2abcbce7a95"
 
 # importing install-config is importing cluster-network-operator which adds sigs.k8s.io/controller-runtime as dependency.
 # sigs.k8s.io/controller-runtime needs 1.12.3
 [[override]]
   name = "k8s.io/apimachinery"
-  version = "kubernetes-1.12.5"
+  version = "kubernetes-1.13.4"
 
 [[override]]
   name = "k8s.io/apiserver"
-  version = "kubernetes-1.12.5"
-
-[[constraint]]
-  branch = "release-1.12"
-  name = "github.com/kubernetes-sigs/cri-o"
+  version = "kubernetes-1.13.4"
 
 [[constraint]]
   revision = "0b67c788f2d234c9fecc3d372d93160869381166"

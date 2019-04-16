@@ -70,20 +70,21 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		Enabled: []string{
 			"ExperimentalCriticalPodAnnotation", // sig-pod, sjenning
 			"RotateKubeletServerCertificate",    // sig-pod, sjenning
+			"SupportPodPidsLimit",               // sig-pod, sjenning
 		},
 		Disabled: []string{
 			"LocalStorageCapacityIsolation", // sig-pod, sjenning
-			"PersistentLocalVolumes",        // sig-storage, hekumar@redhat.com
 		},
 	},
 	TechPreviewNoUpgrade: &FeatureGateEnabledDisabled{
 		Enabled: []string{
 			"ExperimentalCriticalPodAnnotation", // sig-pod, sjenning
 			"RotateKubeletServerCertificate",    // sig-pod, sjenning
+			"SupportPodPidsLimit",               // sig-pod, sjenning
+			"CSIBlockVolume",                    // sig-storage, j-griffith
 		},
 		Disabled: []string{
 			"LocalStorageCapacityIsolation", // sig-pod, sjenning
-			"PersistentLocalVolumes",        // sig-storage, hekumar@redhat.com
 		},
 	},
 }

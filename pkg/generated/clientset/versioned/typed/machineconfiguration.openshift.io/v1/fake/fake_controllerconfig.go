@@ -107,7 +107,7 @@ func (c *FakeControllerConfigs) DeleteCollection(options *v1.DeleteOptions, list
 // Patch applies the patch and returns the patched controllerConfig.
 func (c *FakeControllerConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.ControllerConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(controllerconfigsResource, name, data, subresources...), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootPatchSubresourceAction(controllerconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	if obj == nil {
 		return nil, err
 	}
