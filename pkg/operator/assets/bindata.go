@@ -241,7 +241,7 @@ spec:
   replicas: 3
   selector:
     matchLabels:
-      name: etcd-quorum-guard
+      k8s-app: etcd-quorum-guard
   strategy:
     rollingUpdate:
       maxSurge: 0
@@ -251,7 +251,7 @@ spec:
     metadata:
       labels:
         name: etcd-quorum-guard
-        app: etcd-quorum-guard
+        k8s-app: etcd-quorum-guard
     spec:
       hostNetwork: true
       affinity:
@@ -286,6 +286,9 @@ spec:
       - key: node.kubernetes.io/unschedulable
         effect: NoExecute
         operator: Exists
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
       containers:
       - image: "{{.Images.EtcdQuorumGuardImage}}"
         imagePullPolicy: IfNotPresent
@@ -294,9 +297,16 @@ spec:
         - mountPath: /mnt/kube
           name: kubecerts
         command:
-        - "/bin/sleep"
+        - "/bin/sh"
         args:
-        - "infinity"
+        - "-c"
+        - |
+          declare -r croot=/mnt/kube
+          declare -r health_endpoint="https://127.0.0.1:2379/health"
+          declare -r cert="$(find $croot -name 'system:etcd-peer*.crt' -print -quit)"
+          declare -r key="${cert%.crt}.key"
+          declare -r cacert="$croot/ca.crt"
+          while : ; do date; curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'; sleep 5; done
         readinessProbe:
           exec:
             command:

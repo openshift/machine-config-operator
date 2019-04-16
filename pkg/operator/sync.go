@@ -180,11 +180,11 @@ func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
 	eqg := resourceread.ReadDeploymentV1OrDie(eqgBytes)
 
 	// Second return value is 'updated'
-	_, _, err = resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
+	depl, updated, err := resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), eqg)
+	glog.Infof("Apply eqg deployment\n%s\n\n%+v\n\n%+v", eqgBytes, depl)
 	if err != nil {
 		return err
 	}
-/*
 	if updated {
 		var waitErrs []error
 		waitErrs = append(waitErrs, optr.waitForDeploymentRollout(eqg))
@@ -193,7 +193,6 @@ func (optr *Operator) syncEtcdQuorumGuard(config renderConfig) error {
 			return agg
 		}
 	}
-*/
 
 	disBytes, err := renderAsset(config, "manifests/etcdquorumguard/disruption-budget.yaml")
 	if err != nil {
@@ -414,28 +413,35 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 	var lastErr error
 	if err := wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
 		d, err := optr.deployLister.Deployments(resource.Namespace).Get(resource.Name)
+		glog.Infof("Waiting for deployment rollout %s/%s (%+v)", resource.Namespace, resource.Name)
 		if apierrors.IsNotFound(err) {
+			glog.Infof("   Deployment %s/%s not found", resource.Namespace, resource.Name)
 			// exit early to recreate the deployment.
 			return false, err
 		}
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
+			glog.Infof("   Deployment %s/%s error (may be transitory) %v", resource.Namespace, resource.Name, err)
 			lastErr = fmt.Errorf("error getting Deployment %s during rollout: %v", resource.Name, err)
 			return false, nil
 		}
 
 		if d.DeletionTimestamp != nil {
+			glog.Infof("   Deployment %s/%s is being deleted", resource.Namespace, resource.Name)
 			return false, fmt.Errorf("Deployment %s is being deleted", resource.Name)
 		}
 
 		if d.Generation <= d.Status.ObservedGeneration && d.Status.UpdatedReplicas == d.Status.Replicas && d.Status.UnavailableReplicas == 0 {
+			glog.Infof("   Deployment %s/%s is rolled out!!!", resource.Namespace, resource.Name)
 			return true, nil
 		}
+		glog.Infof("Deployment %s/%s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Namespace, d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
 		lastErr = fmt.Errorf("Deployment %s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
 		return false, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
+			glog.Infof("%v during waitForDeploymentRollout: %v", err, lastErr)
 			return fmt.Errorf("%v during waitForDeploymentRollout: %v", err, lastErr)
 		}
 		return err
