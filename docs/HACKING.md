@@ -222,7 +222,7 @@ make image-{component}
 ```
 
 `{component}` can be either `operator`, `daemon`, `controller` or `server`.
-After the build is complete, make sure to push the image to a registry (i.e. `quay.io/user/machine-config-{component}`).
+After the build is complete, make sure to push the image to a registry (i.e. `quay.io/user/machine-config-{component}:latest`).
 
 Note, quay.io or any other public registry isn't strictly required, you can use a local
 registry for this flow to still work as long as those images are pullable.
@@ -235,7 +235,7 @@ Now that your have your custom component images, to build a custom release paylo
 oc adm release new -n openshift --server https://api.ci.openshift.org \
                                 --from-image-stream "origin-v4.0" \
                                 --to-image quay.io/user/origin-release:v4.0 \
-                                machine-config-{component}=quay.io/user/machine-config-{component}
+                                machine-config-{component}=quay.io/user/machine-config-{component}:{tag}
 ```
 
 There's currently a [known limitation](https://github.com/openshift/machine-config-operator/issues/421) which prevents
@@ -246,10 +246,10 @@ creating a payload which contains all of them:
 oc adm release new -n openshift --server https://api.ci.openshift.org \
                                 --from-image-stream "origin-v4.0" \
                                 --to-image quay.io/user/origin-release:v4.0 \
-                                machine-config-operator=quay.io/user/machine-config-operator \
-                                machine-config-controller=quay.io/user/machine-config-controller \
-                                machine-config-daemon=quay.io/user/machine-config-daemon \
-                                machine-config-server=quay.io/user/machine-config-server
+                                machine-config-operator=quay.io/user/machine-config-operator:latest \
+                                machine-config-controller=quay.io/user/machine-config-controller:latest \
+                                machine-config-daemon=quay.io/user/machine-config-daemon:latest \
+                                machine-config-server=quay.io/user/machine-config-server:latest
 ```
 
 Note, make sure you're using a relatively new `oc` binary from `openshift/origin`. Note also that the
