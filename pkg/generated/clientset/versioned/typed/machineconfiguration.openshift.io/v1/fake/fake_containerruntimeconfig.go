@@ -107,7 +107,7 @@ func (c *FakeContainerRuntimeConfigs) DeleteCollection(options *v1.DeleteOptions
 // Patch applies the patch and returns the patched containerRuntimeConfig.
 func (c *FakeContainerRuntimeConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(containerruntimeconfigsResource, name, data, subresources...), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
+		Invokes(testing.NewRootPatchSubresourceAction(containerruntimeconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	if obj == nil {
 		return nil, err
 	}
