@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -459,4 +460,22 @@ func getKey(config *mcfgv1.MachineConfigPool, t *testing.T) string {
 		return ""
 	}
 	return key
+}
+
+func TestMachineConfigsNoBailWithoutPool(t *testing.T) {
+	f := newFixture(t)
+	mc := newMachineConfig("00-test-cluster-worker", map[string]string{"node-role": "worker"}, "dummy://2", []ignv2_2types.File{})
+	oref := metav1.NewControllerRef(newControllerConfig("test"), mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig"))
+	mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
+	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "")
+	f.mcpLister = append(f.mcpLister, mcp)
+	c := f.newController()
+	queue := []*mcfgv1.MachineConfigPool{}
+	c.enqueueMachineConfigPool = func(mcp *mcfgv1.MachineConfigPool) {
+		queue = append(queue, mcp)
+	}
+	c.addMachineConfig(mc)
+	c.updateMachineConfig(mc, mc)
+	c.deleteMachineConfig(mc)
+	require.Len(t, queue, 3)
 }
