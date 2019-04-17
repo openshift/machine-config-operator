@@ -259,7 +259,7 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
-              - key: app
+              - key: k8s-app
                 operator: In
                 values:
                 - "etcd-quorum-guard"
@@ -295,7 +295,7 @@ spec:
         name: etcd-quorum-guard-container
         volumeMounts:
         - mountPath: /mnt/kube
-          name: kubecerts
+          name: etcdcerts
         command:
         - "/bin/sh"
         args:
@@ -327,7 +327,7 @@ spec:
             cpu: 10m
             memory: 5Mi
       volumes:
-      - name: kubecerts
+      - name: etcdcerts
         hostPath:
           path: /etc/kubernetes/static-pod-resources/etcd-member
 `)
@@ -356,7 +356,7 @@ spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      app: etcd-quorum-guard
+      k8s-app: etcd-quorum-guard
 `)
 
 func manifestsEtcdquorumguardDisruptionBudgetYamlBytes() ([]byte, error) {
