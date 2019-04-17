@@ -15,7 +15,7 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -170,14 +170,13 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 		return
 	}
 
-	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		pool := ctrl.resolveControllerRef(controllerRef)
-		if pool == nil {
+	controllerRef := metav1.GetControllerOf(mc)
+	if controllerRef != nil {
+		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
+			glog.V(4).Infof("MachineConfig %s added", mc.Name)
+			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
-		glog.V(4).Infof("MachineConfig %s added", mc.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return
 	}
 
 	pools, err := ctrl.getPoolsForMachineConfig(mc)
@@ -205,13 +204,11 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	}
 
 	if curControllerRef != nil {
-		pool := ctrl.resolveControllerRef(curControllerRef)
-		if pool == nil {
+		if pool := ctrl.resolveControllerRef(curControllerRef); pool != nil {
+			glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
+			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
-		glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return
 	}
 
 	pools, err := ctrl.getPoolsForMachineConfig(curMC)
@@ -242,14 +239,13 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		}
 	}
 
-	if controllerRef := metav1.GetControllerOf(mc); controllerRef != nil {
-		pool := ctrl.resolveControllerRef(controllerRef)
-		if pool == nil {
+	controllerRef := metav1.GetControllerOf(mc)
+	if controllerRef != nil {
+		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
+			glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
+			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
-		glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
-		ctrl.enqueueMachineConfigPool(pool)
-		return
 	}
 
 	pools, err := ctrl.getPoolsForMachineConfig(mc)
