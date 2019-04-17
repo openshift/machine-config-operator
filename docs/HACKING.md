@@ -232,9 +232,9 @@ registry for this flow to still work as long as those images are pullable.
 Now that your have your custom component images, to build a custom release payload, run:
 
 ```
-oc adm release new -n openshift --server https://api.ci.openshift.org \
-                                --from-image-stream "origin-v4.0" \
-                                --to-image quay.io/user/origin-release:v4.0 \
+oc adm release new -n origin --server https://api.ci.openshift.org \
+                                --from-image-stream "4.1" \
+                                --to-image quay.io/user/origin-release:v4.1 \
                                 machine-config-{component}=quay.io/user/machine-config-{component}:{tag}
 ```
 
@@ -243,9 +243,9 @@ you from building a custom release payload using only a subset of the MCO compon
 creating a payload which contains all of them:
 
 ```
-oc adm release new -n openshift --server https://api.ci.openshift.org \
-                                --from-image-stream "origin-v4.0" \
-                                --to-image quay.io/user/origin-release:v4.0 \
+oc adm release new -n origin --server https://api.ci.openshift.org \
+                                --from-image-stream "4.1" \
+                                --to-image quay.io/user/origin-release:v4.1 \
                                 machine-config-operator=quay.io/user/machine-config-operator:latest \
                                 machine-config-controller=quay.io/user/machine-config-controller:latest \
                                 machine-config-daemon=quay.io/user/machine-config-daemon:latest \
@@ -268,5 +268,5 @@ In order to use your new custom release payload to install a new cluster, simply
 the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
 
 ```
-OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v4.0 bin/openshift-install create cluster --log-level=debug
+OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v4.1 bin/openshift-install create cluster --log-level=debug
 ```
