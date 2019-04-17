@@ -623,11 +623,6 @@ func (in *MachineConfigPoolSpec) DeepCopyInto(out *MachineConfigPoolSpec) {
 		*out = new(metav1.LabelSelector)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.MachineSelector != nil {
-		in, out := &in.MachineSelector, &out.MachineSelector
-		*out = new(metav1.LabelSelector)
-		(*in).DeepCopyInto(*out)
-	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = new(metav1.LabelSelector)
