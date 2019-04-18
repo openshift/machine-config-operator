@@ -184,7 +184,7 @@ func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 // specified bounds.
 func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 	err := wait.PollImmediate(5*time.Second, 2*time.Minute, func() (bool, error) {
-		d, err := cs.AppsV1Interface.Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
+		d, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err != nil {
 			// By this point the deployment should exist.
 			fmt.Printf("  error waiting for etcd-quorum-guard deployment to exist: %v\n", err)

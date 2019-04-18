@@ -294,32 +294,43 @@ spec:
         imagePullPolicy: IfNotPresent
         name: etcd-quorum-guard-container
         volumeMounts:
-        - mountPath: /mnt/kube
-          name: etcdcerts
+        - mountPath: "/etc/ssl/certs/etcd"
+          name: etcd-metric-client
+          readOnly: true
+        - mountPath: "/var/run/etcd-metric-serving-ca"
+          name: etcd-metric-serving-ca
+          readOnly: true
         command:
         - "/bin/sh"
         args:
         - "-c"
         - |
-          declare -r croot=/mnt/kube
-          declare -r health_endpoint="https://127.0.0.1:2379/health"
-          declare -r cert="$(find $croot -name 'system:etcd-peer*.crt' -print -quit)"
-          declare -r key="${cert%.crt}.key"
-          declare -r cacert="$croot/ca.crt"
-          while : ; do date; curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'; sleep 5; done
+          declare -r croot=/etc/ssl/certs/etcd
+          set -x
+          declare -r health_endpoint="https://127.0.0.1:9979/health"
+          declare -r cert="$croot/tls.crt"
+          declare -r key="$croot/tls.key"
+          declare -r cacert="/var/run/etcd-metric-serving-ca/ca-bundle.crt"
+          ls -lR "$croot"
+          ls -lRL "$croot"
+          ls -l "$cacert"
+          ls -lL "$cacert"
+          ls -lRL /var/run/secrets
+          ls -lRL /var/run/etcd-metric-serving-ca
+          while : ; do date; curl -k --max-time 2 --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint"; sleep 5; done
         readinessProbe:
           exec:
             command:
             - /bin/sh
             - -c
             - |
-                declare -r croot=/mnt/kube
-                declare -r health_endpoint="https://127.0.0.1:2379/health"
-                declare -r cert="$(find $croot -name 'system:etcd-peer*.crt' -print -quit)"
-                declare -r key="${cert%.crt}.key"
-                declare -r cacert="$croot/ca.crt"
+                declare -r croot=/etc/ssl/certs/etcd
+                declare -r health_endpoint="https://127.0.0.1:9979/health"
+                declare -r cert="$croot/tls.crt"
+                declare -r key="$croot/tls.key"
+                declare -r cacert="/var/run/etcd-metric-serving-ca/ca-bundle.crt"
                 [[ -z $cert || -z $key ]] && exit 1
-                curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
+                curl --max-time 2 -k --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
             initialDelaySecond: 5
             periodSecond: 5
         resources:
@@ -327,9 +338,12 @@ spec:
             cpu: 10m
             memory: 5Mi
       volumes:
-      - name: etcdcerts
-        hostPath:
-          path: /etc/kubernetes/static-pod-resources/etcd-member
+      - name: etcd-metric-client
+        secret:
+          secretName: etcd-metric-client
+      - name: etcd-metric-serving-ca
+        configMap:
+          name: etcd-metric-serving-ca
 `)
 
 func manifestsEtcdquorumguardDeploymentYamlBytes() ([]byte, error) {

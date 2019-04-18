@@ -367,6 +367,35 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 	return nil
 }
 
+// syncRequiredMachineConfigResources ensures that the ConfigMap and Secret resources are synced from source namespace to destination.
+func (optr *Operator) syncRequiredMachineConfigResources(config renderConfig) error {
+	sourceNamespace := "openshift-config"
+	destinationNamespace := "openshift-machine-config-operator"
+
+	_, _, err := resourceapply.SyncConfigMap(
+		optr.kubeClient.CoreV1(),
+		sourceNamespace,
+		"etcd-metric-serving-ca",
+		destinationNamespace,
+		"etcd-metric-serving-ca",
+		[]metav1.OwnerReference{})
+	if err != nil {
+		return err
+	}
+
+	_, _, errs := resourceapply.SyncSecret(
+		optr.kubeClient.CoreV1(),
+		sourceNamespace,
+		"etcd-metric-client",
+		destinationNamespace,
+		"etcd-metric-client",
+		[]metav1.OwnerReference{})
+	if errs != nil {
+		return errs
+	}
+	return nil
+}
+
 const (
 	deploymentRolloutPollInterval = time.Second
 	deploymentRolloutTimeout      = 10 * time.Minute
@@ -413,7 +442,7 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 	var lastErr error
 	if err := wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
 		d, err := optr.deployLister.Deployments(resource.Namespace).Get(resource.Name)
-		glog.Infof("Waiting for deployment rollout %s/%s (%+v)", resource.Namespace, resource.Name)
+		glog.Infof("Waiting for deployment rollout %s/%s", resource.Namespace, resource.Name)
 		if apierrors.IsNotFound(err) {
 			glog.Infof("   Deployment %s/%s not found", resource.Namespace, resource.Name)
 			// exit early to recreate the deployment.
