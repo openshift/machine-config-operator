@@ -28,7 +28,6 @@ const (
 )
 
 func (ctrl *Controller) featureWorker() {
-	glog.Infof("FeatureWorker")
 	for ctrl.processNextFeatureWorkItem() {
 	}
 }
@@ -47,7 +46,6 @@ func (ctrl *Controller) processNextFeatureWorkItem() bool {
 
 func (ctrl *Controller) syncFeatureHandler(key string) error {
 	startTime := time.Now()
-
 	glog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
 	defer func() {
 		glog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))

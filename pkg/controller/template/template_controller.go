@@ -10,16 +10,18 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corev1clientset "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -64,6 +66,7 @@ func New(
 	templatesDir string,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	secretsInformer coreinformersv1.SecretInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -92,6 +95,12 @@ func New(
 		DeleteFunc: ctrl.deleteMachineConfig,
 	})
 
+	secretsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addSecret,
+		UpdateFunc: ctrl.updateSecret,
+		DeleteFunc: ctrl.deleteSecret,
+	})
+
 	ctrl.syncHandler = ctrl.syncControllerConfig
 	ctrl.enqueueControllerConfig = ctrl.enqueue
 
@@ -101,6 +110,59 @@ func New(
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 
 	return ctrl
+}
+
+func (ctrl *Controller) filterSecret(secret *v1.Secret) {
+	if secret.GetName() == "pull-secret" {
+		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#v", err))
+			return
+		}
+		glog.V(4).Infof("Re-syncing ControllerConfig %s due to secret change", cfg.Name)
+		ctrl.enqueueControllerConfig(cfg)
+	}
+}
+
+func (ctrl *Controller) addSecret(obj interface{}) {
+	secret := obj.(*v1.Secret)
+	if secret.DeletionTimestamp != nil {
+		ctrl.deleteSecret(secret)
+		return
+	}
+	ctrl.filterSecret(secret)
+}
+
+func (ctrl *Controller) updateSecret(old, new interface{}) {
+	ctrl.filterSecret(new.(*v1.Secret))
+}
+
+func (ctrl *Controller) deleteSecret(obj interface{}) {
+	secret, ok := obj.(*v1.Secret)
+
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			return
+		}
+		secret, ok = tombstone.Obj.(*v1.Secret)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Secret %#v", obj))
+			return
+		}
+	}
+
+	if secret.GetName() == "pull-secret" {
+		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("Couldn't get ControllerConfig on secret callback %#v", err))
+			return
+		}
+		glog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
+		// TODO(runcom): should we resync w/o a secret which is going to just cause the controller to fail when trying to get the secret itself?
+		//ctrl.enqueueControllerConfig(cfg)
+	}
 }
 
 // Run executes the template controller
