@@ -316,7 +316,7 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	// sync up CAs
-	etcdCA, err := optr.getCAsFromConfigMap("kube-system", "etcd-serving-ca", "ca-bundle.crt")
+	etcdCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-serving-ca", "ca-bundle.crt")
 	if err != nil {
 		return err
 	}
