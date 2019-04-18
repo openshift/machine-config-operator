@@ -22,6 +22,7 @@ type renderConfig struct {
 	ControllerConfig mcfgv1.ControllerConfigSpec
 	APIServerURL     string
 	Images           Images
+	KubeAPIServerServingCA string
 }
 
 func renderAsset(config renderConfig, path string) ([]byte, error) {
