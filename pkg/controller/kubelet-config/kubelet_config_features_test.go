@@ -1,13 +1,40 @@
 package kubeletconfig
 
 import (
+	"reflect"
 	"testing"
 
+	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 )
+
+func TestFeatureGateDrift(t *testing.T) {
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			f := newFixture(t)
+			cc := newControllerConfig(common.ControllerConfigName, platform)
+			f.ccLister = append(f.ccLister, cc)
+
+			ctrl := f.newController()
+			kubeletConfig, err := ctrl.generateOriginalKubeletConfig("master")
+			if err != nil {
+				t.Errorf("could not generate kubelet config from templates %v", err)
+			}
+			dataURL, _ := dataurl.DecodeString(kubeletConfig.Contents.Source)
+			originalKubeConfig, _ := decodeKubeletConfig(dataURL.Data)
+			defaultFeatureGates, err := ctrl.generateFeatureMap(createNewDefaultFeatureGate())
+			if err != nil {
+				t.Errorf("could not generate defaultFeatureGates: %v", err)
+			}
+			if !reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatureGates) {
+				t.Errorf("template FeatureGates do not match openshift/api FeatureGates: (tmpl=[%v], api=[%v]", originalKubeConfig.FeatureGates, defaultFeatureGates)
+			}
+		})
+	}
+}
 
 func TestFeaturesDefault(t *testing.T) {
 	for _, platform := range []string{"aws", "none", "unrecognized"} {
@@ -28,9 +55,7 @@ func TestFeaturesDefault(t *testing.T) {
 			f.featLister = append(f.featLister, features)
 
 			f.expectGetMachineConfigAction(mcs)
-			f.expectCreateMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs2)
-			f.expectCreateMachineConfigAction(mcs2)
 
 			f.runFeature(getKeyFromFeatureGate(features, t))
 		})
