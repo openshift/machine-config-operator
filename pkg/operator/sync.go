@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -321,12 +322,19 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 	if err != nil {
 		return err
 	}
-
+	isPoolUpdated := func(pool *mcfgv1.MachineConfigPool) bool {
+		for _, condition := range pool.Status.Conditions {
+			if condition.Type == mcfgv1.MachineConfigPoolUpdated {
+				return condition.Status == corev1.ConditionTrue
+			}
+		}
+		return false
+	}
 	for _, pool := range pools {
 		if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
 			return fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
 		}
-		if pool.Generation <= pool.Status.ObservedGeneration && pool.Status.MachineCount == pool.Status.UpdatedMachineCount && pool.Status.UnavailableMachineCount == 0 {
+		if pool.Generation <= pool.Status.ObservedGeneration && isPoolUpdated(pool) {
 			continue
 		}
 		return fmt.Errorf("error pool %s is not ready, retrying. Status: (total: %d, updated: %d, unavailable: %d)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
