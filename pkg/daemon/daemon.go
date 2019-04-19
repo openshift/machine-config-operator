@@ -922,21 +922,6 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	if err != nil {
 		return nil, nil, err
 	}
-	// currentConfig is always expected to be there as loadNodeAnnotations
-	// is one of the very first calls when the daemon starts.
-	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	currentConfig, err := dn.mcLister.Get(currentConfigName)
-	if err != nil {
-		return nil, nil, err
-	}
-	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	mcJSON, err := os.Open(currentConfigPath)
 	if err != nil {
 		return nil, nil, err
@@ -946,12 +931,30 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	if err := json.NewDecoder(bufio.NewReader(mcJSON)).Decode(fingerprintMC); err != nil {
 		return nil, nil, err
 	}
+	// currentConfig is always expected to be there as loadNodeAnnotations
+	// is one of the very first calls when the daemon starts.
+	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	currentConfig, err := dn.mcLister.Get(currentConfigName)
+	if err != nil {
+		// if, for some super weird reason, we fail to load current from etcd, we can now
+		// just use what we have on disk and sync to desired.
+		glog.Warningf("Current config %s not available (got %v), falling back to what's on disk %s", currentConfigName, err, fingerprintMC.GetName())
+		currentConfig = fingerprintMC
+	}
+	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	if fingerprintMC.GetName() != currentConfig.GetName() {
 		return fingerprintMC, desiredConfig, nil
 	}
 
 	// Detect if there is an update
-	if desiredConfigName == currentConfigName && state == constants.MachineConfigDaemonStateDone {
+	if desiredConfig.GetName() == currentConfig.GetName() && state == constants.MachineConfigDaemonStateDone {
 		// No actual update to the config
 		glog.V(2).Info("No updating is required")
 		return nil, nil, nil
