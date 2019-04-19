@@ -7,7 +7,7 @@ contents:
     kind: Pod
     metadata:
       name: etcd-member
-      namespace: kube-system
+      namespace: openshift-etcd
       labels:
         k8s-app: etcd
     spec:
