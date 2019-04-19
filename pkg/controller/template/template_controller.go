@@ -55,8 +55,9 @@ type Controller struct {
 	ccLister mcfglistersv1.ControllerConfigLister
 	mcLister mcfglistersv1.MachineConfigLister
 
-	ccListerSynced cache.InformerSynced
-	mcListerSynced cache.InformerSynced
+	ccListerSynced        cache.InformerSynced
+	mcListerSynced        cache.InformerSynced
+	secretsInformerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
 }
@@ -108,6 +109,7 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -173,7 +175,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	glog.Info("Starting MachineConfigController-TemplateController")
 	defer glog.Info("Shutting down MachineConfigController-TemplateController")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
 		return
 	}
 
