@@ -49,6 +49,11 @@ const (
 	maxRetries = 15
 )
 
+var (
+	// controllerKind contains the schema.GroupVersionKind for this controller type.
+	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ContainerRuntimeConfig")
+)
+
 var updateBackoff = wait.Backoff{
 	Steps:    5,
 	Duration: 100 * time.Millisecond,
@@ -468,17 +473,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
-		mc.ObjectMeta.Annotations = map[string]string{
+		mc.SetAnnotations(map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
-		}
-		mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
-			metav1.OwnerReference{
-				APIVersion: mcfgv1.SchemeGroupVersion.String(),
-				Kind:       "KubeletConfig",
-				Name:       cfg.Name,
-				UID:        cfg.UID,
-			},
-		}
+		})
+		oref := metav1.NewControllerRef(cfg, controllerKind)
+		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
+
 		// Create or Update, on conflict retry
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
