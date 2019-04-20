@@ -214,8 +214,8 @@ func New(
 		stopCh:                 stopCh,
 		kubeClient:             kubeClient,
 		mcClient:               mcClient,
-		currentConfigPath:      currentConfigPath,
 	}
+	dn.currentConfigPath = currentConfigPath
 	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
 	return dn, nil
 }
@@ -352,6 +352,7 @@ func (dn *Daemon) updateErrorState(err error) {
 }
 
 func (dn *Daemon) syncNode(key string) error {
+	dn.logSystem("controller syncing started")
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
@@ -704,6 +705,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	// We usually expect that if current != desired, pending == desired; however,
 	// it can happen that desiredConfig changed while we were rebooting.
 	if pendingConfigName == desiredConfigName {
+		dn.logSystem("using pending config same as desired")
 		pendingConfig = desiredConfig
 	} else if pendingConfigName != "" {
 		pendingConfig, err = dn.mcLister.Get(pendingConfigName)
@@ -751,6 +753,7 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		if !os.IsNotExist(err) {
 			return "", errors.Wrapf(err, "loading transient state")
 		}
+		dn.logSystem("error loading pending config %v", err)
 		return "", nil
 	}
 	type pendingConfigState struct {
@@ -766,6 +769,27 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", p.PendingConfig, dn.bootID)
 	}
 	return p.PendingConfig, nil
+}
+
+func (dn *Daemon) getCurrentConfigOnDisk() (*mcfgv1.MachineConfig, error) {
+	mcJSON, err := os.Open(dn.currentConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	defer mcJSON.Close()
+	currentOnDisk := &mcfgv1.MachineConfig{}
+	if err := json.NewDecoder(bufio.NewReader(mcJSON)).Decode(currentOnDisk); err != nil {
+		return nil, err
+	}
+	return currentOnDisk, nil
+}
+
+func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error {
+	mcJSON, err := json.Marshal(current)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON)
 }
 
 // CheckStateOnBoot is a core entrypoint for our state machine.
@@ -817,6 +841,24 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		}
 	}
 
+	var currentOnDisk *mcfgv1.MachineConfig
+	if !state.bootstrapping {
+		var err error
+		currentOnDisk, err = dn.getCurrentConfigOnDisk()
+		// we allow ENOENT for previous MCO versions that don't write this...
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	if currentOnDisk != nil && state.currentConfig.GetName() != currentOnDisk.GetName() {
+		// The on disk state (if available) is always considered truth.
+		// We want to handle the case where etcd state was restored from a backup.
+		glog.Infof("Using current config on disk %s", currentOnDisk.GetName())
+		dn.logSystem("Using current config on disk %s", currentOnDisk.GetName())
+		state.currentConfig = currentOnDisk
+	}
+
 	// Validate the on-disk state against what we *expect*.
 	//
 	// In the case where we're booting a node for the first time, or the MCD
@@ -828,9 +870,11 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// a once-a-day or week cron job.
 	var expectedConfig *mcfgv1.MachineConfig
 	if state.pendingConfig != nil {
+		dn.logSystem("Validating against pending config %s", state.pendingConfig.GetName())
 		glog.Infof("Validating against pending config %s", state.pendingConfig.GetName())
 		expectedConfig = state.pendingConfig
 	} else {
+		dn.logSystem("Validating against current config %s", state.currentConfig.GetName())
 		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
@@ -860,13 +904,10 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		state.currentConfig = state.pendingConfig
 	}
 
-	mcJSON, err := json.Marshal(state.currentConfig)
-	if err != nil {
-		return err
-	}
-	// write a file with current fingerprint overriding the previous
-	if err := writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON); err != nil {
-		return err
+	if state.bootstrapping {
+		if err := dn.storeCurrentConfigOnDisk(state.currentConfig); err != nil {
+			return err
+		}
 	}
 
 	inDesiredConfig := state.currentConfig == state.desiredConfig
@@ -947,19 +988,6 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	dn.enqueueNode(curNode)
 }
 
-func (dn *Daemon) getCurrentMCOnDisk() (*mcfgv1.MachineConfig, error) {
-	mcJSON, err := os.Open(dn.currentConfigPath)
-	if err != nil {
-		return nil, err
-	}
-	defer mcJSON.Close()
-	currentOnDisk := &mcfgv1.MachineConfig{}
-	if err := json.NewDecoder(bufio.NewReader(mcJSON)).Decode(currentOnDisk); err != nil {
-		return nil, err
-	}
-	return currentOnDisk, nil
-}
-
 // prepUpdateFromCluster handles the shared update prepping functionality for
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
@@ -986,12 +1014,14 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	if err != nil {
 		return nil, nil, err
 	}
-	currentMCOnDisk, err := dn.getCurrentMCOnDisk()
-	if err != nil {
+
+	currentOnDisk, err := dn.getCurrentConfigOnDisk()
+	if err != nil && !os.IsNotExist(err) {
 		return nil, nil, err
 	}
-	if currentMCOnDisk.GetName() != currentConfig.GetName() {
-		return currentMCOnDisk, desiredConfig, nil
+
+	if currentOnDisk != nil && currentOnDisk.GetName() != currentConfig.GetName() {
+		return currentOnDisk, desiredConfig, nil
 	}
 
 	// Detect if there is an update
