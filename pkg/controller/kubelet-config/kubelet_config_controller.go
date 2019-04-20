@@ -164,12 +164,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
 
-	glog.Info("Starting MachineConfigController-KubeletConfigController")
-	defer glog.Info("Shutting down MachineConfigController-KubeletConfigController")
-
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced) {
 		return
 	}
+
+	glog.Info("Starting MachineConfigController-KubeletConfigController")
+	defer glog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)

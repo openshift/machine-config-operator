@@ -196,9 +196,6 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
-	glog.Info("Starting MachineConfigOperator")
-	defer glog.Info("Shutting down MachineConfigOperator")
-
 	apiClient := optr.apiExtClient.ApiextensionsV1beta1()
 	_, err := apiClient.CustomResourceDefinitions().Get("machineconfigpools.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
@@ -236,6 +233,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 			return
 		}
 	}
+
+	glog.Info("Starting MachineConfigOperator")
+	defer glog.Info("Shutting down MachineConfigOperator")
 
 	optr.stopCh = stopCh
 
@@ -303,10 +303,12 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	if optr.inClusterBringup {
+		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
 		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
 			return errors.New("failed to sync caches for informers")
 		}
+		glog.V(4).Info("Finished inClusterBringup informers cache sync")
 	}
 
 	namespace, _, err := cache.SplitMetaNamespaceKey(key)
