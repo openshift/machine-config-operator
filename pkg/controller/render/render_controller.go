@@ -116,12 +116,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	glog.Info("Starting MachineConfigController-RenderController")
-	defer glog.Info("Shutting down MachineConfigController-RenderController")
-
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
 		return
 	}
+
+	glog.Info("Starting MachineConfigController-RenderController")
+	defer glog.Info("Shutting down MachineConfigController-RenderController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
