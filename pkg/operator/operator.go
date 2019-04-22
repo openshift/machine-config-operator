@@ -85,16 +85,19 @@ type Operator struct {
 	mcoCmLister     corelisterv1.ConfigMapLister
 	clusterCmLister corelisterv1.ConfigMapLister
 
-	crdListerSynced       cache.InformerSynced
-	deployListerSynced    cache.InformerSynced
-	daemonsetListerSynced cache.InformerSynced
-	infraListerSynced     cache.InformerSynced
-	networkListerSynced   cache.InformerSynced
-	mcpListerSynced       cache.InformerSynced
-	ccListerSynced        cache.InformerSynced
-	mcListerSynced        cache.InformerSynced
-	mcoCmListerSynced     cache.InformerSynced
-	clusterCmListerSynced cache.InformerSynced
+	crdListerSynced                  cache.InformerSynced
+	deployListerSynced               cache.InformerSynced
+	daemonsetListerSynced            cache.InformerSynced
+	infraListerSynced                cache.InformerSynced
+	networkListerSynced              cache.InformerSynced
+	mcpListerSynced                  cache.InformerSynced
+	ccListerSynced                   cache.InformerSynced
+	mcListerSynced                   cache.InformerSynced
+	mcoCmListerSynced                cache.InformerSynced
+	clusterCmListerSynced            cache.InformerSynced
+	serviceAccountInformerSynced     cache.InformerSynced
+	clusterRoleInformerSynced        cache.InformerSynced
+	clusterRoleBindingInformerSynced cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -107,7 +110,6 @@ func New(
 	namespace, name string,
 	imagesFile string,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
-	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	serviceAccountInfomer coreinformersv1.ServiceAccountInformer,
@@ -161,16 +163,20 @@ func New(
 
 	optr.clusterCmLister = clusterCmInfomer.Lister()
 	optr.clusterCmListerSynced = clusterCmInfomer.Informer().HasSynced
+	optr.mcpLister = mcpInformer.Lister()
+	optr.mcpListerSynced = mcpInformer.Informer().HasSynced
+	optr.ccLister = controllerConfigInformer.Lister()
+	optr.ccListerSynced = controllerConfigInformer.Informer().HasSynced
+	optr.mcLister = mcInformer.Lister()
+	optr.mcListerSynced = mcInformer.Informer().HasSynced
+
+	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
+	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
+	optr.clusterRoleBindingInformerSynced = clusterRoleBindingInformer.Informer().HasSynced
 	optr.mcoCmLister = mcoCmInformer.Lister()
 	optr.mcoCmListerSynced = mcoCmInformer.Informer().HasSynced
 	optr.crdLister = crdInformer.Lister()
 	optr.crdListerSynced = crdInformer.Informer().HasSynced
-	optr.mcpLister = mcpInformer.Lister()
-	optr.mcpListerSynced = mcpInformer.Informer().HasSynced
-	optr.ccLister = ccInformer.Lister()
-	optr.ccListerSynced = ccInformer.Informer().HasSynced
-	optr.mcLister = mcInformer.Lister()
-	optr.mcListerSynced = mcInformer.Informer().HasSynced
 	optr.deployLister = deployInformer.Lister()
 	optr.deployListerSynced = deployInformer.Informer().HasSynced
 	optr.daemonsetLister = daemonsetInformer.Lister()
@@ -190,9 +196,6 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
-	glog.Info("Starting MachineConfigOperator")
-	defer glog.Info("Shutting down MachineConfigOperator")
-
 	apiClient := optr.apiExtClient.ApiextensionsV1beta1()
 	_, err := apiClient.CustomResourceDefinitions().Get("machineconfigpools.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
@@ -211,6 +214,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.infraListerSynced,
 		optr.mcoCmListerSynced,
 		optr.clusterCmListerSynced,
+		optr.serviceAccountInformerSynced,
+		optr.clusterRoleInformerSynced,
+		optr.clusterRoleBindingInformerSynced,
 		optr.networkListerSynced) {
 		glog.Error("failed to sync caches")
 		return
@@ -227,6 +233,9 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 			return
 		}
 	}
+
+	glog.Info("Starting MachineConfigOperator")
+	defer glog.Info("Shutting down MachineConfigOperator")
 
 	optr.stopCh = stopCh
 
@@ -294,10 +303,12 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	if optr.inClusterBringup {
+		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
 		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
 			return errors.New("failed to sync caches for informers")
 		}
+		glog.V(4).Info("Finished inClusterBringup informers cache sync")
 	}
 
 	namespace, _, err := cache.SplitMetaNamespaceKey(key)
@@ -426,11 +437,11 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs Images, apiServerURL string) renderConfig {
 	return renderConfig{
-		TargetNamespace:  tnamespace,
-		Version:          version.Raw,
-		ControllerConfig: *ccSpec,
-		Images:           imgs,
-		APIServerURL:     apiServerURL,
+		TargetNamespace:        tnamespace,
+		Version:                version.Raw,
+		ControllerConfig:       *ccSpec,
+		Images:                 imgs,
+		APIServerURL:           apiServerURL,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 	}
 }

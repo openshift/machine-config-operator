@@ -158,13 +158,13 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
 
-	glog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
-	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
-
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
 		ctrl.imgListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
+
+	glog.Info("Starting MachineConfigController-ContainerRuntimeConfigController")
+	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)

@@ -60,6 +60,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
