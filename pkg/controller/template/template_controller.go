@@ -55,8 +55,9 @@ type Controller struct {
 	ccLister mcfglistersv1.ControllerConfigLister
 	mcLister mcfglistersv1.MachineConfigLister
 
-	ccListerSynced cache.InformerSynced
-	mcListerSynced cache.InformerSynced
+	ccListerSynced        cache.InformerSynced
+	mcListerSynced        cache.InformerSynced
+	secretsInformerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
 }
@@ -108,12 +109,13 @@ func New(
 	ctrl.mcLister = mcInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+	ctrl.secretsInformerSynced = secretsInformer.Informer().HasSynced
 
 	return ctrl
 }
 
 func (ctrl *Controller) filterSecret(secret *v1.Secret) {
-	if secret.GetName() == "pull-secret" {
+	if secret.Name == "pull-secret" {
 		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#v", err))
@@ -130,15 +132,19 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 		ctrl.deleteSecret(secret)
 		return
 	}
+	glog.V(4).Infof("Add Secret %v", secret)
 	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) updateSecret(old, new interface{}) {
-	ctrl.filterSecret(new.(*v1.Secret))
+	secret := new.(*v1.Secret)
+	glog.V(4).Infof("Update Secret %v", secret)
+	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
 	secret, ok := obj.(*v1.Secret)
+	glog.V(4).Infof("Delete Secret %v", secret)
 
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -153,7 +159,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 		}
 	}
 
-	if secret.GetName() == "pull-secret" {
+	if secret.Name == "pull-secret" {
 		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get ControllerConfig on secret callback %#v", err))
@@ -170,12 +176,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	glog.Info("Starting MachineConfigController-TemplateController")
-	defer glog.Info("Shutting down MachineConfigController-TemplateController")
-
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced) {
 		return
 	}
+
+	glog.Info("Starting MachineConfigController-TemplateController")
+	defer glog.Info("Shutting down MachineConfigController-TemplateController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
