@@ -430,18 +430,30 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 	if len(mcs) == 0 {
-		return fmt.Errorf("no MachineConfigs found matching selector %v", selector)
+		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
 	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
 		return ctrl.syncFailingStatus(pool, err)
 	}
 
+	return ctrl.syncAvailableStatus(pool)
+}
+
+func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
+	if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
+		return nil
+	}
+	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, v1.ConditionFalse, "", "")
+	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
+	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, v1.ConditionTrue, fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err), "")
+	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, v1.ConditionTrue, fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err), "")
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool); updateErr != nil {
 		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)

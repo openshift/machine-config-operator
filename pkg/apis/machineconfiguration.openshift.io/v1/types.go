@@ -372,9 +372,11 @@ const (
 	// When at least one of machine is not either not updated or is in the process of updating
 	// to the desired machine config.
 	MachineConfigPoolUpdating MachineConfigPoolConditionType = "Updating"
-	// MachineConfigPoolDegraded means the update for one of the machine is not progressing
-	// the pool can't be configured due to an error
-	// Degraded == !render_went_well || Degraded == Updating_and_something_is_wrong_in_MCDs
+	// MachineConfigPoolNodeDegraded means the update for one of the machine is not progressing
+	MachineConfigPoolNodeDegraded MachineConfigPoolConditionType = "NodeDegraded"
+	// MachineConfigPoolRenderDegraded means the rendered configuration for the pool cannot be generated because of an error
+	MachineConfigPoolRenderDegraded MachineConfigPoolConditionType = "RenderDegraded"
+	// MachineConfigPoolDegraded is the overall status of the pool based, today, on whether we fail with NodeDegraded or RenderDegraded
 	MachineConfigPoolDegraded MachineConfigPoolConditionType = "Degraded"
 )
 
