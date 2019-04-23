@@ -33,21 +33,31 @@ type message struct {
 	responseChannel chan error
 }
 
-// NodeWriter A single writer to Kubernetes to prevent race conditions
-type NodeWriter struct {
+// clusterNodeWriter is a single writer to Kubernetes to prevent race conditions
+type clusterNodeWriter struct {
 	writer chan message
 }
 
+// NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
+type NodeWriter interface {
+	Run(stop <-chan struct{})
+	SetDone(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string, dcAnnotation string) error
+	SetWorking(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error
+	SetUnreconcilable(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error
+	SetDegraded(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error
+	SetSSHAccessed(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error
+}
+
 // NewNodeWriter Create a new NodeWriter
-func NewNodeWriter() *NodeWriter {
-	return &NodeWriter{
+func NewNodeWriter() NodeWriter {
+	return &clusterNodeWriter{
 		writer: make(chan message, defaultWriterQueue),
 	}
 }
 
 // Run reads from the writer channel and sets the node annotation. It will
 // return if the stop channel is closed. Intended to be run via a goroutine.
-func (nw *NodeWriter) Run(stop <-chan struct{}) {
+func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 	for {
 		select {
 		case <-stop:
@@ -60,7 +70,7 @@ func (nw *NodeWriter) Run(stop <-chan struct{}) {
 }
 
 // SetDone sets the state to Done.
-func (nw *NodeWriter) SetDone(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string, dcAnnotation string) error {
+func (nw *clusterNodeWriter) SetDone(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string, dcAnnotation string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
@@ -76,8 +86,8 @@ func (nw *NodeWriter) SetDone(client corev1.NodeInterface, lister corelisterv1.N
 	return <-respChan
 }
 
-// SetWorking Sets the state to Working.
-func (nw *NodeWriter) SetWorking(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
+// SetWorking sets the state to Working.
+func (nw *clusterNodeWriter) SetWorking(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
@@ -92,8 +102,8 @@ func (nw *NodeWriter) SetWorking(client corev1.NodeInterface, lister corelisterv
 	return <-respChan
 }
 
-// SetUnreconcilable Sets the state to Unreconcilable.
-func (nw *NodeWriter) SetUnreconcilable(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
+// SetUnreconcilable sets the state to Unreconcilable.
+func (nw *clusterNodeWriter) SetUnreconcilable(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	glog.Errorf("Marking Unreconcilable due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateUnreconcilable,
@@ -115,7 +125,7 @@ func (nw *NodeWriter) SetUnreconcilable(err error, client corev1.NodeInterface, 
 
 // SetDegraded logs the error and sets the state to Degraded.
 // Returns an error if it couldn't set the annotation.
-func (nw *NodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
+func (nw *clusterNodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	glog.Errorf("Marking Degraded due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDegraded,
@@ -136,7 +146,7 @@ func (nw *NodeWriter) SetDegraded(err error, client corev1.NodeInterface, lister
 }
 
 // SetSSHAccessed sets the ssh annotation to accessed
-func (nw *NodeWriter) SetSSHAccessed(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
+func (nw *clusterNodeWriter) SetSSHAccessed(client corev1.NodeInterface, lister corelisterv1.NodeLister, node string) error {
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}
