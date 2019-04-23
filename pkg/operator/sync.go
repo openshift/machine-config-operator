@@ -40,8 +40,8 @@ func (optr *Operator) syncAll(rconfig renderConfig, syncFuncs []syncFunc) error 
 	}
 
 	agg := utilerrors.NewAggregate(errs)
-	if err := optr.syncFailingStatus(agg); err != nil {
-		return fmt.Errorf("error syncing failing status: %v", err)
+	if err := optr.syncDegradedStatus(agg); err != nil {
+		return fmt.Errorf("error syncing degraded status: %v", err)
 	}
 
 	if err := optr.syncAvailableStatus(); err != nil {
