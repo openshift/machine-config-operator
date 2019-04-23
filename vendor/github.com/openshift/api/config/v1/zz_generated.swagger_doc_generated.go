@@ -149,7 +149,7 @@ func (GenericControllerConfig) SwaggerDoc() map[string]string {
 }
 
 var map_HTTPServingInfo = map[string]string{
-	"": "HTTPServingInfo holds configuration for serving HTTP",
+	"":                      "HTTPServingInfo holds configuration for serving HTTP",
 	"maxRequestsInFlight":   "MaxRequestsInFlight is the number of concurrent requests allowed to the server. If zero, no limit.",
 	"requestTimeoutSeconds": "RequestTimeoutSeconds is the number of seconds before requests are timed out. The default is 60 minutes, if -1 there is no limit on requests.",
 }
@@ -492,7 +492,7 @@ var map_ClusterVersionStatus = map[string]string{
 	"history":            "history contains a list of the most recent versions applied to the cluster. This value may be empty during cluster startup, and then will be updated when a new update is being applied. The newest update is first in the list and it is ordered by recency. Updates in the history have state Completed if the rollout completed - if an update was failing or halfway applied the state will be Partial. Only a limited amount of update history is preserved.",
 	"observedGeneration": "observedGeneration reports which version of the spec is being synced. If this value is not equal to metadata.generation, then the desired and conditions fields may represent from a previous version.",
 	"versionHash":        "versionHash is a fingerprint of the content that the cluster will be updated with. It is used by the operator to avoid unnecessary work and is for internal use only.",
-	"conditions":         "conditions provides information about the cluster version. The condition \"Available\" is set to true if the desiredUpdate has been reached. The condition \"Progressing\" is set to true if an update is being applied. The condition \"Failing\" is set to true if an update is currently blocked by a temporary or permanent error. Conditions are only valid for the current desiredUpdate when metadata.generation is equal to status.generation.",
+	"conditions":         "conditions provides information about the cluster version. The condition \"Available\" is set to true if the desiredUpdate has been reached. The condition \"Progressing\" is set to true if an update is being applied. The condition \"Degraded\" is set to true if an update is currently blocked by a temporary or permanent error. Conditions are only valid for the current desiredUpdate when metadata.generation is equal to status.generation.",
 	"availableUpdates":   "availableUpdates contains the list of updates that are appropriate for this cluster. This list may be empty if no updates are recommended, if the update service is unavailable, or if an invalid channel has been specified.",
 }
 
@@ -1027,7 +1027,7 @@ func (RequestHeaderIdentityProvider) SwaggerDoc() map[string]string {
 }
 
 var map_TokenConfig = map[string]string{
-	"": "TokenConfig holds the necessary configuration options for authorization and access tokens",
+	"":                                    "TokenConfig holds the necessary configuration options for authorization and access tokens",
 	"accessTokenMaxAgeSeconds":            "accessTokenMaxAgeSeconds defines the maximum age of access tokens",
 	"accessTokenInactivityTimeoutSeconds": "accessTokenInactivityTimeoutSeconds defines the default token inactivity timeout for tokens granted by any client. The value represents the maximum amount of time that can occur between consecutive uses of the token. Tokens become invalid if they are not used within this temporal window. The user will need to acquire a new token to regain access once a token times out. Valid values are integer values:\n  x < 0  Tokens time out is enabled but tokens never timeout unless configured per client (e.g. `-1`)\n  x = 0  Tokens time out is disabled (default)\n  x > 0  Tokens time out if there is no activity for x seconds\nThe current minimum allowed value for X is 300 (5 minutes)",
 }
@@ -1056,7 +1056,7 @@ func (ProjectList) SwaggerDoc() map[string]string {
 }
 
 var map_ProjectSpec = map[string]string{
-	"": "ProjectSpec holds the project creation configuration.",
+	"":                       "ProjectSpec holds the project creation configuration.",
 	"projectRequestMessage":  "projectRequestMessage is the string presented to a user if they are unable to request a project via the projectrequest api endpoint",
 	"projectRequestTemplate": "projectRequestTemplate is the template to use for creating projects in response to projectrequest. This must point to a template in 'openshift-config' namespace. It is optional. If it is not specified, a default template is used.",
 }

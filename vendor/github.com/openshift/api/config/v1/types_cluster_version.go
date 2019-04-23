@@ -104,7 +104,7 @@ type ClusterVersionStatus struct {
 	// conditions provides information about the cluster version. The condition
 	// "Available" is set to true if the desiredUpdate has been reached. The
 	// condition "Progressing" is set to true if an update is being applied.
-	// The condition "Failing" is set to true if an update is currently blocked
+	// The condition "Degraded" is set to true if an update is currently blocked
 	// by a temporary or permanent error. Conditions are only valid for the
 	// current desiredUpdate when metadata.generation is equal to
 	// status.generation.
