@@ -89,7 +89,7 @@ type Daemon struct {
 
 	installedSigterm bool
 
-	nodeWriter *NodeWriter
+	nodeWriter NodeWriter
 
 	// channel used by callbacks to signal Run() of an error
 	exitCh chan<- error
@@ -179,7 +179,7 @@ func New(
 	kubeClient kubernetes.Interface,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-	nodeWriter *NodeWriter,
+	nodeWriter NodeWriter,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
@@ -234,7 +234,7 @@ func NewClusterDrivenDaemon(
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-	nodeWriter *NodeWriter,
+	nodeWriter NodeWriter,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
