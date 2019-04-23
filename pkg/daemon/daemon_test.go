@@ -209,7 +209,7 @@ func (f *fixture) newController() *Daemon {
 		k8sI.Core().V1().Nodes(),
 		false,
 		"",
-		nil,
+		newFakeNodeWriter(),
 		nil,
 		nil,
 	)
