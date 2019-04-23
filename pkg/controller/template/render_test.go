@@ -109,7 +109,7 @@ func TestEtcdServerCertDNSNames(t *testing.T) {
 		url string
 		err bool
 	}{{
-		url: "localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,${ETCD_DNS_NAME}",
+		url: "localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,etcd.openshift-etcd.svc,etcd.openshift-etcd.svc.cluster.local,${ETCD_DNS_NAME}",
 		err: false,
 	}}
 	for idx, c := range cases {
