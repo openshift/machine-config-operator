@@ -46,7 +46,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	unavailableMachineCount := int32(len(unavailableMachines))
 
 	degradedMachines := getDegradedMachines(pool.Status.Configuration.Name, nodes)
-	degradedReasons := make([]string, len(nodes))
+	degradedReasons := []string{}
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
 		if ok && reason != "" {
@@ -86,17 +86,26 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 	}
 
-	if len(degradedMachines) > 0 {
-		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ","))
+	var nodeDegraded bool
+	if degradedMachineCount > 0 {
+		nodeDegraded = true
+		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionTrue, fmt.Sprintf("%d nodes are reporting degraded status on sync", len(degradedMachines)), strings.Join(degradedReasons, ", "))
 		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
 	} else {
-		// Do not clear out a possible degradation if everything is ok here but render_controller reported
-		// a failure in rendering
-		poolAlreadyDegraded := mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
-		if !poolAlreadyDegraded {
-			sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
-			mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
-		}
+		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolNodeDegraded, corev1.ConditionFalse, "", "")
+		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+	}
+
+	// here we now set the MCP Degraded field, the node_controller is the one making the call right now
+	// but we might have a dedicated controller or control loop somewhere else that understands how to
+	// set Degraded. For now, the node_controller understand NodeDegraded & RenderDegraded = Degraded.
+	renderDegraded := mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded)
+	if nodeDegraded || renderDegraded {
+		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionTrue, "", "")
+		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
+	} else {
+		sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolDegraded, corev1.ConditionFalse, "", "")
+		mcfgv1.SetMachineConfigPoolCondition(&status, *sdegraded)
 	}
 
 	return status

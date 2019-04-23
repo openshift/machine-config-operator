@@ -54,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
-	return &mcfgv1.MachineConfigPool{
+	mcp := &mcfgv1.MachineConfigPool{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigPoolSpec{
@@ -64,6 +64,9 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMa
 			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 	}
+	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
+	mcfgv1.SetMachineConfigPoolCondition(&mcp.Status, *sdegraded)
+	return mcp
 }
 
 func newMachineConfig(name string, labels map[string]string, osurl string, files []ignv2_2types.File) *mcfgv1.MachineConfig {

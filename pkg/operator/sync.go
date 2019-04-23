@@ -340,7 +340,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 			!degraded {
 			continue
 		}
-		return fmt.Errorf("error pool %s is not ready, retrying. Status: (total: %d, updated: %d, ready: %d, unavailable: %d, pool degraded: %v)", pool.Name, pool.Status.MachineCount, pool.Status.UpdatedMachineCount, pool.Status.ReadyMachineCount, pool.Status.UnavailableMachineCount, degraded)
+		return fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 	}
 	return nil
 }
