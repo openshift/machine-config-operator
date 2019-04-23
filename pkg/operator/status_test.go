@@ -146,13 +146,13 @@ func TestOperatorSyncStatus(t *testing.T) {
 	for idx, testCase := range []struct {
 		syncs []syncCase
 	}{
-		// 0. test that Failing status clears out if the next sync call is successful
+		// 0. test that Degraded status clears out if the next sync call is successful
 		{
 			syncs: []syncCase{
 				{
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
 						},
 						{
@@ -175,7 +175,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				{
 					cond: []configv1.ClusterOperatorStatusCondition{
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 						{
@@ -212,7 +212,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionTrue,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 					},
@@ -234,7 +234,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionTrue,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 					},
@@ -262,7 +262,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionTrue,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 					},
@@ -290,7 +290,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionTrue,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 					},
@@ -313,7 +313,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionFalse,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
 						},
 					},
@@ -327,7 +327,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		},
-		// 4. test that if progressing fails during bringup, we still report failing and not available
+		// 4. test that if progressing fails during bringup, we still report degraded and not available
 		{
 			syncs: []syncCase{
 				{
@@ -342,7 +342,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionFalse,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
 						},
 					},
@@ -367,7 +367,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionFalse,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
 						},
 					},
@@ -381,7 +381,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				},
 			},
 		},
-		// 5. test status flipping between available and failing
+		// 5. test status flipping between available and degraded
 		{
 			syncs: []syncCase{
 				{
@@ -396,7 +396,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionTrue,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 					},
@@ -418,7 +418,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionFalse,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
 						},
 					},
@@ -441,7 +441,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 							Status: configv1.ConditionTrue,
 						},
 						{
-							Type:   configv1.OperatorFailing,
+							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionFalse,
 						},
 					},
@@ -462,7 +462,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 		co := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: coName}}
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
-		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
+		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
 		co.Status.Versions = append(co.Status.Versions, configv1.OperandVersion{Name: "operator", Version: "test-version"})
 
 		for j, sync := range testCase.syncs {
@@ -503,7 +503,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	co := &configv1.ClusterOperator{}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
 	optr.inClusterBringup = true
 

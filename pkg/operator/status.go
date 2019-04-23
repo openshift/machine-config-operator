@@ -28,7 +28,7 @@ func (optr *Operator) syncVersion() error {
 	}
 
 	// keep the old version and progressing if we fail progressing
-	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) && cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorFailing) {
+	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) && cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded) {
 		return nil
 	}
 
@@ -50,12 +50,12 @@ func (optr *Operator) syncAvailableStatus() error {
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
-	failing := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorFailing)
+	degraded := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded)
 	message := fmt.Sprintf("Cluster has deployed %s", optrVersion)
 
 	available := configv1.ConditionTrue
 
-	if failing {
+	if degraded {
 		available = configv1.ConditionFalse
 		message = fmt.Sprintf("Cluster not available for %s", optrVersion)
 	}
@@ -111,8 +111,8 @@ func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1
 	return err
 }
 
-// syncFailingStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncFailingStatus(ierr error) (err error) {
+// syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
+func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -122,10 +122,10 @@ func (optr *Operator) syncFailingStatus(ierr error) (err error) {
 	}
 
 	optrVersion, _ := optr.vStore.Get("operator")
-	failing := configv1.ConditionTrue
+	degraded := configv1.ConditionTrue
 	var message, reason string
 	if ierr == nil {
-		failing = configv1.ConditionFalse
+		degraded = configv1.ConditionFalse
 	} else {
 		if optr.vStore.Equal(co.Status.Versions) {
 			// syncing the state to exiting version.
@@ -144,8 +144,8 @@ func (optr *Operator) syncFailingStatus(ierr error) (err error) {
 	}
 
 	coStatus := configv1.ClusterOperatorStatusCondition{
-		Type: configv1.OperatorFailing,
-		Status: failing,
+		Type:    configv1.OperatorDegraded,
+		Status:  degraded,
 		Message: message,
 		Reason:  reason,
 	}
@@ -178,7 +178,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorFailing, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: "openshift-machine-config-operator"},
