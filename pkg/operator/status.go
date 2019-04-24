@@ -7,10 +7,12 @@ import (
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -30,6 +32,16 @@ func (optr *Operator) syncVersion() error {
 	// keep the old version and progressing if we fail progressing
 	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) && cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded) {
 		return nil
+	}
+
+	if !optr.vStore.Equal(co.Status.Versions) {
+		mcoObjectRef := &corev1.ObjectReference{
+			Kind:      co.Kind,
+			Name:      co.Name,
+			Namespace: co.Namespace,
+			UID:       types.UID(co.GetUID()),
+		}
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 	}
 
 	co.Status.Versions = optr.vStore.GetAll()
@@ -86,13 +98,26 @@ func (optr *Operator) syncProgressingStatus() error {
 			Status:  configv1.ConditionFalse,
 			Message: fmt.Sprintf("Cluster version is %s", optrVersion),
 		}
+		mcoObjectRef = &corev1.ObjectReference{
+			Kind:      co.Kind,
+			Name:      co.Name,
+			Namespace: co.Namespace,
+			UID:       types.UID(co.GetUID()),
+		}
 	)
 	if optr.vStore.Equal(co.Status.Versions) {
 		if optr.inClusterBringup {
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator is bootstrapping to %v", optr.vStore.GetAll()))
 			coStatus.Message = fmt.Sprintf("Cluster is bootstrapping %s", optrVersion)
 			coStatus.Status = configv1.ConditionTrue
 		}
 	} else {
+		// we can still be progressing during a sync (e.g. wait for master pool sync)
+		// but we want to fire the event only once when we're actually setting progressing and we
+		// weren't progressing before.
+		if !cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
+			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator started a version change from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
+		}
 		coStatus.Message = fmt.Sprintf("Working towards %s", optrVersion)
 		coStatus.Status = configv1.ConditionTrue
 	}

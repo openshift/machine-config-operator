@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -455,7 +456,9 @@ func TestOperatorSyncStatus(t *testing.T) {
 			},
 		},
 	} {
-		optr := &Operator{}
+		optr := &Operator{
+			eventRecorder: &record.FakeRecorder{},
+		}
 		optr.vStore = newVersionStore()
 		optr.mcpLister = &mockMCPLister{}
 		coName := fmt.Sprintf("test-%s", uuid.NewUUID())
@@ -496,7 +499,9 @@ func TestOperatorSyncStatus(t *testing.T) {
 }
 
 func TestInClusterBringUpStayOnErr(t *testing.T) {
-	optr := &Operator{}
+	optr := &Operator{
+		eventRecorder: &record.FakeRecorder{},
+	}
 	optr.vStore = newVersionStore()
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{}
