@@ -74,6 +74,8 @@ func (nw *clusterNodeWriter) SetDone(client corev1.NodeInterface, lister corelis
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,
+		// clear out any Degraded/Unreconcilable reason
+		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
@@ -107,6 +109,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error, client corev1.NodeInte
 	glog.Errorf("Marking Unreconcilable due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateUnreconcilable,
+		constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{
@@ -129,6 +132,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error, client corev1.NodeInterface,
 	glog.Errorf("Marking Degraded due to: %v", err)
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDegraded,
+		constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{

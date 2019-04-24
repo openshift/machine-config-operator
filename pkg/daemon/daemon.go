@@ -340,13 +340,13 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 		return
 	}
 
+	dn.updateErrorState(err)
+
 	if dn.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing node %v: %v", key, err)
 		dn.queue.AddRateLimited(key)
 		return
 	}
-
-	dn.updateErrorState(err)
 
 	utilruntime.HandleError(err)
 	glog.V(2).Infof("Dropping node %q out of the queue: %v", key, err)
