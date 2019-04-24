@@ -21,7 +21,7 @@ contents: |
         --node-labels=node-role.kubernetes.io/master \
         --minimum-container-ttl-duration=6m0s \
         --client-ca-file=/etc/kubernetes/ca.crt \
-        \
+        --cloud-config=/etc/kubernetes/cloud.conf \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
 

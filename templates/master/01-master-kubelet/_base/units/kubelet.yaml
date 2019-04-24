@@ -27,7 +27,7 @@ contents: |
         --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
-        {{.CloudProviderConfig -}} \
+        {{cloudConfigFlag . }} \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
 

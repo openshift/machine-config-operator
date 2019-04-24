@@ -24,24 +24,25 @@ var (
 	}
 
 	bootstrapOpts struct {
-		etcdCAFile           string
-		etcdMetricCAFile     string
-		rootCAFile           string
-		kubeCAFile           string
-		pullSecretFile       string
+		cloudConfigFile      string
 		configFile           string
-		oscontentImage       string
-		infraConfigFile      string
-		networkConfigFile    string
-		imagesConfigMapFile  string
-		mccImage             string
-		mcsImage             string
-		mcdImage             string
-		etcdImage            string
-		setupEtcdEnvImage    string
-		infraImage           string
-		kubeClientAgentImage string
 		destinationDir       string
+		etcdCAFile           string
+		etcdImage            string
+		etcdMetricCAFile     string
+		imagesConfigMapFile  string
+		infraConfigFile      string
+		infraImage           string
+		kubeCAFile           string
+		kubeClientAgentImage string
+		mccImage             string
+		mcdImage             string
+		mcsImage             string
+		networkConfigFile    string
+		oscontentImage       string
+		pullSecretFile       string
+		rootCAFile           string
+		setupEtcdEnvImage    string
 	}
 )
 
@@ -74,6 +75,7 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("config-file")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.networkConfigFile, "network-config-file", "/assets/manifests/cluster-network-02-config.yml", "File containing network.config.openshift.io manifest.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudConfigFile, "cloud-config-file", "", "File containing the config map that contains the cloud config for cloudprovider.")
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -97,6 +99,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.configFile,
 		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
+		bootstrapOpts.cloudConfigFile,
 		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		imgs,
 		bootstrapOpts.destinationDir,

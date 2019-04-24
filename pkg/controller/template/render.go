@@ -298,6 +298,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["etcdServerCertDNSNames"] = etcdServerCertDNSNames
 	funcs["etcdPeerCertDNSNames"] = etcdPeerCertDNSNames
 	funcs["cloudProvider"] = cloudProvider
+	funcs["cloudConfigFlag"] = cloudConfigFlag
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
@@ -359,6 +360,19 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 		return platformVSphere, nil
 	}
 	return "", nil
+}
+
+// Process the {{cloudConfigFlag .}}
+// If the CloudProviderConfig field is set and not empty, this
+// returns the cloud conf flag for kubelet [1] pointing the kubelet to use
+// /etc/kubernetes/cloud.conf for configuring the cloud provider.
+//
+// [1]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#options
+func cloudConfigFlag(cfg RenderConfig) interface{} {
+	if len(cfg.CloudProviderConfig) > 0 {
+		return "--cloud-config=/etc/kubernetes/cloud.conf"
+	}
+	return ""
 }
 
 // existsDir returns true if path exists and is a directory, false if the path
