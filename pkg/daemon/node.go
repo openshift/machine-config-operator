@@ -20,6 +20,8 @@ func (dn *Daemon) loadNodeAnnotations(node *core_v1.Node) (*core_v1.Node, error)
 		return node, nil
 	}
 
+	glog.Infof("No %s annotation on node %s: %v, in cluster bootstrap, loading initial node annotation from %s", constants.CurrentMachineConfigAnnotationKey, node.Name, node.Annotations, constants.InitialNodeAnnotationsFilePath)
+
 	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
