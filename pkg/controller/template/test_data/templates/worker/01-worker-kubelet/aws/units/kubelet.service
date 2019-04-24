@@ -24,7 +24,7 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider=aws \
-        \
+         \
         --anonymous-auth=false \
 
   Restart=always

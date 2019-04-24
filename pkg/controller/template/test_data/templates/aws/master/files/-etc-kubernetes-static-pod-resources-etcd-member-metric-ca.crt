@@ -1,6 +1,0 @@
-contents:
-  source: data:,dummy%20etcd-metric-ca%0A
-  verification: {}
-filesystem: root
-mode: 420
-path: /etc/kubernetes/static-pod-resources/etcd-member/metric-ca.crt
