@@ -1,7 +1,7 @@
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
-  namespace: kube-system
+  namespace: {{.TargetNamespace}}
   name: etcd-quorum-guard
 spec:
   maxUnavailable: 1

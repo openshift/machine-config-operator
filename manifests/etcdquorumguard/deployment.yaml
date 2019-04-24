@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: etcd-quorum-guard
-  namespace: kube-system
+  namespace: {{.TargetNamespace}}
 spec:
   replicas: 3
   selector:

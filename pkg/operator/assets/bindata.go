@@ -236,7 +236,7 @@ var _manifestsEtcdquorumguardDeploymentYaml = []byte(`apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: etcd-quorum-guard
-  namespace: kube-system
+  namespace: {{.TargetNamespace}}
 spec:
   replicas: 3
   selector:
@@ -353,7 +353,7 @@ func manifestsEtcdquorumguardDeploymentYaml() (*asset, error) {
 var _manifestsEtcdquorumguardDisruptionBudgetYaml = []byte(`apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
-  namespace: kube-system
+  namespace: {{.TargetNamespace}}
   name: etcd-quorum-guard
 spec:
   maxUnavailable: 1
