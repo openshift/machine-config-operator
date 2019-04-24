@@ -169,7 +169,7 @@ func getNode(cs *framework.ClientSet, node string) (*corev1.Node, error) {
 
 func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 	err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
+		_, err := cs.AppsV1Interface.Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -184,7 +184,7 @@ func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 // specified bounds.
 func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 	err := wait.PollImmediate(5*time.Second, 2*time.Minute, func() (bool, error) {
-		d, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
+		d, err := cs.AppsV1Interface.Deployments("kube-system").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err != nil {
 			// By this point the deployment should exist.
 			fmt.Printf("  error waiting for etcd-quorum-guard deployment to exist: %v\n", err)
@@ -236,7 +236,7 @@ func getEtcdQuotaGuardPodsOnNode(cs *framework.ClientSet, node string) ([]corev1
 	if err != nil {
 		return answer, fmt.Errorf("No such node %s", node)
 	}
-	p, err := cs.CoreV1Interface.Pods("openshift-machine-config-operator").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
+	p, err := cs.CoreV1Interface.Pods("kube-system").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
 	for _, pod := range p.Items {
 		if pod.Spec.NodeName == node {
 			answer = append(answer, pod)
@@ -246,7 +246,7 @@ func getEtcdQuotaGuardPodsOnNode(cs *framework.ClientSet, node string) ([]corev1
 }
 
 func getEtcdQuotaGuardPods(cs *framework.ClientSet) error {
-	p, err := cs.CoreV1Interface.Pods("openshift-machine-config-operator").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
+	p, err := cs.CoreV1Interface.Pods("kube-system").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
 	if err != nil {
 		return err
 	}
