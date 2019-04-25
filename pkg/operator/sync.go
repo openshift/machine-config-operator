@@ -345,6 +345,35 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 	return nil
 }
 
+// syncRequiredMachineConfigResources ensures that the ConfigMap and Secret resources are synced from source namespace to destination.
+func (optr *Operator) syncRequiredMachineConfigResources(config renderConfig) error {
+	sourceNamespace := "openshift-config"
+	destinationNamespace := "openshift-etcd"
+
+	_, _, err := resourceapply.SyncConfigMap(
+		optr.kubeClient.CoreV1(),
+		sourceNamespace,
+		"etcd-metric-serving-ca",
+		destinationNamespace,
+		"etcd-metric-serving-ca",
+		[]metav1.OwnerReference{})
+	if err != nil {
+		return err
+	}
+
+	_, _, errs := resourceapply.SyncSecret(
+		optr.kubeClient.CoreV1(),
+		sourceNamespace,
+		"etcd-metric-client",
+		destinationNamespace,
+		"etcd-metric-client",
+		[]metav1.OwnerReference{})
+	if errs != nil {
+		return errs
+	}
+	return nil
+}
+
 const (
 	deploymentRolloutPollInterval = time.Second
 	deploymentRolloutTimeout      = 10 * time.Minute
