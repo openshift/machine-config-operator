@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -318,10 +319,6 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 	if err != nil {
 		return err
 	}
-	pools, err := optr.mcpLister.List(sel)
-	if err != nil {
-		return err
-	}
 	isPoolStatusConditionTrue := func(pool *mcfgv1.MachineConfigPool, conditionType mcfgv1.MachineConfigPoolConditionType) bool {
 		for _, condition := range pool.Status.Conditions {
 			if condition.Type == conditionType {
@@ -330,17 +327,51 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 		}
 		return false
 	}
-	for _, pool := range pools {
-		if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
-			return fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
+
+	var lastErr error
+	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
+		if lastErr != nil {
+			co, err := optr.fetchClusterOperator()
+			if err != nil {
+				lastErr = errors.Wrapf(lastErr, "failed to fetch clusteroperator: %v", err)
+				return false, nil
+			}
+			if co == nil {
+				glog.Warning("no clusteroperator for machine-config")
+				return false, nil
+			}
+			optr.setOperatorStatusExtension(&co.Status, lastErr)
+			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+			if err != nil {
+				lastErr = errors.Wrapf(lastErr, "failed to update clusteroperator: %v", err)
+				return false, nil
+			}
 		}
-		degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
-		if pool.Generation <= pool.Status.ObservedGeneration &&
-			isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) &&
-			!degraded {
-			continue
+		pools, err := optr.mcpLister.List(sel)
+		if err != nil {
+			lastErr = err
+			return false, nil
 		}
-		return fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+		for _, pool := range pools {
+			if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
+				lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
+				return false, nil
+			}
+			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+			if pool.Generation <= pool.Status.ObservedGeneration &&
+				isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) &&
+				!degraded {
+				continue
+			}
+			lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return fmt.Errorf("%v during syncRequiredMachineConfigPools: %v", err, lastErr)
+		}
+		return err
 	}
 	return nil
 }
