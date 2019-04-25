@@ -1,0 +1,32 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  labels:
+    app: mco-os
+  name: mco-os
+spec:
+  lookupPolicy:
+    local: true
+  output:
+    to:
+      kind: ImageStreamTag
+      name: mco-os:latest
+  postCommit: {}
+  runPolicy: Serial
+  source:
+    type: Dockerfile
+    dockerfile: |
+      # See the original in https://github.com/smarterclayton/origin/blob/4de957b019aee56931b1a29af148cf64865a969b/images/os/Dockerfile
+      FROM quay.io/coreos-assembler/coreos-assembler:latest as build
+      COPY --from=MACHINEOSCONTENT /srv/ /srv/
+      RUN tmpd=$(mktemp -d) && cd ${tmpd} && \
+          commit=$( find /srv -name *.commit | sed -Ee 's|.*objects/(.+)/(.+)\.commit|\1\2|' | head -1 ) && \
+          mkdir -p t/usr/share && date > t/usr/share/mco-test.txt && \
+          cosa dev-overlay --repo=/srv/repo --add-tree ./t --rev "${commit}" --output-ref=mco-test
+      FROM scratch
+      ENTRYPOINT /enoent
+      COPY --from=build /srv/ /srv/
+  strategy:
+    dockerStrategy:
+      pullSecret:
+        name: "pull-secret"
