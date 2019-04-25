@@ -34,7 +34,7 @@ func (optr *Operator) syncVersion() error {
 
 	co.Status.Versions = optr.vStore.GetAll()
 	// TODO(runcom): abstract below with updateStatus
-	optr.setMachineConfigPoolStatuses(&co.Status)
+	optr.setOperatorStatusExtension(&co.Status, nil)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
 }
@@ -106,7 +106,7 @@ func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1
 		status.LastTransitionTime = metav1.Now()
 	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, status)
-	optr.setMachineConfigPoolStatuses(&co.Status)
+	optr.setOperatorStatusExtension(&co.Status, nil)
 	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
 }
@@ -190,11 +190,16 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 }
 
-func (optr *Operator) setMachineConfigPoolStatuses(status *configv1.ClusterOperatorStatus) {
+// setOperatorStatusExtension sets the raw extension field of the clusteroperator. Today, we set
+// the MCPs statuses and an optional status error which we may get during a sync.
+func (optr *Operator) setOperatorStatusExtension(status *configv1.ClusterOperatorStatus, err error) {
 	statuses, err := optr.allMachineConfigPoolStatus()
 	if err != nil {
 		glog.Error(err)
 		return
+	}
+	if err != nil {
+		statuses["lastSyncError"] = err.Error()
 	}
 	raw, err := json.Marshal(statuses)
 	if err != nil {
@@ -267,7 +272,7 @@ func machineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) string {
 		return fmt.Sprintf("pool is degraded because rendering fails with %q", cond.Reason)
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded):
 		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolNodeDegraded)
-		return fmt.Sprintf("pool is degraded because rendering fails with %q: %q", cond.Reason, cond.Message)
+		return fmt.Sprintf("pool is degraded because nodes fail with %q: %q", cond.Reason, cond.Message)
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated):
 		return fmt.Sprintf("all %d nodes are at latest configuration %s", pool.Status.MachineCount, pool.Status.Configuration.Name)
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating):
