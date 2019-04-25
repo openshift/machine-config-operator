@@ -64,7 +64,7 @@ contents:
                 --assetsdir=/etc/ssl/etcd \
                 --dnsnames={{etcdServerCertDNSNames .}} \
                 --commonname=system:etcd-metric:${ETCD_DNS_NAME} \
-                --ipaddrs=${ETCD_IPV4_ADDRESS} \
+                --ipaddrs=${ETCD_IPV4_ADDRESS},127.0.0.1 \
 
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
