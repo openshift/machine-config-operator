@@ -8,11 +8,11 @@ import (
 
 	"github.com/golang/glog"
 
-	"k8s.io/apimachinery/pkg/runtime"
-
 	configv1 "github.com/openshift/api/config/v1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
@@ -76,7 +76,7 @@ func RenderBootstrap(
 		if err != nil {
 			return err
 		}
-		obji, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
+		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
 		if err != nil {
 			return err
 		}
