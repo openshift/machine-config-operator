@@ -65,6 +65,57 @@ func TestCloudProvider(t *testing.T) {
 	}
 }
 
+func TestCloudConfigFlag(t *testing.T) {
+	dummyTemplate := []byte(`{{cloudConfigFlag .}}`)
+
+	cases := []struct {
+		platform string
+		content  string
+		res      string
+	}{{
+		platform: "aws",
+		content:  "",
+		res:      "",
+	}, {
+		platform: "azure",
+		content:  "",
+		res:      "",
+	}, {
+		platform: "aws",
+		content: `
+[dummy-config]
+    option = a
+`,
+		res: "",
+	}, {
+		platform: "azure",
+		content: `
+[dummy-config]
+    option = a
+`,
+		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+	}}
+	for idx, c := range cases {
+		name := fmt.Sprintf("case #%d", idx)
+		t.Run(name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Platform:            c.platform,
+					CloudProviderConfig: c.content,
+				},
+			}
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			if err != nil {
+				t.Fatalf("expected nil error %v", err)
+			}
+
+			if string(got) != c.res {
+				t.Fatalf("mismatch got: %s want: %s", got, c.res)
+			}
+		})
+	}
+}
+
 func TestEtcdPeerCertDNSNames(t *testing.T) {
 	dummyTemplate := []byte(`{{etcdPeerCertDNSNames .}}`)
 
