@@ -296,6 +296,7 @@ func (dn *Daemon) processNextWorkItem() bool {
 		// any error here in bootstrap will cause a retry
 		if err := dn.bootstrapNode(); err != nil {
 			dn.updateErrorState(err)
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "MCDBootstrapSyncFailure", err.Error())
 			glog.Warningf("Booting the MCD errored with %v", err)
 		}
 		return true
@@ -809,6 +810,9 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
 	if state.pendingConfig != nil {
+		if dn.recorder != nil {
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
+		}
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
 			return errors.Wrap(err, "error setting node's state to Done")
 		}
