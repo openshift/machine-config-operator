@@ -1,0 +1,10 @@
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  namespace: openshift-machine-config-operator
+  name: etcd-quorum-guard
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      k8s-app: etcd-quorum-guard
