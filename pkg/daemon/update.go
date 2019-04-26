@@ -139,6 +139,9 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	if err := dn.writePendingState(newConfig); err != nil {
 		return errors.Wrapf(err, "writing pending state")
 	}
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
+	}
 
 	// reboot. this function shouldn't actually return.
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, exec.Command(defaultRebootCommand))
