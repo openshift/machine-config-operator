@@ -810,7 +810,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// we don't uncordon and then immediately re-cordon)
 	if state.pendingConfig != nil {
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
-			return err
+			return errors.Wrap(err, "error setting node's state to Done")
 		}
 		// And remove the pending state file
 		if err := os.Remove(pathStateJSON); err != nil {
