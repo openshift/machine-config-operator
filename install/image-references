@@ -42,3 +42,7 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent
+  - name: etcd-quorum-guard
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:base
