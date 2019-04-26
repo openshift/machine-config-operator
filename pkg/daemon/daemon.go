@@ -341,6 +341,7 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 	}
 
 	dn.updateErrorState(err)
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "MCDSyncFailure", err.Error())
 
 	if dn.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing node %v: %v", key, err)
@@ -789,8 +790,10 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// a once-a-day or week cron job.
 	var expectedConfig *mcfgv1.MachineConfig
 	if state.pendingConfig != nil {
+		glog.Infof("Validating against pending config %s", state.pendingConfig.GetName())
 		expectedConfig = state.pendingConfig
 	} else {
+		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
 	if isOnDiskValid := dn.validateOnDiskState(expectedConfig); !isOnDiskValid {
