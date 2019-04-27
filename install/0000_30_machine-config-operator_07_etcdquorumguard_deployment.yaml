@@ -56,9 +56,9 @@ spec:
         operator: Exists
         effect: NoSchedule
       containers:
-      - image: registry.svc.ci.openshift.org/openshift/origin-v4.0:base
+      - image: registry.svc.ci.openshift.org/openshift/origin-v4.0:cli
         imagePullPolicy: IfNotPresent
-        name: etcd-quorum-guard-container
+        name: guard
         volumeMounts:
         - mountPath: /mnt/kube
           name: kubecerts
