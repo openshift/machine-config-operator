@@ -365,14 +365,22 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 // Process the {{cloudConfigFlag .}}
 // If the CloudProviderConfig field is set and not empty, this
 // returns the cloud conf flag for kubelet [1] pointing the kubelet to use
-// /etc/kubernetes/cloud.conf for configuring the cloud provider.
+// /etc/kubernetes/cloud.conf for configuring the cloud provider for select platforms.
+// By default even if CloudProviderConfig fields is set, the kubelet will be configured to used for
+// select platforms only.
 //
 // [1]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#options
 func cloudConfigFlag(cfg RenderConfig) interface{} {
-	if len(cfg.CloudProviderConfig) > 0 {
-		return "--cloud-config=/etc/kubernetes/cloud.conf"
+	if len(cfg.CloudProviderConfig) == 0 {
+		return ""
 	}
-	return ""
+	flag := "--cloud-config=/etc/kubernetes/cloud.conf"
+	switch cfg.Platform {
+	case platformAzure, platformOpenstack:
+		return flag
+	default:
+		return ""
+	}
 }
 
 // existsDir returns true if path exists and is a directory, false if the path
