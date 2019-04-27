@@ -327,11 +327,11 @@ func skipMissing(key string) (interface{}, error) {
 func etcdServerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 	var dnsNames = []string{
 		"localhost",
-		"etcd.kube-system.svc",               // sign for the local etcd service name that cluster-network apiservers use to communicate
-		"etcd.kube-system.svc.cluster.local", // sign for the local etcd service name that cluster-network apiservers use to communicate
+		"etcd.kube-system.svc",                  // sign for the local etcd service name that cluster-network apiservers use to communicate
+		"etcd.kube-system.svc.cluster.local",    // sign for the local etcd service name that cluster-network apiservers use to communicate
 		"etcd.openshift-etcd.svc",               // sign for the local etcd service name that cluster-network apiservers use to communicate
 		"etcd.openshift-etcd.svc.cluster.local", // sign for the local etcd service name that cluster-network apiservers use to communicate
-		"${ETCD_DNS_NAME}",
+		"${ETCD_WILDCARD_DNS_NAME}",
 	}
 	return strings.Join(dnsNames, ","), nil
 }
