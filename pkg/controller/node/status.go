@@ -157,17 +157,21 @@ func isNodeReady(node *corev1.Node) bool {
 		// - NodeOutOfDisk condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+			glog.Infof("Node %s is reporting NotReady", node.Name)
 			return false
 		}
 		if cond.Type == corev1.NodeOutOfDisk && cond.Status != corev1.ConditionFalse {
+			glog.Infof("Node %s is reporting OutOfDisk", node.Name)
 			return false
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
+			glog.Infof("Node %s is reporting NetworkUnavailable", node.Name)
 			return false
 		}
 	}
 	// Ignore nodes that are marked unschedulable
 	if node.Spec.Unschedulable {
+		glog.Infof("Node %s is reporting Unschedulable", node.Name)
 		return false
 	}
 	return true
@@ -191,7 +195,7 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 		nodeNotReady := !isNodeReady(node)
 		if dconfig == currentConfig && (dconfig != cconfig || nodeNotReady) {
 			unavail = append(unavail, node)
-			glog.V(2).Infof("Node %s unavailable: different configs %v or node not ready %v", node.Name, dconfig != cconfig, nodeNotReady)
+			glog.V(2).Infof("Node %s unavailable: different configs (desired: %s, current %s) or node not ready %v", node.Name, dconfig, cconfig, nodeNotReady)
 		}
 	}
 	return unavail
