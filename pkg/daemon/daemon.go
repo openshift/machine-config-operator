@@ -30,6 +30,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/diff"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -849,6 +850,9 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		// All good!
 		return nil
 	}
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
+	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
 	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
@@ -1177,7 +1181,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return false
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file: %q", filePath)
+		glog.Errorf("content mismatch for file %s: %s", filePath, diff.ObjectDiff(contents, expectedContent))
 		return false
 	}
 	return true
