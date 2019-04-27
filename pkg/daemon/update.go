@@ -101,6 +101,21 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
+	if err := dn.writePendingState(newConfig); err != nil {
+		return errors.Wrapf(err, "writing pending state")
+	}
+	defer func() {
+		if retErr != nil {
+			if err := os.Remove(pathStateJSON); err != nil {
+				retErr = errors.Wrapf(retErr, "error removing pending config file %v", err)
+				return
+			}
+		}
+	}()
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
+	}
+
 	// Skip draining of the node when we're not cluster driven
 	if dn.onceFrom == "" {
 		glog.Info("Update prepared; draining the node")
@@ -126,7 +141,6 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 			lastErr = err
 			glog.Infof("Draining failed with: %v, retrying", err)
 			return false, nil
-
 		}); err != nil {
 			if err == wait.ErrWaitTimeout {
 				return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
@@ -134,21 +148,6 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 			return errors.Wrap(err, "failed to drain node")
 		}
 		glog.Info("Node successfully drained")
-	}
-
-	if err := dn.writePendingState(newConfig); err != nil {
-		return errors.Wrapf(err, "writing pending state")
-	}
-	defer func() {
-		if retErr != nil {
-			if err := os.Remove(pathStateJSON); err != nil {
-				retErr = errors.Wrapf(retErr, "error removing pending config file %v", err)
-				return
-			}
-		}
-	}()
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
 	}
 
 	// reboot. this function shouldn't actually return.
@@ -716,6 +715,9 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if osMatch {
 		return nil
 	}
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
+	}
 
 	glog.Infof("Updating OS to %s", newURL)
 	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
@@ -782,7 +784,7 @@ func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exe
 	// in the context of the host asynchronously from us
 	err := rebootCmd.Run()
 	if err != nil {
-		return errors.Wrapf(err, "Failed to reboot")
+		return errors.Wrapf(err, "failed to reboot")
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
