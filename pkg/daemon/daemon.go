@@ -797,8 +797,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
-	if isOnDiskValid := dn.validateOnDiskState(expectedConfig); !isOnDiskValid {
-		return errors.New("unexpected on-disk state")
+	if !dn.validateOnDiskState(expectedConfig) {
+		return fmt.Errorf("unexpected on-disk state validating against %s", expectedConfig.GetName())
 	}
 	glog.Info("Validated on-disk state")
 
