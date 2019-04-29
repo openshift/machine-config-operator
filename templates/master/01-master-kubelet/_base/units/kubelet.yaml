@@ -30,6 +30,7 @@ contents: |
         {{cloudConfigFlag . }} \
         --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
+        --v=3 \
 
   Restart=always
   RestartSec=10
