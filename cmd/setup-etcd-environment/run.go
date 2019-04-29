@@ -87,8 +87,9 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	return writeEnvironmentFile(map[string]string{
-		"IPV4_ADDRESS": ip,
-		"DNS_NAME":     dns,
+		"IPV4_ADDRESS":      ip,
+		"DNS_NAME":          dns,
+		"WILDCARD_DNS_NAME": fmt.Sprintf("*.%s", runOpts.discoverySRV),
 	}, out)
 }
 
