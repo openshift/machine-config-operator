@@ -30,6 +30,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/diff"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -296,6 +297,7 @@ func (dn *Daemon) processNextWorkItem() bool {
 		// any error here in bootstrap will cause a retry
 		if err := dn.bootstrapNode(); err != nil {
 			dn.updateErrorState(err)
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "MCDBootstrapSyncFailure", err.Error())
 			glog.Warningf("Booting the MCD errored with %v", err)
 		}
 		return true
@@ -796,8 +798,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
-	if isOnDiskValid := dn.validateOnDiskState(expectedConfig); !isOnDiskValid {
-		return errors.New("unexpected on-disk state")
+	if !dn.validateOnDiskState(expectedConfig) {
+		return fmt.Errorf("unexpected on-disk state validating against %s", expectedConfig.GetName())
 	}
 	glog.Info("Validated on-disk state")
 
@@ -809,8 +811,11 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
 	if state.pendingConfig != nil {
+		if dn.recorder != nil {
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
+		}
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
-			return err
+			return errors.Wrap(err, "error setting node's state to Done")
 		}
 		// And remove the pending state file
 		if err := os.Remove(pathStateJSON); err != nil {
@@ -844,6 +849,9 @@ func (dn *Daemon) CheckStateOnBoot() error {
 
 		// All good!
 		return nil
+	}
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
@@ -1173,7 +1181,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return false
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file: %q", filePath)
+		glog.Errorf("content mismatch for file %s: %s", filePath, diff.ObjectDiff(contents, expectedContent))
 		return false
 	}
 	return true
