@@ -25,15 +25,15 @@ The MachineConfig object used by in-cluster Ignition server and daemon running o
 
 ## Detailed Design
 
-### Generated MachineConfig object
+### Final Rendered MachineConfig object
 
-MachineConfig objects can be created by both openshift and users to define machine configurations. But the MachineConfig object used by the MachineConfig Server and daemon running on machines is a single generated MachineConfig object.
+MachineConfig objects can be created by both the OpenShift platform and users to define machine configurations.  There is a final "rendered" MachineConfig object (prefixed with `rendered-`) that is the union of its inputs.
 
-1. The generated MachineConfig object contains merged spec of all the different MachineConfig objects that are valid for the machine.
+1. The rendered MachineConfig object contains merged spec of all the different MachineConfig objects that are valid for the machine.
 
 2. To ensure the configuration does not change unexpectedly between usage, all remote content referenced in the ignition config is retrieved and embedded into the merged MachineConfig at the time of generation.
 
-### No remote sources in generated MachineConfig
+### No remote sources in rendered MachineConfig
 
 To ensure all the machines see the same configurations, remote sources need to be resolved to a snapshot at generation time.
 
@@ -98,4 +98,4 @@ Ignition config keys as well).
 
 The operating system used to first boot a machine is platform dependent. For example, on AWS AMIs are used to bring up EC2Instances. But for day-2 updates of the cluster, the MachineConfigDaemon uses the `OSImageURL` to fetch new operating system during updates. An example for OSImageURL is `quay.io/openshift/$CONTAINER@sha256:$DIGEST`. The digest is required to ensure there are no race conditions.
 
-When combining multiple MachineConfig objects, OSImageURL field is ignored from all the MachineConfig objects except the one defined by Openshift.
+For more information, see [OSUpgrades.md].
