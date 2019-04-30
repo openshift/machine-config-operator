@@ -1,8 +1,11 @@
 # machine-config-operator
 
-This operator is an integral part of the operator-focused OpenShift 4 platform.
-It manages and applies configuration and updates of the base operating system
-and container runtime; essentially everything between the kernel and kubelet.
+OpenShift 4 is an [operator-focused platform](https://blog.openshift.com/openshift-4-a-noops-platform/),
+and the Machine Config operator extends that to the operating system itself,
+managing updates and configuration changes to essentially everything between the kernel and kubelet.
+
+To repeat for emphasis, this operator manages updates to systemd, cri-o/kubelet, kernel, NetworkManager,
+etc.  It also offers a new `MachineConfig` CRD that can write configuration files onto the host.
 
 The approach here is a "fusion" of code from the original CoreOS
 Tectonic as well as some components of Red Hat Enterprise Linux Atomic Host,
@@ -19,7 +22,7 @@ One way to view the MCO is to treat the operating system itself as "just another
 Kubernetes component" that you can inspect and manage with `oc`.
 
 The MCO uses [CoreOS Ignition](https://github.com/coreos/ignition) as a configuration
-format.  Operating system updates use [rpm-ostree](http://github.com/projectatomic/rpm-ostree).
+format.  Operating system updates use [rpm-ostree](http://github.com/projectatomic/rpm-ostree), with ostree updates encapsulated inside a container image.  More information in [OSUpgrades.md](docs/OSUpgrades.md).
 
 # Sub-components and design
 
@@ -32,11 +35,19 @@ the operator.  Here are links to design docs for the sub-components:
 
 # Interacting with the MCO
 
-View operator status:
+Because the MCO is an integrated operator, you can inspect its status
+just like any other operator.  If it's reporting success, then that
+means that the operating system is up to date.
+
 `oc describe clusteroperator/machine-config-operator`
 
-Inspect the status of the `machineconfigpool` objects which track upgrades:
+One level down from the operator CRD, the `machineconfigpool` objects
+track updates to a group of nodes.  You will often want to run a command
+like this:
+
 `oc describe machineconfigpool`
+
+Particularly note the `Updated` and `Updating` columns.
 
 # Applying configuration changes to the cluster
 
@@ -46,7 +57,8 @@ quite large number of things one may want to configure on a system. For example,
 offline environments may want to specify an internal NTP pool. Another example
 is static network configuration. By providing a MachineConfig object
 containing [Ignition configuration](https://github.com/coreos/ignition),
-systemd units can be provided, arbitrary files can be laid down into `/etc` and `/var`, etc.
+systemd units can be provided, arbitrary files can be laid down into writable
+locations (i.e. `/etc` and `/var`).
 
 One known ergonomic issue right now for supplying files is that you must encode file contents
 via [`data:` URIs](https://en.wikipedia.org/wiki/Data_URI_scheme). This is part of
@@ -118,6 +130,17 @@ Practically speaking, one may find it useful to generate your
 custom MachineConfig objects from a higher level tool.  Although
 in the future ergonomic improvements are planned such as having
 a single MC apply to multiple labels, inline file encoding, etc.
+
+# What to look at after creating a MachineConfig
+
+Once you create a MachineConfig fragment like the above, the controller will generate a new "rendered" version that will be used as a target.
+For more information, see [MachineConfiguration](doc/MachineConfiguration.md).
+
+In particular, you should look at `oc describe machineconfigpool` and `oc describe clusteroperator/machine-config` as noted above.
+
+# More information about OS updates
+
+The model implemented by the MCO is that the cluster controls the operating system.  OS updates are just another entry in the release image.  For more information, see [OSUpgrades.md](docs/OSUpgrades.md).
 
 # Developing the MCO
 
