@@ -103,6 +103,10 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
+		// Check to see if FeatureGates are equal
+		if reflect.DeepEqual(originalKubeConfig.FeatureGates, *featureGates) {
+			continue
+		}
 		// Merge in Feature Gates
 		err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
 		if err != nil {
