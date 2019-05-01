@@ -86,6 +86,10 @@ contents:
 
           source /run/etcd/environment
 
+          set -a
+          source /etc/etcd/etcd.conf
+          set +a
+
           exec etcd \
             --discovery-srv {{.EtcdDiscoveryDomain}} \
             --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
@@ -113,6 +117,9 @@ contents:
           mountPath: /etc/ssl/etcd/
         - name: data-dir
           mountPath: /var/lib/etcd/
+        - name: conf
+          mountPath: /etc/etcd/
+
         env:
         - name: ETCD_DATA_DIR
           value: "/var/lib/etcd"
@@ -176,3 +183,6 @@ contents:
       - name: data-dir
         hostPath:
           path: /var/lib/etcd
+      - name: conf
+        hostPath:
+          path: /etc/etcd
