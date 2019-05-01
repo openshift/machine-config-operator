@@ -1,0 +1,18 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/etcd/etcd.conf"
+contents:
+  inline: |
+    #[member]
+    ETCD_SNAPSHOT_COUNT=100000
+    ETCD_HEARTBEAT_INTERVAL=100
+    ETCD_ELECTION_TIMEOUT=1000
+
+    #[storage]
+    ETCD_QUOTA_BACKEND_BYTES=4294967296
+
+    #[logging]
+    ETCD_DEBUG=false
+
+    #[profiling]
+    ETCD_ENABLE_PPROF=false
