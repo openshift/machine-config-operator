@@ -436,9 +436,18 @@ spec:
       priorityClassName: "system-cluster-critical"
       restartPolicy: Always
       tolerations:
-      - key: "node-role.kubernetes.io/master"
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/unreachable"
         operator: "Exists"
-        effect: "NoSchedule"`)
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+`)
 
 func manifestsMachineconfigcontrollerDeploymentYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigcontrollerDeploymentYaml, nil
@@ -597,12 +606,12 @@ spec:
       serviceAccountName: machine-config-daemon
       terminationGracePeriodSeconds: 300
       tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
-        - key: node-role.kubernetes.io/etcd
-          operator: Exists
-          effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
       nodeSelector:
         beta.kubernetes.io/os: linux
       priorityClassName: "system-node-critical"
@@ -992,9 +1001,12 @@ spec:
       priorityClassName: "system-cluster-critical"
       serviceAccountName: machine-config-server
       tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
       volumes:
       - name: node-bootstrap-token
         secret:
