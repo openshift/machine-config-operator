@@ -37,24 +37,6 @@ spec:
       - key: node-role.kubernetes.io/master
         effect: NoSchedule
         operator: Exists
-      - key: node.kubernetes.io/memory-pressure
-        effect: NoSchedule
-        operator: Exists
-      - key: node.kubernetes.io/disk-pressure
-        effect: NoSchedule
-        operator: Exists
-      - key: node.kubernetes.io/not-ready
-        effect: NoExecute
-        operator: Exists
-      - key: node.kubernetes.io/unreachable
-        effect: NoExecute
-        operator: Exists
-      - key: node.kubernetes.io/unschedulable
-        effect: NoSchedule
-        operator: Exists
-      - key: node-role.kubernetes.io/etcd
-        operator: Exists
-        effect: NoSchedule
       containers:
       - image: registry.svc.ci.openshift.org/openshift/origin-v4.0:cli
         imagePullPolicy: IfNotPresent
