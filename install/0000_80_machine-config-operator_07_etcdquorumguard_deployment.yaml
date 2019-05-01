@@ -50,7 +50,7 @@ spec:
         effect: NoExecute
         operator: Exists
       - key: node.kubernetes.io/unschedulable
-        effect: NoExecute
+        effect: NoSchedule
         operator: Exists
       - key: node-role.kubernetes.io/etcd
         operator: Exists
