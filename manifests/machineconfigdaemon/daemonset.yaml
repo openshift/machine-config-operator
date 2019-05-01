@@ -51,7 +51,7 @@ spec:
       serviceAccountName: machine-config-daemon
       terminationGracePeriodSeconds: 300
       tolerations:
-        operator: Exists
+      - operator: Exists
       nodeSelector:
         beta.kubernetes.io/os: linux
       priorityClassName: "system-node-critical"

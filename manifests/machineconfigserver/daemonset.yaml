@@ -34,7 +34,7 @@ spec:
       priorityClassName: "system-cluster-critical"
       serviceAccountName: machine-config-server
       tolerations:
-        operator: Exists
+      - operator: Exists
       volumes:
       - name: node-bootstrap-token
         secret:
