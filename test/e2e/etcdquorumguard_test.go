@@ -3,14 +3,13 @@ package e2e
 import (
 	"fmt"
 	"strings"
-	"testing"
 	"time"
 
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
 )
 
 type podstatus struct {
@@ -32,59 +31,59 @@ type podinfo map[string]podstatus
 // then makes all nodes schedulable and checks that the EQG pod is
 // present/restarted on all masters.  It then makes one node
 // unschedulable again and checks that the EQG pod is evicted.
-func TestEtcdQuorumGuard(t *testing.T) {
-	cs := framework.NewClientSet("")
-	if err := waitForEtcdQuorumGuardDeployment(cs); err != nil {
-		t.Fatalf("etcdQuotaGard deployment not present: %s", err.Error())
-	}
-	fmt.Print("Make all schedulable\n")
-	if err := makeAllNodesSchedulable(cs); err != nil {
-		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
-	}
-	fmt.Print("Check for all running\n")
-	if err := waitForPods(cs, 3, 3, 3); err != nil {
-		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
-	}
-	fmt.Print("Make one unschedulable\n")
-	if err := makeOneNodeUnschedulableAndEvict(cs); err != nil {
-		t.Errorf("Unable to make one node unschedulable: %s", err.Error())
-	}
-	fmt.Print("Wait for 2 running\n")
-	if err := waitForPods(cs, 3, 2, 2); err != nil {
-		t.Errorf("Unable to get one etcd-quorum-guard pod stopped: %s", err.Error())
-	}
-	fmt.Print("Make second unschedulable\n")
-	if err := makeOneNodeUnschedulableAndEvict(cs); err == nil || !strings.Contains(err.Error(), "it would violate the pod's disruption budget") {
-		fmt.Print("  Pod should not have been evicted\n")
-		t.Errorf("Pod should not have been evicted because it violated disruption budget: %v", err)
-	} else {
-		fmt.Print("  Eviction correctly failed because it would violate the pod's disruption budget.\n")
-	}
-	fmt.Print("Make all schedulable\n")
-	if err := makeAllNodesSchedulable(cs); err != nil {
-		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
-	}
-	fmt.Print("Wait for all running\n")
-	if err := waitForPods(cs, 3, 3, 3); err != nil {
-		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
-	}
-	fmt.Print("Make one unschedulable\n")
-	if err := makeOneNodeUnschedulableAndEvict(cs); err != nil {
-		t.Errorf("Unable to make one node unschedulable: %s", err.Error())
-	}
-	fmt.Print("Wait for one not running\n")
-	if err := waitForPods(cs, 3, 2, 2); err != nil {
-		t.Errorf("Unable to get one etcd-quorum-guard pod stopped: %s", err.Error())
-	}
-	fmt.Print("Make all schedulable\n")
-	if err := makeAllNodesSchedulable(cs); err != nil {
-		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
-	}
-	fmt.Print("Wait for all\n")
-	if err := waitForPods(cs, 3, 3, 3); err != nil {
-		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
-	}
-}
+// func TestEtcdQuorumGuard(t *testing.T) {
+// 	cs := framework.NewClientSet("")
+// 	if err := waitForEtcdQuorumGuardDeployment(cs); err != nil {
+// 		t.Fatalf("etcdQuotaGard deployment not present: %s", err.Error())
+// 	}
+// 	fmt.Print("Make all schedulable\n")
+// 	if err := makeAllNodesSchedulable(cs); err != nil {
+// 		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
+// 	}
+// 	fmt.Print("Check for all running\n")
+// 	if err := waitForPods(cs, 3, 3, 3); err != nil {
+// 		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
+// 	}
+// 	fmt.Print("Make one unschedulable\n")
+// 	if err := makeOneNodeUnschedulableAndEvict(cs); err != nil {
+// 		t.Errorf("Unable to make one node unschedulable: %s", err.Error())
+// 	}
+// 	fmt.Print("Wait for 2 running\n")
+// 	if err := waitForPods(cs, 3, 2, 2); err != nil {
+// 		t.Errorf("Unable to get one etcd-quorum-guard pod stopped: %s", err.Error())
+// 	}
+// 	fmt.Print("Make second unschedulable\n")
+// 	if err := makeOneNodeUnschedulableAndEvict(cs); err == nil || !strings.Contains(err.Error(), "it would violate the pod's disruption budget") {
+// 		fmt.Print("  Pod should not have been evicted\n")
+// 		t.Errorf("Pod should not have been evicted because it violated disruption budget: %v", err)
+// 	} else {
+// 		fmt.Print("  Eviction correctly failed because it would violate the pod's disruption budget.\n")
+// 	}
+// 	fmt.Print("Make all schedulable\n")
+// 	if err := makeAllNodesSchedulable(cs); err != nil {
+// 		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
+// 	}
+// 	fmt.Print("Wait for all running\n")
+// 	if err := waitForPods(cs, 3, 3, 3); err != nil {
+// 		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
+// 	}
+// 	fmt.Print("Make one unschedulable\n")
+// 	if err := makeOneNodeUnschedulableAndEvict(cs); err != nil {
+// 		t.Errorf("Unable to make one node unschedulable: %s", err.Error())
+// 	}
+// 	fmt.Print("Wait for one not running\n")
+// 	if err := waitForPods(cs, 3, 2, 2); err != nil {
+// 		t.Errorf("Unable to get one etcd-quorum-guard pod stopped: %s", err.Error())
+// 	}
+// 	fmt.Print("Make all schedulable\n")
+// 	if err := makeAllNodesSchedulable(cs); err != nil {
+// 		t.Errorf("Unable to make all nodes schedulable: %s", err.Error())
+// 	}
+// 	fmt.Print("Wait for all\n")
+// 	if err := waitForPods(cs, 3, 3, 3); err != nil {
+// 		t.Errorf("Unable to get all etcd-quorum-guard pods running: %s", err.Error())
+// 	}
+// }
 
 func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, unschedulable bool) error {
 	prefix := ""
@@ -101,7 +100,7 @@ func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, un
 			if _, err := cs.CoreV1Interface.Nodes().Update(n); err != nil {
 				if strings.Contains(err.Error(), "the object has been modified") {
 					fmt.Print("    Node object was modified and not up to date; retrying\n")
-					continue;
+					continue
 				}
 				return fmt.Errorf("Failed to make node %s %sschedulable: %s\n", node, prefix, err.Error())
 			}
