@@ -1,0 +1,86 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/manifests/coredns.yaml"
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: coredns
+      namespace: kube-system
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: kni-infra-mdns
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/coredns"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes/kubeconfig"
+      - name: conf-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/coredns"
+      initContainers:
+      - name: clusterrc-generation
+        image: quay.io/openshift-metalkube/kubeconfig-extractor:latest
+        command:
+        - "/usr/bin/kubeconfig-extractor"
+        args:
+        - "/etc/kubernetes/kubeconfig"
+        - "/etc/kubernetes/static-pod-resources/clusterrc"
+        resources: {}
+        volumeMounts:
+        - name: resource-dir
+          mountPath: "/etc/kubernetes/static-pod-resources"
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+      - name: render-corefile
+        image: quay.io/openshift/origin-node:latest
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          set -ex
+
+          source /etc/kubernetes/static-pod-resources/clusterrc
+          export DOMAIN
+          export NAME
+          /usr/libexec/platform-python -c "from __future__ import print_function
+          import os
+          with open('/etc/kubernetes/static-pod-resources/Corefile.template', 'r') as f:
+              content = f.read()
+          with open('/etc/coredns/Corefile', 'w') as dest:
+              print(os.path.expandvars(content), file=dest)"
+        resources: {}
+        volumeMounts:
+        - name: resource-dir
+          mountPath: "/etc/kubernetes/static-pod-resources"
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        imagePullPolicy: IfNotPresent
+      containers:
+      - name: coredns
+        securityContext:
+          privileged: true
+        image: quay.io/openshift-metalkube/coredns-mdns:latest
+        args:
+        - "--conf"
+        - "/etc/coredns/Corefile"
+        resources:
+          requests:
+            cpu: 150m
+            memory: 1Gi
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}
