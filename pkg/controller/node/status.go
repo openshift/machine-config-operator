@@ -177,6 +177,7 @@ func isNodeReady(node *corev1.Node) bool {
 	return true
 }
 
+// TODO(runcom): drop currentConfig arg
 func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
@@ -191,9 +192,14 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 		if !ok || cconfig == "" {
 			continue
 		}
+		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+		if !ok || dstate == "" {
+			continue
+		}
 
 		nodeNotReady := !isNodeReady(node)
-		if dconfig == currentConfig && (dconfig != cconfig || nodeNotReady) {
+		// we want to be able to roll back if a bad MC caused an unreconcilable state
+		if (dconfig != cconfig || nodeNotReady) && dstate != daemonconsts.MachineConfigDaemonStateUnreconcilable {
 			unavail = append(unavail, node)
 			glog.V(2).Infof("Node %s unavailable: different configs (desired: %s, current %s) or node not ready %v", node.Name, dconfig, cconfig, nodeNotReady)
 		}
