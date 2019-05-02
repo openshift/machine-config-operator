@@ -1,0 +1,44 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/manifests/coredns.yaml"
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: coredns
+      namespace: kube-system
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: kni-infra-mdns
+    spec:
+      volumes:
+      - name: conf-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/coredns"
+      - name: var-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources"
+      containers:
+      - name: coredns
+        securityContext:
+          privileged: true
+        image: quay.io/openshift/origin-coredns:latest
+        args:
+        - "--conf"
+        - "/etc/coredns/Corefile"
+        resources:
+          requests:
+            cpu: 150m
+            memory: 1Gi
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}

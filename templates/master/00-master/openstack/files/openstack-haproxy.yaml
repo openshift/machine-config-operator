@@ -1,0 +1,116 @@
+filesystem: "root"
+mode: 0644
+path: /etc/kubernetes/manifests/haproxy.yaml
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: haproxy
+      namespace: kube-system
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: kni-infra-api-lb
+    spec:
+      volumes:
+      - name: oc
+        hostPath:
+          path: "/bin/oc"
+      - name: run-dir
+        empty-dir: {}
+      - name: conf-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/haproxy/config"
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/haproxy/resources"
+      - name: clustervars
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/clustervars"
+      - name: kubelet
+        hostPath:
+          path: "/var/lib/kubelet"
+      - name: chroot-host
+        hostPath:
+          path: "/"
+      initcontainers:
+      - name: haproxy-init-config
+        securityContext:
+          privileged: true
+        image: quay.io/openshift/origin-node:latest
+        env:
+        - name: api_port
+          value: "6443"
+        - name: lb_port
+          value: "7443"
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #!/bin/bash
+          cat << EOF > /etc/haproxy/haproxy.cfg
+          # NOTE(shadower): this is the INITIAL haproxy.cfg created by the MCO
+          listen {{.EtcdDiscoveryDomain}}-api-masters
+              bind 0.0.0.0:$lb_port
+              mode tcp
+              balance roundrobin
+              server lb-api-vip-$api_port {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} check port $api_port
+          EOF
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/haproxy"
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      containers:
+      - name: haproxy-monitor
+        securityContext:
+          privileged: true
+        image: quay.io/openshift/origin-node:latest
+        env:
+        - name: api_port
+          value: "6443"
+        - name: lb_port
+          value: "7443"
+        - name: stat_port
+          value: "50000"
+        command:
+        - "/opt/haproxy/haproxy-watcher.sh"
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/haproxy"
+        - name: resource-dir
+          mountPath: "/opt/haproxy"
+        - name: run-dir
+          mountPath: "/var/run/haproxy"
+        - name: clustervars
+          mountPath: "/etc/kubernetes/static-pod-resources/clustervars"
+        - name: kubelet
+          mountPath: "/var/lib/kubelet"
+        - name: oc
+          mountPath: "/bin/oc"
+        - name: chroot-host
+          mountPath: "/host"
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      - name: haproxy
+        image: docker.io/library/haproxy:latest
+        args:
+        - "-W"
+        - "-db"
+        - "-S"
+        - "/var/run/haproxy/haproxy-master.sock,level,admin"
+        - "-f"
+        - "/etc/haproxy/haproxy.cfg"
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/haproxy"
+        - name: run-dir
+          mountPath: "/var/run/haproxy"
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}

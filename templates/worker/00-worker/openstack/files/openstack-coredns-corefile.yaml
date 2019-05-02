@@ -1,0 +1,24 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/coredns/Corefile"
+contents:
+  inline: |
+    . {
+        log
+        errors
+        reload 5s
+
+        forward . 8.8.8.8 {
+            except {{.EtcdDiscoveryDomain}}
+        }
+    }
+
+    {{.EtcdDiscoveryDomain}} {
+        log
+        mdns {{.EtcdDiscoveryDomain}} 3 {{(split "." .EtcdDiscoveryDomain)._0}}
+        cache 30
+        reload 5s
+        loadbalance round_robin
+        file /etc/coredns/coredns.db {
+        }
+    }
