@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
@@ -88,7 +90,7 @@ type Daemon struct {
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
 
-	installedSigterm bool
+	updateActive bool
 
 	nodeWriter NodeWriter
 
@@ -467,6 +469,28 @@ func (dn *Daemon) runOnceFrom() error {
 		return dn.runOnceFromMachineConfig(configi.(mcfgv1.MachineConfig), contentFrom)
 	}
 	return errors.New("unsupported onceFrom type provided")
+}
+
+// InstallSignalHandler installs the handler for the signals the daemon should act on
+func (dn *Daemon) InstallSignalHandler(stopCh chan struct{}) {
+	termChan := make(chan os.Signal, 2048)
+	signal.Notify(termChan, syscall.SIGTERM)
+
+	// Catch SIGTERM - if we're actively updating, we should avoid
+	// having the process be killed.
+	// https://github.com/openshift/machine-config-operator/issues/407
+	go func() {
+		for sig := range termChan {
+			switch sig {
+			case syscall.SIGTERM:
+				if dn.updateActive {
+					glog.Info("Got SIGTERM, but actively updating")
+				} else {
+					close(stopCh)
+				}
+			}
+		}
+	}()
 }
 
 // Run finishes informer setup and then blocks, and the informer will be
