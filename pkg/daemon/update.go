@@ -7,12 +7,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
-	"syscall"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -152,28 +150,6 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 
 	// reboot. this function shouldn't actually return.
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, exec.Command(defaultRebootCommand))
-}
-
-// isUpdating returns true if the MCD is actively applying an update
-func (dn *Daemon) catchIgnoreSIGTERM() {
-	if dn.installedSigterm {
-		return
-	}
-
-	termChan := make(chan os.Signal, 1)
-	signal.Notify(termChan, syscall.SIGTERM)
-
-	dn.installedSigterm = true
-
-	// Catch SIGTERM - if we're actively updating, we should avoid
-	// having the process be killed.
-	// https://github.com/openshift/machine-config-operator/issues/407
-	go func() {
-		for {
-			<-termChan
-			glog.Info("Got SIGTERM, but actively updating")
-		}
-	}()
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
@@ -751,10 +727,16 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	}
 }
 
+func (dn *Daemon) catchIgnoreSIGTERM() {
+	if dn.updateActive {
+		return
+	}
+	dn.updateActive = true
+}
+
 func (dn *Daemon) cancelSIGTERM() {
-	if dn.installedSigterm {
-		signal.Reset(syscall.SIGTERM)
-		dn.installedSigterm = false
+	if dn.updateActive {
+		dn.updateActive = false
 	}
 }
 
