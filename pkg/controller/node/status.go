@@ -177,6 +177,7 @@ func isNodeReady(node *corev1.Node) bool {
 	return true
 }
 
+// TODO(runcom): drop currentConfig arg
 func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
@@ -193,7 +194,7 @@ func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev
 		}
 
 		nodeNotReady := !isNodeReady(node)
-		if dconfig == currentConfig && (dconfig != cconfig || nodeNotReady) {
+		if dconfig != cconfig || nodeNotReady {
 			unavail = append(unavail, node)
 			glog.V(2).Infof("Node %s unavailable: different configs (desired: %s, current %s) or node not ready %v", node.Name, dconfig, cconfig, nodeNotReady)
 		}
