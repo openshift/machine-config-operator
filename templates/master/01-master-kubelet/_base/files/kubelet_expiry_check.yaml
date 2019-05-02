@@ -1,0 +1,33 @@
+filesystem: "root"
+mode: 0755
+path: "/usr/local/bin/kubelet_expiry_check"
+contents:
+  inline: |
+    #!/bin/bash
+    
+    set -eou pipefail
+    
+    KUBELET_PEM_FILE=/var/lib/kubelet/pki/kubelet-client-current.pem
+    
+    error() {
+      echo "Error: Line $(caller)" >&2
+    }
+    
+    cleanup() {
+      rm -rf /var/lib/kubelet/pki/*
+      rm -f /var/lib/kubelet/kubeconfig
+      reboot
+    }
+    
+    trap 'error' ERR
+    
+    [[ ! -f $KUBELET_PEM_FILE ]] && exit 0
+    
+    expiry_cert_date=$(openssl x509 -in ${KUBELET_PEM_FILE} -enddate -noout | cut -d= -f 2)
+    expiry_date=$(date -d "${expiry_cert_date}" +%s)
+    now_date=$(date +%s)
+    
+    if [ $now_date -ge $expiry_date ] ; then
+      echo "Found expired certificate"
+      cleanup
+    fi

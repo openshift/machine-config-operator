@@ -1,0 +1,6 @@
+contents:
+  source: data:,%23!%2Fbin%2Fbash%0A%0Aset%20-eou%20pipefail%0A%0AKUBELET_PEM_FILE%3D%2Fvar%2Flib%2Fkubelet%2Fpki%2Fkubelet-client-current.pem%0A%0Aerror()%20%7B%0A%20%20echo%20%22Error%3A%20Line%20%24(caller)%22%20%3E%262%0A%7D%0A%0Acleanup()%20%7B%0A%20%20rm%20-rf%20%2Fvar%2Flib%2Fkubelet%2Fpki%2F*%0A%20%20rm%20-f%20%2Fvar%2Flib%2Fkubelet%2Fkubeconfig%0A%20%20reboot%0A%7D%0A%0Atrap%20'error'%20ERR%0A%0A%5B%5B%20!%20-f%20%24KUBELET_PEM_FILE%20%5D%5D%20%26%26%20exit%200%0A%0Aexpiry_cert_date%3D%24(openssl%20x509%20-in%20%24%7BKUBELET_PEM_FILE%7D%20-enddate%20-noout%20%7C%20cut%20-d%3D%20-f%202)%0Aexpiry_date%3D%24(date%20-d%20%22%24%7Bexpiry_cert_date%7D%22%20%2B%25s)%0Anow_date%3D%24(date%20%2B%25s)%0A%0Aif%20%5B%20%24now_date%20-ge%20%24expiry_date%20%5D%20%3B%20then%0A%20%20echo%20%22Found%20expired%20certificate%22%0A%20%20cleanup%0Afi%0A
+  verification: {}
+filesystem: root
+mode: 493
+path: /usr/local/bin/kubelet_expiry_check
