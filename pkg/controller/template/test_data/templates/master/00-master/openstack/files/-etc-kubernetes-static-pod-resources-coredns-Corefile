@@ -1,0 +1,6 @@
+contents:
+  source: data:,.%20%7B%0A%20%20%20%20log%0A%20%20%20%20mdns%20my-test-cluster.installer.team.coreos.systems%203%20my-test-cluster%0A%20%20%20%20cache%2030%0A%20%20%20%20reload%0A%20%20%20%20forward%20.%20%2Fetc%2Fresolv.conf%20%7B%0A%20%20%20%20%20%20%20%20except%20my-test-cluster.installer.team.coreos.systems%0A%20%20%20%20%7D%0A%7D%0A
+  verification: {}
+filesystem: root
+mode: 420
+path: /etc/kubernetes/static-pod-resources/coredns/Corefile

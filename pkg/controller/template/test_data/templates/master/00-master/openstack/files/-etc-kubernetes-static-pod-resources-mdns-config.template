@@ -1,0 +1,6 @@
+contents:
+  source: data:,bind_address%20%3D%20%22%24NON_VIRTUAL_IP%22%0Acollision_avoidance%20%3D%20%22hostname%22%0A%0Aservice%20%7B%0A%20%20%20%20name%20%3D%20%22%24CLUSTER_NAME%20Etcd%22%0A%20%20%20%20host_name%20%3D%20%22%24ETCD_HOSTNAME%22%0A%20%20%20%20type%20%3D%20%22_etcd-server-ssl._tcp%22%0A%20%20%20%20domain%20%3D%20%22local.%22%0A%20%20%20%20port%20%3D%202380%0A%20%20%20%20ttl%20%3D%203200%0A%7D%0A%0Aservice%20%7B%0A%20%20%20%20name%20%3D%20%22%24CLUSTER_NAME%20Workstation%22%0A%20%20%20%20host_name%20%3D%20%22%24MASTER_HOSTNAME%22%0A%20%20%20%20type%20%3D%20%22_workstation._tcp%22%0A%20%20%20%20domain%20%3D%20%22local.%22%0A%20%20%20%20port%20%3D%2042424%0A%20%20%20%20ttl%20%3D%203200%0A%7D%0A%0Aservice%20%7B%0A%20%20%20%20name%20%3D%20%22%24CLUSTER_NAME%20EtcdWorkstation%22%0A%20%20%20%20host_name%20%3D%20%22%24ETCD_HOSTNAME%22%0A%20%20%20%20type%20%3D%20%22_workstation._tcp%22%0A%20%20%20%20domain%20%3D%20%22local.%22%0A%20%20%20%20port%20%3D%2042424%0A%20%20%20%20ttl%20%3D%20300%0A%7D%0A
+  verification: {}
+filesystem: root
+mode: 420
+path: /etc/kubernetes/static-pod-resources/mdns/config.template
