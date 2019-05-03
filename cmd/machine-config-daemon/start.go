@@ -206,9 +206,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	dn.InstallSignalHandler(stopCh)
+	signaled := make(chan struct{})
+	dn.InstallSignalHandler(signaled)
 
-	if err := dn.Run(stopCh, exitCh); err != nil {
+	if err := dn.Run(stopCh, signaled, exitCh); err != nil {
 		glog.Fatalf("Failed to run: %v", err)
 	}
 }

@@ -472,7 +472,7 @@ func (dn *Daemon) runOnceFrom() error {
 }
 
 // InstallSignalHandler installs the handler for the signals the daemon should act on
-func (dn *Daemon) InstallSignalHandler(stopCh chan struct{}) {
+func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 	termChan := make(chan os.Signal, 2048)
 	signal.Notify(termChan, syscall.SIGTERM)
 
@@ -486,7 +486,7 @@ func (dn *Daemon) InstallSignalHandler(stopCh chan struct{}) {
 				if dn.updateActive {
 					glog.Info("Got SIGTERM, but actively updating")
 				} else {
-					close(stopCh)
+					close(signaled)
 				}
 			}
 		}
@@ -496,7 +496,7 @@ func (dn *Daemon) InstallSignalHandler(stopCh chan struct{}) {
 // Run finishes informer setup and then blocks, and the informer will be
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
-func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
+func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) error {
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
@@ -519,6 +519,8 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	for {
 		select {
 		case <-stopCh:
+			return nil
+		case <-signaled:
 			return nil
 		case err := <-exitCh:
 			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
