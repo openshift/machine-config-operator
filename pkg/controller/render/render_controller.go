@@ -505,6 +505,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
+	glog.V(2).Infof("Pool %s is now targeting: %s", pool.Name, generated.Name)
 	pool.Status.Configuration.Name = generated.Name
 	pool.Status.Configuration.Source = source
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool)
