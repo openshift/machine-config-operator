@@ -541,6 +541,12 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 			glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
 		}
 
+		if u.Contents == "" {
+			continue
+		}
+
+		glog.Infof("Writing systemd unit %q", u.Name)
+
 		fpath := filepath.Join(pathSystemd, u.Name)
 
 		// check if the unit is masked. if it is, we write a symlink to
@@ -560,16 +566,12 @@ func (dn *Daemon) writeUnits(units []ignv2_2types.Unit) error {
 			continue
 		}
 
-		if u.Contents != "" {
-			glog.Infof("Writing systemd unit %q", u.Name)
-
-			// write the unit to disk
-			if err := writeFileAtomicallyWithDefaults(fpath, []byte(u.Contents)); err != nil {
-				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
-			}
-
-			glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
+		// write the unit to disk
+		if err := writeFileAtomicallyWithDefaults(fpath, []byte(u.Contents)); err != nil {
+			return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 		}
+
+		glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
 
 		// if the unit doesn't note if it should be enabled or disabled then
 		// skip all linking.
