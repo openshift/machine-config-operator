@@ -118,7 +118,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 
 	// Skip draining of the node when we're not cluster driven
 	if dn.onceFrom == "" {
-		glog.Info("Update prepared; draining the node")
+		dn.logSystem("Update prepared; beginning drain")
 
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
@@ -147,7 +147,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 			return errors.Wrap(err, "failed to drain node")
 		}
-		glog.Info("Node successfully drained")
+		dn.logSystem("drain complete")
 	}
 
 	// reboot. this function shouldn't actually return.
@@ -742,6 +742,7 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 
 	go func() {
 		defer stdin.Close()
+		io.WriteString(stdin, "machine-config-daemon: ")
 		io.WriteString(stdin, message)
 	}()
 	err = logger.Run()
@@ -766,7 +767,7 @@ func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exe
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
 	}
-	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
+	dn.logSystem("initiating reboot: %s", rationale)
 
 	// Now that everything is done, avoid delaying shutdown.
 	dn.cancelSIGTERM()

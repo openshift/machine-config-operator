@@ -976,7 +976,7 @@ func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) er
 		return err
 	}
 
-	dn.logSystem("machine-config-daemon: completed update for config %s", desiredConfigName)
+	dn.logSystem("completed update for config %s", desiredConfigName)
 
 	return nil
 }
