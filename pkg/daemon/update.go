@@ -218,6 +218,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		dn.logSystem(wrappedErr.Error())
 		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
+	dn.logSystem("Starting update from %s to %s", oldConfigName, newConfigName)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
