@@ -111,6 +111,8 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	return status
 }
 
+// getUpdatedMachines filters the provided nodes to ones whose current == desired
+// and the "done" flag is set.
 func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var updated []*corev1.Node
 	for _, node := range nodes {
@@ -138,6 +140,8 @@ func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.No
 	return updated
 }
 
+// getReadyMachines filters the provided nodes to ones which are updated
+// and marked ready.
 func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	updated := getUpdatedMachines(currentConfig, nodes)
 	var ready []*corev1.Node
@@ -178,6 +182,9 @@ func isNodeReady(node *corev1.Node) bool {
 }
 
 // TODO(runcom): drop currentConfig arg
+// getUnavailableMachines is the opposite of getReadyNodes - it filters the provided
+// set of nodes to ones which are either not ready, or whose current config does
+// not match the target.g
 func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
