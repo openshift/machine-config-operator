@@ -452,13 +452,13 @@ func TestGetCandidateMachines(t *testing.T) {
 		expected: []*corev1.Node{newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue)},
 	}, {
 		//progress on old stuck node
-		progress: 0,
+		progress: 1,
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-1", "v0.1", "v0.2", corev1.ConditionFalse),
 			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: []*corev1.Node{},
+		expected: []*corev1.Node{newNodeWithReady("node-1", "v0.1", "v0.2", corev1.ConditionFalse)},
 	}}
 
 	for idx, test := range tests {
