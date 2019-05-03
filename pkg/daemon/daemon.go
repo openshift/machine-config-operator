@@ -135,7 +135,7 @@ const (
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
 	// currentConfigPath is where we store the current config on disk to validate
 	// against annotations changes
-	currentConfigPath = "/var/machine-config-daemon/currentconfig"
+	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
 
 	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
 	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
