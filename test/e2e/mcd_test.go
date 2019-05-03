@@ -396,12 +396,12 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcp.Status.UnavailableMachineCount >= 1 {
+		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolDegraded) && mcp.Status.DegradedMachineCount >= 1 {
 			return true, nil
 		}
 		return false, nil
 	}); err != nil {
-		t.Errorf("MCP isn't reporting unavailable with a bad MC: %v", err)
+		t.Errorf("worker pool isn't reporting degraded with a bad MC: %v", err)
 	}
 
 	// now delete the bad MC and watch the nodes reconciling as expected
