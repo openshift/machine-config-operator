@@ -239,10 +239,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
 		},
 		currentConfig: "v2",
-		unavail: []*corev1.Node{
-			newNodeWithReady("node-0", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
-		},
+		unavail:       []*corev1.Node{newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue)},
 	}, {
 		// 1 node updated, 1 updating, 1 updating but not v2 and is not ready
 		nodes: []*corev1.Node{
@@ -251,10 +248,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
 		},
 		currentConfig: "v2",
-		unavail:       []*corev1.Node{
-			newNodeWithReady("node-0", "v0", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
-		},
+		unavail:       []*corev1.Node{newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue)},
 	}, {
 		// 2 node updated, 1 updating
 		nodes: []*corev1.Node{
