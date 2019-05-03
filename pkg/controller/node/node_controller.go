@@ -13,8 +13,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -227,8 +227,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	// Specifically log when a node has completed an update so the MCC logs are a useful central aggregate of state changes
 	if oldNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
-		curNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
-		curNode.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] == daemonconsts.MachineConfigDaemonStateDone {
+		isNodeDone(curNode) {
 		glog.Infof("Pool %s: node %s has completed update to %s", pool.Name, curNode.Name, curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
 	} else {
@@ -469,16 +468,12 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	progress, err := makeProgress(pool, nodes)
+	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
 		return err
-	}
+	}	
 
-	if progress == 0 {
-		return ctrl.syncStatusOnly(pool)
-	}
-
-	candidates := getCandidateMachines(pool, nodes, progress)
+	candidates := getCandidateMachines(pool, nodes, maxunavail)
 	for _, node := range candidates {
 		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Status.Configuration.Name); err != nil {
 			return err
@@ -521,43 +516,49 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 	})
 }
 
-func makeProgress(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
-	maxunavail, err := maxUnavailable(pool, nodes)
-	if err != nil {
-		return 0, err
+func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) []*corev1.Node {
+	targetConfig := pool.Status.Configuration.Name
+
+	unavail := getUnavailableMachines(nodesInPool)
+	// If we're at capacity, there's nothing to do.
+	if len(unavail) >= maxUnavailable {
+		return nil
 	}
-	unavail := len(getUnavailableMachines(pool.Status.Configuration.Name, nodes))
-	progress := 0
-	if unavail < maxunavail {
-		progress = maxunavail - unavail
-	}
-
-	return progress, nil
-}
-
-func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node, progress int) []*corev1.Node {
-	acted := getReadyMachines(pool.Status.Configuration.Name, nodes)
-	acted = append(acted, getUnavailableMachines(pool.Status.Configuration.Name, nodes)...)
-
-	actedMap := map[string]bool{}
-	for _, node := range acted {
-		actedMap[node.Name] = true
-	}
-
-	var candidates []*corev1.Node
-	for _, node := range nodes {
-		if !actedMap[node.Name] {
-			candidates = append(candidates, node)
+	capacity := maxUnavailable - len(unavail)
+	failingThisConfig := 0
+	// We only look at nodes which aren't already targeting our desired config
+	var nodes []*corev1.Node
+	for _, node := range nodesInPool {
+		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
+			if isNodeMCDFailing(node) {
+				failingThisConfig++
+			}
+			continue
 		}
+
+		nodes = append(nodes, node)
 	}
 
-	if len(candidates) <= progress {
-		return candidates
+	// Nodes which are failing to target this config also count against
+	// availability - it might be a transient issue, and if the issue
+	// clears we don't want multiple to update at once.
+	if failingThisConfig >= capacity {
+		return nil
 	}
-	return candidates[:progress]
+	capacity -= failingThisConfig
+
+	if len(nodes) < capacity {
+		return nodes
+	}
+	return nodes[:capacity]
 }
 
 func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
+	// Hardcoded for now per discussion in
+	// https://github.com/openshift/machine-config-operator/pull/701
+	if pool.Name == "master" {
+		return 1, nil
+	}
 	intOrPercent := intstrutil.FromInt(1)
 	if pool.Spec.MaxUnavailable != nil {
 		intOrPercent = *pool.Spec.MaxUnavailable

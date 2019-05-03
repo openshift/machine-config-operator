@@ -56,10 +56,16 @@ func TestIsNodeReady(t *testing.T) {
 func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 	var annos map[string]string
 	if currentConfig != "" || desiredConfig != "" {
+		var state string
+		if currentConfig == desiredConfig {
+			state = daemonconsts.MachineConfigDaemonStateDone
+		} else {
+			state = daemonconsts.MachineConfigDaemonStateWorking
+		}		
 		annos = map[string]string{}
 		annos[daemonconsts.CurrentMachineConfigAnnotationKey] = currentConfig
 		annos[daemonconsts.DesiredMachineConfigAnnotationKey] = desiredConfig
-		annos[daemonconsts.MachineConfigDaemonStateAnnotationKey] = daemonconsts.MachineConfigDaemonStateDone
+		annos[daemonconsts.MachineConfigDaemonStateAnnotationKey] = state
 	}
 
 	return &corev1.Node{
@@ -83,12 +89,16 @@ func newNodeWithLabel(name string, currentConfig, desiredConfig string, labels m
 
 func newNodeWithReady(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus) *corev1.Node {
 	node := newNode(name, currentConfig, desiredConfig)
-	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}
+	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}	
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
+	}
 	return node
 }
 
 func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus, dstate string) *corev1.Node {
-	node := newNodeWithReady(name, currentConfig, desiredConfig, status)
+	node := newNode(name, currentConfig, desiredConfig)
+	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}	
 	if node.Annotations == nil {
 		node.Annotations = map[string]string{}
 	}
@@ -207,30 +217,30 @@ func TestGetUnavailableMachines(t *testing.T) {
 	tests := []struct {
 		nodes         []*corev1.Node
 		currentConfig string
-		unavail       []*corev1.Node
+		unavail       []string
 	}{{
 		// no nodes
 		nodes:         []*corev1.Node{},
 		currentConfig: "v1",
 		unavail:       nil,
 	}, {
-		// 1 node updated, 1 updating, 1 not acted upon
+		// 1 in progress
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
 		},
 		currentConfig: "v1",
-		unavail:       []*corev1.Node{newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue)},
+		unavail:       []string{"node-2"},
 	}, {
-		// 1 node updated, 1 updating, 1 not acted upon
+		// 1 unavail, 1 in progress
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
 			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
 		},
 		currentConfig: "v1",
-		unavail:       []*corev1.Node{newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse), newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue)},
+		unavail:       []string{"node-1", "node-2"},
 	}, {
 		// 1 node updated, 1 updating, 1 updating but not v2 and is ready
 		nodes: []*corev1.Node{
@@ -239,7 +249,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
 		},
 		currentConfig: "v2",
-		unavail:       []*corev1.Node{newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue)},
+		unavail: []string{"node-0", "node-2"},
 	}, {
 		// 1 node updated, 1 updating, 1 updating but not v2 and is not ready
 		nodes: []*corev1.Node{
@@ -248,7 +258,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
 		},
 		currentConfig: "v2",
-		unavail:       []*corev1.Node{newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue)},
+		unavail:       []string{"node-0", "node-2"},
 	}, {
 		// 2 node updated, 1 updating
 		nodes: []*corev1.Node{
@@ -257,7 +267,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v1", "v1", corev1.ConditionFalse),
 		},
 		currentConfig: "v1",
-		unavail:       []*corev1.Node{newNodeWithReady("node-0", "v0", "v1", corev1.ConditionTrue), newNodeWithReady("node-2", "v1", "v1", corev1.ConditionFalse)},
+		unavail:       []string{"node-0", "node-2"},
 	}, {
 		// 2 node updated, 1 updating, but one updated node is NotReady.
 		nodes: []*corev1.Node{
@@ -266,14 +276,19 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v1", "v1", corev1.ConditionFalse),
 		},
 		currentConfig: "v1",
-		unavail:       []*corev1.Node{newNode("node-0", "v0", "v1"), newNodeWithReady("node-2", "v1", "v1", corev1.ConditionFalse)},
+		unavail:       []string{"node-0", "node-2"},
 	}}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			unavail := getUnavailableMachines(test.currentConfig, test.nodes)
-			if !reflect.DeepEqual(unavail, test.unavail) {
-				t.Fatalf("mismatch expected: %v got %v", test.unavail, unavail)
+			fmt.Printf("Starting case %d\n", idx)
+			unavail := getUnavailableMachines(test.nodes)
+			var unavailNames []string
+			for _, node := range unavail {
+				unavailNames = append(unavailNames, node.Name)
+			}
+			if !reflect.DeepEqual(unavailNames, test.unavail) {
+				t.Fatalf("mismatch expected: %v got %v", test.unavail, unavailNames)
 			}
 		})
 	}
