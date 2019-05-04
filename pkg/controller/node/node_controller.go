@@ -200,13 +200,18 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	if pool == nil {
 		return
 	}
+	glog.V(4).Infof("Node %s updated", curNode.Name)
+
+	oldReady := isNodeReady(oldNode)
+	newReady := isNodeReady(curNode)
+	if oldReady != newReady {
+		glog.Infof("Pool %s: node %s is now reporting ready: %v", pool.Name, curNode.Name, newReady)
+	}
 
 	// Specifically log when a node has completed an update so the MCC logs are a useful central aggregate of state changes
 	if oldNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
 		curNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
 		glog.Infof("Pool %s: node %s has completed update to %s", pool.Name, curNode.Name, curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
-	} else {
-		glog.V(4).Infof("Node %s updated", curNode.Name)
 	}
 	ctrl.enqueueMachineConfigPool(pool)
 }
