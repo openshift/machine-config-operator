@@ -1207,7 +1207,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return false
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file %s: %s", filePath, diff.ObjectDiff(contents, expectedContent))
+		glog.Errorf("content mismatch for file %s: %s", filePath, diff.StringDiff(string(contents), string(expectedContent)))
 		return false
 	}
 	return true
