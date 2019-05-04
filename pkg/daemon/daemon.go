@@ -268,8 +268,6 @@ func NewClusterDrivenDaemon(
 	eventBroadcaster.StartRecordingToSink(&clientsetcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
-	dn.logSystem("Starting to manage node: %s", nodeName)
-
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -497,6 +495,8 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) error {
+	dn.logSystem("Starting to manage node: %s", dn.name)
+
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
