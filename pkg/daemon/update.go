@@ -7,12 +7,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
-	"syscall"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -118,7 +116,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 
 	// Skip draining of the node when we're not cluster driven
 	if dn.onceFrom == "" {
-		glog.Info("Update prepared; draining the node")
+		dn.logSystem("Update prepared; beginning drain")
 
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
@@ -147,33 +145,11 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 			return errors.Wrap(err, "failed to drain node")
 		}
-		glog.Info("Node successfully drained")
+		dn.logSystem("drain complete")
 	}
 
 	// reboot. this function shouldn't actually return.
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, exec.Command(defaultRebootCommand))
-}
-
-// isUpdating returns true if the MCD is actively applying an update
-func (dn *Daemon) catchIgnoreSIGTERM() {
-	if dn.installedSigterm {
-		return
-	}
-
-	termChan := make(chan os.Signal, 1)
-	signal.Notify(termChan, syscall.SIGTERM)
-
-	dn.installedSigterm = true
-
-	// Catch SIGTERM - if we're actively updating, we should avoid
-	// having the process be killed.
-	// https://github.com/openshift/machine-config-operator/issues/407
-	go func() {
-		for {
-			<-termChan
-			glog.Info("Got SIGTERM, but actively updating")
-		}
-	}()
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
@@ -218,6 +194,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		dn.logSystem(wrappedErr.Error())
 		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
+	dn.logSystem("Starting update from %s to %s", oldConfigName, newConfigName)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
@@ -742,6 +719,7 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 
 	go func() {
 		defer stdin.Close()
+		io.WriteString(stdin, "machine-config-daemon: ")
 		io.WriteString(stdin, message)
 	}()
 	err = logger.Run()
@@ -751,10 +729,16 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	}
 }
 
+func (dn *Daemon) catchIgnoreSIGTERM() {
+	if dn.updateActive {
+		return
+	}
+	dn.updateActive = true
+}
+
 func (dn *Daemon) cancelSIGTERM() {
-	if dn.installedSigterm {
-		signal.Reset(syscall.SIGTERM)
-		dn.installedSigterm = false
+	if dn.updateActive {
+		dn.updateActive = false
 	}
 }
 
@@ -766,7 +750,7 @@ func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exe
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
 	}
-	dn.logSystem("machine-config-daemon initiating reboot: %s", rationale)
+	dn.logSystem("initiating reboot: %s", rationale)
 
 	// Now that everything is done, avoid delaying shutdown.
 	dn.cancelSIGTERM()

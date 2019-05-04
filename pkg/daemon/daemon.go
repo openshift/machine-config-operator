@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
@@ -88,7 +90,7 @@ type Daemon struct {
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
 
-	installedSigterm bool
+	updateActive bool
 
 	nodeWriter NodeWriter
 
@@ -133,7 +135,7 @@ const (
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
 	// currentConfigPath is where we store the current config on disk to validate
 	// against annotations changes
-	currentConfigPath = "/var/machine-config-daemon/currentconfig"
+	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
 
 	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
 	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
@@ -266,7 +268,7 @@ func NewClusterDrivenDaemon(
 	eventBroadcaster.StartRecordingToSink(&clientsetcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
-	glog.Infof("Managing node: %s", nodeName)
+	dn.logSystem("Starting to manage node: %s", nodeName)
 
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
@@ -469,10 +471,32 @@ func (dn *Daemon) runOnceFrom() error {
 	return errors.New("unsupported onceFrom type provided")
 }
 
+// InstallSignalHandler installs the handler for the signals the daemon should act on
+func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
+	termChan := make(chan os.Signal, 2048)
+	signal.Notify(termChan, syscall.SIGTERM)
+
+	// Catch SIGTERM - if we're actively updating, we should avoid
+	// having the process be killed.
+	// https://github.com/openshift/machine-config-operator/issues/407
+	go func() {
+		for sig := range termChan {
+			switch sig {
+			case syscall.SIGTERM:
+				if dn.updateActive {
+					glog.Info("Got SIGTERM, but actively updating")
+				} else {
+					close(signaled)
+				}
+			}
+		}
+	}()
+}
+
 // Run finishes informer setup and then blocks, and the informer will be
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
-func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
+func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) error {
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
@@ -495,6 +519,8 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	for {
 		select {
 		case <-stopCh:
+			return nil
+		case <-signaled:
 			return nil
 		case err := <-exitCh:
 			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
@@ -976,7 +1002,7 @@ func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) er
 		return err
 	}
 
-	dn.logSystem("machine-config-daemon: completed update for config %s", desiredConfigName)
+	dn.logSystem("completed update for config %s", desiredConfigName)
 
 	return nil
 }

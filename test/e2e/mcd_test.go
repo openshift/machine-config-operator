@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -11,10 +12,14 @@ import (
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -92,8 +97,10 @@ func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
 
-	for i := 0; i < 10; i++ {
+	// TODO: bring this back to 10
+	for i := 0; i < 5; i++ {
 		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
 
 		// create the dummy MC now
@@ -121,7 +128,7 @@ func TestMCDeployed(t *testing.T) {
 		}
 
 		visited := make(map[string]bool)
-		if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
+		if err := wait.Poll(2*time.Second, 30*time.Minute, func() (bool, error) {
 			nodes, err := getNodesByRole(cs, "worker")
 			if err != nil {
 				return false, nil
@@ -145,8 +152,24 @@ func TestMCDeployed(t *testing.T) {
 	}
 }
 
+func bumpPoolMaxUnavailableTo(t *testing.T, cs *framework.ClientSet, max int) {
+	pool, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	old, err := json.Marshal(pool)
+	require.Nil(t, err)
+	maxUnavailable := intstr.FromInt(max)
+	pool.Spec.MaxUnavailable = &maxUnavailable
+	new, err := json.Marshal(pool)
+	require.Nil(t, err)
+	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(old, new, old)
+	require.Nil(t, err)
+	_, err = cs.MachineConfigPools().Patch("worker", types.MergePatchType, patch)
+	require.Nil(t, err)
+}
+
 func TestUpdateSSH(t *testing.T) {
 	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("sshkeys-worker-%s", uuid.NewUUID())
@@ -310,6 +333,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 
 func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	// create a bad MC w/o a filesystem field which is going to fail reconciling
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
@@ -372,7 +396,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcp.Status.UnavailableMachineCount == 1 {
+		if mcp.Status.UnavailableMachineCount >= 1 {
 			return true, nil
 		}
 		return false, nil
@@ -400,7 +424,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	}
 
 	visited := make(map[string]bool)
-	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
+	if err := wait.Poll(2*time.Second, 30*time.Minute, func() (bool, error) {
 		nodes, err := getNodesByRole(cs, "worker")
 		if err != nil {
 			return false, err
