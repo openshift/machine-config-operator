@@ -719,7 +719,7 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 
 	go func() {
 		defer stdin.Close()
-		io.WriteString(stdin, "machine-config-daemon: ")
+		io.WriteString(stdin, fmt.Sprintf("machine-config-daemon[%d]: ", os.Getpid()))
 		io.WriteString(stdin, message)
 	}()
 	err = logger.Run()
