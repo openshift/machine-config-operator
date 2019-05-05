@@ -26,6 +26,7 @@ contents: |
         --cloud-provider=aws \
          \
         --anonymous-auth=false \
+        --v=3 \
 
   Restart=always
   RestartSec=10
