@@ -856,7 +856,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		return err
 	}
 	// write a file with current fingerprint overriding the previous
-	if err := writeFileAtomicallyWithDefaults(currentConfigPath, mcJSON); err != nil {
+	if err := writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON); err != nil {
 		return err
 	}
 
