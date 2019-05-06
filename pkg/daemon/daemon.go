@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -112,8 +111,6 @@ type Daemon struct {
 	syncHandler func(node string) error
 
 	booting bool
-
-	currentConfigPath string
 }
 
 // pendingConfigState is stored as JSON at pathStateJSON; it is only
@@ -133,9 +130,6 @@ const (
 	pathDevNull = "/dev/null"
 	// pathStateJSON is where we store temporary state across config changes
 	pathStateJSON = "/etc/machine-config-daemon/state.json"
-	// currentConfigPath is where we store the current config on disk to validate
-	// against annotations changes
-	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
 
 	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
 	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
@@ -216,7 +210,6 @@ func New(
 		stopCh:                 stopCh,
 		kubeClient:             kubeClient,
 		mcClient:               mcClient,
-		currentConfigPath:      currentConfigPath,
 	}
 	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
 	return dn, nil
@@ -851,15 +844,6 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		state.currentConfig = state.pendingConfig
 	}
 
-	mcJSON, err := json.Marshal(state.currentConfig)
-	if err != nil {
-		return err
-	}
-	// write a file with current fingerprint overriding the previous
-	if err := writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON); err != nil {
-		return err
-	}
-
 	inDesiredConfig := state.currentConfig == state.desiredConfig
 	if inDesiredConfig {
 		if state.pendingConfig != nil {
@@ -938,19 +922,6 @@ func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
 	dn.enqueueNode(curNode)
 }
 
-func (dn *Daemon) getCurrentMCOnDisk() (*mcfgv1.MachineConfig, error) {
-	mcJSON, err := os.Open(dn.currentConfigPath)
-	if err != nil {
-		return nil, err
-	}
-	defer mcJSON.Close()
-	currentOnDisk := &mcfgv1.MachineConfig{}
-	if err := json.NewDecoder(bufio.NewReader(mcJSON)).Decode(currentOnDisk); err != nil {
-		return nil, err
-	}
-	return currentOnDisk, nil
-}
-
 // prepUpdateFromCluster handles the shared update prepping functionality for
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
@@ -976,13 +947,6 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	state, err := getNodeAnnotation(dn.node, constants.MachineConfigDaemonStateAnnotationKey)
 	if err != nil {
 		return nil, nil, err
-	}
-	currentMCOnDisk, err := dn.getCurrentMCOnDisk()
-	if err != nil {
-		return nil, nil, err
-	}
-	if currentMCOnDisk.GetName() != currentConfig.GetName() {
-		return currentMCOnDisk, desiredConfig, nil
 	}
 
 	// Detect if there is an update
