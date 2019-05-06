@@ -77,6 +77,7 @@ spec:
                 declare -r cert="$(find $croot -name 'system:etcd-peer*.crt' -print -quit)"
                 declare -r key="${cert%.crt}.key"
                 declare -r cacert="$croot/ca.crt"
+                export NSS_SDB_USE_CACHE=no
                 [[ -z $cert || -z $key ]] && exit 1
                 curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
             initialDelaySecond: 5
