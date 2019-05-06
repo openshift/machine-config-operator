@@ -730,6 +730,8 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 }
 
 func (dn *Daemon) catchIgnoreSIGTERM() {
+	dn.updateActiveLock.Lock()
+	defer dn.updateActiveLock.Unlock()
 	if dn.updateActive {
 		return
 	}
@@ -737,6 +739,8 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 }
 
 func (dn *Daemon) cancelSIGTERM() {
+	dn.updateActiveLock.Lock()
+	defer dn.updateActiveLock.Unlock()
 	if dn.updateActive {
 		dn.updateActive = false
 	}
