@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -90,7 +91,8 @@ type Daemon struct {
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
 
-	updateActive bool
+	updateActive     bool
+	updateActiveLock sync.Mutex
 
 	nodeWriter NodeWriter
 
@@ -481,7 +483,10 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 		for sig := range termChan {
 			switch sig {
 			case syscall.SIGTERM:
-				if dn.updateActive {
+				dn.updateActiveLock.Lock()
+				updateActive := dn.updateActive
+				dn.updateActiveLock.Unlock()
+				if updateActive {
 					glog.Info("Got SIGTERM, but actively updating")
 				} else {
 					close(signaled)
