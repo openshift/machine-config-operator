@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/time/rate"
 	imgref "github.com/containers/image/docker/reference"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -32,6 +31,7 @@ import (
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/diff"
@@ -119,14 +119,6 @@ type Daemon struct {
 	currentConfigPath string
 }
 
-// pendingConfigState is stored as JSON at pathStateJSON; it is only
-// written after an update is complete, and across the reboot to
-// denote success.
-type pendingConfigState struct {
-	PendingConfig string `json:"pendingConfig,omitempty"`
-	BootID        string `json:"bootID,omitempty"`
-}
-
 const (
 	// pathSystemd is the path systemd modifiable units, services, etc.. reside
 	pathSystemd = "/etc/systemd/system"
@@ -134,11 +126,12 @@ const (
 	wantsPathSystemd = "/etc/systemd/system/multi-user.target.wants/"
 	// pathDevNull is the systems path to and endless blackhole
 	pathDevNull = "/dev/null"
-	// pathStateJSON is where we store temporary state across config changes
-	pathStateJSON = "/etc/machine-config-daemon/state.json"
 	// currentConfigPath is where we store the current config on disk to validate
 	// against annotations changes
 	currentConfigPath = "/etc/machine-config-daemon/currentconfig"
+	// pendingStateMessageID is the id we store the pending state in journal. We use it to
+	// also retrieve the pending config after a reboot
+	pendingStateMessageID = "machine-config-daemon-pending-state"
 
 	kubeletHealthzEndpoint         = "http://localhost:10248/healthz"
 	kubeletHealthzPollingInterval  = time.Duration(30 * time.Second)
@@ -730,30 +723,6 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	}, nil
 }
 
-// getPendingConfig loads the JSON state we cache across attempting to apply
-// a config+reboot.  If no pending state is available, ("", nil) will be returned.
-// The bootID is stored in the pending state; if it is unchanged, we assume
-// that we failed to reboot; that for now should be a fatal error, in order to avoid
-// reboot loops.
-func (dn *Daemon) getPendingConfig() (string, error) {
-	s, err := ioutil.ReadFile(pathStateJSON)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return "", errors.Wrapf(err, "loading transient state")
-		}
-		return "", nil
-	}
-	var p pendingConfigState
-	if err := json.Unmarshal([]byte(s), &p); err != nil {
-		return "", errors.Wrapf(err, "parsing transient state")
-	}
-
-	if p.BootID == dn.bootID {
-		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", p.PendingConfig, dn.bootID)
-	}
-	return p.PendingConfig, nil
-}
-
 // LogSystemData gathers data from the OS and adds it to our stdout; should only
 // be called once on MCD startup to log things which generally shouldn't change
 // dynamically after a reboot.
@@ -782,7 +751,7 @@ func (dn *Daemon) LogSystemData() {
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
 func (dn *Daemon) CheckStateOnBoot() error {
-	pendingConfigName, err := dn.getPendingConfig()
+	pendingConfigName, err := dn.getPendingState()
 	if err != nil {
 		return err
 	}
@@ -851,9 +820,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
 			return errors.Wrap(err, "error setting node's state to Done")
 		}
-		// And remove the pending state file
-		if err := os.Remove(pathStateJSON); err != nil {
-			return errors.Wrapf(err, "removing transient state file")
+		if err := dn.storePendingState(state.pendingConfig, 0); err != nil {
+			return err
 		}
 
 		state.currentConfig = state.pendingConfig
