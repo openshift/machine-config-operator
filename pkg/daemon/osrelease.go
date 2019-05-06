@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"fmt"
-	"path"
 
 	"github.com/ashcrow/osrelease"
 )
@@ -20,9 +19,9 @@ const (
 // OS variant the daemon is running on. If we are unable to read the
 // os-release file OR the information doesn't match MCD supported OS's
 // an error is returned.
-func GetHostRunningOS(rootFs string) (string, error) {
-	libPath := path.Join(rootFs, "usr", "lib", "os-release")
-	etcPath := path.Join(rootFs, "etc", "os-release")
+func GetHostRunningOS() (string, error) {
+	libPath := "/usr/lib/os-release"
+	etcPath := "/etc/os-release"
 
 	or, err := osrelease.NewWithOverrides(etcPath, libPath)
 	if err != nil {

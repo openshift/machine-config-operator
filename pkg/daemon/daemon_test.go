@@ -165,7 +165,6 @@ func (f *fixture) newController() *Daemon {
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 
 	d, err := NewClusterDrivenDaemon(
-		"/",
 		"node_name_test",
 		"rhel",
 		NewNodeUpdaterClient(),

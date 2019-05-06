@@ -34,7 +34,6 @@ func TestUpdateOS(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
-		rootMount:         "/",
 		bootedOSImageURL:  "test",
 	}
 
@@ -66,7 +65,6 @@ func TestReconcilable(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: nil,
 		kubeClient:        nil,
-		rootMount:         "/",
 		bootedOSImageURL:  "test",
 	}
 
@@ -205,7 +203,6 @@ func TestReconcilableSSH(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
-		rootMount:         "/",
 		bootedOSImageURL:  "test",
 	}
 
@@ -295,7 +292,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
-		rootMount:         "/",
 		bootedOSImageURL:  "test",
 	}
 	// Set up machineconfigs that are identical except for SSH keys
@@ -348,7 +344,6 @@ func TestInvalidIgnConfig(t *testing.T) {
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
-		rootMount:         "/",
 		bootedOSImageURL:  "test",
 	}
 

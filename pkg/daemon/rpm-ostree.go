@@ -45,7 +45,7 @@ type RpmOstreeDeployment struct {
 // around content deployment
 type NodeUpdaterClient interface {
 	GetStatus() (string, error)
-	GetBootedOSImageURL(string) (string, string, error)
+	GetBootedOSImageURL() (string, string, error)
 	RunPivot(string) error
 }
 
@@ -59,9 +59,9 @@ func NewNodeUpdaterClient() NodeUpdaterClient {
 }
 
 // getBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) getBootedDeployment(rootMount string) (*RpmOstreeDeployment, error) {
+func (r *RpmOstreeClient) getBootedDeployment() (*RpmOstreeDeployment, error) {
 	var rosState RpmOstreeState
-	output, err := RunGetOut("chroot", rootMount, "rpm-ostree", "status", "--json")
+	output, err := RunGetOut("rpm-ostree", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +90,8 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 }
 
 // GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
-func (r *RpmOstreeClient) GetBootedOSImageURL(rootMount string) (string, string, error) {
-	bootedDeployment, err := r.getBootedDeployment(rootMount)
+func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
+	bootedDeployment, err := r.getBootedDeployment()
 	if err != nil {
 		return "", "", err
 	}
