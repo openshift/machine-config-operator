@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -72,18 +74,6 @@ func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, 
 	return t.CloseAtomicallyReplace()
 }
 
-func (dn *Daemon) writePendingState(desiredConfig *mcfgv1.MachineConfig) error {
-	t := &pendingConfigState{
-		PendingConfig: desiredConfig.GetName(),
-		BootID:        dn.bootID,
-	}
-	b, err := json.Marshal(t)
-	if err != nil {
-		return err
-	}
-	return writeFileAtomicallyWithDefaults(pathStateJSON, b)
-}
-
 func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	return &corev1.ObjectReference{
 		Kind: "Node",
@@ -99,13 +89,13 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	if err := dn.writePendingState(newConfig); err != nil {
-		return errors.Wrapf(err, "writing pending state")
+	if err := dn.storePendingState(newConfig, 1); err != nil {
+		return errors.Wrap(err, "failed to log pending config")
 	}
 	defer func() {
 		if retErr != nil {
-			if err := os.Remove(pathStateJSON); err != nil {
-				retErr = errors.Wrapf(retErr, "error removing pending config file %v", err)
+			if err := dn.storePendingState(newConfig, 0); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back pending config %v", err)
 				return
 			}
 		}
@@ -698,6 +688,53 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	return nil
+}
+
+// getPendingState loads the JSON state we cache across attempting to apply
+// a config+reboot.  If no pending state is available, ("", nil) will be returned.
+// The bootID is stored in the pending state; if it is unchanged, we assume
+// that we failed to reboot; that for now should be a fatal error, in order to avoid
+// reboot loops.
+func (dn *Daemon) getPendingState() (string, error) {
+	journalOutput, err := exec.Command("journalctl", "-o", "json", fmt.Sprintf("MESSAGE_ID=%s", pendingStateMessageID)).CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	if len(journalOutput) == 0 {
+		return "", nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(journalOutput)), "\n")
+	last := lines[len(lines)-1]
+	type journalMsg struct {
+		Message string `json:"MESSAGE,omitempty"`
+		// TODO(runcom): journal messages have a _BOOT_ID field, might use that
+		BootID  string `json:"BOOT_ID,omitempty"`
+		Pending string `json:"PENDING,omitempty"`
+	}
+	entry := &journalMsg{}
+	if err := json.Unmarshal([]byte(last), entry); err != nil {
+		return "", errors.Wrap(err, "getting pending state from journal")
+	}
+	if entry.BootID == dn.bootID {
+		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", entry.Message, dn.bootID)
+	}
+	if entry.Pending == "1" {
+		return entry.Message, nil
+	}
+	return "", nil
+}
+
+func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int) error {
+	logger := exec.Command("logger", "--journald")
+
+	var pendingState bytes.Buffer
+	pendingState.Write([]byte(fmt.Sprintf(`MESSAGE_ID=%s
+MESSAGE=%s
+BOOT_ID=%s
+PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending)))
+
+	logger.Stdin = &pendingState
+	return logger.Run()
 }
 
 // Log a message to the systemd journal as well as our stdout
