@@ -23,7 +23,7 @@ type RpmOstreeClientMock struct {
 
 // GetBootedOSImageURL implements a test version of RpmOStreeClients GetBootedOSImageURL.
 // It returns an OsImageURL, Version, and Error as defined in GetBootedOSImageURLReturns in order.
-func (r RpmOstreeClientMock) GetBootedOSImageURL(string) (string, string, error) {
+func (r RpmOstreeClientMock) GetBootedOSImageURL() (string, string, error) {
 	returnValues := r.GetBootedOSImageURLReturns[0]
 	if len(r.GetBootedOSImageURLReturns) > 1 {
 		r.GetBootedOSImageURLReturns = r.GetBootedOSImageURLReturns[1:]
