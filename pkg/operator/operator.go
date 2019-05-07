@@ -389,8 +389,11 @@ func (optr *Operator) sync(key string) error {
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 	}
 
+	// TODO(abhinavdahiya): remove this migration when https://github.com/openshift/installer/pull/1718 merges
+	apiServerURL := getAPIServerURL(infra)
+
 	// create renderConfig
-	rc := getRenderConfig(namespace, string(kubeAPIServerServingCABytes), spec, imgs, infra.Status.APIServerURL)
+	rc := getRenderConfig(namespace, string(kubeAPIServerServingCABytes), spec, imgs, apiServerURL)
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
@@ -466,4 +469,12 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		APIServerURL:           apiServerURL,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 	}
+}
+
+func getAPIServerURL(infra *configv1.Infrastructure) string {
+	apiServerURL := infra.Status.APIServerInternalURL
+	if apiServerURL == "" {
+		apiServerURL = infra.Status.APIServerURL
+	}
+	return apiServerURL
 }
