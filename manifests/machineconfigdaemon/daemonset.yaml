@@ -37,12 +37,12 @@ spec:
       serviceAccountName: machine-config-daemon
       terminationGracePeriodSeconds: 300
       tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
-        - key: node-role.kubernetes.io/etcd
-          operator: Exists
-          effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
       nodeSelector:
         beta.kubernetes.io/os: linux
       priorityClassName: "system-node-critical"
