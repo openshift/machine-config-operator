@@ -94,7 +94,7 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
-func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) error {
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
@@ -102,14 +102,6 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	if err := dn.writePendingState(newConfig); err != nil {
 		return errors.Wrapf(err, "writing pending state")
 	}
-	defer func() {
-		if retErr != nil {
-			if err := os.Remove(pathStateJSON); err != nil {
-				retErr = errors.Wrapf(retErr, "error removing pending config file %v", err)
-				return
-			}
-		}
-	}()
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
 	}
