@@ -34,9 +34,12 @@ spec:
       priorityClassName: "system-cluster-critical"
       serviceAccountName: machine-config-server
       tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
       volumes:
       - name: node-bootstrap-token
         secret:
