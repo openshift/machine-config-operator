@@ -106,7 +106,7 @@ func RenderBootstrap(
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 	}
 
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, imgs, infra.Status.APIServerURL)
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, imgs, infra.Status.APIServerInternalURL)
 
 	manifests := []struct {
 		name     string
