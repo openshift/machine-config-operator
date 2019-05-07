@@ -348,6 +348,7 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "MCDSyncFailure", err.Error())
 
 	if dn.queue.NumRequeues(key) < maxRetries {
+		// This is at V(2) since the updateErrorState() call above ends up logging too
 		glog.V(2).Infof("Error syncing node %v: %v", key, err)
 		dn.queue.AddRateLimited(key)
 		return
@@ -408,7 +409,6 @@ func (dn *Daemon) syncNode(key string) error {
 		}
 		if current != nil || desired != nil {
 			if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
-				glog.Infof("Unable to apply update: %s", err)
 				return err
 			}
 		}

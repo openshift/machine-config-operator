@@ -191,7 +191,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
-		dn.logSystem(wrappedErr.Error())
 		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
 	dn.logSystem("Starting update from %s to %s", oldConfigName, newConfigName)
@@ -236,7 +235,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // config currently.
 
 func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	glog.Info("Checking if configs are reconcilable")
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
