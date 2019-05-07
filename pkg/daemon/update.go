@@ -149,7 +149,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	// reboot. this function shouldn't actually return.
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, exec.Command(defaultRebootCommand))
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, rebootCommand(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName())))
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
@@ -768,9 +768,11 @@ func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exe
 
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
-	err := rebootCmd.Run()
-	if err != nil {
-		return errors.Wrapf(err, "failed to reboot")
+	// We're not returning the error from the reboot command as it can be terminated by
+	// the system itself with signal: terminated. We can't catch the subprocess termination signal
+	// either, we just have one for the MCD itself.
+	if err := rebootCmd.Run(); err != nil {
+		dn.logSystem("failed to run reboot: %v", err)
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
