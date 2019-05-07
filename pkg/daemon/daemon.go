@@ -167,8 +167,12 @@ const (
 
 var (
 	defaultRebootTimeout = 24 * time.Hour
-	defaultRebootCommand = "reboot"
 )
+
+func rebootCommand(rationale string) *exec.Cmd {
+	return exec.Command("systemd-run", "--unit", "machine-config-daemon-reboot",
+		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale), "reboot")
+}
 
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
@@ -932,7 +936,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
 		return err
 	}
-	return dn.reboot("runOnceFromIgnition complete", defaultRebootTimeout, exec.Command(defaultRebootCommand))
+	return dn.reboot("runOnceFromIgnition complete", defaultRebootTimeout, rebootCommand("runOnceFromIgnition complete"))
 }
 
 func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
