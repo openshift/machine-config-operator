@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -728,10 +727,10 @@ func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int
 	logger := exec.Command("logger", "--journald")
 
 	var pendingState bytes.Buffer
-	pendingState.Write([]byte(fmt.Sprintf(`MESSAGE_ID=%s
+	pendingState.WriteString(fmt.Sprintf(`MESSAGE_ID=%s
 MESSAGE=%s
 BOOT_ID=%s
-PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending)))
+PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
 
 	logger.Stdin = &pendingState
 	return logger.Run()
@@ -746,21 +745,13 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	// subprocess rather than talking to journald in process since
 	// I worry about the golang library having a connection pre-chroot.
 	logger := exec.Command("logger")
-	stdin, err := logger.StdinPipe()
-	if err != nil {
-		glog.Errorf("failed to get stdin pipe: %v", err)
-		return
-	}
 
-	go func() {
-		defer stdin.Close()
-		io.WriteString(stdin, fmt.Sprintf("machine-config-daemon[%d]: ", os.Getpid()))
-		io.WriteString(stdin, message)
-	}()
-	err = logger.Run()
-	if err != nil {
+	var log bytes.Buffer
+	log.WriteString(fmt.Sprintf("machine-config-daemon[%d]: %s", os.Getpid(), message))
+
+	logger.Stdin = &log
+	if err := logger.Run(); err != nil {
 		glog.Errorf("failed to invoke logger: %v", err)
-		return
 	}
 }
 
