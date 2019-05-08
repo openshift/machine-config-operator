@@ -128,38 +128,6 @@ func TestCompareOSImageURL(t *testing.T) {
 	}
 }
 
-func TestDaemonOnceFromNoPanic(t *testing.T) {
-	if _, err := os.Stat("/proc/sys/kernel/random/boot_id"); os.IsNotExist(err) {
-		t.Skip("we're not on linux")
-	}
-
-	exitCh := make(chan error)
-	defer close(exitCh)
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	// This is how a onceFrom daemon is initialized
-	// and it shouldn't panic assuming kubeClient is there
-	dn, err := New(
-		"/",
-		"testnodename",
-		"testos",
-		NewNodeUpdaterClient(),
-		"",
-		"test",
-		false,
-		nil,
-		k8sfake.NewSimpleClientset(),
-		false,
-		"",
-		nil,
-		exitCh,
-		stopCh,
-	)
-	require.Nil(t, err)
-	require.NotPanics(t, func() { dn.triggerUpdateWithMachineConfig(&mcfgv1.MachineConfig{}, &mcfgv1.MachineConfig{}) })
-}
-
 type fixture struct {
 	t *testing.T
 
