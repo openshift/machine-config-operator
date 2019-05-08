@@ -505,6 +505,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 // updates shouldn't return, and should just reboot the node.
 func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) error {
 	dn.logSystem("Starting to manage node: %s", dn.name)
+	dn.LogSystemData()
 
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
@@ -766,14 +767,10 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 	return p.PendingConfig, nil
 }
 
-// CheckStateOnBoot is a core entrypoint for our state machine.
-// It determines whether we're in our desired state, or if we're
-// transitioning between states, and whether or not we need to update
-// to a new state. It also checks if someone jumped on a node before
-// the daemon took over.
-//
-// Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
-func (dn *Daemon) CheckStateOnBoot() error {
+// LogSystemData gathers data from the OS and adds it to our stdout; should only
+// be called once on MCD startup to log things which generally shouldn't change
+// dynamically after a reboot.
+func (dn *Daemon) LogSystemData() {
 	// Print status if available
 	if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
 		status, err := dn.NodeUpdaterClient.GetStatus()
@@ -783,6 +780,21 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		glog.Info(status)
 	}
 
+	boots, err := RunGetOut("journalctl", "--list-boots")
+	if err != nil {
+		glog.Errorf("Listing boots: %v", err)
+	}
+	glog.Infof("journalctl --list-boots:\n" + string(boots))
+}
+
+// CheckStateOnBoot is a core entrypoint for our state machine.
+// It determines whether we're in our desired state, or if we're
+// transitioning between states, and whether or not we need to update
+// to a new state. It also checks if someone jumped on a node before
+// the daemon took over.
+//
+// Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
+func (dn *Daemon) CheckStateOnBoot() error {
 	pendingConfigName, err := dn.getPendingConfig()
 	if err != nil {
 		return err
