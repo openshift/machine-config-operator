@@ -715,13 +715,13 @@ func (dn *Daemon) getPendingState() (string, error) {
 	if err := json.Unmarshal([]byte(last), entry); err != nil {
 		return "", errors.Wrap(err, "getting pending state from journal")
 	}
+	if entry.Pending == "0" {
+		return "", nil
+	}
 	if entry.BootID == dn.bootID {
 		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", entry.Message, dn.bootID)
 	}
-	if entry.Pending == "1" {
-		return entry.Message, nil
-	}
-	return "", nil
+	return entry.Message, nil
 }
 
 func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int) error {
