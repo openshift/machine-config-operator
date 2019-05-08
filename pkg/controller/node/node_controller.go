@@ -188,13 +188,13 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	oldNode := old.(*corev1.Node)
 	curNode := cur.(*corev1.Node)
 
-	if !nodeChanged(oldNode, curNode) {
+	if !isNodeManaged(curNode) {
 		return
 	}
 
 	pool, err := ctrl.getPoolForNode(curNode)
 	if err != nil {
-		glog.Errorf("error finding pools for node: %v", err)
+		glog.Errorf("error finding pool for node: %v", err)
 		return
 	}
 	if pool == nil {
@@ -202,17 +202,49 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	}
 	glog.V(4).Infof("Node %s updated", curNode.Name)
 
-	oldReady := isNodeReady(oldNode)
-	newReady := isNodeReady(curNode)
+	var changed bool
+	oldReadyErr := checkNodeReady(oldNode)
+	newReadyErr := checkNodeReady(curNode)
+	var oldReady, newReady string
+	if oldReadyErr != nil {
+		oldReady = oldReadyErr.Error()
+	} else {
+		oldReady = ""
+	}
+	if newReadyErr != nil {
+		newReady = newReadyErr.Error()
+	} else {
+		newReady = ""
+	}
 	if oldReady != newReady {
-		glog.Infof("Pool %s: node %s is now reporting ready: %v", pool.Name, curNode.Name, newReady)
+		changed = true
+		if newReadyErr != nil {
+			glog.Infof("Pool %s: node %s is now reporting unready: %v", pool.Name, curNode.Name, newReadyErr)
+		} else {
+			glog.Infof("Pool %s: node %s is now reporting ready", pool.Name, curNode.Name)
+		}
 	}
 
 	// Specifically log when a node has completed an update so the MCC logs are a useful central aggregate of state changes
 	if oldNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
-		curNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
+		curNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
+		curNode.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] == daemonconsts.MachineConfigDaemonStateDone {
 		glog.Infof("Pool %s: node %s has completed update to %s", pool.Name, curNode.Name, curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
+		changed = true
+	} else {
+		annos := []string{daemonconsts.CurrentMachineConfigAnnotationKey, daemonconsts.DesiredMachineConfigAnnotationKey, daemonconsts.MachineConfigDaemonStateAnnotationKey}
+		for _, anno := range annos {
+			if oldNode.Annotations[anno] != curNode.Annotations[anno] {
+				glog.Infof("Pool %s: node %s changed %s = %s", pool.Name, curNode.Name, anno, curNode.Annotations[anno])
+				changed = true
+			}
+		}
 	}
+
+	if !changed {
+		return
+	}
+
 	ctrl.enqueueMachineConfigPool(pool)
 }
 
@@ -242,28 +274,6 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 	}
 	glog.V(4).Infof("Node %s delete", node.Name)
 	ctrl.enqueueMachineConfigPool(pool)
-}
-
-func nodeChanged(old, cur *corev1.Node) bool {
-	if old.Annotations == nil && cur.Annotations != nil ||
-		old.Annotations != nil && cur.Annotations == nil {
-		return true
-	}
-
-	if old.Annotations == nil && cur.Annotations == nil {
-		return false
-	}
-
-	if old.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != cur.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] ||
-		old.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != cur.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
-		return true
-	}
-
-	if old.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] != cur.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] {
-		return true
-	}
-
-	return false
 }
 
 // getPoolForNode chooses the MachineConfigPool that should be used for a given node.
