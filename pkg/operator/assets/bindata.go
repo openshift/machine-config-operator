@@ -590,7 +590,7 @@ spec:
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
-      terminationGracePeriodSeconds: 300
+      terminationGracePeriodSeconds: 600
       tolerations:
       - key: node-role.kubernetes.io/master
         operator: Exists
