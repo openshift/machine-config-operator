@@ -117,6 +117,18 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	return status
 }
 
+// isNodeManaged checks whether the MCD has ever run on a node
+func isNodeManaged(node *corev1.Node) bool {
+	if node.Annotations == nil {
+		return false
+	}
+	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+	if !ok || cconfig == "" {
+		return false
+	}
+	return true
+}
+
 // getUpdatedMachines filters the provided nodes to ones whose current == desired
 // and the "done" flag is set.
 func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
@@ -159,7 +171,7 @@ func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node
 	return ready
 }
 
-func isNodeReady(node *corev1.Node) bool {
+func checkNodeReady(node *corev1.Node) error {
 	for i := range node.Status.Conditions {
 		cond := &node.Status.Conditions[i]
 		// We consider the node for scheduling only when its:
@@ -167,24 +179,24 @@ func isNodeReady(node *corev1.Node) bool {
 		// - NodeOutOfDisk condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			glog.Infof("Node %s is reporting NotReady", node.Name)
-			return false
+			return fmt.Errorf("Node %s is reporting NotReady", node.Name)
 		}
 		if cond.Type == corev1.NodeOutOfDisk && cond.Status != corev1.ConditionFalse {
-			glog.Infof("Node %s is reporting OutOfDisk", node.Name)
-			return false
+			return fmt.Errorf("Node %s is reporting OutOfDisk", node.Name)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
-			glog.Infof("Node %s is reporting NetworkUnavailable", node.Name)
-			return false
+			return fmt.Errorf("Node %s is reporting NetworkUnavailable", node.Name)
 		}
 	}
 	// Ignore nodes that are marked unschedulable
 	if node.Spec.Unschedulable {
-		glog.Infof("Node %s is reporting Unschedulable", node.Name)
-		return false
+		return fmt.Errorf("Node %s is reporting Unschedulable", node.Name)
 	}
-	return true
+	return nil
+}
+
+func isNodeReady(node *corev1.Node) bool {
+	return checkNodeReady(node) == nil
 }
 
 func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
