@@ -1,0 +1,7 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/dhcp/dhclient.conf"
+contents:
+  inline: |
+    send dhcp-client-identifier = hardware;
+    prepend domain-name-servers 127.0.0.1;

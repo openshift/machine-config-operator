@@ -8,4 +8,7 @@ contents:
         mdns $DOMAIN 3 $NAME
         cache 30
         reload
+        forward . /etc/resolv.conf {
+            except $DOMAIN
+        }
     }
