@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/time/rate"
 	imgref "github.com/containers/image/docker/reference"
 	ignv2 "github.com/coreos/ignition/config/v2_2"
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
@@ -144,17 +145,15 @@ const (
 	kubeletHealthzTimeout          = time.Duration(30 * time.Second)
 	kubeletHealthzFailureThreshold = 3
 
-	// TODO(runcom): increase retry and backoff?
-	//
-	// maxRetries is the number of times a node will be retried before it is dropped out of the queue.
-	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
-	// a node is going to be requeued:
-	//
-	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
-	maxRetries = 15
-
-	// updateDelay is a pause to deal with churn in Node
+	// updateDelay is the baseline speed at which we react to changes.  We don't
+	// need to react in milliseconds as any change would involve rebooting the node.
+	// Having this be relatively high limits the number of times we retry before
+	// the MCC/MCO will time out.  We don't want to spam our logs with the same
+	// error.
 	updateDelay = 5 * time.Second
+	// maxUpdateBackoff is the maximum time to react to a change as we back off
+	// in the face of errors.
+	maxUpdateBackoff = 60 * time.Second
 )
 
 type onceFromOrigin int
@@ -267,7 +266,12 @@ func NewClusterDrivenDaemon(
 		return nil, err
 	}
 
-	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigdaemon")
+	// Other controllers start out with the default controller limiter which retries
+	// in milliseconds; since any change here will involve rebooting the node
+	// we don't need to react in milliseconds.  See also updateDelay above.
+	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.V(2).Infof)
@@ -299,15 +303,6 @@ func (dn *Daemon) worker() {
 }
 
 func (dn *Daemon) processNextWorkItem() bool {
-	if dn.booting {
-		// any error here in bootstrap will cause a retry
-		if err := dn.bootstrapNode(); err != nil {
-			dn.updateErrorState(err)
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "MCDBootstrapSyncFailure", err.Error())
-			glog.Warningf("Booting the MCD errored with %v", err)
-		}
-		return true
-	}
 	key, quit := dn.queue.Get()
 	if quit {
 		return false
@@ -349,19 +344,9 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 	}
 
 	dn.updateErrorState(err)
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "MCDSyncFailure", err.Error())
-
-	if dn.queue.NumRequeues(key) < maxRetries {
-		// This is at V(2) since the updateErrorState() call above ends up logging too
-		glog.V(2).Infof("Error syncing node %v: %v", key, err)
-		dn.queue.AddRateLimited(key)
-		return
-	}
-
-	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping node %q out of the queue: %v", key, err)
-	dn.queue.Forget(key)
-	dn.queue.AddAfter(key, 1*time.Minute)
+	// This is at V(2) since the updateErrorState() call above ends up logging too
+	glog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
+	dn.queue.AddRateLimited(key)
 }
 
 func (dn *Daemon) updateErrorState(err error) {
@@ -379,6 +364,14 @@ func (dn *Daemon) syncNode(key string) error {
 	defer func() {
 		glog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
 	}()
+
+	// Handle initial setup
+	if dn.booting {
+		if err := dn.bootstrapNode(); err != nil {
+			return errors.Wrapf(err, "during bootstrap")
+		}
+		return nil
+	}
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -421,20 +414,14 @@ func (dn *Daemon) syncNode(key string) error {
 	return nil
 }
 
-// enqueueAfter will enqueue a node after the provided amount of time.
-func (dn *Daemon) enqueueAfter(node *corev1.Node, after time.Duration) {
+// enqueueDefault calls a default enqueue function
+func (dn *Daemon) enqueueDefault(node *corev1.Node) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", node, err))
 		return
 	}
-
-	dn.queue.AddAfter(key, after)
-}
-
-// enqueueDefault calls a default enqueue function
-func (dn *Daemon) enqueueDefault(node *corev1.Node) {
-	dn.enqueueAfter(node, updateDelay)
+	dn.queue.AddRateLimited(key)
 }
 
 const (
