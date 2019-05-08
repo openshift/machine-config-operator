@@ -390,7 +390,7 @@ func (optr *Operator) sync(key string) error {
 	}
 
 	// create renderConfig
-	rc := getRenderConfig(namespace, string(kubeAPIServerServingCABytes), spec, imgs, infra.Status.APIServerURL)
+	rc := getRenderConfig(namespace, string(kubeAPIServerServingCABytes), spec, imgs, infra.Status.APIServerInternalURL)
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
