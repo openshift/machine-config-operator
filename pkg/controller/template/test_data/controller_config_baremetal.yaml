@@ -1,0 +1,17 @@
+apiVersion: "machineconfigurations.openshift.io/v1"
+kind: "ControllerConfig"
+spec:
+  clusterDNSIP: "10.3.0.10"
+  cloudProviderConfig: ""
+  etcdDiscoveryDomain: "my-test-cluster.installer.team.coreos.systems"
+  etcdInitialCount: 3
+  platform: "baremetal"
+  etcdCAData: ZHVtbXkgZXRjZC1jYQo=
+  rootCAData: ZHVtbXkgcm9vdC1jYQo=
+  pullSecret:
+    data: ZHVtbXkgZXRjZC1jYQo=
+  images:
+    etcd: image/etcd:1
+    setupEtcdEnv: image/setupEtcdEnv:1
+    infraImage: image/infraImage:1
+    kubeClientAgentImage: image/kubeClientAgentImage:1
