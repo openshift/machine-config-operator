@@ -743,6 +743,31 @@ func (dn *Daemon) LogSystemData() {
 	glog.Infof("journalctl --list-boots:\n" + string(boots))
 }
 
+// XXX: drop this
+// we need this compatibility layer for now
+func (dn *Daemon) getPendingConfig() (string, error) {
+	s, err := ioutil.ReadFile("/etc/machine-config-daemon/state.json")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", errors.Wrapf(err, "loading transient state")
+		}
+		return "", nil
+	}
+	type pendingConfigState struct {
+		PendingConfig string `json:"pendingConfig,omitempty"`
+		BootID        string `json:"bootID,omitempty"`
+	}
+	var p pendingConfigState
+	if err := json.Unmarshal([]byte(s), &p); err != nil {
+		return "", errors.Wrapf(err, "parsing transient state")
+	}
+
+	if p.BootID == dn.bootID {
+		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", p.PendingConfig, dn.bootID)
+	}
+	return p.PendingConfig, nil
+}
+
 // CheckStateOnBoot is a core entrypoint for our state machine.
 // It determines whether we're in our desired state, or if we're
 // transitioning between states, and whether or not we need to update
@@ -754,6 +779,14 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	pendingConfigName, err := dn.getPendingState()
 	if err != nil {
 		return err
+	}
+	// XXX: drop this
+	// we need this compatibility layer for now
+	if pendingConfigName == "" {
+		pendingConfigName, err = dn.getPendingConfig()
+		if err != nil {
+			return err
+		}
 	}
 	state, err := dn.getStateAndConfigs(pendingConfigName)
 	if err != nil {
