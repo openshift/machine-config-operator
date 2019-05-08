@@ -9,7 +9,7 @@ contents:
     ETCD_ELECTION_TIMEOUT=1000
 
     #[storage]
-    ETCD_QUOTA_BACKEND_BYTES=4294967296
+    ETCD_QUOTA_BACKEND_BYTES=7516192768
 
     #[logging]
     ETCD_DEBUG=false
