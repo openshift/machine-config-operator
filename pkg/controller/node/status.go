@@ -34,6 +34,8 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+	previousUpdated := mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated)
+
 	machineCount := int32(len(nodes))
 
 	updatedMachines := getUpdatedMachines(pool.Status.Configuration.Name, nodes)
@@ -75,8 +77,12 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0 {
 		//TODO: update api to only have one condition regarding status of update.
-		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, fmt.Sprintf("All nodes are updated with %s", pool.Status.Configuration.Name), "")
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", pool.Status.Configuration.Name)
+		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, updatedMsg, "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
+		if !previousUpdated {
+			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
+		}
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 	} else {
