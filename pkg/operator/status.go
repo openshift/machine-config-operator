@@ -242,7 +242,7 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 	ret := map[string]string{}
 	for _, pool := range pools {
 		p := pool.DeepCopy()
-		err := isMachineConfigPoolConfigurationValid(p, version.Version.String(), optr.mcLister.Get)
+		err := isMachineConfigPoolConfigurationValid(p, version.Hash, optr.mcLister.Get)
 		if err != nil {
 			glog.V(4).Infof("Skipping status for pool %s because %v", p.GetName(), err)
 			continue

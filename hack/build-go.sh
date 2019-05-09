@@ -20,7 +20,9 @@ if [ -z ${VERSION_OVERRIDE+a} ]; then
 	VERSION_OVERRIDE=$(git describe --abbrev=8 --dirty --always)
 fi
 
-GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE}"
+HASH=$(git rev-parse --verify 'HEAD^{commit}')
+
+GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE} -X ${REPO}/pkg/version.Hash=${HASH}"
 
 eval $(go env)
 
@@ -32,5 +34,5 @@ mkdir -p ${BIN_PATH}
 
 CGO_ENABLED=0
 
-echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE})"
+echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE}, ${HASH})"
 CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build ${GOFLAGS} -ldflags "${GLDFLAGS} -s -w" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}

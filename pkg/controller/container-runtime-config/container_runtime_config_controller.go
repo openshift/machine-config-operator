@@ -508,7 +508,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 			mc.Spec.Config = createNewCtrRuntimeConfigIgnition(storageTOML, crioTOML)
 			mc.SetAnnotations(map[string]string{
-				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			})
 			oref := metav1.NewControllerRef(cfg, controllerKind)
 			mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
@@ -625,7 +625,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				// if the configuration for the registries is equal, we still need to compare
 				// the generated controller version because during an upgrade we need a new one
 				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-				if mcCtrlVersion == version.Version.String() {
+				if mcCtrlVersion == version.Hash {
 					applied = false
 					return nil
 				}
@@ -635,7 +635,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 			mc.Spec.Config = registriesIgn
 			mc.ObjectMeta.Annotations = map[string]string{
-				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
+				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			}
 			mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
 				metav1.OwnerReference{

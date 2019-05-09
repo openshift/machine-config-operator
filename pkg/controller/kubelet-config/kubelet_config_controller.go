@@ -474,7 +474,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
 		mc.SetAnnotations(map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Version.String(),
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		})
 		oref := metav1.NewControllerRef(cfg, controllerKind)
 		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
