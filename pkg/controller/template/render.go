@@ -83,7 +83,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 		if cfg.Annotations == nil {
 			cfg.Annotations = map[string]string{}
 		}
-		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Version.String()
+		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Hash
 	}
 
 	return cfgs, nil
