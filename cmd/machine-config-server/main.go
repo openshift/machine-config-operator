@@ -5,6 +5,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 )
 
 const (
@@ -19,12 +21,24 @@ var (
 	}
 
 	rootOpts struct {
-		sport  int
-		isport int
-		cert   string
-		key    string
+		address string
+		sport   int
+		isport  int
+		cert    string
+		key     string
 	}
 )
+
+// findDefaultAddress uses the k8s ChooseHostInterface to provide a default
+// address to bind to. This function panic's on ChooseHostInterface error.
+func findDefaultAddress() string {
+	ip, err := utilnet.ChooseHostInterface()
+	if err != nil {
+		panic(err)
+	}
+
+	return ip.String()
+}
 
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
@@ -32,6 +46,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "/etc/ssl/mcs/tls.crt", "cert file for TLS")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
 	rootCmd.PersistentFlags().IntVar(&rootOpts.isport, "insecure-port", 22624, "insecure port to serve ignition configs")
+	rootCmd.PersistentFlags().StringVar(&rootOpts.address, "address", findDefaultAddress(), "address to bind ports on")
 }
 
 func main() {

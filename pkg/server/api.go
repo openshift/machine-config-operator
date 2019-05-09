@@ -17,6 +17,7 @@ type poolRequest struct {
 // for providing the machine configs.
 type APIServer struct {
 	handler  http.Handler
+	address  string
 	port     int
 	insecure bool
 	cert     string
@@ -26,7 +27,7 @@ type APIServer struct {
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
+func NewAPIServer(a *APIHandler, address string, p int, is bool, c, k string) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
 	mux.Handle("/healthz", &healthHandler{})
@@ -34,6 +35,7 @@ func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 
 	return &APIServer{
 		handler:  mux,
+		address:  address,
 		port:     p,
 		insecure: is,
 		cert:     c,

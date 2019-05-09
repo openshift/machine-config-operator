@@ -43,8 +43,8 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	}
 
 	apiHandler := server.NewServerAPIHandler(bs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
-	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
+	secureServer := server.NewAPIServer(apiHandler, rootOpts.address, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
+	insecureServer := server.NewAPIServer(apiHandler, rootOpts.address, rootOpts.isport, true, "", "")
 
 	stopCh := make(chan struct{})
 	go secureServer.Serve()
