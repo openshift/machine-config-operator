@@ -34,6 +34,8 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
+	previousUpdated := mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated)
+
 	machineCount := int32(len(nodes))
 
 	updatedMachines := getUpdatedMachines(pool.Status.Configuration.Name, nodes)
@@ -42,10 +44,10 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	readyMachines := getReadyMachines(pool.Status.Configuration.Name, nodes)
 	readyMachineCount := int32(len(readyMachines))
 
-	unavailableMachines := getUnavailableMachines(pool.Status.Configuration.Name, nodes)
+	unavailableMachines := getUnavailableMachines(nodes)
 	unavailableMachineCount := int32(len(unavailableMachines))
 
-	degradedMachines := getDegradedMachines(pool.Status.Configuration.Name, nodes)
+	degradedMachines := getDegradedMachines(nodes)
 	degradedReasons := []string{}
 	for _, n := range degradedMachines {
 		reason, ok := n.Annotations[daemonconsts.MachineConfigDaemonReasonAnnotationKey]
@@ -75,8 +77,12 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0 {
 		//TODO: update api to only have one condition regarding status of update.
-		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, fmt.Sprintf("All nodes are updated with %s", pool.Status.Configuration.Name), "")
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", pool.Status.Configuration.Name)
+		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, updatedMsg, "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
+		if !previousUpdated {
+			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
+		}
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 	} else {
@@ -111,29 +117,66 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	return status
 }
 
-// getUpdatedMachines filters the provided nodes to ones whose current == desired
+// isNodeManaged checks whether the MCD has ever run on a node
+func isNodeManaged(node *corev1.Node) bool {
+	if node.Annotations == nil {
+		return false
+	}
+	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+	if !ok || cconfig == "" {
+		return false
+	}
+	return true
+}
+
+/// isNodeDone returns true if the current == desired and the MCD has marked done.
+func isNodeDone(node *corev1.Node) bool {
+	if node.Annotations == nil {
+		return false
+	}
+	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+	if !ok || cconfig == "" {
+		return false
+	}
+	dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+	if !ok || dconfig == "" {
+		return false
+	}
+
+	return cconfig == dconfig && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
+}
+
+// isNodeDoneAt checks whether a node is fully updated to a targetConfig
+func isNodeDoneAt(node *corev1.Node, targetConfig string) bool {
+	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == targetConfig
+}
+
+// isNodeMCDDone checks the MCD state
+func isNodeMCDState(node *corev1.Node, state string) bool {
+	dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
+	if !ok || dstate == "" {
+		return false
+	}
+
+	return dstate == state
+}
+
+// isNodeMCDFailing says whether the MCD has unsuccessfully applied an update
+func isNodeMCDFailing(node *corev1.Node) bool {
+	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
+		return false
+	}	
+	return isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDegraded) ||
+		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateUnreconcilable)
+}
+
+// getUpdatedMachines filters the provided nodes to ones whose current config
+// matches the desired config, which also matches the target config.
 // and the "done" flag is set.
-func getUpdatedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
+func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var updated []*corev1.Node
 	for _, node := range nodes {
-		if node.Annotations == nil {
-			continue
-		}
-		cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
-		if !ok || cconfig == "" {
-			continue
-		}
-		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-		if !ok || cconfig == "" {
-			continue
-		}
-
-		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
-		if !ok || dstate == "" {
-			continue
-		}
-
-		if cconfig == currentConfig && dconfig == currentConfig && dstate == daemonconsts.MachineConfigDaemonStateDone {
+		if isNodeDoneAt(node, poolTargetConfig) {
 			updated = append(updated, node)
 		}
 	}
@@ -153,7 +196,7 @@ func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node
 	return ready
 }
 
-func isNodeReady(node *corev1.Node) bool {
+func checkNodeReady(node *corev1.Node) error {
 	for i := range node.Status.Conditions {
 		cond := &node.Status.Conditions[i]
 		// We consider the node for scheduling only when its:
@@ -161,51 +204,63 @@ func isNodeReady(node *corev1.Node) bool {
 		// - NodeOutOfDisk condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			glog.Infof("Node %s is reporting NotReady", node.Name)
-			return false
+			return fmt.Errorf("Node %s is reporting NotReady", node.Name)
 		}
 		if cond.Type == corev1.NodeOutOfDisk && cond.Status != corev1.ConditionFalse {
-			glog.Infof("Node %s is reporting OutOfDisk", node.Name)
-			return false
+			return fmt.Errorf("Node %s is reporting OutOfDisk", node.Name)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
-			glog.Infof("Node %s is reporting NetworkUnavailable", node.Name)
-			return false
+			return fmt.Errorf("Node %s is reporting NetworkUnavailable", node.Name)
 		}
 	}
 	// Ignore nodes that are marked unschedulable
 	if node.Spec.Unschedulable {
-		glog.Infof("Node %s is reporting Unschedulable", node.Name)
-		return false
+		return fmt.Errorf("Node %s is reporting Unschedulable", node.Name)
 	}
-	return true
+	return nil
 }
 
-func getUnavailableMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
+func isNodeReady(node *corev1.Node) bool {
+	return checkNodeReady(node) == nil
+}
+
+// isNodeUnavailable is the backend for getUnavailableMachines;
+// see the docs for that for more information.
+func isNodeUnavailable(node *corev1.Node) bool {
+	// Unready nodes are unavailable
+	if !isNodeReady(node) {
+		return true
+	}
+	// Ready nodes are not unavailable
+	if isNodeDone(node) {
+		return false
+	}
+	// Now we know the node isn't ready - the current config must not
+	// equal target.  We want to further filter down on the MCD state.
+	// If a MCD is in a terminal (failing) state then we can safely retarget it.
+	// to a different config.  Or to say it another way, a node is unavailable
+	// if the MCD is working, or hasn't started work but the configs differ.
+	return !isNodeMCDFailing(node)
+}
+
+// getUnavailableMachines returns the set of nodes which are
+// either marked unscheduleable, or have a MCD actively working.
+// The reason for checking the MCD state is that if the MCD is actively
+// working (or hasn't started) then the node *may* go unschedulable in the future, so we
+// don't want to potentially start another node update exceeding our
+// maxUnavailable.
+// Somewhat the opposite of getReadyNodes().
+func getUnavailableMachines(nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
 	for _, node := range nodes {
-		if node.Annotations == nil {
-			continue
-		}
-		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-		if !ok || dconfig == "" {
-			continue
-		}
-		cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
-		if !ok || cconfig == "" {
-			continue
-		}
-
-		nodeNotReady := !isNodeReady(node)
-		if dconfig == currentConfig && (dconfig != cconfig || nodeNotReady) {
+		if isNodeUnavailable(node) {
 			unavail = append(unavail, node)
-			glog.V(2).Infof("Node %s unavailable: different configs (desired: %s, current %s) or node not ready %v", node.Name, dconfig, cconfig, nodeNotReady)
 		}
 	}
 	return unavail
 }
 
-func getDegradedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
+func getDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
 	var degraded []*corev1.Node
 	for _, node := range nodes {
 		if node.Annotations == nil {
@@ -220,8 +275,7 @@ func getDegradedMachines(currentConfig string, nodes []*corev1.Node) []*corev1.N
 			continue
 		}
 
-		if dconfig == currentConfig &&
-			(dstate == daemonconsts.MachineConfigDaemonStateDegraded || dstate == daemonconsts.MachineConfigDaemonStateUnreconcilable) {
+		if dstate == daemonconsts.MachineConfigDaemonStateDegraded || dstate == daemonconsts.MachineConfigDaemonStateUnreconcilable {
 			degraded = append(degraded, node)
 		}
 	}
