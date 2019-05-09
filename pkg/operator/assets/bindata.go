@@ -851,14 +851,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: system-bootstrap-approve-node-client-csr
-subjects:
-- kind: ServiceAccount
-  name: node-bootstrapper
-  namespace: openshift-machine-config-operator
 roleRef:
   kind: ClusterRole
   name: system:certificates.k8s.io:certificatesigningrequests:nodeclient
-  apiGroup: rbac.authorization.k8s.io`)
+  apiGroup: rbac.authorization.k8s.io
+`)
 
 func manifestsMachineconfigserverCsrApproverRoleBindingYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigserverCsrApproverRoleBindingYaml, nil
