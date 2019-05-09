@@ -541,7 +541,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	if merged.Annotations == nil {
 		merged.Annotations = map[string]string{}
 	}
-	merged.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Version.String()
+	merged.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Hash
 
 	return merged, nil
 }
