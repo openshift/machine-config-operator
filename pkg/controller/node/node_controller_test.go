@@ -340,6 +340,7 @@ func TestMaxUnavailable(t *testing.T) {
 	}
 
 	tests := []struct {
+		poolName string
 		maxUnavail *intstr.IntOrString
 
 		expected int
@@ -374,11 +375,20 @@ func TestMaxUnavailable(t *testing.T) {
 
 		expected: 0,
 		err:      true,
+	}, {
+		poolName:   "master",
+		maxUnavail: intStrPtr(intstr.FromInt(2)),
+
+		expected: 1,
+		err:      false,
 	}}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: test.poolName,
+				},
 				Spec: mcfgv1.MachineConfigPoolSpec{
 					MaxUnavailable: test.maxUnavail,
 				},
@@ -400,7 +410,7 @@ func TestGetCandidateMachines(t *testing.T) {
 		nodes    []*corev1.Node
 		progress int
 
-		expected []*corev1.Node
+		expected []string
 	}{{
 		//no progress
 		progress: 1,
@@ -420,7 +430,7 @@ func TestGetCandidateMachines(t *testing.T) {
 		},
 		expected: nil,
 	}, {
-		//no progress
+		//no progress because we have an unavailable node
 		progress: 1,
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
@@ -429,8 +439,8 @@ func TestGetCandidateMachines(t *testing.T) {
 		},
 		expected: nil,
 	}, {
-		//progress all available nodes
-		progress: 2,
+		// node-2 is going to change config, so we can only progress one more
+		progress: 3,
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
@@ -438,27 +448,55 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: []*corev1.Node{newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue), newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue)},
+		expected: []string{"node-3"},
 	}, {
-		//progress nodes but limited
+		// We have a node working, don't start anything else
 		progress: 1,
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
+			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: []*corev1.Node{newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue)},
+		expected: nil,
 	}, {
 		//progress on old stuck node
 		progress: 1,
 		nodes: []*corev1.Node{
 			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v0.1", "v0.2", corev1.ConditionFalse),
+			newNodeWithReadyAndDaemonState("node-1", "v0.1", "v0.2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
 			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: []*corev1.Node{newNodeWithReady("node-1", "v0.1", "v0.2", corev1.ConditionFalse)},
+		expected: []string{"node-1"},
+	}, {
+		// Don't change a degraded node to same config, but also don't start another
+		progress: 1,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReadyAndDaemonState("node-1", "v1", "v1", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
+		},
+		expected: nil,
+	}, {
+		// Must be able to roll back
+		progress: 1,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReadyAndDaemonState("node-2", "v1", "v2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
+			newNodeWithReady("node-3", "v1", "v1", corev1.ConditionTrue),
+		},
+		expected: []string{"node-2"},
+	}, {
+		// Validate we also don't affect nodes which haven't started work
+		progress: 1,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReadyAndDaemonState("node-2", "v1", "v2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDone),
+			newNodeWithReady("node-3", "v1", "v1", corev1.ConditionTrue),
+		},
+		expected: nil,
 	}}
 
 	for idx, test := range tests {
@@ -470,88 +508,12 @@ func TestGetCandidateMachines(t *testing.T) {
 			}
 
 			got := getCandidateMachines(pool, test.nodes, test.progress)
-			if !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("mismatch: got %v want: %v", got, test.expected)
+			var nodeNames []string
+			for _, node := range got {
+				nodeNames = append(nodeNames, node.Name)
 			}
-		})
-	}
-}
-
-func TestMakeProgress(t *testing.T) {
-	tests := []struct {
-		nodes []*corev1.Node
-		max   intstr.IntOrString
-
-		expected int
-	}{{
-		// no progress can be made
-		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-		},
-		max:      intstr.FromInt(2),
-		expected: 0,
-	}, {
-		// no progress can be made
-		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-		},
-		max:      intstr.FromString("30%"),
-		expected: 0,
-	}, {
-		// no progress can be made
-		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-		},
-		max:      intstr.FromString("50%"),
-		expected: 0,
-	}, {
-		// progress can be made, 1
-		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-		},
-		max:      intstr.FromString("50%"),
-		expected: 1,
-	}, {
-		// progress can be made, 1
-		nodes: []*corev1.Node{
-			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
-			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
-		},
-		max:      intstr.FromInt(2),
-		expected: 1,
-	}}
-
-	for idx, test := range tests {
-		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			pool := &mcfgv1.MachineConfigPool{
-				Spec: mcfgv1.MachineConfigPoolSpec{
-					MaxUnavailable: &test.max,
-				},
-				Status: mcfgv1.MachineConfigPoolStatus{
-					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: "v1"}},
-				},
-			}
-			got, err := makeProgress(pool, test.nodes)
-			if err != nil {
-				t.Fatal("expected non-nil error")
-			}
-
-			if got != test.expected {
-				t.Fatalf("mismatch progress: got %d want: %d", got, test.expected)
+			if !reflect.DeepEqual(nodeNames, test.expected) {
+				t.Fatalf("mismatch: got %v want: %v", nodeNames, test.expected)
 			}
 		})
 	}
