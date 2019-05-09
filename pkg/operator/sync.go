@@ -353,7 +353,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error 
 			return false, nil
 		}
 		for _, pool := range pools {
-			if err := isMachineConfigPoolConfigurationValid(pool, version.Version.String(), optr.mcLister.Get); err != nil {
+			if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, optr.mcLister.Get); err != nil {
 				lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
 				return false, nil
 			}

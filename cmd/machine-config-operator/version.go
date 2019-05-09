@@ -26,7 +26,7 @@ func runVersionCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	program := "MachineConfigOperator"
-	version := "v" + version.Version.String()
+	version := "v" + version.Version.String() + "-" + version.Hash
 
 	fmt.Println(program, version)
 }
