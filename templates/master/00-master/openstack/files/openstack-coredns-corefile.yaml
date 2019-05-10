@@ -1,14 +1,14 @@
 filesystem: "root"
 mode: 0644
-path: "/etc/kubernetes/static-pod-resources/coredns/Corefile.template"
+path: "/etc/kubernetes/static-pod-resources/coredns/Corefile"
 contents:
   inline: |
     . {
         log
-        mdns $DOMAIN 3 $NAME
+        mdns {{.EtcdDiscoveryDomain}} 3 {{(split "." .EtcdDiscoveryDomain)._0}}
         cache 30
         reload
         forward . /etc/resolv.conf {
-            except $DOMAIN
+            except {{.EtcdDiscoveryDomain}}
         }
     }
