@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/pkg/errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -10,8 +11,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	rest "k8s.io/client-go/rest"
+	clientset "k8s.io/client-go/kubernetes"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 )
@@ -22,6 +25,9 @@ const (
 	inClusterConfig = ""
 
 	bootstrapTokenDir = "/etc/mcs/bootstrap-token"
+
+	componentNamespace = "openshift-machine-config-operator"
+	ignitionAuth = "ignition-auth"
 )
 
 // ensure clusterServer implements the
@@ -29,6 +35,8 @@ const (
 var _ = Server(&clusterServer{})
 
 type clusterServer struct {
+	// kubeClient is used for the Ignition secret currently
+	kubeClient clientset.Interface
 	// machineClient is used to interact with the
 	// machine config, pool objects.
 	machineClient v1.MachineconfigurationV1Interface
@@ -48,8 +56,13 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
 	}
 
+	kc, err := clientset.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
 	mc := v1.NewForConfigOrDie(restConfig)
 	return &clusterServer{
+		kubeClient:     kc,
 		machineClient:  mc,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
@@ -57,8 +70,32 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
-func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
-	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machineConfigPool, metav1.GetOptions{})
+func (cs *clusterServer) GetConfig(cr poolRequest, auth string) (*ignv2_2types.Config, error) {	
+	authSecretObj, err := cs.kubeClient.CoreV1().Secrets(componentNamespace).Get(ignitionAuth, metav1.GetOptions{})
+	authEnabled := true
+	if err != nil {
+		// For backwards compat, allow any request if the secret isn't found
+		if apierrors.IsNotFound(err) {
+			authEnabled = false
+		} else {
+			return nil, errors.Wrapf(err, "getting ignition-auth")
+		}
+	}
+
+	name := cr.machineConfigPool
+
+	// If there's a secret, require that it was passed as a query parameter.
+	if authEnabled {
+		authSecret := string(authSecretObj.Data[name])
+		if auth != authSecret {
+			return nil, &configError {
+				msg: "Not authorized",
+				forbidden: true,
+			}
+		}
+	}
+
+	mp, err := cs.machineClient.MachineConfigPools().Get(name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}

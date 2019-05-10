@@ -12,6 +12,7 @@ import (
 	yaml "github.com/ghodss/yaml"
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 )
 
@@ -99,7 +100,7 @@ func TestBootstrapServer(t *testing.T) {
 	}
 	res, err := bs.GetConfig(poolRequest{
 		machineConfigPool: testPool,
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
@@ -151,6 +152,7 @@ func TestClusterServer(t *testing.T) {
 	}
 
 	csc := &clusterServer{
+		kubeClient:     k8sfake.NewSimpleClientset(),
 		machineClient:  cs.MachineconfigurationV1(),
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
@@ -174,7 +176,7 @@ func TestClusterServer(t *testing.T) {
 
 	res, err := csc.GetConfig(poolRequest{
 		machineConfigPool: testPool,
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}

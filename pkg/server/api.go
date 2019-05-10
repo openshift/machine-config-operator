@@ -90,15 +90,22 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auth := r.URL.Query().Get("auth")
+
 	cr := poolRequest{
 		machineConfigPool: path.Base(r.URL.Path),
 	}
 
-	conf, err := sh.server.GetConfig(cr)
+	conf, err := sh.server.GetConfig(cr, auth)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		if IsForbidden(err) {
+			w.WriteHeader(http.StatusForbidden)
+			glog.Infof("Denying unauthorized request: %v", err)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		}
 		return
 	}
 	if conf == nil && err == nil {

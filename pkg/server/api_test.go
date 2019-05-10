@@ -11,11 +11,11 @@ import (
 )
 
 type mockServer struct {
-	GetConfigFn func(poolRequest) (*ignv2_2types.Config, error)
+	GetConfigFn func(cr poolRequest, auth string) (*ignv2_2types.Config, error)
 }
 
-func (ms *mockServer) GetConfig(pr poolRequest) (*ignv2_2types.Config, error) {
-	return ms.GetConfigFn(pr)
+func (ms *mockServer) GetConfig(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
+	return ms.GetConfigFn(pr, auth)
 }
 
 type checkResponse func(t *testing.T, response *http.Response)
@@ -23,16 +23,25 @@ type checkResponse func(t *testing.T, response *http.Response)
 type scenario struct {
 	name          string
 	request       *http.Request
-	serverFunc    func(poolRequest) (*ignv2_2types.Config, error)
+	serverFunc    func(pr poolRequest, auth string) (*ignv2_2types.Config, error)
 	checkResponse checkResponse
 }
 
 func TestAPIHandler(t *testing.T) {
+	authServerFunc := func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
+		if auth == "letmein" {
+			return new(ignv2_2types.Config), nil
+		}
+		return nil, &configError {
+			msg: "Not authorized",
+			forbidden: true,
+		}
+	}
 	scenarios := []scenario{
 		{
 			name:    "get config path that does not exist",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -44,7 +53,7 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "get config path that exists",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -57,7 +66,7 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "head config path that exists",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -70,13 +79,34 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "post config path that exists",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "not auth",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master?auth=bad", nil),
+			serverFunc: authServerFunc,
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusForbidden)
+				checkContentLength(t, response, 0)
+				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "auth OK",
+			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master?auth=letmein", nil),
+			serverFunc: authServerFunc,
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				checkContentLength(t, response, 114)
+				checkBodyLength(t, response, 114)
 			},
 		},
 	}
@@ -102,7 +132,7 @@ func TestHealthzHandler(t *testing.T) {
 		{
 			name:    "get healthz",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -114,7 +144,7 @@ func TestHealthzHandler(t *testing.T) {
 		{
 			name:    "head healthz",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -126,7 +156,7 @@ func TestHealthzHandler(t *testing.T) {
 		{
 			name:    "post healthz",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -154,7 +184,7 @@ func TestDefaultHandler(t *testing.T) {
 		{
 			name:    "get root",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -166,7 +196,7 @@ func TestDefaultHandler(t *testing.T) {
 		{
 			name:    "head root",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -178,7 +208,7 @@ func TestDefaultHandler(t *testing.T) {
 		{
 			name:    "post root",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -206,7 +236,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get config path that does not exist",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -218,7 +248,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get config path that exists",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -231,7 +261,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "head config path that exists",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -244,7 +274,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "post config path that exists",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -256,7 +286,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get healthz",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -268,7 +298,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "head healthz",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -280,7 +310,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "post healthz",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -292,7 +322,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get root",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -304,7 +334,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "head root",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -316,7 +346,7 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "post root",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
+			serverFunc: func(pr poolRequest, auth string) (*ignv2_2types.Config, error) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {

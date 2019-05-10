@@ -796,6 +796,9 @@ rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
   verbs: ["*"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
 `)
 
 func manifestsMachineconfigserverClusterroleYamlBytes() ([]byte, error) {
