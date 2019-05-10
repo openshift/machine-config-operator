@@ -37,7 +37,7 @@ func runbootstrapCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v", version.Version)
+	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	if bootstrapOpts.manifestsDir == "" || bootstrapOpts.destinationDir == "" {
 		glog.Fatalf("--dest-dir or --manifest-dir not set")

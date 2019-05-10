@@ -34,7 +34,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v", version.Version)
+	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	if startOpts.apiserverURL == "" {
 		glog.Exitf("--apiserver-url cannot be empty")
