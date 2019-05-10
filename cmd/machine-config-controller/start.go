@@ -46,7 +46,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v", version.Version)
+	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {

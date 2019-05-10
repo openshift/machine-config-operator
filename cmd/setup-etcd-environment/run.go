@@ -43,7 +43,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v", version.Version)
+	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	if runOpts.discoverySRV == "" {
 		return errors.New("--discovery-srv cannot be empty")
