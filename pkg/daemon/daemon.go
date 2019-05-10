@@ -853,8 +853,8 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
 			return errors.Wrap(err, "error setting node's state to Done")
 		}
-		if err := dn.storePendingState(state.pendingConfig, 0); err != nil {
-			return err
+		if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
+			return errors.Wrapf(err, "failed to reset pending config: %s", string(out))
 		}
 
 		state.currentConfig = state.pendingConfig
