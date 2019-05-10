@@ -34,7 +34,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v", version.Version)
+	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	bs, err := server.NewBootstrapServer(bootstrapOpts.serverBaseDir, bootstrapOpts.serverKubeConfig)
 

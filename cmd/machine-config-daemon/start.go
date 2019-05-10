@@ -64,7 +64,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.V(2).Infof("Options parsed: %+v", startOpts)
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v", version.Version)
+	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	operatingSystem, err := daemon.GetHostRunningOS(startOpts.rootMount)
 	if err != nil {
