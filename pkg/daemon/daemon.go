@@ -117,6 +117,8 @@ type Daemon struct {
 	booting bool
 
 	currentConfigPath string
+
+	loggerSupportsJournal bool
 }
 
 const (
@@ -217,6 +219,7 @@ func New(
 	}
 	dn.currentConfigPath = currentConfigPath
 	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
+	dn.loggerSupportsJournal = dn.isLoggingToJournalSupported()
 	return dn, nil
 }
 
