@@ -89,13 +89,13 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	if err := dn.storePendingState(newConfig, 1); err != nil {
-		return errors.Wrap(err, "failed to log pending config")
+	if out, err := dn.storePendingState(newConfig, 1); err != nil {
+		return errors.Wrapf(err, "failed to log pending config: %s", string(out))
 	}
 	defer func() {
 		if retErr != nil {
-			if err := dn.storePendingState(newConfig, 0); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back pending config %v", err)
+			if out, err := dn.storePendingState(newConfig, 0); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back pending config %v: %s", err, string(out))
 				return
 			}
 		}
@@ -724,7 +724,7 @@ func (dn *Daemon) getPendingState() (string, error) {
 	return entry.Message, nil
 }
 
-func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int) error {
+func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int) ([]byte, error) {
 	logger := exec.Command("logger", "--journald")
 
 	var pendingState bytes.Buffer
@@ -734,7 +734,7 @@ BOOT_ID=%s
 PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending)))
 
 	logger.Stdin = &pendingState
-	return logger.Run()
+	return logger.CombinedOutput()
 }
 
 // Log a message to the systemd journal as well as our stdout
