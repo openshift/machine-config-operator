@@ -212,6 +212,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	if err := dn.storeCurrentConfigOnDisk(newConfig); err != nil {
+		return err
+	}
+	defer func() {
+		if retErr != nil {
+			if err := dn.storeCurrentConfigOnDisk(oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back current config on disk %v", err)
+				return
+			}
+		}
+	}()
+
 	return dn.updateOSAndReboot(newConfig)
 }
 
