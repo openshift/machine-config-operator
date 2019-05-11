@@ -95,6 +95,9 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 	defer func() {
 		if retErr != nil {
+			if dn.recorder != nil {
+				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfigRollBack", fmt.Sprintf("Rolling back pending config %s: %v", newConfig.GetName(), retErr))
+			}
 			if out, err := dn.storePendingState(newConfig, 0); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back pending config %v: %s", err, string(out))
 				return
