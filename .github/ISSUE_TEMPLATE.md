@@ -18,6 +18,11 @@ The easier it is for us to reproduce it, the faster it'll be fixed!
 
 Please don't include any private/sensitive information in your issue!
 
+SECURITY NOTICE:
+If you would like to report a Security Issue, please see our Security Section
+(https://github.com/openshift/machine-config-operator/tree/master/docs#security-response) 
+for details.
+
 ---------------------------------------------------
 BUG REPORT INFORMATION
 ---------------------------------------------------
