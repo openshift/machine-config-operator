@@ -792,13 +792,24 @@ func (dn *Daemon) getPendingState() (string, error) {
 		return "", errors.Wrap(err, "error running journalctl -o json")
 	}
 	if len(journalOutput) == 0 {
-			return "", nil
+		return "", nil
 	}
 	return dn.processJournalOutput(journalOutput)
 }
 
 func (dn *Daemon) storePendingStateLegacyLogger(pending *mcfgv1.MachineConfig, isPending int) ([]byte, error) {
 	glog.Info("logger doesn't support --jounald, logging json directly")
+
+	if isPending == 1 {
+		if err := dn.writePendingConfig(pending); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := os.Remove(pendingConfigPath); err != nil {
+			return nil, err
+		}
+	}
+
 	oldLogger := exec.Command("logger", fmt.Sprintf(`{"MESSAGE": "%s", "BOOT_ID": "%s", "PENDING": "%d", "OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK": "1"}`, pending.GetName(), dn.bootID, isPending))
 	return oldLogger.CombinedOutput()
 }

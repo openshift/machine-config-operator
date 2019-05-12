@@ -748,6 +748,28 @@ func (dn *Daemon) LogSystemData() {
 	glog.Infof("journalctl --list-boots:\n" + string(boots))
 }
 
+const (
+	pendingConfigPath = "/etc/machine-config-daemon/state.json"
+)
+
+type pendingConfigState struct {
+	PendingConfig string `json:"pendingConfig,omitempty"`
+	BootID        string `json:"bootID,omitempty"`
+}
+
+// XXX: drop this
+func (dn *Daemon) writePendingConfig(desiredConfig *mcfgv1.MachineConfig) error {
+	t := &pendingConfigState{
+		PendingConfig: desiredConfig.GetName(),
+		BootID:        dn.bootID,
+	}
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomicallyWithDefaults(pendingConfigPath, b)
+}
+
 // XXX: drop this
 // we need this compatibility layer for now
 func (dn *Daemon) getPendingConfig() (string, error) {
@@ -758,10 +780,6 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		}
 		dn.logSystem("error loading pending config %v", err)
 		return "", nil
-	}
-	type pendingConfigState struct {
-		PendingConfig string `json:"pendingConfig,omitempty"`
-		BootID        string `json:"bootID,omitempty"`
 	}
 	var p pendingConfigState
 	if err := json.Unmarshal([]byte(s), &p); err != nil {
