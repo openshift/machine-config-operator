@@ -913,7 +913,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		}
 	}
 
-	inDesiredConfig := state.currentConfig == state.desiredConfig
+	inDesiredConfig := state.currentConfig.GetName() == state.desiredConfig.GetName()
 	if inDesiredConfig {
 		if state.pendingConfig != nil {
 			// Great, we've successfully rebooted for the desired config,
