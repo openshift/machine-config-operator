@@ -20,7 +20,6 @@
 // manifests/machineconfigpool.crd.yaml
 // manifests/machineconfigserver/clusterrole.yaml
 // manifests/machineconfigserver/clusterrolebinding.yaml
-// manifests/machineconfigserver/csr-approver-role-binding.yaml
 // manifests/machineconfigserver/csr-bootstrap-role-binding.yaml
 // manifests/machineconfigserver/csr-renewal-role-binding.yaml
 // manifests/machineconfigserver/daemonset.yaml
@@ -842,39 +841,6 @@ func manifestsMachineconfigserverClusterrolebindingYaml() (*asset, error) {
 	return a, nil
 }
 
-var _manifestsMachineconfigserverCsrApproverRoleBindingYaml = []byte(`# CSRApproverRoleBindingTemplate instructs the csrapprover controller to
-# automatically approve CSRs made by serviceaccount node-bootstrapper in openshift-machine-config-operator
-# for client credentials.
-#
-# This binding should be removed to disable CSR auto-approval.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: system-bootstrap-approve-node-client-csr
-subjects:
-- kind: ServiceAccount
-  name: node-bootstrapper
-  namespace: openshift-machine-config-operator
-roleRef:
-  kind: ClusterRole
-  name: system:certificates.k8s.io:certificatesigningrequests:nodeclient
-  apiGroup: rbac.authorization.k8s.io`)
-
-func manifestsMachineconfigserverCsrApproverRoleBindingYamlBytes() ([]byte, error) {
-	return _manifestsMachineconfigserverCsrApproverRoleBindingYaml, nil
-}
-
-func manifestsMachineconfigserverCsrApproverRoleBindingYaml() (*asset, error) {
-	bytes, err := manifestsMachineconfigserverCsrApproverRoleBindingYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/machineconfigserver/csr-approver-role-binding.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 var _manifestsMachineconfigserverCsrBootstrapRoleBindingYaml = []byte(`# system-bootstrap-node-bootstrapper lets serviceaccount `+"`"+`openshift-machine-config-operator/node-bootstrapper`+"`"+` tokens and nodes request CSRs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -1227,7 +1193,6 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigpool.crd.yaml": manifestsMachineconfigpoolCrdYaml,
 	"manifests/machineconfigserver/clusterrole.yaml": manifestsMachineconfigserverClusterroleYaml,
 	"manifests/machineconfigserver/clusterrolebinding.yaml": manifestsMachineconfigserverClusterrolebindingYaml,
-	"manifests/machineconfigserver/csr-approver-role-binding.yaml": manifestsMachineconfigserverCsrApproverRoleBindingYaml,
 	"manifests/machineconfigserver/csr-bootstrap-role-binding.yaml": manifestsMachineconfigserverCsrBootstrapRoleBindingYaml,
 	"manifests/machineconfigserver/csr-renewal-role-binding.yaml": manifestsMachineconfigserverCsrRenewalRoleBindingYaml,
 	"manifests/machineconfigserver/daemonset.yaml": manifestsMachineconfigserverDaemonsetYaml,
@@ -1305,7 +1270,6 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"machineconfigserver": &bintree{nil, map[string]*bintree{
 			"clusterrole.yaml": &bintree{manifestsMachineconfigserverClusterroleYaml, map[string]*bintree{}},
 			"clusterrolebinding.yaml": &bintree{manifestsMachineconfigserverClusterrolebindingYaml, map[string]*bintree{}},
-			"csr-approver-role-binding.yaml": &bintree{manifestsMachineconfigserverCsrApproverRoleBindingYaml, map[string]*bintree{}},
 			"csr-bootstrap-role-binding.yaml": &bintree{manifestsMachineconfigserverCsrBootstrapRoleBindingYaml, map[string]*bintree{}},
 			"csr-renewal-role-binding.yaml": &bintree{manifestsMachineconfigserverCsrRenewalRoleBindingYaml, map[string]*bintree{}},
 			"daemonset.yaml": &bintree{manifestsMachineconfigserverDaemonsetYaml, map[string]*bintree{}},
