@@ -20,7 +20,7 @@ if [ -z ${VERSION_OVERRIDE+a} ]; then
 	VERSION_OVERRIDE=$(git describe --abbrev=8 --dirty --always)
 fi
 
-HASH=$(git rev-parse --verify 'HEAD^{commit}')
+HASH=${OS_GIT_COMMIT:-$(git rev-parse --verify 'HEAD^{commit}')}
 
 GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE} -X ${REPO}/pkg/version.Hash=${HASH}"
 
