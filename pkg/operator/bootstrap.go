@@ -128,9 +128,6 @@ func RenderBootstrap(
 		data:     filesData[pullSecretFile],
 		filename: "bootstrap/manifests/machineconfigcontroller-pull-secret",
 	}, {
-		name:     "manifests/machineconfigserver/csr-approver-role-binding.yaml",
-		filename: "manifests/csr-approver-role-binding.yaml",
-	}, {
 		name:     "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
 		filename: "manifests/csr-bootstrap-role-binding.yaml",
 	}, {
