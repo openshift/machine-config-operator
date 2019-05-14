@@ -14,7 +14,7 @@ import (
 	"github.com/Masterminds/sprig"
 	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
 	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -241,7 +241,7 @@ const (
 )
 
 // MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
-func MachineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.Config) *mcfgv1.MachineConfig {
+func MachineConfigFromIgnConfig(role string, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
 	labels := map[string]string{
 		machineConfigRoleLabelKey: role,
 	}
@@ -257,7 +257,7 @@ func MachineConfigFromIgnConfig(role string, name string, ignCfg *ignv2_2types.C
 	}
 }
 
-func transpileToIgn(files, units []string) (*ignv2_2types.Config, error) {
+func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 	var ctCfg cttypes.Config
 
 	// Convert data to Ignition resources

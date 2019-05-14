@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
@@ -320,7 +320,7 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2types.File, error) {
+func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*igntypes.File, error) {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get ControllerConfig %v", err)
