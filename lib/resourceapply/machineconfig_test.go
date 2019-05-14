@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/davecgh/go-spew/spew"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -175,9 +175,9 @@ func TestApplyMachineConfig(t *testing.T) {
 		input: &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
-				Config: ignv2_2types.Config{
-					Passwd: ignv2_2types.Passwd{
-						Users: []ignv2_2types.PasswdUser{{
+				Config: igntypes.Config{
+					Passwd: igntypes.Passwd{
+						Users: []igntypes.PasswdUser{{
 							HomeDir: "/home/dummy",
 						}},
 					},
@@ -199,9 +199,9 @@ func TestApplyMachineConfig(t *testing.T) {
 			expected := &mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: ignv2_2types.Config{
-						Passwd: ignv2_2types.Passwd{
-							Users: []ignv2_2types.PasswdUser{{
+					Config: igntypes.Config{
+						Passwd: igntypes.Passwd{
+							Users: []igntypes.PasswdUser{{
 								HomeDir: "/home/dummy",
 							}},
 						},
@@ -218,9 +218,9 @@ func TestApplyMachineConfig(t *testing.T) {
 			&mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: ignv2_2types.Config{
-						Passwd: ignv2_2types.Passwd{
-							Users: []ignv2_2types.PasswdUser{{
+					Config: igntypes.Config{
+						Passwd: igntypes.Passwd{
+							Users: []igntypes.PasswdUser{{
 								HomeDir: "/home/dummy-prev",
 							}},
 						},
@@ -231,9 +231,9 @@ func TestApplyMachineConfig(t *testing.T) {
 		input: &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
-				Config: ignv2_2types.Config{
-					Passwd: ignv2_2types.Passwd{
-						Users: []ignv2_2types.PasswdUser{{
+				Config: igntypes.Config{
+					Passwd: igntypes.Passwd{
+						Users: []igntypes.PasswdUser{{
 							HomeDir: "/home/dummy",
 						}},
 					},
@@ -255,9 +255,9 @@ func TestApplyMachineConfig(t *testing.T) {
 			expected := &mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: ignv2_2types.Config{
-						Passwd: ignv2_2types.Passwd{
-							Users: []ignv2_2types.PasswdUser{{
+					Config: igntypes.Config{
+						Passwd: igntypes.Passwd{
+							Users: []igntypes.PasswdUser{{
 								HomeDir: "/home/dummy",
 							}},
 						},
