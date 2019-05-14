@@ -173,7 +173,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	newConfigName := newConfig.GetName()
 	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
 	// make sure we can actually reconcile this state
-	reconcilableError := dn.reconcilable(oldConfig, newConfig)
+	diff, reconcilableError := dn.reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
@@ -187,7 +187,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
-	dn.logSystem("Starting update from %s to %s", oldConfigName, newConfigName)
+	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
@@ -231,6 +231,17 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.updateOSAndReboot(newConfig)
 }
 
+// machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
+// At some point this may change into holding just the files/units that changed
+// and the MCO would just operate on that.  For now we're just doing this to get
+// improved logging.
+type machineConfigDiff struct {
+	osUpdate bool
+	passwd   bool
+	files    bool
+	units    bool
+}
+
 // reconcilable checks the configs to make sure that the only changes requested
 // are ones we know how to do in-place.  If we can reconcile, (nil, nil) is returned.
 // Otherwise, if we can't do it in place, the node is marked as degraded;
@@ -239,13 +250,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-
-func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
 	// reason is that there is a good chance a previous state is not available to match against.
 	if oldConfig.Kind == "" && dn.onceFrom != "" {
 		glog.Info("Missing kind in old config. Assuming no prior state.")
-		return nil
+		return nil, nil
 	}
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
@@ -254,13 +264,13 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// First check if this is a generally valid Ignition Config
 	rpt := validate.ValidateWithoutSource(reflect.ValueOf(newIgn))
 	if rpt.IsFatal() {
-		return errors.Errorf("invalid Ignition config found: %v", rpt)
+		return nil, errors.Errorf("invalid Ignition config found: %v", rpt)
 	}
 
 	// if the config versions are different, all bets are off. this probably
 	// shouldn't happen, but if it does, we can't deal with it.
 	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
-		return fmt.Errorf("ignition version mismatch between old and new config: old: %s new: %s",
+		return nil, fmt.Errorf("ignition version mismatch between old and new config: old: %s new: %s",
 			oldIgn.Ignition.Version, newIgn.Ignition.Version)
 	}
 	// everything else in the ignition section doesn't matter to us, since the
@@ -273,7 +283,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// we don't currently configure the network in place. we can't fix it if
 	// something changed here.
 	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
-		return errors.New("ignition networkd section contains changes")
+		return nil, errors.New("ignition networkd section contains changes")
 	}
 
 	// Passwd section
@@ -281,9 +291,10 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// we don't currently configure Groups in place. we don't configure Users except
 	// for setting/updating SSHAuthorizedKeys for the only allowed user "core".
 	// otherwise we can't fix it if something changed here.
-	if !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd) {
+	passwdChanged := !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd)
+	if passwdChanged {
 		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
-			return errors.New("ignition Passwd Groups section contains changes")
+			return nil, errors.New("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
 			// check if the prior config is empty and that this is the first time running.
@@ -293,12 +304,12 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 				// change to the SSHAuthorizedKeys for the user "core"
 				for _, user := range newIgn.Passwd.Users {
 					if user.Name != coreUserName {
-						return errors.New("ignition passwd user section contains unsupported changes: non-core user")
+						return nil, errors.New("ignition passwd user section contains unsupported changes: non-core user")
 					}
 				}
 				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
 				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
-					return err
+					return nil, err
 				}
 			}
 		}
@@ -309,23 +320,23 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// we can only reconcile files right now. make sure the sections we can't
 	// fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
-		return errors.New("ignition disks section contains changes")
+		return nil, errors.New("ignition disks section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
-		return errors.New("ignition filesystems section contains changes")
+		return nil, errors.New("ignition filesystems section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
-		return errors.New("ignition raid section contains changes")
+		return nil, errors.New("ignition raid section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {
-		return errors.New("ignition directories section contains changes")
+		return nil, errors.New("ignition directories section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
 		// This means links have been added, as opposed as being removed as it happened with
 		// https://bugzilla.redhat.com/show_bug.cgi?id=1677198. This doesn't really change behavior
 		// since we still don't support links but we allow old MC to remove links when upgrading.
 		if len(newIgn.Storage.Links) != 0 {
-			return errors.New("ignition links section contains changes")
+			return nil, errors.New("ignition links section contains changes")
 		}
 	}
 
@@ -333,7 +344,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	// have to force a reprovision since it's not idempotent
 	for _, f := range newIgn.Storage.Files {
 		if f.Append {
-			return fmt.Errorf("ignition file %v includes append", f.Path)
+			return nil, fmt.Errorf("ignition file %v includes append", f.Path)
 		}
 	}
 
@@ -343,7 +354,12 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	return nil
+	return &machineConfigDiff {
+		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
+		passwd: passwdChanged,
+		files: !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
+		units: !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+	}, nil
 }
 
 // verifyUserFields returns nil if the user Name = "core", if 1 or more SSHKeys exist for

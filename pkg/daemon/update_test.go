@@ -91,12 +91,12 @@ func TestReconcilable(t *testing.T) {
 	}
 
 	// Verify Ignition version changes react as expected
-	isReconcilable := d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable := d.reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Ignition", isReconcilable)
 
 	// Match ignition versions
 	oldConfig.Spec.Config.Ignition.Version = "2.2.0"
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Ignition", isReconcilable)
 
 	// Verify Networkd unit changes react as expected
@@ -108,13 +108,13 @@ func TestReconcilable(t *testing.T) {
 			},
 		},
 	}
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Networkd", isReconcilable)
 
 	// Match Networkd
 	oldConfig.Spec.Config.Networkd = newConfig.Spec.Config.Networkd
 
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Networkd", isReconcilable)
 
 	// Verify Disk changes react as expected
@@ -124,12 +124,12 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Disk", isReconcilable)
 
 	// Match storage disks
 	newConfig.Spec.Config.Storage.Disks = oldConfig.Spec.Config.Storage.Disks
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
@@ -141,12 +141,12 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Match Storage filesystems
 	newConfig.Spec.Config.Storage.Filesystems = oldConfig.Spec.Config.Storage.Filesystems
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
@@ -157,12 +157,12 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Raid", isReconcilable)
 
 	// Match storage raid
 	newConfig.Spec.Config.Storage.Raid = oldConfig.Spec.Config.Storage.Raid
-	isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Raid", isReconcilable)
 
 	// Verify Passwd Groups changes unsupported
@@ -177,9 +177,70 @@ func TestReconcilable(t *testing.T) {
 			},
 		},
 	}
-	isReconcilable = d.reconcilable(oldConfig, newMcfg)
+	_, isReconcilable = d.reconcilable(oldConfig, newMcfg)
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
+}
 
+func newTestIgnitionFile(i uint) ignv2_2types.File {
+	mode := 0644
+	return ignv2_2types.File{Node: ignv2_2types.Node{Path: fmt.Sprintf("/etc/config%d", i), Filesystem: "root"},
+		FileEmbedded1: ignv2_2types.FileEmbedded1{Contents: ignv2_2types.FileContents{Source: fmt.Sprintf("data:,config%d", i)}, Mode: &mode}}
+}
+
+func newMachineConfigFromFiles(files []ignv2_2types.File) *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ignv2_2types.Config{
+				Ignition: ignv2_2types.Ignition{
+					Version: "2.2.0",
+				},
+				Storage: ignv2_2types.Storage{
+					Files: files,
+				},
+			},
+		},
+	}
+}
+
+func TestReconcilableDiff(t *testing.T) {
+	d := Daemon{
+		name:              "nodeName",
+		OperatingSystem:   machineConfigDaemonOSRHCOS,
+		NodeUpdaterClient: nil,
+		kubeClient:        nil,
+		bootedOSImageURL:  "test",
+	}
+	var oldFiles []ignv2_2types.File
+	nOldFiles := uint(10)
+	for i := uint(0); i < nOldFiles; i++ {
+		oldFiles = append(oldFiles, newTestIgnitionFile(uint(i)))
+	}
+	oldConfig := newMachineConfigFromFiles(oldFiles)
+	newConfig := newMachineConfigFromFiles(append(oldFiles, newTestIgnitionFile(nOldFiles + 1)))
+
+	diff, err := d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "add file", err)
+	assert.Equal(t, diff.osUpdate, false)
+	assert.Equal(t, diff.passwd, false)
+	assert.Equal(t, diff.units, false)
+	assert.Equal(t, diff.files, true)
+
+	newConfig = newMachineConfigFromFiles(nil)
+	diff, err = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "remove all files", err)
+	assert.Equal(t, diff.osUpdate, false)
+	assert.Equal(t, diff.passwd, false)
+	assert.Equal(t, diff.units, false)
+	assert.Equal(t, diff.files, true)
+
+	newConfig = newMachineConfigFromFiles(oldFiles)
+	newConfig.Spec.OSImageURL = "example.com/machine-os-content:new"
+	diff, err = d.reconcilable(oldConfig, newConfig)
+	checkReconcilableResults(t, "os update", err)
+	assert.Equal(t, diff.osUpdate, true)
+	assert.Equal(t, diff.passwd, false)
+	assert.Equal(t, diff.units, false)
+	assert.Equal(t, diff.files, false)
 }
 
 func TestReconcilableSSH(t *testing.T) {
@@ -193,7 +254,7 @@ func TestReconcilableSSH(t *testing.T) {
 		RunPivotReturns: []error{
 			// First run will return no error
 			nil,
-			// Second rrun will return our expected error
+			// Second run will return our expected error
 			expectedError},
 	}
 
@@ -231,7 +292,7 @@ func TestReconcilableSSH(t *testing.T) {
 		},
 	}
 
-	errMsg := d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg := d.reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 
 	// 	Check that updating User with User that is not core is not supported
@@ -240,21 +301,21 @@ func TestReconcilableSSH(t *testing.T) {
 	tempUser3 := ignv2_2types.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser3
 
-	errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
 	tempUser4 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser4
 
-	errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot add a user or have len(Passwd.Users)> 1
 	tempUser5 := ignv2_2types.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users = append(newMcfg.Spec.Config.Passwd.Users, tempUser5)
 
-	errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that user is not attempting to remove the only sshkey from core user
@@ -262,15 +323,14 @@ func TestReconcilableSSH(t *testing.T) {
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser6
 	newMcfg.Spec.Config.Passwd.Users = newMcfg.Spec.Config.Passwd.Users[:len(newMcfg.Spec.Config.Passwd.Users)-1]
 
-	errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	//check that empty Users does not generate error/degrade node
 	newMcfg.Spec.Config.Passwd.Users = nil
 
-	errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
-
 }
 
 func TestUpdateSSHKeys(t *testing.T) {
@@ -374,13 +434,13 @@ func TestInvalidIgnConfig(t *testing.T) {
 			},
 		},
 	}
-	err := d.reconcilable(oldMcfg, newMcfg)
+	_, err := d.reconcilable(oldMcfg, newMcfg)
 	assert.NotNil(t, err, "Expected error. Relative Paths should fail general ignition validation")
 
 	newMcfg.Spec.Config.Storage.Files[0].Node.Path = "/home/core/test"
-	err = d.reconcilable(oldMcfg, newMcfg)
+	diff, err := d.reconcilable(oldMcfg, newMcfg)
 	assert.Nil(t, err, "Expected no error. Absolute paths should not fail general ignition validation")
-
+	assert.Equal(t, diff.files, true)
 }
 
 // checkReconcilableResults is a shortcut for verifying results that should be reconcilable
