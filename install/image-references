@@ -6,43 +6,43 @@ spec:
   - name: machine-config-operator
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-machine-config-operator:v4.0.0
+      name: registry.svc.ci.openshift.org/openshift:machine-config-operator
   - name: machine-config-controller
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-machine-config-controller:v4.0.0
+      name: registry.svc.ci.openshift.org/openshift:machine-config-controller
   - name: machine-config-server
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-machine-config-server:v4.0.0
+      name: registry.svc.ci.openshift.org/openshift:machine-config-server
   - name: machine-config-daemon
     from:
       kind: DockerImage
-      name: docker.io/openshift/origin-machine-config-daemon:v4.0.0
+      name: registry.svc.ci.openshift.org/openshift:machine-config-daemon
   - name: etcd
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:etcd
+      name: registry.svc.ci.openshift.org/openshift:etcd
   - name: pod
     from:
       kind: DockerImage
-      name: quay.io/openshift/origin-pod:v4.0
+      name: registry.svc.ci.openshift.org/openshift:pod
   - name: setup-etcd-environment
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment
+      name: registry.svc.ci.openshift.org/openshift:setup-etcd-environment
   # This one is special, it's the OS payload
   # https://github.com/openshift/machine-config-operator/issues/183
   # See the machine-config-osimageurl configmap.
   - name: machine-os-content
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/rhcos/maipo@sha256:61dc83d62cfb5054c4c5532bd2478742a0711075ef5151572e63f94babeacc1a
+      name: registry.svc.ci.openshift.org/openshift:machine-os-content
   - name: kube-client-agent
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent
+      name: registry.svc.ci.openshift.org/openshift:kube-client-agent
   - name: cli
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift/origin-v4.0:cli
+      name: registry.svc.ci.openshift.org/openshift:cli
