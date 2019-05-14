@@ -46,7 +46,7 @@ const (
 // expected directory structure for correctly templating machine configs: <templatedir>/<role>/<name>/<platform>/<type>/<tmpl_file>
 //
 // All files from platform _base are always included, and may be overridden or
-// supplemented by platform-specific templates
+// supplemented by platform-specific templates.
 //
 //  ex:
 //       templates/worker/00-worker/_base/units/kubelet.conf.tmpl
@@ -70,8 +70,11 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 			continue
 		}
 		role := info.Name()
-		path := filepath.Join(templateDir, role)
-		roleConfigs, err := GenerateMachineConfigsForRole(config, role, path)
+		if role == "common" {
+			continue
+		}
+
+		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
 		}
@@ -90,7 +93,8 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 }
 
 // GenerateMachineConfigsForRole creates MachineConfigs for the role provided
-func GenerateMachineConfigsForRole(config *RenderConfig, role string, path string) ([]*mcfgv1.MachineConfig, error) {
+func GenerateMachineConfigsForRole(config *RenderConfig, role string, templateDir string) ([]*mcfgv1.MachineConfig, error) {
+	path := filepath.Join(templateDir, role)
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
@@ -104,7 +108,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, path strin
 		}
 		name := info.Name()
 		namePath := filepath.Join(path, name)
-		nameConfig, err := generateMachineConfigForName(config, role, name, namePath)
+		nameConfig, err := generateMachineConfigForName(config, role, name, templateDir, namePath)
 		if err != nil {
 			return nil, err
 		}
@@ -161,13 +165,26 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 	return filepath.Walk(path, walkFn)
 }
 
-func generateMachineConfigForName(config *RenderConfig, role, name, path string) (*mcfgv1.MachineConfig, error) {
+func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string) (*mcfgv1.MachineConfig, error) {
 	platform, err := platformFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
 		return nil, err
 	}
 
 	platformDirs := []string{}
+	// Loop over templates/common which applies everywhere
+	for _, dir := range []string{platformBase, platform} {
+		basePath := filepath.Join(templateDir, "common", dir)
+		exists, err := existsDir(basePath)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			continue
+		}
+		platformDirs = append(platformDirs, basePath)
+	}
+	// And now over the target e.g. templates/master
 	for _, dir := range []string{platformBase, platform} {
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
