@@ -175,8 +175,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, path string)
 			return nil, err
 		}
 		if !exists {
-			glog.Errorf("could not find expected template directory %s", platformPath)
-			return nil, fmt.Errorf("platform %s unsupported", config.Platform)
+			continue
 		}
 		platformDirs = append(platformDirs, platformPath)
 	}
