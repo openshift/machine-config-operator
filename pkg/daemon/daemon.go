@@ -778,7 +778,6 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		if !os.IsNotExist(err) {
 			return "", errors.Wrapf(err, "loading transient state")
 		}
-		dn.logSystem("error loading pending config %v", err)
 		return "", nil
 	}
 	var p pendingConfigState
