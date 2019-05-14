@@ -6,11 +6,11 @@ metadata:
 data:
   images.json: >
     {
-      "machineConfigController": "docker.io/openshift/origin-machine-config-controller:v4.0.0",
-      "machineConfigDaemon": "docker.io/openshift/origin-machine-config-daemon:v4.0.0",
-      "machineConfigServer": "docker.io/openshift/origin-machine-config-server:v4.0.0",
-      "etcd": "registry.svc.ci.openshift.org/openshift/origin-v4.0:etcd",
-      "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift/origin-v4.0:setup-etcd-environment",
-      "infraImage": "quay.io/openshift/origin-pod:v4.0",
-      "kubeClientAgentImage": "registry.svc.ci.openshift.org/openshift/origin-v4.0:kube-client-agent"
+      "machineConfigController": "registry.svc.ci.openshift.org/openshift:machine-config-controller",
+      "machineConfigDaemon": "registry.svc.ci.openshift.org/openshift:machine-config-daemon",
+      "machineConfigServer": "registry.svc.ci.openshift.org/openshift:machine-config-server",
+      "etcd": "registry.svc.ci.openshift.org/openshift:etcd",
+      "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift:setup-etcd-environment",
+      "infraImage": "registry.svc.ci.openshift.org/openshift:pod",
+      "kubeClientAgentImage": "registry.svc.ci.openshift.org/openshift:kube-client-agent"
     }
