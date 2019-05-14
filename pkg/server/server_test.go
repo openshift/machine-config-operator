@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -187,7 +187,7 @@ func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {
 	return []byte("dummy-kubeconfig"), []byte("dummy-root-ca"), nil
 }
 
-func validateIgnitionFiles(t *testing.T, exp, got []ignv2_2types.File) {
+func validateIgnitionFiles(t *testing.T, exp, got []igntypes.File) {
 	expMap := createFileMap(exp)
 	gotMap := createFileMap(got)
 
@@ -202,7 +202,7 @@ func validateIgnitionFiles(t *testing.T, exp, got []ignv2_2types.File) {
 	}
 }
 
-func validateIgnitionSystemd(t *testing.T, exp, got []ignv2_2types.Unit) {
+func validateIgnitionSystemd(t *testing.T, exp, got []igntypes.Unit) {
 	expMap := createUnitMap(exp)
 	gotMap := createUnitMap(got)
 
@@ -217,16 +217,16 @@ func validateIgnitionSystemd(t *testing.T, exp, got []ignv2_2types.Unit) {
 	}
 }
 
-func createUnitMap(units []ignv2_2types.Unit) map[string]ignv2_2types.Unit {
-	m := make(map[string]ignv2_2types.Unit)
+func createUnitMap(units []igntypes.Unit) map[string]igntypes.Unit {
+	m := make(map[string]igntypes.Unit)
 	for i := range units {
 		m[units[i].Name] = units[i]
 	}
 	return m
 }
 
-func createFileMap(files []ignv2_2types.File) map[string]ignv2_2types.File {
-	m := make(map[string]ignv2_2types.File)
+func createFileMap(files []igntypes.File) map[string]igntypes.File {
+	m := make(map[string]igntypes.File)
 	for i := range files {
 		file := path.Join(files[i].Filesystem, files[i].Path)
 		m[file] = files[i]

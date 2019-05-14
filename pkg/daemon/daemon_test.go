@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -57,13 +57,13 @@ func TestOverwrittenFile(t *testing.T) {
 	fileMode := int(fi.Mode().Perm())
 
 	// validate single file
-	files := []ignv2_2types.File{
+	files := []igntypes.File{
 		{
-			Node: ignv2_2types.Node{
+			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
-				Contents: ignv2_2types.FileContents{
+			FileEmbedded1: igntypes.FileEmbedded1{
+				Contents: igntypes.FileContents{
 					Source: dataurl.EncodeBytes([]byte("hello world\n")),
 				},
 				Mode: &fileMode,
@@ -76,24 +76,24 @@ func TestOverwrittenFile(t *testing.T) {
 	}
 
 	// validate overwritten file
-	files = []ignv2_2types.File{
+	files = []igntypes.File{
 		{
-			Node: ignv2_2types.Node{
+			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
-				Contents: ignv2_2types.FileContents{
+			FileEmbedded1: igntypes.FileEmbedded1{
+				Contents: igntypes.FileContents{
 					Source: dataurl.EncodeBytes([]byte("hello\n")),
 				},
 				Mode: &fileMode,
 			},
 		},
 		{
-			Node: ignv2_2types.Node{
+			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
-				Contents: ignv2_2types.FileContents{
+			FileEmbedded1: igntypes.FileEmbedded1{
+				Contents: igntypes.FileContents{
 					Source: dataurl.EncodeBytes([]byte("hello world\n")),
 				},
 				Mode: &fileMode,

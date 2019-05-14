@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/stretchr/testify/require"
@@ -56,15 +57,15 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabels
 }
 
-func createIgnFile(path, content, fs string, mode int) ignv2_2types.File {
-	return ignv2_2types.File{
-		FileEmbedded1: ignv2_2types.FileEmbedded1{
-			Contents: ignv2_2types.FileContents{
+func createIgnFile(path, content, fs string, mode int) igntypes.File {
+	return igntypes.File{
+		FileEmbedded1: igntypes.FileEmbedded1{
+			Contents: igntypes.FileContents{
 				Source: content,
 			},
 			Mode: &mode,
 		},
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Filesystem: fs,
 			Path:       path,
 		},
@@ -80,18 +81,11 @@ func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 		// TODO(runcom): hardcoded to workers for safety
 		Labels: mcLabelForWorkers(),
 	}
-	mcadd.Spec = mcv1.MachineConfigSpec{
-		Config: ignv2_2types.Config{
-			Ignition: ignv2_2types.Ignition{
-				Version: "2.2.0",
-			},
-			Storage: ignv2_2types.Storage{
-				Files: []ignv2_2types.File{
-					createIgnFile(filename, "data:,"+data, fs, 420),
-				},
-			},
-		},
-	}
+
+	ignConfig := ctrlcommon.NewIgnConfig()
+	ignFile := createIgnFile(filename, "data:,"+data, fs, 420)
+	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
+	mcadd.Spec.Config = ignConfig
 	return mcadd
 }
 
@@ -137,7 +131,8 @@ func TestMCDeployed(t *testing.T) {
 				if visited[node.Name] {
 					continue
 				}
-				if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
+				if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName &&
+					node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
 					visited[node.Name] = true
 					if len(visited) == len(nodes) {
 						return true, nil
@@ -179,23 +174,17 @@ func TestUpdateSSH(t *testing.T) {
 		Labels: mcLabelForWorkers(),
 	}
 	// create a new MC that adds a valid user & ssh keys
-	tempUser := ignv2_2types.PasswdUser{
+	tempUser := igntypes.PasswdUser{
 		Name: "core",
-		SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{
+		SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{
 			"1234_test",
 			"abc_test",
 		},
 	}
-	mcadd.Spec = mcv1.MachineConfigSpec{
-		Config: ignv2_2types.Config{
-			Ignition: ignv2_2types.Ignition{
-				Version: "2.2.0",
-			},
-			Passwd: ignv2_2types.Passwd{
-				Users: []ignv2_2types.PasswdUser{tempUser},
-			},
-		},
-	}
+	ignConfig := ctrlcommon.NewIgnConfig()
+	ignConfig.Passwd.Users = append(ignConfig.Passwd.Users, tempUser)
+	mcadd.Spec.Config = ignConfig
+
 	_, err := cs.MachineConfigs().Create(mcadd)
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
@@ -378,7 +367,8 @@ func TestReconcileAfterBadMC(t *testing.T) {
 			return false, err
 		}
 		for _, node := range nodes {
-			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
+			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == newMCName &&
+				node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
 				// just check that we have the annotation here, w/o strings checking anything that can flip fast causing flakes
 				if node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] != "" {
 					return true, nil
@@ -434,10 +424,13 @@ func TestReconcileAfterBadMC(t *testing.T) {
 			return false, err
 		}
 		for _, node := range nodes {
-			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == workerOldMc && node.Annotations[constants.DesiredMachineConfigAnnotationKey] == workerOldMc && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
+			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == workerOldMc &&
+				node.Annotations[constants.DesiredMachineConfigAnnotationKey] == workerOldMc &&
+				node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
 				visited[node.Name] = true
 				if len(visited) == len(nodes) {
-					if mcp.Status.UnavailableMachineCount == 0 && mcp.Status.ReadyMachineCount == int32(len(nodes)) && mcp.Status.UpdatedMachineCount == int32(len(nodes)) {
+					if mcp.Status.UnavailableMachineCount == 0 && mcp.Status.ReadyMachineCount == int32(len(nodes)) &&
+						mcp.Status.UpdatedMachineCount == int32(len(nodes)) {
 						return true, nil
 					}
 				}
