@@ -73,9 +73,6 @@ type Daemon struct {
 	// recorder sends events to the apiserver
 	recorder record.EventRecorder
 
-	// rootMount is the location for the MCD to chroot in
-	rootMount string
-
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corelisterv1.NodeLister
 	nodeListerSynced cache.InformerSynced
@@ -171,7 +168,6 @@ func rebootCommand(rationale string) *exec.Cmd {
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
-	rootMount string,
 	nodeName string,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
@@ -193,7 +189,7 @@ func New(
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == machineConfigDaemonOSRHCOS {
 		var osVersion string
-		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL(rootMount)
+		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
 		}
@@ -204,7 +200,6 @@ func New(
 		name:                   nodeName,
 		OperatingSystem:        operatingSystem,
 		NodeUpdaterClient:      nodeUpdaterClient,
-		rootMount:              rootMount,
 		bootedOSImageURL:       osImageURL,
 		bootID:                 bootID,
 		onceFrom:               onceFrom,
@@ -226,7 +221,6 @@ func New(
 // NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
 // machine.
 func NewClusterDrivenDaemon(
-	rootMount,
 	nodeName,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
@@ -243,7 +237,6 @@ func NewClusterDrivenDaemon(
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
 	dn, err := New(
-		rootMount,
 		nodeName,
 		operatingSystem,
 		nodeUpdaterClient,
@@ -521,18 +514,6 @@ func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) err
 			glog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
 	}
-}
-
-// BindPodMounts ensures that the daemon can still see e.g. /run/secrets/kubernetes.io
-// service account tokens after chrooting.  This function must be called before chroot.
-func (dn *Daemon) BindPodMounts() error {
-	targetSecrets := filepath.Join(dn.rootMount, "/run/secrets")
-	if err := os.MkdirAll(targetSecrets, 0755); err != nil {
-		return err
-	}
-	// This will only affect our mount namespace, not the host
-	mnt := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets)
-	return mnt.Run()
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
