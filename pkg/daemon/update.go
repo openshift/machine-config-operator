@@ -170,23 +170,29 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
-	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
-	// make sure we can actually reconcile this state
-	diff, reconcilableError := dn.reconcilable(oldConfig, newConfig)
+	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	// We skip out of Reconcilable if there is no Kind and we are in runOnce mode. The
+	// reason is that there is a good chance a previous state is not available to match against.
+	if oldConfig.Kind == "" && dn.onceFrom != "" {
+		glog.Info("Missing kind in old config. Assuming no prior state.")
+	} else {
+		// make sure we can actually reconcile this state
+		diff, reconcilableError := Reconcilable(oldConfig, newConfig)
 
-	if reconcilableError != nil {
-		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
-		if dn.recorder != nil {
-			mcRef := &corev1.ObjectReference{
-				Kind: "MachineConfig",
-				Name: newConfig.GetName(),
-				UID:  newConfig.GetUID(),
+		if reconcilableError != nil {
+			wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
+			if dn.recorder != nil {
+				mcRef := &corev1.ObjectReference{
+					Kind: "MachineConfig",
+					Name: newConfig.GetName(),
+					UID:  newConfig.GetUID(),
+				}
+				dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 			}
-			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+			return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 		}
-		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
+		dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 	}
-	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
@@ -230,18 +236,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.updateOSAndReboot(newConfig)
 }
 
-// machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
+// MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
 // At some point this may change into holding just the files/units that changed
 // and the MCO would just operate on that.  For now we're just doing this to get
 // improved logging.
-type machineConfigDiff struct {
+type MachineConfigDiff struct {
 	osUpdate bool
 	passwd   bool
 	files    bool
 	units    bool
 }
 
-// reconcilable checks the configs to make sure that the only changes requested
+// Reconcilable checks the configs to make sure that the only changes requested
 // are ones we know how to do in-place.  If we can reconcile, (nil, nil) is returned.
 // Otherwise, if we can't do it in place, the node is marked as degraded;
 // the returned string value includes the rationale.
@@ -249,13 +255,7 @@ type machineConfigDiff struct {
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
-	// reason is that there is a good chance a previous state is not available to match against.
-	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Info("Missing kind in old config. Assuming no prior state.")
-		return nil, nil
-	}
+func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
 
@@ -353,7 +353,7 @@ func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*mac
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	return &machineConfigDiff {
+	return &MachineConfigDiff {
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
 		passwd: passwdChanged,
 		files: !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),

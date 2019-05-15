@@ -60,14 +60,6 @@ func TestUpdateOS(t *testing.T) {
 // TestReconcilable attempts to verify the conditions in which configs would and would not be
 // reconcilable. Welcome to the longest unittest you've ever read.
 func TestReconcilable(t *testing.T) {
-	d := Daemon{
-		name:              "nodeName",
-		OperatingSystem:   machineConfigDaemonOSRHCOS,
-		NodeUpdaterClient: nil,
-		kubeClient:        nil,
-		bootedOSImageURL:  "test",
-	}
-
 	// oldConfig is the current config of the fake system
 	oldConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
@@ -91,12 +83,12 @@ func TestReconcilable(t *testing.T) {
 	}
 
 	// Verify Ignition version changes react as expected
-	_, isReconcilable := d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable := Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Ignition", isReconcilable)
 
 	// Match ignition versions
 	oldConfig.Spec.Config.Ignition.Version = "2.2.0"
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Ignition", isReconcilable)
 
 	// Verify Networkd unit changes react as expected
@@ -108,13 +100,13 @@ func TestReconcilable(t *testing.T) {
 			},
 		},
 	}
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Networkd", isReconcilable)
 
 	// Match Networkd
 	oldConfig.Spec.Config.Networkd = newConfig.Spec.Config.Networkd
 
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Networkd", isReconcilable)
 
 	// Verify Disk changes react as expected
@@ -124,12 +116,12 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Disk", isReconcilable)
 
 	// Match storage disks
 	newConfig.Spec.Config.Storage.Disks = oldConfig.Spec.Config.Storage.Disks
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
@@ -141,12 +133,12 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Match Storage filesystems
 	newConfig.Spec.Config.Storage.Filesystems = oldConfig.Spec.Config.Storage.Filesystems
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
@@ -157,12 +149,12 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Raid", isReconcilable)
 
 	// Match storage raid
 	newConfig.Spec.Config.Storage.Raid = oldConfig.Spec.Config.Storage.Raid
-	_, isReconcilable = d.reconcilable(oldConfig, newConfig)
+	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Raid", isReconcilable)
 
 	// Verify Passwd Groups changes unsupported
@@ -177,7 +169,7 @@ func TestReconcilable(t *testing.T) {
 			},
 		},
 	}
-	_, isReconcilable = d.reconcilable(oldConfig, newMcfg)
+	_, isReconcilable = Reconcilable(oldConfig, newMcfg)
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
 }
 
@@ -203,13 +195,6 @@ func newMachineConfigFromFiles(files []ignv2_2types.File) *mcfgv1.MachineConfig 
 }
 
 func TestReconcilableDiff(t *testing.T) {
-	d := Daemon{
-		name:              "nodeName",
-		OperatingSystem:   machineConfigDaemonOSRHCOS,
-		NodeUpdaterClient: nil,
-		kubeClient:        nil,
-		bootedOSImageURL:  "test",
-	}
 	var oldFiles []ignv2_2types.File
 	nOldFiles := uint(10)
 	for i := uint(0); i < nOldFiles; i++ {
@@ -218,7 +203,7 @@ func TestReconcilableDiff(t *testing.T) {
 	oldConfig := newMachineConfigFromFiles(oldFiles)
 	newConfig := newMachineConfigFromFiles(append(oldFiles, newTestIgnitionFile(nOldFiles + 1)))
 
-	diff, err := d.reconcilable(oldConfig, newConfig)
+	diff, err := Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "add file", err)
 	assert.Equal(t, diff.osUpdate, false)
 	assert.Equal(t, diff.passwd, false)
@@ -226,7 +211,7 @@ func TestReconcilableDiff(t *testing.T) {
 	assert.Equal(t, diff.files, true)
 
 	newConfig = newMachineConfigFromFiles(nil)
-	diff, err = d.reconcilable(oldConfig, newConfig)
+	diff, err = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "remove all files", err)
 	assert.Equal(t, diff.osUpdate, false)
 	assert.Equal(t, diff.passwd, false)
@@ -235,7 +220,7 @@ func TestReconcilableDiff(t *testing.T) {
 
 	newConfig = newMachineConfigFromFiles(oldFiles)
 	newConfig.Spec.OSImageURL = "example.com/machine-os-content:new"
-	diff, err = d.reconcilable(oldConfig, newConfig)
+	diff, err = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "os update", err)
 	assert.Equal(t, diff.osUpdate, true)
 	assert.Equal(t, diff.passwd, false)
@@ -244,29 +229,6 @@ func TestReconcilableDiff(t *testing.T) {
 }
 
 func TestReconcilableSSH(t *testing.T) {
-	// expectedError is the error we will use when expecting an error to return
-	expectedError := fmt.Errorf("broken")
-
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-		RunPivotReturns: []error{
-			// First run will return no error
-			nil,
-			// Second run will return our expected error
-			expectedError},
-	}
-
-	// Create a Daemon instance with mocked clients
-	d := Daemon{
-		name:              "nodeName",
-		OperatingSystem:   machineConfigDaemonOSRHCOS,
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
-
 	// Check that updating SSH Key of user core supported
 	//tempUser1 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"1234"}}
 	oldMcfg := &mcfgv1.MachineConfig{
@@ -292,7 +254,7 @@ func TestReconcilableSSH(t *testing.T) {
 		},
 	}
 
-	_, errMsg := d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg := Reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 
 	// 	Check that updating User with User that is not core is not supported
@@ -301,21 +263,21 @@ func TestReconcilableSSH(t *testing.T) {
 	tempUser3 := ignv2_2types.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser3
 
-	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
 	tempUser4 := ignv2_2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser4
 
-	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot add a user or have len(Passwd.Users)> 1
 	tempUser5 := ignv2_2types.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ignv2_2types.SSHAuthorizedKey{"5678"}}
 	newMcfg.Spec.Config.Passwd.Users = append(newMcfg.Spec.Config.Passwd.Users, tempUser5)
 
-	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that user is not attempting to remove the only sshkey from core user
@@ -323,13 +285,13 @@ func TestReconcilableSSH(t *testing.T) {
 	newMcfg.Spec.Config.Passwd.Users[0] = tempUser6
 	newMcfg.Spec.Config.Passwd.Users = newMcfg.Spec.Config.Passwd.Users[:len(newMcfg.Spec.Config.Passwd.Users)-1]
 
-	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	//check that empty Users does not generate error/degrade node
 	newMcfg.Spec.Config.Passwd.Users = nil
 
-	_, errMsg = d.reconcilable(oldMcfg, newMcfg)
+	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 }
 
@@ -386,27 +348,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 // This test should fail until Ignition validation enabled.
 // Ignition validation does not permit writing files to relative paths.
 func TestInvalidIgnConfig(t *testing.T) {
-	// expectedError is the error we will use when expecting an error to return
-	expectedError := fmt.Errorf("broken")
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-		RunPivotReturns: []error{
-			// First run will return no error
-			nil,
-			// Second rrun will return our expected error
-			expectedError},
-	}
-	// Create a Daemon instance with mocked clients
-	d := Daemon{
-		name:              "nodeName",
-		OperatingSystem:   machineConfigDaemonOSRHCOS,
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
-
 	oldMcfg := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: ignv2_2types.Config{
@@ -434,11 +375,11 @@ func TestInvalidIgnConfig(t *testing.T) {
 			},
 		},
 	}
-	_, err := d.reconcilable(oldMcfg, newMcfg)
+	_, err := Reconcilable(oldMcfg, newMcfg)
 	assert.NotNil(t, err, "Expected error. Relative Paths should fail general ignition validation")
 
 	newMcfg.Spec.Config.Storage.Files[0].Node.Path = "/home/core/test"
-	diff, err := d.reconcilable(oldMcfg, newMcfg)
+	diff, err := Reconcilable(oldMcfg, newMcfg)
 	assert.Nil(t, err, "Expected no error. Absolute paths should not fail general ignition validation")
 	assert.Equal(t, diff.files, true)
 }
