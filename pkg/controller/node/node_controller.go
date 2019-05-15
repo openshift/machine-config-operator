@@ -205,17 +205,10 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	var changed bool
 	oldReadyErr := checkNodeReady(oldNode)
 	newReadyErr := checkNodeReady(curNode)
-	var oldReady, newReady string
-	if oldReadyErr != nil {
-		oldReady = oldReadyErr.Error()
-	} else {
-		oldReady = ""
-	}
-	if newReadyErr != nil {
-		newReady = newReadyErr.Error()
-	} else {
-		newReady = ""
-	}
+
+	oldReady := getErrorString(oldReadyErr)
+	newReady := getErrorString(newReadyErr)
+
 	if oldReady != newReady {
 		changed = true
 		if newReadyErr != nil {
@@ -471,7 +464,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
 		return err
-	}	
+	}
 
 	candidates := getCandidateMachines(pool, nodes, maxunavail)
 	for _, node := range candidates {
@@ -572,4 +565,12 @@ func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, 
 		maxunavail = 1
 	}
 	return maxunavail, nil
+}
+
+// getErrorString returns error string if not nil and empty string if error is nil
+func getErrorString(err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return ""
 }

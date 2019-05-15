@@ -165,7 +165,7 @@ func isNodeMCDState(node *corev1.Node, state string) bool {
 func isNodeMCDFailing(node *corev1.Node) bool {
 	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
 		return false
-	}	
+	}
 	return isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDegraded) ||
 		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateUnreconcilable)
 }
@@ -204,18 +204,18 @@ func checkNodeReady(node *corev1.Node) error {
 		// - NodeOutOfDisk condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			return fmt.Errorf("Node %s is reporting NotReady", node.Name)
+			return fmt.Errorf("node %s is reporting NotReady", node.Name)
 		}
 		if cond.Type == corev1.NodeOutOfDisk && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("Node %s is reporting OutOfDisk", node.Name)
+			return fmt.Errorf("node %s is reporting OutOfDisk", node.Name)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("Node %s is reporting NetworkUnavailable", node.Name)
+			return fmt.Errorf("node %s is reporting NetworkUnavailable", node.Name)
 		}
 	}
 	// Ignore nodes that are marked unschedulable
 	if node.Spec.Unschedulable {
-		return fmt.Errorf("Node %s is reporting Unschedulable", node.Name)
+		return fmt.Errorf("node %s is reporting Unschedulable", node.Name)
 	}
 	return nil
 }
