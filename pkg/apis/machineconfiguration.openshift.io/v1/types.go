@@ -229,6 +229,8 @@ type MachineConfigSpec struct {
 	OSImageURL string `json:"osImageURL"`
 	// Config is a Ignition Config object.
 	Config igntypes.Config `json:"config"`
+
+	KernelArguments []string `json:"kernelArguments"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

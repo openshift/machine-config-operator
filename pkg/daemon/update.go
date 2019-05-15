@@ -233,6 +233,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	// kargs
+	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
+		return err
+	}
+
 	return dn.updateOSAndReboot(newConfig)
 }
 
@@ -242,6 +247,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // improved logging.
 type MachineConfigDiff struct {
 	osUpdate bool
+	kargs    bool
 	passwd   bool
 	files    bool
 	units    bool
@@ -355,6 +361,7 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 	glog.V(2).Info("Configs are reconcilable")
 	return &MachineConfigDiff {
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
+		kargs: !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
 		passwd: passwdChanged,
 		files: !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units: !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
@@ -380,6 +387,49 @@ func verifyUserFields(pwdUser igntypes.PasswdUser) error {
 		return errors.New("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
 	}
 	return nil
+}
+
+// generateKargsCommand performs a diff between the old/new MC kernelArguments,
+// and generates the command line arguments suitable for `rpm-ostree kargs`.
+// Note what we really should be doing though is also looking at the *current*
+// kernel arguments in case there was drift.  But doing that requires us knowing
+// what the "base" arguments are.  See https://github.com/ostreedev/ostree/issues/479
+func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
+	oldKargs := make(map[string]bool)
+	for _, arg := range oldConfig.Spec.KernelArguments {
+		oldKargs[arg] = true
+	}
+	newKargs := make(map[string]bool)
+	for _, arg := range newConfig.Spec.KernelArguments {
+		newKargs[arg] = true
+	}
+	cmdArgs := []string{}
+	for _, arg := range oldConfig.Spec.KernelArguments {
+		if !newKargs[arg] {
+			cmdArgs = append(cmdArgs, "--delete=" + arg)
+		}
+	}
+	for _, arg := range newConfig.Spec.KernelArguments {
+		if !oldKargs[arg] {
+			cmdArgs = append(cmdArgs, "--append=" + arg)
+		}
+	}
+	return cmdArgs
+}
+
+// updateKernelArguments adjusts the kernel args
+func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	diff := generateKargsCommand(oldConfig, newConfig)
+	if len(diff) == 0 {
+		return nil
+	}
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+		return fmt.Errorf("Updating kargs on non-RHCOS nodes is not supported: %v", diff)
+	}
+
+	args := append([]string{"kargs"}, diff...)
+	dn.logSystem("Running rpm-ostree %v", args)
+	return exec.Command("rpm-ostree", args...).Run()
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
