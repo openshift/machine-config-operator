@@ -149,7 +149,7 @@ var errUnreconcilable = errors.New("unreconcilable")
 
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
-	if dn.nodeWriter != nil {
+	if dn.nodeWriter != nil && dn.onceFrom == "" {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
 			return err
@@ -232,6 +232,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 		}
 	}()
+
+	if dn.onceFrom != "" {
+		nodeAnnotations := map[string]string{
+			constants.CurrentMachineConfigAnnotationKey:     newConfig.GetName(),
+			constants.DesiredMachineConfigAnnotationKey:     newConfig.GetName(),
+			constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
+		}
+		contents, err := json.Marshal(nodeAnnotations)
+		if err != nil {
+			return fmt.Errorf("could not marshal node annotations, err: %v", err)
+		}
+		if err := writeFileAtomicallyWithDefaults(constants.InitialNodeAnnotationsFilePath, contents); err != nil {
+			return errors.Wrap(err, "failed to write initial node annotations file")
+		}
+	}
 
 	return dn.updateOSAndReboot(newConfig)
 }
