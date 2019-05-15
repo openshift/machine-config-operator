@@ -134,7 +134,7 @@ type healthHandler struct{}
 func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", "0")
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
