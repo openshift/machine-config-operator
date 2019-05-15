@@ -117,6 +117,8 @@ type Daemon struct {
 	booting bool
 
 	currentConfigPath string
+
+	loggerSupportsJournal bool
 }
 
 const (
@@ -217,6 +219,7 @@ func New(
 	}
 	dn.currentConfigPath = currentConfigPath
 	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
+	dn.loggerSupportsJournal = dn.isLoggingToJournalSupported()
 	return dn, nil
 }
 
@@ -745,6 +748,28 @@ func (dn *Daemon) LogSystemData() {
 	glog.Infof("journalctl --list-boots:\n" + string(boots))
 }
 
+const (
+	pendingConfigPath = "/etc/machine-config-daemon/state.json"
+)
+
+type pendingConfigState struct {
+	PendingConfig string `json:"pendingConfig,omitempty"`
+	BootID        string `json:"bootID,omitempty"`
+}
+
+// XXX: drop this
+func (dn *Daemon) writePendingConfig(desiredConfig *mcfgv1.MachineConfig) error {
+	t := &pendingConfigState{
+		PendingConfig: desiredConfig.GetName(),
+		BootID:        dn.bootID,
+	}
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomicallyWithDefaults(pendingConfigPath, b)
+}
+
 // XXX: drop this
 // we need this compatibility layer for now
 func (dn *Daemon) getPendingConfig() (string, error) {
@@ -755,10 +780,6 @@ func (dn *Daemon) getPendingConfig() (string, error) {
 		}
 		dn.logSystem("error loading pending config %v", err)
 		return "", nil
-	}
-	type pendingConfigState struct {
-		PendingConfig string `json:"pendingConfig,omitempty"`
-		BootID        string `json:"bootID,omitempty"`
 	}
 	var p pendingConfigState
 	if err := json.Unmarshal([]byte(s), &p); err != nil {
@@ -910,7 +931,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		}
 	}
 
-	inDesiredConfig := state.currentConfig == state.desiredConfig
+	inDesiredConfig := state.currentConfig.GetName() == state.desiredConfig.GetName()
 	if inDesiredConfig {
 		if state.pendingConfig != nil {
 			// Great, we've successfully rebooted for the desired config,
