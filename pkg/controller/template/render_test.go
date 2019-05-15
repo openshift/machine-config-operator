@@ -2,23 +2,16 @@ package template
 
 import (
 	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
-)
-
-var (
-	updateGoldenFiles = flag.Bool("u", false, "If set to True, the tests will update the golden files before testing.")
 )
 
 func TestMain(m *testing.M) {
@@ -271,7 +264,7 @@ func TestInvalidPlatform(t *testing.T) {
 }
 
 func TestGenerateMachineConfigs(t *testing.T) {
-	for platform, config := range configs {
+	for _, config := range configs {
 		controllerConfig, err := controllerConfigFromFile(config)
 		if err != nil {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
@@ -281,6 +274,11 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
+
+		foundPullSecretMaster := false
+		foundPullSecretWorker := false
+		foundKubeletUnitMaster := false
+		foundKubeletUnitWorker := false
 
 		for _, cfg := range cfgs {
 			if cfg.Labels == nil {
@@ -293,13 +291,37 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			}
 
 			ign := cfg.Spec.Config
-			if len(ign.Storage.Files) > 0 {
-				verifyIgnFiles(ign.Storage.Files, filepath.Join(resultDir, role, cfg.Name, platform, "files"), *updateGoldenFiles, t)
-			}
-			if len(ign.Systemd.Units) > 0 {
-				verifyIgnUnits(ign.Systemd.Units, filepath.Join(resultDir, role, cfg.Name, platform, "units"), *updateGoldenFiles, t)
+			if role == "master" {
+				if !foundPullSecretMaster {
+					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
+				}
+				if !foundKubeletUnitMaster {
+					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+				}
+			} else if role == "worker" {
+				if !foundPullSecretWorker {
+					foundPullSecretWorker = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
+				}
+				if !foundKubeletUnitWorker {
+					foundKubeletUnitWorker = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+				}
+			} else {
+				t.Fatalf("Unknown role %s", role)
 			}
 		}
+
+		if !foundPullSecretMaster {
+			t.Errorf("Failed to find pull secret for master")
+		}
+		if !foundKubeletUnitMaster {
+			t.Errorf("Failed to find kubelet unit")
+		}
+		if !foundPullSecretWorker {
+			t.Errorf("Failed to find pull secret")
+		}
+		if !foundKubeletUnitWorker {
+			t.Errorf("Failed to find kubelet unit")
+		}		
 	}
 }
 
@@ -319,62 +341,22 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	return cc, nil
 }
 
-func verifyIgnFiles(files []ignv2_2types.File, dir string, update bool, t *testing.T) {
-	var actual [][]byte
-
+func findIgnFile(files []ignv2_2types.File, path string, t *testing.T) bool {
 	for _, f := range files {
-		j, err := json.MarshalIndent(f, "", "  ")
-		if err != nil {
-			t.Fatalf("failed to marshal file: %v", err)
-		}
-
-		data, err := yaml.JSONToYAML(j)
-		if err != nil {
-			t.Fatalf("failed to convert to yaml: %v", err)
-		}
-
-		actual = append(actual, data)
-
-		if update {
-			name := strings.Replace(f.Path, "/", "-", -1)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				t.Logf("error creating dir %s: %v", dir, err)
-			}
-			if err := ioutil.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
-				t.Logf("error writing ign unit %s to disk: %v", name, err)
-			}
+		if f.Path == path {
+			return true
 		}
 	}
-
-	verifyIgn(actual, dir, t)
+	return false
 }
 
-func verifyIgnUnits(units []ignv2_2types.Unit, dir string, update bool, t *testing.T) {
-	var actual [][]byte
+func findIgnUnit(units []ignv2_2types.Unit, name string, t *testing.T) bool {
 	for _, u := range units {
-		j, err := json.MarshalIndent(u, "", "  ")
-		if err != nil {
-			t.Fatalf("failed to marshal file: %v", err)
-		}
-
-		data, err := yaml.JSONToYAML(j)
-		if err != nil {
-			t.Fatalf("failed to convert to yaml: %v", err)
-		}
-
-		actual = append(actual, data)
-
-		if update {
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				t.Logf("error creating dir %s: %v", dir, err)
-			}
-			if err := ioutil.WriteFile(filepath.Join(dir, u.Name), data, 0644); err != nil {
-				t.Logf("error writing ign unit %s to disk: %v", u.Name, err)
-			}
+		if u.Name == name {
+			return true
 		}
 	}
-
-	verifyIgn(actual, dir, t)
+	return false
 }
 
 func verifyIgn(actual [][]byte, dir string, t *testing.T) {

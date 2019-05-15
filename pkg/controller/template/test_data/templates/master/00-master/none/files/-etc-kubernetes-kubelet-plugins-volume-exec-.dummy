@@ -1,6 +1,0 @@
-contents:
-  source: data:,
-  verification: {}
-filesystem: root
-mode: 493
-path: /etc/kubernetes/kubelet-plugins/volume/exec/.dummy
