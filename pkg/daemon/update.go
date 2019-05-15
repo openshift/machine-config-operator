@@ -171,22 +171,28 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 	glog.Infof("Checking reconcilable for config %v to %v", oldConfigName, newConfigName)
-	// make sure we can actually reconcile this state
-	diff, reconcilableError := dn.reconcilable(oldConfig, newConfig)
+	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
+	// reason is that there is a good chance a previous state is not available to match against.
+	if oldConfig.Kind == "" && dn.onceFrom != "" {
+		glog.Info("Missing kind in old config. Assuming no prior state.")
+	} else {
+		// make sure we can actually reconcile this state
+		diff, reconcilableError := dn.reconcilable(oldConfig, newConfig)
 
-	if reconcilableError != nil {
-		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
-		if dn.recorder != nil {
-			mcRef := &corev1.ObjectReference{
-				Kind: "MachineConfig",
-				Name: newConfig.GetName(),
-				UID:  newConfig.GetUID(),
+		if reconcilableError != nil {
+			wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
+			if dn.recorder != nil {
+				mcRef := &corev1.ObjectReference{
+					Kind: "MachineConfig",
+					Name: newConfig.GetName(),
+					UID:  newConfig.GetUID(),
+				}
+				dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 			}
-			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+			return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 		}
-		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
+		dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 	}
-	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
@@ -250,12 +256,6 @@ type machineConfigDiff struct {
 // directories, links, and systemd units sections of the included ignition
 // config currently.
 func (dn *Daemon) reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	// We skip out of reconcilable if there is no Kind and we are in runOnce mode. The
-	// reason is that there is a good chance a previous state is not available to match against.
-	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Info("Missing kind in old config. Assuming no prior state.")
-		return nil, nil
-	}
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
 
