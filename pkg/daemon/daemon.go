@@ -348,7 +348,6 @@ func (dn *Daemon) updateErrorState(err error) {
 }
 
 func (dn *Daemon) syncNode(key string) error {
-	dn.logSystem("controller syncing started")
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
