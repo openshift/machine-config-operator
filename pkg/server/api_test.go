@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,6 +17,9 @@ type mockServer struct {
 
 func (ms *mockServer) GetConfig(pr poolRequest) (*ignv2_2types.Config, error) {
 	return ms.GetConfigFn(pr)
+}
+func (ms *mockServer) GetPointerConfig(pr poolRequest) (*ignv2_2types.Config, error) {
+	return nil, errors.New("Not implemented")
 }
 
 type checkResponse func(t *testing.T, response *http.Response)

@@ -39,6 +39,11 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 	}, nil
 }
 
+// GetPointerConfig is not implemented yet - currently the installer generates this
+func (bsc *bootstrapServer) GetPointerConfig(cr poolRequest) (*ignv2_2types.Config, error) {
+	return nil, fmt.Errorf("Not implemented")
+}
+
 // GetConfig fetches the machine config(type - Ignition) from the bootstrap server,
 // based on the pool request.
 // It returns nil for conf, error if the config isn't found. It returns a formatted

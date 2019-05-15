@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"path/filepath"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	ignition "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/vincent-petithory/dataurl"
 	yaml "github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +31,11 @@ const (
 var _ = Server(&clusterServer{})
 
 type clusterServer struct {
+	// apiServerHost is the hostname of the API server
+	apiServerHost string
+	// rootCA is the root CA
+	rootCA []byte
+
 	// machineClient is used to interact with the
 	// machine config, pool objects.
 	machineClient v1.MachineconfigurationV1Interface
@@ -48,16 +55,55 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
 	}
 
+	rootCA, err := ioutil.ReadFile("/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+	if err != nil {
+		return nil, err
+	}
+
+	apiURL, err := url.Parse(apiserverURL)
+	if err != nil {
+		return nil, err
+	}
+
 	mc := v1.NewForConfigOrDie(restConfig)
 	return &clusterServer{
+		apiServerHost:  apiURL.Hostname(),
+		rootCA:         rootCA,
 		machineClient:  mc,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
 }
 
+// GetPointerConfig ends up as e.g. user-data in AWS.
+func (cs *clusterServer) GetPointerConfig(cr poolRequest) (*ignition.Config, error) {
+	return &ignition.Config{
+		Ignition: ignition.Ignition{
+			Version: ignition.MaxVersion.String(),
+			Config: ignition.IgnitionConfig{
+				Append: []ignition.ConfigReference{{
+					Source: func() *url.URL {
+						return &url.URL{
+							Scheme: "https",
+							Host:   fmt.Sprintf("%s:22623", cs.apiServerHost),
+							Path:   fmt.Sprintf("/config/%s", cr.machineConfigPool),
+						}
+					}().String(),
+				}},
+			},
+			Security: ignition.Security{
+				TLS: ignition.TLS{
+					CertificateAuthorities: []ignition.CaReference{{
+						Source: dataurl.EncodeBytes([]byte(cs.rootCA)),
+					}},
+				},
+			},
+		},
+	}, nil
+}
+
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
-func (cs *clusterServer) GetConfig(cr poolRequest) (*ignv2_2types.Config, error) {
+func (cs *clusterServer) GetConfig(cr poolRequest) (*ignition.Config, error) {
 	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)

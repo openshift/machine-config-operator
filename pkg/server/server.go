@@ -34,6 +34,7 @@ type appenderFunc func(*ignv2_2types.Config) error
 // Server defines the interface that is implemented by different
 // machine config server implementations.
 type Server interface {
+	GetPointerConfig(poolRequest) (*ignv2_2types.Config, error)
 	GetConfig(poolRequest) (*ignv2_2types.Config, error)
 }
 

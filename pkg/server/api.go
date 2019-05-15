@@ -7,6 +7,8 @@ import (
 	"path"
 
 	"github.com/golang/glog"
+
+	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 )
 
 type poolRequest struct {
@@ -29,6 +31,9 @@ type APIServer struct {
 func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
+	mux.Handle("/pointerconfig/", &pointerHandler {
+		server: a.server,
+	})
 	mux.Handle("/healthz", &healthHandler{})
 	mux.Handle("/", &defaultHandler{})
 
@@ -60,6 +65,35 @@ func (a *APIServer) Serve() {
 		}
 	}
 }
+
+func completeIgnitionRequest(w http.ResponseWriter, r *http.Request, conf *ignv2_2types.Config) {
+	if conf == nil {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	data, err := json.Marshal(conf)
+	if err != nil {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusInternalServerError)
+		glog.Errorf("failed to marshal config: %v", err)
+		return
+	}
+
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	_, err = w.Write(data)
+	if err != nil {
+		glog.Errorf("failed to write response: %v", err)
+	}
+}
+
 
 // APIHandler is the HTTP Handler for the
 // Machine Config Server.
@@ -101,31 +135,42 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
 		return
 	}
-	if conf == nil && err == nil {
+	completeIgnitionRequest(w, r, conf)
+}
+
+// pointerHandler is the HTTP Handler for the
+// Machine Config Server.
+type pointerHandler struct {
+	server Server
+}
+
+// ServeHTTP handles the requests for the machine config server
+// API handler.
+func (sh *pointerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	data, err := json.Marshal(conf)
+	if r.URL.Path == "" {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	cr := poolRequest{
+		machineConfigPool: path.Base(r.URL.Path),
+	}
+
+	conf, err := sh.server.GetPointerConfig(cr)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("failed to marshal %v config: %v", cr, err)
+		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
 		return
 	}
-
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method == http.MethodHead {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	_, err = w.Write(data)
-	if err != nil {
-		glog.Errorf("failed to write %v response: %v", cr, err)
-	}
+	completeIgnitionRequest(w, r, conf)
 }
 
 type healthHandler struct{}
