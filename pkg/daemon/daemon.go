@@ -688,7 +688,6 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 	// We usually expect that if current != desired, pending == desired; however,
 	// it can happen that desiredConfig changed while we were rebooting.
 	if pendingConfigName == desiredConfigName {
-		dn.logSystem("using pending config same as desired")
 		pendingConfig = desiredConfig
 	} else if pendingConfigName != "" {
 		pendingConfig, err = dn.mcLister.Get(pendingConfigName)
@@ -854,8 +853,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	if currentOnDisk != nil && state.currentConfig.GetName() != currentOnDisk.GetName() {
 		// The on disk state (if available) is always considered truth.
 		// We want to handle the case where etcd state was restored from a backup.
-		glog.Infof("Using current config on disk %s", currentOnDisk.GetName())
-		dn.logSystem("Using current config on disk %s", currentOnDisk.GetName())
+		dn.logSystem("Disk currentConfig %s overrides node annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
 		state.currentConfig = currentOnDisk
 	}
 
@@ -870,11 +868,9 @@ func (dn *Daemon) CheckStateOnBoot() error {
 	// a once-a-day or week cron job.
 	var expectedConfig *mcfgv1.MachineConfig
 	if state.pendingConfig != nil {
-		dn.logSystem("Validating against pending config %s", state.pendingConfig.GetName())
 		glog.Infof("Validating against pending config %s", state.pendingConfig.GetName())
 		expectedConfig = state.pendingConfig
 	} else {
-		dn.logSystem("Validating against current config %s", state.currentConfig.GetName())
 		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
