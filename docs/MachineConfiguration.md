@@ -48,11 +48,9 @@ type MachineConfig struct {
 }
 
 type MachineConfigSpec struct {
-    // OSImageURL specifies the remote location that will be used to
-    // fetch the OS. This must be in the canonical $name@$digest format.
-    OSImageURL string `json:"osImageURL"`
     // Config is a Ignition Config object.
     Config ign.Config `json:"config"`
+    KernelArguments []string `json:"kernelArguments"`
 }
 ```
 
@@ -74,13 +72,11 @@ spec:
         filesystem: root
         mode: 384
         path: /root/myfile
-  osImageURL: quay.io/openshift/rhcos@sha256:...
 ```
 
-(Notice how it's the usual Ignition config object *inplace*, not as a JSON
-string -- also note the `config` and `osImageURL` casing follow the
-`json:` markers in the definition above, of course this follows for the
-Ignition config keys as well).
+Notice how it's the usual Ignition config object *inplace*, not as a JSON
+string -- also note the casing follows the `json:` markers in the definition above, of course this follows for the
+Ignition config keys as well.
 
 ### How to create generated MachineConfig
 
@@ -94,8 +90,11 @@ Ignition config keys as well).
 
     * Use the openshift defined Ignition config as base and append all the other Ignition configs in a pre-defined order.
 
+### KernelArguments
+
+This extends the host's kernel arguments.  Use this for e.g. [nosmt](https://access.redhat.com/solutions/rhel-smt).
+
 ### OSImageURL
 
-The operating system used to first boot a machine is platform dependent. For example, on AWS AMIs are used to bring up EC2Instances. But for day-2 updates of the cluster, the MachineConfigDaemon uses the `OSImageURL` to fetch new operating system during updates. An example for OSImageURL is `quay.io/openshift/$CONTAINER@sha256:$DIGEST`. The digest is required to ensure there are no race conditions.
-
+You should not attempt to set this field; it is controlled by the operator and injected directly into the final `rendered-` config.
 For more information, see [OSUpgrades.md].

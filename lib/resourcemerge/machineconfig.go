@@ -45,6 +45,10 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {
 	setStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
+	if !equality.Semantic.DeepEqual(existing.KernelArguments, required.KernelArguments) {
+		*modified = true
+		(*existing).KernelArguments = required.KernelArguments
+	}
 	if !equality.Semantic.DeepEqual(existing.Config, required.Config) {
 		*modified = true
 		(*existing).Config = required.Config

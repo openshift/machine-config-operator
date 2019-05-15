@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -189,6 +190,26 @@ func bumpPoolMaxUnavailableTo(t *testing.T, cs *framework.ClientSet, max int) {
 	require.Nil(t, err)
 }
 
+func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
+	// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
+	listOptions := metav1.ListOptions{
+		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
+	}
+	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
+
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
+	if err != nil {
+		return nil, err
+	}
+	if len(mcdList.Items) != 1 {
+		if len(mcdList.Items) == 0 {
+			return nil, fmt.Errorf("Failed to find MCD for node %s", node.Name)
+		}
+		return nil, fmt.Errorf("Too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
+	}
+	return &mcdList.Items[0], nil
+}
+
 func TestUpdateSSH(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
@@ -233,20 +254,11 @@ func TestUpdateSSH(t *testing.T) {
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
-		listOptions := metav1.ListOptions{
-			FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
-		}
-		listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
-
-		mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
+		mcd, err := mcdForNode(cs, &node)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(mcdList.Items) != 1 {
-			t.Fatalf("Failed to find MCD for node %s", node.Name)
-		}
-		mcdName := mcdList.Items[0].ObjectMeta.Name
+		mcdName := mcd.ObjectMeta.Name
 
 		// now rsh into that daemon and grep the authorized key file to check if 1234_test was written
 		// must do both commands in same shell, combine commands into one exec.Command()
@@ -259,6 +271,60 @@ func TestUpdateSSH(t *testing.T) {
 			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", found)
 		}
 		t.Logf("Node %s has SSH key", node.Name)
+	}
+}
+
+
+func TestKernelArguments(t *testing.T) {
+	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
+	kargsMC := &mcv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+			KernelArguments: []string{"nosmt", "foo=bar"},
+		},
+	}
+
+	_, err := cs.MachineConfigs().Create(kargsMC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Created %s", kargsMC.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcdName := mcd.ObjectMeta.Name
+		kargsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"cat", "/rootfs/proc/cmdline").CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+		kargs := string(kargsBytes)
+		for _, v := range kargsMC.Spec.KernelArguments {
+			if !strings.Contains(kargs, v) {
+				t.Fatalf("Missing '%s' in kargs", v)
+			}
+		}
+		t.Logf("Node %s has expected kargs", node.Name)
 	}
 }
 
