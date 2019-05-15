@@ -547,22 +547,25 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.
 }
 
 func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
-	// Hardcoded for now per discussion in
-	// https://github.com/openshift/machine-config-operator/pull/701
-	if pool.Name == "master" {
-		return 1, nil
-	}
 	intOrPercent := intstrutil.FromInt(1)
 	if pool.Spec.MaxUnavailable != nil {
 		intOrPercent = *pool.Spec.MaxUnavailable
 	}
-
 	maxunavail, err := intstrutil.GetValueFromIntOrPercent(&intOrPercent, len(nodes), false)
 	if err != nil {
 		return 0, err
 	}
 	if maxunavail == 0 {
 		maxunavail = 1
+	}
+	if pool.Name == "master" {
+		// calculate the fault tolerance dynamically for the master pool
+		// to avoid risking losing etcd quorum.
+		tolerance := len(nodes) - ((len(nodes) / 2) + 1)
+		if maxunavail > tolerance {
+			glog.Warningf("Refusing to honor master pool maxUnavailable %d to prevent losing etcd quorum, using %d instead", maxunavail, tolerance)
+			return tolerance, nil
+		}
 	}
 	return maxunavail, nil
 }

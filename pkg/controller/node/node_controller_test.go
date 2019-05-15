@@ -331,57 +331,79 @@ func TestGetPoolForNode(t *testing.T) {
 
 func intStrPtr(obj intstr.IntOrString) *intstr.IntOrString { return &obj }
 
-func TestMaxUnavailable(t *testing.T) {
-	nodes := []*corev1.Node{
-		newNode("node-0", "", ""),
-		newNode("node-1", "", ""),
-		newNode("node-2", "", ""),
-		newNode("node-3", "", ""),
+func newNodeSet(len int) []*corev1.Node {
+	nodes := []*corev1.Node{}
+	for i := 0; i < len; i++ {
+		nodes = append(nodes, newNode(fmt.Sprintf("node-%d", i), "", ""))
 	}
+	return nodes
+}
 
+func TestMaxUnavailable(t *testing.T) {
 	tests := []struct {
-		poolName string
+		poolName   string
 		maxUnavail *intstr.IntOrString
-
-		expected int
-		err      bool
-	}{{
-		maxUnavail: nil,
-
-		expected: 1,
-		err:      false,
-	}, {
-		maxUnavail: intStrPtr(intstr.FromInt(2)),
-
-		expected: 2,
-		err:      false,
-	}, {
-		maxUnavail: intStrPtr(intstr.FromInt(0)),
-
-		expected: 1,
-		err:      false,
-	}, {
-		maxUnavail: intStrPtr(intstr.FromString("50%")),
-
-		expected: 2,
-		err:      false,
-	}, {
-		maxUnavail: intStrPtr(intstr.FromString("60%")),
-
-		expected: 2,
-		err:      false,
-	}, {
-		maxUnavail: intStrPtr(intstr.FromString("50 percent")),
-
-		expected: 0,
-		err:      true,
-	}, {
-		poolName:   "master",
-		maxUnavail: intStrPtr(intstr.FromInt(2)),
-
-		expected: 1,
-		err:      false,
-	}}
+		nodes      []*corev1.Node
+		expected   int
+		err        bool
+	}{
+		{
+			maxUnavail: nil,
+			nodes:      newNodeSet(4),
+			expected:   1,
+			err:        false,
+		}, {
+			maxUnavail: intStrPtr(intstr.FromInt(2)),
+			nodes:      newNodeSet(4),
+			expected:   2,
+			err:        false,
+		}, {
+			maxUnavail: intStrPtr(intstr.FromInt(0)),
+			nodes:      newNodeSet(4),
+			expected:   1,
+			err:        false,
+		}, {
+			maxUnavail: intStrPtr(intstr.FromString("50%")),
+			nodes:      newNodeSet(4),
+			expected:   2,
+			err:        false,
+		}, {
+			maxUnavail: intStrPtr(intstr.FromString("60%")),
+			nodes:      newNodeSet(4),
+			expected:   2,
+			err:        false,
+		}, {
+			maxUnavail: intStrPtr(intstr.FromString("50 percent")),
+			nodes:      newNodeSet(4),
+			expected:   0,
+			err:        true,
+		}, {
+			poolName:   "master",
+			maxUnavail: intStrPtr(intstr.FromInt(1)),
+			nodes:      newNodeSet(5),
+			expected:   1,
+			err:        false,
+		}, {
+			poolName:   "master",
+			maxUnavail: intStrPtr(intstr.FromInt(2)),
+			nodes:      newNodeSet(3),
+			expected:   1,
+			err:        false,
+		}, {
+			poolName:   "master",
+			maxUnavail: intStrPtr(intstr.FromInt(2)),
+			nodes:      newNodeSet(5),
+			expected:   2,
+			err:        false,
+		},
+		{
+			poolName:   "master",
+			maxUnavail: intStrPtr(intstr.FromInt(4)),
+			nodes:      newNodeSet(7),
+			expected:   3,
+			err:        false,
+		},
+	}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
@@ -393,7 +415,7 @@ func TestMaxUnavailable(t *testing.T) {
 					MaxUnavailable: test.maxUnavail,
 				},
 			}
-			got, err := maxUnavailable(pool, nodes)
+			got, err := maxUnavailable(pool, test.nodes)
 			if err != nil && !test.err {
 				t.Fatal("expected non-nil error")
 			}
