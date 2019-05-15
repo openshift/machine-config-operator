@@ -94,6 +94,8 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		machineConfigPool: path.Base(r.URL.Path),
 	}
 
+	glog.Infof("Pool %s requested by %s", cr.machineConfigPool, r.RemoteAddr)
+
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")

@@ -34,4 +34,4 @@ $podman login --tls-verify=false -u unused -p "${secret}" "${registry}"
 set -x
 
 # And allow everything to pull from our namespace
-oc -n openshift-machine-config-operator policy add-role-to-group registry-viewer system:unauthenticated
+oc -n openshift-machine-config-operator policy add-role-to-group registry-viewer system:anonymous
