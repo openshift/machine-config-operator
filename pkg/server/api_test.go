@@ -106,7 +106,7 @@ func TestHealthzHandler(t *testing.T) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
-				checkStatus(t, response, http.StatusNoContent)
+				checkStatus(t, response, http.StatusOK)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
 			},
@@ -118,7 +118,7 @@ func TestHealthzHandler(t *testing.T) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
-				checkStatus(t, response, http.StatusNoContent)
+				checkStatus(t, response, http.StatusOK)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
 			},
@@ -260,7 +260,7 @@ func TestAPIServer(t *testing.T) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
-				checkStatus(t, response, http.StatusNoContent)
+				checkStatus(t, response, http.StatusOK)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
 			},
@@ -272,7 +272,7 @@ func TestAPIServer(t *testing.T) {
 				return new(ignv2_2types.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
-				checkStatus(t, response, http.StatusNoContent)
+				checkStatus(t, response, http.StatusOK)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
 			},
