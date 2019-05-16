@@ -598,7 +598,7 @@ func TestCalculateStatus(t *testing.T) {
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
-				Status: mcfgv1.MachineConfigPoolStatus{
+				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.currentConfig}},
 				},
 			}
