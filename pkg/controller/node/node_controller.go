@@ -432,7 +432,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	if machineconfigpool.Status.Configuration.Name == "" {
+	if machineconfigpool.Spec.Configuration.Name == "" {
 		// Previously we spammed the logs about empty pools.
 		// Let's just pause for a bit here to let the renderer
 		// initialize them.
@@ -475,7 +475,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	candidates := getCandidateMachines(pool, nodes, maxunavail)
 	for _, node := range candidates {
-		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Status.Configuration.Name); err != nil {
+		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Spec.Configuration.Name); err != nil {
 			return err
 		}
 	}
@@ -517,7 +517,7 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 }
 
 func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) []*corev1.Node {
-	targetConfig := pool.Status.Configuration.Name
+	targetConfig := pool.Spec.Configuration.Name
 
 	unavail := getUnavailableMachines(nodesInPool)
 	// If we're at capacity, there's nothing to do.

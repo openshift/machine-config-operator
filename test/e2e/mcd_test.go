@@ -93,6 +93,7 @@ func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 			},
 		},
 	}
+
 	return mcadd
 }
 
@@ -107,9 +108,9 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 		if err != nil {
 			return false, err
 		}
-		for _, mc := range mcp.Status.Configuration.Source {
+		for _, mc := range mcp.Spec.Configuration.Source {
 			if mc.Name == mcName {
-				renderedConfig = mcp.Status.Configuration.Name
+				renderedConfig = mcp.Spec.Configuration.Name
 				return true, nil
 			}
 		}
@@ -123,8 +124,6 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 
 // waitForPoolComplete polls a pool until it has completed an update to target
 func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
-	// We need a spec and status separation https://github.com/openshift/machine-config-operator/pull/765#issuecomment-493136113
-	time.Sleep(time.Second * 13)
 	startTime := time.Now()
 	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})

@@ -63,6 +63,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavai
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			NodeSelector:   selector,
 			MaxUnavailable: maxUnavail,
+			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
 			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
@@ -502,7 +503,7 @@ func TestGetCandidateMachines(t *testing.T) {
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
-				Status: mcfgv1.MachineConfigPoolStatus{
+				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: "v1"}},
 				},
 			}
