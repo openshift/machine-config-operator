@@ -35,7 +35,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 
 		err error
 	}{{
-		err: errors.New("configuration for pool dummy-pool is empty"),
+		err: errors.New("configuration spec for pool dummy-pool is empty"),
 	}, {
 		generated: "g",
 		err:       errors.New("list of MachineConfigs that were used to generate configuration for pool dummy-pool is empty"),
@@ -115,6 +115,9 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 			err := isMachineConfigPoolConfigurationValid(&mcfgv1.MachineConfigPool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dummy-pool",
+				},
+				Spec: mcfgv1.MachineConfigPoolSpec{
+					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.generated}, Source: source},
 				},
 				Status: mcfgv1.MachineConfigPoolStatus{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.generated}, Source: source},

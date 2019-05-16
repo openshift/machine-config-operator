@@ -500,18 +500,20 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	if pool.Status.Configuration.Name == generated.Name {
+	if pool.Spec.Configuration.Name == generated.Name {
 		_, _, err = resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
 		return err
 	}
 
-	glog.V(2).Infof("Pool %s is now targeting: %s", pool.Name, generated.Name)
-	pool.Status.Configuration.Name = generated.Name
-	pool.Status.Configuration.Source = source
-	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool)
+	newPool := pool.DeepCopy()
+	newPool.Spec.Configuration.Name = generated.Name
+	newPool.Spec.Configuration.Source = source
+	// TODO(walters) Use subresource or JSON patch, but the latter isn't supported by the unit test mocks
+	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(newPool)
 	if err != nil {
 		return err
 	}
+	glog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, generated.Name)
 
 	if err := ctrl.garbageCollectRenderedConfigs(pool); err != nil {
 		return err
@@ -565,6 +567,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
+		pool.Spec.Configuration.Name = generated.Name
 		pool.Status.Configuration.Name = generated.Name
 		opools = append(opools, pool)
 		oconfigs = append(oconfigs, generated)

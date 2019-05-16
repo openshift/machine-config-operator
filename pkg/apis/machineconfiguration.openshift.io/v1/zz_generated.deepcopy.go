@@ -633,6 +633,7 @@ func (in *MachineConfigPoolSpec) DeepCopyInto(out *MachineConfigPoolSpec) {
 		*out = new(intstr.IntOrString)
 		**out = **in
 	}
+	in.Configuration.DeepCopyInto(&out.Configuration)
 	return
 }
 

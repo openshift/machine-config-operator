@@ -255,8 +255,11 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 // isMachineConfigPoolConfigurationValid returns nil error when the configuration of a `pool` is created by the controller at version `version`.
 func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
 	// both .status.configuration.name and .status.configuration.source must be set.
+	if len(pool.Spec.Configuration.Name) == 0 {
+		return fmt.Errorf("configuration spec for pool %s is empty", pool.GetName())
+	}
 	if len(pool.Status.Configuration.Name) == 0 {
-		return fmt.Errorf("configuration for pool %s is empty", pool.GetName())
+		return fmt.Errorf("configuration status for pool %s is empty", pool.GetName())
 	}
 	if len(pool.Status.Configuration.Source) == 0 {
 		return fmt.Errorf("list of MachineConfigs that were used to generate configuration for pool %s is empty", pool.GetName())

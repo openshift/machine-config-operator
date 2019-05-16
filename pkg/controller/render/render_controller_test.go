@@ -59,6 +59,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMa
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			MachineConfigSelector: selector,
+			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
 			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
@@ -235,6 +236,10 @@ func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
+func (f *fixture) expectUpdateMachineConfigPoolSpec(pool *mcfgv1.MachineConfigPool) {
+	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "spec", pool))
+}
+
 func (f *fixture) expectUpdateMachineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) {
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "status", pool))
 }
@@ -339,6 +344,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	gmc.Spec.OSImageURL = "why-did-you-change-it"
+	mcp.Spec.Configuration.Name = gmc.Name
 	mcp.Status.Configuration.Name = gmc.Name
 
 	f.ccLister = append(f.ccLister, cc)
@@ -401,6 +407,7 @@ func TestDoNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mcp.Spec.Configuration.Name = gmc.Name
 	mcp.Status.Configuration.Name = gmc.Name
 
 	f.ccLister = append(f.ccLister, cc)
