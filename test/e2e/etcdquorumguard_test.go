@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"github.com/pkg/errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 )
 
@@ -103,7 +105,7 @@ func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, un
 					fmt.Print("    Node object was modified and not up to date; retrying\n")
 					continue;
 				}
-				return fmt.Errorf("Failed to make node %s %sschedulable: %s\n", node, prefix, err.Error())
+				return errors.Wrapf(err, "failed to make node %s %sschedulable", node, prefix)
 			}
 		} else {
 			fmt.Printf("  Node %s is already %sschedulable", node, prefix)
@@ -130,14 +132,15 @@ func evictEtcdQuotaGuardPodsFromNode(cs *framework.ClientSet, node string) error
 	if err != nil {
 		return err
 	}
+	var podErrs []error
 	for _, pod := range pods {
 		fmt.Printf("  Evicting pod %s/%s...\n", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
 		err = cs.CoreV1Interface.Pods(pod.ObjectMeta.Namespace).Evict(&policyv1beta1.Eviction{metav1.TypeMeta{}, pod.ObjectMeta, &metav1.DeleteOptions{}})
 		if err != nil {
-			err = fmt.Errorf("     Unable to evict pod %s/%s: %s\n", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, err.Error())
+			podErrs = append(podErrs, errors.Wrapf(err, "Unable to evict pod %s/%s", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name))
 		}
 	}
-	return err
+	return utilerrors.NewAggregate(podErrs)
 }
 
 // makeOneNodeUnschedulableAndEvict attempts to evict the etcd Quorum
@@ -212,7 +215,7 @@ func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 				return fmt.Errorf("Pod %s not associated with a node", pod)
 			}
 			if _, ok := nodes[node]; !ok {
-				return fmt.Errorf("Pod %s running on %s, not a master!", pod, node)
+				return fmt.Errorf("pod %s running on %s, not a master", pod, node)
 			}
 		}
 	}
