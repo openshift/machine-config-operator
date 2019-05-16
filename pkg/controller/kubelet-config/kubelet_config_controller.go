@@ -3,7 +3,6 @@ package kubeletconfig
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -326,9 +325,8 @@ func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ignv2_2type
 		return nil, fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 	// Render the default templates
-	tmplPath := filepath.Join(ctrl.templatesDir, role)
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, tmplPath)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, ctrl.templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error %s", err)
 	}

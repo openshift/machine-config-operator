@@ -3,14 +3,13 @@ package containerruntimeconfig
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -351,9 +350,8 @@ func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*i
 		return nil, nil, nil, fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 	// Render the default templates
-	tmplPath := filepath.Join(ctrl.templatesDir, role)
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, tmplPath)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, ctrl.templatesDir)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
 	}
