@@ -211,6 +211,26 @@ func RenderBootstrap(
 		}}...)
 	}
 
+	if infra.Status.PlatformStatus.Ovirt != nil {
+		manifests = append(manifests, []struct {
+			name     string
+			data     []byte
+			filename string
+		}{{
+			name:     "manifests/ovirt/coredns.yaml",
+			filename: "ovirt/manifests/coredns.yaml",
+		}, {
+			name:     "manifests/ovirt/coredns-corefile.tmpl",
+			filename: "ovirt/static-pod-resources/coredns/Corefile.tmpl",
+		}, {
+			name:     "manifests/ovirt/keepalived.yaml",
+			filename: "ovirt/manifests/keepalived.yaml",
+		}, {
+			name:     "manifests/ovirt/keepalived.conf.tmpl",
+			filename: "ovirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
+		}}...)
+	}
+
 	for _, m := range manifests {
 		var b []byte
 		var err error
