@@ -1,0 +1,35 @@
+# Configuration template for Keepalived, which is used to manage the DNS and
+# API VIPs.
+#
+# For more information, see installer/data/data/bootstrap/baremetal/README.md
+# in the installer repo.
+
+vrrp_instance {{`{{.Cluster.Name}}`}}_API {
+    state BACKUP
+    interface {{`{{.VRRPInterface}}`}}
+    virtual_router_id {{`{{.Cluster.APIVirtualRouterID }}`}}
+    priority 50
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`{{.Cluster.Name}}`}}_api_vip
+    }
+    virtual_ipaddress {
+        {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+    }
+}
+
+vrrp_instance {{`{{.Cluster.Name}}`}}_DNS {
+    state MASTER
+    interface {{`{{.VRRPInterface}}`}}
+    virtual_router_id {{`{{.Cluster.DNSVirtualRouterID }}`}}
+    priority 140
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`{{.Cluster.Name}}`}}_dns_vip
+    }
+    virtual_ipaddress {
+        {{`{{ .Cluster.DNSVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+    }
+}
