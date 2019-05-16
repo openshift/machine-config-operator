@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"github.com/pkg/errors"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -73,10 +74,9 @@ func createIgnFile(path, content, fs string, mode int) ignv2_2types.File {
 
 func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 	// create a dummy MC
-	mcName := fmt.Sprintf("%s-%s", name, uuid.NewUUID())
 	mcadd := &mcv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name: mcName,
+		Name: fmt.Sprintf("%s-%s", name, uuid.NewUUID()),
 		// TODO(runcom): hardcoded to workers for safety
 		Labels: mcLabelForWorkers(),
 	}
@@ -95,6 +95,29 @@ func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 	return mcadd
 }
 
+// waitForRenderedConfig polls a MachineConfigPool until it has
+// included the given mcName in its config, and returns the new
+// rendered config name.
+func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName string) (string, error) {
+	var newMCName string
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, mc := range mcp.Status.Configuration.Source {
+			if mc.Name == mcName {
+				newMCName = mcp.Status.Configuration.Name
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		return "", errors.Wrapf(err, "machine config %s hasn't been picked by pool %s", mcName, pool)
+	}
+	return newMCName, nil
+}
+
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
@@ -109,22 +132,9 @@ func TestMCDeployed(t *testing.T) {
 			t.Errorf("failed to create machine config %v", err)
 		}
 
-		// grab the latest worker- MC
-		var newMCName string
-		if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-			mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-			if err != nil {
-				return false, err
-			}
-			for _, mc := range mcp.Status.Configuration.Source {
-				if mc.Name == mcadd.Name {
-					newMCName = mcp.Status.Configuration.Name
-					return true, nil
-				}
-			}
-			return false, nil
-		}); err != nil {
-			t.Errorf("machine config hasn't been picked by the pool: %v", err)
+		newMCName, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+		if err != nil {
+			t.Errorf("%v", err)
 		}
 
 		visited := make(map[string]bool)
@@ -202,21 +212,9 @@ func TestUpdateSSH(t *testing.T) {
 	}
 
 	// grab the latest worker- MC
-	var newMCName string
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		for _, mc := range mcp.Status.Configuration.Source {
-			if mc.Name == mcName {
-				newMCName = mcp.Status.Configuration.Name
-				return true, nil
-			}
-		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config hasn't been picked by the pool: %v", err)
+	newMCName, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	if err != nil {
+		t.Errorf("%v", err)
 	}
 
 	visited := make(map[string]bool)
@@ -353,22 +351,9 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		t.Errorf("failed to create machine config %v", err)
 	}
 
-	// grab the latest worker- MC
-	var newMCName string
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		for _, mc := range mcp.Status.Configuration.Source {
-			if mc.Name == mcadd.Name {
-				newMCName = mcp.Status.Configuration.Name
-				return true, nil
-			}
-		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config hasn't been picked by the pool: %v", err)
+	newMCName, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	if err != nil {
+		t.Errorf("%v", err)
 	}
 
 	// verify that one node picked the above up
