@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -44,8 +44,8 @@ func TestFeaturesDefault(t *testing.T) {
 			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
 			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
-			mcs := newMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{{}})
-			mcs2 := newMachineConfig(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ignv2_2types.File{{}})
+			mcs := newMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := newMachineConfig(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)

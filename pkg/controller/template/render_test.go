@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -321,7 +321,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		}
 		if !foundKubeletUnitWorker {
 			t.Errorf("Failed to find kubelet unit")
-		}		
+		}
 	}
 }
 
@@ -341,7 +341,7 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	return cc, nil
 }
 
-func findIgnFile(files []ignv2_2types.File, path string, t *testing.T) bool {
+func findIgnFile(files []igntypes.File, path string, t *testing.T) bool {
 	for _, f := range files {
 		if f.Path == path {
 			return true
@@ -350,7 +350,7 @@ func findIgnFile(files []ignv2_2types.File, path string, t *testing.T) bool {
 	return false
 }
 
-func findIgnUnit(units []ignv2_2types.Unit, name string, t *testing.T) bool {
+func findIgnUnit(units []igntypes.Unit, name string, t *testing.T) bool {
 	for _, u := range units {
 		if u.Name == name {
 			return true

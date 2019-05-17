@@ -19,8 +19,8 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ignv2 "github.com/coreos/ignition/config/v2_2"
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	ign "github.com/coreos/ignition/config/v2_2"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
@@ -105,7 +105,7 @@ type Daemon struct {
 	node *corev1.Node
 
 	// remove the funcs below once proper e2e testing is done for updating ssh keys
-	atomicSSHKeysWriter func(ignv2_2types.PasswdUser, string) error
+	atomicSSHKeysWriter func(igntypes.PasswdUser, string) error
 
 	queue       workqueue.RateLimitingInterface
 	enqueueNode func(*corev1.Node)
@@ -441,9 +441,9 @@ func (dn *Daemon) runOnceFrom() error {
 		return err
 	}
 	switch configi.(type) {
-	case ignv2_2types.Config:
+	case igntypes.Config:
 		glog.V(2).Info("Daemon running directly from Ignition")
-		return dn.runOnceFromIgnition(configi.(ignv2_2types.Config))
+		return dn.runOnceFromIgnition(configi.(igntypes.Config))
 	case mcfgv1.MachineConfig:
 		glog.V(2).Info("Daemon running directly from MachineConfig")
 		return dn.runOnceFromMachineConfig(configi.(mcfgv1.MachineConfig), contentFrom)
@@ -965,7 +965,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
-func (dn *Daemon) runOnceFromIgnition(ignConfig ignv2_2types.Config) error {
+func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
 	// Execute update without hitting the cluster
 	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
 		return err
@@ -1162,7 +1162,7 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 
 // checkUnits validates the contents of all the units in the
 // target config and retursn true if they match.
-func checkUnits(units []ignv2_2types.Unit) bool {
+func checkUnits(units []igntypes.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
@@ -1197,7 +1197,7 @@ func checkUnits(units []ignv2_2types.Unit) bool {
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func checkFiles(files []ignv2_2types.File) bool {
+func checkFiles(files []igntypes.File) bool {
 	checkedFiles := make(map[string]bool)
 	for i := len(files) - 1; i >= 0; i-- {
 		f := files[i]
@@ -1299,7 +1299,7 @@ func (dn *Daemon) senseAndLoadOnceFrom() (interface{}, onceFromOrigin, error) {
 	}
 
 	// Try each supported parser
-	ignConfig, _, err := ignv2.Parse(content)
+	ignConfig, _, err := ign.Parse(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
 		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil

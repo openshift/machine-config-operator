@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -69,7 +69,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMa
 	return mcp
 }
 
-func newMachineConfig(name string, labels map[string]string, osurl string, files []ignv2_2types.File) *mcfgv1.MachineConfig {
+func newMachineConfig(name string, labels map[string]string, osurl string, files []igntypes.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
 	}
@@ -261,18 +261,18 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 func TestCreatesGeneratedMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
-	files := []ignv2_2types.File{{
-		Node: ignv2_2types.Node{
+	files := []igntypes.File{{
+		Node: igntypes.Node{
 			Path: "/dummy/0",
 		},
 	}, {
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
-		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
-		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []igntypes.File{files[1]}),
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
@@ -289,18 +289,18 @@ func TestCreatesGeneratedMachineConfig(t *testing.T) {
 // generateRenderedMachineConfig should return an error when one of the MCs in configs contains an invalid ignconfig.
 func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
-	files := []ignv2_2types.File{{
-		Node: ignv2_2types.Node{
+	files := []igntypes.File{{
+		Node: igntypes.Node{
 			Path: "/dummy/0",
 		},
 	}, {
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
-		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
-		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []igntypes.File{files[1]}),
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
@@ -319,18 +319,18 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f := newFixture(t)
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
-	files := []ignv2_2types.File{{
-		Node: ignv2_2types.Node{
+	files := []igntypes.File{{
+		Node: igntypes.Node{
 			Path: "/dummy/0",
 		},
 	}, {
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
-		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
-		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []igntypes.File{files[1]}),
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
@@ -366,8 +366,8 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
 	mcs := []*mcfgv1.MachineConfig{
-		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy-test-1", []ignv2_2types.File{}),
-		newMachineConfig("00-test-cluster-master-0", map[string]string{"node-role": "master"}, "dummy-change", []ignv2_2types.File{}),
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy-test-1", []igntypes.File{}),
+		newMachineConfig("00-test-cluster-master-0", map[string]string{"node-role": "master"}, "dummy-change", []igntypes.File{}),
 	}
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
@@ -382,18 +382,18 @@ func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
 func TestDoNothing(t *testing.T) {
 	f := newFixture(t)
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
-	files := []ignv2_2types.File{{
-		Node: ignv2_2types.Node{
+	files := []igntypes.File{{
+		Node: igntypes.Node{
 			Path: "/dummy/0",
 		},
 	}, {
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
-		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
-		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []igntypes.File{files[1]}),
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
@@ -421,23 +421,23 @@ func TestDoNothing(t *testing.T) {
 
 func TestGetMachineConfigsForPool(t *testing.T) {
 	masterPool := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
-	files := []ignv2_2types.File{{
-		Node: ignv2_2types.Node{
+	files := []igntypes.File{{
+		Node: igntypes.Node{
 			Path: "/dummy/0",
 		},
 	}, {
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Path: "/dummy/1",
 		},
 	}, {
-		Node: ignv2_2types.Node{
+		Node: igntypes.Node{
 			Path: "/dummy/2",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
-		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []ignv2_2types.File{files[0]}),
-		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []ignv2_2types.File{files[1]}),
-		newMachineConfig("00-test-cluster-worker", map[string]string{"node-role": "worker"}, "dummy://2", []ignv2_2types.File{files[2]}),
+		newMachineConfig("00-test-cluster-master", map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{files[0]}),
+		newMachineConfig("05-extra-master", map[string]string{"node-role": "master"}, "dummy://1", []igntypes.File{files[1]}),
+		newMachineConfig("00-test-cluster-worker", map[string]string{"node-role": "worker"}, "dummy://2", []igntypes.File{files[2]}),
 	}
 	masterConfigs, err := getMachineConfigsForPool(masterPool, mcs)
 	if err != nil {
@@ -467,7 +467,7 @@ func getKey(config *mcfgv1.MachineConfigPool, t *testing.T) string {
 
 func TestMachineConfigsNoBailWithoutPool(t *testing.T) {
 	f := newFixture(t)
-	mc := newMachineConfig("00-test-cluster-worker", map[string]string{"node-role": "worker"}, "dummy://2", []ignv2_2types.File{})
+	mc := newMachineConfig("00-test-cluster-worker", map[string]string{"node-role": "worker"}, "dummy://2", []igntypes.File{})
 	oref := metav1.NewControllerRef(newControllerConfig("test"), mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig"))
 	mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "")
