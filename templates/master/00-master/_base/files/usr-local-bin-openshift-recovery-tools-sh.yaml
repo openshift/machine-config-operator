@@ -79,12 +79,16 @@ contents:
         cp -rap ${ETCD_DATA_DIR} $ASSET_DIR/backup/
       fi
     }
-    
+
+    snapshot_data_dir() {
+      ETCDCTL_API=3 ${ETCDCTL} snapshot save ${SNAPSHOT_FILE}
+    }
+
     # backup etcd peer, server and metric certs
     backup_certs() {
       COUNT=$(ls $ETCD_STATIC_RESOURCES/system\:etcd-* 2>/dev/null | wc -l)
       BACKUP_COUNT=$(ls $ASSET_DIR/backup/system\:etcd-* 2>/dev/null | wc -l)
-    
+
       if [ "$BACKUP_COUNT" -gt 1 ]; then
         echo "etcd TLS certificate backups found in $ASSET_DIR/backup.."
       elif [ "$COUNT" -eq 0 ]; then
