@@ -854,7 +854,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		// The on disk state (if available) is always considered truth.
 		// We want to handle the case where etcd state was restored from a backup.
 		dn.logSystem("Disk currentConfig %s overrides node annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
-		state.currentConfig = currentOnDisk
+		//state.currentConfig = currentOnDisk
 	}
 
 	// Validate the on-disk state against what we *expect*.
@@ -1011,14 +1011,14 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 		return nil, nil, err
 	}
 
-	currentOnDisk, err := dn.getCurrentConfigOnDisk()
-	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, err
-	}
+	// currentOnDisk, err := dn.getCurrentConfigOnDisk()
+	// if err != nil && !os.IsNotExist(err) {
+	// 	return nil, nil, err
+	// }
 
-	if currentOnDisk != nil && currentOnDisk.GetName() != currentConfig.GetName() {
-		return currentOnDisk, desiredConfig, nil
-	}
+	// if currentOnDisk != nil && currentOnDisk.GetName() != currentConfig.GetName() {
+	// 	return currentOnDisk, desiredConfig, nil
+	// }
 
 	// Detect if there is an update
 	if desiredConfigName == currentConfigName && state == constants.MachineConfigDaemonStateDone {
