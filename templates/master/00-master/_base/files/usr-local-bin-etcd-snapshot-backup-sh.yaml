@@ -38,6 +38,7 @@ contents:
     function run {
       init
       dl_etcdctl
+      backup_etcd_client_certs
       backup_manifest
       snapshot_data_dir
     }
