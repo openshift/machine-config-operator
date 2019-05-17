@@ -9,8 +9,8 @@ contents:
     set -o pipefail
     
     # example
-    # etcd-snapshot-restore.sh $path-to-snapshot
     
+    # etcd-snapshot-restore.sh $path-to-snapshot $etcd-connection-string
     if [[ $EUID -ne 0 ]]; then
       echo "This script must be run as root"
       exit 1
@@ -23,6 +23,12 @@ contents:
       SNAPSHOT_FILE="$1"
     fi
     
+
+    ETCD_CONNSTRING=""
+    if [ "$2" != "" ]; then
+      ETCD_CONNSTRING="$2"
+    fi
+
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
     MANIFEST_STOPPED_DIR="${CONFIG_FILE_DIR}/manifests-stopped"

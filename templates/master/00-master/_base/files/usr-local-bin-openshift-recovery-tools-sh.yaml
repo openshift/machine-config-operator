@@ -134,7 +134,10 @@ contents:
       HOSTNAME=$(hostname)
       HOSTDOMAIN=$(hostname -d)
       ETCD_NAME=etcd-member-${HOSTNAME}.${HOSTDOMAIN}
-    
+      if [ -z "${ETCD_CONNSTRING}" ]; then
+        ETCD_CONNSTRING="${ETCD_NAME}=https://${ETCD_DNS_NAME}:2380"
+      fi
+
       source /run/etcd/environment
     
       if [ ! -f "$SNAPSHOT_FILE" ]; then
@@ -148,7 +151,7 @@ contents:
         
       env ETCDCTL_API=3 ${ETCDCTL} snapshot restore $SNAPSHOT_FILE \
         --name $ETCD_NAME \
-        --initial-cluster ${ETCD_NAME}=https://${ETCD_DNS_NAME}:2380 \
+        --initial-cluster ${ETCD_CONNSTRING} \
         --initial-cluster-token etcd-cluster-1 \
         --skip-hash-check=true \
         --initial-advertise-peer-urls https://${ETCD_IPV4_ADDRESS}:2380 \
