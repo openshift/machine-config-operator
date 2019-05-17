@@ -1,0 +1,86 @@
+filesystem: "root"
+mode: 0644
+path: "/usr/local/share/openshift-recovery/template/etcd-generate-certs.yaml.template"
+contents:
+  inline: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: etcd-generate-certs
+      namespace: openshift-etcd
+      labels:
+        k8s-app: etcd
+    spec:
+      containers:
+      - name: generate-env
+        image: "__SETUP_ETCD_ENVIRONMENT__"
+        args:
+        - "run"
+        - "--discovery-srv=__ETCD_DISCOVERY_DOMAIN__"
+        - "--output-file=/run/etcd/environment"
+        - "--v=4"
+        volumeMounts:
+        - name: discovery
+          mountPath: /run/etcd/
+      - name: generate-certs
+        image: "__KUBE_CLIENT_AGENT__"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          #!/bin/sh
+          set -euxo pipefail
+    
+          source /run/etcd/environment
+    
+          [ -e /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt -a \
+            -e /etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key ] || \
+            kube-client-agent \
+              request \
+                --kubeconfig=/etc/ssl/etcd/.recoveryconfig \
+                --orgname=system:etcd-servers \
+                --assetsdir=/etc/ssl/etcd \
+                --dnsnames=localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,etcd.openshift-etcd.svc,etcd.openshift-etcd.svc.cluster.local,"${ETCD_WILDCARD_DNS_NAME}" \
+                --commonname=system:etcd-server:${ETCD_DNS_NAME} \
+                --ipaddrs=${ETCD_IPV4_ADDRESS},127.0.0.1 \
+    
+          [ -e /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt -a \
+            -e /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key ] || \
+            kube-client-agent \
+              request \
+                --kubeconfig=/etc/ssl/etcd/.recoveryconfig \
+                --orgname=system:etcd-peers \
+                --assetsdir=/etc/ssl/etcd \
+                --dnsnames=${ETCD_DNS_NAME},__ETCD_DISCOVERY_DOMAIN__  \
+                --commonname=system:etcd-peer:${ETCD_DNS_NAME} \
+                --ipaddrs=${ETCD_IPV4_ADDRESS} \
+    
+          [ -e /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.crt -a \
+            -e /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.key ] || \
+            kube-client-agent \
+              request \
+                --kubeconfig=/etc/ssl/etcd/.recoveryconfig \
+                --orgname=system:etcd-metrics \
+                --assetsdir=/etc/ssl/etcd \
+                --dnsnames=localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,etcd.openshift-etcd.svc,etcd.openshift-etcd.svc.cluster.local,${ETCD_DNS_NAME} \
+                --commonname=system:etcd-metric:${ETCD_DNS_NAME} \
+                --ipaddrs=${ETCD_IPV4_ADDRESS} \
+    
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: discovery
+          mountPath: /run/etcd/
+        - name: certs
+          mountPath: /etc/ssl/etcd/
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      tolerations:
+      - operator: "Exists"
+      restartPolicy: Always
+      volumes:
+      - name: certs
+        hostPath:
+          path: /etc/kubernetes/static-pod-resources/etcd-member
+      - name: discovery
+        hostPath:
+          path: /run/etcd
