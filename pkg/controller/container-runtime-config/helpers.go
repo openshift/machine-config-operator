@@ -10,7 +10,7 @@ import (
 	"github.com/containers/image/docker/reference"
 	"github.com/containers/image/pkg/sysregistriesv2"
 	storageconfig "github.com/containers/storage/pkg/config"
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	crioconfig "github.com/kubernetes-sigs/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -61,21 +61,21 @@ type tomlConfigRegistries struct {
 
 type updateConfig func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
 
-func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte) ignv2_2types.Config {
+func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte) igntypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
 	// Create storage.conf ignition
 	if storageTOMLConfig != nil {
 		storagedu := dataurl.New(storageTOMLConfig, "text/plain")
 		storagedu.Encoding = dataurl.EncodingASCII
-		storageTempFile := ignv2_2types.File{
-			Node: ignv2_2types.Node{
+		storageTempFile := igntypes.File{
+			Node: igntypes.Node{
 				Filesystem: "root",
 				Path:       storageConfigPath,
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
+			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,
-				Contents: ignv2_2types.FileContents{
+				Contents: igntypes.FileContents{
 					Source: storagedu.String(),
 				},
 			},
@@ -87,14 +87,14 @@ func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte)
 	if crioTOMLConfig != nil {
 		criodu := dataurl.New(crioTOMLConfig, "text/plain")
 		criodu.Encoding = dataurl.EncodingASCII
-		crioTempFile := ignv2_2types.File{
-			Node: ignv2_2types.Node{
+		crioTempFile := igntypes.File{
+			Node: igntypes.Node{
 				Filesystem: "root",
 				Path:       crioConfigPath,
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
+			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,
-				Contents: ignv2_2types.FileContents{
+				Contents: igntypes.FileContents{
 					Source: criodu.String(),
 				},
 			},
@@ -105,21 +105,21 @@ func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte)
 	return tempIgnConfig
 }
 
-func createNewRegistriesConfigIgnition(registriesTOMLConfig []byte) ignv2_2types.Config {
+func createNewRegistriesConfigIgnition(registriesTOMLConfig []byte) igntypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
 	// Create Registries ignition
 	if registriesTOMLConfig != nil {
 		regdu := dataurl.New(registriesTOMLConfig, "text/plain")
 		regdu.Encoding = dataurl.EncodingASCII
-		regTempFile := ignv2_2types.File{
-			Node: ignv2_2types.Node{
+		regTempFile := igntypes.File{
+			Node: igntypes.Node{
 				Filesystem: "root",
 				Path:       registriesConfigPath,
 			},
-			FileEmbedded1: ignv2_2types.FileEmbedded1{
+			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,
-				Contents: ignv2_2types.FileContents{
+				Contents: igntypes.FileContents{
 					Source: regdu.String(),
 				},
 			},
@@ -129,7 +129,7 @@ func createNewRegistriesConfigIgnition(registriesTOMLConfig []byte) ignv2_2types
 	return tempIgnConfig
 }
 
-func findStorageConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
+func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	for _, c := range mc.Spec.Config.Storage.Files {
 		if c.Path == storageConfigPath {
 			return &c, nil
@@ -138,7 +138,7 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
 	return nil, fmt.Errorf("could not find Storage Config")
 }
 
-func findCRIOConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
+func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	for _, c := range mc.Spec.Config.Storage.Files {
 		if c.Path == crioConfigPath {
 			return &c, nil
@@ -147,7 +147,7 @@ func findCRIOConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
 	return nil, fmt.Errorf("could not find CRI-O Config")
 }
 
-func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*ignv2_2types.File, error) {
+func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	for _, c := range mc.Spec.Config.Storage.Files {
 		if c.Path == registriesConfigPath {
 			return &c, nil

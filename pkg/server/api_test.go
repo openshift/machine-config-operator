@@ -7,14 +7,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 )
 
 type mockServer struct {
-	GetConfigFn func(poolRequest) (*ignv2_2types.Config, error)
+	GetConfigFn func(poolRequest) (*igntypes.Config, error)
 }
 
-func (ms *mockServer) GetConfig(pr poolRequest) (*ignv2_2types.Config, error) {
+func (ms *mockServer) GetConfig(pr poolRequest) (*igntypes.Config, error) {
 	return ms.GetConfigFn(pr)
 }
 
@@ -23,7 +23,7 @@ type checkResponse func(t *testing.T, response *http.Response)
 type scenario struct {
 	name          string
 	request       *http.Request
-	serverFunc    func(poolRequest) (*ignv2_2types.Config, error)
+	serverFunc    func(poolRequest) (*igntypes.Config, error)
 	checkResponse checkResponse
 }
 
@@ -32,8 +32,8 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "get config path that does not exist",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), fmt.Errorf("not acceptable")
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusInternalServerError)
@@ -44,8 +44,8 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "get config path that exists",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -57,8 +57,8 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "head config path that exists",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -70,8 +70,8 @@ func TestAPIHandler(t *testing.T) {
 		{
 			name:    "post config path that exists",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
@@ -102,8 +102,8 @@ func TestHealthzHandler(t *testing.T) {
 		{
 			name:    "get healthz",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -114,8 +114,8 @@ func TestHealthzHandler(t *testing.T) {
 		{
 			name:    "head healthz",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -126,8 +126,8 @@ func TestHealthzHandler(t *testing.T) {
 		{
 			name:    "post healthz",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
@@ -154,8 +154,8 @@ func TestDefaultHandler(t *testing.T) {
 		{
 			name:    "get root",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusNotFound)
@@ -166,8 +166,8 @@ func TestDefaultHandler(t *testing.T) {
 		{
 			name:    "head root",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusNotFound)
@@ -178,8 +178,8 @@ func TestDefaultHandler(t *testing.T) {
 		{
 			name:    "post root",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
@@ -206,8 +206,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get config path that does not exist",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), fmt.Errorf("not acceptable")
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusInternalServerError)
@@ -218,8 +218,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get config path that exists",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -231,8 +231,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "head config path that exists",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -244,8 +244,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "post config path that exists",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
@@ -256,8 +256,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get healthz",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -268,8 +268,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "head healthz",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
@@ -280,8 +280,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "post healthz",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
@@ -292,8 +292,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "get root",
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusNotFound)
@@ -304,8 +304,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "head root",
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusNotFound)
@@ -316,8 +316,8 @@ func TestAPIServer(t *testing.T) {
 		{
 			name:    "post root",
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
-			serverFunc: func(poolRequest) (*ignv2_2types.Config, error) {
-				return new(ignv2_2types.Config), nil
+			serverFunc: func(poolRequest) (*igntypes.Config, error) {
+				return new(igntypes.Config), nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
