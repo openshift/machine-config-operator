@@ -142,11 +142,12 @@ contents:
       HOSTNAME=$(hostname)
       HOSTDOMAIN=$(hostname -d)
       ETCD_NAME=etcd-member-${HOSTNAME}.${HOSTDOMAIN}
+
+      source /run/etcd/environment
+
       if [ -z "${ETCD_CONNSTRING}" ]; then
         ETCD_CONNSTRING="${ETCD_NAME}=https://${ETCD_DNS_NAME}:2380"
       fi
-
-      source /run/etcd/environment
 
       if [ ! -f "$SNAPSHOT_FILE" ]; then
         echo "Snapshot file not found, restore failed: $SNAPSHOT_FILE."
@@ -229,10 +230,6 @@ contents:
     start_etcd() {
       echo "Starting etcd.."
       mv ${MANIFEST_STOPPED_DIR}/etcd-member.yaml $MANIFEST_DIR
-    }
-
-    download_cert_recover_template() {
-      curl -s https://raw.githubusercontent.com/hexfusion/openshift-recovery/master/manifests/etcd-generate-certs.yaml.template -o $ASSET_DIR/templates/etcd-generate-certs.yaml.template
     }
 
     populate_template() {
