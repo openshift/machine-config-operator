@@ -299,6 +299,7 @@ contents:
 
     start_static_pods() {
       echo "Starting static pods.."
+      find ${MANIFEST_STOPPED_DIR} -maxdepth 1 -type f -printf "%f\n" > $STOPPED_STATIC_PODS
       while read STATIC_POD; do
         echo "..starting $STATIC_POD"
         mv ${MANIFEST_STOPPED_DIR}/${STATIC_POD} $MANIFEST_DIR
