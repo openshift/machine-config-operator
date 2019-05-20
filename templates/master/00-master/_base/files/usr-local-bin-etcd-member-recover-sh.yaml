@@ -33,8 +33,8 @@ contents:
     ASSET_DIR_TMP="$ASSET_DIR/tmp"
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
-    MANIFEST_STOPPED_DIR=/etc/kubernetes/manifests-stopped
-
+    
+    MANIFEST_STOPPED_DIR="$ASSET_DIR/manifests-stopped"
     ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
     ETCD_CONFIG=/etc/etcd/etcd.conf
     ETCDCTL=$ASSET_DIR/bin/etcdctl
