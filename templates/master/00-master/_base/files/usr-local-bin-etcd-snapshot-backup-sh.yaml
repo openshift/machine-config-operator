@@ -25,7 +25,7 @@ contents:
 
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
-    MANIFEST_STOPPED_DIR="${CONFIG_FILE_DIR}/manifests-stopped"
+    MANIFEST_STOPPED_DIR="${ASSET_DIR}/manifests-stopped"
     ETCD_VERSION=v3.3.10
     ETCDCTL="${ASSET_DIR}/bin/etcdctl"
     ETCD_DATA_DIR=/var/lib/etcd
