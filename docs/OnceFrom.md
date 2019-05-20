@@ -16,11 +16,7 @@ don't expect "once-from" to e.g. create users.
 
 # Testing once-from mode
 
-Generally, machine-config-operator developers test their code against
-running clusters (see `HACKING.md`) which are usually running RHCOS.
-
-But once-from should generally be used on a machine not connected
-to a cluster.  You can use for example a traditional CentOS 7 machine;
+Once-from should generally be used on a machine not connected to a cluster.  You can use for example a traditional CentOS 7 machine;
 this could be anything from a cloud instance to a Vagrant Box or even
 a physical install.
 
@@ -49,6 +45,4 @@ Where `example.ign` here is the content from https://github.com/coreos/ignition/
 }
 ```
 
-You can also try out the MachineConfig support of "once-from" mode by passing a
-MC manifest instead. See the contents of HACKING.md for an example MachineConfig
-one could use.
+You can also try out the MachineConfig support of "once-from" mode by passing a MC manifest instead, see [HACKING.md](./HACKING.md) for a MachineConfig example.
