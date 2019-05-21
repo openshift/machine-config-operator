@@ -45,4 +45,4 @@ spec:
   - name: cli
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:cli
+      name: quay.io/openshift/origin-cli:latest
