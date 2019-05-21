@@ -1,8 +1,0 @@
-filesystem: "root"
-mode: 0644
-path: "/etc/tmpfiles.d/cleanup-cni.conf"
-contents:
-  inline: |
-    r /etc/kubernetes/cni/net.d/80-openshift-network.conf
-    r /etc/kubernetes/cni/net.d/10-ovn-kubernetes.conf
-    r /etc/kubernetes/cni/net.d/00-multus.conf
