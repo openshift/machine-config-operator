@@ -40,6 +40,27 @@ type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
 // appenderFunc appends Config.
 type appenderFunc func(*mcfgv1.MachineConfig) error
 
+// configError is returned by the GetConfig API
+type configError struct {
+	msg       string
+	forbidden bool
+}
+
+// configError returns the string
+func (e *configError) Error() string {
+	return e.msg
+}
+
+// IsForbidden says if err is an configError with forbidden set
+func IsForbidden(err error) bool {
+	switch t := err.(type) {
+	case *configError:
+		return t.forbidden
+	default:
+		return false
+	}
+}
+
 // Server defines the interface that is implemented by different
 // machine config server implementations.
 type Server interface {

@@ -2536,9 +2536,15 @@ metadata:
   name: machine-config-server
   namespace: {{.TargetNamespace}}
 rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
   verbs: ["*"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["networks"]
+  verbs: ["get", "list", "watch"]
 `)
 
 func manifestsMachineconfigserverClusterroleYamlBytes() ([]byte, error) {

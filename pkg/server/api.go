@@ -11,6 +11,7 @@ import (
 
 type poolRequest struct {
 	machineConfigPool string
+	remoteAddr        string
 }
 
 // APIServer provides the HTTP(s) endpoint
@@ -92,6 +93,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	cr := poolRequest{
 		machineConfigPool: path.Base(r.URL.Path),
+		remoteAddr:        r.RemoteAddr,
 	}
 
 	glog.Infof("Pool %s requested by %s", cr.machineConfigPool, r.RemoteAddr)
@@ -99,8 +101,13 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		if IsForbidden(err) {
+			w.WriteHeader(http.StatusForbidden)
+			glog.Infof("Denying unauthorized request: %v", err)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		}
 		return
 	}
 	if conf == nil {
