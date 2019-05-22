@@ -33,6 +33,7 @@ spec:
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
+      terminationGracePeriodSeconds: 3
       tolerations:
       - key: node-role.kubernetes.io/master
         effect: NoSchedule
@@ -56,9 +57,14 @@ spec:
         - mountPath: /mnt/kube
           name: kubecerts
         command:
-        - "/bin/sleep"
+        - /bin/bash
         args:
-        - "infinity"
+        - -c
+        - |
+          # properly handle TERM and exit as soon as it is signaled
+          set -euo pipefail
+          trap 'jobs -p | xargs -r kill; exit 0' TERM
+          sleep infinity & wait
         readinessProbe:
           exec:
             command:
