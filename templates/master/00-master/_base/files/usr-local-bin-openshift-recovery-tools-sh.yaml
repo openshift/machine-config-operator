@@ -313,6 +313,7 @@ contents:
 
     start_kubelet() {
       echo "Starting kubelet.."
+      systemctl daemon-reload
       systemctl start kubelet.service
     }
 
