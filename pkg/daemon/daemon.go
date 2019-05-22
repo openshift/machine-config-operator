@@ -160,9 +160,16 @@ var (
 	defaultRebootTimeout = 24 * time.Hour
 )
 
+// rebootCommand creates a new transient systemd unit to reboot the system.
+// We explictily try to stop kubelet.service first, before anything else; this
+// way we ensure the rest of system stays running, because kubelet may need
+// to do "graceful" shutdown by e.g. de-registering with a load balancer.
+// However note we use `;` instead of `&&` so we keep rebooting even
+// if kubelet failed to shutdown - that way the machine will still eventually reboot
+// as systemd will time out the stop invocation.
 func rebootCommand(rationale string) *exec.Cmd {
 	return exec.Command("systemd-run", "--unit", "machine-config-daemon-reboot",
-		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale), "reboot")
+		"--description", fmt.Sprintf("machine-config-daemon: %s", rationale), "/bin/sh", "-c", "systemctl stop kubelet.service; reboot")
 }
 
 // New sets up the systemd and kubernetes connections needed to update the
