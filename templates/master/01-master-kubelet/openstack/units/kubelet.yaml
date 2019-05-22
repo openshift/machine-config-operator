@@ -21,7 +21,6 @@ contents: |
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --node-labels=node-role.kubernetes.io/master \
         --minimum-container-ttl-duration=6m0s \
-        --client-ca-file=/etc/kubernetes/ca.crt \
         {{cloudConfigFlag . }} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
 
