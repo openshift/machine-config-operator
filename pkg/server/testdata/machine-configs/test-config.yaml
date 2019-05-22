@@ -179,7 +179,6 @@ spec:
                     --lock-file=/var/run/lock/kubelet.lock \
                     --exit-on-lock-contention \
                     --pod-manifest-path=/etc/kubernetes/manifests \
-                    --allow-privileged \
                     --node-labels=node-role.kubernetes.io/etcd \
                     --minimum-container-ttl-duration=6m0s \
                     --cluster-dns=10.3.0.10 \
