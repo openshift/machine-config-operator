@@ -183,7 +183,6 @@ spec:
                     --minimum-container-ttl-duration=6m0s \
                     --cluster-dns=10.3.0.10 \
                     --cluster-domain=cluster.local \
-                    --client-ca-file=/etc/kubernetes/ca.crt \
                     --cloud-provider=aws \
                      \
                     --register-with-taints=node-role.kubernetes.io/etcd=:NoSchedule \

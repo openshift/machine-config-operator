@@ -24,7 +24,6 @@ contents: |
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
         --minimum-container-ttl-duration=6m0s \
-        --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \

@@ -6,6 +6,8 @@ contents:
     kind: KubeletConfiguration
     apiVersion: kubelet.config.k8s.io/v1beta1
     authentication:
+      x509:
+        clientCAFile: /etc/kubernetes/ca.crt
       anonymous:
         enabled: false
     cgroupDriver: systemd
