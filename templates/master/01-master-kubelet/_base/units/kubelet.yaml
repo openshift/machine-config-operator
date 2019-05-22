@@ -28,7 +28,6 @@ contents: |
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \
-        --anonymous-auth=false \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
         --v=3 \
 

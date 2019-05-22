@@ -186,7 +186,6 @@ spec:
                     --client-ca-file=/etc/kubernetes/ca.crt \
                     --cloud-provider=aws \
                      \
-                    --anonymous-auth=false \
                     --register-with-taints=node-role.kubernetes.io/etcd=:NoSchedule \
                     $CGROUP_DRIVER_FLAG \
               Restart=always

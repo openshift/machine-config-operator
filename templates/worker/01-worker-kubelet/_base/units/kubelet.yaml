@@ -27,7 +27,6 @@ contents: |
         --client-ca-file=/etc/kubernetes/ca.crt \
         --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
-        --anonymous-auth=false \
         --v=3 \
 
   Restart=always
