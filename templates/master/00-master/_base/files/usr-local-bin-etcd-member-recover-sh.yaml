@@ -33,6 +33,7 @@ contents:
     ASSET_DIR_TMP="$ASSET_DIR/tmp"
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
+    RUN_ENV=/run/etcd/environment
     
     MANIFEST_STOPPED_DIR="$ASSET_DIR/manifests-stopped"
     ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
@@ -51,6 +52,12 @@ contents:
       init
       dl_etcdctl
       backup_manifest
+      DISCOVERY_DOMAIN=$(grep -oP '(?<=discovery-srv=).*[^"]' $ASSET_DIR/backup/etcd-member.yaml )
+      if [ -z "$DISCOVERY_DOMAIN" ]; then
+        echo "Discovery domain can not be extracted from $ASSET_DIR/backup/etcd-member.yaml"
+        exit 1
+      fi
+      validate_environment
       backup_etcd_conf
       backup_etcd_client_certs
       stop_etcd
@@ -58,11 +65,6 @@ contents:
       backup_certs
       remove_certs
       gen_config
-      DISCOVERY_DOMAIN=$(grep -oP '(?<=discovery-srv=).*[^"]' $ASSET_DIR/backup/etcd-member.yaml )
-      if [ -z "$DISCOVERY_DOMAIN" ]; then
-        echo "Discovery domain can not be extracted from $ASSET_DIR/backup/etcd-member.yaml"
-        exit 1
-      fi
       CLUSTER_NAME=$(echo ${DISCOVERY_DOMAIN} | grep -oP '^.*?(?=\.)')
       populate_template '__ETCD_DISCOVERY_DOMAIN__' "$DISCOVERY_DOMAIN" "$TEMPLATE" "$ASSET_DIR/tmp/etcd-generate-certs.stage1"
       populate_template '__SETUP_ETCD_ENVIRONMENT__' "$SETUP_ETCD_ENVIRONMENT" "$ASSET_DIR/tmp/etcd-generate-certs.stage1" "$ASSET_DIR/tmp/etcd-generate-certs.stage2"
