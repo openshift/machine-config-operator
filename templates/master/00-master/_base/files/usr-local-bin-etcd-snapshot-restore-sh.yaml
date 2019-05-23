@@ -45,6 +45,7 @@ contents:
       init
       dl_etcdctl
       backup_manifest
+      backup_etcd_environment
       stop_static_pods
       stop_etcd
       stop_kubelet

@@ -69,6 +69,16 @@ contents:
       fi
     }
 
+    # backup etcd environment
+    backup_etcd_environment() {
+      if [ -e "${ASSET_DIR}/backup/etcd.environment" ]; then
+        echo "etcd.environment backup upready exists $ASSET_DIR/backup/etcd.environment"
+      else
+        echo "Backing up /run/etcd/environment to ${ASSET_DIR}/backup/"
+        cp /run/etcd/environment ${ASSET_DIR}/backup/etcd.environment
+      fi
+    }
+
     backup_data_dir() {
       if [ -f "$ASSET_DIR/backup/etcd/member/snap/db" ]; then
         echo "etcd data-dir backup found $ASSET_DIR/backup/etcd.."
@@ -143,7 +153,7 @@ contents:
       HOSTDOMAIN=$(hostname -d)
       ETCD_NAME=etcd-member-${HOSTNAME}.${HOSTDOMAIN}
 
-      source /run/etcd/environment
+      source ${ASSET_DIR}/backup/etcd.environment
 
       if [ -z "${ETCD_CONNSTRING}" ]; then
         ETCD_CONNSTRING="${ETCD_NAME}=https://${ETCD_DNS_NAME}:2380"
