@@ -320,3 +320,42 @@ contents:
       echo "Stopping all containers.."
       crictl ps -q | xargs -r crictl stop
     }
+
+    # validate_environment performs the same actions as the discovery container in etcd-member init
+    # sometimes $RUN_ENV is not available if the node is rebooted so we recreate here.
+    validate_environment() {
+      if [ -f "$RUN_ENV" ] && [ -s "$RUN_ENV" ];then
+        return 0
+      fi
+      SRV_A_RECORD=$(dig +noall +answer SRV _etcd-server-ssl._tcp.${DISCOVERY_DOMAIN} | grep -oP '(?<=2380 ).*[^\.]' | xargs)
+      HOST_IPS=$(ip -o addr |  grep -oP '(?<=inet )(\d{1,3}\.?){4}')
+
+      if [ -z "$SRV_A_RECORD" ]; then
+        echo "SRV A record query for ${DISCOVERY_DOMAIN} failed please update DNS"
+        exit 1
+      elif [ -z "$HOST_IPS" ]; then
+        echo "Unable to find any IPv4 addresses for host interfaces"
+        exit 1
+      fi
+
+      for a in ${SRV_A_RECORD[@]}; do
+        echo "checking against $a"
+        for i in ${HOST_IPS[@]}; do
+          DIG_IP=$(dig +short $a)
+          if [ -z "$DIG_IP" ]; then
+            echo "No matching A record found for $a skipping"
+            continue
+          elif [ "$DIG_IP" == "$i" ]; then
+            echo "dns name is $a"
+            cat > $RUN_ENV << EOF
+    ETCD_IPV4_ADDRESS=$DIG_IP
+    ETCD_DNS_NAME=$a
+    ETCD_WILDCARD_DNS_NAME=*.${DISCOVERY_DOMAIN}
+    EOF
+            return 0
+          fi
+        done
+      done
+      echo "SRV query failed no matching records found"
+      exit 1
+    }
