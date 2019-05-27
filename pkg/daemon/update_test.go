@@ -1,6 +1,9 @@
 package daemon
 
 import (
+	"strings"
+	"time"
+	"math/rand"
 	"fmt"
 	"os/exec"
 	"testing"
@@ -221,6 +224,92 @@ func TestReconcilableDiff(t *testing.T) {
 	assert.Equal(t, diff.passwd, false)
 	assert.Equal(t, diff.units, false)
 	assert.Equal(t, diff.files, false)
+}
+
+func TestKernelAguments(t *testing.T) {
+	oldMcfg := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+			KernelArguments: []string {"nosmt", "foo", "baz=test"},
+		},
+	}
+	tests := []struct {
+		args      []string
+		deletions []string
+		additions []string
+	}{
+		{
+			args: nil,
+			deletions: []string{"nosmt", "foo", "baz=test"},
+			additions: []string{},
+		},
+		{
+			args: oldMcfg.Spec.KernelArguments,
+			deletions: []string{},
+			additions: []string{},
+		},
+		{
+			args: append(oldMcfg.Spec.KernelArguments, "hello=world"),
+			deletions: []string{},
+			additions: []string{"hello=world"},
+		},
+		{
+			args: []string{"foo", "hello=world"},
+			deletions: []string{"nosmt", "baz=test"},
+			additions: []string{"hello=world"},
+		},
+		{
+			args: append([]string{"baz=othertest"}, oldMcfg.Spec.KernelArguments...),
+			deletions: []string{},
+			additions: []string{"baz=othertest"},
+		},
+	}
+	rand.Seed(time.Now().UnixNano())
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			newMcfg := &mcfgv1.MachineConfig{
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: ctrlcommon.NewIgnConfig(),
+					KernelArguments: test.args,
+				},
+			}
+			// Randomize the order of both old/new to sort out ordering issues.
+			rand.Shuffle(len(test.args), func(i, j int) {
+				test.args[i], test.args[j] = test.args[j], test.args[i]
+			})
+			oldKargs := oldMcfg.Spec.KernelArguments
+			rand.Shuffle(len(oldMcfg.Spec.KernelArguments), func(i, j int) {
+				oldKargs[i], oldKargs[j] = oldKargs[j], oldKargs[i]
+			})
+			res := generateKargsCommand(oldMcfg, newMcfg)
+			additionsExpected := make(map[string]bool)
+			for _, k := range test.additions {
+				additionsExpected[k] = true
+			}
+			deletionsExpected := make(map[string]bool)
+			for _, k := range test.deletions {
+				deletionsExpected[k] = true
+			}
+			for _, a := range res {
+				parts := strings.SplitN(a, "=", 2)
+				if len(parts) != 2 {
+					t.Fatalf("Bad karg %v", a)
+				}
+				arg := parts[1]
+				if parts[0] == "--append" {
+					if !additionsExpected[arg] {
+						t.Errorf("Unexpected addition %s", arg)
+					}
+				} else if parts[0] == "--delete" {
+					if !deletionsExpected[arg] {
+						t.Errorf("Unexpected deletion %s", arg)
+					}
+				} else {
+					t.Fatalf("Bad karg %s", a)
+				}
+			}
+		})
+	}
 }
 
 func TestReconcilableSSH(t *testing.T) {
