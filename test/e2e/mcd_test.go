@@ -482,3 +482,68 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		t.Errorf("machine config didn't roll back on any worker: %v", err)
 	}
 }
+
+func TestDontDeleteRPMFiles(t *testing.T) {
+	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
+
+	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test", "root")
+
+	// grab the initial machineconfig used by the worker pool
+	// this MC is gonna be the one which is going to be reapplied once the previous MC is deleted
+	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	workerOldMc := mcp.Status.Configuration.Name
+
+	// create the dummy MC now
+	_, err = cs.MachineConfigs().Create(mcHostFile)
+	if err != nil {
+		t.Errorf("failed to create machine config %v", err)
+	}
+
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcHostFile.Name)
+	if err != nil {
+		t.Errorf("%v", err)
+	}
+
+	// wait for the mcp to go back to previous config
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	// now delete the bad MC and watch the nodes reconciling as expected
+	if err := cs.MachineConfigs().Delete(mcHostFile.Name, &metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	// wait for the mcp to go back to previous config
+	if err := waitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+		t.Fatal(err)
+	}
+
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMc)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcdName := mcd.ObjectMeta.Name
+
+		found, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"cat", "/rootfs/etc/motd").CombinedOutput()
+		if err != nil {
+			t.Fatalf("unable to read test file on daemon: %s got: %s got err: %v", mcdName, found, err)
+		}
+		if strings.Contains(string(found), "mco-test") {
+			t.Fatalf("updated file doesn't contain expected data, got %s", found)
+		}
+	}
+}
