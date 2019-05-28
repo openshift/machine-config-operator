@@ -6,12 +6,12 @@ import (
 	"io/ioutil"
 	"path"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
+	"github.com/stretchr/testify/assert"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -47,6 +47,25 @@ func TestStringEncode(t *testing.T) {
 	if exp != enc {
 		t.Errorf("string encode failed. exp: %s, got: %s", exp, enc)
 	}
+}
+
+func TestMachineConfigToIgnition(t *testing.T) {
+	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
+	mcData, err := ioutil.ReadFile(mcPath)
+	assert.Nil(t, err)
+	mc := new(v1.MachineConfig)
+	err = yaml.Unmarshal([]byte(mcData), mc)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(mc.Spec.Config.Storage.Files))
+	assert.Equal(t, mc.Spec.Config.Storage.Files[0].Path, "/etc/coreos/update.conf")
+
+	origMc := mc.DeepCopy()
+	ign := machineConfigToIgnition(mc)
+	assert.Equal(t, 1, len(origMc.Spec.Config.Storage.Files))
+	assert.Equal(t, 2, len(mc.Spec.Config.Storage.Files))
+	assert.Equal(t, 2, len(ign.Storage.Files))
+	assert.Equal(t, ign.Storage.Files[0].Path, "/etc/coreos/update.conf")
+	assert.Equal(t, ign.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 }
 
 // TestBootstrapServer tests the behavior of the machine config server
@@ -108,8 +127,8 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// assert on the output.
-	validateIgnitionFiles(t, res.Storage.Files, mc.Spec.Config.Storage.Files)
-	validateIgnitionSystemd(t, res.Systemd.Units, mc.Spec.Config.Systemd.Units)
+	validateIgnitionFiles(t, mc.Spec.Config.Storage.Files, res.Storage.Files)
+	validateIgnitionSystemd(t, mc.Spec.Config.Systemd.Units, res.Systemd.Units)
 }
 
 // TestClusterServer tests the behavior of the machine config server
@@ -182,8 +201,26 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
 
-	validateIgnitionFiles(t, res.Storage.Files, mc.Spec.Config.Storage.Files)
-	validateIgnitionSystemd(t, res.Systemd.Units, mc.Spec.Config.Systemd.Units)
+	validateIgnitionFiles(t, mc.Spec.Config.Storage.Files, res.Storage.Files)
+	validateIgnitionSystemd(t, mc.Spec.Config.Systemd.Units, res.Systemd.Units)
+
+	foundEncapsulated := false
+	for _, f := range res.Storage.Files {
+		if f.Path != daemonconsts.MachineConfigEncapsulatedPath {
+			continue
+		}
+		foundEncapsulated = true
+		encapMc := new(v1.MachineConfig)
+		contents, err := getDecodedContent(f.Contents.Source)
+		assert.Nil(t, err)
+		err = yaml.Unmarshal([]byte(contents), encapMc)
+		assert.Nil(t, err)
+		assert.Equal(t, encapMc.Spec.KernelArguments, mc.Spec.KernelArguments)
+		assert.Equal(t, encapMc.Spec.OSImageURL, mc.Spec.OSImageURL)
+	}
+	if !foundEncapsulated {
+		t.Errorf("missing %s", daemonconsts.MachineConfigEncapsulatedPath)
+	}
 }
 
 func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {
@@ -194,15 +231,20 @@ func validateIgnitionFiles(t *testing.T, exp, got []igntypes.File) {
 	expMap := createFileMap(exp)
 	gotMap := createFileMap(got)
 
+	encapsulatedKey := "root" + daemonconsts.MachineConfigEncapsulatedPath
 	for k, v := range expMap {
+		// This special value is injected
+		if k == encapsulatedKey {
+			continue
+		}
 		f, ok := gotMap[k]
 		if !ok {
 			t.Errorf("could not find file: %s", k)
+			continue
 		}
-		if !reflect.DeepEqual(v, f) {
-			t.Errorf("file validation failed for: %s, exp: %v, got: %v", k, v, f)
-		}
+		assert.Equal(t, v, f)
 	}
+
 }
 
 func validateIgnitionSystemd(t *testing.T, exp, got []igntypes.Unit) {
@@ -212,11 +254,10 @@ func validateIgnitionSystemd(t *testing.T, exp, got []igntypes.Unit) {
 	for k, v := range expMap {
 		f, ok := gotMap[k]
 		if !ok {
-			t.Errorf("could not find file: %s", k)
+			t.Errorf("could not find unit: %s", k)
+			continue
 		}
-		if !reflect.DeepEqual(v, f) {
-			t.Errorf("file validation failed for: %s, exp: %v, got: %v", k, v, f)
-		}
+		assert.Equal(t, v, f)
 	}
 }
 
