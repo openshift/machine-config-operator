@@ -7,6 +7,7 @@ import (
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/vincent-petithory/dataurl"
 )
@@ -48,6 +49,13 @@ func getAppenders(currMachineConfig string, f kubeconfigFunc, osimageurl string)
 
 // machineConfigToIgnition converts a MachineConfig object into Ignition.
 func machineConfigToIgnition(mccfg *mcfgv1.MachineConfig) *igntypes.Config {
+	tmpcfg := mccfg.DeepCopy()
+	tmpcfg.Spec.Config = ctrlcommon.NewIgnConfig()
+	serialized, err := json.Marshal(tmpcfg)
+	if err != nil {
+		panic(err.Error())
+	}
+	appendFileToIgnition(&mccfg.Spec.Config, daemonconsts.MachineConfigEncapsulatedPath, string(serialized))
 	return &mccfg.Spec.Config
 }
 
