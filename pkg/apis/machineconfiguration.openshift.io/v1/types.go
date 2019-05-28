@@ -301,6 +301,9 @@ type MachineConfigPoolSpec struct {
 	// MaxUnavailable specifies the percentage or constant number of machines that can be updating at any given time.
 	// default is 1.
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable"`
+
+	// The targeted MachineConfig object for the machine config pool.
+	Configuration MachineConfigPoolStatusConfiguration `json:"configuration"`
 }
 
 // MachineConfigPoolStatus is the status for MachineConfigPool resource.
