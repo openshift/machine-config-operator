@@ -217,6 +217,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	dn.InstallSignalHandler(signaled)
 
 	if err := dn.Run(stopCh, signaled, exitCh); err != nil {
-		glog.Fatalf("Failed to run: %v", err)
+		controllercommon.WriteTerminationError(err)
 	}
 }

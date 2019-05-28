@@ -1,6 +1,8 @@
 package common
 
 import (
+	"io/ioutil"
+	"github.com/golang/glog"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 )
 
@@ -11,4 +13,11 @@ func NewIgnConfig() igntypes.Config {
 			Version: igntypes.MaxVersion.String(),
 		},
 	}
+}
+
+// WriteTerminationError writes to the Kubernetes termination log.
+func WriteTerminationError(err error) {
+	msg := err.Error()
+	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0644)
+	glog.Fatal(msg)
 }

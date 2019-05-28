@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/golang/glog"
+	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL)
 	if err != nil {
-		glog.Exitf("Machine Config Server exited with error: %v", err)
+		controllercommon.WriteTerminationError(err)
 	}
 
 	apiHandler := server.NewServerAPIHandler(cs)

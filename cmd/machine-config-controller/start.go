@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/pkg/errors"
 	"context"
 	"flag"
 
@@ -50,7 +51,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
-		glog.Fatalf("error creating clients: %v", err)
+		controllercommon.WriteTerminationError(errors.Wrapf(err, "Creating clients"))
 	}
 	run := func(ctx context.Context) {
 		ctrlctx := controllercommon.CreateControllerContext(cb, ctx.Done(), componentName)
