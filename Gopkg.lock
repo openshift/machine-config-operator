@@ -112,19 +112,25 @@
   name = "github.com/containers/image"
   packages = [
     "docker/reference",
+    "manifest",
+    "pkg/strslice",
     "pkg/sysregistriesv2",
+    "signature",
+    "transports",
     "types",
+    "version",
   ]
   pruneopts = "NUT"
   revision = "abf32c4ea589cb8e96bdca5a478dba68f11980e5"
   version = "v2.0.0"
 
 [[projects]]
-  digest = "1:490deff6409bd7c1e531e143c3adc5bf5e5ff39a7bad6a69f41d5efe95a7ec07"
+  digest = "1:be9b61a3c1c5422cc1024c407c4f4a3af64cdafc7800a12c8ddfafe15899c211"
   name = "github.com/containers/storage"
   packages = [
     "pkg/config",
     "pkg/fileutils",
+    "pkg/homedir",
     "pkg/idtools",
     "pkg/mount",
     "pkg/system",
@@ -201,12 +207,15 @@
   version = "v1.1.1"
 
 [[projects]]
-  digest = "1:c18eb4734a9775d861238a8ca4920a57fa94fa608e07c0043196fefd00c13ecf"
+  branch = "master"
+  digest = "1:40d19df4845533177d878b9b4e93b5f0e7477126c97be329a2ee33adde489197"
   name = "github.com/docker/docker"
-  packages = ["pkg/signal"]
+  packages = [
+    "api/types/versions",
+    "pkg/signal",
+  ]
   pruneopts = "NUT"
-  revision = "d3446258471733fe667f0abdf015ee3ebd2f3485"
-  version = "v1.3.3"
+  revision = "b1239f0a9f5acb08436d7c97092b3e0f5e75fcaa"
 
 [[projects]]
   digest = "1:97176fe8a268479a527d08df458c269dc27abf59c1643807d4e36398cbd9ef2d"
@@ -415,6 +424,14 @@
   version = "1.0.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:88a19b9585da51239884c1e556bfc9989dbd4361221a4a20497dedff9fce55c3"
+  name = "github.com/mtrmac/gpgme"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "b2432428689ca58c2b8e8dea9449d3295cf96fc9"
+
+[[projects]]
   digest = "1:e0cc8395ea893c898ff5eb0850f4d9851c1f57c78c232304a026379a47a552d0"
   name = "github.com/opencontainers/go-digest"
   packages = ["."]
@@ -591,6 +608,13 @@
   digest = "1:0a6b1f967fe07b156d7a28017d552de51b6a24921a4b4aa64531d45294636895"
   name = "golang.org/x/crypto"
   packages = [
+    "cast5",
+    "openpgp",
+    "openpgp/armor",
+    "openpgp/elgamal",
+    "openpgp/errors",
+    "openpgp/packet",
+    "openpgp/s2k",
     "pbkdf2",
     "scrypt",
     "ssh/terminal",
