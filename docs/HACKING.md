@@ -86,7 +86,7 @@ We follow a hard flattening approach; i.e. direct and inherited dependencies are
 
 Dependencies are managed with [dep](https://golang.github.io/dep/) but committed directly to the repository. If you don't have dep, install the latest release from [Installation](https://golang.github.io/dep/docs/installation.html) link.
 
-We require atleast following version for dep:
+We require at least the following versions for dep:
 
 ```
 dep:
@@ -120,7 +120,7 @@ oc patch daemonset/machine-config-daemon --type='json' -p='[{"op": "add", "path"
 ```
 
 You can replace `daemonset/machine-config-daemon` with any other MCO component.
-If the componenet already has a `--v=` flag set, the command above still adds
+If the component already has a `--v=` flag set, the command above still adds
 verbose and ignores the previous one already set.
 If you watch the pods, you'll notice your component restarting as well.
 Note this still requires [disabling the CVO](https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusterversion.md#disabling-the-cluster-version-operator).
@@ -181,7 +181,7 @@ runs in the https://api.ci.openshift.org/ cluster.
 When a PR is complete you'll see a lot of information more nicely rendered, including
 artifacts. The `pods/` directory for example has the logs for the various
 pods.  Lists of some important objects are extracted to JSON; for example `nodes.json` has
-a list of the node state.  For this project, the the `machineconfigs.json` and `machineconfigpools.json`
+a list of the node state.  For this project, the `machineconfigs.json` and `machineconfigpools.json`
 are commonly useful.
 
 ## Logging into a cluster live

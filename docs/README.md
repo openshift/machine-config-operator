@@ -39,7 +39,7 @@ Because the MCO is an integrated operator, you can inspect its status
 just like any other operator.  If it's reporting success, then that
 means that the operating system is up to date.
 
-`oc describe clusteroperator/machine-config-operator`
+`oc describe clusteroperator/machine-config`
 
 One level down from the operator CRD, the `machineconfigpool` objects
 track updates to a group of nodes.  You will often want to run a command
@@ -134,7 +134,7 @@ a single MC apply to multiple labels, inline file encoding, etc.
 # What to look at after creating a MachineConfig
 
 Once you create a MachineConfig fragment like the above, the controller will generate a new "rendered" version that will be used as a target.
-For more information, see [MachineConfiguration](doc/MachineConfiguration.md).
+For more information, see [MachineConfiguration](docs/MachineConfiguration.md).
 
 In particular, you should look at `oc describe machineconfigpool` and `oc describe clusteroperator/machine-config` as noted above.
 
