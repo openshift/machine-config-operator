@@ -432,6 +432,26 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	return exec.Command("rpm-ostree", args...).Run()
 }
 
+// updateFIPS handles changes in FIPS
+func (dn *Daemon) updateFIPS(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	if oldConfig.Spec.FIPS != newConfig.Spec.FIPS {
+		return nil
+	}
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+		return fmt.Errorf("Updating FIPS on non-RHCOS nodes is not supported")
+	}
+
+	arg := "enable"
+	if !newConfig.Spec.FIPS {
+		arg = "disable"
+	}
+
+	cmd := "/usr/libexec/rhcos-tools/coreos-fips"
+	args := []string{arg}
+	dn.logSystem("Running %s %v", cmd, args)
+	return exec.Command(cmd, args...).Run()
+}
+
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
 // systemd units. there is no support for multiple filesystems at this point.
 //

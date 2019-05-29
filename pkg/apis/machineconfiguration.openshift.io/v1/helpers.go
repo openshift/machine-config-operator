@@ -13,6 +13,7 @@ import (
 // It sorts all the configs in increasing order of their name.
 // It uses the Ignition config from first object as base and appends all the rest.
 // Kernel arguments are concatenated.
+// FIPS uses the last specified value.
 // It uses only the OSImageURL provided by the CVO and ignores any MC provided OSImageURL.
 func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineConfig {
 	if len(configs) == 0 {
@@ -24,15 +25,18 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 	for idx := 1; idx < len(configs); idx++ {
 		outIgn = ign.Append(outIgn, configs[idx].Spec.Config)
 	}
+	fips := false
 	kargs := []string{}
 	for _, cfg := range configs {
 		kargs = append(kargs, cfg.Spec.KernelArguments...)
+		fips = cfg.Spec.FIPS
 	}
 
 	return &MachineConfig{
 		Spec: MachineConfigSpec{
 			OSImageURL: osImageURL,
 			KernelArguments: kargs,
+			FIPS:            fips,
 			Config:     outIgn,
 		},
 	}
