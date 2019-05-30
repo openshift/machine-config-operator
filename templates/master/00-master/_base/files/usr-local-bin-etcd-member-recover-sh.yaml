@@ -8,7 +8,7 @@ contents:
     # example
     # export SETUP_ETCD_ENVIRONMENT=$(oc adm release info --image-for setup-etcd-environment --registry-config=./config.json)
     # export KUBE_CLIENT_AGENT=$(oc adm release info --image-for kube-client-agent --registry-config=./config.json)
-    # sudo -E ./etcd-member-recover.sh 192.168.1.100
+    # sudo -E ./etcd-member-recover.sh 192.168.1.100 $etcd_name
 
     if [[ $EUID -ne 0 ]]; then
       echo "This script must be run as root"
@@ -19,15 +19,16 @@ contents:
     : ${KUBE_CLIENT_AGENT:?"Need to set KUBE_CLIENT_AGENT"}
 
     usage () {
-        echo 'Recovery server IP address required: ./etcd-member-recover.sh 192.168.1.100'
-        exit
+        echo 'Recovery server IP address and etcd name required: ./etcd-member-recover.sh 192.168.1.100 $etcd_name'
+        exit 1
     }
 
-    if [ "$1" == "" ]; then
+    if [ "$1" == "" ] || [ "$2" == "" ]; then
         usage
     fi
 
     RECOVERY_SERVER_IP=$1
+    ETCD_NAME=$2
 
     ASSET_DIR=./assets
     ASSET_DIR_TMP="$ASSET_DIR/tmp"
@@ -58,6 +59,7 @@ contents:
         exit 1
       fi
       validate_environment
+      source  /run/etcd/environment
       backup_etcd_conf
       backup_etcd_client_certs
       stop_etcd
