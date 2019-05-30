@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -23,8 +24,17 @@ func (dn *Daemon) loadNodeAnnotations(node *core_v1.Node) (*core_v1.Node, error)
 	glog.Infof("No %s annotation on node %s: %v, in cluster bootstrap, loading initial node annotation from %s", constants.CurrentMachineConfigAnnotationKey, node.Name, node.Annotations, constants.InitialNodeAnnotationsFilePath)
 
 	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
+	}
+	if os.IsNotExist(err) {
+		// try currentConfig if, for whatever reason we lost annotations? this is super best effort.
+		currentOnDisk, err := dn.getCurrentConfigOnDisk()
+		if err == nil {
+			glog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
+			return setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
+		}
+		return nil, err
 	}
 
 	var initial map[string]string
