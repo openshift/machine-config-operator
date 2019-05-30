@@ -239,16 +239,34 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 }
 
 func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string) ([]byte, error) {
-	tomlConf := sysregistriesv2.V1RegistriesConf{}
+	tomlConf := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
 	}
 
-	if internalInsecure != nil {
-		tomlConf.Insecure = sysregistriesv2.V1TOMLregistries{Registries: internalInsecure}
+	// getRegistryEntry returns a pointer to a modifiable Registry object corresponding to scope,
+	// creating it if necessary.
+	// NOTE: We never generate entries with Prefix != Location, so everything in updateRegistriesConfig
+	// only checks Location.
+	// NOTE: The pointer is valid only until the next getRegistryEntry call.
+	getRegistryEntry := func(scope string) *sysregistriesv2.Registry {
+		for i := range tomlConf.Registries {
+			if tomlConf.Registries[i].Location == scope {
+				return &tomlConf.Registries[i]
+			}
+		}
+		tomlConf.Registries = append(tomlConf.Registries, sysregistriesv2.Registry{
+			Endpoint: sysregistriesv2.Endpoint{Location: scope},
+		})
+		return &tomlConf.Registries[len(tomlConf.Registries)-1]
 	}
-	if internalBlocked != nil {
-		tomlConf.Block = sysregistriesv2.V1TOMLregistries{Registries: internalBlocked}
+	for _, insecureReg := range internalInsecure {
+		reg := getRegistryEntry(insecureReg)
+		reg.Insecure = true
+	}
+	for _, blockedReg := range internalBlocked {
+		reg := getRegistryEntry(blockedReg)
+		reg.Blocked = true
 	}
 
 	var newData bytes.Buffer
