@@ -839,11 +839,11 @@ func (dn *Daemon) CheckStateOnBoot() error {
 		}
 		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
 
-		// Delete the bootstrap node annotations; the
+		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
 		// In other words if it drifts somehow, we go degraded.
-		if err := os.Remove(constants.InitialNodeAnnotationsFilePath); err != nil {
-			return errors.Wrapf(err, "removing initial node annotations file")
+		if err := os.Rename(constants.InitialNodeAnnotationsFilePath, constants.InitialNodeAnnotationsBakPath); err != nil {
+			return errors.Wrap(err, "renaming initial node annotation file")
 		}
 	}
 
