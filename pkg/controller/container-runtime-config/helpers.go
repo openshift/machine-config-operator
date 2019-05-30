@@ -53,12 +53,6 @@ type tomlConfigCRIO struct {
 	} `toml:"crio"`
 }
 
-type tomlConfigRegistries struct {
-	Registries []sysregistriesv2.Registry `toml:"registry"`
-	// backwards compatibility to sysregistries v1
-	sysregistriesv2.V1TOMLConfig `toml:"registries"`
-}
-
 type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
 
 func createNewCtrRuntimeConfigIgnition(storageTOMLConfig, crioTOMLConfig []byte) igntypes.Config {
@@ -245,8 +239,8 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 }
 
 func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string) ([]byte, error) {
-	tomlConf := new(tomlConfigRegistries)
-	if _, err := toml.Decode(string(data), tomlConf); err != nil {
+	tomlConf := sysregistriesv2.V1RegistriesConf{}
+	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
 	}
 
@@ -259,7 +253,7 @@ func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []str
 
 	var newData bytes.Buffer
 	encoder := toml.NewEncoder(&newData)
-	if err := encoder.Encode(*tomlConf); err != nil {
+	if err := encoder.Encode(tomlConf); err != nil {
 		return nil, err
 	}
 
