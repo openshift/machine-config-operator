@@ -81,7 +81,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 
 		// Get MachineConfig
 		managedKey := getManagedFeaturesKey(pool)
-		mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
@@ -125,9 +125,9 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
 			} else {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
 			}
 			return err
 		}); err != nil {
