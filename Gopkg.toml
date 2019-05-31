@@ -105,27 +105,27 @@ required = [
 
 [[constraint]]
   name = "k8s.io/api"
-  version = "kubernetes-1.13.4"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/apiextensions-apiserver"
-  version = "kubernetes-1.13.4"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  version = "10.0.0"
+  version = "11.0.0"
 
 [[constraint]]
   name = "k8s.io/code-generator"
-  version = "kubernetes-1.13.4"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/kubelet"
-  version = "kubernetes-1.13.4"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  revision = "v1.13.4"
+  revision = "v1.14.0"
 
 # TODO: include why the override is required
 [[override]]
@@ -146,11 +146,11 @@ required = [
 # sigs.k8s.io/controller-runtime needs 1.12.3
 [[override]]
   name = "k8s.io/apimachinery"
-  version = "kubernetes-1.13.4"
+  version = "kubernetes-1.14.0"
 
 [[override]]
   name = "k8s.io/apiserver"
-  version = "kubernetes-1.13.4"
+  version = "kubernetes-1.14.0"
 
 [[constraint]]
   revision = "0b67c788f2d234c9fecc3d372d93160869381166"
