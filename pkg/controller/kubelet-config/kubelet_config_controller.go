@@ -238,7 +238,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 		return nil
 	}
 	mcName := cfg.GetFinalizers()[0]
-	err := ctrl.client.Machineconfiguration().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
+	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
 	if err != nil && !macherrors.IsNotFound(err) {
 		return err
 	}
@@ -436,7 +436,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		role := pool.Name
 		// Get MachineConfig
 		managedKey := getManagedKubeletConfigKey(pool)
-		mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 		if err != nil && !macherrors.IsNotFound(err) {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
@@ -484,9 +484,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
 			} else {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
 			}
 			return err
 		}); err != nil {

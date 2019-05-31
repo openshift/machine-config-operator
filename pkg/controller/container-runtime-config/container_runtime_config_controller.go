@@ -241,7 +241,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.ContainerRuntimeConfig) error 
 		return nil
 	}
 	mcName := cfg.GetFinalizers()[0]
-	err := ctrl.client.Machineconfiguration().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
+	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -476,7 +476,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// Get MachineConfig
 		managedKey := getManagedKeyCtrCfg(pool, cfg)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 			}
@@ -514,9 +514,9 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 			// Create or Update, on conflict retry
 			if isNotFound {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
 			} else {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
 			}
 
 			// Add Finalizers to the ContainerRuntimeConfigs
@@ -614,7 +614,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 					return fmt.Errorf("could not update registries config with new changes: %v", err)
 				}
 			}
-			mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("could not find MachineConfig: %v", err)
 			}
@@ -647,9 +647,9 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 			// Create or Update, on conflict retry
 			if isNotFound {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
 			} else {
-				_, err = ctrl.client.Machineconfiguration().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
 			}
 
 			return err
@@ -696,7 +696,7 @@ func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.Co
 }
 
 func (ctrl *Controller) patchContainerRuntimeConfigs(name string, patch []byte) error {
-	_, err := ctrl.client.Machineconfiguration().ContainerRuntimeConfigs().Patch(name, types.MergePatchType, patch)
+	_, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Patch(name, types.MergePatchType, patch)
 	return err
 }
 
