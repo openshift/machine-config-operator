@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/docker/reference"
@@ -238,6 +239,18 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	return newData.Bytes(), nil
 }
 
+// scopeMatchesRegistry returns true if a scope value (as in sysregistriesv2.Registry.Prefix / sysregistriesv2.Endpoint.Location)
+// matches a host[:port] value in reg.
+func scopeMatchesRegistry(scope, reg string) bool {
+	if reg == scope {
+		return true
+	}
+	if len(scope) > len(reg) {
+		return strings.HasPrefix(scope, reg) && scope[len(reg)] == '/'
+	}
+	return false
+}
+
 func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string) ([]byte, error) {
 	tomlConf := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
@@ -260,13 +273,34 @@ func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []str
 		})
 		return &tomlConf.Registries[len(tomlConf.Registries)-1]
 	}
+	// internalInsecure and internalBlocked are lists of registries; now that mirrors can be configured at a namespace/repo level,
+	// configuration at the namespace/repo level would shadow the registry-level entries; so, propagate the insecure/blocked
+	// flags to the child namespaces as well.
 	for _, insecureReg := range internalInsecure {
 		reg := getRegistryEntry(insecureReg)
 		reg.Insecure = true
+		for i := range tomlConf.Registries {
+			reg := &tomlConf.Registries[i]
+			if scopeMatchesRegistry(reg.Location, insecureReg) {
+				reg.Insecure = true
+			}
+			for j := range reg.Mirrors {
+				mirror := &reg.Mirrors[j]
+				if scopeMatchesRegistry(mirror.Location, insecureReg) {
+					mirror.Insecure = true
+				}
+			}
+		}
 	}
 	for _, blockedReg := range internalBlocked {
 		reg := getRegistryEntry(blockedReg)
 		reg.Blocked = true
+		for i := range tomlConf.Registries {
+			reg := &tomlConf.Registries[i]
+			if scopeMatchesRegistry(reg.Location, blockedReg) {
+				reg.Blocked = true
+			}
+		}
 	}
 
 	var newData bytes.Buffer
