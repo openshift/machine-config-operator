@@ -59,8 +59,3 @@ var _ clientset.Interface = &Clientset{}
 func (c *Clientset) MachineconfigurationV1() machineconfigurationv1.MachineconfigurationV1Interface {
 	return &fakemachineconfigurationv1.FakeMachineconfigurationV1{Fake: &c.Fake}
 }
-
-// Machineconfiguration retrieves the MachineconfigurationV1Client
-func (c *Clientset) Machineconfiguration() machineconfigurationv1.MachineconfigurationV1Interface {
-	return &fakemachineconfigurationv1.FakeMachineconfigurationV1{Fake: &c.Fake}
-}
