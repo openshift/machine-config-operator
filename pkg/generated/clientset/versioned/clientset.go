@@ -12,8 +12,6 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	MachineconfigurationV1() machineconfigurationv1.MachineconfigurationV1Interface
-	// Deprecated: please explicitly pick a version if possible.
-	Machineconfiguration() machineconfigurationv1.MachineconfigurationV1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
@@ -25,12 +23,6 @@ type Clientset struct {
 
 // MachineconfigurationV1 retrieves the MachineconfigurationV1Client
 func (c *Clientset) MachineconfigurationV1() machineconfigurationv1.MachineconfigurationV1Interface {
-	return c.machineconfigurationV1
-}
-
-// Deprecated: Machineconfiguration retrieves the default version of MachineconfigurationClient.
-// Please explicitly pick a version.
-func (c *Clientset) Machineconfiguration() machineconfigurationv1.MachineconfigurationV1Interface {
 	return c.machineconfigurationV1
 }
 
