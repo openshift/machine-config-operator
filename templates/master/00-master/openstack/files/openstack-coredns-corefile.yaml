@@ -5,13 +5,19 @@ contents:
   inline: |
     . {
         log
+        errors
+
+        forward . 8.8.8.8 {
+            except {{.EtcdDiscoveryDomain}}
+        }
+    }
+
+    {{.EtcdDiscoveryDomain}} {
+        log
         mdns {{.EtcdDiscoveryDomain}} 3 {{(split "." .EtcdDiscoveryDomain)._0}}
         cache 30
         reload
         loadbalance round_robin
         file /etc/coredns/coredns.db {
-        }
-        forward . /etc/resolv.conf {
-            except {{.EtcdDiscoveryDomain}}
         }
     }
