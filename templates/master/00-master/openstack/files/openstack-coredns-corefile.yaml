@@ -8,6 +8,9 @@ contents:
         mdns {{.EtcdDiscoveryDomain}} 3 {{(split "." .EtcdDiscoveryDomain)._0}}
         cache 30
         reload
+        loadbalance round_robin
+        file /etc/coredns/coredns.db {
+        }
         forward . /etc/resolv.conf {
             except {{.EtcdDiscoveryDomain}}
         }

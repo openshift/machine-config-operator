@@ -17,6 +17,33 @@ contents:
       - name: conf-dir
         hostPath:
           path: "/etc/kubernetes/static-pod-resources/coredns"
+      - name: var-dir
+        hostPath:
+          path: "/tmp"
+      initContainers:
+      - name: dns-render-config
+        image: quay.io/openshift/origin-node:latest
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          set -ex
+          source /tmp/clustervars
+          
+          /usr/libexec/platform-python -c "from __future__ import print_function
+          import os
+          with open('/etc/coredns/coredns.db.template', 'r') as f:
+              content = f.read()
+          with open('/etc/coredns/coredns.db', 'w') as dest:
+              print(os.path.expandvars(content), file=dest)"
+        resources: {}
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        - name: var-dir
+          mountPath: "/tmp"
+        imagePullPolicy: IfNotPresent
       containers:
       - name: coredns
         securityContext:
