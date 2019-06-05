@@ -15,7 +15,7 @@ The MCO (for short) interacts closely with
 both [the installer](https://github.com/openshift/installer/) as well as Red Hat
 CoreOS. See also [the machine-api-operator](https://github.com/openshift/machine-api-operator)
 which handles provisioning of new machines - once the machine-api-operator
-provisions a machine (with a "pristine" base Red hat CoreOS), the MCO will take
+provisions a machine (with a "pristine" base Red Hat CoreOS), the MCO will take
 care of configuring it.
 
 One way to view the MCO is to treat the operating system itself as "just another
@@ -26,8 +26,8 @@ format.  Operating system updates use [rpm-ostree](http://github.com/projectatom
 
 # Sub-components and design
 
-This operator is split into 4 components; the above covers
-the operator.  Here are links to design docs for the sub-components:
+This one git repository generates 4 components in a cluster; the `machine-config-operator`
+pod manages the remaining 3 sub-components.  Here are links to design docs:
 
  - [machine-config-server](docs/MachineConfigServer.md)
  - [machine-config-controller](docs/MachineConfigController.md)
@@ -35,9 +35,9 @@ the operator.  Here are links to design docs for the sub-components:
 
 # Interacting with the MCO
 
-Because the MCO is an integrated operator, you can inspect its status
-just like any other operator.  If it's reporting success, then that
-means that the operating system is up to date.
+Because the MCO is a cluster-level operator, you can inspect its status
+just like any other operator that is part of the release image.  If it's reporting success, then that
+means that the operating system is up to date and configured.
 
 `oc describe clusteroperator/machine-config`
 
