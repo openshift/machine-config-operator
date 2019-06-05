@@ -321,6 +321,8 @@ var _manifestsMachineconfigcontrollerClusterroleYaml = []byte(`apiVersion: rbac.
 kind: ClusterRole
 metadata:
   name: machine-config-controller
+  labels:
+    "mco-built-in/cluster-role": ""
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -355,6 +357,8 @@ var _manifestsMachineconfigcontrollerClusterrolebindingYaml = []byte(`apiVersion
 kind: ClusterRoleBinding
 metadata:
   name: machine-config-controller
+  labels:
+    "mco-built-in/cluster-role-binding": ""
 roleRef:
   kind: ClusterRole
   name: machine-config-controller
@@ -487,6 +491,8 @@ var _manifestsMachineconfigdaemonClusterroleYaml = []byte(`apiVersion: rbac.auth
 kind: ClusterRole
 metadata:
   name: machine-config-daemon
+  labels:
+    "mco-built-in/cluster-role": ""
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -524,6 +530,8 @@ var _manifestsMachineconfigdaemonClusterrolebindingYaml = []byte(`apiVersion: rb
 kind: ClusterRoleBinding
 metadata:
   name: machine-config-daemon
+  labels:
+    "mco-built-in/cluster-role-binding": ""
 roleRef:
   kind: ClusterRole
   name: machine-config-daemon
@@ -786,6 +794,8 @@ var _manifestsMachineconfigserverClusterroleYaml = []byte(`apiVersion: rbac.auth
 kind: ClusterRole
 metadata:
   name: machine-config-server
+  labels:
+    "mco-built-in/cluster-role": ""
 rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
@@ -811,6 +821,8 @@ var _manifestsMachineconfigserverClusterrolebindingYaml = []byte(`apiVersion: rb
 kind: ClusterRoleBinding
 metadata:
   name: machine-config-server
+  labels:
+    "mco-built-in/cluster-role-binding": ""
 roleRef:
   kind: ClusterRole
   name: machine-config-server
@@ -840,6 +852,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: system-bootstrap-node-bootstrapper
+  labels:
+    "mco-built-in/cluster-role-binding": ""
 subjects:
 - kind: ServiceAccount
   name: node-bootstrapper
@@ -875,6 +889,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: system-bootstrap-node-renewal
+  labels:
+    "mco-built-in/cluster-role-binding": ""
 subjects:
 - kind: Group
   name: system:nodes

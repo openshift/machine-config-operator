@@ -2,6 +2,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: machine-config-controller
+  labels:
+    "mco-built-in/cluster-role": ""
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
