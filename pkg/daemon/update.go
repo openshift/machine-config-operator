@@ -37,6 +37,8 @@ const (
 	coreUserName = "core"
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
+	// fipsCommand is the command to use when enabling or disabling FIPS
+	fipsCommand = "/usr/libexec/rhcos-tools/coreos-fips"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -245,7 +247,35 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	if err := dn.updateFIPS(oldConfig, newConfig); err != nil {
+		return err
+	}
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateFIPS(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back FIPS %v", err)
+				return
+			}
+		}
+	}()
+
 	return dn.updateOSAndReboot(newConfig)
+}
+
+func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
+	if current.Spec.Fips == desired.Spec.Fips {
+		return nil
+	}
+	arg := "enable"
+	if !desired.Spec.Fips {
+		arg = "disable"
+	}
+	cmd := exec.Command(fipsCommand, arg)
+	dn.logSystem("Running %s %s", fipsCommand, arg)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "%s FIPS: %s", arg, string(out))
+	}
+	return nil
 }
 
 // MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
@@ -255,6 +285,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 type MachineConfigDiff struct {
 	osUpdate bool
 	kargs    bool
+	fips     bool
 	passwd   bool
 	files    bool
 	units    bool
@@ -369,6 +400,7 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 	return &MachineConfigDiff{
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
 		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
+		fips:     oldConfig.Spec.Fips != newConfig.Spec.Fips,
 		passwd:   passwdChanged,
 		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
