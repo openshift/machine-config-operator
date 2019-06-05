@@ -231,6 +231,8 @@ type MachineConfigSpec struct {
 	Config igntypes.Config `json:"config"`
 
 	KernelArguments []string `json:"kernelArguments"`
+
+	Fips bool `json:"fips"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
