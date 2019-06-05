@@ -55,7 +55,7 @@ Use `oc get pods -w` to watch for your new code to be deployed.
 
 # Hacking on MCO - updating the manifests
 
-To update the manifests applied by Machine Config Operator, edit the `yaml` files in `manifests` folder in the root. The manifest folder has 3 subfolders, each for sub component.
+To update the manifests applied by Machine Config Operator, edit the `yaml` files in `manifests` folder in the root. The manifest folder has 3 subfolders, one for each subcomponent.
 
 - `manifests/machineconfigcontroller`: These are all the manifests related to Machine Config Controller.
 - `manifests/machineconfigdaemon`: These are all the manifests related to Machine Config Daemon.
@@ -72,11 +72,15 @@ Every time you modify any of the manifests in `manifests` please run the followi
 # Unit Tests
 
 Unit tests (that don't interact with a running cluster) can be executed on a per
-package basis with `go test` like so:
+package basis with `go test`:
 
 `go test -v github.com/openshift/machine-config-operator/pkg/apis`
 
-All tests can be executed with:
+To execute all unit tests:
+
+`make test-unit`
+
+All tests (unit and e2e) can be executed with:
 
 `make test`
 
@@ -151,7 +155,7 @@ for ip in 11 51; do ssh core@192.168.126.$ip sudo cp -R /home/core/.ssh /root; d
 for ip in 11 51; do scp _output/linux/amd64/machine-config-daemon root@192.168.126.$ip:/usr/local/bin; done
 ```
 
-Note this still requires disabling the CVO. It also requires disabling
+This still requires [disabling the CVO](https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusterversion.md#disabling-the-cluster-version-operator). It also requires disabling
 the operator since the MCD daemonset will be overwritten:
 
 ```
@@ -165,7 +169,7 @@ The `e2e-aws` job is common across most OpenShift repos; it runs the installer
 with a custom update payload using code from the PR, and then runs the e2e test
 suite from [OpenShift Origin](https://github.com/openshift/origin/).
 
-Finally, [recently we added](https://github.com/openshift/release/pull/2577) an
+[Recently we added](https://github.com/openshift/release/pull/2577) an
 `e2e-aws-op` job. This one also generates a cluster with the code, but runs
 `make test-e2e` from our own repo rather than Origin's test suite. We can run
 destructive tests here.
@@ -178,18 +182,18 @@ you will see a line like: `2019/02/13 18:56:22 Using namespace ci-op-ydnn8xvi`.
 The different parts of a build/test run are all inside that namespace that
 runs in the https://api.ci.openshift.org/ cluster.
 
-When a PR is complete you'll see a lot of information more nicely rendered, including
+When CI is complete you'll see a lot of information more nicely rendered, including
 artifacts. The `pods/` directory for example has the logs for the various
 pods.  Lists of some important objects are extracted to JSON; for example `nodes.json` has
 a list of the node state.  For this project, the `machineconfigs.json` and `machineconfigpools.json`
 are commonly useful.
 
-## Logging into a cluster live
+## Logging into a live test cluster
 
 Login: `oc login --server=https://api.ci.openshift.org`
 
 In the pull request, you'll see a "project" or Kubernetes namespace, so you can e.g.: `oc project ci-op-zgctgrpy`
-You can watch the installer logs via e.g. `oc logs -f -c setup e2e-aws`.
+You can watch the installer logs via `oc logs -f -c setup e2e-aws`.
 
 Now, you can get the Kubernetes credentials back to your machine:
 
@@ -198,12 +202,12 @@ oc rsh -c test e2e-aws cat /tmp/artifacts/installer/auth/kubeconfig > $XDG_RUNTI
 export KUBECONFIG=$XDG_RUNTIME_DIR/kubeconfig
 ````
 
-And from there debug the cluster live while the tests are running. Though be
-aware that it will be quickly torn down as soon as the tests succeed or fail.
+And from there debug the live cluster while the tests are running. Though be
+aware that it will be quickly torn down as soon as the tests have completed.
 
 # Building and installing a custom release image for testing the MCO
 
-During the MCO development there are certain test scenarios
+During MCO development there are certain test scenarios
 that require a cluster running with a custom release to properly test your
 code (i.e. test the interaction of the MCO with the CVO).
 
@@ -224,8 +228,8 @@ make image-{component}
 `{component}` can be either `operator`, `daemon`, `controller` or `server`.
 After the build is complete, make sure to push the image to a registry (i.e. `quay.io/user/machine-config-{component}:latest`).
 
-Note, quay.io or any other public registry isn't strictly required, you can use a local
-registry for this flow to still work as long as those images are pullable.
+Quay.io or any other public registry isn't strictly required - you can use a local
+registry as long as those images are pullable.
 
 ## Build a custom release payload
 
@@ -233,33 +237,35 @@ Now that your have your custom component images, to build a custom release paylo
 
 ```
 oc adm release new -n origin --server https://api.ci.openshift.org \
-                                --from-image-stream "4.1" \
-                                --to-image quay.io/user/origin-release:v4.1 \
+                                --from-image-stream "{version number}" \
+                                --to-image quay.io/user/origin-release:v{version number} \
                                 machine-config-{component}=quay.io/user/machine-config-{component}:{tag}
 ```
 
+`{version number}` is an openshift version, for example 4.1 
+
 There's currently a [known limitation](https://github.com/openshift/machine-config-operator/issues/421) which prevents
-you from building a custom release payload using only a subset of the MCO components. You can work that around by
+building a custom release payload using only a subset of the MCO components. You can work around that by
 creating a payload which contains all of them:
 
 ```
 oc adm release new -n origin --server https://api.ci.openshift.org \
-                                --from-image-stream "4.1" \
-                                --to-image quay.io/user/origin-release:v4.1 \
+                                --from-image-stream "{version number}" \
+                                --to-image quay.io/user/origin-release:v{version number} \
                                 machine-config-operator=quay.io/user/machine-config-operator:latest \
                                 machine-config-controller=quay.io/user/machine-config-controller:latest \
                                 machine-config-daemon=quay.io/user/machine-config-daemon:latest \
                                 machine-config-server=quay.io/user/machine-config-server:latest
 ```
 
-Note, make sure you're using a relatively new `oc` binary from `openshift/origin`. Note also that the
-image must be pullable by remote resources (nodes), therefore using a local registry might not work.
+Make sure you're using a relatively new `oc` binary from `openshift/origin`. The image must be pullable by 
+remote resources (nodes), therefore using a local registry might not work.
 
 When the command above finishes, your custom release payload is going to be available
 at the location you specified via the `--to-image` flag for the installer to be consumed.
 
-Note for quay.io users: images pushed to your personal account are going to be
-private by default. If you want to keep the release payload image private you will need to provide
+Note for quay.io users: images pushed to your personal account are going to be private by default. 
+If you want to keep the release payload image private you will need to provide
 the secret to pull it in the `install-config.yaml` configuration (`pullSecret` section specifically).
 
 ## Install a cluster with a custom release payload
@@ -268,5 +274,5 @@ In order to use your new custom release payload to install a new cluster, simply
 the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
 
 ```
-OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v4.1 bin/openshift-install create cluster --log-level=debug
+OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v{version number} bin/openshift-install create cluster --log-level=debug
 ```
