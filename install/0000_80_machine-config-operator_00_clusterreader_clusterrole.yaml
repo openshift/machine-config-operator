@@ -4,6 +4,7 @@ metadata:
   name: system:openshift:machine-config-operator:cluster-reader
   labels:
     rbac.authorization.k8s.io/aggregate-to-cluster-reader: "true"
+    mco-built-in/cluster-role-binding: ""
 rules:
   - apiGroups:
       - machineconfiguration.openshift.io
