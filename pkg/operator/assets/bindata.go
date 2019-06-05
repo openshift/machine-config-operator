@@ -321,7 +321,6 @@ var _manifestsMachineconfigcontrollerClusterroleYaml = []byte(`apiVersion: rbac.
 kind: ClusterRole
 metadata:
   name: machine-config-controller
-  namespace: {{.TargetNamespace}}
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -356,7 +355,6 @@ var _manifestsMachineconfigcontrollerClusterrolebindingYaml = []byte(`apiVersion
 kind: ClusterRoleBinding
 metadata:
   name: machine-config-controller
-  namespace: {{.TargetNamespace}}
 roleRef:
   kind: ClusterRole
   name: machine-config-controller
@@ -489,7 +487,6 @@ var _manifestsMachineconfigdaemonClusterroleYaml = []byte(`apiVersion: rbac.auth
 kind: ClusterRole
 metadata:
   name: machine-config-daemon
-  namespace: {{.TargetNamespace}}
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -527,7 +524,6 @@ var _manifestsMachineconfigdaemonClusterrolebindingYaml = []byte(`apiVersion: rb
 kind: ClusterRoleBinding
 metadata:
   name: machine-config-daemon
-  namespace: {{.TargetNamespace}}
 roleRef:
   kind: ClusterRole
   name: machine-config-daemon
@@ -790,7 +786,6 @@ var _manifestsMachineconfigserverClusterroleYaml = []byte(`apiVersion: rbac.auth
 kind: ClusterRole
 metadata:
   name: machine-config-server
-  namespace: {{.TargetNamespace}}
 rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
@@ -816,7 +811,6 @@ var _manifestsMachineconfigserverClusterrolebindingYaml = []byte(`apiVersion: rb
 kind: ClusterRoleBinding
 metadata:
   name: machine-config-server
-  namespace: {{.TargetNamespace}}
 roleRef:
   kind: ClusterRole
   name: machine-config-server
