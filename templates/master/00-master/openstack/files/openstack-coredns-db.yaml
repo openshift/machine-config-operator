@@ -13,6 +13,7 @@ contents:
                                     )
 
     api IN A $FLOATING_IP
+    *.apps IN A $FLOATING_IP
     api-int IN A $BOOTSTRAP_IP
     api-int IN A $MASTER_FIXED_IPS_0
     api-int IN A $MASTER_FIXED_IPS_1
