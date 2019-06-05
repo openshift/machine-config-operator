@@ -19,7 +19,7 @@ contents:
           path: "/etc/kubernetes/static-pod-resources/coredns"
       - name: var-dir
         hostPath:
-          path: "/tmp"
+          path: "/etc/kubernetes/static-pod-resources"
       initContainers:
       - name: dns-render-config
         image: quay.io/openshift/origin-node:latest
