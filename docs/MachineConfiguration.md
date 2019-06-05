@@ -51,6 +51,7 @@ type MachineConfigSpec struct {
     // Config is a Ignition Config object.
     Config ign.Config `json:"config"`
     KernelArguments []string `json:"kernelArguments"`
+    Fips bool `json:"fips"`
 }
 ```
 
@@ -93,6 +94,10 @@ Ignition config keys as well.
 ### KernelArguments
 
 This extends the host's kernel arguments.  Use this for e.g. [nosmt](https://access.redhat.com/solutions/rhel-smt).
+
+### FIPS
+
+This allows to enable/disable [FIPS mode](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/security_guide/chap-federal_standards_and_regulations).
 
 ### OSImageURL
 

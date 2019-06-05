@@ -20,8 +20,10 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 	}
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
+	fips := configs[0].Spec.Fips
 	outIgn := configs[0].Spec.Config
 	for idx := 1; idx < len(configs); idx++ {
+		fips = configs[idx].Spec.Fips
 		outIgn = ign.Append(outIgn, configs[idx].Spec.Config)
 	}
 	kargs := []string{}
@@ -31,9 +33,10 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 
 	return &MachineConfig{
 		Spec: MachineConfigSpec{
-			OSImageURL: osImageURL,
+			OSImageURL:      osImageURL,
 			KernelArguments: kargs,
-			Config:     outIgn,
+			Config:          outIgn,
+			Fips:            fips,
 		},
 	}
 }

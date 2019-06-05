@@ -1,7 +1,6 @@
 package e2e_test
 
 import (
-	"github.com/pkg/errors"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -9,15 +8,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
+
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/stretchr/testify/assert"
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	v1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -272,7 +273,6 @@ func TestUpdateSSH(t *testing.T) {
 	}
 }
 
-
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
@@ -282,7 +282,7 @@ func TestKernelArguments(t *testing.T) {
 			Labels: mcLabelForWorkers(),
 		},
 		Spec: mcv1.MachineConfigSpec{
-			Config: ctrlcommon.NewIgnConfig(),
+			Config:          ctrlcommon.NewIgnConfig(),
 			KernelArguments: []string{"nosmt", "foo=bar"},
 		},
 	}
@@ -481,5 +481,93 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		return false, nil
 	}); err != nil {
 		t.Errorf("machine config didn't roll back on any worker: %v", err)
+	}
+}
+
+func TestFIPS(t *testing.T) {
+	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
+	fipsMC := &mcv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("fips-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+			Fips:   true,
+		},
+	}
+
+	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	workerOldMc := mcp.Status.Configuration.Name
+
+	_, err = cs.MachineConfigs().Create(fipsMC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Created %s", fipsMC.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", fipsMC.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcdName := mcd.ObjectMeta.Name
+		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"fips-mode-setup --check").CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fips := string(fipsBytes)
+		if !strings.Contains(fips, "FIPS mode is enabled") {
+			t.Fatalf("FIPS hasn't been enabled")
+		}
+		t.Logf("Node %s has expected FIPS mode", node.Name)
+	}
+
+	if err := cs.MachineConfigs().Delete(fipsMC.Name, &metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+		t.Fatal(err)
+	}
+
+	nodes, err = getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcdName := mcd.ObjectMeta.Name
+		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"fips-mode-setup --check").CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fips := string(fipsBytes)
+		if !strings.Contains(fips, "FIPS mode is disabled") {
+			t.Fatalf("FIPS hasn't been disabled")
+		}
+		t.Logf("Node %s has expected FIPS mode", node.Name)
 	}
 }

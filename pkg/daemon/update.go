@@ -238,7 +238,35 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
+	if err := dn.updateFIPS(oldConfig, newConfig); err != nil {
+		return err
+	}
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateFIPS(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back FIPS %v", err)
+				return
+			}
+		}
+	}()
+
 	return dn.updateOSAndReboot(newConfig)
+}
+
+func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
+	if current.Spec.Fips == desired.Spec.Fips {
+		return nil
+	}
+	var cmd *exec.Cmd
+	if desired.Spec.Fips {
+		cmd = exec.Command("/usr/libexec/rhcos-tools/coreos-fips", "enable")
+	} else {
+		cmd = exec.Command("/usr/libexec/rhcos-tools/coreos-fips", "disable")
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "enabling FIPS: %s", string(out))
+	}
+	return nil
 }
 
 // MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
@@ -248,6 +276,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 type MachineConfigDiff struct {
 	osUpdate bool
 	kargs    bool
+	fips     bool
 	passwd   bool
 	files    bool
 	units    bool
@@ -359,12 +388,13 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	return &MachineConfigDiff {
+	return &MachineConfigDiff{
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs: !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
-		passwd: passwdChanged,
-		files: !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
-		units: !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
+		fips:     oldConfig.Spec.Fips != newConfig.Spec.Fips,
+		passwd:   passwdChanged,
+		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
+		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 	}, nil
 }
 
@@ -406,12 +436,12 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	cmdArgs := []string{}
 	for _, arg := range oldConfig.Spec.KernelArguments {
 		if !newKargs[arg] {
-			cmdArgs = append(cmdArgs, "--delete=" + arg)
+			cmdArgs = append(cmdArgs, "--delete="+arg)
 		}
 	}
 	for _, arg := range newConfig.Spec.KernelArguments {
 		if !oldKargs[arg] {
-			cmdArgs = append(cmdArgs, "--append=" + arg)
+			cmdArgs = append(cmdArgs, "--append="+arg)
 		}
 	}
 	return cmdArgs
