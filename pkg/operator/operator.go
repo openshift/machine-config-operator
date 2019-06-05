@@ -28,6 +28,7 @@ import (
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
@@ -247,12 +248,27 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (optr *Operator) eventHandler() cache.ResourceEventHandler {
+func (optr *Operator) enqueue(obj interface{}) {
+	// we're filtering out config maps that are "leader" based and we don't have logic around them
+	// resyncing on these causes the operator to sync every 14s for no good reason
+	if cm, ok := obj.(*v1.ConfigMap); ok && cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
+		return
+	}
 	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
+	optr.queue.Add(workQueueKey)
+}
+
+func (optr *Operator) eventHandler() cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { optr.queue.Add(workQueueKey) },
-		UpdateFunc: func(old, new interface{}) { optr.queue.Add(workQueueKey) },
-		DeleteFunc: func(obj interface{}) { optr.queue.Add(workQueueKey) },
+		AddFunc: func(obj interface{}) {
+			optr.enqueue(obj)
+		},
+		UpdateFunc: func(old, new interface{}) {
+			optr.enqueue(new)
+		},
+		DeleteFunc: func(obj interface{}) {
+			optr.enqueue(obj)
+		},
 	}
 }
 
