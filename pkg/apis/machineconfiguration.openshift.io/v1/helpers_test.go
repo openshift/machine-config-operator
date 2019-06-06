@@ -179,3 +179,158 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeLabels(t *testing.T) {
+	in1 := []MachineConfigLabels{
+		{
+			Labels: map[string]string{
+				"existkey1":   "existvalue1",
+				"noexistkey1": "shouldnotexist",
+			},
+			Exist: true,
+		},
+		{
+			Labels: map[string]string{
+				"noexistkey1": "noexistvalue1",
+				"existkey5":   "shouldexist",
+			},
+			Exist: false,
+		},
+		{
+			Labels: map[string]string{
+				"existkey2": "existvalue2",
+			},
+			Exist: true,
+		},
+		{
+			Labels: map[string]string{
+				"noexistkey2": "noexistvalue2",
+			},
+			Exist: false,
+		},
+	}
+	in2 := []MachineConfigLabels{
+		{
+			Labels: map[string]string{
+				"existkey3": "existvalue3",
+				"existkey4": "existvalue4",
+			},
+			Exist: true,
+		},
+		{
+			Labels: map[string]string{
+				"noexistkey3": "noexistvalue3",
+				"noexistkey4": "noexistvalue4",
+			},
+			Exist: false,
+		},
+		{
+			Labels: map[string]string{
+				"existkey1": "overwriteexistkey1",
+				"existkey5": "existvalue5",
+			},
+			Exist: true,
+		},
+		{
+			Labels: map[string]string{
+				"noexistkey5": "",
+			},
+			Exist: false,
+		},
+	}
+	expected := []MachineConfigLabels{
+		{
+			Labels: map[string]string{
+				"existkey1": "overwriteexistkey1",
+				"existkey2": "existvalue2",
+				"existkey3": "existvalue3",
+				"existkey4": "existvalue4",
+				"existkey5": "existvalue5",
+			},
+			Exist: true,
+		},
+		{
+			Labels: map[string]string{
+				"noexistkey1": "noexistvalue1",
+				"noexistkey2": "noexistvalue2",
+				"noexistkey3": "noexistvalue3",
+				"noexistkey4": "noexistvalue4",
+				"noexistkey5": "",
+			},
+			Exist: false,
+		},
+	}
+	found := mergeLabels(in1, in2)
+	if !reflect.DeepEqual(found, expected) {
+		t.Fatalf("expected: %v got %v", expected, found)
+	}
+}
+
+func TestMergeTaints(t *testing.T) {
+	in1 := []MachineConfigTaint{
+		{
+			Taint: corev1.Taint{
+				Key:    "existkey1",
+				Value:  "value1",
+				Effect: "NoSchedule",
+			},
+			Exist: true,
+		},
+		{
+			Taint: corev1.Taint{
+				Key:    "noexistkey1",
+				Value:  "value1",
+				Effect: "NoSchedule",
+			},
+			Exist: false,
+		},
+		{
+			Taint: corev1.Taint{
+				Key:    "noexistkey2",
+				Value:  "invalidvalue",
+				Effect: "invalideffect",
+			},
+			Exist: true,
+		},
+	}
+	in2 := []MachineConfigTaint{
+		{
+			Taint: corev1.Taint{
+				Key:    "noexistkey2",
+				Value:  "value2",
+				Effect: "NoSchedule",
+			},
+			Exist: false,
+		},
+	}
+	expected := []MachineConfigTaint{
+		{
+			Taint: corev1.Taint{
+				Key:    "existkey1",
+				Value:  "value1",
+				Effect: "NoSchedule",
+			},
+			Exist: true,
+		},
+		{
+			Taint: corev1.Taint{
+				Key:    "noexistkey1",
+				Value:  "value1",
+				Effect: "NoSchedule",
+			},
+			Exist: false,
+		},
+		{
+			Taint: corev1.Taint{
+				Key:    "noexistkey2",
+				Value:  "value2",
+				Effect: "NoSchedule",
+			},
+			Exist: false,
+		},
+	}
+	found := mergeTaints(in1, in2)
+	if !reflect.DeepEqual(found, expected) {
+		t.Fatalf("expected: %v got %v", expected, found)
+	}
+}

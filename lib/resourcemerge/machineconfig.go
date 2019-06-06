@@ -53,6 +53,14 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 		*modified = true
 		(*existing).Config = required.Config
 	}
+	if !equality.Semantic.DeepEqual(existing.Labels, required.Labels) {
+		*modified = true
+		(*existing).Labels = required.Labels
+	}
+	if !equality.Semantic.DeepEqual(existing.Taints, required.Taints) {
+		*modified = true
+		(*existing).Taints = required.Taints
+	}
 }
 
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {

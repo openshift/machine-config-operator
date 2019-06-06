@@ -41,6 +41,7 @@ type fixture struct {
 	kubeclient *k8sfake.Clientset
 
 	mcpLister  []*mcfgv1.MachineConfigPool
+	mcLister   []*mcfgv1.MachineConfig
 	nodeLister []*corev1.Node
 
 	kubeactions []core.Action
@@ -64,10 +65,11 @@ func (f *fixture) newController() *Controller {
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
-	c := New(i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		f.kubeclient, f.client)
+	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
+		k8sI.Core().V1().Nodes(), f.kubeclient, f.client)
 
 	c.mcpListerSynced = alwaysReady
+	c.mcListerSynced = alwaysReady
 	c.nodeListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -80,6 +82,10 @@ func (f *fixture) newController() *Controller {
 
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
+	}
+
+	for _, c := range f.mcLister {
+		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(c)
 	}
 
 	for _, m := range f.nodeLister {
@@ -191,6 +197,8 @@ func filterInformerActions(actions []core.Action) []core.Action {
 		if len(action.GetNamespace()) == 0 &&
 			(action.Matches("list", "machineconfigpools") ||
 				action.Matches("watch", "machineconfigpools") ||
+				action.Matches("list", "machineconfigs") ||
+				action.Matches("watch", "machineconfigs") ||
 				action.Matches("list", "nodes") ||
 				action.Matches("watch", "nodes")) {
 			continue
@@ -731,13 +739,17 @@ func TestShouldMakeProgress(t *testing.T) {
 	f := newFixture(t)
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+	f.mcpLister = append(f.mcpLister, mcp)
+	f.objects = append(f.objects, mcp)
+
+	mc := helpers.NewMachineConfig("v1", map[string]string{"node-role": "master"}, "", nil)
+	f.mcLister = append(f.mcLister, mc)
+	f.objects = append(f.objects, mc)
+
 	nodes := []*corev1.Node{
 		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
 		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/master": ""}),
 	}
-
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
 	f.nodeLister = append(f.nodeLister, nodes...)
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])

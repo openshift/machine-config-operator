@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/pkg/errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -322,6 +324,116 @@ func TestKernelArguments(t *testing.T) {
 			}
 		}
 		t.Logf("Node %s has expected kargs", node.Name)
+	}
+}
+
+func TestLabelsArguments(t *testing.T) {
+	testLabel := []mcv1.MachineConfigLabels{
+		{
+			Labels: map[string]string{
+				"testlabel": "testlabelvalue",
+			},
+			Exist: true,
+		},
+	}
+	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
+	kargsMC := &mcv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("labels-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+			Labels: testLabel,
+		},
+	}
+
+	_, err := cs.MachineConfigs().Create(kargsMC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Created %s", kargsMC.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		found := false
+		for label, key := range node.ObjectMeta.Labels {
+			if label == "testlabel" && key == "testlabelvalue" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Unable to find label testlabel on node: %v", node.ObjectMeta.Name)
+		}
+	}
+}
+
+func TestTaintsArguments(t *testing.T) {
+	testTaint := []mcv1.MachineConfigTaint{
+		{
+			Taint: corev1.Taint{
+				Key:    "taintkey",
+				Value:  "taintvaule",
+				Effect: "PreferNoSchedule",
+			},
+			Exist: true,
+		},
+	}
+	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
+	kargsMC := &mcv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("labels-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+			Taints: testTaint,
+		},
+	}
+
+	_, err := cs.MachineConfigs().Create(kargsMC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Created %s", kargsMC.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		found := false
+		for _, taint := range node.Spec.Taints {
+			if taint.Key == "taintkey" && taint.Value == "taintvalue" && taint.Effect == "PreferNoSchedule" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Unable to find label testlabel on node: %v", node.ObjectMeta.Name)
+		}
 	}
 }
 

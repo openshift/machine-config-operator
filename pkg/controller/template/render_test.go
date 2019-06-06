@@ -14,6 +14,13 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 )
 
+func getRenderConfig(ccspec *mcfgv1.ControllerConfigSpec) RenderConfig {
+	return RenderConfig{
+		ControllerConfigSpec: ccspec,
+		PullSecret:           `{"dummy":"dummy"}`,
+	}
+}
+
 func TestMain(m *testing.M) {
 	flag.Parse()
 	os.Exit(m.Run())
@@ -47,7 +54,7 @@ func TestCloudProvider(t *testing.T) {
 					Platform: c.platform,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(getRenderConfig(&config.Spec), name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -98,7 +105,7 @@ func TestCloudConfigFlag(t *testing.T) {
 					CloudProviderConfig: c.content,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(getRenderConfig(&config.Spec), name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -135,7 +142,7 @@ func TestEtcdPeerCertDNSNames(t *testing.T) {
 					EtcdDiscoveryDomain: c.etcdDiscoveryDomain,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(getRenderConfig(&config.Spec), name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -163,7 +170,7 @@ func TestEtcdServerCertDNSNames(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
+			got, err := renderTemplate(getRenderConfig(&config.Spec), name, dummyTemplate)
 			if err != nil && !c.err {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -253,14 +260,16 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Platform = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+	rc := getRenderConfig(&controllerConfig.Spec)
+	_, err = generateTemplateMachineConfigs(&rc, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Platform = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+	rc = getRenderConfig(&controllerConfig.Spec)
+	_, err = generateTemplateMachineConfigs(&rc, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -271,7 +280,8 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
+		rc := getRenderConfig(&controllerConfig.Spec)
+		cfgs, err := generateTemplateMachineConfigs(&rc, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}

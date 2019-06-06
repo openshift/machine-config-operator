@@ -26,7 +26,9 @@ import (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret string
+	PullSecret    string
+	KubeletLabels string
+	KubeletTaints string
 }
 
 const (
@@ -315,6 +317,10 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["etcdPeerCertDNSNames"] = etcdPeerCertDNSNames
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
+	funcs["workerLabels"] = workerLabels
+	funcs["masterLabels"] = masterLabels
+	funcs["masterTaintsFlag"] = masterTaintsFlag
+	funcs["workerTaintsFlag"] = workerTaintsFlag
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
@@ -399,6 +405,34 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 	default:
 		return ""
 	}
+}
+
+func workerLabels(cfg RenderConfig) (interface{}, error) {
+	if cfg.KubeletLabels != "" {
+		return cfg.KubeletLabels, nil
+	}
+	return "node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID}", nil
+}
+
+func masterLabels(cfg RenderConfig) (interface{}, error) {
+	if cfg.KubeletLabels != "" {
+		return cfg.KubeletLabels, nil
+	}
+	return "node-role.kubernetes.io/master,node.openshift.io/os_id=${ID}", nil
+}
+
+func workerTaintsFlag(cfg RenderConfig) (interface{}, error) {
+	if cfg.KubeletTaints != "" {
+		return fmt.Sprintf("--register-with-taints=%s", cfg.KubeletTaints), nil
+	}
+	return "", nil
+}
+
+func masterTaintsFlag(cfg RenderConfig) (interface{}, error) {
+	if cfg.KubeletTaints != "" {
+		return fmt.Sprintf("--register-with-taints=%s", cfg.KubeletTaints), nil
+	}
+	return "--register-with-taints=node-role.kubernetes.io/master=:NoSchedule", nil
 }
 
 // existsDir returns true if path exists and is a directory, false if the path

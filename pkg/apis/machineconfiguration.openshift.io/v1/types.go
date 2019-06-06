@@ -230,7 +230,21 @@ type MachineConfigSpec struct {
 	// Config is a Ignition Config object.
 	Config igntypes.Config `json:"config"`
 
+	// Labels and taints to use when registering the node with and to continuously apply
+	Labels []MachineConfigLabels `json:labels`
+	Taints []MachineConfigTaint  `json:taints`
+
 	KernelArguments []string `json:"kernelArguments"`
+}
+
+type MachineConfigLabels struct {
+	Labels map[string]string `json:"labels"`
+	Exist  bool              `json:"exist"`
+}
+
+type MachineConfigTaint struct {
+	Taint corev1.Taint `json:taint`
+	Exist bool         `json:"exist"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

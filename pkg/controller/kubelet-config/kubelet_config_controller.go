@@ -433,10 +433,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		// Get MachineConfig
 		managedKey := getManagedKubeletConfigKey(pool)
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
-		if err != nil && !macherrors.IsNotFound(err) {
-			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
-		}
 		isNotFound := macherrors.IsNotFound(err)
+		if err != nil && !isNotFound {
+			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
+		} else if isNotFound {
+			ignConfig := ctrlcommon.NewIgnConfig()
+			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
+		}
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
 		if err != nil {
@@ -464,10 +467,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		cfgYAML, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not encode YAML: %v", err)
-		}
-		if isNotFound {
-			ignConfig := ctrlcommon.NewIgnConfig()
-			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
 		mc.SetAnnotations(map[string]string{

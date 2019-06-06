@@ -14,6 +14,7 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -64,9 +65,11 @@ type Controller struct {
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
+	mcLister   mcfglistersv1.MachineConfigLister
 	nodeLister corelisterv1.NodeLister
 
 	mcpListerSynced  cache.InformerSynced
+	mcListerSynced   cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
@@ -75,6 +78,7 @@ type Controller struct {
 // New returns a new node controller.
 func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -105,8 +109,11 @@ func New(
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
 	ctrl.mcpLister = mcpInformer.Lister()
+	ctrl.mcLister = mcInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
+
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 
 	return ctrl
@@ -463,6 +470,9 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	candidates := getCandidateMachines(pool, nodes, maxunavail)
 	for _, node := range candidates {
+		if err := ctrl.syncLabelsAndTaints(node, pool.Spec.Configuration.Name); err != nil {
+			return err
+		}
 		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Spec.Configuration.Name); err != nil {
 			return err
 		}
@@ -494,6 +504,88 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
+}
+
+func updateLabels(node *corev1.Node, mcls []mcfgv1.MachineConfigLabels) *corev1.Node {
+	for _, mcl := range mcls {
+		for label, value := range mcl.Labels {
+			if mcl.Exist {
+				node.ObjectMeta.Labels[label] = value
+			} else {
+				delete(node.ObjectMeta.Labels, label)
+			}
+		}
+	}
+	return node
+}
+
+func findTaint(node *corev1.Node, taint corev1.Taint) (bool, int) {
+	for i, t := range node.Spec.Taints {
+		if t.Key == taint.Key {
+			return true, i
+		}
+	}
+	return false, 0
+}
+
+func updateTaints(node *corev1.Node, mcts []mcfgv1.MachineConfigTaint) *corev1.Node {
+	for i := range mcts {
+		mct := &mcts[i]
+		found, index := findTaint(node, mct.Taint)
+		if mct.Exist {
+			if !found {
+				// Supposed to be there but wasn't found, add it.
+				node.Spec.Taints = append(node.Spec.Taints, mct.Taint)
+				continue
+			}
+			// Supposed to be there and was, just overwrite it, instead of wasting time
+			// checking if it has the right values.
+			node.Spec.Taints[index] = mct.Taint
+		} else {
+			if !found {
+				// Not supposed to be there and not there
+				continue
+			}
+			// Not supposed to be there, but is, so delete it.
+			node.Spec.Taints = append(node.Spec.Taints[:index], node.Spec.Taints[index+1:]...)
+		}
+	}
+	return node
+}
+
+func (ctrl *Controller) syncLabelsAndTaints(oldNode *corev1.Node, currentConfigName string) error {
+	mc, err := ctrl.mcLister.Get(currentConfigName)
+	if err != nil {
+		return err
+	}
+
+	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+
+		newNode = updateLabels(newNode, mc.Spec.Labels)
+		newNode = updateTaints(newNode, mc.Spec.Taints)
+
+		if equality.Semantic.DeepEqual(oldNode, newNode) {
+			return nil
+		}
+
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", oldNode.Name, err)
+		}
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(oldNode.Name, types.StrategicMergePatchType, patchBytes)
+		return err
+	})
 }
 
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
