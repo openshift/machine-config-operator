@@ -9,7 +9,7 @@ contents:
     set -o pipefail
 
     # example
-    # etcd-snapshot-restore.sh $path-to-snapshot $etcd-connection-string
+    # ./etcd-snapshot-restore.sh $path-to-snapshot $inital_cluster
 
     if [[ $EUID -ne 0 ]]; then
       echo "This script must be run as root"
@@ -17,20 +17,16 @@ contents:
     fi
 
     usage () {
-        echo 'Path to snapshot is required: ./etcd-member-recover.sh $path-to-snapshot'
-        exit
+        echo 'Path to snapshot and initial cluster are required: ./etcd-snapshot-restore.sh $path-to-snapshot $initial_cluster'
+        exit 1
     }
 
-    if [ "$1" == "" ]; then
+    if [ "$1" == "" ] || [ "$2" == "" ]; then
         usage
     fi
 
     SNAPSHOT_FILE="$1"
-    ETCD_CONNSTRING=""
-    if [ "$2" != "" ]; then
-      ETCD_CONNSTRING="$2"
-    fi
-
+    ETCD_INITIAL_CLUSTER="$2"
     ASSET_DIR=./assets
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
@@ -56,6 +52,8 @@ contents:
         exit 1
       fi
       validate_environment
+      source /run/etcd/environment
+      ETCD_NAME=$(validate_etcd_name)
       stop_static_pods
       stop_etcd
       stop_kubelet
