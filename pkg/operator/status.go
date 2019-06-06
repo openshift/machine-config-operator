@@ -207,6 +207,9 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: "openshift-machine-config-operator"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "master"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
+		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "cluster"},
 	}
 	// During an installation we report the RELEASE_VERSION as soon as the component is created
 	// whether for normal runs and upgrades this code isn't hit and we get the right version every
