@@ -4,10 +4,13 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/golang/glog"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	apiextinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 )
@@ -55,7 +58,17 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), targetNamespace, nil)
 	openShiftConfigKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-config", nil)
-	apiExtSharedInformer := apiextinformers.NewSharedInformerFactory(apiExtClient, resyncPeriod()())
+	// filter out CRDs that do not have the MCO label
+	assignFilterLabels := func(opts *metav1.ListOptions) {
+		labelsMap, err := labels.ConvertSelectorToLabelsMap(opts.LabelSelector)
+		if err != nil {
+			glog.Warningf("unable to convert selector %q to map: %v", opts.LabelSelector, err)
+			return
+		}
+		opts.LabelSelector = labels.Merge(labelsMap, map[string]string{"openshift.io/operator-managed": ""}).String()
+	}
+	apiExtSharedInformer := apiextinformers.NewSharedInformerFactoryWithOptions(apiExtClient, resyncPeriod()(),
+		apiextinformers.WithNamespace(targetNamespace), apiextinformers.WithTweakListOptions(assignFilterLabels))
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 
 	return &ControllerContext{
