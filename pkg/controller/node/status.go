@@ -9,15 +9,10 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
-	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
-	if err != nil {
-		return err
-	}
-	nodes, err := ctrl.nodeLister.List(selector)
+	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		return err
 	}
