@@ -139,28 +139,15 @@ contents:
     }
 
     restore_snapshot() {
-      HOSTNAME=$(hostname)
-      HOSTDOMAIN=$(hostname -d)
-      ETCD_NAME=etcd-member-${HOSTNAME}.${HOSTDOMAIN}
-
-      source /run/etcd/environment
-
-      if [ -z "${ETCD_CONNSTRING}" ]; then
-        ETCD_CONNSTRING="${ETCD_NAME}=https://${ETCD_DNS_NAME}:2380"
-      fi
-
       if [ ! -f "$SNAPSHOT_FILE" ]; then
         echo "Snapshot file not found, restore failed: $SNAPSHOT_FILE."
         exit 1
       fi
 
-      sleep 2
-
       echo "Restoring etcd member $ETCD_NAME from snapshot.."
-
       env ETCDCTL_API=3 ${ETCDCTL} snapshot restore $SNAPSHOT_FILE \
         --name $ETCD_NAME \
-        --initial-cluster ${ETCD_CONNSTRING} \
+        --initial-cluster ${ETCD_INITIAL_CLUSTER} \
         --initial-cluster-token etcd-cluster-1 \
         --skip-hash-check=true \
         --initial-advertise-peer-urls https://${ETCD_IPV4_ADDRESS}:2380 \
@@ -203,16 +190,11 @@ contents:
 
     # add member cluster
     etcd_member_add() {
-      source  /run/etcd/environment
-      HOSTNAME=$(hostname)
-      HOSTDOMAIN=$(hostname -d)
-      ETCD_NAME=etcd-member-${HOSTNAME}.${HOSTDOMAIN}
-
+      echo "Updating etcd membership.."
       if [ -d "$ETCD_DATA_DIR" ]; then
+        echo "Removing etcd data_dir $ETCD_DATA_DIR.."
         rm -rf $ETCD_DATA_DIR
       fi
-
-      echo "Updating etcd membership.."
 
       RESPONSE=$(env ETCDCTL_API=3 $ETCDCTL --cert $ASSET_DIR/backup/etcd-client.crt --key $ASSET_DIR/backup/etcd-client.key --cacert $ASSET_DIR/backup/etcd-ca-bundle.crt \
         --endpoints ${RECOVERY_SERVER_IP}:2379 member add $ETCD_NAME --peer-urls=https://${ETCD_DNS_NAME}:2380)
@@ -359,4 +341,14 @@ contents:
       done
       echo "SRV query failed no matching records found"
       exit 1
+    }
+
+    # validate_etcd_name uses regex to return the etcd member name key from ETCD_INITIAL_CLUSTER matching the local ETCD_DNS_NAME.
+    validate_etcd_name() {
+      ETCD_NAME=$(echo ${ETCD_INITIAL_CLUSTER} | grep -oP "(?<=)[^,,\s]*(?==[^=]*${ETCD_DNS_NAME}\b)")
+      if [ -z "$ETCD_NAME" ]; then
+        echo "${ETCD_DNS_NAME} is not found in ${ETCD_INITIAL_CLUSTER}"
+        exit 1
+      fi
+      echo "$ETCD_NAME"
     }
