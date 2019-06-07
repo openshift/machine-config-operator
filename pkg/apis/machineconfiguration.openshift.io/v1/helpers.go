@@ -31,9 +31,9 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 
 	return &MachineConfig{
 		Spec: MachineConfigSpec{
-			OSImageURL: osImageURL,
+			OSImageURL:      osImageURL,
 			KernelArguments: kargs,
-			Config:     outIgn,
+			Config:          outIgn,
 		},
 	}
 }

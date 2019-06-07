@@ -359,12 +359,12 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	return &MachineConfigDiff {
+	return &MachineConfigDiff{
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs: !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
-		passwd: passwdChanged,
-		files: !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
-		units: !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
+		passwd:   passwdChanged,
+		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
+		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 	}, nil
 }
 
@@ -406,12 +406,12 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	cmdArgs := []string{}
 	for _, arg := range oldConfig.Spec.KernelArguments {
 		if !newKargs[arg] {
-			cmdArgs = append(cmdArgs, "--delete=" + arg)
+			cmdArgs = append(cmdArgs, "--delete="+arg)
 		}
 	}
 	for _, arg := range newConfig.Spec.KernelArguments {
 		if !oldKargs[arg] {
-			cmdArgs = append(cmdArgs, "--append=" + arg)
+			cmdArgs = append(cmdArgs, "--append="+arg)
 		}
 	}
 	return cmdArgs

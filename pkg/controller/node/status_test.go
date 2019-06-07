@@ -61,7 +61,7 @@ func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 			state = daemonconsts.MachineConfigDaemonStateDone
 		} else {
 			state = daemonconsts.MachineConfigDaemonStateWorking
-		}		
+		}
 		annos = map[string]string{}
 		annos[daemonconsts.CurrentMachineConfigAnnotationKey] = currentConfig
 		annos[daemonconsts.DesiredMachineConfigAnnotationKey] = desiredConfig
@@ -89,7 +89,7 @@ func newNodeWithLabel(name string, currentConfig, desiredConfig string, labels m
 
 func newNodeWithReady(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus) *corev1.Node {
 	node := newNode(name, currentConfig, desiredConfig)
-	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}	
+	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}
 	if node.Annotations == nil {
 		node.Annotations = map[string]string{}
 	}
@@ -98,7 +98,7 @@ func newNodeWithReady(name string, currentConfig, desiredConfig string, status c
 
 func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus, dstate string) *corev1.Node {
 	node := newNode(name, currentConfig, desiredConfig)
-	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}	
+	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}
 	if node.Annotations == nil {
 		node.Annotations = map[string]string{}
 	}
@@ -249,7 +249,7 @@ func TestGetUnavailableMachines(t *testing.T) {
 			newNodeWithReady("node-2", "v0", "v2", corev1.ConditionTrue),
 		},
 		currentConfig: "v2",
-		unavail: []string{"node-0", "node-2"},
+		unavail:       []string{"node-0", "node-2"},
 	}, {
 		// 1 node updated, 1 updating, 1 updating but not v2 and is not ready
 		nodes: []*corev1.Node{

@@ -59,7 +59,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMa
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			MachineConfigSelector: selector,
-			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
+			Configuration:         mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
 			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
