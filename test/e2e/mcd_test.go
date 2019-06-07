@@ -1,7 +1,6 @@
 package e2e_test
 
 import (
-	"github.com/pkg/errors"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -10,13 +9,9 @@ import (
 	"time"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/stretchr/testify/require"
-	v1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -26,6 +21,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
@@ -42,7 +42,7 @@ func TestMCDToken(t *testing.T) {
 	}
 
 	for _, pod := range mcdList.Items {
-		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{}).DoRaw()
+		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).DoRaw()
 		if err != nil {
 			t.Errorf("%s", err)
 		}
@@ -272,7 +272,6 @@ func TestUpdateSSH(t *testing.T) {
 	}
 }
 
-
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
@@ -282,7 +281,7 @@ func TestKernelArguments(t *testing.T) {
 			Labels: mcLabelForWorkers(),
 		},
 		Spec: mcv1.MachineConfigSpec{
-			Config: ctrlcommon.NewIgnConfig(),
+			Config:          ctrlcommon.NewIgnConfig(),
 			KernelArguments: []string{"nosmt", "foo=bar"},
 		},
 	}
@@ -326,7 +325,7 @@ func TestKernelArguments(t *testing.T) {
 	}
 }
 
-func getNodesByRole(cs *framework.ClientSet, role string) ([]v1.Node, error) {
+func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error) {
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
 	}

@@ -8,10 +8,10 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	core_v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
-func (dn *Daemon) loadNodeAnnotations(node *core_v1.Node) (*core_v1.Node, error) {
+func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 	ccAnnotation, err := getNodeAnnotation(node, constants.CurrentMachineConfigAnnotationKey)
 	// we need to load the annotations from the file only for the
 	// first run.
@@ -51,12 +51,12 @@ func (dn *Daemon) loadNodeAnnotations(node *core_v1.Node) (*core_v1.Node, error)
 }
 
 // getNodeAnnotation gets the node annotation, unsurprisingly
-func getNodeAnnotation(node *core_v1.Node, k string) (string, error) {
+func getNodeAnnotation(node *corev1.Node, k string) (string, error) {
 	return getNodeAnnotationExt(node, k, false)
 }
 
 // getNodeAnnotationExt is like getNodeAnnotation, but allows one to customize ENOENT handling
-func getNodeAnnotationExt(node *core_v1.Node, k string, allowNoent bool) (string, error) {
+func getNodeAnnotationExt(node *corev1.Node, k string, allowNoent bool) (string, error) {
 	v, ok := node.Annotations[k]
 	if !ok {
 		if !allowNoent {

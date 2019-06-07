@@ -4,9 +4,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/openshift/machine-config-operator/internal/clients"
 	"github.com/golang/glog"
-	"k8s.io/api/core/v1"
+	"github.com/openshift/machine-config-operator/internal/clients"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -27,7 +27,7 @@ const (
 func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName string) resourcelock.Interface {
 	recorder := record.
 		NewBroadcaster().
-		NewRecorder(runtime.NewScheme(), v1.EventSource{Component: componentName})
+		NewRecorder(runtime.NewScheme(), corev1.EventSource{Component: componentName})
 
 	id, err := os.Hostname()
 	if err != nil {
