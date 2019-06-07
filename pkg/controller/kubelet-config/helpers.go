@@ -10,7 +10,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -121,13 +121,13 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfig
 	if err != nil {
 		condition = mcfgv1.NewKubeletConfigCondition(
 			mcfgv1.KubeletConfigFailure,
-			v1.ConditionFalse,
+			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
 		condition = mcfgv1.NewKubeletConfigCondition(
 			mcfgv1.KubeletConfigSuccess,
-			v1.ConditionTrue,
+			corev1.ConditionTrue,
 			"Success",
 		)
 	}
