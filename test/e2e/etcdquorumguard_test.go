@@ -1,18 +1,18 @@
 package e2e
 
 import (
-	"github.com/pkg/errors"
 	"fmt"
+	"github.com/pkg/errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 type podstatus struct {
@@ -106,7 +106,7 @@ func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, un
 		if _, err := cs.CoreV1Interface.Nodes().Update(n); err != nil {
 			if strings.Contains(err.Error(), "the object has been modified") {
 				fmt.Print("    Node object was modified and not up to date; retrying\n")
-				continue;
+				continue
 			}
 			return errors.Wrapf(err, "failed to make node %s %sschedulable", node, prefix)
 		}

@@ -17,11 +17,11 @@ import (
 )
 
 type renderConfig struct {
-	TargetNamespace  string
-	Version          string
-	ControllerConfig mcfgv1.ControllerConfigSpec
-	APIServerURL     string
-	Images           Images
+	TargetNamespace        string
+	Version                string
+	ControllerConfig       mcfgv1.ControllerConfigSpec
+	APIServerURL           string
+	Images                 Images
 	KubeAPIServerServingCA string
 }
 

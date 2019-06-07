@@ -12,7 +12,7 @@ import (
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
 	apiextlistersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1"
@@ -141,7 +141,7 @@ func New(
 		kubeClient:    kubeClient,
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigoperator"}),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
@@ -251,7 +251,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 func (optr *Operator) enqueue(obj interface{}) {
 	// we're filtering out config maps that are "leader" based and we don't have logic around them
 	// resyncing on these causes the operator to sync every 14s for no good reason
-	if cm, ok := obj.(*v1.ConfigMap); ok && cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
+	if cm, ok := obj.(*corev1.ConfigMap); ok && cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
 		return
 	}
 	workQueueKey := fmt.Sprintf("%s/%s", optr.namespace, optr.name)
@@ -396,7 +396,7 @@ func (optr *Operator) sync(key string) error {
 	spec.EtcdCAData = etcdCA
 	spec.EtcdMetricCAData = etcdMetricCA
 	spec.RootCAData = bundle
-	spec.PullSecret = &v1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
+	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:            imgs.Etcd,

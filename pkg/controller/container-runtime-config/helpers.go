@@ -16,7 +16,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -169,13 +169,13 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRunt
 	if err != nil {
 		condition = mcfgv1.NewContainerRuntimeConfigCondition(
 			mcfgv1.ContainerRuntimeConfigFailure,
-			v1.ConditionFalse,
+			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
 	} else {
 		condition = mcfgv1.NewContainerRuntimeConfigCondition(
 			mcfgv1.ContainerRuntimeConfigSuccess,
-			v1.ConditionTrue,
+			corev1.ConditionTrue,
 			"Success",
 		)
 	}
