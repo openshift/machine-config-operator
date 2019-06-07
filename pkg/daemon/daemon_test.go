@@ -433,4 +433,3 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	require.Equal(t, onDiskMC.GetName(), current.GetName())
 	require.Equal(t, desired.GetName(), "test2")
 }
-

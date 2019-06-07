@@ -62,13 +62,13 @@ func getBootID() (string, error) {
 // bindPodMounts ensures that the daemon can still see e.g. /run/secrets/kubernetes.io
 // service account tokens after chrooting.  This function must be called before chroot.
 func bindPodMounts(rootMount string) error {
-       targetSecrets := filepath.Join(rootMount, "/run/secrets")
-       if err := os.MkdirAll(targetSecrets, 0755); err != nil {
-               return err
-       }
-       // This will only affect our mount namespace, not the host
-       mnt := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets)
-       return mnt.Run()
+	targetSecrets := filepath.Join(rootMount, "/run/secrets")
+	if err := os.MkdirAll(targetSecrets, 0755); err != nil {
+		return err
+	}
+	// This will only affect our mount namespace, not the host
+	mnt := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets)
+	return mnt.Run()
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {

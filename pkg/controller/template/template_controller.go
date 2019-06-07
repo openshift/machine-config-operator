@@ -16,7 +16,6 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -79,7 +78,7 @@ func New(
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "machineconfigcontroller-templatecontroller"}),
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-templatecontroller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-templatecontroller"),
 	}
 
@@ -114,7 +113,7 @@ func New(
 	return ctrl
 }
 
-func (ctrl *Controller) filterSecret(secret *v1.Secret) {
+func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
 	if secret.Name == "pull-secret" {
 		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
 		if err != nil {
@@ -127,7 +126,7 @@ func (ctrl *Controller) filterSecret(secret *v1.Secret) {
 }
 
 func (ctrl *Controller) addSecret(obj interface{}) {
-	secret := obj.(*v1.Secret)
+	secret := obj.(*corev1.Secret)
 	if secret.DeletionTimestamp != nil {
 		ctrl.deleteSecret(secret)
 		return
@@ -137,13 +136,13 @@ func (ctrl *Controller) addSecret(obj interface{}) {
 }
 
 func (ctrl *Controller) updateSecret(old, new interface{}) {
-	secret := new.(*v1.Secret)
+	secret := new.(*corev1.Secret)
 	glog.V(4).Infof("Update Secret %v", secret)
 	ctrl.filterSecret(secret)
 }
 
 func (ctrl *Controller) deleteSecret(obj interface{}) {
-	secret, ok := obj.(*v1.Secret)
+	secret, ok := obj.(*corev1.Secret)
 	glog.V(4).Infof("Delete Secret %v", secret)
 
 	if !ok {
@@ -152,7 +151,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
 			return
 		}
-		secret, ok = tombstone.Obj.(*v1.Secret)
+		secret, ok = tombstone.Obj.(*corev1.Secret)
 		if !ok {
 			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Secret %#v", obj))
 			return

@@ -40,8 +40,8 @@ import (
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	clientsetcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -74,7 +74,7 @@ type Daemon struct {
 	recorder record.EventRecorder
 
 	// nodeLister is used to watch for updates via the informer
-	nodeLister       corelisterv1.NodeLister
+	nodeLister       corev1lister.NodeLister
 	nodeListerSynced cache.InformerSynced
 
 	mcLister       mcfglistersv1.MachineConfigLister
@@ -271,7 +271,7 @@ func NewClusterDrivenDaemon(
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&clientsetcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
 
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
