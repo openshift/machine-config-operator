@@ -63,7 +63,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavai
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			NodeSelector:   selector,
 			MaxUnavailable: maxUnavail,
-			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
+			Configuration:  mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
 			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},

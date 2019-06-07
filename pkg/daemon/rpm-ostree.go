@@ -142,7 +142,7 @@ func followPivotJournalLogs(stopCh <-chan time.Time) {
 	}
 
 	go func() {
-		<- stopCh
+		<-stopCh
 		cmd.Process.Kill()
 	}()
 }

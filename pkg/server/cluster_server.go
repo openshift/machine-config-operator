@@ -105,7 +105,7 @@ func kubeconfigFromSecret(secertDir string, apiserverURL string) ([]byte, []byte
 		Clusters: []clientcmdv1.NamedCluster{{
 			Name: "local",
 			Cluster: clientcmdv1.Cluster{
-				Server: apiserverURL,
+				Server:                   apiserverURL,
 				CertificateAuthorityData: caData,
 			}},
 		},
