@@ -28,9 +28,10 @@ func TestCloudProvider(t *testing.T) {
 	}{{
 		platform: "aws",
 		res:      "aws",
-	}, {
-		platform: "openstack",
-		res:      "openstack",
+		// OpenStack cloud config is disabled
+		//}, {
+		//platform: "openstack",
+		//res:      "openstack",
 	}, {
 		platform: "libvirt",
 		res:      "",

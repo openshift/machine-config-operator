@@ -370,8 +370,10 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 		return platformAWS, nil
 	case platformAzure:
 		return platformAzure, nil
-	case platformOpenstack:
-		return platformOpenstack, nil
+	// FIXME Explicitly disable the cloud provider on OpenStack for now
+	// Don't forget to turn the test case back on as well
+	//case platformOpenstack:
+	//return platformOpenstack, nil
 	case platformVSphere:
 		return platformVSphere, nil
 	}
