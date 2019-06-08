@@ -3,11 +3,14 @@ enabled: true
 contents: |
   [Unit]
   Description=Kubernetes Kubelet
-  Wants=rpc-statd.service
+  Wants=rpc-statd.service crio.service
+  After=crio.service
 
   [Service]
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+  EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
 
@@ -19,10 +22,12 @@ contents: |
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
-        --node-labels=node-role.kubernetes.io/master \
+        --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
         --minimum-container-ttl-duration=6m0s \
+        --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
+        --v=3 \
 
   Restart=always
   RestartSec=10
