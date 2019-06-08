@@ -52,6 +52,7 @@ verify:
 	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to verify generated code";  exit 1; }
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
+	hack/verify-kubelet-template-diff.sh
 
 # Template for defining build targets for binaries.
 define target_template =
