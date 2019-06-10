@@ -20,6 +20,12 @@ contents:
       - name: var-dir
         hostPath:
           path: "/etc/kubernetes/static-pod-resources"
+      - name: chroot-host
+        hostPath:
+          path: "/"
+      - name: kublet
+        hostPath:
+          path: "/var/lib/kubelet"
       initContainers:
       - name: dns-render-config
         image: quay.io/openshift/origin-node:latest
@@ -61,6 +67,48 @@ contents:
           mountPath: "/etc/coredns"
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
+      - name: machine-watcher
+        image: quay.io/openshift/origin-node:latest
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          set -e
+
+          while true; do
+            masters=$(/host/bin/oc get machines -n openshift-machine-api --config /var/lib/kubelet/kubeconfig | grep -o "{{.EtcdDiscoveryDomain}}-master-[0-9]\+" || true)
+            workers=$(/host/bin/oc get machines -n openshift-machine-api --config /var/lib/kubelet/kubeconfig | grep -o "{{.EtcdDiscoveryDomain}}-worker-[0-9A-Za-z]\+" || true)
+            nodes="$masters $workers"
+
+            if [ -n "$nodes" ]; then
+              for node in $nodes; do
+                  ip=$(/host/bin/oc describe machine -n openshift-machine-api $node --config /var/lib/kubelet/kubeconfig | grep "address" | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' || true)
+
+                  # If there is an entry for the node, replace it with what is in the machines.yaml, ortherwise create an entry
+                  if [ -n "$ip" ] && [ -z "$(cat /etc/coredns/coredns.db | grep -w $node)" ]; then
+                      echo "$node IN A $ip"
+                      echo "$node IN A $ip" >> /etc/coredns/coredns.db
+                  else
+                      sed -i "0,/$node.*/s//$node IN A $ip/" /etc/coredns/coredns.db
+                  fi
+              done
+            fi
+
+          sleep 1
+          done
+        resources: {}
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        - name: var-dir
+          mountPath: "/tmp"
+        - name: chroot-host
+          mountPath: "/host"
+        - name: kublet
+          mountPath: "/var/lib/kubelet"
+        imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
       hostNetwork: true
       tolerations:
       - operator: Exists

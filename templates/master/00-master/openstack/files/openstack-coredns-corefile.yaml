@@ -16,7 +16,7 @@ contents:
         log
         mdns {{.EtcdDiscoveryDomain}} 3 {{(split "." .EtcdDiscoveryDomain)._0}}
         cache 30
-        reload
+        reload 3s
         loadbalance round_robin
         file /etc/coredns/coredns.db {
         }
