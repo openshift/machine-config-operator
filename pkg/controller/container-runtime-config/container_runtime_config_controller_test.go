@@ -10,7 +10,6 @@ import (
 
 	"github.com/golang/glog"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,6 +30,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 var (
@@ -86,20 +86,6 @@ func (f *fixture) validateActions() {
 	}
 }
 
-func newMachineConfig(name string, labels map[string]string, osurl string, files []igntypes.File) *mcfgv1.MachineConfig {
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	return &mcfgv1.MachineConfig{
-		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
-		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: osurl,
-			Config:     igntypes.Config{Storage: igntypes.Storage{Files: files}},
-		},
-	}
-}
-
 func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
 	cc := &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
@@ -110,20 +96,6 @@ func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
 		},
 	}
 	return cc
-}
-
-func newMachineConfigPool(name string, labels map[string]string, selector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
-	return &mcfgv1.MachineConfigPool{
-		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
-		Spec: mcfgv1.MachineConfigPoolSpec{
-			MachineConfigSelector: selector,
-			Configuration:         mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
-		},
-		Status: mcfgv1.MachineConfigPoolStatus{
-			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
-		},
-	}
 }
 
 func newContainerRuntimeConfig(name string, ctrconf *mcfgv1.ContainerRuntimeConfiguration, selector *metav1.LabelSelector) *mcfgv1.ContainerRuntimeConfig {
@@ -339,10 +311,12 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(common.ControllerConfigName, platform)
-			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
-			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp.ObjectMeta.Labels["custom-crio"] = "my-config"
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs1 := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -370,10 +344,12 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(common.ControllerConfigName, platform)
-			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
-			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp.ObjectMeta.Labels["custom-crio"] = "my-config"
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs := newMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp, ctrcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -445,12 +421,12 @@ func TestImageConfigCreate(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(common.ControllerConfigName, platform)
-			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
-			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -477,12 +453,12 @@ func TestImageConfigUpdate(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(common.ControllerConfigName, platform)
-			mcp := newMachineConfigPool("master", map[string]string{"custom-crio": "my-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
-			mcp2 := newMachineConfigPool("worker", map[string]string{"custom-crio": "storage-config"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := newMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := newMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp, imgcfg1), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2, imgcfg1), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
