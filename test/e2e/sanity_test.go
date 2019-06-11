@@ -16,7 +16,7 @@ func TestOperatorLabel(t *testing.T) {
 		t.Errorf("%#v", err)
 	}
 
-	osSelector := d.Spec.Template.Spec.NodeSelector["beta.kubernetes.io/os"]
+	osSelector := d.Spec.Template.Spec.NodeSelector["kubernetes.io/os"]
 	if osSelector != "linux" {
 		t.Errorf("Expected node selector 'linux', not '%s'", osSelector)
 	}
