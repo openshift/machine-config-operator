@@ -10,10 +10,6 @@ import (
 	"time"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +22,12 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 var pathtests = []struct {
@@ -348,14 +350,6 @@ func newNode(annotations map[string]string) *corev1.Node {
 	}
 }
 
-func newMachineConfig(name string) *mcfgv1.MachineConfig {
-	return &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-	}
-}
-
 func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	tmpCurrentConfig, err := ioutil.TempFile("", "currentconfig")
 	require.Nil(t, err)
@@ -363,15 +357,15 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 
 	// 1: onDisk matches what on the node, so we now have currentFromNode == currentOnDisk, desiredFromNode
 	f := newFixture(t)
-	onDiskMC := newMachineConfig("test1")
+	onDiskMC := helpers.NewMachineConfig("test1", nil, "", nil)
 	annotations := map[string]string{
 		constants.CurrentMachineConfigAnnotationKey:     "test1",
 		constants.DesiredMachineConfigAnnotationKey:     "test2",
 		constants.MachineConfigDaemonStateAnnotationKey: "",
 	}
 	node := newNode(annotations)
-	f.objects = append(f.objects, newMachineConfig("test1"))
-	f.objects = append(f.objects, newMachineConfig("test2"))
+	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
 	tmpCurrentConfig.Truncate(0)
 	tmpCurrentConfig.Seek(0, 0)
 	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
@@ -388,15 +382,15 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	//    so we now have currentFromNode == currentOnDisk == desiredFromNode
 	//    so no update required
 	f = newFixture(t)
-	onDiskMC = newMachineConfig("test1")
+	onDiskMC = helpers.NewMachineConfig("test1", nil, "", nil)
 	annotations = map[string]string{
 		constants.CurrentMachineConfigAnnotationKey:     "test1",
 		constants.DesiredMachineConfigAnnotationKey:     "test1",
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 	}
 	node = newNode(annotations)
-	f.objects = append(f.objects, newMachineConfig("test1"))
-	f.objects = append(f.objects, newMachineConfig("test2"))
+	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
 	tmpCurrentConfig.Truncate(0)
 	tmpCurrentConfig.Seek(0, 0)
 	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
@@ -411,15 +405,15 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	// 3: onDisk doesn't what on the node and current == desired,
 	//    so we now have currentFromNode != currentOnDisk, desiredFromNode
 	f = newFixture(t)
-	onDiskMC = newMachineConfig("test3")
+	onDiskMC = helpers.NewMachineConfig("test3", nil, "", nil)
 	annotations = map[string]string{
 		constants.CurrentMachineConfigAnnotationKey:     "test1",
 		constants.DesiredMachineConfigAnnotationKey:     "test2",
 		constants.MachineConfigDaemonStateAnnotationKey: "",
 	}
 	node = newNode(annotations)
-	f.objects = append(f.objects, newMachineConfig("test1"))
-	f.objects = append(f.objects, newMachineConfig("test2"))
+	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
 	tmpCurrentConfig.Truncate(0)
 	tmpCurrentConfig.Seek(0, 0)
 	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))

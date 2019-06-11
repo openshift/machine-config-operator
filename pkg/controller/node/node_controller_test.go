@@ -7,10 +7,6 @@ import (
 	"testing"
 	"time"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +21,12 @@ import (
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 var (
@@ -54,21 +56,6 @@ func newFixture(t *testing.T) *fixture {
 	f.objects = []runtime.Object{}
 	f.kubeobjects = []runtime.Object{}
 	return f
-}
-
-func newMachineConfigPool(name string, selector *metav1.LabelSelector, maxUnavail *intstr.IntOrString, currentMachineConfig string) *mcfgv1.MachineConfigPool {
-	return &mcfgv1.MachineConfigPool{
-		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: mcfgv1.MachineConfigPoolSpec{
-			NodeSelector:   selector,
-			MaxUnavailable: maxUnavail,
-			Configuration:  mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
-		},
-		Status: mcfgv1.MachineConfigPoolStatus{
-			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
-		},
-	}
 }
 
 func (f *fixture) newController() *Controller {
@@ -235,8 +222,8 @@ func TestGetPoolForNode(t *testing.T) {
 		err      bool
 	}{{
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
-			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), nil, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role": ""},
 
@@ -244,37 +231,37 @@ func TestGetPoolForNode(t *testing.T) {
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
-			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), nil, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
 		},
-		nodeLabel: map[string]string{"node-role": "master"},
+		nodeLabel: map[string]string{"node-role/master": ""},
 
-		expected: newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
+		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
-			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": ""},
 
-		expected: newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
+		expected: helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
-			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
-			newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role/worker": "", "node-role/infra": ""},
 
-		expected: newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+		expected: helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
 		err:      false,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
-			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
-			newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role/master": "", "node-role/infra": ""},
 
@@ -282,10 +269,10 @@ func TestGetPoolForNode(t *testing.T) {
 		err:      true,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", ""), nil, "v0"),
-			newMachineConfigPool("worker", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", ""), nil, "v0"),
-			newMachineConfigPool("infra", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", ""), nil, "v0"),
-			newMachineConfigPool("infra2", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), nil, "v0"),
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
+			helpers.NewMachineConfigPool("infra2", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra2", ""), "v0"),
 		},
 		nodeLabel: map[string]string{"node-role/infra": "", "node-role/infra2": ""},
 
@@ -294,8 +281,8 @@ func TestGetPoolForNode(t *testing.T) {
 	}, {
 
 		pools: []*mcfgv1.MachineConfigPool{
-			newMachineConfigPool("test-cluster-pool-1", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
-			newMachineConfigPool("test-cluster-pool-2", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), nil, "v0"),
+			helpers.NewMachineConfigPool("test-cluster-pool-1", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("test-cluster-pool-2", nil, helpers.MasterSelector, "v0"),
 		},
 		nodeLabel: map[string]string{"node-role": "master"},
 
@@ -323,6 +310,12 @@ func TestGetPoolForNode(t *testing.T) {
 				t.Fatal("expected non-nil error")
 			}
 
+			if got != nil {
+				got.ObjectMeta.UID = ""
+			}
+			if test.expected != nil {
+				test.expected.ObjectMeta.UID = ""
+			}
 			if !reflect.DeepEqual(got, test.expected) {
 				t.Fatalf("mismatch: got: %v want: %v", got, test.expected)
 			}
@@ -736,10 +729,11 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 func TestShouldMakeProgress(t *testing.T) {
 	f := newFixture(t)
-	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role": "master"}),
-		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role": "master"}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/master": ""}),
 	}
 
 	f.mcpLister = append(f.mcpLister, mcp)
@@ -775,7 +769,8 @@ func TestShouldMakeProgress(t *testing.T) {
 
 func TestEmptyCurrentMachineConfig(t *testing.T) {
 	f := newFixture(t)
-	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "")
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.run(getKey(mcp, t))
@@ -783,11 +778,12 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 
 func TestPaused(t *testing.T) {
 	f := newFixture(t)
-	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	mcp.Spec.Paused = true
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role": "master"}),
-		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role": "master"}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/master": ""}),
 	}
 
 	f.mcpLister = append(f.mcpLister, mcp)
@@ -807,10 +803,11 @@ func TestPaused(t *testing.T) {
 
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 	f := newFixture(t)
-	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role": "master"}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role": "master"}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/master": ""}),
 	}
 
 	f.mcpLister = append(f.mcpLister, mcp)
@@ -830,10 +827,11 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 
 func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	f := newFixture(t)
-	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role": "master"}),
-		newNodeWithLabel("node-1", "v0", "v1", map[string]string{"node-role": "master"}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-1", "v0", "v1", map[string]string{"node-role/master": ""}),
 	}
 
 	f.mcpLister = append(f.mcpLister, mcp)
@@ -853,10 +851,11 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 
 func TestShouldDoNothing(t *testing.T) {
 	f := newFixture(t)
-	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), intStrPtr(intstr.FromInt(1)), "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role": "master"}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role": "master"}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/master": ""}),
 	}
 	status := calculateStatus(mcp, nodes)
 	mcp.Status = status
