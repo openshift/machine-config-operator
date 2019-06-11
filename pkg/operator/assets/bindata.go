@@ -300,6 +300,9 @@ spec:
     singular: machineconfig
     # kind is normally the CamelCased singular type. Your resource manifests use this.
     kind: MachineConfig
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+    - mc
 `)
 
 func manifestsMachineconfigCrdYamlBytes() ([]byte, error) {
@@ -769,6 +772,9 @@ spec:
     singular: machineconfigpool
     # kind is normally the CamelCased singular type. Your resource manifests use this.
     kind: MachineConfigPool
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+    - mcp
 `)
 
 func manifestsMachineconfigpoolCrdYamlBytes() ([]byte, error) {
