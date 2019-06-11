@@ -6,9 +6,9 @@ import (
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/vincent-petithory/dataurl"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 func TestFeatureGateDrift(t *testing.T) {
@@ -42,10 +42,10 @@ func TestFeaturesDefault(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(common.ControllerConfigName, platform)
-			mcp := newMachineConfigPool("master", map[string]string{"kubeletType": "small-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "v0")
-			mcp2 := newMachineConfigPool("worker", map[string]string{"kubeletType": "large-pods"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "worker"), "v0")
-			mcs := newMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := newMachineConfig(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
