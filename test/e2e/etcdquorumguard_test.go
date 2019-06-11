@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"github.com/pkg/errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 )
 
@@ -35,7 +37,7 @@ type podinfo map[string]podstatus
 func TestEtcdQuorumGuard(t *testing.T) {
 	cs := framework.NewClientSet("")
 	if err := waitForEtcdQuorumGuardDeployment(cs); err != nil {
-		t.Fatalf("etcdQuotaGard deployment not present: %s", err.Error())
+		t.Fatalf("etcdQuorumGuard deployment not present: %s", err.Error())
 	}
 	fmt.Print("Make all schedulable\n")
 	if err := makeAllNodesSchedulable(cs); err != nil {
@@ -96,23 +98,43 @@ func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, un
 		if err != nil {
 			return err
 		}
-		if n.Spec.Unschedulable != unschedulable {
-			n.Spec.Unschedulable = !unschedulable
-			if _, err := cs.CoreV1Interface.Nodes().Update(n); err != nil {
-				if strings.Contains(err.Error(), "the object has been modified") {
-					fmt.Print("    Node object was modified and not up to date; retrying\n")
-					continue;
-				}
-				return fmt.Errorf("Failed to make node %s %sschedulable: %s\n", node, prefix, err.Error())
-			}
-		} else {
-			fmt.Printf("  Node %s is already %sschedulable", node, prefix)
+		if n.Spec.Unschedulable == unschedulable {
+			fmt.Printf("  Node %s is already %sschedulable\n", node, prefix)
+			return nil
 		}
-		return nil
+		n.Spec.Unschedulable = unschedulable
+		if _, err := cs.CoreV1Interface.Nodes().Update(n); err != nil {
+			if strings.Contains(err.Error(), "the object has been modified") {
+				fmt.Print("    Node object was modified and not up to date; retrying\n")
+				continue;
+			}
+			return errors.Wrapf(err, "failed to make node %s %sschedulable", node, prefix)
+		}
+		break
 	}
+	return wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+		if err := getMasterNodes(cs); err != nil {
+			fmt.Printf("Error getting master nodes: %s\n", err.Error())
+			return true, err
+		}
+		n, err := getNode(cs, node)
+		if err != nil {
+			fmt.Printf("Error getting node status for %s: %s\n", node, err.Error())
+			return true, err
+		}
+		if n.Spec.Unschedulable == unschedulable {
+			return true, nil
+		}
+		fmt.Printf("Node %s not yet %sschedulable\n", node, prefix)
+		return false, nil
+	})
 }
 
 func makeAllNodesSchedulable(cs *framework.ClientSet) error {
+	if err := getMasterNodes(cs); err != nil {
+		fmt.Printf("Error getting master nodes %s\n", err.Error())
+		return err
+	}
 	for node, unschedulable := range nodes {
 		if unschedulable {
 			err := makeNodeUnSchedulableOrSchedulable(cs, node, false)
@@ -130,14 +152,15 @@ func evictEtcdQuotaGuardPodsFromNode(cs *framework.ClientSet, node string) error
 	if err != nil {
 		return err
 	}
+	var podErrs []error
 	for _, pod := range pods {
-		fmt.Printf("  Evicting pod %s/%s...\n", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
+		fmt.Printf("  Evicting pod %s/%s/%s...\n", node, pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
 		err = cs.CoreV1Interface.Pods(pod.ObjectMeta.Namespace).Evict(&policyv1beta1.Eviction{metav1.TypeMeta{}, pod.ObjectMeta, &metav1.DeleteOptions{}})
 		if err != nil {
-			err = fmt.Errorf("     Unable to evict pod %s/%s: %s\n", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, err.Error())
+			podErrs = append(podErrs, errors.Wrapf(err, "Unable to evict pod %s/%s", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name))
 		}
 	}
-	return err
+	return utilerrors.NewAggregate(podErrs)
 }
 
 // makeOneNodeUnschedulableAndEvict attempts to evict the etcd Quorum
@@ -148,6 +171,7 @@ func makeOneNodeUnschedulableAndEvict(cs *framework.ClientSet) error {
 		if !unschedulable {
 			err = makeNodeUnSchedulableOrSchedulable(cs, node, true)
 			if err != nil {
+				fmt.Printf("    Make %s unschedulable failed: %s\n", node, err.Error())
 				break
 			}
 			nodes[node] = true
@@ -155,6 +179,9 @@ func makeOneNodeUnschedulableAndEvict(cs *framework.ClientSet) error {
 			break
 		}
 	}
+	// Always update the list of master nodes regardless of whether there
+	// was an earlier error.  If there was an earlier error, return that;
+	// otherwise return any error that getMasterNodes() produced.
 	err1 := getMasterNodes(cs)
 	if err != nil {
 		return err
@@ -168,7 +195,7 @@ func getNode(cs *framework.ClientSet, node string) (*corev1.Node, error) {
 }
 
 func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
-	err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+	err := wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
 		_, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err == nil {
 			return true, nil
@@ -183,7 +210,7 @@ func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 // to be present and for the number of available pods to be within the
 // specified bounds.
 func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
-	err := wait.PollImmediate(5*time.Second, 5*time.Minute, func() (bool, error) {
+	err := wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
 		d, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
 		if err != nil {
 			// By this point the deployment should exist.
@@ -212,7 +239,7 @@ func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 				return fmt.Errorf("Pod %s not associated with a node", pod)
 			}
 			if _, ok := nodes[node]; !ok {
-				return fmt.Errorf("Pod %s running on %s, not a master!", pod, node)
+				return fmt.Errorf("pod %s running on %s, not a master", pod, node)
 			}
 		}
 	}
