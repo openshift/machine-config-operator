@@ -1,15 +1,19 @@
 ⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
 
-# Hacking on the MCO - prep
+# Hacking on the MCO
 
 These instructions have been tested inside a Fedora 29 podman container (on a FSB29 host).
 It should also work to run these commands directly on a host system if you haven't yet
 containerized your workflow.  You will need build dependencies such as a `go` compiler,
 and the image builds rely on `podman`.
 
-1. Create a cluster using [the installer](https://github.com/openshift/installer/).  Many of the MCD developers use libvirt.  These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
+## Prerequisites
+
+1. Create a cluster using [the installer](https://github.com/openshift/installer/).  These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
 
 1. (libvirt) Set up a local proxy
+
+1. (libvirt) Additional registry config (see below)
 
 The steps here come from [this comment](https://github.com/openshift/installer/issues/411#issuecomment-445165262) which provides a way for libvirt developers to expose their registry.
 
@@ -21,19 +25,23 @@ sudo setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/oc
 
 (Or `kubectl` depending on your setup.  You may prefer to copy the `oc` binary elsewhere before writing to it as well.)
 
+
 Now, forward port `443` to the router:
 
 ```
 oc -n openshift-ingress port-forward svc/router-internal-default 443
 ```
 
-Leave that process running in a separate terminal.
+Leave that process running in a separate terminal. In a new terminal, run step 4.
 
-1. Run `hack/cluster-push-prep.sh` (once)
+4. (all platforms) Run the cluster push prep script
+```
+hack/cluster-push-prep.sh
+```
 
-You will likely get an error about needing to add the registry to your `/etc/hosts`; do that and then rerun the script.
+(Libvirt Users) You might get an error about needing to add the registry to your `/etc/hosts`; do that and then rerun the script.
 
-# Hacking on the MCO - doing builds
+## Building Components
 
 While you're still in the mode of testing builds, use `make`:
 
@@ -53,7 +61,7 @@ make deploy-daemon
 
 Use `oc get pods -w` to watch for your new code to be deployed.
 
-# Hacking on MCO - updating the manifests
+## Updating the Manifests
 
 To update the manifests applied by Machine Config Operator, edit the `yaml` files in `manifests` folder in the root. The manifest folder has 3 subfolders, one for each subcomponent.
 
@@ -114,7 +122,7 @@ This [guide](https://golang.github.io/dep/docs/daily-dep.html) a great source to
 
 For the sake of your fellow reviewers, commit vendored code separately from any other changes.
 
-# Turn on verbose for development
+# Turn on verbose mode for development
 
 Given you already have a cluster up and running, you can turn verbose on (level 4)
 for any given component with:
@@ -197,10 +205,10 @@ You can watch the installer logs via `oc logs -f -c setup e2e-aws`.
 
 Now, you can get the Kubernetes credentials back to your machine:
 
-```
+```sh
 oc rsh -c test e2e-aws cat /tmp/artifacts/installer/auth/kubeconfig > $XDG_RUNTIME_DIR/kubeconfig
 export KUBECONFIG=$XDG_RUNTIME_DIR/kubeconfig
-````
+```
 
 And from there debug the live cluster while the tests are running. Though be
 aware that it will be quickly torn down as soon as the tests have completed.
@@ -226,7 +234,8 @@ make image-{component}
 ```
 
 `{component}` can be either `operator`, `daemon`, `controller` or `server`.
-After the build is complete, make sure to push the image to a registry (i.e. `quay.io/user/machine-config-{component}:latest`).
+
+After the build is complete, make sure to push the image to a registry (i.e. `podman push localhost/machine-config-{component} quay.io/user/machine-config-{component}`).
 
 Quay.io or any other public registry isn't strictly required - you can use a local
 registry as long as those images are pullable.
@@ -242,7 +251,7 @@ oc adm release new -n origin --server https://api.ci.openshift.org \
                                 machine-config-{component}=quay.io/user/machine-config-{component}:{tag}
 ```
 
-`{version number}` is an openshift version, for example 4.1 
+`{version number}` is an openshift version, for example 4.1
 
 There's currently a [known limitation](https://github.com/openshift/machine-config-operator/issues/421) which prevents
 building a custom release payload using only a subset of the MCO components. You can work around that by
@@ -258,13 +267,15 @@ oc adm release new -n origin --server https://api.ci.openshift.org \
                                 machine-config-server=quay.io/user/machine-config-server:latest
 ```
 
-Make sure you're using a relatively new `oc` binary from `openshift/origin`. The image must be pullable by 
+Make sure you're using a relatively new `oc` binary from `openshift/origin`. The image must be pullable by
 remote resources (nodes), therefore using a local registry might not work.
+
+Any registry credentials need to be present in `~/.docker/config.json` for `oc` to interact with the registry.
 
 When the command above finishes, your custom release payload is going to be available
 at the location you specified via the `--to-image` flag for the installer to be consumed.
 
-Note for quay.io users: images pushed to your personal account are going to be private by default. 
+Note for quay.io users: images pushed to your personal account are going to be private by default.
 If you want to keep the release payload image private you will need to provide
 the secret to pull it in the `install-config.yaml` configuration (`pullSecret` section specifically).
 
