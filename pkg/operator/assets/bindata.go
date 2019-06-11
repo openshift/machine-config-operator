@@ -598,7 +598,7 @@ spec:
         operator: Exists
         effect: NoSchedule
       nodeSelector:
-        beta.kubernetes.io/os: linux
+        kubernetes.io/os: linux
       priorityClassName: "system-node-critical"
       volumes:
         - name: rootfs
