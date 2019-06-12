@@ -38,6 +38,7 @@ var (
 		mccImage             string
 		mcdImage             string
 		mcsImage             string
+		mcoImage             string
 		networkConfigFile    string
 		oscontentImage       string
 		pullSecretFile       string
@@ -61,6 +62,7 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("machine-config-server-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon.")
 	bootstrapCmd.MarkFlagRequired("machine-config-daemon-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcoImage, "machine-config-operator-image", "", "Image for Machine Config Operator.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
 	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
