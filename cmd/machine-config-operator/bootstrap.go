@@ -58,6 +58,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon.")
 	bootstrapCmd.MarkFlagRequired("machine-config-daemon-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcoImage, "machine-config-operator-image", "", "Image for Machine Config Operator.")
+	bootstrapCmd.MarkFlagRequired("machine-config-operator-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
 	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
@@ -83,6 +84,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	imgs := operator.Images{
+		MachineConfigOperator:   bootstrapOpts.mcoImage,
 		MachineConfigController: bootstrapOpts.mccImage,
 		MachineConfigDaemon:     bootstrapOpts.mcdImage,
 		MachineConfigServer:     bootstrapOpts.mcsImage,

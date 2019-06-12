@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
       - name: machine-config-controller
-        image: {{.Images.MachineConfigController}}
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-controller"]
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"

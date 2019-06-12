@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
       - name: machine-config-daemon
-        image: {{.Images.MachineConfigDaemon}}
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-daemon"]
         args:
           - "start"
         resources:
