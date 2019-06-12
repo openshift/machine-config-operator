@@ -6,6 +6,7 @@ metadata:
 data:
   images.json: >
     {
+      "machineConfigOperator": "registry.svc.ci.openshift.org/openshift:machine-config-operator",
       "machineConfigController": "registry.svc.ci.openshift.org/openshift:machine-config-controller",
       "machineConfigDaemon": "registry.svc.ci.openshift.org/openshift:machine-config-daemon",
       "machineConfigServer": "registry.svc.ci.openshift.org/openshift:machine-config-server",

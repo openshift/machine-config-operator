@@ -8,6 +8,7 @@ package operator
 // Change the installer to pass that arg with the image from the CVO
 // (some time later) Change the option to required and drop the default
 type Images struct {
+	MachineConfigOperator   string `json:"machineConfigOperator"`
 	MachineConfigController string `json:"machineConfigController"`
 	MachineConfigDaemon     string `json:"machineConfigDaemon"`
 	MachineConfigServer     string `json:"machineConfigServer"`
