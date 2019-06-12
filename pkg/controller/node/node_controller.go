@@ -451,11 +451,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncStatusOnly(pool)
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
-	if err != nil {
-		return fmt.Errorf("invalid label selector: %v", err)
-	}
-	nodes, err := ctrl.nodeLister.List(selector)
+	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		return err
 	}
@@ -472,6 +468,32 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 	}
 	return ctrl.syncStatusOnly(pool)
+}
+
+func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*corev1.Node, error) {
+	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
+	if err != nil {
+		return nil, fmt.Errorf("invalid label selector: %v", err)
+	}
+
+	initialNodes, err := ctrl.nodeLister.List(selector)
+	if err != nil {
+		return nil, err
+	}
+
+	nodes := []*corev1.Node{}
+	for _, n := range initialNodes {
+		p, err := ctrl.getPoolForNode(n)
+		if err != nil {
+			glog.Warningf("can't get pool for node %q: %v", n.Name, err)
+			continue
+		}
+		if p.Name != pool.Name {
+			continue
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes, nil
 }
 
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
