@@ -80,7 +80,8 @@ metadata:
 spec:
   initContainers:
   - name: machine-config-controller
-    image: {{.Images.MachineConfigController}}
+    image: {{.Images.MachineConfigOperator}}
+    command: ["/usr/bin/machine-config-controller"]
     args:
     - "bootstrap"
     - "--manifest-dir=/etc/mcc/bootstrap"
@@ -101,7 +102,8 @@ spec:
       mountPath: /etc/mcs/bootstrap
   containers:
   - name: machine-config-server
-    image: {{.Images.MachineConfigServer}}
+    image: {{.Images.MachineConfigOperator}}
+    command: ["/usr/bin/machine-config-server"]
     args:
       - "bootstrap"
     volumeMounts:
@@ -423,7 +425,8 @@ spec:
     spec:
       containers:
       - name: machine-config-controller
-        image: {{.Images.MachineConfigController}}
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-controller"]
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
@@ -572,7 +575,8 @@ spec:
     spec:
       containers:
       - name: machine-config-daemon
-        image: {{.Images.MachineConfigDaemon}}
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-daemon"]
         args:
           - "start"
         resources:
@@ -928,7 +932,8 @@ spec:
     spec:
       containers:
       - name: machine-config-server
-        image: {{.Images.MachineConfigServer}}
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-server"]
         args:
           - "start"
           - "--apiserver-url={{.APIServerURL}}"
