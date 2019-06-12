@@ -47,6 +47,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+const (
+	masterRole = "node-role.kubernetes.io/master"
+	workerRole = "node-role.kubernetes.io/worker"
+)
+
 // Daemon is the dispatch point for the functions of the agent on the
 // machine. it keeps track of connections and the current state of the update
 // process.
@@ -311,6 +316,58 @@ func (dn *Daemon) processNextWorkItem() bool {
 	return true
 }
 
+// syncSchedulableTaint enforces a rule that a node with
+// role "master" but not worker is tainted NoSchedule.
+// We default to adding the taint to ensure that "user" workloads
+// on the control plane is an explicit decision.
+// See https://github.com/openshift/machine-config-operator/issues/763
+func (dn *Daemon) syncScheduleableTaint() error {
+	_, isMaster := dn.node.Labels[masterRole]
+	// We don't do anything for non-master nodes
+	if !isMaster {
+		return nil
+	}
+	_, isWorker := dn.node.Labels[workerRole]
+
+	isMasterTainted := false
+	for _, t := range dn.node.Spec.Taints {
+		if t.Key == masterRole {
+			isMasterTainted = true
+			break
+		}
+	}
+	if isMasterTainted && isWorker {
+		// If it's a worker, remove the taint
+		node, err := updateNodeRetry(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, func(node *corev1.Node) {
+			newTaints := []corev1.Taint{}
+			for _, t := range node.Spec.Taints {
+				if t.Key == masterRole {
+					continue
+				}
+				newTaints = append(newTaints, t)
+			}
+			node.Spec.Taints = newTaints
+		})
+		if err != nil {
+			return err
+		}
+		dn.node = node
+	} else if !isMasterTainted && !isWorker {
+		// If it's not a worker, add the taint
+		node, err := updateNodeRetry(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, func(node *corev1.Node) {
+			node.Spec.Taints = append(node.Spec.Taints, corev1.Taint{
+				Key:    masterRole,
+				Effect: corev1.TaintEffectNoSchedule,
+			})
+		})
+		if err != nil {
+			return err
+		}
+		dn.node = node
+	}
+	return nil
+}
+
 // bootstrapNode takes care of the very first sync of the MCD on a node.
 // It loads the node annotation from the bootstrap (if we're really bootstrapping)
 // and then proceed to checking the state of the node, which includes
@@ -394,6 +451,12 @@ func (dn *Daemon) syncNode(key string) error {
 	if node.Name == dn.name {
 		// stash the current node being processed
 		dn.node = node
+
+		err := dn.syncScheduleableTaint()
+		if err != nil {
+			return err
+		}
+
 		// Pass to the shared update prep method
 		current, desired, err := dn.prepUpdateFromCluster()
 		if err != nil {
