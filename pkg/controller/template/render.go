@@ -33,6 +33,7 @@ const (
 	filesDir = "files"
 	unitsDir = "units"
 
+	// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
 	platformAWS       = "aws"
 	platformAzure     = "azure"
 	platformOpenstack = "openstack"
@@ -81,7 +82,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 		cfgs = append(cfgs, roleConfigs...)
 	}
 
-	// tag all the machineconfigs with version of the controller.
+	// tag all machineconfigs with the controller version
 	for _, cfg := range cfgs {
 		if cfg.Annotations == nil {
 			cfg.Annotations = map[string]string{}
@@ -121,11 +122,10 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role string, templateDi
 func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, error) {
 	switch ic.Platform {
 	case "":
-		return "", fmt.Errorf("cannot generateMachineConfigs with an empty platform field")
+		return "", fmt.Errorf("cannot generate MachineConfigs with an empty platform field")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
 	case platformAWS, platformAzure, platformOpenstack, platformLibvirt, platformNone:
-		// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
 		return ic.Platform, nil
 	default:
 		glog.Warningf("Warning: the controller config referenced an unsupported platform: %s", ic.Platform)
@@ -365,27 +365,22 @@ func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 }
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
-	switch cfg.Platform {
-	case platformAWS:
-		return platformAWS, nil
-	case platformAzure:
-		return platformAzure, nil
-	// FIXME Explicitly disable the cloud provider on OpenStack for now
+	// FIXME Explicitly disable (remove) the cloud provider on OpenStack for now
 	// Don't forget to turn the test case back on as well
-	//case platformOpenstack:
-	//return platformOpenstack, nil
-	case platformVSphere:
-		return platformVSphere, nil
+	switch cfg.Platform {
+	case platformAWS, platformAzure, platformVSphere:
+		return cfg.Platform, nil
+	default:
+		return "", nil
 	}
-	return "", nil
 }
 
 // Process the {{cloudConfigFlag .}}
 // If the CloudProviderConfig field is set and not empty, this
 // returns the cloud conf flag for kubelet [1] pointing the kubelet to use
 // /etc/kubernetes/cloud.conf for configuring the cloud provider for select platforms.
-// By default even if CloudProviderConfig fields is set, the kubelet will be configured to used for
-// select platforms only.
+// By default, even if CloudProviderConfig fields is set, the kubelet will be configured to be
+// used for select platforms only.
 //
 // [1]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#options
 func cloudConfigFlag(cfg RenderConfig) interface{} {
@@ -412,7 +407,7 @@ func existsDir(path string) (bool, error) {
 		return false, fmt.Errorf("failed to open dir %q: %v", path, err)
 	}
 	if !info.IsDir() {
-		return false, fmt.Errorf("expected template directory %q is not a directory", path)
+		return false, fmt.Errorf("expected template directory, %q is not a directory", path)
 	}
 	return true, nil
 }
