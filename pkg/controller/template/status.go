@@ -35,7 +35,7 @@ func (ctrl *Controller) syncRunningStatus(ctrlconfig *mcfgv1.ControllerConfig) e
 // - sets the `failing` condition to `true` using the `oerr`
 func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, oerr error) error {
 	if oerr == nil {
-		return oerr
+		return nil
 	}
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := oerr.Error()

@@ -1,0 +1,109 @@
+---
+run:
+  concurrency: 6
+  deadline: 5m
+  skip-files:
+    - ".*_test\\.go"
+    - "lib/.*"
+linters:
+  disable-all: true
+  enable:
+    - deadcode
+    - depguard
+    #- dupl
+    #- gochecknoinits
+    - goconst
+    - gocritic
+    - gofmt
+    - goimports
+    - golint
+    - gosec
+    - govet
+    - ineffassign
+    #- interfacer
+    #- maligned
+    - misspell
+    #- prealloc
+    #- scopelint
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unconvert
+    - unparam
+    - varcheck
+    #- errcheck
+    #- gochecknoglobals
+    - gocyclo
+    #- lll
+    #- nakedret
+linters-settings:
+  gocritic:
+    enabled-checks:
+      # Diagnostic
+      - argOrder
+      - badCond
+      - caseOrder
+      - codegenComment
+      - commentedOutCode
+      - deprecatedComment
+      - dupArg
+      - dupBranchBody
+      - dupCase
+      - dupSubExpr
+      - exitAfterDefer
+      - flagDeref
+      - flagName
+      - nilValReturn
+      - offBy1
+      - weakCond
+      #- appendAssign
+      - octalLiteral
+      - sloppyReassign
+
+      # Performance
+      - equalFold
+      #- hugeParam
+      - indexAlloc
+      - rangeExprCopy
+      #- rangeValCopy
+      - appendCombine
+
+      # Style
+      - assignOp
+      - boolExprSimplify
+      - captLocal
+      - commentFormatting
+      - commentedOutImport
+      - defaultCaseOrder
+      - docStub
+      - elseif
+      - emptyFallthrough
+      - emptyStringTest
+      - hexLiteral
+      #- ifElseChain
+      - methodExprCall
+      - regexpMust
+      - singleCaseSwitch
+      - sloppyLen
+      - stringXbytes
+      - switchTrue
+      - typeAssertChain
+      - typeSwitchVar
+      - underef
+      - unlabelStmt
+      - unlambda
+      - unslice
+      - valSwap
+      - yodaStyleExpr
+      - wrapperFunc
+
+      # Opinionated
+      - initClause
+      - nestingReduce
+      - ptrToRefParam
+      - typeUnparen
+      - unnecessaryBlock
+      #- builtinShadow
+      #- importShadow
+      - paramTypeCombine
+      #- unnamedResult

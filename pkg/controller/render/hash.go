@@ -1,6 +1,7 @@
 package render
 
 import (
+	//nolint:gosec
 	"crypto/md5"
 	"fmt"
 
@@ -40,6 +41,7 @@ func getMachineConfigHashedName(pool *mcfgv1.MachineConfigPool, config *mcfgv1.M
 }
 
 func hashData(data []byte) ([]byte, error) {
+	//nolint:gosec
 	hasher := md5.New()
 	if _, err := hasher.Write(salt); err != nil {
 		return nil, fmt.Errorf("error computing hash: %v", err)

@@ -166,7 +166,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 		}
 		glog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
 		// TODO(runcom): should we resync w/o a secret which is going to just cause the controller to fail when trying to get the secret itself?
-		//ctrl.enqueueControllerConfig(cfg)
+		// ctrl.enqueueControllerConfig(cfg)
 	}
 }
 

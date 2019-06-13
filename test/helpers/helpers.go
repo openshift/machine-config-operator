@@ -43,7 +43,7 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 }
 
-func NewMachineConfigPool(name string, mcSelector *metav1.LabelSelector, nodeSelector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
+func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
 	return &mcfgv1.MachineConfigPool{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: mcfgv1.SchemeGroupVersion.String(),

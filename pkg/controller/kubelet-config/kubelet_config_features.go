@@ -69,6 +69,9 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		return err
 	}
 	featureGates, err := ctrl.generateFeatureMap(features)
+	if err != nil {
+		return err
+	}
 
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
@@ -180,6 +183,7 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 	glog.V(4).Infof("Deleted Feature %s and restored default config", features.Name)
 }
 
+//nolint:gocritic
 func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[string]bool, error) {
 	rv := make(map[string]bool)
 	set, ok := osev1.FeatureSets[features.Spec.FeatureSet]

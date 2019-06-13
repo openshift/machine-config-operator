@@ -103,7 +103,7 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
 		return
 	}
-	if conf == nil && err == nil {
+	if conf == nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusNotFound)
 		return

@@ -50,6 +50,8 @@ update:
 #    make verify
 verify:
 	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to verify generated code";  exit 1; }
+	@which golangci-lint 2> /dev/null >&1 || { echo "golangci-lint must be installed to lint code";  exit 1; }
+	golangci-lint run
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
 

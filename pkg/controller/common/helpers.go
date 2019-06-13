@@ -1,9 +1,10 @@
 package common
 
 import (
+	"io/ioutil"
+
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
-	"io/ioutil"
 )
 
 // NewIgnConfig returns an empty ignition config with version set as latest version

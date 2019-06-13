@@ -13,7 +13,7 @@ import (
 )
 
 // Builder can create a variety of kubernetes client interface
-// with its embeded rest.Config.
+// with its embedded rest.Config.
 type Builder struct {
 	config *rest.Config
 }
