@@ -484,6 +484,13 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
+			if _, err := os.Stat(origFileName(f.Path)); err == nil {
+				if err := os.Rename(origFileName(f.Path), f.Path); err != nil {
+					return err
+				}
+				glog.V(2).Infof("Restored file %q", f.Path)
+				continue
+			}
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			if err := os.Remove(f.Path); err != nil {
 				newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
@@ -679,9 +686,32 @@ func (dn *Daemon) writeFiles(files []igntypes.File) error {
 				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
 			}
 		}
+		if err := createOrigFile(file.Path); err != nil {
+			return err
+		}
 		if err := writeFileAtomically(file.Path, contents.Data, defaultDirectoryPermissions, mode, uid, gid); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func origFileName(fpath string) string {
+	return fpath + ".mcdorig"
+}
+
+func createOrigFile(fpath string) error {
+	if _, err := os.Stat(fpath); err != nil {
+		// the file isn't there, no need to back it up
+		// we could check ENOENT only maybe?
+		return nil
+	}
+	if _, err := os.Stat(origFileName(fpath)); err == nil {
+		// the orig file is already there and we avoid creating a new one to preserve the real default
+		return nil
+	}
+	if out, err := exec.Command("cp", "-a", "--reflink=auto", fpath, origFileName(fpath)).CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "creating orig file for %q: %s", fpath, string(out))
 	}
 	return nil
 }
@@ -780,12 +810,12 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 // RHEL 7.6 logger (util-linux) doesn't have the --journald flag
 func (dn *Daemon) isLoggingToJournalSupported() bool {
+	if dn.OperatingSystem == machineConfigDaemonOSRHEL {
+		return true
+	}
 	loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
 	if err != nil {
 		dn.logSystem("error running logger --help: %v", err)
-		if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
-			return true
-		}
 		return false
 	}
 	return strings.Contains(string(loggerOutput), "--journald")
