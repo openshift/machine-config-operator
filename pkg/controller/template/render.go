@@ -95,7 +95,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 }
 
 // GenerateMachineConfigsForRole creates MachineConfigs for the role provided
-func GenerateMachineConfigsForRole(config *RenderConfig, role string, templateDir string) ([]*mcfgv1.MachineConfig, error) {
+func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	path := filepath.Join(templateDir, role)
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
@@ -259,7 +259,7 @@ const (
 )
 
 // MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
-func MachineConfigFromIgnConfig(role string, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
+func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
 	labels := map[string]string{
 		machineConfigRoleLabelKey: role,
 	}
@@ -331,7 +331,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 
 var skipKeyValidate = regexp.MustCompile(`^[_a-z]\w*$`)
 
-// Keys labled with skip ie. {{skip "key"}}, don't need to be templated in now because at Ignition request they will be templated in with query params
+// Keys labelled with skip ie. {{skip "key"}}, don't need to be templated in now because at Ignition request they will be templated in with query params
 func skipMissing(key string) (interface{}, error) {
 	if !skipKeyValidate.Match([]byte(key)) {
 		return nil, fmt.Errorf("invalid key for skipKey")
@@ -385,7 +385,7 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 //
 // [1]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#options
 func cloudConfigFlag(cfg RenderConfig) interface{} {
-	if len(cfg.CloudProviderConfig) == 0 {
+	if cfg.CloudProviderConfig == "" {
 		return ""
 	}
 	flag := "--cloud-config=/etc/kubernetes/cloud.conf"

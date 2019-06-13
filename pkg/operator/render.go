@@ -21,11 +21,11 @@ type renderConfig struct {
 	Version                string
 	ControllerConfig       mcfgv1.ControllerConfigSpec
 	APIServerURL           string
-	Images                 Images
+	Images                 *Images
 	KubeAPIServerServingCA string
 }
 
-func renderAsset(config renderConfig, path string) ([]byte, error) {
+func renderAsset(config *renderConfig, path string) ([]byte, error) {
 	objBytes, err := assets.Asset(path)
 	if err != nil {
 		return nil, fmt.Errorf("error getting asset %s: %v", path, err)

@@ -18,9 +18,6 @@ var (
 		Short: "Run Machine Config Operator",
 		Long:  "",
 	}
-
-	rootOpts struct {
-	}
 )
 
 func init() {

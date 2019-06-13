@@ -11,7 +11,7 @@ import (
 	"github.com/golang/glog"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 
-	"github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 // ensure bootstrapServer implements the
@@ -96,7 +96,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
 	}
 
-	appenders := getAppenders(cr, currConf, bsc.kubeconfigFunc, mc.Spec.OSImageURL)
+	appenders := getAppenders(currConf, bsc.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
 		if err := a(&mc.Spec.Config); err != nil {
 			return nil, err

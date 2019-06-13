@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -39,7 +38,7 @@ func (optr *Operator) syncVersion() error {
 			Kind:      co.Kind,
 			Name:      co.Name,
 			Namespace: co.Namespace,
-			UID:       types.UID(co.GetUID()),
+			UID:       co.GetUID(),
 		}
 		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeNormal, "OperatorVersionChanged", fmt.Sprintf("clusteroperator/machine-config-operator version changed from %v to %v", co.Status.Versions, optr.vStore.GetAll()))
 	}
@@ -102,7 +101,7 @@ func (optr *Operator) syncProgressingStatus() error {
 			Kind:      co.Kind,
 			Name:      co.Name,
 			Namespace: co.Namespace,
-			UID:       types.UID(co.GetUID()),
+			UID:       co.GetUID(),
 		}
 	)
 	if optr.vStore.Equal(co.Status.Versions) {
@@ -220,14 +219,14 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 
 // setOperatorStatusExtension sets the raw extension field of the clusteroperator. Today, we set
 // the MCPs statuses and an optional status error which we may get during a sync.
-func (optr *Operator) setOperatorStatusExtension(status *configv1.ClusterOperatorStatus, err error) {
+func (optr *Operator) setOperatorStatusExtension(status *configv1.ClusterOperatorStatus, statusErr error) {
 	statuses, err := optr.allMachineConfigPoolStatus()
 	if err != nil {
 		glog.Error(err)
 		return
 	}
-	if err != nil {
-		statuses["lastSyncError"] = err.Error()
+	if statusErr != nil {
+		statuses["lastSyncError"] = statusErr.Error()
 	}
 	raw, err := json.Marshal(statuses)
 	if err != nil {
@@ -258,10 +257,10 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 // isMachineConfigPoolConfigurationValid returns nil error when the configuration of a `pool` is created by the controller at version `version`.
 func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
 	// both .status.configuration.name and .status.configuration.source must be set.
-	if len(pool.Spec.Configuration.Name) == 0 {
+	if pool.Spec.Configuration.Name == "" {
 		return fmt.Errorf("configuration spec for pool %s is empty", pool.GetName())
 	}
-	if len(pool.Status.Configuration.Name) == 0 {
+	if pool.Status.Configuration.Name == "" {
 		return fmt.Errorf("configuration status for pool %s is empty", pool.GetName())
 	}
 	if len(pool.Status.Configuration.Source) == 0 {

@@ -19,11 +19,11 @@ import (
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
-	clusterConfigConfigMapFile string,
-	infraFile, networkFile string,
-	cloudConfigFile string,
-	etcdCAFile, etcdMetricCAFile string, rootCAFile string, kubeAPIServerServingCA string, pullSecretFile string,
-	imgs Images,
+	clusterConfigConfigMapFile,
+	infraFile, networkFile,
+	cloudConfigFile,
+	etcdCAFile, etcdMetricCAFile, rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
+	imgs *Images,
 	destinationDir string,
 ) error {
 	filesData := map[string][]byte{}
@@ -137,15 +137,16 @@ func RenderBootstrap(
 	for _, m := range manifests {
 		var b []byte
 		var err error
-		if len(m.name) > 0 {
+		switch {
+		case len(m.name) > 0:
 			glog.Info(m.name)
 			b, err = renderAsset(config, m.name)
 			if err != nil {
 				return err
 			}
-		} else if len(m.data) > 0 {
+		case len(m.data) > 0:
 			b = m.data
-		} else {
+		default:
 			continue
 		}
 

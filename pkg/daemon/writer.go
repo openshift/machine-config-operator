@@ -70,7 +70,7 @@ func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 }
 
 // SetDone sets the state to Done.
-func (nw *clusterNodeWriter) SetDone(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string, dcAnnotation string) error {
+func (nw *clusterNodeWriter) SetDone(client corev1client.NodeInterface, lister corev1lister.NodeLister, node, dcAnnotation string) error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 		constants.CurrentMachineConfigAnnotationKey:     dcAnnotation,

@@ -24,10 +24,10 @@ import (
 
 type syncFunc struct {
 	name string
-	fn   func(config renderConfig) error
+	fn   func(config *renderConfig) error
 }
 
-func (optr *Operator) syncAll(rconfig renderConfig, syncFuncs []syncFunc) error {
+func (optr *Operator) syncAll(rconfig *renderConfig, syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
@@ -91,7 +91,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigPools(config renderConfig) error {
+func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	mcps := []string{
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
@@ -112,7 +112,7 @@ func (optr *Operator) syncMachineConfigPools(config renderConfig) error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigController(config renderConfig) error {
+func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	crBytes, err := renderAsset(config, "manifests/machineconfigcontroller/clusterrole.yaml")
 	if err != nil {
 		return err
@@ -164,16 +164,14 @@ func (optr *Operator) syncMachineConfigController(config renderConfig) error {
 		return err
 	}
 	if updated {
-		var waitErrs []error
-		waitErrs = append(waitErrs, optr.waitForDeploymentRollout(mcc))
-		waitErrs = append(waitErrs, optr.waitForControllerConfigToBeCompleted(cc))
+		waitErrs := []error{optr.waitForDeploymentRollout(mcc), optr.waitForControllerConfigToBeCompleted(cc)}
 		agg := utilerrors.NewAggregate(waitErrs)
 		return agg
 	}
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigDaemon(config renderConfig) error {
+func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 	for _, path := range []string{
 		"manifests/machineconfigdaemon/clusterrole.yaml",
 		"manifests/machineconfigdaemon/events-clusterrole.yaml",
@@ -240,7 +238,7 @@ func (optr *Operator) syncMachineConfigDaemon(config renderConfig) error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigServer(config renderConfig) error {
+func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 	crBytes, err := renderAsset(config, "manifests/machineconfigserver/clusterrole.yaml")
 	if err != nil {
 		return err
@@ -313,7 +311,7 @@ func (optr *Operator) syncMachineConfigServer(config renderConfig) error {
 
 // syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
 // have updated to the latest configuration.
-func (optr *Operator) syncRequiredMachineConfigPools(config renderConfig) error {
+func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, requiredForUpgradeMachineConfigPoolLabelKey, ""))
 	if err != nil {
 		return err
