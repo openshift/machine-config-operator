@@ -67,11 +67,23 @@ func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 		annos[daemonconsts.DesiredMachineConfigAnnotationKey] = desiredConfig
 		annos[daemonconsts.MachineConfigDaemonStateAnnotationKey] = state
 	}
+	return newNodeWithAnnotations(name, annos)
+}
 
+func newNodeWithLabels(name string, labels map[string]string) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: labels,
+		},
+	}
+}
+
+func newNodeWithAnnotations(name string, annotations map[string]string) *corev1.Node {
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
-			Annotations: annos,
+			Annotations: annotations,
 		},
 	}
 }
