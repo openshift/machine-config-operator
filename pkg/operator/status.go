@@ -29,7 +29,7 @@ func (optr *Operator) syncVersion() error {
 	}
 
 	// keep the old version and progressing if we fail progressing
-	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) && cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded) {
+	if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) || cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded) {
 		return nil
 	}
 
