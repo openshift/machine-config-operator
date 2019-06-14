@@ -1,0 +1,18 @@
+name: "machine-config-daemon-initial.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Initial
+  ConditionPathExists=/etc/pivot/image-pullspec
+  # If pivot exists, defer to it
+  ConditionPathExists=!/usr/bin/pivot
+  After=ignition-firstboot-complete.service
+  Before=kubelet.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/libexec/machine-config-daemon pivot
+
+  [Install]
+  WantedBy=multi-user.target
