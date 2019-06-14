@@ -2,6 +2,7 @@ package operator
 
 import (
 	"fmt"
+	configv1 "github.com/openshift/api/config/v1"
 	"strings"
 	"testing"
 )
@@ -101,4 +102,99 @@ func TestRenderAsset(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
+	tests := []struct {
+		Infra   *configv1.Infrastructure
+		Network *configv1.Network
+		Proxy   *configv1.Proxy
+		Error   bool
+	}{{
+		Infra: &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{
+					Type: configv1.AWSPlatformType,
+				},
+				EtcdDiscoveryDomain: "tt.testing",
+			}},
+		Network: &configv1.Network{
+			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/24"}}},
+		Proxy: &configv1.Proxy{
+			Status: configv1.ProxyStatus{
+				HTTPProxy: "test.proxy"}},
+	}, {
+		Infra: &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{
+					Type: configv1.AWSPlatformType,
+				},
+				EtcdDiscoveryDomain: "tt.testing",
+			}},
+		Network: &configv1.Network{
+			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/99999999"}}},
+		Error: true,
+	}, {
+		Infra: &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus:      &configv1.PlatformStatus{},
+				EtcdDiscoveryDomain: "tt.testing",
+			}},
+		Network: &configv1.Network{
+			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/24"}}},
+	}, {
+		Infra: &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				PlatformStatus: &configv1.PlatformStatus{
+					Type: configv1.AWSPlatformType,
+				},
+				EtcdDiscoveryDomain: "tt.testing",
+			}},
+		Network: &configv1.Network{
+			Spec: configv1.NetworkSpec{ServiceNetwork: []string{}}},
+		Error: true,
+	}, {
+		// Test old Platform field instead of PlatformStatus
+		Infra: &configv1.Infrastructure{
+			Status: configv1.InfrastructureStatus{
+				Platform:            configv1.AWSPlatformType,
+				EtcdDiscoveryDomain: "tt.testing",
+			},
+		},
+		Network: &configv1.Network{
+			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/24"}}},
+	}}
+
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			desc := fmt.Sprintf("Infra(%#v), Network(%#v)", test.Infra, test.Network)
+			controllerConfigSpec, err := createDiscoveredControllerConfigSpec(test.Infra, test.Network, test.Proxy)
+			if err != nil {
+				if !test.Error {
+					t.Fatalf("%s failed: %s", desc, err.Error())
+				} else {
+					// If Err flag is true and err is found, stop testing
+					return
+				}
+			}
+			if controllerConfigSpec == nil {
+				t.Fatalf("Controller config spec did not get initialized")
+			} else if controllerConfigSpec.Platform == "" {
+				t.Fatalf("Error setting controller config platform")
+			}
+			etcdDomain := controllerConfigSpec.EtcdDiscoveryDomain
+			testDomain := test.Infra.Status.EtcdDiscoveryDomain
+			if etcdDomain != testDomain {
+				t.Fatalf("%s failed: got = %s want = %s", desc, etcdDomain, testDomain)
+			}
+			if test.Proxy != nil {
+				testURL := test.Proxy.Status.HTTPProxy
+				controllerURL := controllerConfigSpec.Proxy.HTTPProxy
+				if controllerURL != testURL {
+					t.Fatalf("%s failed: got = %s want = %s", desc, controllerURL, testURL)
+				}
+			}
+		})
+	}
+
 }
