@@ -413,7 +413,7 @@ func (optr *Operator) sync(key string) error {
 		{"mcc", optr.syncMachineConfigController},
 		{"mcs", optr.syncMachineConfigServer},
 		{"mcd", optr.syncMachineConfigDaemon},
-		{"required-pools", optr.syncRequiredMachineConfigPools},
+		{"pools", optr.waitForMachineConfigPools},
 	}
 	return optr.syncAll(rc, syncFuncs)
 }

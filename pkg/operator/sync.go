@@ -5,21 +5,19 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
-
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/pkg/errors"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 type syncFunc struct {
@@ -311,11 +309,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 
 // syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
 // have updated to the latest configuration.
-func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
-	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, requiredForUpgradeMachineConfigPoolLabelKey, ""))
-	if err != nil {
-		return err
-	}
+func (optr *Operator) waitForMachineConfigPools(_ *renderConfig) error {
 	isPoolStatusConditionTrue := func(pool *mcfgv1.MachineConfigPool, conditionType mcfgv1.MachineConfigPoolConditionType) bool {
 		for _, condition := range pool.Status.Conditions {
 			if condition.Type == conditionType {
@@ -326,7 +320,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	}
 
 	var lastErr error
-	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
+	if err := wait.Poll(time.Second, 15*time.Minute, func() (bool, error) {
 		if lastErr != nil {
 			co, err := optr.fetchClusterOperator()
 			if err != nil {
@@ -344,7 +338,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				return false, nil
 			}
 		}
-		pools, err := optr.mcpLister.List(sel)
+		pools, err := optr.mcpLister.List(labels.Everything())
 		if err != nil {
 			lastErr = err
 			return false, nil
@@ -494,7 +488,3 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 	}
 	return nil
 }
-
-const (
-	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
-)
