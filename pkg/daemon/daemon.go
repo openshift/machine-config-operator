@@ -1103,10 +1103,10 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 	return true
 }
 
-// getRefDigest parses a Docker/OCI image reference and returns
+// GetRefDigest parses a Docker/OCI image reference and returns
 // its digest, or an error if the string fails to parse as
 // a "canonical" image reference with a digest.
-func getRefDigest(ref string) (string, error) {
+func GetRefDigest(ref string) (string, error) {
 	refParsed, err := imgref.ParseNamed(ref)
 	if err != nil {
 		return "", errors.Wrapf(err, "parsing reference: %q", ref)
@@ -1119,8 +1119,8 @@ func getRefDigest(ref string) (string, error) {
 	return canon.Digest().String(), nil
 }
 
-// compareOSImageURL is the backend for checkOS.
-func compareOSImageURL(current, desired string) (bool, error) {
+// CompareOSImageURL is the backend for checkOS.
+func CompareOSImageURL(current, desired string) (bool, error) {
 	// Since https://github.com/openshift/machine-config-operator/pull/426 landed
 	// we don't use the "unspecified" osImageURL anymore, but let's keep supporting
 	// it for now.
@@ -1134,11 +1134,11 @@ func compareOSImageURL(current, desired string) (bool, error) {
 		return true, nil
 	}
 
-	bootedDigest, err := getRefDigest(current)
+	bootedDigest, err := GetRefDigest(current)
 	if err != nil {
 		return false, errors.Wrap(err, "parsing booted osImageURL")
 	}
-	desiredDigest, err := getRefDigest(desired)
+	desiredDigest, err := GetRefDigest(desired)
 	if err != nil {
 		return false, errors.Wrap(err, "parsing desired osImageURL")
 	}
@@ -1164,7 +1164,7 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 		return true, nil
 	}
 
-	return compareOSImageURL(dn.bootedOSImageURL, osImageURL)
+	return CompareOSImageURL(dn.bootedOSImageURL, osImageURL)
 }
 
 // checkUnits validates the contents of all the units in the
