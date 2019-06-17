@@ -789,7 +789,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	newURL := config.Spec.OSImageURL
-	osMatch, err := compareOSImageURL(dn.bootedOSImageURL, newURL)
+	osMatch, err := CompareOSImageURL(dn.bootedOSImageURL, newURL)
 	if err != nil {
 		return err
 	}
