@@ -13,10 +13,8 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/kubernetes"
 )
 
 var (
@@ -130,35 +128,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	nodeWriter := daemon.NewNodeWriter()
 	go nodeWriter.Run(stopCh)
 
-	cb, err := clients.NewBuilder(startOpts.kubeconfig)
-	if err != nil {
-		if startOpts.onceFrom != "" {
-			glog.Info("Cannot initialize ClientBuilder, likely in onceFrom mode with Ignition")
-		} else {
-			glog.Fatalf("Failed to initialize ClientBuilder: %v", err)
-		}
-	}
-
-	var kubeClient kubernetes.Interface
-	if cb != nil {
-		kubeClient, err = cb.KubeClient(componentName)
-		if err != nil {
-			glog.Info("Cannot initialize kubeClient, likely in onceFrom mode with Ignition")
-		}
-	}
-
 	var dn *daemon.Daemon
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
-		var mcClient mcfgclientset.Interface
-		if cb != nil {
-			mcClient, err = cb.MachineConfigClient(componentName)
-			if err != nil {
-				glog.Info("Cannot initialize MC client, likely in onceFrom mode with Ignition")
-			}
-		}
 		dn, err = daemon.New(
 			startOpts.nodeName,
 			operatingSystem,
@@ -166,8 +140,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			bootID,
 			startOpts.onceFrom,
 			startOpts.skipReboot,
-			mcClient,
-			kubeClient,
+			nil,
+			nil,
 			startOpts.kubeletHealthzEnabled,
 			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
@@ -179,9 +153,16 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 		// Else we use the cluster driven daemon
 	} else {
-		if kubeClient == nil {
-			panic("Running in cluster mode without a kubeClient")
+		cb, err := clients.NewBuilder(startOpts.kubeconfig)
+		if err != nil {
+			glog.Fatalf("Failed to initialize ClientBuilder: %v", err)
 		}
+
+		kubeClient, err := cb.KubeClient(componentName)
+		if err != nil {
+			glog.Fatalf("Cannot initialize kubeClient: %v", err)
+		}
+
 		ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
 		// create the daemon instance. this also initializes kube client items
 		// which need to come from the container and not the chroot.
