@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	kubeinformers "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
@@ -213,6 +214,60 @@ func (f *fixture) expectPatchNodeAction(node *corev1.Node, patch []byte) {
 	f.kubeactions = append(f.kubeactions, core.NewPatchAction(schema.GroupVersionResource{Resource: "nodes"}, node.Namespace, node.Name, types.MergePatchType, patch))
 }
 
+func TestGetNodesForPool(t *testing.T) {
+	tests := []struct {
+		pool  *mcfgv1.MachineConfigPool
+		nodes []*corev1.Node
+
+		expected int
+		err      bool
+	}{
+		{
+			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			nodes:    newMixedNodeSet(3, map[string]string{"node-role": ""}, map[string]string{"node-role/worker": ""}),
+			expected: 0,
+			err:      false,
+		},
+		{
+			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			nodes:    newMixedNodeSet(2, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": ""}),
+			expected: 2,
+			err:      false,
+		},
+		{
+			pool:     helpers.NewMachineConfigPool("ïnfra", nil, helpers.InfraSelector, "v0"),
+			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			expected: 3,
+			err:      false,
+		},
+		{
+			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			expected: 3,
+			err:      false,
+		},
+	}
+
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			f := newFixture(t)
+
+			f.nodeLister = append(f.nodeLister, test.nodes...)
+			f.mcpLister = append(f.mcpLister, test.pool)
+
+			c := f.newController()
+
+			got, err := c.getNodesForPool(test.pool)
+			if err != nil && !test.err {
+				t.Fatal("expected non-nil error")
+			}
+			if len(got) != test.expected {
+				t.Fatalf("mismatch: got: %v want: %v", got, test.expected)
+			}
+		})
+	}
+}
+
 func TestGetPoolForNode(t *testing.T) {
 	tests := []struct {
 		pools     []*mcfgv1.MachineConfigPool
@@ -324,6 +379,24 @@ func TestGetPoolForNode(t *testing.T) {
 }
 
 func intStrPtr(obj intstr.IntOrString) *intstr.IntOrString { return &obj }
+
+// newMixedNodeSet generates a slice of nodes for each role specified of length setlen.
+func newMixedNodeSet(setlen int, roles ...map[string]string) []*corev1.Node {
+	var nodeSet []*corev1.Node
+	for _, role := range roles {
+		nodes := newRoleNodeSet(setlen, role)
+		nodeSet = append(nodeSet, nodes...)
+	}
+	return nodeSet
+}
+
+func newRoleNodeSet(len int, roles map[string]string) []*corev1.Node {
+	nodes := []*corev1.Node{}
+	for i := 0; i < len; i++ {
+		nodes = append(nodes, newNodeWithLabels(fmt.Sprintf("node-%s", uuid.NewUUID()), roles))
+	}
+	return nodes
+}
 
 func newNodeSet(len int) []*corev1.Node {
 	nodes := []*corev1.Node{}
