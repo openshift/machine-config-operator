@@ -3,8 +3,8 @@ enabled: true
 contents: |
   [Unit]
   Description=Kubernetes Kubelet
-  Wants=rpc-statd.service crio.service
-  After=crio.service
+  Wants=rpc-statd.service crio.service coreos-growpart.service
+  After=crio.service coreos-growpart.service
 
   [Service]
   Type=notify
