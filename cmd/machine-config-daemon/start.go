@@ -103,6 +103,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("Error found when checking operating system: %s", err)
 	}
 
+	bootID, err := getBootID()
+	if err != nil {
+		glog.Fatalf("Cannot get boot ID: %v", err)
+	}
+
 	if startOpts.nodeName == "" {
 		name, ok := os.LookupEnv("NODE_NAME")
 		if !ok || name == "" {
@@ -143,11 +148,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	var dn *daemon.Daemon
-
-	bootID, err := getBootID()
-	if err != nil {
-		glog.Fatalf("Cannot get boot ID: %v", err)
-	}
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
