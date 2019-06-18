@@ -369,7 +369,7 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	// FIXME Explicitly disable (remove) the cloud provider on OpenStack for now
 	// Don't forget to turn the test case back on as well
 	switch cfg.Platform {
-	case platformAWS, platformBaremetal, platformAzure, platformVSphere:
+	case platformAWS, platformAzure, platformVSphere:
 		return cfg.Platform, nil
 	default:
 		return "", nil
