@@ -152,44 +152,50 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			glog.Fatalf("Failed to initialize single run daemon: %v", err)
 		}
 		// Else we use the cluster driven daemon
-	} else {
-		cb, err := clients.NewBuilder(startOpts.kubeconfig)
-		if err != nil {
-			glog.Fatalf("Failed to initialize ClientBuilder: %v", err)
-		}
 
-		kubeClient, err := cb.KubeClient(componentName)
+		err = dn.RunOnceFrom()
 		if err != nil {
-			glog.Fatalf("Cannot initialize kubeClient: %v", err)
+			glog.Fatalf("%v", err)
 		}
-
-		ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
-		// create the daemon instance. this also initializes kube client items
-		// which need to come from the container and not the chroot.
-		dn, err = daemon.NewClusterDrivenDaemon(
-			startOpts.nodeName,
-			operatingSystem,
-			daemon.NewNodeUpdaterClient(),
-			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
-			kubeClient,
-			bootID,
-			startOpts.onceFrom,
-			startOpts.skipReboot,
-			ctx.KubeInformerFactory.Core().V1().Nodes(),
-			startOpts.kubeletHealthzEnabled,
-			startOpts.kubeletHealthzEndpoint,
-			nodeWriter,
-			exitCh,
-			stopCh,
-		)
-		if err != nil {
-			glog.Fatalf("Failed to initialize daemon: %v", err)
-		}
-
-		ctx.KubeInformerFactory.Start(stopCh)
-		ctx.InformerFactory.Start(stopCh)
-		close(ctx.InformersStarted)
+		return
 	}
+
+	cb, err := clients.NewBuilder(startOpts.kubeconfig)
+	if err != nil {
+		glog.Fatalf("Failed to initialize ClientBuilder: %v", err)
+	}
+
+	kubeClient, err := cb.KubeClient(componentName)
+	if err != nil {
+		glog.Fatalf("Cannot initialize kubeClient: %v", err)
+	}
+
+	ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
+	// create the daemon instance. this also initializes kube client items
+	// which need to come from the container and not the chroot.
+	dn, err = daemon.NewClusterDrivenDaemon(
+		startOpts.nodeName,
+		operatingSystem,
+		daemon.NewNodeUpdaterClient(),
+		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+		kubeClient,
+		bootID,
+		startOpts.onceFrom,
+		startOpts.skipReboot,
+		ctx.KubeInformerFactory.Core().V1().Nodes(),
+		startOpts.kubeletHealthzEnabled,
+		startOpts.kubeletHealthzEndpoint,
+		nodeWriter,
+		exitCh,
+		stopCh,
+	)
+	if err != nil {
+		glog.Fatalf("Failed to initialize daemon: %v", err)
+	}
+
+	ctx.KubeInformerFactory.Start(stopCh)
+	ctx.InformerFactory.Start(stopCh)
+	close(ctx.InformersStarted)
 
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")

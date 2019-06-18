@@ -440,7 +440,8 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 	return nil
 }
 
-func (dn *Daemon) runOnceFrom() error {
+// RunOnceFrom is the primary entrypoint for the non-cluster case
+func (dn *Daemon) RunOnceFrom() error {
 	configi, contentFrom, err := dn.senseAndLoadOnceFrom()
 	if err != nil {
 		glog.Warningf("Unable to decipher onceFrom config type: %s", err)
@@ -493,11 +494,6 @@ func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) err
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
-	}
-
-	// Catch quickly if we've been asked to run once.
-	if dn.onceFrom != "" {
-		return dn.runOnceFrom()
 	}
 
 	defer utilruntime.HandleCrash()
