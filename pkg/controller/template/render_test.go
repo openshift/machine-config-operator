@@ -34,7 +34,7 @@ func TestCloudProvider(t *testing.T) {
 		//res:      "openstack",
 	}, {
 		platform: "baremetal",
-		res:      "baremetal",
+		res:      "",
 	}, {
 		platform: "libvirt",
 		res:      "",
