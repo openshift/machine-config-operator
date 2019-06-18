@@ -487,9 +487,15 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 // Run finishes informer setup and then blocks, and the informer will be
 // responsible for triggering callbacks to handle updates. Successful
 // updates shouldn't return, and should just reboot the node.
-func (dn *Daemon) Run(stopCh, signaled <-chan struct{}, exitCh <-chan error) error {
+func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	dn.logSystem("Starting to manage node: %s", dn.name)
 	dn.LogSystemData()
+
+	glog.Info("Starting MachineConfigDaemon")
+	defer glog.Info("Shutting down MachineConfigDaemon")
+
+	signaled := make(chan struct{})
+	dn.InstallSignalHandler(signaled)
 
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")

@@ -197,13 +197,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx.InformerFactory.Start(stopCh)
 	close(ctx.InformersStarted)
 
-	glog.Info("Starting MachineConfigDaemon")
-	defer glog.Info("Shutting down MachineConfigDaemon")
-
-	signaled := make(chan struct{})
-	dn.InstallSignalHandler(signaled)
-
-	if err := dn.Run(stopCh, signaled, exitCh); err != nil {
+	if err := dn.Run(stopCh, exitCh); err != nil {
 		controllercommon.WriteTerminationError(err)
 	}
 }
