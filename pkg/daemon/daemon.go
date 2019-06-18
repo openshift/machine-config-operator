@@ -186,8 +186,6 @@ func New(
 	nodeName,
 	operatingSystem string,
 	nodeUpdaterClient NodeUpdaterClient,
-	onceFrom string,
-	skipReboot bool,
 	mcClient mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	kubeletHealthzEnabled bool,
@@ -222,8 +220,6 @@ func New(
 		NodeUpdaterClient:      nodeUpdaterClient,
 		bootedOSImageURL:       osImageURL,
 		bootID:                 bootID,
-		onceFrom:               onceFrom,
-		skipReboot:             skipReboot,
 		kubeletHealthzEnabled:  kubeletHealthzEnabled,
 		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
 		nodeWriter:             nodeWriter,
@@ -246,8 +242,6 @@ func NewClusterDrivenDaemon(
 	nodeUpdaterClient NodeUpdaterClient,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	kubeClient kubernetes.Interface,
-	onceFrom string,
-	skipReboot bool,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -259,8 +253,6 @@ func NewClusterDrivenDaemon(
 		nodeName,
 		operatingSystem,
 		nodeUpdaterClient,
-		onceFrom,
-		skipReboot,
 		nil,
 		kubeClient,
 		kubeletHealthzEnabled,
@@ -452,7 +444,10 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 }
 
 // RunOnceFrom is the primary entrypoint for the non-cluster case
-func (dn *Daemon) RunOnceFrom() error {
+func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
+	dn.onceFrom = onceFrom
+	dn.skipReboot = skipReboot
+
 	configi, contentFrom, err := dn.senseAndLoadOnceFrom()
 	if err != nil {
 		glog.Warningf("Unable to decipher onceFrom config type: %s", err)
