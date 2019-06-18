@@ -203,6 +203,7 @@ func New(
 	}
 
 	dn := &Daemon{
+		booting:                true,
 		name:                   nodeName,
 		OperatingSystem:        operatingSystem,
 		NodeUpdaterClient:      nodeUpdaterClient,
@@ -285,7 +286,6 @@ func NewClusterDrivenDaemon(
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
-	dn.booting = true
 
 	return dn, nil
 }
