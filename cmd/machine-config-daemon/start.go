@@ -121,8 +121,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.nodeName,
 			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
-			startOpts.onceFrom,
-			startOpts.skipReboot,
 			nil,
 			nil,
 			startOpts.kubeletHealthzEnabled,
@@ -136,7 +134,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 		// Else we use the cluster driven daemon
 
-		err = dn.RunOnceFrom()
+		err = dn.RunOnceFrom(startOpts.onceFrom, startOpts.skipReboot)
 		if err != nil {
 			glog.Fatalf("%v", err)
 		}
@@ -162,8 +160,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		daemon.NewNodeUpdaterClient(),
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		kubeClient,
-		startOpts.onceFrom,
-		startOpts.skipReboot,
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
