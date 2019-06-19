@@ -118,8 +118,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			daemon.NewNodeUpdaterClient(),
 			nil,
 			nil,
-			startOpts.kubeletHealthzEnabled,
-			startOpts.kubeletHealthzEndpoint,
 			nodeWriter,
 			exitCh,
 			stopCh,
