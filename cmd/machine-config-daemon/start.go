@@ -103,24 +103,20 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	exitCh := make(chan error)
 	defer close(exitCh)
 
-	var dn *daemon.Daemon
-	var err error
+	dn, err := daemon.New(
+		startOpts.nodeName,
+		daemon.NewNodeUpdaterClient(),
+		nil,
+		exitCh,
+		stopCh,
+	)
+	if err != nil {
+		glog.Fatalf("Failed to initialize single run daemon: %v", err)
+	}
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
-		dn, err = daemon.New(
-			startOpts.nodeName,
-			daemon.NewNodeUpdaterClient(),
-			nil,
-			exitCh,
-			stopCh,
-		)
-		if err != nil {
-			glog.Fatalf("Failed to initialize single run daemon: %v", err)
-		}
-		// Else we use the cluster driven daemon
-
 		err = dn.RunOnceFrom(startOpts.onceFrom, startOpts.skipReboot)
 		if err != nil {
 			glog.Fatalf("%v", err)
@@ -141,16 +137,12 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
-	dn, err = daemon.NewClusterDrivenDaemon(
-		startOpts.nodeName,
-		daemon.NewNodeUpdaterClient(),
-		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+	dn.ClusterConnect(
 		kubeClient,
+		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
-		exitCh,
-		stopCh,
 	)
 	if err != nil {
 		glog.Fatalf("Failed to initialize daemon: %v", err)
