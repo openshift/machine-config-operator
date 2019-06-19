@@ -56,6 +56,9 @@ type Daemon struct {
 	// OperatingSystem the operating system the MCD is running on
 	OperatingSystem string
 
+	// mock is set if we're running as non-root, probably under unit tests
+	mock bool
+
 	// NodeUpdaterClient an instance of the client which interfaces with host content deployments
 	NodeUpdaterClient NodeUpdaterClient
 
@@ -103,9 +106,6 @@ type Daemon struct {
 	// node is the current instance of the node being processed through handleNodeUpdate
 	// or the very first instance grabbed when the daemon starts
 	node *corev1.Node
-
-	// remove the funcs below once proper e2e testing is done for updating ssh keys
-	atomicSSHKeysWriter func(igntypes.PasswdUser, string) error
 
 	queue       workqueue.RateLimitingInterface
 	enqueueNode func(*corev1.Node)
@@ -194,6 +194,11 @@ func New(
 	exitCh chan<- error,
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
+	mock := false
+	if os.Getuid() != 0 {
+		mock = true
+	}
+
 	var (
 		osImageURL string
 		err        error
@@ -208,12 +213,16 @@ func New(
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
 
-	bootID, err := getBootID()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to read boot ID")
+	bootID := ""
+	if !mock {
+		bootID, err = getBootID()
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to read boot ID")
+		}
 	}
 
 	dn := &Daemon{
+		mock:                   mock,
 		booting:                true,
 		name:                   nodeName,
 		OperatingSystem:        operatingSystem,
@@ -229,7 +238,6 @@ func New(
 		mcClient:               mcClient,
 	}
 	dn.currentConfigPath = currentConfigPath
-	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
 	dn.loggerSupportsJournal = dn.isLoggingToJournalSupported()
 	return dn, nil
 }
