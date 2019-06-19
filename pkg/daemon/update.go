@@ -746,7 +746,7 @@ func getFileOwnership(file igntypes.File) (int, int, error) {
 	return uid, gid, nil
 }
 
-func (dn *Daemon) atomicallyWriteSSHKey(newUser igntypes.PasswdUser, keys string) error {
+func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
 
 	// Keys should only be written to "/home/core/.ssh"
@@ -774,9 +774,11 @@ func (dn *Daemon) updateSSHKeys(newUsers []igntypes.PasswdUser) error {
 	for _, k := range newUsers[len(newUsers)-1].SSHAuthorizedKeys {
 		concatSSHKeys = concatSSHKeys + string(k) + "\n"
 	}
-	// newUsers[0] is currently unused since we write keys only for the core user
-	if err := dn.atomicSSHKeysWriter(newUsers[0], concatSSHKeys); err != nil {
-		return err
+	if !dn.mock {
+		// Note we write keys only for the core user and so this ignores the user list
+		if err := dn.atomicallyWriteSSHKey(concatSSHKeys); err != nil {
+			return err
+		}
 	}
 	return nil
 }

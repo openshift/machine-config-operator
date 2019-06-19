@@ -34,6 +34,7 @@ func TestUpdateOS(t *testing.T) {
 
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
+		mock:              true,
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
@@ -384,6 +385,7 @@ func TestUpdateSSHKeys(t *testing.T) {
 	}
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
+		mock:              true,
 		name:              "nodeName",
 		OperatingSystem:   machineConfigDaemonOSRHCOS,
 		NodeUpdaterClient: testClient,
@@ -398,8 +400,6 @@ func TestUpdateSSHKeys(t *testing.T) {
 		},
 	}
 	newMcfg.Spec.Config.Passwd.Users = []igntypes.PasswdUser{tempUser}
-
-	d.atomicSSHKeysWriter = func(user igntypes.PasswdUser, keys string) error { return nil }
 
 	err := d.updateSSHKeys(newMcfg.Spec.Config.Passwd.Users)
 	if err != nil {
@@ -457,6 +457,7 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 func TestSkipReboot(t *testing.T) {
 	// skipReboot is only honored with onceFrom != ""
 	d := &Daemon{
+		mock:       true,
 		onceFrom:   "test",
 		skipReboot: true,
 	}
@@ -464,6 +465,7 @@ func TestSkipReboot(t *testing.T) {
 
 	// skipReboot in normal cluster run is just a no-op and we reboot anyway
 	d = &Daemon{
+		mock:       true,
 		onceFrom:   "",
 		skipReboot: true,
 	}
