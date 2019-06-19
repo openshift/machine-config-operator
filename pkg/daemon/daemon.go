@@ -187,8 +187,6 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	mcClient mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
-	kubeletHealthzEnabled bool,
-	kubeletHealthzEndpoint string,
 	nodeWriter NodeWriter,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
@@ -242,21 +240,19 @@ func New(
 	}
 
 	return &Daemon{
-		mock:                   mock,
-		booting:                true,
-		name:                   nodeName,
-		OperatingSystem:        operatingSystem,
-		NodeUpdaterClient:      nodeUpdaterClient,
-		bootedOSImageURL:       osImageURL,
-		bootID:                 bootID,
-		kubeletHealthzEnabled:  kubeletHealthzEnabled,
-		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
-		nodeWriter:             nodeWriter,
-		exitCh:                 exitCh,
-		stopCh:                 stopCh,
-		kubeClient:             kubeClient,
-		currentConfigPath:      currentConfigPath,
-		loggerSupportsJournal:  loggerSupportsJournal,
+		mock:                  mock,
+		booting:               true,
+		name:                  nodeName,
+		OperatingSystem:       operatingSystem,
+		NodeUpdaterClient:     nodeUpdaterClient,
+		bootedOSImageURL:      osImageURL,
+		bootID:                bootID,
+		nodeWriter:            nodeWriter,
+		exitCh:                exitCh,
+		stopCh:                stopCh,
+		kubeClient:            kubeClient,
+		currentConfigPath:     currentConfigPath,
+		loggerSupportsJournal: loggerSupportsJournal,
 	}, nil
 }
 
@@ -279,8 +275,6 @@ func NewClusterDrivenDaemon(
 		nodeUpdaterClient,
 		nil,
 		kubeClient,
-		kubeletHealthzEnabled,
-		kubeletHealthzEndpoint,
 		nodeWriter,
 		exitCh,
 		stopCh,
@@ -313,6 +307,9 @@ func NewClusterDrivenDaemon(
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
+
+	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
+	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
 	return dn, nil
 }
