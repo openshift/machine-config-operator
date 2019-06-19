@@ -229,7 +229,19 @@ func New(
 		}
 	}
 
-	dn := &Daemon{
+	// RHEL 7.6 logger (util-linux) doesn't have the --journald flag
+	loggerSupportsJournal := true
+	if !mock {
+		if operatingSystem == machineConfigDaemonOSRHEL {
+			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
+			if err != nil {
+				return nil, errors.Wrapf(err, "running logger --help")
+			}
+			loggerSupportsJournal = strings.Contains(string(loggerOutput), "--journald")
+		}
+	}
+
+	return &Daemon{
 		mock:                   mock,
 		booting:                true,
 		name:                   nodeName,
@@ -243,11 +255,9 @@ func New(
 		exitCh:                 exitCh,
 		stopCh:                 stopCh,
 		kubeClient:             kubeClient,
-		mcClient:               mcClient,
-	}
-	dn.currentConfigPath = currentConfigPath
-	dn.loggerSupportsJournal = dn.isLoggingToJournalSupported()
-	return dn, nil
+		currentConfigPath:      currentConfigPath,
+		loggerSupportsJournal:  loggerSupportsJournal,
+	}, nil
 }
 
 // NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
