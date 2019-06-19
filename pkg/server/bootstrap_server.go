@@ -41,8 +41,7 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 
 // GetConfig fetches the machine config(type - Ignition) from the bootstrap server,
 // based on the pool request.
-// It returns nil for conf, error if the config isn't found. It returns a formatted
-// error if any other error is encountered during its operations.
+// If a config cannot be found or parsed, it returns a nil conf, along with an error.
 //
 // The method does the following:
 //
