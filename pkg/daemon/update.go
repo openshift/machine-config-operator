@@ -810,7 +810,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 // RHEL 7.6 logger (util-linux) doesn't have the --journald flag
 func (dn *Daemon) isLoggingToJournalSupported() bool {
-	if dn.OperatingSystem == machineConfigDaemonOSRHEL {
+	if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
 		return true
 	}
 	loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
