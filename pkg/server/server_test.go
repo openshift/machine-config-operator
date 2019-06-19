@@ -1,11 +1,13 @@
 package server
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"path"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
@@ -13,6 +15,7 @@ import (
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -246,4 +249,61 @@ func getTestMachineConfigPool() (*v1.MachineConfigPool, error) {
 		return nil, fmt.Errorf("unexpected error while unmarshaling machine-pool: %s, err: %v", mpPath, err)
 	}
 	return mp, nil
+}
+
+func TestKubeconfigFromSecret(t *testing.T) {
+	tests := []struct {
+		SecretPath string
+		TestURL    string
+		Error      bool
+	}{{
+		SecretPath: testDir,
+		TestURL:    "api.tt.testing",
+	}, {
+		SecretPath: "BADPATH",
+		TestURL:    "api.tt.testing",
+		Error:      true,
+	}, {
+		SecretPath: testDir,
+		Error:      true,
+	}}
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			desc := fmt.Sprintf("SecretPath(%#v), TestAPIUrl(%#v)", test.SecretPath, test.TestURL)
+			kc, ca, err := kubeconfigFromSecret(test.SecretPath, test.TestURL)
+			if err != nil {
+				if !test.Error {
+					t.Fatalf("%s failed %s", desc, err.Error())
+				} else {
+					return
+				}
+			}
+
+			if kc == nil {
+				t.Fatalf("Generated kubeconfig is nil")
+			}
+
+			if ca == nil {
+				t.Fatalf("Certificate data is nil")
+			}
+
+			str := fmt.Sprintf("%s", kc)
+			if str == "" || len(str) == 0 {
+				t.Fatalf("Error converting kubeconfig yaml to string")
+			}
+
+			mockCAData, err := ioutil.ReadFile(test.SecretPath + "/" + corev1.ServiceAccountRootCAKey)
+			if err != nil {
+				t.Fatalf("Error reading test certificate file: %s", err.Error())
+			}
+
+			if !strings.Contains(str, base64.StdEncoding.EncodeToString(mockCAData)) {
+				t.Fatalf("Kubeconfig does not contain b64 encoded ca data")
+			}
+
+			if !strings.Contains(str, test.TestURL) {
+				t.Fatalf("Kubeconfig does not contain server API URL")
+			}
+		})
+	}
 }
