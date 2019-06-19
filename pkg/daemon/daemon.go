@@ -187,7 +187,6 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	mcClient mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
-	nodeWriter NodeWriter,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
@@ -247,7 +246,6 @@ func New(
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
 		bootID:                bootID,
-		nodeWriter:            nodeWriter,
 		exitCh:                exitCh,
 		stopCh:                stopCh,
 		kubeClient:            kubeClient,
@@ -266,7 +264,6 @@ func NewClusterDrivenDaemon(
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-	nodeWriter NodeWriter,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
@@ -275,13 +272,15 @@ func NewClusterDrivenDaemon(
 		nodeUpdaterClient,
 		nil,
 		kubeClient,
-		nodeWriter,
 		exitCh,
 		stopCh,
 	)
 	if err != nil {
 		return nil, err
 	}
+
+	dn.nodeWriter = newNodeWriter()
+	go dn.nodeWriter.Run(stopCh)
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node

@@ -103,10 +103,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	exitCh := make(chan error)
 	defer close(exitCh)
 
-	glog.Info("Starting node writer")
-	nodeWriter := daemon.NewNodeWriter()
-	go nodeWriter.Run(stopCh)
-
 	var dn *daemon.Daemon
 	var err error
 
@@ -118,7 +114,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			daemon.NewNodeUpdaterClient(),
 			nil,
 			nil,
-			nodeWriter,
 			exitCh,
 			stopCh,
 		)
@@ -155,7 +150,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
-		nodeWriter,
 		exitCh,
 		stopCh,
 	)
