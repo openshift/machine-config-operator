@@ -810,19 +810,6 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	return nil
 }
 
-// RHEL 7.6 logger (util-linux) doesn't have the --journald flag
-func (dn *Daemon) isLoggingToJournalSupported() bool {
-	if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
-		return true
-	}
-	loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
-	if err != nil {
-		dn.logSystem("error running logger --help: %v", err)
-		return false
-	}
-	return strings.Contains(string(loggerOutput), "--journald")
-}
-
 func (dn *Daemon) getPendingStateLegacyLogger() (string, error) {
 	glog.Info("logger doesn't support --jounald, grepping the journal")
 
