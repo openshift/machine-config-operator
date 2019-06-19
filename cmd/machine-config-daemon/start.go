@@ -113,7 +113,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			startOpts.nodeName,
 			daemon.NewNodeUpdaterClient(),
 			nil,
-			nil,
 			exitCh,
 			stopCh,
 		)

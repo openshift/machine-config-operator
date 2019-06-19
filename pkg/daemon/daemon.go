@@ -26,7 +26,6 @@ import (
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
@@ -70,8 +69,6 @@ type Daemon struct {
 
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
-
-	mcClient mcfgclientset.Interface
 
 	// recorder sends events to the apiserver
 	recorder record.EventRecorder
@@ -185,7 +182,6 @@ func getBootID() (string, error) {
 func New(
 	nodeName string,
 	nodeUpdaterClient NodeUpdaterClient,
-	mcClient mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
@@ -270,7 +266,6 @@ func NewClusterDrivenDaemon(
 	dn, err := New(
 		nodeName,
 		nodeUpdaterClient,
-		nil,
 		kubeClient,
 		exitCh,
 		stopCh,
@@ -970,7 +965,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 // no cluster is present yet.
 func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, contentFrom onceFromOrigin) error {
 	if contentFrom == onceFromRemoteConfig {
-		if dn.kubeClient == nil || dn.mcClient == nil {
+		if dn.kubeClient == nil {
 			panic("running in onceFrom mode with a remote MachineConfig without a cluster")
 		}
 		// NOTE: This case expects a cluster to exists already.
