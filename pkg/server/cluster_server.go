@@ -40,8 +40,8 @@ type clusterServer struct {
 // NewClusterServer is used to initialize the machine config
 // server that will be used to fetch the requested MachineConfigPool
 // objects from within the cluster.
-// It accepts the kubeConfig which is not required when it's
-// run from within the cluster(useful in testing).
+// It accepts a kubeConfig, which is not required when it's
+// run from within a cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
 func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	restConfig, err := getClientConfig(kubeConfig)
@@ -90,9 +90,11 @@ func getClientConfig(path string) (*rest.Config, error) {
 	return rest.InClusterConfig()
 }
 
-func kubeconfigFromSecret(secertDir, apiserverURL string) ([]byte, []byte, error) {
-	caFile := filepath.Join(secertDir, corev1.ServiceAccountRootCAKey)
-	tokenFile := filepath.Join(secertDir, corev1.ServiceAccountTokenKey)
+// kubeconfigFromSecret creates a kubeconfig with the certificate
+// and token files in secretDir
+func kubeconfigFromSecret(secretDir, apiserverURL string) ([]byte, []byte, error) {
+	caFile := filepath.Join(secretDir, corev1.ServiceAccountRootCAKey)
+	tokenFile := filepath.Join(secretDir, corev1.ServiceAccountTokenKey)
 	caData, err := ioutil.ReadFile(caFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Failed to read %s: %v", caFile, err)
