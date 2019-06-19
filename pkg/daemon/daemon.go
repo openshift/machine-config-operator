@@ -250,32 +250,19 @@ func New(
 	}, nil
 }
 
-// NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
+// ClusterConnect sets up the systemd and kubernetes connections needed to update the
 // machine.
-func NewClusterDrivenDaemon(
-	nodeName string,
-	nodeUpdaterClient NodeUpdaterClient,
-	mcInformer mcfginformersv1.MachineConfigInformer,
+func (dn *Daemon) ClusterConnect(
 	kubeClient kubernetes.Interface,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-	exitCh chan<- error,
-	stopCh <-chan struct{},
-) (*Daemon, error) {
-	dn, err := New(
-		nodeName,
-		nodeUpdaterClient,
-		kubeClient,
-		exitCh,
-		stopCh,
-	)
-	if err != nil {
-		return nil, err
-	}
+) {
+	dn.kubeClient = kubeClient
 
 	dn.nodeWriter = newNodeWriter()
-	go dn.nodeWriter.Run(stopCh)
+	go dn.nodeWriter.Run(dn.stopCh)
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
@@ -286,8 +273,8 @@ func NewClusterDrivenDaemon(
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
+	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
 
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
@@ -304,8 +291,6 @@ func NewClusterDrivenDaemon(
 
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
-
-	return dn, nil
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
