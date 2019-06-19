@@ -168,7 +168,6 @@ func (f *fixture) newController() *Daemon {
 
 	d, err := NewClusterDrivenDaemon(
 		"node_name_test",
-		"rhel",
 		NewNodeUpdaterClient(),
 		i.Machineconfiguration().V1().MachineConfigs(),
 		f.kubeclient,

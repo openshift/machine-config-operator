@@ -183,8 +183,7 @@ func getBootID() (string, error) {
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
-	nodeName,
-	operatingSystem string,
+	nodeName string,
 	nodeUpdaterClient NodeUpdaterClient,
 	mcClient mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
@@ -203,6 +202,15 @@ func New(
 		osImageURL string
 		err        error
 	)
+
+	operatingSystem := "mock"
+	if !mock {
+		operatingSystem, err = getHostRunningOS()
+		if err != nil {
+			return nil, errors.Wrapf(err, "checking operating system")
+		}
+	}
+
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == machineConfigDaemonOSRHCOS {
 		var osVersion string
@@ -245,8 +253,7 @@ func New(
 // NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
 // machine.
 func NewClusterDrivenDaemon(
-	nodeName,
-	operatingSystem string,
+	nodeName string,
 	nodeUpdaterClient NodeUpdaterClient,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	kubeClient kubernetes.Interface,
@@ -259,7 +266,6 @@ func NewClusterDrivenDaemon(
 ) (*Daemon, error) {
 	dn, err := New(
 		nodeName,
-		operatingSystem,
 		nodeUpdaterClient,
 		nil,
 		kubeClient,

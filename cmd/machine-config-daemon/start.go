@@ -85,11 +85,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("Unable to change directory to /: %s", err)
 	}
 
-	operatingSystem, err := daemon.GetHostRunningOS()
-	if err != nil {
-		glog.Fatalf("Error found when checking operating system: %s", err)
-	}
-
 	if startOpts.nodeName == "" {
 		name, ok := os.LookupEnv("NODE_NAME")
 		if !ok || name == "" {
@@ -113,13 +108,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	go nodeWriter.Run(stopCh)
 
 	var dn *daemon.Daemon
+	var err error
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
 		dn, err = daemon.New(
 			startOpts.nodeName,
-			operatingSystem,
 			daemon.NewNodeUpdaterClient(),
 			nil,
 			nil,
@@ -156,7 +151,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// which need to come from the container and not the chroot.
 	dn, err = daemon.NewClusterDrivenDaemon(
 		startOpts.nodeName,
-		operatingSystem,
 		daemon.NewNodeUpdaterClient(),
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		kubeClient,
