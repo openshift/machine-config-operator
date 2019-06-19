@@ -38,7 +38,7 @@ const (
 	platformAzure     = "azure"
 	platformBaremetal = "baremetal"
 	platformGCP       = "gcp"
-	platformOpenstack = "openstack"
+	platformOpenStack = "openstack"
 	platformLibvirt   = "libvirt"
 	platformNone      = "none"
 	platformVSphere   = "vsphere"
@@ -128,7 +128,7 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 		return "", fmt.Errorf("cannot generate MachineConfigs when no platform is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenstack, platformLibvirt, platformNone:
+	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenStack, platformLibvirt, platformNone:
 		return ic.Platform, nil
 	default:
 		// platformNone is used for a non-empty, but currently unsupported platform.
@@ -371,10 +371,8 @@ func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 }
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
-	// FIXME Explicitly disable (remove) the cloud provider on OpenStack for now
-	// Don't forget to turn the test case back on as well
 	switch cfg.Platform {
-	case platformAWS, platformAzure, platformVSphere:
+	case platformAWS, platformAzure, platformOpenStack, platformVSphere:
 		return cfg.Platform, nil
 	case platformGCP:
 		return "gce", nil
@@ -397,7 +395,7 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 	}
 	flag := "--cloud-config=/etc/kubernetes/cloud.conf"
 	switch cfg.Platform {
-	case platformAzure, platformOpenstack:
+	case platformAzure, platformOpenStack:
 		return flag
 	default:
 		return ""
