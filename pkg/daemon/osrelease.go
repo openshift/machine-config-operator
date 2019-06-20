@@ -15,11 +15,11 @@ const (
 	machineConfigDaemonOSCENTOS = "CENTOS"
 )
 
-// GetHostRunningOS reads os-release from the rootFs prefix to return what
+// getHostRunningOS reads os-release from the rootFs prefix to return what
 // OS variant the daemon is running on. If we are unable to read the
 // os-release file OR the information doesn't match MCD supported OS's
 // an error is returned.
-func GetHostRunningOS() (string, error) {
+func getHostRunningOS() (string, error) {
 	libPath := "/usr/lib/os-release"
 	etcPath := "/etc/os-release"
 

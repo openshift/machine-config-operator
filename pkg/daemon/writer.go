@@ -48,8 +48,8 @@ type NodeWriter interface {
 	SetSSHAccessed(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
 }
 
-// NewNodeWriter Create a new NodeWriter
-func NewNodeWriter() NodeWriter {
+// newNodeWriter Create a new NodeWriter
+func newNodeWriter() NodeWriter {
 	return &clusterNodeWriter{
 		writer: make(chan message, defaultWriterQueue),
 	}
