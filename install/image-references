@@ -2,7 +2,9 @@ kind: ImageStream
 apiVersion: image.openshift.io/v1
 spec:
   tags:
-  # These are the 4 components of the MCO
+  # machine-config-operator is the new master mco image that contains all of the 
+  # component images:mco, mcc, mcs, mcd & setup etcd
+  # TO-DO: in future PR other component images will be deleted
   - name: machine-config-operator
     from:
       kind: DockerImage

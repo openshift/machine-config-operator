@@ -6,7 +6,8 @@ metadata:
 spec:
   initContainers:
   - name: machine-config-controller
-    image: {{.Images.MachineConfigController}}
+    image: {{.Images.MachineConfigOperator}}
+    command: ["/usr/bin/machine-config-controller"]
     args:
     - "bootstrap"
     - "--manifest-dir=/etc/mcc/bootstrap"
@@ -27,7 +28,8 @@ spec:
       mountPath: /etc/mcs/bootstrap
   containers:
   - name: machine-config-server
-    image: {{.Images.MachineConfigServer}}
+    image: {{.Images.MachineConfigOperator}}
+    command: ["/usr/bin/machine-config-server"]
     args:
       - "bootstrap"
     volumeMounts:
