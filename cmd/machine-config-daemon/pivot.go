@@ -93,18 +93,14 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 	if cmdLinePath == "" {
 		cmdLinePath = cmdLineFile
 	}
-	// Return fast if the file does not exist
-	if _, err := os.Stat(tuningFilePath); os.IsNotExist(err) {
-		glog.V(2).Infof("no kernel tuning needed as %s does not exist", tuningFilePath)
-		// This isn't an error. Return out.
-		return addArguments, deleteArguments, err
-	}
 	// Read and parse the file
 	file, err := os.Open(tuningFilePath)
 	if err != nil {
-		// If we have an issue reading return an error
-		glog.Infof("Unable to open %s for reading: %v", tuningFilePath, err)
-		return addArguments, deleteArguments, err
+		if os.IsNotExist(err) {
+			// It's ok if the file doesn't exist
+			return addArguments, deleteArguments, nil
+		}
+		return addArguments, deleteArguments, errors.Wrapf(err, "reading %s", tuningFilePath)
 	}
 	// Clean up
 	defer file.Close()
@@ -361,15 +357,12 @@ func run(_ *cobra.Command, args []string) error {
 	// Check to see if we need to tune kernel arguments
 	tuningChanged, err := updateTuningArgs(kernelTuningFile, cmdLineFile)
 	if err != nil {
-		glog.Infof("unable to parse tuning file %s: %s", kernelTuningFile, err)
+		return err
 	}
 	// If tuning changes but the oscontainer didn't we still denote we changed
 	// for the reboot
 	if tuningChanged {
 		changed = true
-		if err != nil {
-			glog.Infof(`Unable to remove kernel tuning file %s: "%s"`, kernelTuningFile, err)
-		}
 	}
 
 	if !changed {
