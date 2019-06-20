@@ -35,7 +35,7 @@ test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit:
-	go test -v ./cmd/... ./pkg/... ./lib/...
+	go test -count=1 -v ./cmd/... ./pkg/... ./lib/...
 
 # Run the code generation tasks.
 # Example:
