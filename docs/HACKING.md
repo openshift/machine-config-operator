@@ -84,6 +84,10 @@ package basis with `go test`:
 
 `go test -v github.com/openshift/machine-config-operator/pkg/apis`
 
+To disable go test caching in go > 1.10:
+
+`go test -count=1 ...`
+
 To execute all unit tests:
 
 `make test-unit`
