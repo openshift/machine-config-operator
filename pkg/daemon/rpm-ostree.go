@@ -106,7 +106,11 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 }
 
 // RunPivot executes a pivot from one deployment to another as found in the referenced
-// osImageURL. See https://github.com/openshift/pivot.
+// osImageURL. This was originally https://github.com/openshift/pivot but it's now
+// imported into the MCD itself.  The reason we execute on the host is due to SELinux;
+// see https://github.com/openshift/pivot/pull/31 and
+// https://github.com/openshift/machine-config-operator/issues/314
+// Basically rpm_ostree_t has mac_admin, container_t doesn't.
 func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 	if err := os.MkdirAll(filepath.Dir(constants.EtcPivotFile), os.FileMode(0755)); err != nil {
 		return fmt.Errorf("error creating leading dirs for %s: %v", constants.EtcPivotFile, err)
@@ -120,9 +124,22 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 	defer close(journalStopCh)
 	go followPivotJournalLogs(journalStopCh)
 
-	err := exec.Command("systemctl", "start", "pivot.service").Run()
+	service := "machine-config-daemon-host.service"
+	// We need to use pivot if it's there, because machine-config-daemon-host.service
+	// currently has a ConditionPathExists=!/usr/bin/pivot.  This code can be dropped
+	// once we don't need to care about compat with older RHCOS.
+	var err error
+	_, err = os.Stat("/usr/bin/pivot")
 	if err != nil {
-		return errors.Wrapf(err, "failed to start pivot.service")
+		if !os.IsNotExist(err) {
+			return errors.Wrapf(err, "stat(/usr/bin/pivot)")
+		}
+	} else {
+		service = "pivot.service"
+	}
+	err = exec.Command("systemctl", "start", service).Run()
+	if err != nil {
+		return errors.Wrapf(err, "failed to start %s", service)
 	}
 	return nil
 }
