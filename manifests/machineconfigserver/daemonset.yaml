@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
       - name: machine-config-server
-        image: {{.Images.MachineConfigServer}}
+        image: {{.Images.MachineConfigOperator}}
+        command: ["/usr/bin/machine-config-server"]
         args:
           - "start"
           - "--apiserver-url={{.APIServerURL}}"

@@ -56,9 +56,9 @@ func TestRenderAsset(t *testing.T) {
 		RenderConfig: &renderConfig{
 			TargetNamespace: "testing-namespace",
 			Images: &Images{
-				MachineConfigController: "{MCC: PLACEHOLDER}"},
+				MachineConfigOperator: "{MCO: PLACEHOLDER}"},
 		},
-		FindExpected: "image: {MCC: PLACEHOLDER}",
+		FindExpected: "image: {MCO: PLACEHOLDER}",
 	}, {
 		// Render same template as previous test
 		// But with a template field missing
@@ -96,7 +96,7 @@ func TestRenderAsset(t *testing.T) {
 			// Verify that any FindExpected values are actually in the string
 			if test.FindExpected != "" {
 				if !strings.Contains(str, test.FindExpected) {
-					t.Fatalf("Rendered template does not contain expected values")
+					t.Fatalf("Rendered template does not contain expected values: %s, \nGot: %s", test.FindExpected, str)
 				}
 			}
 		})
