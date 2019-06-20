@@ -16,6 +16,7 @@ import (
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -193,25 +194,28 @@ func podmanRemove(cid string) {
 }
 
 // getDefaultDeployment uses rpm-ostree status --json to get the current deployment
-func getDefaultDeployment() types.RpmOstreeDeployment {
+func getDefaultDeployment() (*types.RpmOstreeDeployment, error) {
 	// use --status for now, we can switch to D-Bus if we need more info
 	var rosState types.RpmOstreeState
 	output := utils.RunGetOut("rpm-ostree", "status", "--json")
 	if err := json.Unmarshal([]byte(output), &rosState); err != nil {
-		glog.Fatalf("Failed to parse `rpm-ostree status --json` output: %v", err)
+		return nil, errors.Wrapf(err, "Failed to parse `rpm-ostree status --json` output")
 	}
 
 	// just make it a hard error if we somehow don't have any deployments
 	if len(rosState.Deployments) == 0 {
-		glog.Fatalf("Not currently booted in a deployment")
+		return nil, errors.New("Not currently booted in a deployment")
 	}
 
-	return rosState.Deployments[0]
+	return &rosState.Deployments[0], nil
 }
 
 // pullAndRebase potentially rebases system if not already rebased.
-func pullAndRebase(container string) (imgid string, changed bool) {
-	defaultDeployment := getDefaultDeployment()
+func pullAndRebase(container string) (imgid string, changed bool, err error) {
+	defaultDeployment, err := getDefaultDeployment()
+	if err != nil {
+		return
+	}
 
 	previousPivot := ""
 	if len(defaultDeployment.CustomOrigin) > 0 {
@@ -228,7 +232,7 @@ func pullAndRebase(container string) (imgid string, changed bool) {
 
 	// If we're passed a non-canonical image, resolve it to its sha256 now
 	isCanonicalForm := true
-	if _, err := daemon.GetRefDigest(container); err != nil {
+	if _, err = daemon.GetRefDigest(container); err != nil {
 		isCanonicalForm = false
 		// In non-canonical form, we pull unconditionally right now
 		args := []string{"pull", "-q"}
@@ -236,9 +240,10 @@ func pullAndRebase(container string) (imgid string, changed bool) {
 		args = append(args, container)
 		utils.RunExt(false, numRetriesNetCommands, "podman", args...)
 	} else {
-		targetMatched, err := daemon.CompareOSImageURL(previousPivot, container)
+		var targetMatched bool
+		targetMatched, err = daemon.CompareOSImageURL(previousPivot, container)
 		if err != nil {
-			glog.Fatalf("%v", err)
+			return
 		}
 		if targetMatched {
 			changed = false
@@ -291,10 +296,12 @@ func pullAndRebase(container string) (imgid string, changed bool) {
 			glog.Infof("Using ref %s", refs[0])
 			ostreeCsum = utils.RunGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
 		} else if len(refs) > 1 {
-			glog.Fatalf("Multiple refs found in repo!")
+			err = errors.New("multiple refs found in repo")
+			return
 		} else {
 			// XXX: in the future, possibly scan the repo to find a unique .commit object
-			glog.Fatalf("No refs found in repo!")
+			err = errors.New("No refs found in repo")
+			return
 		}
 	}
 
@@ -315,8 +322,7 @@ func pullAndRebase(container string) (imgid string, changed bool) {
 	return
 }
 
-// Execute runs the command
-func Execute(cmd *cobra.Command, args []string) {
+func run(_ *cobra.Command, args []string) error {
 	var fromFile bool
 	var container string
 	if len(args) > 0 {
@@ -326,19 +332,22 @@ func Execute(cmd *cobra.Command, args []string) {
 		glog.Infof("Using image pullspec from %s", etcPivotFile)
 		data, err := ioutil.ReadFile(etcPivotFile)
 		if err != nil {
-			glog.Fatalf("Failed to read from %s: %v", etcPivotFile, err)
+			return errors.Wrapf(err, "failed to read from %s", etcPivotFile)
 		}
 		container = strings.TrimSpace(string(data))
 		fromFile = true
 	}
 
-	imgid, changed := pullAndRebase(container)
+	imgid, changed, err := pullAndRebase(container)
+	if err != nil {
+		return err
+	}
 
 	// Delete the file now that we successfully rebased
 	if fromFile {
 		if err := os.Remove(etcPivotFile); err != nil {
 			if !os.IsNotExist(err) {
-				glog.Fatalf("Failed to delete %s: %v", etcPivotFile, err)
+				return errors.Wrapf(err, "failed to delete %s", etcPivotFile)
 			}
 		}
 	}
@@ -361,7 +370,6 @@ func Execute(cmd *cobra.Command, args []string) {
 		if err != nil {
 			glog.Infof(`Unable to remove kernel tuning file %s: "%s"`, kernelTuningFile, err)
 		}
-
 	}
 
 	if !changed {
@@ -372,5 +380,14 @@ func Execute(cmd *cobra.Command, args []string) {
 	} else if reboot || utils.FileExists(runPivotRebootFile) {
 		// Reboot the machine if asked to do so
 		utils.Run("systemctl", "reboot")
+	}
+	return nil
+}
+
+// Execute runs the command
+func Execute(cmd *cobra.Command, args []string) {
+	err := run(cmd, args)
+	if err != nil {
+		glog.Fatalf("%v", err)
 	}
 }
