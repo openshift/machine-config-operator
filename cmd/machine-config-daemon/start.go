@@ -85,11 +85,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("Unable to change directory to /: %s", err)
 	}
 
-	operatingSystem, err := daemon.GetHostRunningOS()
-	if err != nil {
-		glog.Fatalf("Error found when checking operating system: %s", err)
-	}
-
 	if startOpts.nodeName == "" {
 		name, ok := os.LookupEnv("NODE_NAME")
 		if !ok || name == "" {
@@ -108,32 +103,20 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	exitCh := make(chan error)
 	defer close(exitCh)
 
-	glog.Info("Starting node writer")
-	nodeWriter := daemon.NewNodeWriter()
-	go nodeWriter.Run(stopCh)
-
-	var dn *daemon.Daemon
+	dn, err := daemon.New(
+		startOpts.nodeName,
+		daemon.NewNodeUpdaterClient(),
+		nil,
+		exitCh,
+		stopCh,
+	)
+	if err != nil {
+		glog.Fatalf("Failed to initialize single run daemon: %v", err)
+	}
 
 	// If we are asked to run once and it's a valid file system path use
 	// the bare Daemon
 	if startOpts.onceFrom != "" {
-		dn, err = daemon.New(
-			startOpts.nodeName,
-			operatingSystem,
-			daemon.NewNodeUpdaterClient(),
-			nil,
-			nil,
-			startOpts.kubeletHealthzEnabled,
-			startOpts.kubeletHealthzEndpoint,
-			nodeWriter,
-			exitCh,
-			stopCh,
-		)
-		if err != nil {
-			glog.Fatalf("Failed to initialize single run daemon: %v", err)
-		}
-		// Else we use the cluster driven daemon
-
 		err = dn.RunOnceFrom(startOpts.onceFrom, startOpts.skipReboot)
 		if err != nil {
 			glog.Fatalf("%v", err)
@@ -154,18 +137,12 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
-	dn, err = daemon.NewClusterDrivenDaemon(
-		startOpts.nodeName,
-		operatingSystem,
-		daemon.NewNodeUpdaterClient(),
-		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+	dn.ClusterConnect(
 		kubeClient,
+		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
-		nodeWriter,
-		exitCh,
-		stopCh,
 	)
 	if err != nil {
 		glog.Fatalf("Failed to initialize daemon: %v", err)

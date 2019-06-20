@@ -26,7 +26,6 @@ import (
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
@@ -56,6 +55,9 @@ type Daemon struct {
 	// OperatingSystem the operating system the MCD is running on
 	OperatingSystem string
 
+	// mock is set if we're running as non-root, probably under unit tests
+	mock bool
+
 	// NodeUpdaterClient an instance of the client which interfaces with host content deployments
 	NodeUpdaterClient NodeUpdaterClient
 
@@ -67,8 +69,6 @@ type Daemon struct {
 
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
-
-	mcClient mcfgclientset.Interface
 
 	// recorder sends events to the apiserver
 	recorder record.EventRecorder
@@ -103,9 +103,6 @@ type Daemon struct {
 	// node is the current instance of the node being processed through handleNodeUpdate
 	// or the very first instance grabbed when the daemon starts
 	node *corev1.Node
-
-	// remove the funcs below once proper e2e testing is done for updating ssh keys
-	atomicSSHKeysWriter func(igntypes.PasswdUser, string) error
 
 	queue       workqueue.RateLimitingInterface
 	enqueueNode func(*corev1.Node)
@@ -183,21 +180,30 @@ func getBootID() (string, error) {
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
-	nodeName,
-	operatingSystem string,
+	nodeName string,
 	nodeUpdaterClient NodeUpdaterClient,
-	mcClient mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
-	kubeletHealthzEnabled bool,
-	kubeletHealthzEndpoint string,
-	nodeWriter NodeWriter,
 	exitCh chan<- error,
 	stopCh <-chan struct{},
 ) (*Daemon, error) {
+	mock := false
+	if os.Getuid() != 0 {
+		mock = true
+	}
+
 	var (
 		osImageURL string
 		err        error
 	)
+
+	operatingSystem := "mock"
+	if !mock {
+		operatingSystem, err = getHostRunningOS()
+		if err != nil {
+			return nil, errors.Wrapf(err, "checking operating system")
+		}
+	}
+
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == machineConfigDaemonOSRHCOS {
 		var osVersion string
@@ -208,62 +214,55 @@ func New(
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
 
-	bootID, err := getBootID()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to read boot ID")
+	bootID := ""
+	if !mock {
+		bootID, err = getBootID()
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to read boot ID")
+		}
 	}
 
-	dn := &Daemon{
-		booting:                true,
-		name:                   nodeName,
-		OperatingSystem:        operatingSystem,
-		NodeUpdaterClient:      nodeUpdaterClient,
-		bootedOSImageURL:       osImageURL,
-		bootID:                 bootID,
-		kubeletHealthzEnabled:  kubeletHealthzEnabled,
-		kubeletHealthzEndpoint: kubeletHealthzEndpoint,
-		nodeWriter:             nodeWriter,
-		exitCh:                 exitCh,
-		stopCh:                 stopCh,
-		kubeClient:             kubeClient,
-		mcClient:               mcClient,
+	// RHEL 7.6 logger (util-linux) doesn't have the --journald flag
+	loggerSupportsJournal := true
+	if !mock {
+		if operatingSystem == machineConfigDaemonOSRHEL {
+			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
+			if err != nil {
+				return nil, errors.Wrapf(err, "running logger --help")
+			}
+			loggerSupportsJournal = strings.Contains(string(loggerOutput), "--journald")
+		}
 	}
-	dn.currentConfigPath = currentConfigPath
-	dn.atomicSSHKeysWriter = dn.atomicallyWriteSSHKey
-	dn.loggerSupportsJournal = dn.isLoggingToJournalSupported()
-	return dn, nil
+
+	return &Daemon{
+		mock:                  mock,
+		booting:               true,
+		name:                  nodeName,
+		OperatingSystem:       operatingSystem,
+		NodeUpdaterClient:     nodeUpdaterClient,
+		bootedOSImageURL:      osImageURL,
+		bootID:                bootID,
+		exitCh:                exitCh,
+		stopCh:                stopCh,
+		kubeClient:            kubeClient,
+		currentConfigPath:     currentConfigPath,
+		loggerSupportsJournal: loggerSupportsJournal,
+	}, nil
 }
 
-// NewClusterDrivenDaemon sets up the systemd and kubernetes connections needed to update the
+// ClusterConnect sets up the systemd and kubernetes connections needed to update the
 // machine.
-func NewClusterDrivenDaemon(
-	nodeName,
-	operatingSystem string,
-	nodeUpdaterClient NodeUpdaterClient,
-	mcInformer mcfginformersv1.MachineConfigInformer,
+func (dn *Daemon) ClusterConnect(
 	kubeClient kubernetes.Interface,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-	nodeWriter NodeWriter,
-	exitCh chan<- error,
-	stopCh <-chan struct{},
-) (*Daemon, error) {
-	dn, err := New(
-		nodeName,
-		operatingSystem,
-		nodeUpdaterClient,
-		nil,
-		kubeClient,
-		kubeletHealthzEnabled,
-		kubeletHealthzEndpoint,
-		nodeWriter,
-		exitCh,
-		stopCh,
-	)
-	if err != nil {
-		return nil, err
-	}
+) {
+	dn.kubeClient = kubeClient
+
+	dn.nodeWriter = newNodeWriter()
+	go dn.nodeWriter.Run(dn.stopCh)
 
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
@@ -274,8 +273,8 @@ func NewClusterDrivenDaemon(
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName})
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
+	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
 
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
@@ -290,7 +289,8 @@ func NewClusterDrivenDaemon(
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
 
-	return dn, nil
+	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
+	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -950,7 +950,7 @@ func (dn *Daemon) CheckStateOnBoot() error {
 // no cluster is present yet.
 func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, contentFrom onceFromOrigin) error {
 	if contentFrom == onceFromRemoteConfig {
-		if dn.kubeClient == nil || dn.mcClient == nil {
+		if dn.kubeClient == nil {
 			panic("running in onceFrom mode with a remote MachineConfig without a cluster")
 		}
 		// NOTE: This case expects a cluster to exists already.
