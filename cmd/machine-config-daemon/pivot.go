@@ -306,7 +306,7 @@ func pullAndRebase(container string) (imgid string, changed bool) {
 	utils.Run("rpm-ostree", "rebase", "--experimental",
 		fmt.Sprintf("%s:%s", repo, ostreeCsum),
 		"--custom-origin-url", customURL,
-		"--custom-origin-description", "Managed by pivot tool")
+		"--custom-origin-description", "Managed by machine-config-operator")
 
 	// Kill our dummy container
 	podmanRemove(types.PivotName)
