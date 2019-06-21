@@ -112,19 +112,19 @@ func TestCompareOSImageURL(t *testing.T) {
 	refA := "registry.example.com/foo/bar@sha256:0743a3cc3bcf3b4aabb814500c2739f84cb085ff4e7ec7996aef7977c4c19c7f"
 	refB := "registry.example.com/foo/baz@sha256:0743a3cc3bcf3b4aabb814500c2739f84cb085ff4e7ec7996aef7977c4c19c7f"
 	refC := "registry.example.com/foo/bar@sha256:2a76681fd15bfc06fa4aa0ff6913ba17527e075417fc92ea29f6bcc2afca24ff"
-	m, err := CompareOSImageURL(refA, refA)
+	m, err := compareOSImageURL(refA, refA)
 	if !m {
 		t.Fatalf("Expected refA ident")
 	}
-	m, err = CompareOSImageURL(refA, refB)
+	m, err = compareOSImageURL(refA, refB)
 	if !m {
 		t.Fatalf("Expected refA = refB")
 	}
-	m, err = CompareOSImageURL(refA, refC)
+	m, err = compareOSImageURL(refA, refC)
 	if m {
 		t.Fatalf("Expected refA != refC")
 	}
-	m, err = CompareOSImageURL(refA, "registry.example.com/foo/bar")
+	m, err = compareOSImageURL(refA, "registry.example.com/foo/bar")
 	if m || err == nil {
 		t.Fatalf("Expected err")
 	}
