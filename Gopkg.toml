@@ -164,6 +164,7 @@ required = [
   name = "github.com/containers/image"
   revision = "1c10a197331c71709754037e2b7f7e7fc94c65cf"
 
+# Needed by library-go
 [[override]]
   name = "k8s.io/kube-aggregator"
   branch = "release-1.14"
