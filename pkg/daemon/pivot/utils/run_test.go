@@ -6,21 +6,22 @@ import (
 	"time"
 	"io/ioutil"
 
+	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // TestRun should always pass. The function will panic if it is unable to
 // execute the shell command(s) or the command returns non-zero.
 func TestRun(t *testing.T) {
-	Run("echo", "echo", "from", "TestRun")
+	assert.Nil(t, Run("echo", "echo", "from", "TestRun"))
 }
 
 // TestRunGetOut verifies the output of running a command is
 // its output, trimmed of whitespace.
 func TestRunGetOut(t *testing.T) {
-	if result := RunGetOut("echo", "hello", "world"); result != "hello world" {
-		t.Errorf("expected 'hello world', got '%s'", result)
-	}
+	result, err := RunGetOut("echo", "hello", "world")
+	assert.Nil(t, err)
+	assert.Equal(t, "hello world", result)
 }
 
 // TestRunIgnoreErr verifies the a failed command doesn't cause exit
@@ -36,14 +37,11 @@ func TestRunIgnoreErr(t *testing.T) {
 func TestRunExt(t *testing.T) {
 	RunExt(false, 0, "echo", "echo", "from", "TestRunExt")
 
-	if result := RunExt(true, 0, "echo", "hello", "world"); result != "hello world" {
-		t.Errorf("expected 'hello world', got '%s'", result)
-	}
+	result := RunExt(true, 0, "echo", "hello", "world")
+	assert.Equal(t, "hello world", result)
 
 	tmpdir, err := ioutil.TempDir("", "run_test")
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	assert.Nil(t, err)
 	defer os.RemoveAll(tmpdir)
 	tmpf := tmpdir + "/t"
 	runExtBackoff(false, wait.Backoff{Steps: 6,
@@ -51,10 +49,6 @@ func TestRunExt(t *testing.T) {
 		Factor: 1.1},
 		"sh", "-c", "echo -n x >> " + tmpf + " && test $(stat -c '%s' " + tmpf + ") = 3")
 	s, err := os.Stat(tmpf)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if s.Size() != 3 {
-		t.Fatalf("Expected size 3")
-	}
+	assert.Nil(t, err)
+	assert.Equal(t, int64(3), s.Size())
 }

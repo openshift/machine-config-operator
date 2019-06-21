@@ -164,7 +164,10 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	for _, toAdd := range additions {
 		if toAdd.Bare {
 			changed = true
-			utils.Run("rpm-ostree", "kargs", fmt.Sprintf("--append=%s", toAdd.Key))
+			err := utils.Run("rpm-ostree", "kargs", fmt.Sprintf("--append=%s", toAdd.Key))
+			if err != nil {
+				return false, err
+			}
 		} else {
 			panic("Not supported")
 		}
@@ -173,7 +176,10 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	for _, toDelete := range deletions {
 		if toDelete.Bare {
 			changed = true
-			utils.Run("rpm-ostree", "kargs", fmt.Sprintf("--delete=%s", toDelete.Key))
+			err := utils.Run("rpm-ostree", "kargs", fmt.Sprintf("--delete=%s", toDelete.Key))
+			if err != nil {
+				return false, err
+			}
 		} else {
 			panic("Not supported")
 		}
@@ -191,7 +197,10 @@ func podmanRemove(cid string) {
 func getDefaultDeployment() (*types.RpmOstreeDeployment, error) {
 	// use --status for now, we can switch to D-Bus if we need more info
 	var rosState types.RpmOstreeState
-	output := utils.RunGetOut("rpm-ostree", "status", "--json")
+	output, err := utils.RunGetOut("rpm-ostree", "status", "--json")
+	if err != nil {
+		return nil, err
+	}
 	if err := json.Unmarshal([]byte(output), &rosState); err != nil {
 		return nil, errors.Wrapf(err, "Failed to parse `rpm-ostree status --json` output")
 	}
@@ -272,9 +281,17 @@ func pullAndRebase(container string) (imgid string, changed bool, err error) {
 	podmanRemove(types.PivotName)
 
 	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	cid := utils.RunGetOut("podman", "create", "--net=none", "--name", types.PivotName, imgid)
+	var cid string
+	cid, err = utils.RunGetOut("podman", "create", "--net=none", "--name", types.PivotName, imgid)
+	if err != nil {
+		return
+	}
 	// Use the container ID to find its mount point
-	mnt := utils.RunGetOut("podman", "mount", cid)
+	var mnt string
+	mnt, err = utils.RunGetOut("podman", "mount", cid)
+	if err != nil {
+		return
+	}
 	repo := fmt.Sprintf("%s/srv/repo", mnt)
 
 	// Now we need to figure out the commit to rebase to
@@ -289,10 +306,18 @@ func pullAndRebase(container string) (imgid string, changed bool, err error) {
 		}
 	} else {
 		glog.Infof("No com.coreos.ostree-commit label found in metadata! Inspecting...")
-		refs := strings.Split(utils.RunGetOut("ostree", "refs", "--repo", repo), "\n")
+		var refText string
+		refText, err = utils.RunGetOut("ostree", "refs", "--repo", repo)
+		if err != nil {
+			return
+		}
+		refs := strings.Split(refText, "\n")
 		if len(refs) == 1 {
 			glog.Infof("Using ref %s", refs[0])
-			ostreeCsum = utils.RunGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
+			ostreeCsum, err = utils.RunGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
+			if err != nil {
+				return
+			}
 		} else if len(refs) > 1 {
 			err = errors.New("multiple refs found in repo")
 			return
