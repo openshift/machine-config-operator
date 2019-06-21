@@ -318,11 +318,7 @@ func (dn *Daemon) processNextWorkItem() bool {
 // and then proceed to checking the state of the node, which includes
 // finalizing an update and/or reconciling the current and desired machine configs.
 func (dn *Daemon) bootstrapNode() error {
-	node, err := dn.nodeLister.Get(dn.name)
-	if err != nil {
-		return err
-	}
-	node, err = dn.loadNodeAnnotations(node)
+	node, err := dn.loadNodeAnnotations(dn.node)
 	if err != nil {
 		return err
 	}
@@ -363,18 +359,16 @@ func (dn *Daemon) syncNode(key string) error {
 		glog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
 	}()
 
-	// Handle initial setup
-	if dn.booting {
-		if err := dn.bootstrapNode(); err != nil {
-			return errors.Wrapf(err, "during bootstrap")
-		}
-		return nil
-	}
-
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
+	// If this isn't our node, nothing to do.  The node controller
+	// handles other nodes.
+	if name != dn.name {
+		return nil
+	}
+
 	node, err := dn.nodeLister.Get(name)
 	if apierrors.IsNotFound(err) {
 		glog.V(2).Infof("node %v has been deleted", key)
@@ -383,32 +377,37 @@ func (dn *Daemon) syncNode(key string) error {
 	if err != nil {
 		return err
 	}
-
-	// Deep-copy otherwise we are mutating our cache.
-	node = node.DeepCopy()
-
 	// Check for Deleted Node
 	if node.DeletionTimestamp != nil {
+		glog.Infof("Node %s was deleted!", node.Name)
 		return nil
 	}
 
-	// First check if the node that was updated is this daemon's node
-	if node.Name == dn.name {
-		// stash the current node being processed
-		dn.node = node
-		// Pass to the shared update prep method
-		current, desired, err := dn.prepUpdateFromCluster()
-		if err != nil {
-			glog.Infof("Unable to prep update: %s", err)
+	// Deep-copy otherwise we are mutating our cache.
+	node = node.DeepCopy()
+	// Update our cached copy of the node
+	dn.node = node
+
+	// Handle initial setup
+	if dn.booting {
+		if err := dn.bootstrapNode(); err != nil {
+			return errors.Wrapf(err, "during bootstrap")
+		}
+		return nil
+	}
+
+	// Pass to the shared update prep method
+	current, desired, err := dn.prepUpdateFromCluster()
+	if err != nil {
+		glog.Infof("Unable to prep update: %s", err)
+		return err
+	}
+	if current != nil || desired != nil {
+		if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
 			return err
 		}
-		if current != nil || desired != nil {
-			if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
-				return err
-			}
-		}
-		glog.V(2).Infof("Node %s is already synced", node.Name)
 	}
+	glog.V(2).Infof("Node %s is already synced", node.Name)
 	return nil
 }
 
