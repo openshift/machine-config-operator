@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"strings"
 
 	// Enable sha256 in container image references
@@ -159,9 +160,9 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	for _, toAdd := range additions {
 		if toAdd.Bare {
 			changed = true
-			err := utils.Run("rpm-ostree", "kargs", fmt.Sprintf("--append=%s", toAdd.Key))
+			err := exec.Command("rpm-ostree", "kargs", fmt.Sprintf("--append=%s", toAdd.Key)).Run()
 			if err != nil {
-				return false, err
+				return false, errors.Wrapf(err, "adding karg")
 			}
 		} else {
 			panic("Not supported")
@@ -171,9 +172,9 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	for _, toDelete := range deletions {
 		if toDelete.Bare {
 			changed = true
-			err := utils.Run("rpm-ostree", "kargs", fmt.Sprintf("--delete=%s", toDelete.Key))
+			err := exec.Command("rpm-ostree", "kargs", fmt.Sprintf("--delete=%s", toDelete.Key)).Run()
 			if err != nil {
-				return false, err
+				return false, errors.Wrapf(err, "deleting karg")
 			}
 		} else {
 			panic("Not supported")
@@ -217,7 +218,7 @@ func run(_ *cobra.Command, args []string) error {
 	// By default, delete the image.
 	if !keep {
 		// Related: https://github.com/containers/libpod/issues/2234
-		utils.RunIgnoreErr("podman", "rmi", imgid)
+		exec.Command("podman", "rmi", imgid).Run()
 	}
 
 	// Check to see if we need to tune kernel arguments
@@ -235,7 +236,10 @@ func run(_ *cobra.Command, args []string) error {
 		glog.Info("Already at target oscontainer")
 	} else if reboot || utils.FileExists(runPivotRebootFile) {
 		// Reboot the machine if asked to do so
-		utils.Run("systemctl", "reboot")
+		err := exec.Command("systemctl", "reboot").Run()
+		if err != nil {
+			return errors.Wrapf(err, "rebooting")
+		}
 	}
 	return nil
 }

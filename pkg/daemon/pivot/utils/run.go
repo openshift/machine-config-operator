@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	errors "github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -60,29 +59,4 @@ func RunExt(capture bool, retries int, command string, args ...string) string {
 		Factor:   2,               // factor by which to increase sleep
 	},
 		command, args...)
-}
-
-// Run executes a command, logging it
-func Run(command string, args ...string) error {
-	if _, err := runImpl(false, command, args...); err != nil {
-		return errors.Wrapf(err, "%s failed", command)
-	}
-	return nil
-}
-
-// RunIgnoreErr is like Run(..), but doesn't exit on errors
-func RunIgnoreErr(command string, args ...string) {
-	if _, err := runImpl(false, command, args...); err != nil {
-		glog.Warningf("(ignored) %s: %s", command, err)
-	}
-}
-
-// RunGetOut is like Run(..), but get the output as a string
-func RunGetOut(command string, args ...string) (string, error) {
-	var err error
-	var out []byte
-	if out, err = runImpl(true, command, args...); err != nil {
-		return "", errors.Wrapf(err, "%s failed", command)
-	}
-	return strings.TrimSpace(string(out)), nil
 }
