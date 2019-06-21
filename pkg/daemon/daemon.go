@@ -183,7 +183,6 @@ func New(
 	nodeUpdaterClient NodeUpdaterClient,
 	kubeClient kubernetes.Interface,
 	exitCh chan<- error,
-	stopCh <-chan struct{},
 ) (*Daemon, error) {
 	mock := false
 	if os.Getuid() != 0 {
@@ -241,7 +240,6 @@ func New(
 		bootedOSImageURL:      osImageURL,
 		bootID:                bootID,
 		exitCh:                exitCh,
-		stopCh:                stopCh,
 		kubeClient:            kubeClient,
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
