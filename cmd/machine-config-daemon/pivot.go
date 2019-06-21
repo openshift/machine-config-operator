@@ -24,7 +24,6 @@ import (
 // flag storage
 var keep bool
 var reboot bool
-var exit77 bool
 
 const (
 	// the number of times to retry commands that pull data from the network
@@ -57,7 +56,6 @@ func init() {
 	rootCmd.AddCommand(pivotCmd)
 	pivotCmd.PersistentFlags().BoolVarP(&keep, "keep", "k", false, "Do not remove container image")
 	pivotCmd.PersistentFlags().BoolVarP(&reboot, "reboot", "r", false, "Reboot if changed")
-	pivotCmd.PersistentFlags().BoolVar(&exit77, "unchanged-exit-77", false, "If unchanged, exit 77")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
 
@@ -366,10 +364,7 @@ func run(_ *cobra.Command, args []string) error {
 	}
 
 	if !changed {
-		glog.Info("Already at target pivot; exiting...")
-		if exit77 {
-			os.Exit(77)
-		}
+		glog.Info("Already at target oscontainer")
 	} else if reboot || utils.FileExists(runPivotRebootFile) {
 		// Reboot the machine if asked to do so
 		utils.Run("systemctl", "reboot")
