@@ -160,7 +160,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 
 	// If we're passed a non-canonical image, resolve it to its sha256 now
 	isCanonicalForm := true
-	if _, err = GetRefDigest(container); err != nil {
+	if _, err = getRefDigest(container); err != nil {
 		isCanonicalForm = false
 		// In non-canonical form, we pull unconditionally right now
 		args := []string{"pull", "-q"}
@@ -169,7 +169,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 		pivotutils.RunExt(false, numRetriesNetCommands, "podman", args...)
 	} else {
 		var targetMatched bool
-		targetMatched, err = CompareOSImageURL(previousPivot, container)
+		targetMatched, err = compareOSImageURL(previousPivot, container)
 		if err != nil {
 			return
 		}
