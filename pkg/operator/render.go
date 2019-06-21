@@ -68,6 +68,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	}
 
 	platform := "none"
+	//nolint:staticcheck
 	switch infra.Status.Platform {
 	case configv1.AWSPlatformType:
 		platform = "aws"
