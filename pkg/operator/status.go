@@ -135,6 +135,10 @@ func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1
 	return err
 }
 
+const (
+	failedToSyncReason = "FailedToSync"
+)
+
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
 func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
 	co, err := optr.fetchClusterOperator()
@@ -157,7 +161,7 @@ func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
 		} else {
 			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.Error())
 		}
-		reason = ierr.Error()
+		reason = failedToSyncReason
 
 		// set progressing
 		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
