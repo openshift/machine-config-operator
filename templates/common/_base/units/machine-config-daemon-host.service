@@ -1,4 +1,4 @@
-name: "machine-config-daemon-initial.service"
+name: "machine-config-daemon-host.service"
 enabled: true
 contents: |
   [Unit]
