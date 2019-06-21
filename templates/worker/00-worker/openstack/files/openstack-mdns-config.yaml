@@ -1,0 +1,17 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/mdns/config.template"
+contents:
+  inline: |
+
+    bind_address = "$NON_VIRTUAL_IP"
+    collision_avoidance = "hostname"
+
+    service {
+        name = "$CLUSTER_NAME Workstation"
+        host_name = "$SHORT_HOSTNAME"
+        type = "_workstation._tcp"
+        domain = "local."
+        port = 42424
+        ttl = 3200
+    }
