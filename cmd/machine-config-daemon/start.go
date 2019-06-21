@@ -104,7 +104,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	defer close(exitCh)
 
 	dn, err := daemon.New(
-		startOpts.nodeName,
 		daemon.NewNodeUpdaterClient(),
 		nil,
 		exitCh,
@@ -138,6 +137,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	dn.ClusterConnect(
+		startOpts.nodeName,
 		kubeClient,
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
