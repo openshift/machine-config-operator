@@ -255,7 +255,11 @@ func pullAndRebase(container string) (imgid string, changed bool, err error) {
 	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", container))
 	output := utils.RunExt(true, 1, "podman", inspectArgs...)
 	var imagedataArray []types.ImageInspection
-	json.Unmarshal([]byte(output), &imagedataArray)
+	err = json.Unmarshal([]byte(output), &imagedataArray)
+	if err != nil {
+		err = errors.Wrapf(err, "unmarshaling podman inspect")
+		return
+	}
 	imagedata := imagedataArray[0]
 	if !isCanonicalForm {
 		imgid = imagedata.RepoDigests[0]
