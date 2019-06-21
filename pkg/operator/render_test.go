@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/assert"
 )

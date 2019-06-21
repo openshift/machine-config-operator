@@ -15,7 +15,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
@@ -158,7 +158,7 @@ func TestBootstrapRun(t *testing.T) {
 			require.Len(t, paths, 1)
 			mcBytes, err := ioutil.ReadFile(paths[0])
 			require.NoError(t, err)
-			mc, err := resourceread.ReadMachineConfigV1(mcBytes)
+			mc, err := mcoResourceRead.ReadMachineConfigV1(mcBytes)
 			require.NoError(t, err)
 
 			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy
