@@ -133,8 +133,9 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 
 // podmanRemove kills and removes a container
 func podmanRemove(cid string) {
-	pivotutils.RunIgnoreErr("podman", "kill", cid)
-	pivotutils.RunIgnoreErr("podman", "rm", "-f", cid)
+	// Ignore errors here
+	exec.Command("podman", "kill", cid).Run()
+	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
 // pullAndRebase potentially rebases system if not already rebased.
@@ -153,7 +154,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 	}
 
 	var authArgs []string
-	if pivotutils.FileExists(kubeletAuthFile) {
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
 		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
 	}
 
@@ -186,9 +187,13 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 
 	inspectArgs := []string{"inspect", "--type=image"}
 	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", container))
-	output := pivotutils.RunExt(true, 1, "podman", inspectArgs...)
+	var output []byte
+	output, err = runGetOut("podman", inspectArgs...)
+	if err != nil {
+		return
+	}
 	var imagedataArray []imageInspection
-	err = json.Unmarshal([]byte(output), &imagedataArray)
+	err = json.Unmarshal(output, &imagedataArray)
 	if err != nil {
 		err = errors.Wrapf(err, "unmarshaling podman inspect")
 		return
@@ -205,14 +210,14 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 	podmanRemove(pivottypes.PivotName)
 
 	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	var cid string
-	cid, err = pivotutils.RunGetOut("podman", "create", "--net=none", "--name", pivottypes.PivotName, imgid)
+	var cid []byte
+	cid, err = runGetOut("podman", "create", "--net=none", "--name", pivottypes.PivotName, imgid)
 	if err != nil {
 		return
 	}
 	// Use the container ID to find its mount point
-	var mnt string
-	mnt, err = pivotutils.RunGetOut("podman", "mount", cid)
+	var mnt []byte
+	mnt, err = runGetOut("podman", "mount", string(cid))
 	if err != nil {
 		return
 	}
@@ -230,18 +235,20 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 		}
 	} else {
 		glog.Infof("No com.coreos.ostree-commit label found in metadata! Inspecting...")
-		var refText string
-		refText, err = pivotutils.RunGetOut("ostree", "refs", "--repo", repo)
+		var refText []byte
+		refText, err = runGetOut("ostree", "refs", "--repo", repo)
 		if err != nil {
 			return
 		}
-		refs := strings.Split(refText, "\n")
+		refs := strings.Split(string(refText), "\n")
 		if len(refs) == 1 {
 			glog.Infof("Using ref %s", refs[0])
-			ostreeCsum, err = pivotutils.RunGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
+			var ostreeCsumBytes []byte
+			ostreeCsumBytes, err = runGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
 			if err != nil {
 				return
 			}
+			ostreeCsum = string(ostreeCsumBytes)
 		} else if len(refs) > 1 {
 			err = errors.New("multiple refs found in repo")
 			return
@@ -257,10 +264,13 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 
 	// RPM-OSTree can now directly slurp from the mounted container!
 	// https://github.com/projectatomic/rpm-ostree/pull/1732
-	pivotutils.Run("rpm-ostree", "rebase", "--experimental",
+	err = exec.Command("rpm-ostree", "rebase", "--experimental",
 		fmt.Sprintf("%s:%s", repo, ostreeCsum),
 		"--custom-origin-url", customURL,
-		"--custom-origin-description", "Managed by machine-config-operator")
+		"--custom-origin-description", "Managed by machine-config-operator").Run()
+	if err != nil {
+		return
+	}
 
 	// Kill our dummy container
 	podmanRemove(pivottypes.PivotName)
