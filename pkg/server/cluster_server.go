@@ -77,7 +77,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
 			return nil, err
 		}
 	}
-	return &mc.Spec.Config, nil
+	return machineConfigToIgnition(mc), nil
 }
 
 // getClientConfig returns a Kubernetes client Config.

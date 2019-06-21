@@ -4,6 +4,8 @@ metadata:
   creationTimestamp: null
   name: test-pool
 spec:
+  configuration:
+    name: test-config
   machineConfigSelector:
     matchLabels:
       machineconfiguration.openshift.io/role: test
