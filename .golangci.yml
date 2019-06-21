@@ -25,7 +25,7 @@ linters:
     - misspell
     #- prealloc
     #- scopelint
-    - staticcheck
+    #- staticcheck
     - structcheck
     - typecheck
     - unconvert
