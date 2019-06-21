@@ -24,6 +24,7 @@ import (
 // flag storage
 var keep bool
 var reboot bool
+var fromEtcPullSpec bool
 
 const (
 	etcPivotFile       = "/etc/pivot/image-pullspec"
@@ -52,6 +53,7 @@ func init() {
 	rootCmd.AddCommand(pivotCmd)
 	pivotCmd.PersistentFlags().BoolVarP(&keep, "keep", "k", false, "Do not remove container image")
 	pivotCmd.PersistentFlags().BoolVarP(&reboot, "reboot", "r", false, "Reboot if changed")
+	pivotCmd.PersistentFlags().BoolVarP(&fromEtcPullSpec, "from-etc-pullspec", "P", false, "Parse /etc/pivot/image-pullspec")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
 
@@ -184,19 +186,19 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 }
 
 func run(_ *cobra.Command, args []string) error {
-	var fromFile bool
 	var container string
-	if len(args) > 0 {
-		container = args[0]
-		fromFile = false
-	} else {
-		glog.Infof("Using image pullspec from %s", etcPivotFile)
+	if fromEtcPullSpec || len(args) == 0 {
+		fromEtcPullSpec = true
 		data, err := ioutil.ReadFile(etcPivotFile)
 		if err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("No container specified")
+			}
 			return errors.Wrapf(err, "failed to read from %s", etcPivotFile)
 		}
 		container = strings.TrimSpace(string(data))
-		fromFile = true
+	} else {
+		container = args[0]
 	}
 
 	client := daemon.NewNodeUpdaterClient()
@@ -207,7 +209,7 @@ func run(_ *cobra.Command, args []string) error {
 	}
 
 	// Delete the file now that we successfully rebased
-	if fromFile {
+	if fromEtcPullSpec {
 		if err := os.Remove(etcPivotFile); err != nil {
 			if !os.IsNotExist(err) {
 				return errors.Wrapf(err, "failed to delete %s", etcPivotFile)
@@ -248,6 +250,7 @@ func run(_ *cobra.Command, args []string) error {
 func Execute(cmd *cobra.Command, args []string) {
 	err := run(cmd, args)
 	if err != nil {
-		glog.Fatalf("%v", err)
+		fmt.Printf("error: %v\n", err)
+		os.Exit(1)
 	}
 }
