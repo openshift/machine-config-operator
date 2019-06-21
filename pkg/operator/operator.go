@@ -35,6 +35,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/events"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -72,6 +73,7 @@ type Operator struct {
 	apiExtClient  apiextclientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
+	libgoRecorder events.Recorder
 
 	syncHandler func(ic string) error
 
@@ -141,6 +143,7 @@ func New(
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
+		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events("openshift-machine-config-operator"), "machine-config-operator", &corev1.ObjectReference{}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 

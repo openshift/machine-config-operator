@@ -23,7 +23,7 @@ import (
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -1323,7 +1323,7 @@ func (dn *Daemon) senseAndLoadOnceFrom() (interface{}, onceFromOrigin, error) {
 	glog.V(2).Infof("%s is not an Ignition config: %v. Trying MachineConfig.", dn.onceFrom, err)
 
 	// Try to parse as a machine config
-	mc, err := resourceread.ReadMachineConfigV1(content)
+	mc, err := mcoResourceRead.ReadMachineConfigV1(content)
 	if err == nil && mc != nil {
 		glog.V(2).Info("onceFrom file is of type MachineConfig")
 		return *mc, contentFrom, nil

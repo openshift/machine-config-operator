@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/lib/resourceapply"
+	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -423,7 +423,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	}
 
 	for _, mc := range mcs {
-		_, updated, err := resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mc)
+		_, updated, err := mcoResourceApply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mc)
 		if err != nil {
 			return ctrl.syncFailingStatus(cfg, err)
 		}

@@ -15,8 +15,10 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/openshift/machine-config-operator/lib/resourceapply"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -77,7 +79,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 			return fmt.Errorf("error getting asset %s: %v", crd, err)
 		}
 		c := resourceread.ReadCustomResourceDefinitionV1Beta1OrDie(crdBytes)
-		_, updated, err := resourceapply.ApplyCustomResourceDefinition(optr.apiExtClient.ApiextensionsV1beta1(), c)
+		_, updated, err := resourceapply.ApplyCustomResourceDefinition(optr.apiExtClient.ApiextensionsV1beta1(), optr.libgoRecorder, c)
 		if err != nil {
 			return err
 		}
@@ -102,8 +104,8 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		if err != nil {
 			return err
 		}
-		p := resourceread.ReadMachineConfigPoolV1OrDie(mcpBytes)
-		_, _, err = resourceapply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
+		p := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
+		_, _, err = mcoResourceApply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
 		if err != nil {
 			return err
 		}
@@ -118,7 +120,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		return err
 	}
 	cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
+	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
 	if err != nil {
 		return err
 	}
@@ -128,7 +130,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		return err
 	}
 	crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-	_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), crb)
+	_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
 	if err != nil {
 		return err
 	}
@@ -138,7 +140,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		return err
 	}
 	sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
+	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
 	if err != nil {
 		return err
 	}
@@ -147,8 +149,8 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	if err != nil {
 		return err
 	}
-	cc := resourceread.ReadControllerConfigV1OrDie(ccBytes)
-	_, _, err = resourceapply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
+	cc := mcoResourceRead.ReadControllerConfigV1OrDie(ccBytes)
+	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
 		return err
 	}
@@ -159,7 +161,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	}
 	mcc := resourceread.ReadDeploymentV1OrDie(mccBytes)
 
-	_, updated, err := resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
+	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
 	if err != nil {
 		return err
 	}
@@ -181,7 +183,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 			return err
 		}
 		cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-		_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
+		_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
 		if err != nil {
 			return err
 		}
@@ -196,7 +198,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 			return err
 		}
 		crb := resourceread.ReadRoleBindingV1OrDie(crbBytes)
-		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), crb)
+		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
 		if err != nil {
 			return err
 		}
@@ -207,7 +209,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		return err
 	}
 	crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-	_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), crb)
+	_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
 	if err != nil {
 		return err
 	}
@@ -217,7 +219,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		return err
 	}
 	sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
+	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
 	if err != nil {
 		return err
 	}
@@ -228,7 +230,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 	}
 	mcd := resourceread.ReadDaemonSetV1OrDie(mcdBytes)
 
-	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcd)
+	_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcd)
 	if err != nil {
 		return err
 	}
@@ -244,7 +246,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 		return err
 	}
 	cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
+	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
 	if err != nil {
 		return err
 	}
@@ -260,7 +262,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 			return err
 		}
 		obj := resourceread.ReadClusterRoleBindingV1OrDie(b)
-		_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), obj)
+		_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), optr.libgoRecorder, obj)
 		if err != nil {
 			return err
 		}
@@ -276,7 +278,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 			return err
 		}
 		obj := resourceread.ReadServiceAccountV1OrDie(b)
-		_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), obj)
+		_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), optr.libgoRecorder, obj)
 		if err != nil {
 			return err
 		}
@@ -287,7 +289,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 		return err
 	}
 	nbt := resourceread.ReadSecretV1OrDie(nbtBytes)
-	_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), nbt)
+	_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), optr.libgoRecorder, nbt)
 	if err != nil {
 		return err
 	}
@@ -299,7 +301,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 
 	mcs := resourceread.ReadDaemonSetV1OrDie(mcsBytes)
 
-	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcs)
+	_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcs)
 	if err != nil {
 		return err
 	}
