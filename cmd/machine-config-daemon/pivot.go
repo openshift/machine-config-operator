@@ -203,7 +203,7 @@ func run(_ *cobra.Command, args []string) error {
 
 	client := daemon.NewNodeUpdaterClient()
 
-	imgid, changed, err := client.PullAndRebase(container)
+	_, changed, err := client.PullAndRebase(container, keep)
 	if err != nil {
 		return err
 	}
@@ -215,12 +215,6 @@ func run(_ *cobra.Command, args []string) error {
 				return errors.Wrapf(err, "failed to delete %s", etcPivotFile)
 			}
 		}
-	}
-
-	// By default, delete the image.
-	if !keep {
-		// Related: https://github.com/containers/libpod/issues/2234
-		exec.Command("podman", "rmi", imgid).Run()
 	}
 
 	// Check to see if we need to tune kernel arguments
