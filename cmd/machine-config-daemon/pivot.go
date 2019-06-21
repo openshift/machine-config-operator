@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -26,12 +25,8 @@ var keep bool
 var reboot bool
 
 const (
-	// the number of times to retry commands that pull data from the network
-	numRetriesNetCommands = 5
-	etcPivotFile          = "/etc/pivot/image-pullspec"
-	runPivotRebootFile    = "/run/pivot/reboot-needed"
-	// Pull secret.  Written by the machine-config-operator
-	kubeletAuthFile = "/var/lib/kubelet/config.json"
+	etcPivotFile       = "/etc/pivot/image-pullspec"
+	runPivotRebootFile = "/run/pivot/reboot-needed"
 	// File containing kernel arg changes for tuning
 	kernelTuningFile = "/etc/pivot/kernel-args"
 	cmdLineFile      = "/proc/cmdline"
@@ -187,164 +182,6 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	return changed, nil
 }
 
-// podmanRemove kills and removes a container
-func podmanRemove(cid string) {
-	utils.RunIgnoreErr("podman", "kill", cid)
-	utils.RunIgnoreErr("podman", "rm", "-f", cid)
-}
-
-// getDefaultDeployment uses rpm-ostree status --json to get the current deployment
-func getDefaultDeployment() (*types.RpmOstreeDeployment, error) {
-	// use --status for now, we can switch to D-Bus if we need more info
-	var rosState types.RpmOstreeState
-	output, err := utils.RunGetOut("rpm-ostree", "status", "--json")
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal([]byte(output), &rosState); err != nil {
-		return nil, errors.Wrapf(err, "Failed to parse `rpm-ostree status --json` output")
-	}
-
-	// just make it a hard error if we somehow don't have any deployments
-	if len(rosState.Deployments) == 0 {
-		return nil, errors.New("Not currently booted in a deployment")
-	}
-
-	return &rosState.Deployments[0], nil
-}
-
-// pullAndRebase potentially rebases system if not already rebased.
-func pullAndRebase(container string) (imgid string, changed bool, err error) {
-	defaultDeployment, err := getDefaultDeployment()
-	if err != nil {
-		return
-	}
-
-	previousPivot := ""
-	if len(defaultDeployment.CustomOrigin) > 0 {
-		if strings.HasPrefix(defaultDeployment.CustomOrigin[0], "pivot://") {
-			previousPivot = defaultDeployment.CustomOrigin[0][len("pivot://"):]
-			glog.Infof("Previous pivot: %s", previousPivot)
-		}
-	}
-
-	var authArgs []string
-	if utils.FileExists(kubeletAuthFile) {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
-	}
-
-	// If we're passed a non-canonical image, resolve it to its sha256 now
-	isCanonicalForm := true
-	if _, err = daemon.GetRefDigest(container); err != nil {
-		isCanonicalForm = false
-		// In non-canonical form, we pull unconditionally right now
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		utils.RunExt(false, numRetriesNetCommands, "podman", args...)
-	} else {
-		var targetMatched bool
-		targetMatched, err = daemon.CompareOSImageURL(previousPivot, container)
-		if err != nil {
-			return
-		}
-		if targetMatched {
-			changed = false
-			return
-		}
-
-		// Pull the image
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		utils.RunExt(false, numRetriesNetCommands, "podman", args...)
-	}
-
-	inspectArgs := []string{"inspect", "--type=image"}
-	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", container))
-	output := utils.RunExt(true, 1, "podman", inspectArgs...)
-	var imagedataArray []types.ImageInspection
-	err = json.Unmarshal([]byte(output), &imagedataArray)
-	if err != nil {
-		err = errors.Wrapf(err, "unmarshaling podman inspect")
-		return
-	}
-	imagedata := imagedataArray[0]
-	if !isCanonicalForm {
-		imgid = imagedata.RepoDigests[0]
-		glog.Infof("Resolved to: %s", imgid)
-	} else {
-		imgid = container
-	}
-
-	// Clean up a previous container
-	podmanRemove(types.PivotName)
-
-	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	var cid string
-	cid, err = utils.RunGetOut("podman", "create", "--net=none", "--name", types.PivotName, imgid)
-	if err != nil {
-		return
-	}
-	// Use the container ID to find its mount point
-	var mnt string
-	mnt, err = utils.RunGetOut("podman", "mount", cid)
-	if err != nil {
-		return
-	}
-	repo := fmt.Sprintf("%s/srv/repo", mnt)
-
-	// Now we need to figure out the commit to rebase to
-
-	// Commit label takes priority
-	ostreeCsum, ok := imagedata.Labels["com.coreos.ostree-commit"]
-	if ok {
-		if ostreeVersion, ok := imagedata.Labels["version"]; ok {
-			glog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
-		} else {
-			glog.Infof("Pivoting to: %s", ostreeCsum)
-		}
-	} else {
-		glog.Infof("No com.coreos.ostree-commit label found in metadata! Inspecting...")
-		var refText string
-		refText, err = utils.RunGetOut("ostree", "refs", "--repo", repo)
-		if err != nil {
-			return
-		}
-		refs := strings.Split(refText, "\n")
-		if len(refs) == 1 {
-			glog.Infof("Using ref %s", refs[0])
-			ostreeCsum, err = utils.RunGetOut("ostree", "rev-parse", "--repo", repo, refs[0])
-			if err != nil {
-				return
-			}
-		} else if len(refs) > 1 {
-			err = errors.New("multiple refs found in repo")
-			return
-		} else {
-			// XXX: in the future, possibly scan the repo to find a unique .commit object
-			err = errors.New("No refs found in repo")
-			return
-		}
-	}
-
-	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
-	customURL := fmt.Sprintf("pivot://%s", imgid)
-
-	// RPM-OSTree can now directly slurp from the mounted container!
-	// https://github.com/projectatomic/rpm-ostree/pull/1732
-	utils.Run("rpm-ostree", "rebase", "--experimental",
-		fmt.Sprintf("%s:%s", repo, ostreeCsum),
-		"--custom-origin-url", customURL,
-		"--custom-origin-description", "Managed by machine-config-operator")
-
-	// Kill our dummy container
-	podmanRemove(types.PivotName)
-
-	changed = true
-	return
-}
-
 func run(_ *cobra.Command, args []string) error {
 	var fromFile bool
 	var container string
@@ -361,7 +198,9 @@ func run(_ *cobra.Command, args []string) error {
 		fromFile = true
 	}
 
-	imgid, changed, err := pullAndRebase(container)
+	client := daemon.NewNodeUpdaterClient()
+
+	imgid, changed, err := client.PullAndRebase(container)
 	if err != nil {
 		return err
 	}
