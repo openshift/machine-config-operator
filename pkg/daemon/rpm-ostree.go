@@ -66,7 +66,7 @@ type imageInspection struct {
 type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
-	PullAndRebase(string) (string, bool, error)
+	PullAndRebase(string, bool) (string, bool, error)
 	RunPivot(string) error
 }
 
@@ -139,7 +139,7 @@ func podmanRemove(cid string) {
 }
 
 // pullAndRebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed bool, err error) {
+func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid string, changed bool, err error) {
 	defaultDeployment, err := r.getBootedDeployment()
 	if err != nil {
 		return
@@ -274,6 +274,12 @@ func (r *RpmOstreeClient) PullAndRebase(container string) (imgid string, changed
 
 	// Kill our dummy container
 	podmanRemove(pivottypes.PivotName)
+
+	// By default, delete the image.
+	if !keep {
+		// Related: https://github.com/containers/libpod/issues/2234
+		exec.Command("podman", "rmi", imgid).Run()
+	}
 
 	changed = true
 	return
