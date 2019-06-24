@@ -166,15 +166,11 @@ func (f *fixture) newController() *Daemon {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 
-	d, err := New("node_name_test",
-			NewNodeUpdaterClient(),
-			nil,
-			nil,
-			nil)
+	d, err := New(NewNodeUpdaterClient(), nil)
 	if err != nil {
 		f.t.Fatalf("can't bring up daemon: %v", err)
 	}
-	d.ClusterConnect(
+	d.ClusterConnect("node_name_test",
 		f.kubeclient,
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),

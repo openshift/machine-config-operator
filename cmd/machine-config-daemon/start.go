@@ -93,10 +93,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.nodeName = name
 	}
 
-	// This channel is used to ensure all spawned goroutines exit when we exit.
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
 	// This channel is used to signal Run() something failed and to jump ship.
 	// It's purely a chan<- in the Daemon struct for goroutines to write to, and
 	// a <-chan in Run() for the main thread to listen on.
@@ -104,11 +100,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	defer close(exitCh)
 
 	dn, err := daemon.New(
-		startOpts.nodeName,
 		daemon.NewNodeUpdaterClient(),
-		nil,
 		exitCh,
-		stopCh,
 	)
 	if err != nil {
 		glog.Fatalf("Failed to initialize single run daemon: %v", err)
@@ -134,10 +127,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("Cannot initialize kubeClient: %v", err)
 	}
 
+	// This channel is used to ensure all spawned goroutines exit when we exit.
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
 	ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	dn.ClusterConnect(
+		startOpts.nodeName,
 		kubeClient,
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
