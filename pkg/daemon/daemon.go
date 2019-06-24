@@ -313,28 +313,6 @@ func (dn *Daemon) processNextWorkItem() bool {
 	return true
 }
 
-// bootstrapNode takes care of the very first sync of the MCD on a node.
-// It loads the node annotation from the bootstrap (if we're really bootstrapping)
-// and then proceed to checking the state of the node, which includes
-// finalizing an update and/or reconciling the current and desired machine configs.
-func (dn *Daemon) bootstrapNode() error {
-	node, err := dn.nodeLister.Get(dn.name)
-	if err != nil {
-		return err
-	}
-	node, err = dn.loadNodeAnnotations(node)
-	if err != nil {
-		return err
-	}
-	dn.node = node
-	if err := dn.CheckStateOnBoot(); err != nil {
-		return err
-	}
-	// finished syncing node for the first time
-	dn.booting = false
-	return nil
-}
-
 func (dn *Daemon) handleErr(err error, key interface{}) {
 	if err == nil {
 		dn.queue.Forget(key)
@@ -363,18 +341,16 @@ func (dn *Daemon) syncNode(key string) error {
 		glog.V(4).Infof("Finished syncing node %q (%v)", key, time.Since(startTime))
 	}()
 
-	// Handle initial setup
-	if dn.booting {
-		if err := dn.bootstrapNode(); err != nil {
-			return errors.Wrapf(err, "during bootstrap")
-		}
-		return nil
-	}
-
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
+	// If this isn't our node, nothing to do.  The node controller
+	// handles other nodes.
+	if name != dn.name {
+		return nil
+	}
+
 	node, err := dn.nodeLister.Get(name)
 	if apierrors.IsNotFound(err) {
 		glog.V(2).Infof("node %v has been deleted", key)
@@ -383,32 +359,44 @@ func (dn *Daemon) syncNode(key string) error {
 	if err != nil {
 		return err
 	}
-
-	// Deep-copy otherwise we are mutating our cache.
-	node = node.DeepCopy()
-
 	// Check for Deleted Node
 	if node.DeletionTimestamp != nil {
+		glog.Infof("Node %s was deleted!", node.Name)
 		return nil
 	}
 
-	// First check if the node that was updated is this daemon's node
-	if node.Name == dn.name {
-		// stash the current node being processed
-		dn.node = node
-		// Pass to the shared update prep method
-		current, desired, err := dn.prepUpdateFromCluster()
-		if err != nil {
-			glog.Infof("Unable to prep update: %s", err)
+	// Deep-copy otherwise we are mutating our cache.
+	node = node.DeepCopy()
+	// Update our cached copy of the node
+	dn.node = node
+
+	// Take care of the very first sync of the MCD on a node.
+	// This loads the node annotation from the bootstrap (if we're really bootstrapping)
+	// and then proceed to checking the state of the node, which includes
+	// finalizing an update and/or reconciling the current and desired machine configs.
+	if dn.booting {
+		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
 		}
-		if current != nil || desired != nil {
-			if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
-				return err
-			}
-		}
-		glog.V(2).Infof("Node %s is already synced", node.Name)
+		// finished syncing node for the first time;
+		// currently we return immediately here, although
+		// I think we should change this to continue.
+		dn.booting = false
+		return nil
 	}
+
+	// Pass to the shared update prep method
+	current, desired, err := dn.prepUpdateFromCluster()
+	if err != nil {
+		glog.Infof("Unable to prep update: %s", err)
+		return err
+	}
+	if current != nil || desired != nil {
+		if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
+			return err
+		}
+	}
+	glog.V(2).Infof("Node %s is already synced", node.Name)
 	return nil
 }
 
@@ -806,14 +794,20 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 	return writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON)
 }
 
-// CheckStateOnBoot is a core entrypoint for our state machine.
+// checkStateOnFirstRun is a core entrypoint for our state machine.
 // It determines whether we're in our desired state, or if we're
 // transitioning between states, and whether or not we need to update
 // to a new state. It also checks if someone jumped on a node before
 // the daemon took over.
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
-func (dn *Daemon) CheckStateOnBoot() error {
+func (dn *Daemon) checkStateOnFirstRun() error {
+	node, err := dn.loadNodeAnnotations(dn.node)
+	if err != nil {
+		return err
+	}
+	// Update our cached copy
+	dn.node = node
 	pendingConfigName, err := dn.getPendingState()
 	if err != nil {
 		return err
