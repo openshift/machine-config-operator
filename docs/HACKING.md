@@ -291,3 +291,53 @@ the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
 ```
 OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v{version number} bin/openshift-install create cluster --log-level=debug
 ```
+
+## Hacking on `machine-os-content`
+
+If you own part of the operating system (from kernel to kubelet) you
+are part of the `machine-os-content`.  More information in [OSUpgrades.md].
+You will want a workflow for testing changes to a cluster.
+
+### Directly applying changes live to a node
+
+The simplest workflow is to `use oc debug node/` to start testing your changes on a single worker node.
+Commands to use here include `rpm-ostree usroverlay` and/or `rpm-ostree override replace`.
+The first one gives you a writable overlayfs on `/usr` and you can easily
+replace binaries there (e.g. `/usr/bin/crio`).  For anything that requires a reboot
+(particularly the `kernel` package) you'll need to use `rpm-ostree override replace`.
+
+### Applying a custom oscontainer
+
+A more advanced flow is to build a custom `machine-os-content`
+container; this exercises applying updates the same way that is used by
+the default upgrade path.  This can be useful if for example you're testing
+code related to upgrades.  For this, see https://github.com/coreos/coreos-assembler/pull/489
+(A future iteration of this document will better describe this part)
+But let's assume you have a custom container and have pushed to a registry, for
+this example `quay.io/example/machine-os-content:latest`.
+
+Once you have an oscontainer, you can again use `oc debug node/` and  `pivot` to directly switch
+to the target oscontainer, e.g. `pivot quay.io/example/machine-os-content:latest`.
+If you choose this path though the MCD will go degraded until you revert the change.
+
+If you want to roll it out to the entire cluster using the MCO, first scale down the CVO:
+`oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator`.
+
+Then,
+`oc -n openshift-machine-config-operator edit configmap/machine-config-osimageurl`
+and change the `osImageURL: quay.io/example/machine-os-content@sha256:...`.
+Notice the use of the pull-by-digest form `@sha256`; this is required by the MCO.
+
+This will follow the upgrade process that's normally used for upgrades and only
+drain/reboot a single node at a time.
+
+### Replacing `machine-os-content` in a new release image
+
+The method that best matches the way true upgrades work though is to build
+a custom release image that includes your custom `machine-os-content` as an
+override.  To do this, follow the instructions above for creating a custom
+release image, but instead of overriding `machine-config-operator`, override
+`machine-os-content`.
+
+At the time of this writing, the [kubelet](https://github.com/smarterclayton/origin/blob/4de957b019aee56931b1a29af148cf64865a969b/images/os/Dockerfile)
+has code to do this in CI, and work is in progress to [replicate that for cri-o](https://github.com/openshift/release/pull/4030).
