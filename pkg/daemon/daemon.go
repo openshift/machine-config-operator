@@ -181,7 +181,6 @@ func getBootID() (string, error) {
 // machine.
 func New(
 	nodeUpdaterClient NodeUpdaterClient,
-	kubeClient kubernetes.Interface,
 	exitCh chan<- error,
 ) (*Daemon, error) {
 	mock := false
@@ -240,7 +239,6 @@ func New(
 		bootedOSImageURL:      osImageURL,
 		bootID:                bootID,
 		exitCh:                exitCh,
-		kubeClient:            kubeClient,
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
 	}, nil
