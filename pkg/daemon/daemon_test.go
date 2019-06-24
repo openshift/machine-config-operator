@@ -166,7 +166,7 @@ func (f *fixture) newController() *Daemon {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 
-	d, err := New(NewNodeUpdaterClient(), nil, nil)
+	d, err := New(NewNodeUpdaterClient(), nil)
 	if err != nil {
 		f.t.Fatalf("can't bring up daemon: %v", err)
 	}
