@@ -3,6 +3,7 @@ enabled: true
 contents: |
   [Unit]
   Description=Machine Config Daemon Initial
+  EnvironmentFile=/etc/machine-config-daemon/proxy
   ConditionPathExists=/etc/pivot/image-pullspec
   # If pivot exists, defer to it
   ConditionPathExists=!/usr/bin/pivot

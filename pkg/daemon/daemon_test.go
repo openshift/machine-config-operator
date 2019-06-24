@@ -10,6 +10,8 @@ import (
 	"time"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	configfake "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configinformer "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -133,8 +135,9 @@ func TestCompareOSImageURL(t *testing.T) {
 type fixture struct {
 	t *testing.T
 
-	client     *fake.Clientset
-	kubeclient *k8sfake.Clientset
+	client       *fake.Clientset
+	kubeclient   *k8sfake.Clientset
+	configclient *configfake.Clientset
 
 	mcLister   []*mcfgv1.MachineConfig
 	nodeLister []*corev1.Node
@@ -162,15 +165,17 @@ var (
 func (f *fixture) newController() *Daemon {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
+	f.configclient = configfake.NewSimpleClientset()
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
+	configI := configinformer.NewSharedInformerFactory(f.configclient, noResyncPeriodFunc())
 
 	d, err := New("node_name_test",
-			NewNodeUpdaterClient(),
-			nil,
-			nil,
-			nil)
+		NewNodeUpdaterClient(),
+		nil,
+		nil,
+		nil)
 	if err != nil {
 		f.t.Fatalf("can't bring up daemon: %v", err)
 	}
@@ -178,6 +183,7 @@ func (f *fixture) newController() *Daemon {
 		f.kubeclient,
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
+		configI.Config().V1().Proxies(),
 		false,
 		"",
 	)

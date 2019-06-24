@@ -22,6 +22,8 @@ import (
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
+	configv1lister "github.com/openshift/client-go/config/listers/config/v1"
+	configv1informer "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	drain "github.com/openshift/kubernetes-drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -80,6 +82,9 @@ type Daemon struct {
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
 
+	proxyLister       configv1lister.ProxyLister
+	proxyListerSynced cache.InformerSynced
+
 	// onceFrom defines where the source config is to run the daemon once and exit
 	onceFrom string
 
@@ -128,6 +133,8 @@ const (
 	// pendingStateMessageID is the id we store the pending state in journal. We use it to
 	// also retrieve the pending config after a reboot
 	pendingStateMessageID = "machine-config-daemon-pending-state"
+	// proxyPath defines the environment file path used to inject proxies from cluster when running pivot
+	proxyPath = "/etc/machine-config-daemon/proxy"
 
 	kubeletHealthzPollingInterval  = 30 * time.Second
 	kubeletHealthzTimeout          = 30 * time.Second
@@ -256,6 +263,7 @@ func (dn *Daemon) ClusterConnect(
 	kubeClient kubernetes.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	proxyInformer configv1informer.ProxyInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 ) {
@@ -285,6 +293,8 @@ func (dn *Daemon) ClusterConnect(
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
+	dn.proxyLister = proxyInformer.Lister()
+	dn.proxyListerSynced = proxyInformer.Informer().HasSynced
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
@@ -499,7 +509,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	defer utilruntime.HandleCrash()
 	defer dn.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced, dn.proxyListerSynced) {
 		return errors.New("failed to sync initial listers cache")
 	}
 

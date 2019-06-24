@@ -430,15 +430,15 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:1dd4900dc60a20a67c3d99f638bcdeb362faa83a62cd49d5cbde543daa87b2ba"
+  digest = "1:8941c6f7cefee9a75f4991d1979808094a3f97a59e4d6076cde9da64b2ca8a67"
   name = "github.com/openshift/api"
   packages = ["config/v1"]
   pruneopts = "NUT"
-  revision = "10f647f62efca0c361334c29499f68ad1a37e266"
+  revision = "e6261f37404f71d47f1c44a2dd387850732e5948"
 
 [[projects]]
   branch = "master"
-  digest = "1:be548006c42411cba93d28f10365809319961c811ffeb7fe13e267d0c74f5f42"
+  digest = "1:9cd8d9a994e377cabe084821157325f2a272267ccdfce1723cae6aaf43655753"
   name = "github.com/openshift/client-go"
   packages = [
     "config/clientset/versioned",
@@ -453,7 +453,7 @@
     "config/listers/config/v1",
   ]
   pruneopts = "NUT"
-  revision = "0255926f53935175fe90b8e7672c4c06c17d79e6"
+  revision = "8892c0adc000741c33af70e05f4ede47725d0773"
 
 [[projects]]
   digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
@@ -1174,6 +1174,7 @@
     "github.com/google/renameio",
     "github.com/imdario/mergo",
     "github.com/kubernetes-sigs/cri-o/pkg/config",
+    "github.com/opencontainers/go-digest",
     "github.com/openshift/api/config/v1",
     "github.com/openshift/client-go/config/clientset/versioned",
     "github.com/openshift/client-go/config/clientset/versioned/fake",
@@ -1186,6 +1187,7 @@
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
     "github.com/pkg/errors",
     "github.com/spf13/cobra",
+    "github.com/spf13/pflag",
     "github.com/stretchr/testify/assert",
     "github.com/stretchr/testify/require",
     "github.com/vincent-petithory/dataurl",

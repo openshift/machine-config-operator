@@ -25,6 +25,7 @@ import (
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -802,12 +803,32 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
 	}
 
+	if err := dn.writeProxyEnvs(); err != nil {
+		return err
+	}
+
 	glog.Infof("Updating OS to %s", newURL)
 	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
 		return fmt.Errorf("failed to run pivot: %v", err)
 	}
 
 	return nil
+}
+
+func (dn *Daemon) writeProxyEnvs() error {
+	proxyCfg, err := dn.proxyLister.Get("cluster")
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		// no proxy configured
+		return os.Remove(proxyPath)
+	}
+ 	proxyEnvs := fmt.Sprintf(`HTTP_PROXY=%s
+HTTPS_PROXY=%s
+NO_PROXY=%s
+`, proxyCfg.Status.HTTPProxy, proxyCfg.Status.HTTPSProxy, proxyCfg.Status.NoProxy)
+	return writeFileAtomicallyWithDefaults(proxyPath, []byte(proxyEnvs))
 }
 
 func (dn *Daemon) getPendingStateLegacyLogger() (string, error) {
