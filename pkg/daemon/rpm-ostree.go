@@ -124,6 +124,11 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 	defer close(journalStopCh)
 	go followPivotJournalLogs(journalStopCh)
 
+	// This is written by code injected by the MCS, but we always want the MCD to be in control of reboots
+	if err := os.Remove("/run/pivot/reboot-needed"); err != nil && !os.IsNotExist(err) {
+		return errors.Wrap(err, "deleting pivot reboot-needed file")
+	}
+
 	service := "machine-config-daemon-host.service"
 	// We need to use pivot if it's there, because machine-config-daemon-host.service
 	// currently has a ConditionPathExists=!/usr/bin/pivot.  This code can be dropped
