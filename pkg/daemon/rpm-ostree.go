@@ -122,6 +122,9 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 	defer close(journalStopCh)
 	go followPivotJournalLogs(journalStopCh)
 
+	if err := os.Remove("/etc/pivot/reboot-needed"); err != nil {
+		return errors.Wrap(err, "deleting pivot reboot-needed file")
+	}
 	err := exec.Command("systemctl", "start", "pivot.service").Run()
 	if err != nil {
 		return errors.Wrapf(err, "failed to start pivot.service")
