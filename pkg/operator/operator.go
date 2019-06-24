@@ -395,9 +395,9 @@ func (optr *Operator) sync(key string) error {
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
 		{"pools", optr.syncMachineConfigPools},
+		{"mcd", optr.syncMachineConfigDaemon},
 		{"mcc", optr.syncMachineConfigController},
 		{"mcs", optr.syncMachineConfigServer},
-		{"mcd", optr.syncMachineConfigDaemon},
 		{"required-pools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(rc, syncFuncs)
