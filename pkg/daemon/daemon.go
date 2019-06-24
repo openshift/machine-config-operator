@@ -180,11 +180,8 @@ func getBootID() (string, error) {
 // New sets up the systemd and kubernetes connections needed to update the
 // machine.
 func New(
-	nodeName string,
 	nodeUpdaterClient NodeUpdaterClient,
-	kubeClient kubernetes.Interface,
 	exitCh chan<- error,
-	stopCh <-chan struct{},
 ) (*Daemon, error) {
 	mock := false
 	if os.Getuid() != 0 {
@@ -237,14 +234,11 @@ func New(
 	return &Daemon{
 		mock:                  mock,
 		booting:               true,
-		name:                  nodeName,
 		OperatingSystem:       operatingSystem,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
 		bootID:                bootID,
 		exitCh:                exitCh,
-		stopCh:                stopCh,
-		kubeClient:            kubeClient,
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
 	}, nil
@@ -253,12 +247,14 @@ func New(
 // ClusterConnect sets up the systemd and kubernetes connections needed to update the
 // machine.
 func (dn *Daemon) ClusterConnect(
+	name string,
 	kubeClient kubernetes.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 ) {
+	dn.name = name
 	dn.kubeClient = kubeClient
 
 	dn.nodeWriter = newNodeWriter()
