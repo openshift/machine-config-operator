@@ -28,8 +28,10 @@ env VERSION_OVERRIDE=%{version} SOURCE_GIT_COMMIT=%{commit} make daemon
 
 %install
 install -D -m 0755 _output/linux/*/%{name} $RPM_BUILD_ROOT/usr/libexec/%{name}
+install -D -m 0755 cmd/machine-config-daemon/pivot.sh $RPM_BUILD_ROOT/%{_bindir}/pivot
 
 %files
 %license LICENSE
 %doc README.md
 %{_libexecdir}/%{name}
+%{_bindir}/pivot
