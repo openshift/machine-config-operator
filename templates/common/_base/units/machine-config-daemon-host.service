@@ -4,8 +4,8 @@ contents: |
   [Unit]
   Description=Machine Config Daemon Initial
   ConditionPathExists=/etc/pivot/image-pullspec
-  # If pivot exists, defer to it
-  ConditionPathExists=!/usr/bin/pivot
+  # If pivot exists, defer to it.  Note similar code in update.go
+  ConditionPathExists=!/usr/lib/systemd/system/pivot.service
   After=ignition-firstboot-complete.service
   Before=kubelet.service
 
