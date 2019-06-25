@@ -34,14 +34,12 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 }
 
 func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv1.MachineConfigPoolStatus {
-	previousUpdated := mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated)
-
 	machineCount := int32(len(nodes))
 
-	updatedMachines := getUpdatedMachines(pool.Status.Configuration.Name, nodes)
+	updatedMachines := getUpdatedMachines(pool.Spec.Configuration.Name, nodes)
 	updatedMachineCount := int32(len(updatedMachines))
 
-	readyMachines := getReadyMachines(pool.Status.Configuration.Name, nodes)
+	readyMachines := getReadyMachines(pool.Spec.Configuration.Name, nodes)
 	readyMachineCount := int32(len(readyMachines))
 
 	unavailableMachines := getUnavailableMachines(nodes)
@@ -73,22 +71,26 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		status.Conditions = append(status.Conditions, conditions[i])
 	}
 
-	if updatedMachineCount == machineCount &&
+	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
-		unavailableMachineCount == 0 {
+		unavailableMachineCount == 0
+
+	if allUpdated {
 		//TODO: update api to only have one condition regarding status of update.
-		updatedMsg := fmt.Sprintf("All nodes are updated with %s", pool.Status.Configuration.Name)
+		updatedMsg := fmt.Sprintf("All nodes are updated with %s", pool.Spec.Configuration.Name)
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, updatedMsg, "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
-		if !previousUpdated {
-			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
-		}
+
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+		if status.Configuration.Name != pool.Spec.Configuration.Name {
+			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
+			status.Configuration = pool.Spec.Configuration
+		}
 	} else {
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
-		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, fmt.Sprintf("All nodes are updating to %s", pool.Status.Configuration.Name), "")
+		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name), "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 	}
 

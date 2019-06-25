@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"github.com/pkg/errors"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/stretchr/testify/assert"
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
@@ -73,10 +75,9 @@ func createIgnFile(path, content, fs string, mode int) ignv2_2types.File {
 
 func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 	// create a dummy MC
-	mcName := fmt.Sprintf("%s-%s", name, uuid.NewUUID())
 	mcadd := &mcv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name: mcName,
+		Name: fmt.Sprintf("%s-%s", name, uuid.NewUUID()),
 		// TODO(runcom): hardcoded to workers for safety
 		Labels: mcLabelForWorkers(),
 	}
@@ -92,7 +93,55 @@ func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
 			},
 		},
 	}
+
 	return mcadd
+}
+
+// waitForRenderedConfig polls a MachineConfigPool until it has
+// included the given mcName in its config, and returns the new
+// rendered config name.
+func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName string) (string, error) {
+	var renderedConfig string
+	startTime := time.Now()
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, mc := range mcp.Spec.Configuration.Source {
+			if mc.Name == mcName {
+				renderedConfig = mcp.Spec.Configuration.Name
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		return "", errors.Wrapf(err, "machine config %s hasn't been picked by pool %s", mcName, pool)
+	}
+	t.Logf("Pool %s has rendered config %s with %s (waited %v)", pool, mcName, renderedConfig, time.Since(startTime))
+	return renderedConfig, nil
+}
+
+// waitForPoolComplete polls a pool until it has completed an update to target
+func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
+	startTime := time.Now()
+	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcp.Status.Configuration.Name != target {
+			return false, nil
+		}
+		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolUpdated) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		return errors.Wrapf(err, "pool %s didn't report updated to %s", pool, target)
+	}
+	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
+	return nil
 }
 
 func TestMCDeployed(t *testing.T) {
@@ -101,6 +150,7 @@ func TestMCDeployed(t *testing.T) {
 
 	// TODO: bring this back to 10
 	for i := 0; i < 5; i++ {
+		startTime := time.Now()
 		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
 
 		// create the dummy MC now
@@ -109,46 +159,23 @@ func TestMCDeployed(t *testing.T) {
 			t.Errorf("failed to create machine config %v", err)
 		}
 
-		// grab the latest worker- MC
-		var newMCName string
-		if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-			mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-			if err != nil {
-				return false, err
-			}
-			for _, mc := range mcp.Status.Configuration.Source {
-				if mc.Name == mcadd.Name {
-					newMCName = mcp.Status.Configuration.Name
-					return true, nil
-				}
-			}
-			return false, nil
-		}); err != nil {
-			t.Errorf("machine config hasn't been picked by the pool: %v", err)
+		t.Logf("Created %s", mcadd.Name)
+		renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+		if err != nil {
+			t.Errorf("%v", err)
 		}
-
-		visited := make(map[string]bool)
-		if err := wait.Poll(2*time.Second, 30*time.Minute, func() (bool, error) {
-			nodes, err := getNodesByRole(cs, "worker")
-			if err != nil {
-				return false, nil
-			}
-			for _, node := range nodes {
-				if visited[node.Name] {
-					continue
-				}
-				if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
-					visited[node.Name] = true
-					if len(visited) == len(nodes) {
-						return true, nil
-					}
-					continue
-				}
-			}
-			return false, nil
-		}); err != nil {
-			t.Errorf("machine config didn't result in file being on any worker: %v", err)
+		if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+			t.Fatal(err)
 		}
+		nodes, err := getNodesByRole(cs, "worker")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, node := range nodes {
+			assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
+			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
+		}
+		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
 	}
 }
 
@@ -200,77 +227,49 @@ func TestUpdateSSH(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
+	t.Logf("Created %s", mcadd.Name)
 
 	// grab the latest worker- MC
-	var newMCName string
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		for _, mc := range mcp.Status.Configuration.Source {
-			if mc.Name == mcName {
-				newMCName = mcp.Status.Configuration.Name
-				return true, nil
-			}
-		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config hasn't been picked by the pool: %v", err)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
+		listOptions := metav1.ListOptions{
+			FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
+		}
+		listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
 
-	visited := make(map[string]bool)
-	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
-		nodes, err := getNodesByRole(cs, "worker")
+		mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
 		if err != nil {
-			return false, err
+			t.Fatal(err)
 		}
-		for _, node := range nodes {
-			if visited[node.Name] {
-				continue
-			}
-			// check that the new MC is in the annotations and that the MCD state is Done.
-			if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == newMCName &&
-				node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == constants.MachineConfigDaemonStateDone {
-				// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
-				listOptions := metav1.ListOptions{
-					FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
-				}
-				listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
-
-				mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
-				if err != nil {
-					return false, nil
-				}
-				if len(mcdList.Items) != 1 {
-					t.Logf("did not find any mcd pods")
-					return false, nil
-				}
-				mcdName := mcdList.Items[0].ObjectMeta.Name
-
-				// now rsh into that daemon and grep the authorized key file to check if 1234_test was written
-				// must do both commands in same shell, combine commands into one exec.Command()
-				found, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-					"grep", "1234_test", "/rootfs/home/core/.ssh/authorized_keys").CombinedOutput()
-				if err != nil {
-					t.Logf("unable to read authorized_keys on daemon: %s got: %s got err: %v", mcdName, found, err)
-					return false, nil
-				}
-				if !strings.Contains(string(found), "1234_test") {
-					t.Logf("updated ssh keys not found in authorized_keys, got %s", found)
-					return false, nil
-				}
-
-				visited[node.Name] = true
-				if len(visited) == len(nodes) {
-					return true, nil
-				}
-				continue
-			}
+		if len(mcdList.Items) != 1 {
+			t.Fatalf("Failed to find MCD for node %s", node.Name)
 		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config didn't result in ssh keys being on any worker: %v", err)
+		mcdName := mcdList.Items[0].ObjectMeta.Name
+
+		// now rsh into that daemon and grep the authorized key file to check if 1234_test was written
+		// must do both commands in same shell, combine commands into one exec.Command()
+		found, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"grep", "1234_test", "/rootfs/home/core/.ssh/authorized_keys").CombinedOutput()
+		if err != nil {
+			t.Fatalf("unable to read authorized_keys on daemon: %s got: %s got err: %v", mcdName, found, err)
+		}
+		if !strings.Contains(string(found), "1234_test") {
+			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", found)
+		}
+		t.Logf("Node %s has SSH key", node.Name)
 	}
 }
 
@@ -353,22 +352,9 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		t.Errorf("failed to create machine config %v", err)
 	}
 
-	// grab the latest worker- MC
-	var newMCName string
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		for _, mc := range mcp.Status.Configuration.Source {
-			if mc.Name == mcadd.Name {
-				newMCName = mcp.Status.Configuration.Name
-				return true, nil
-			}
-		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("machine config hasn't been picked by the pool: %v", err)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	if err != nil {
+		t.Errorf("%v", err)
 	}
 
 	// verify that one node picked the above up
@@ -378,7 +364,8 @@ func TestReconcileAfterBadMC(t *testing.T) {
 			return false, err
 		}
 		for _, node := range nodes {
-			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == newMCName && node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
+			if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == renderedConfig &&
+				node.Annotations[constants.MachineConfigDaemonStateAnnotationKey] != constants.MachineConfigDaemonStateDone {
 				// just check that we have the annotation here, w/o strings checking anything that can flip fast causing flakes
 				if node.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] != "" {
 					return true, nil
@@ -410,17 +397,8 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	}
 
 	// wait for the mcp to go back to previous config
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		if mcp.Status.Configuration.Name == workerOldMc {
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
-		t.Errorf("old machine config hasn't been picked by the pool: %v", err)
+	if err := waitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+		t.Fatal(err)
 	}
 
 	visited := make(map[string]bool)
