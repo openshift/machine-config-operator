@@ -15,7 +15,6 @@ import (
 	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
-	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -228,7 +227,11 @@ func run(_ *cobra.Command, args []string) error {
 		changed = true
 	}
 
-	runPivotRebootExists := utils.FileExists(runPivotRebootFile)
+	_, err = os.Stat(runPivotRebootFile)
+	if err != nil && !os.IsNotExist(err) {
+		return errors.Wrapf(err, "Checking %s", runPivotRebootFile)
+	}
+	runPivotRebootExists := err == nil
 	if !changed {
 		glog.Info("Already at target oscontainer")
 	} else if reboot || runPivotRebootExists {
