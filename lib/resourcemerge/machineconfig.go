@@ -53,6 +53,10 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 		*modified = true
 		(*existing).Config = required.Config
 	}
+	if existing.Fips != required.Fips {
+		*modified = true
+		(*existing).Fips = required.Fips
+	}
 }
 
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {
