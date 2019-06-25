@@ -367,13 +367,19 @@ func (dn *Daemon) syncNode(key string) error {
 	dn.node = node
 
 	// Take care of the very first sync of the MCD on a node.
-	// This loads the node annotation from the bootstrap (if we're really bootstrapping)
-	// and then proceed to checking the state of the node, which includes
-	// finalizing an update and/or reconciling the current and desired machine configs.
 	if dn.booting {
+		// This loads the node annotation from the bootstrap (if we're really bootstrapping)
+		// and then proceed to checking the state of the node, which includes
+		// finalizing an update and/or reconciling the current and desired machine configs.
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
 		}
+
+		// And check SSH here
+		if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
+			return fmt.Errorf("error detecting previous SSH accesses: %v", err)
+		}
+
 		// finished syncing node for the first time;
 		// currently we return immediately here, although
 		// I think we should change this to continue.
@@ -856,9 +862,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	state, err := dn.getStateAndConfigs(bootstrapping)
 	if err != nil {
 		return err
-	}
-	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
-		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
 	}
 
 	if state.bootstrapping {
