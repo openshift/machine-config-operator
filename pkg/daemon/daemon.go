@@ -633,8 +633,21 @@ type stateAndConfigs struct {
 	desiredConfig *mcfgv1.MachineConfig
 }
 
-func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs, error) {
-	_, err := os.Lstat(constants.InitialNodeAnnotationsFilePath)
+// getStateAndConfigs captures initial state of the MCD/node
+func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
+	pendingConfigName, err := dn.getPendingState()
+	if err != nil {
+		return nil, err
+	}
+	// XXX: drop this
+	// we need this compatibility layer for now
+	if pendingConfigName == "" {
+		pendingConfigName, err = dn.getPendingConfig()
+		if err != nil {
+			return nil, err
+		}
+	}
+	_, err = os.Lstat(constants.InitialNodeAnnotationsFilePath)
 	var bootstrapping bool
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -804,19 +817,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 	// Update our cached copy
 	dn.node = node
-	pendingConfigName, err := dn.getPendingState()
-	if err != nil {
-		return err
-	}
-	// XXX: drop this
-	// we need this compatibility layer for now
-	if pendingConfigName == "" {
-		pendingConfigName, err = dn.getPendingConfig()
-		if err != nil {
-			return err
-		}
-	}
-	state, err := dn.getStateAndConfigs(pendingConfigName)
+	state, err := dn.getStateAndConfigs()
 	if err != nil {
 		return err
 	}
