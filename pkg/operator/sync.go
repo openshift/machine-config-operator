@@ -143,16 +143,6 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		return err
 	}
 
-	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
-	if err != nil {
-		return err
-	}
-	cc := resourceread.ReadControllerConfigV1OrDie(ccBytes)
-	_, _, err = resourceapply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
-	if err != nil {
-		return err
-	}
-
 	mccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/deployment.yaml")
 	if err != nil {
 		return err
@@ -164,11 +154,20 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		return err
 	}
 	if updated {
-		waitErrs := []error{optr.waitForDeploymentRollout(mcc), optr.waitForControllerConfigToBeCompleted(cc)}
-		agg := utilerrors.NewAggregate(waitErrs)
-		return agg
+		if err := optr.waitForDeploymentRollout(mcc); err != nil {
+			return err
+		}
 	}
-	return nil
+	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
+	if err != nil {
+		return err
+	}
+	cc := resourceread.ReadControllerConfigV1OrDie(ccBytes)
+	_, _, err = resourceapply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
+	if err != nil {
+		return err
+	}
+	return optr.waitForControllerConfigToBeCompleted(cc)
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
