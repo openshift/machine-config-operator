@@ -546,3 +546,91 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestFIPS(t *testing.T) {
+	cs := framework.NewClientSet("")
+	bumpPoolMaxUnavailableTo(t, cs, 3)
+	fipsMC := &mcv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("fips-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+			Fips:   true,
+		},
+	}
+
+	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	if err != nil {
+		t.Error(err)
+	}
+	workerOldMc := mcp.Status.Configuration.Name
+
+	_, err = cs.MachineConfigs().Create(fipsMC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Created %s", fipsMC.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", fipsMC.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcdName := mcd.ObjectMeta.Name
+		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"chroot", "/rootfs", "fips-mode-setup", "--check").CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fips := string(fipsBytes)
+		if !strings.Contains(fips, "FIPS mode is enabled") {
+			t.Fatalf("FIPS hasn't been enabled")
+		}
+		t.Logf("Node %s has expected FIPS mode", node.Name)
+	}
+
+	if err := cs.MachineConfigs().Delete(fipsMC.Name, &metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+	if err := waitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
+		t.Fatal(err)
+	}
+
+	nodes, err = getNodesByRole(cs, "worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMc)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mcdName := mcd.ObjectMeta.Name
+		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"chroot", "/rootfs", "fips-mode-setup", "--check").CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fips := string(fipsBytes)
+		if !strings.Contains(fips, "FIPS mode is disabled") {
+			t.Fatalf("FIPS hasn't been disabled")
+		}
+		t.Logf("Node %s has expected FIPS mode", node.Name)
+	}
+}
