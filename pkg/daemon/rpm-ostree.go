@@ -131,13 +131,14 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 
 	service := "machine-config-daemon-host.service"
 	// We need to use pivot if it's there, because machine-config-daemon-host.service
-	// currently has a ConditionPathExists=!/usr/bin/pivot.  This code can be dropped
+	// currently has a ConditionPathExists=!/usr/lib/systemd/system/pivot.service to
+	// avoid having *both* pivot and MCD try to update.  This code can be dropped
 	// once we don't need to care about compat with older RHCOS.
 	var err error
-	_, err = os.Stat("/usr/bin/pivot")
+	_, err = os.Stat("/usr/lib/systemd/system/pivot.service")
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return errors.Wrapf(err, "stat(/usr/bin/pivot)")
+			return errors.Wrapf(err, "checking pivot service")
 		}
 	} else {
 		service = "pivot.service"
