@@ -155,6 +155,8 @@ var _manifestsContainerruntimeconfigCrdYaml = []byte(`apiVersion: apiextensions.
 kind: CustomResourceDefinition
 metadata:
   name: containerruntimeconfigs.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
 spec:
   group: machineconfiguration.openshift.io
   names:
@@ -193,6 +195,8 @@ kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: controllerconfigs.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
 spec:
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
@@ -235,6 +239,8 @@ var _manifestsKubeletconfigCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: kubeletconfigs.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
 spec:
   group: machineconfiguration.openshift.io
   names:
@@ -271,6 +277,8 @@ kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: machineconfigs.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
 spec:
   additionalPrinterColumns:
   - JSONPath: .metadata.annotations.machineconfiguration\.openshift\.io/generated-by-controller-version
@@ -739,6 +747,8 @@ kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: machineconfigpools.machineconfiguration.openshift.io
+  labels:
+    "openshift.io/operator-managed": ""
 spec:
   additionalPrinterColumns:
   - JSONPath: .status.configuration.name
