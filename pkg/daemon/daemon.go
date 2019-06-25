@@ -634,7 +634,7 @@ type stateAndConfigs struct {
 }
 
 // getStateAndConfigs captures initial state of the MCD/node
-func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
+func (dn *Daemon) getStateAndConfigs(bootstrapping bool) (*stateAndConfigs, error) {
 	pendingConfigName, err := dn.getPendingState()
 	if err != nil {
 		return nil, err
@@ -646,18 +646,6 @@ func (dn *Daemon) getStateAndConfigs() (*stateAndConfigs, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-	_, err = os.Lstat(constants.InitialNodeAnnotationsFilePath)
-	var bootstrapping bool
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-		// The node annotation file (laid down by the MCS)
-		// doesn't exist, we must not be bootstrapping
-	} else {
-		bootstrapping = true
-		glog.Info("In bootstrap mode")
 	}
 
 	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
@@ -803,6 +791,53 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 	return writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON)
 }
 
+// ensureNodeStateAnnotations does nothing if the node already has a CurrentConfig
+// annotation.  Otherwise, it tries to read it from the file injected by the MCS,
+// or falls back to querying the journal.  The boolean return value will be
+// true if we detected that the MCS file exists; this signals a transition
+// point between the early bootstrap and the MCD managing the system.
+func (dn *Daemon) ensureNodeStateAnnotations() (bool, error) {
+	ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
+	// we need to load the annotations from the file only for the
+	// first run.
+	// the initial annotations do no need to be set if the node
+	// already has annotations.
+	if err == nil && ccAnnotation != "" {
+		return false, nil
+	}
+
+	glog.Infof("No %s annotation on node %s: %v, in cluster bootstrap, loading initial node annotation from %s", constants.CurrentMachineConfigAnnotationKey, dn.node.Name, dn.node.Annotations, constants.InitialNodeAnnotationsFilePath)
+
+	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
+	}
+	if os.IsNotExist(err) {
+		// try currentConfig if, for whatever reason we lost annotations? this is super best effort.
+		currentOnDisk, err := dn.getCurrentConfigOnDisk()
+		if err == nil {
+			glog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
+			_, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
+			return false, err
+		}
+		return false, err
+	}
+
+	var initial map[string]string
+	if err := json.Unmarshal(d, &initial); err != nil {
+		return false, fmt.Errorf("failed to unmarshal initial annotations: %v", err)
+	}
+
+	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
+	n, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, initial)
+	if err != nil {
+		return false, fmt.Errorf("failed to set initial annotations: %v", err)
+	}
+	// Update our cached copy
+	dn.node = n
+	return true, nil
+}
+
 // checkStateOnFirstRun is a core entrypoint for our state machine.
 // It determines whether we're in our desired state, or if we're
 // transitioning between states, and whether or not we need to update
@@ -811,13 +846,14 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
 func (dn *Daemon) checkStateOnFirstRun() error {
-	node, err := dn.loadNodeAnnotations(dn.node)
+	bootstrapping, err := dn.ensureNodeStateAnnotations()
 	if err != nil {
 		return err
 	}
-	// Update our cached copy
-	dn.node = node
-	state, err := dn.getStateAndConfigs()
+	if bootstrapping {
+		glog.Info("In bootstrap mode")
+	}
+	state, err := dn.getStateAndConfigs(bootstrapping)
 	if err != nil {
 		return err
 	}
