@@ -5,6 +5,7 @@
 package v1
 
 import (
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -247,6 +248,11 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		for key, val := range *in {
 			(*out)[key] = val
 		}
+	}
+	if in.Proxy != nil {
+		in, out := &in.Proxy, &out.Proxy
+		*out = new(configv1.ProxyStatus)
+		**out = **in
 	}
 	return
 }

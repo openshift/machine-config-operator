@@ -68,6 +68,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.KubeInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Networks(),
+			ctrlctx.ConfigInformerFactory.Config().V1().Proxies(),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 			ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
 			ctrlctx.ClientBuilder.APIExtClientOrDie(componentName),
