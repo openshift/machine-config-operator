@@ -1,0 +1,19 @@
+name: "machine-config-daemon-firstboot.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Firstboot
+  # This effectively disables this unit unit we patch the MCS, so
+  # we can land this code and then get it built into the host.
+  ConditionPathExists=!/etc/pivot/image-pullspec
+  ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+  After=ignition-firstboot-complete.service
+  Before=kubelet.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/libexec/machine-config-daemon firstboot-complete-machineconfig
+
+  [Install]
+  WantedBy=multi-user.target
