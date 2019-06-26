@@ -984,10 +984,8 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		return nil
 	}
 	if contentFrom == onceFromLocalConfig {
-		// NOTE: This case expects that the cluster is NOT CREATED YET.
-		oldConfig := mcfgv1.MachineConfig{}
 		// Execute update without hitting the cluster
-		return dn.update(&oldConfig, &machineConfig)
+		return dn.update(nil, &machineConfig)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
