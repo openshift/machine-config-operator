@@ -453,7 +453,7 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 }
 
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
-	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err), "")
+	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
 	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool); updateErr != nil {
 		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
