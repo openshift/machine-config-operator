@@ -80,9 +80,6 @@ type Daemon struct {
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
 
-	// onceFrom defines where the source config is to run the daemon once and exit
-	onceFrom string
-
 	// skipReboot skips the reboot after a sync, only valid with onceFrom != ""
 	skipReboot bool
 
@@ -429,10 +426,9 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 
 // RunOnceFrom is the primary entrypoint for the non-cluster case
 func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
-	dn.onceFrom = onceFrom
 	dn.skipReboot = skipReboot
 
-	configi, contentFrom, err := dn.senseAndLoadOnceFrom()
+	configi, contentFrom, err := dn.senseAndLoadOnceFrom(onceFrom)
 	if err != nil {
 		glog.Warningf("Unable to decipher onceFrom config type: %s", err)
 		return err
@@ -988,7 +984,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		return dn.update(nil, &machineConfig)
 	}
 	// Otherwise return an error as the input format is unsupported
-	return fmt.Errorf("%s is not a path nor url; can not run once", dn.onceFrom)
+	return fmt.Errorf("%v is not a path nor url; can not run once", contentFrom)
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
@@ -1293,15 +1289,16 @@ func ValidPath(path string) bool {
 // senseAndLoadOnceFrom gets a hold of the content for supported onceFrom configurations,
 // parses to verify the type, and returns back the genericInterface, the type description,
 // if it was local or remote, and error.
-func (dn *Daemon) senseAndLoadOnceFrom() (interface{}, onceFromOrigin, error) {
+func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOrigin, error) {
 	var (
 		content     []byte
 		contentFrom onceFromOrigin
 	)
 	// Read the content from a remote endpoint if requested
-	if strings.HasPrefix(dn.onceFrom, "http://") || strings.HasPrefix(dn.onceFrom, "https://") {
+	/* #nosec */
+	if strings.HasPrefix(onceFrom, "http://") || strings.HasPrefix(onceFrom, "https://") {
 		contentFrom = onceFromRemoteConfig
-		resp, err := http.Get(dn.onceFrom)
+		resp, err := http.Get(onceFrom)
 		if err != nil {
 			return nil, contentFrom, err
 		}
@@ -1315,7 +1312,7 @@ func (dn *Daemon) senseAndLoadOnceFrom() (interface{}, onceFromOrigin, error) {
 	} else {
 		// Otherwise read it from a local file
 		contentFrom = onceFromLocalConfig
-		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(dn.onceFrom))
+		absoluteOnceFrom, err := filepath.Abs(filepath.Clean(onceFrom))
 		if err != nil {
 			return nil, contentFrom, err
 		}
@@ -1332,7 +1329,7 @@ func (dn *Daemon) senseAndLoadOnceFrom() (interface{}, onceFromOrigin, error) {
 		return ignConfig, contentFrom, nil
 	}
 
-	glog.V(2).Infof("%s is not an Ignition config: %v. Trying MachineConfig.", dn.onceFrom, err)
+	glog.V(2).Infof("%s is not an Ignition config: %v. Trying MachineConfig.", onceFrom, err)
 
 	// Try to parse as a machine config
 	mc, err := resourceread.ReadMachineConfigV1(content)
