@@ -183,14 +183,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	oldConfigName := oldConfig.GetName()
-	newConfigName := newConfig.GetName()
-	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
-	// We skip out of Reconcilable if there is no Kind and we are in runOnce mode. The
-	// reason is that there is a good chance a previous state is not available to match against.
-	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Info("Missing kind in old config. Assuming no prior state.")
+	oldConfigUnset := oldConfig == nil
+	if oldConfigUnset {
+		// Rather than change the rest of the code to deal
+		// with a nil oldConfig, just pass an empty one in
+		// most places.
+		emptyMC := mcfgv1.MachineConfig{}
+		oldConfig = &emptyMC
 	} else {
+		oldConfigName := oldConfig.GetName()
+		newConfigName := newConfig.GetName()
+		glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+
 		// make sure we can actually reconcile this state
 		diff, reconcilableError := Reconcilable(oldConfig, newConfig)
 
@@ -240,7 +244,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 	defer func() {
-		if retErr != nil {
+		if retErr != nil && !oldConfigUnset {
 			if err := dn.storeCurrentConfigOnDisk(oldConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back current config on disk %v", err)
 				return
