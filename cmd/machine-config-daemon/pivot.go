@@ -227,19 +227,25 @@ func run(_ *cobra.Command, args []string) error {
 		changed = true
 	}
 
-	_, err = os.Stat(runPivotRebootFile)
-	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrapf(err, "Checking %s", runPivotRebootFile)
-	}
-	runPivotRebootExists := err == nil
 	if !changed {
-		glog.Info("Already at target oscontainer")
-	} else if reboot || runPivotRebootExists {
-		if reboot {
-			glog.Infof("Rebooting as requested by cmdline flag")
-		} else {
-			glog.Infof("Rebooting due to %s", runPivotRebootFile)
+		glog.Info("No changes; already at target oscontainer, no kernel args provided")
+		return nil
+	}
+
+	if reboot {
+		glog.Infof("Rebooting as requested by cmdline flag")
+	} else {
+		// Otherwise see if it's specified by the file
+		_, err = os.Stat(runPivotRebootFile)
+		if err != nil && !os.IsNotExist(err) {
+			return errors.Wrapf(err, "Checking %s", runPivotRebootFile)
 		}
+		if err == nil {
+			glog.Infof("Rebooting due to %s", runPivotRebootFile)
+			reboot = true
+		}
+	}
+	if reboot {
 		// Reboot the machine if asked to do so
 		err := exec.Command("systemctl", "reboot").Run()
 		if err != nil {
