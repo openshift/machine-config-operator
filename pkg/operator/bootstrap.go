@@ -19,6 +19,7 @@ import (
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
+	proxyFile,
 	clusterConfigConfigMapFile,
 	infraFile, networkFile,
 	cloudConfigFile,
@@ -28,6 +29,7 @@ func RenderBootstrap(
 ) error {
 	filesData := map[string][]byte{}
 	files := []string{
+		proxyFile,
 		clusterConfigConfigMapFile,
 		infraFile,
 		networkFile,
@@ -57,6 +59,15 @@ func RenderBootstrap(
 		return fmt.Errorf("expected *configv1.Infrastructure found %T", obji)
 	}
 
+	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[proxyFile])
+	if err != nil {
+		return err
+	}
+	proxy, ok := obji.(*configv1.Proxy)
+	if !ok {
+		return fmt.Errorf("expected *configv1.Proxy found %T", obji)
+	}
+
 	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[networkFile])
 	if err != nil {
 		return err
@@ -65,7 +76,7 @@ func RenderBootstrap(
 	if !ok {
 		return fmt.Errorf("expected *configv1.Network found %T", obji)
 	}
-	spec, err := createDiscoveredControllerConfigSpec(infra, network)
+	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
 	if err != nil {
 		return err
 	}
