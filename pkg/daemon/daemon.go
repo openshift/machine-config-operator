@@ -996,7 +996,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
 		return err
 	}
-	return dn.reboot("runOnceFromIgnition complete", defaultRebootTimeout, rebootCommand("runOnceFromIgnition complete"))
+	return dn.reboot("runOnceFromIgnition complete")
 }
 
 func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
