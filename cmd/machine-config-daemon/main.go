@@ -25,6 +25,6 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing mcd: %v", err)
+		glog.Exitf("Error executing MCD: %v", err)
 	}
 }
