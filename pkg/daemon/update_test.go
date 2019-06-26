@@ -9,6 +9,7 @@ import (
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
@@ -173,6 +174,28 @@ func TestReconcilable(t *testing.T) {
 
 	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
+}
+
+func TestMachineConfigDiff(t *testing.T) {
+	oldConfig := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "oldconfig"},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+		},
+	}
+	newConfig := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "newconfig"},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+		},
+	}
+	diff := NewMachineConfigDiff(oldConfig, newConfig)
+	assert.True(t, diff.IsEmpty())
+
+	newConfig.Spec.OSImageURL = "quay.io/example/foo@sha256:b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c"
+	diff = NewMachineConfigDiff(oldConfig, newConfig)
+	assert.False(t, diff.IsEmpty())
+	assert.True(t, diff.osUpdate)
 }
 
 func newTestIgnitionFile(i uint) igntypes.File {

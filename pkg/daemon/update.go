@@ -25,6 +25,7 @@ import (
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -162,8 +163,35 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 
 var errUnreconcilable = errors.New("unreconcilable")
 
+func canonicalizeEmptyConfig(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
+	if config != nil {
+		return config
+	}
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "mco-empty-mc"},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: ctrlcommon.NewIgnConfig(),
+		},
+	}
+}
+
+func (dn *Daemon) checkUpdateDiff(oldConfig, newConfig *mcfgv1.MachineConfig) bool {
+	var diff *MachineConfigDiff
+	oldConfig = canonicalizeEmptyConfig(oldConfig)
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
+	diff = NewMachineConfigDiff(oldConfig, newConfig)
+	if diff.IsEmpty() {
+		glog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
+		return false
+	}
+	return true
+}
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+	oldConfig = canonicalizeEmptyConfig(oldConfig)
+
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
@@ -183,35 +211,28 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	oldConfigUnset := oldConfig == nil
-	if oldConfigUnset {
-		// Rather than change the rest of the code to deal
-		// with a nil oldConfig, just pass an empty one in
-		// most places.
-		emptyMC := mcfgv1.MachineConfig{}
-		oldConfig = &emptyMC
-	} else {
-		oldConfigName := oldConfig.GetName()
-		newConfigName := newConfig.GetName()
-		glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
 
-		// make sure we can actually reconcile this state
-		diff, reconcilableError := Reconcilable(oldConfig, newConfig)
+	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
-		if reconcilableError != nil {
-			wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
-			if dn.recorder != nil {
-				mcRef := &corev1.ObjectReference{
-					Kind: "MachineConfig",
-					Name: newConfig.GetName(),
-					UID:  newConfig.GetUID(),
-				}
-				dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+	// make sure we can actually reconcile this state
+	diff, reconcilableError := Reconcilable(oldConfig, newConfig)
+
+	if reconcilableError != nil {
+		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
+		if dn.recorder != nil {
+			mcRef := &corev1.ObjectReference{
+				Kind: "MachineConfig",
+				Name: newConfig.GetName(),
+				UID:  newConfig.GetUID(),
 			}
-			return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
+			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
-		dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
+
+	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
@@ -244,7 +265,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 	defer func() {
-		if retErr != nil && !oldConfigUnset {
+		if retErr != nil {
 			if err := dn.storeCurrentConfigOnDisk(oldConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back current config on disk %v", err)
 				return
@@ -310,6 +331,30 @@ type MachineConfigDiff struct {
 	passwd   bool
 	files    bool
 	units    bool
+}
+
+// NewMachineConfigDiff compares two MachineConfig objects.
+func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) *MachineConfigDiff {
+	oldIgn := oldConfig.Spec.Config
+	newIgn := newConfig.Spec.Config
+	return &MachineConfigDiff{
+		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
+		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
+		fips:     oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
+		passwd:   !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
+		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
+		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+	}
+}
+
+// IsEmpty returns true if the MachineConfigDiff has no changes, or
+// in other words if the two MachineConfig objects are equivalent from
+// the MCD's point of view.  This is mainly relevant if e.g. two MC
+// objects happen to have different Ignition versions but are otherwise
+// the same.  (Probably a better way would be to canonicalize)
+func (d *MachineConfigDiff) IsEmpty() bool {
+	emptyDiff := MachineConfigDiff{}
+	return reflect.DeepEqual(d, &emptyDiff)
 }
 
 // Reconcilable checks the configs to make sure that the only changes requested
@@ -417,14 +462,7 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	return &MachineConfigDiff{
-		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
-		fips:     oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
-		passwd:   passwdChanged,
-		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
-		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
-	}, nil
+	return NewMachineConfigDiff(oldConfig, newConfig), nil
 }
 
 // verifyUserFields returns nil if the user Name = "core", if 1 or more SSHKeys exist for
