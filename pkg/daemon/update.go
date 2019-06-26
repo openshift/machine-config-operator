@@ -122,7 +122,7 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 	}
 
 	// Skip draining of the node when we're not cluster driven
-	if dn.onceFrom == "" {
+	if dn.kubeClient != nil {
 		dn.logSystem("Update prepared; beginning drain")
 
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
@@ -1008,21 +1008,19 @@ func (dn *Daemon) cancelSIGTERM() {
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
 func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exec.Cmd) error {
+	// Now that everything is done, avoid delaying shutdown.
+	dn.cancelSIGTERM()
+	dn.Close()
+
+	if dn.skipReboot {
+		return nil
+	}
+
 	// We'll only have a recorder if we're cluster driven
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
 	}
 	dn.logSystem("initiating reboot: %s", rationale)
-
-	// Now that everything is done, avoid delaying shutdown.
-	dn.cancelSIGTERM()
-
-	dn.Close()
-
-	if dn.skipReboot && dn.onceFrom != "" { // the dn.onceFrom check is just a triple check that we're not messing with in-cluster MCDs
-		glog.Info("MCD is not rebooting in onceFrom with --skip-reboot")
-		return nil
-	}
 
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
