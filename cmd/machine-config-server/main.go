@@ -36,6 +36,6 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing mcs: %v", err)
+		glog.Exitf("Error executing MCS: %v", err)
 	}
 }
