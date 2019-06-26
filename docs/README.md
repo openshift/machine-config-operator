@@ -62,7 +62,9 @@ locations (i.e. `/etc` and `/var`).
 
 One known ergonomic issue right now for supplying files is that you must encode file contents
 via [`data:` URIs](https://en.wikipedia.org/wiki/Data_URI_scheme). This is part of
-the current Ignition specification.
+the current Ignition specification.  The easiest way to encode file contents using this
+scheme is via `base64`.  See the example MachineConfig below on how to provide `base64`
+encoded file contents
 
 In the example below, the `mode` is in octal (notice the leading `0`); however, decimal is the canonical representation for `mode` when inspecting `MachineConfigs` (in the example, it's `420` below).
 
@@ -85,7 +87,7 @@ spec:
     storage:
       files:
       - contents:
-          source: data:,server%20foo.example.net%20maxdelay%200.4%20offline%0Aserver%20bar.example.net%20maxdelay%200.4%20offline%0Aserver%20baz.example.net%20maxdelay%200.4%20offline
+          source: data:text/plain;charset=utf;base64,c2VydmVyIGZvby5leGFtcGxlLm5ldCBtYXhkZWxheSAwLjQgb2ZmbGluZQpzZXJ2ZXIgYmFyLmV4YW1wbGUubmV0IG1heGRlbGF5IDAuNCBvZmZsaW5lCnNlcnZlciBiYXouZXhhbXBsZS5uZXQgbWF4ZGVsYXkgMC40IG9mZmxpbmUK
         filesystem: root
         mode: 0644
         path: /etc/chrony.conf
@@ -111,7 +113,7 @@ spec:
     storage:
       files:
       - contents:
-          source: data:,server%20foo.example.net%20maxdelay%200.4%20offline%0Aserver%20bar.example.net%20maxdelay%200.4%20offline%0Aserver%20baz.example.net%20maxdelay%200.4%20offline
+          source: data:text/plain;charset=utf;base64,c2VydmVyIGZvby5leGFtcGxlLm5ldCBtYXhkZWxheSAwLjQgb2ZmbGluZQpzZXJ2ZXIgYmFyLmV4YW1wbGUubmV0IG1heGRlbGF5IDAuNCBvZmZsaW5lCnNlcnZlciBiYXouZXhhbXBsZS5uZXQgbWF4ZGVsYXkgMC40IG9mZmxpbmUK
         filesystem: root
         mode: 420
         path: /etc/chrony.conf
