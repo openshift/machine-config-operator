@@ -196,6 +196,13 @@ func TestMachineConfigDiff(t *testing.T) {
 	diff = NewMachineConfigDiff(oldConfig, newConfig)
 	assert.False(t, diff.IsEmpty())
 	assert.True(t, diff.osUpdate)
+
+	emptyMc := canonicalizeEmptyConfig(nil)
+	otherEmptyMc := canonicalizeEmptyConfig(nil)
+	emptyMc.Spec.KernelArguments = nil
+	otherEmptyMc.Spec.KernelArguments = []string{}
+	diff = NewMachineConfigDiff(emptyMc, otherEmptyMc)
+	assert.True(t, diff.IsEmpty())
 }
 
 func newTestIgnitionFile(i uint) igntypes.File {
