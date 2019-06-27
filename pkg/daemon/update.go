@@ -333,13 +333,21 @@ type MachineConfigDiff struct {
 	units    bool
 }
 
+// See if this was Rust we wouldn't have nullable pointers by default...
+func canonicalizeStringArray(a []string) []string {
+	if a == nil {
+		return []string{}
+	}
+	return a
+}
+
 // NewMachineConfigDiff compares two MachineConfig objects.
 func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) *MachineConfigDiff {
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
 	return &MachineConfigDiff{
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
+		kargs:    !reflect.DeepEqual(canonicalizeStringArray(oldConfig.Spec.KernelArguments), canonicalizeStringArray(newConfig.Spec.KernelArguments)),
 		fips:     oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
 		passwd:   !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
 		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
