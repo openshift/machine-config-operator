@@ -112,7 +112,7 @@ func RenderBootstrap(
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:            imgs.Etcd,
-		templatectrl.SetupEtcdEnvKey:         imgs.SetupEtcdEnv,
+		templatectrl.SetupEtcdEnvKey:         imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:           imgs.InfraImage,
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 	}
