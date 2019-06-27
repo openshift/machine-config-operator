@@ -161,13 +161,18 @@ type ControllerConfigStatusCondition struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ControllerConfigStatusConditionType valid conditions of a machineconfigpool
+// ControllerConfigStatusConditionType valid conditions of a ControllerConfigStatus
 type ControllerConfigStatusConditionType string
 
 const (
-	TemplateContollerRunning   ControllerConfigStatusConditionType = "TemplateContollerRunning"
-	TemplateContollerCompleted ControllerConfigStatusConditionType = "TemplateContollerCompleted"
-	TemplateContollerFailing   ControllerConfigStatusConditionType = "TemplateContollerFailing"
+	// TemplateControllerRunning means the template controller is currently running.
+	TemplateControllerRunning ControllerConfigStatusConditionType = "TemplateControllerRunning"
+
+	// TemplateControllerCompleted means the template controller has completed reconciliation.
+	TemplateControllerCompleted ControllerConfigStatusConditionType = "TemplateControllerCompleted"
+
+	// TemplateControllerFailing means the template controller is failing.
+	TemplateControllerFailing ControllerConfigStatusConditionType = "TemplateControllerFailing"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
