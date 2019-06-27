@@ -60,28 +60,3 @@ func RunExt(capture bool, retries int, command string, args ...string) string {
 	},
 		command, args...)
 }
-
-// Run executes a command, logging it, and exit with a fatal error if
-// the command failed.
-func Run(command string, args ...string) {
-	if _, err := runImpl(false, command, args...); err != nil {
-		glog.Fatalf("%s: %s", command, err)
-	}
-}
-
-// RunIgnoreErr is like Run(..), but doesn't exit on errors
-func RunIgnoreErr(command string, args ...string) {
-	if _, err := runImpl(false, command, args...); err != nil {
-		glog.Warningf("(ignored) %s: %s", command, err)
-	}
-}
-
-// RunGetOut is like Run(..), but get the output as a string
-func RunGetOut(command string, args ...string) string {
-	var err error
-	var out []byte
-	if out, err = runImpl(true, command, args...); err != nil {
-		glog.Fatalf("%s: %s", command, err)
-	}
-	return strings.TrimSpace(string(out))
-}
