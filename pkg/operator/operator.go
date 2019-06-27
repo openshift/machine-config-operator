@@ -85,6 +85,7 @@ type Operator struct {
 	networkLister   configlistersv1.NetworkLister
 	mcoCmLister     corelisterv1.ConfigMapLister
 	clusterCmLister corelisterv1.ConfigMapLister
+	proxyLister     configlistersv1.ProxyLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -99,6 +100,7 @@ type Operator struct {
 	serviceAccountInformerSynced     cache.InformerSynced
 	clusterRoleInformerSynced        cache.InformerSynced
 	clusterRoleBindingInformerSynced cache.InformerSynced
+	proxyListerSynced                cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -122,6 +124,7 @@ func New(
 	clusterCmInfomer coreinformersv1.ConfigMapInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
 	networkInformer configinformersv1.NetworkInformer,
+	proxyInformer configinformersv1.ProxyInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
@@ -156,6 +159,7 @@ func New(
 		infraInformer.Informer(),
 		networkInformer.Informer(),
 		mcpInformer.Informer(),
+		proxyInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -170,6 +174,8 @@ func New(
 	optr.ccListerSynced = controllerConfigInformer.Informer().HasSynced
 	optr.mcLister = mcInformer.Lister()
 	optr.mcListerSynced = mcInformer.Informer().HasSynced
+	optr.proxyLister = proxyInformer.Lister()
+	optr.proxyListerSynced = proxyInformer.Informer().HasSynced
 
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -218,7 +224,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.serviceAccountInformerSynced,
 		optr.clusterRoleInformerSynced,
 		optr.clusterRoleBindingInformerSynced,
-		optr.networkListerSynced) {
+		optr.networkListerSynced,
+		optr.proxyListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}
@@ -374,11 +381,11 @@ func (optr *Operator) sync(key string) error {
 	imgs.MachineOSContent = osimageurl
 
 	// sync up the ControllerConfigSpec
-	infra, network, err := optr.getGlobalConfig()
+	infra, network, proxy, err := optr.getGlobalConfig()
 	if err != nil {
 		return err
 	}
-	spec, err := createDiscoveredControllerConfigSpec(infra, network)
+	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
 	if err != nil {
 		return err
 	}
@@ -459,16 +466,20 @@ func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (
 
 // getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
 // Each type of global configuration is named `cluster` for easy discovery in the cluster.
-func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, error) {
+func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, *configv1.Proxy, error) {
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	network, err := optr.networkLister.Get("cluster")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return infra, network, nil
+	proxy, err := optr.proxyLister.Get("cluster")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return infra, network, proxy, nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *Images, apiServerURL string) *renderConfig {

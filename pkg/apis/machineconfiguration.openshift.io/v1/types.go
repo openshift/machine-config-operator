@@ -2,6 +2,7 @@ package v1
 
 import (
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -131,6 +132,9 @@ type ControllerConfigSpec struct {
 
 	// Sourced from configmap/machine-config-osimageurl
 	OSImageURL string `json:"osImageURL"`
+
+	// Proxy holds the current proxy configuration for the nodes
+	Proxy *configv1.ProxyStatus `json:"proxy"`
 }
 
 // ControllerConfigStatus is the status for ControllerConfig
