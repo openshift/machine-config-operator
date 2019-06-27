@@ -223,9 +223,9 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*Controll
 		return fmt.Errorf("status for ControllerConfig %s is being reported for %d, expecting it for %d", ccName, cur.Status.ObservedGeneration, cur.Generation)
 	}
 
-	completed := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerCompleted)
-	running := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerRunning)
-	failing := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateContollerFailing)
+	completed := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateControllerCompleted)
+	running := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateControllerRunning)
+	failing := IsControllerConfigStatusConditionTrue(cur.Status.Conditions, TemplateControllerFailing)
 	if completed &&
 		!running &&
 		!failing {
