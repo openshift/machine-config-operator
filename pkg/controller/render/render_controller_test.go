@@ -224,7 +224,7 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		Status: mcfgv1.ControllerConfigStatus{
 			Conditions: []mcfgv1.ControllerConfigStatusCondition{
 				{
-					Type:   mcfgv1.TemplateContollerCompleted,
+					Type:   mcfgv1.TemplateControllerCompleted,
 					Status: corev1.ConditionTrue,
 				},
 			},
