@@ -39,6 +39,7 @@ var (
 		pullSecretFile       string
 		rootCAFile           string
 		setupEtcdEnvImage    string
+		proxyConfigFile      string
 	}
 )
 
@@ -70,6 +71,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.networkConfigFile, "network-config-file", "/assets/manifests/cluster-network-02-config.yml", "File containing network.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudConfigFile, "cloud-config-file", "", "File containing the config map that contains the cloud config for cloudprovider.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.proxyConfigFile, "proxy-config-file", "/assets/manifests/cluster-proxy-01-config.yaml", "File containing proxy.config.openshift.io manifest.")
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -92,6 +94,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	}
 
 	if err := operator.RenderBootstrap(
+		bootstrapOpts.proxyConfigFile,
 		bootstrapOpts.configFile,
 		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
 		bootstrapOpts.cloudConfigFile,
