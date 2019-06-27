@@ -18,10 +18,10 @@ import (
 func (ctrl *Controller) syncRunningStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := fmt.Sprintf("syncing towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Version)
-		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerRunning, corev1.ConditionTrue, "", reason)
+		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionTrue, "", reason)
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
-		if cfg.GetGeneration() != cfg.Status.ObservedGeneration && mcfgv1.IsControllerConfigStatusConditionPresentAndEqual(cfg.Status.Conditions, mcfgv1.TemplateContollerCompleted, corev1.ConditionTrue) {
-			acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerCompleted, corev1.ConditionFalse, "", fmt.Sprintf("%s due to change in Generation", reason))
+		if cfg.GetGeneration() != cfg.Status.ObservedGeneration && mcfgv1.IsControllerConfigStatusConditionPresentAndEqual(cfg.Status.Conditions, mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue) {
+			acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", fmt.Sprintf("%s due to change in Generation", reason))
 			mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
 		}
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
@@ -39,11 +39,11 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 	}
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		message := fmt.Sprintf("failed to syncing towards (%d) generation using controller version %s: %v", cfg.GetGeneration(), version.Version, oerr)
-		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerFailing, corev1.ConditionTrue, "", message)
+		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionTrue, "", message)
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
-		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerCompleted, corev1.ConditionFalse, "", "")
+		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", "")
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
-		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerRunning, corev1.ConditionFalse, "", "")
+		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
@@ -60,11 +60,11 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 func (ctrl *Controller) syncCompletedStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := fmt.Sprintf("sync completed towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Version)
-		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerCompleted, corev1.ConditionTrue, "", reason)
+		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue, "", reason)
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
-		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerRunning, corev1.ConditionFalse, "", "")
+		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
-		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateContollerFailing, corev1.ConditionFalse, "", "")
+		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionFalse, "", "")
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil

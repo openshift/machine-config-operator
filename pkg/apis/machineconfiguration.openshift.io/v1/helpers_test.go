@@ -155,13 +155,13 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 			getter := func(name string) (*ControllerConfig, error) {
 				var conds []ControllerConfigStatusCondition
 				if test.completed {
-					conds = append(conds, *NewControllerConfigStatusCondition(TemplateContollerCompleted, corev1.ConditionTrue, "", ""))
+					conds = append(conds, *NewControllerConfigStatusCondition(TemplateControllerCompleted, corev1.ConditionTrue, "", ""))
 				}
 				if test.running {
-					conds = append(conds, *NewControllerConfigStatusCondition(TemplateContollerRunning, corev1.ConditionTrue, "", ""))
+					conds = append(conds, *NewControllerConfigStatusCondition(TemplateControllerRunning, corev1.ConditionTrue, "", ""))
 				}
 				if test.failing {
-					conds = append(conds, *NewControllerConfigStatusCondition(TemplateContollerFailing, corev1.ConditionTrue, "", ""))
+					conds = append(conds, *NewControllerConfigStatusCondition(TemplateControllerFailing, corev1.ConditionTrue, "", ""))
 				}
 				return &ControllerConfig{
 					ObjectMeta: metav1.ObjectMeta{Generation: 1, Name: name},
