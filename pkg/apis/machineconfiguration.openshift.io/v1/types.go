@@ -113,7 +113,7 @@ type ControllerConfigSpec struct {
 	ClusterDNSIP        string `json:"clusterDNSIP"`
 	CloudProviderConfig string `json:"cloudProviderConfig"`
 
-	// The openshift platform, e.g. "libvirt", "openstack", "baremetal", "aws", or "none"
+	// The openshift platform, e.g. "libvirt", "openstack", "gcp", "baremetal", "aws", or "none"
 	Platform string `json:"platform"`
 
 	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain"`
