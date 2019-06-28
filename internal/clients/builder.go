@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/glog"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	apiext "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
@@ -44,6 +45,11 @@ func (cb *Builder) KubeClient(name string) (kubernetes.Interface, error) {
 // such as pod security policy, security context.
 func (cb *Builder) ConfigClientOrDie(name string) configclientset.Interface {
 	return configclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
+}
+
+// OperatorClientOrDie returns the kubernetes client interface for operator-specific configuration.
+func (cb *Builder) OperatorClientOrDie(name string) operatorclientset.Interface {
+	return operatorclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
 // APIExtClientOrDie returns the kubernetes client interface for extended kubernetes objects.

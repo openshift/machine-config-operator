@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	apiextinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
@@ -37,6 +38,7 @@ type ControllerContext struct {
 	OpenShiftConfigKubeNamespacedInformerFactory informers.SharedInformerFactory
 	APIExtInformerFactory                        apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                        configinformers.SharedInformerFactory
+	OperatorInformerFactory                      operatorinformers.SharedInformerFactory
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -53,6 +55,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	kubeClient := cb.KubeClientOrDie("kube-shared-informer")
 	apiExtClient := cb.APIExtClientOrDie("apiext-shared-informer")
 	configClient := cb.ConfigClientOrDie("config-shared-informer")
+	operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
 	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
 	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), targetNamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
@@ -70,6 +73,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	apiExtSharedInformer := apiextinformers.NewSharedInformerFactoryWithOptions(apiExtClient, resyncPeriod()(),
 		apiextinformers.WithNamespace(targetNamespace), apiextinformers.WithTweakListOptions(assignFilterLabels))
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
+	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
 	return &ControllerContext{
 		ClientBuilder:                                cb,
@@ -80,6 +84,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 		OpenShiftConfigKubeNamespacedInformerFactory: openShiftConfigKubeNamespacedSharedInformer,
 		APIExtInformerFactory:                        apiExtSharedInformer,
 		ConfigInformerFactory:                        configSharedInformer,
+		OperatorInformerFactory:                      operatorSharedInformer,
 		Stop:                                         stop,
 		InformersStarted:                             make(chan struct{}),
 		ResyncPeriod:                                 resyncPeriod(),
