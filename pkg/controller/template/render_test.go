@@ -36,6 +36,9 @@ func TestCloudProvider(t *testing.T) {
 		platform: "baremetal",
 		res:      "",
 	}, {
+		platform: "gcp",
+		res:      "gcp",
+	}, {
 		platform: "libvirt",
 		res:      "",
 	}, {
@@ -232,6 +235,7 @@ var (
 	configs = map[string]string{
 		"aws":       "./test_data/controller_config_aws.yaml",
 		"baremetal": "./test_data/controller_config_baremetal.yaml",
+		"gcp":    "./test_data/controller_config_gcp.yaml",
 		"openstack": "./test_data/controller_config_openstack.yaml",
 		"libvirt":   "./test_data/controller_config_libvirt.yaml",
 		"none":      "./test_data/controller_config_none.yaml",

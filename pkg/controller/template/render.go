@@ -37,6 +37,7 @@ const (
 	platformAWS       = "aws"
 	platformAzure     = "azure"
 	platformBaremetal = "baremetal"
+	platformGCP       = "gcp"
 	platformOpenstack = "openstack"
 	platformLibvirt   = "libvirt"
 	platformNone      = "none"
@@ -126,7 +127,7 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 		return "", fmt.Errorf("cannot generate MachineConfigs with an empty platform field")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case platformAWS, platformAzure, platformBaremetal, platformOpenstack, platformLibvirt, platformNone:
+	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenstack, platformLibvirt, platformNone:
 		return ic.Platform, nil
 	default:
 		glog.Warningf("Warning: the controller config referenced an unsupported platform: %s", ic.Platform)
@@ -369,7 +370,7 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	// FIXME Explicitly disable (remove) the cloud provider on OpenStack for now
 	// Don't forget to turn the test case back on as well
 	switch cfg.Platform {
-	case platformAWS, platformAzure, platformVSphere:
+	case platformAWS, platformAzure, platformGCP, platformVSphere:
 		return cfg.Platform, nil
 	default:
 		return "", nil
