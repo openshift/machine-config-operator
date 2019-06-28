@@ -431,15 +431,19 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:d148497b0c4b208d0a56e0ee519ab7ba4a1a91dad32de497291a499a0d62cd9c"
+  digest = "1:34b38d09bae90735a8c185e289f7dcf18a6d2471ef529ec21a8d7cef117bf795"
   name = "github.com/openshift/api"
-  packages = ["config/v1"]
+  packages = [
+    "config/v1",
+    "operator/v1",
+    "operator/v1alpha1",
+  ]
   pruneopts = "NUT"
   revision = "076caf201561527c42b501fed3e82638877f7562"
 
 [[projects]]
   branch = "master"
-  digest = "1:9cd8d9a994e377cabe084821157325f2a272267ccdfce1723cae6aaf43655753"
+  digest = "1:96e2c68938f520cf4d141b628574b1adc689a6c8ae3f94784942f5e7883afcdb"
   name = "github.com/openshift/client-go"
   packages = [
     "config/clientset/versioned",
@@ -452,6 +456,20 @@
     "config/informers/externalversions/config/v1",
     "config/informers/externalversions/internalinterfaces",
     "config/listers/config/v1",
+    "operator/clientset/versioned",
+    "operator/clientset/versioned/fake",
+    "operator/clientset/versioned/scheme",
+    "operator/clientset/versioned/typed/operator/v1",
+    "operator/clientset/versioned/typed/operator/v1/fake",
+    "operator/clientset/versioned/typed/operator/v1alpha1",
+    "operator/clientset/versioned/typed/operator/v1alpha1/fake",
+    "operator/informers/externalversions",
+    "operator/informers/externalversions/internalinterfaces",
+    "operator/informers/externalversions/operator",
+    "operator/informers/externalversions/operator/v1",
+    "operator/informers/externalversions/operator/v1alpha1",
+    "operator/listers/operator/v1",
+    "operator/listers/operator/v1alpha1",
   ]
   pruneopts = "NUT"
   revision = "c44a8b61b9f46cd9e802384dfeda0bc9942db68a"
@@ -1190,6 +1208,7 @@
     "github.com/kubernetes-sigs/cri-o/pkg/config",
     "github.com/opencontainers/go-digest",
     "github.com/openshift/api/config/v1",
+    "github.com/openshift/api/operator/v1alpha1",
     "github.com/openshift/client-go/config/clientset/versioned",
     "github.com/openshift/client-go/config/clientset/versioned/fake",
     "github.com/openshift/client-go/config/clientset/versioned/scheme",
@@ -1197,6 +1216,11 @@
     "github.com/openshift/client-go/config/informers/externalversions",
     "github.com/openshift/client-go/config/informers/externalversions/config/v1",
     "github.com/openshift/client-go/config/listers/config/v1",
+    "github.com/openshift/client-go/operator/clientset/versioned",
+    "github.com/openshift/client-go/operator/clientset/versioned/fake",
+    "github.com/openshift/client-go/operator/informers/externalversions",
+    "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1",
+    "github.com/openshift/client-go/operator/listers/operator/v1alpha1",
     "github.com/openshift/kubernetes-drain",
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
     "github.com/pkg/errors",

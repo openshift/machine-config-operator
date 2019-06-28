@@ -63,6 +63,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.KubeInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -117,6 +118,7 @@ func createControllers(ctx *controllercommon.ControllerContext) []controllercomm
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().Images(),
+			ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctx.ConfigInformerFactory.Config().V1().ClusterVersions(),
 			ctx.ClientBuilder.KubeClientOrDie("container-runtime-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("container-runtime-config-controller"),

@@ -27,9 +27,12 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
+	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -81,6 +84,9 @@ type Controller struct {
 	imgLister       cligolistersv1.ImageLister
 	imgListerSynced cache.InformerSynced
 
+	icspLister       operatorlistersv1alpha1.ImageContentSourcePolicyLister
+	icspListerSynced cache.InformerSynced
+
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
@@ -102,6 +108,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
+	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -132,6 +139,12 @@ func New(
 		DeleteFunc: ctrl.imageConfDeleted,
 	})
 
+	icspInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.icspConfAdded,
+		UpdateFunc: ctrl.icspConfUpdated,
+		DeleteFunc: ctrl.icspConfDeleted,
+	})
+
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
@@ -148,6 +161,9 @@ func New(
 	ctrl.imgLister = imgInformer.Lister()
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
 
+	ctrl.icspLister = icspInformer.Lister()
+	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
+
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
@@ -163,7 +179,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.imgQueue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.clusterVersionListerSynced) {
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -199,6 +215,18 @@ func (ctrl *Controller) imageConfUpdated(oldObj, newObj interface{}) {
 }
 
 func (ctrl *Controller) imageConfDeleted(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) icspConfAdded(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) icspConfUpdated(oldObj, newObj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) icspConfDeleted(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -589,6 +617,14 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
+	// Find all ImageContentSourcePolicy objects
+	icspRules, err := ctrl.icspLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
+	} else if err != nil {
+		return err
+	}
+
 	// Find all the MachineConfig pools
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -608,12 +644,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 
 			var registriesTOML []byte
-			if insecureRegs != nil || blockedRegs != nil {
+			if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
 				dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
 				if err != nil {
 					return fmt.Errorf("could not decode original registries config: %v", err)
 				}
-				registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs)
+				registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs, icspRules)
 				if err != nil {
 					return fmt.Errorf("could not update registries config with new changes: %v", err)
 				}
