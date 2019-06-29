@@ -1,10 +1,10 @@
 package utils
 
 import (
-	"testing"
-	"os"
-	"time"
 	"io/ioutil"
+	"os"
+	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -24,8 +24,8 @@ func TestRunExt(t *testing.T) {
 	tmpf := tmpdir + "/t"
 	runExtBackoff(false, wait.Backoff{Steps: 6,
 		Duration: 1 * time.Second,
-		Factor: 1.1},
-		"sh", "-c", "echo -n x >> " + tmpf + " && test $(stat -c '%s' " + tmpf + ") = 3")
+		Factor:   1.1},
+		"sh", "-c", "printf x >> "+tmpf+" && test $(wc -c < "+tmpf+") = 3")
 	s, err := os.Stat(tmpf)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(3), s.Size())
