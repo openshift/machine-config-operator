@@ -210,17 +210,19 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 	podmanRemove(pivottypes.PivotName)
 
 	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	var cid []byte
-	cid, err = runGetOut("podman", "create", "--net=none", "--name", pivottypes.PivotName, imgid)
+	var cidBuf []byte
+	cidBuf, err = runGetOut("podman", "create", "--net=none", "--name", pivottypes.PivotName, imgid)
 	if err != nil {
 		return
 	}
+	cid := strings.TrimSpace(string(cidBuf))
 	// Use the container ID to find its mount point
-	var mnt []byte
-	mnt, err = runGetOut("podman", "mount", string(cid))
+	var mntBuf []byte
+	mntBuf, err = runGetOut("podman", "mount", cid)
 	if err != nil {
 		return
 	}
+	mnt := strings.TrimSpace(string(mntBuf))
 	repo := fmt.Sprintf("%s/srv/repo", mnt)
 
 	// Now we need to figure out the commit to rebase to
@@ -240,7 +242,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		if err != nil {
 			return
 		}
-		refs := strings.Split(string(refText), "\n")
+		refs := strings.Split(strings.TrimSpace(string(refText)), "\n")
 		if len(refs) == 1 {
 			glog.Infof("Using ref %s", refs[0])
 			var ostreeCsumBytes []byte
@@ -248,7 +250,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 			if err != nil {
 				return
 			}
-			ostreeCsum = string(ostreeCsumBytes)
+			ostreeCsum = strings.TrimSpace(string(ostreeCsumBytes))
 		} else if len(refs) > 1 {
 			err = errors.New("multiple refs found in repo")
 			return
