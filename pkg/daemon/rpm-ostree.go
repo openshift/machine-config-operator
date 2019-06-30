@@ -335,7 +335,8 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 func followPivotJournalLogs(stopCh <-chan time.Time) {
 	cmd := exec.Command("journalctl", "-f", "-b", "-o", "cat",
 		"-u", "rpm-ostreed",
-		"-u", "pivot")
+		"-u", "pivot",
+		"-u", "machine-config-daemon-host")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
