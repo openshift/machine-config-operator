@@ -185,6 +185,9 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 }
 
 func run(_ *cobra.Command, args []string) error {
+	flag.Set("logtostderr", "true")
+	flag.Parse()
+
 	var container string
 	if fromEtcPullSpec || len(args) == 0 {
 		fromEtcPullSpec = true
