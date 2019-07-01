@@ -940,6 +940,13 @@ func (dn *Daemon) CheckStateOnBoot() error {
 				return err
 			}
 		}
+		// if we're degraded here, it means we got an error likely on startup and we retried
+		// if it's the case, clear it out
+		if state.state == constants.MachineConfigDaemonStateDegraded {
+			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
+				return errors.Wrap(err, "error setting node's state to Done")
+			}
+		}
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
 
