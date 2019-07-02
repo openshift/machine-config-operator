@@ -91,7 +91,6 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		CloudProviderConfig: "",
 		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
 		Platform:            platform,
-		Proxy:               &proxy.Status,
 	}
 
 	if proxy != nil {
