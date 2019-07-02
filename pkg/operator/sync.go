@@ -14,7 +14,6 @@ import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 
@@ -36,23 +35,19 @@ func (optr *Operator) syncAll(rconfig *renderConfig, syncFuncs []syncFunc) error
 		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
 
-	var errs []error
+	var syncErr error
 	for _, sf := range syncFuncs {
 		startTime := time.Now()
-		syncErr := sf.fn(rconfig)
-		errs = append(errs, syncErr)
+		syncErr = sf.fn(rconfig)
 		if optr.inClusterBringup {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
-		// fail fast here as we know we can't have the other functions running
-		// because they're missing the renderConfig
-		if syncErr != nil && sf.name == "render-config" {
+		if syncErr != nil {
 			break
 		}
 	}
 
-	agg := utilerrors.NewAggregate(errs)
-	if err := optr.syncDegradedStatus(agg); err != nil {
+	if err := optr.syncDegradedStatus(syncErr); err != nil {
 		return fmt.Errorf("error syncing degraded status: %v", err)
 	}
 
@@ -64,12 +59,12 @@ func (optr *Operator) syncAll(rconfig *renderConfig, syncFuncs []syncFunc) error
 		return fmt.Errorf("error syncing version: %v", err)
 	}
 
-	if optr.inClusterBringup && agg == nil {
+	if optr.inClusterBringup && syncErr == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
 
-	return agg
+	return syncErr
 }
 
 func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
