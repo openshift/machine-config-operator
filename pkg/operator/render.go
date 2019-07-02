@@ -86,13 +86,19 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		platform = "vsphere"
 	}
 
-	return &mcfgv1.ControllerConfigSpec{
+	ccSpec := &mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        dnsIP,
 		CloudProviderConfig: "",
 		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
 		Platform:            platform,
 		Proxy:               &proxy.Status,
-	}, nil
+	}
+
+	if proxy != nil {
+		ccSpec.Proxy = &proxy.Status
+	}
+
+	return ccSpec, nil
 }
 
 func clusterDNSIP(iprange string) (string, error) {
