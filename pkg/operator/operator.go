@@ -323,7 +323,7 @@ func (optr *Operator) sync(key string) error {
 	// any error marks sync as failure.
 	var syncFuncs = []syncFunc{
 		// "render-config" must always run first as it sets the renderConfig in the operator
-		// for the sync funcs below. This is the only function that prevents the others from even running also.
+		// for the sync funcs below
 		{"render-config", optr.syncRenderConfig},
 		{"pools", optr.syncMachineConfigPools},
 		{"mcd", optr.syncMachineConfigDaemon},
@@ -332,7 +332,7 @@ func (optr *Operator) sync(key string) error {
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
 		{"required-pools", optr.syncRequiredMachineConfigPools},
 	}
-	return optr.syncAll(optr.renderConfig, syncFuncs)
+	return optr.syncAll(syncFuncs)
 }
 
 func (optr *Operator) getOsImageURL(namespace string) (string, error) {

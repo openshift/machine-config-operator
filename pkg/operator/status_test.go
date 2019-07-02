@@ -479,7 +479,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				optr.vStore.Set("operator", "test-version")
 			}
 			optr.configClient = fakeconfigclientset.NewSimpleClientset(co)
-			err := optr.syncAll(&renderConfig{}, sync.syncFuncs)
+			err := optr.syncAll(sync.syncFuncs)
 			if sync.expectOperatorFail {
 				assert.NotNil(t, err, "test case %d, sync call %d, expected an error", idx, j)
 			} else {
@@ -518,7 +518,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	fn1 := func(config *renderConfig) error {
 		return errors.New("mocked fn1")
 	}
-	err := optr.syncAll(&renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
 	assert.NotNil(t, err, "expected syncAll to fail")
 
 	assert.True(t, optr.inClusterBringup)
@@ -526,7 +526,7 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	fn1 = func(config *renderConfig) error {
 		return nil
 	}
-	err = optr.syncAll(&renderConfig{}, []syncFunc{{name: "mock1", fn: fn1}})
+	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)

@@ -30,7 +30,7 @@ type syncFunc struct {
 	fn   func(config *renderConfig) error
 }
 
-func (optr *Operator) syncAll(rconfig *renderConfig, syncFuncs []syncFunc) error {
+func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
@@ -38,7 +38,7 @@ func (optr *Operator) syncAll(rconfig *renderConfig, syncFuncs []syncFunc) error
 	var syncErr error
 	for _, sf := range syncFuncs {
 		startTime := time.Now()
-		syncErr = sf.fn(rconfig)
+		syncErr = sf.fn(optr.renderConfig)
 		if optr.inClusterBringup {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
