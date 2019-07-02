@@ -1,6 +1,6 @@
 filesystem: "root"
 mode: 0644
-path: "/etc/systemd/user.conf.d/10-default-env.conf"
+path: "/etc/systemd/system/crio.service.d/10-default-env.conf"
 contents:
   inline: |
     {{if .Proxy -}}
@@ -14,4 +14,4 @@ contents:
     {{if .Proxy.NoProxy -}}
     DefaultEnvironment=NO_PROXY="{{.Proxy.NoProxy}}"
     {{end -}}
-    {{end -}}
+    {{end -}} 
