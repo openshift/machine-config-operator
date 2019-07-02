@@ -476,7 +476,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 		return nil, nil, nil, err
 	}
 	proxy, err := optr.proxyLister.Get("cluster")
-	if err != nil {
+	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, err
 	}
 	return infra, network, proxy, nil
