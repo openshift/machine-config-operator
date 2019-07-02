@@ -2,10 +2,7 @@ package operator
 
 import (
 	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -37,7 +34,6 @@ import (
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -106,6 +102,8 @@ type Operator struct {
 	queue workqueue.RateLimitingInterface
 
 	stopCh <-chan struct{}
+
+	renderConfig *renderConfig
 }
 
 // New returns a new machine config operator.
@@ -321,108 +319,20 @@ func (optr *Operator) sync(key string) error {
 		glog.V(4).Infof("Finished syncing operator %q (%v)", key, time.Since(startTime))
 	}()
 
-	if err := optr.syncCustomResourceDefinitions(); err != nil {
-		return err
-	}
-
-	if optr.inClusterBringup {
-		glog.V(4).Info("Starting inClusterBringup informers cache sync")
-		// sync now our own informers after having installed the CRDs
-		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
-			return errors.New("failed to sync caches for informers")
-		}
-		glog.V(4).Info("Finished inClusterBringup informers cache sync")
-	}
-
-	namespace, _, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
-	// sync up the images used by operands.
-	imgsRaw, err := ioutil.ReadFile(optr.imagesFile)
-	if err != nil {
-		return err
-	}
-	imgs := Images{}
-	if err := json.Unmarshal(imgsRaw, &imgs); err != nil {
-		return err
-	}
-
-	// sync up CAs
-	etcdCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-serving-ca", "ca-bundle.crt")
-	if err != nil {
-		return err
-	}
-	etcdMetricCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-metric-serving-ca", "ca-bundle.crt")
-	if err != nil {
-		return err
-	}
-	rootCA, err := optr.getCAsFromConfigMap("kube-system", "root-ca", "ca.crt")
-	if err != nil {
-		return err
-	}
-	// as described by the name this is essentially static, but it no worse than what was here before.  Since changes disrupt workloads
-	// and since must perfectly match what the installer creates, this is effectively frozen in time.
-	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
-	if err != nil {
-		return err
-	}
-	bundle := make([]byte, 0)
-	bundle = append(bundle, rootCA...)
-	bundle = append(bundle, kubeAPIServerServingCABytes...)
-
-	// sync up os image url
-	// TODO: this should probably be part of the imgs
-	osimageurl, err := optr.getOsImageURL(namespace)
-	if err != nil {
-		return err
-	}
-	imgs.MachineOSContent = osimageurl
-
-	// sync up the ControllerConfigSpec
-	infra, network, proxy, err := optr.getGlobalConfig()
-	if err != nil {
-		return err
-	}
-	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
-	if err != nil {
-		return err
-	}
-
-	// if the cloudConfig is set in infra read the cloud config reference
-	if infra.Spec.CloudConfig.Name != "" {
-		cc, err := optr.getCloudConfigFromConfigMap("openshift-config", infra.Spec.CloudConfig.Name, infra.Spec.CloudConfig.Key)
-		if err != nil {
-			return err
-		}
-		spec.CloudProviderConfig = cc
-	}
-
-	spec.EtcdCAData = etcdCA
-	spec.EtcdMetricCAData = etcdMetricCA
-	spec.RootCAData = bundle
-	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
-	spec.OSImageURL = imgs.MachineOSContent
-	spec.Images = map[string]string{
-		templatectrl.EtcdImageKey:            imgs.Etcd,
-		templatectrl.SetupEtcdEnvKey:         imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:           imgs.InfraImage,
-		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
-	}
-
-	// create renderConfig
-	rc := getRenderConfig(namespace, string(kubeAPIServerServingCABytes), spec, &imgs, infra.Status.APIServerURL)
 	// syncFuncs is the list of sync functions that are executed in order.
-	// any error marks sync as failure but continues to next syncFunc
+	// any error marks sync as failure but continues to next syncFunc unless it's the "render-config" one
+	// which is in charge of setting up the renderConfig for the subsequent syncfuncs.
 	var syncFuncs = []syncFunc{
+		// "render-config" must always run first as it sets the renderConfig in the operator
+		// for the sync funcs below. This is the only function that prevents the others from even running also.
+		{"render-config", optr.syncRenderConfig},
 		{"pools", optr.syncMachineConfigPools},
 		{"mcd", optr.syncMachineConfigDaemon},
 		{"mcc", optr.syncMachineConfigController},
 		{"mcs", optr.syncMachineConfigServer},
 		{"required-pools", optr.syncRequiredMachineConfigPools},
 	}
-	return optr.syncAll(rc, syncFuncs)
+	return optr.syncAll(optr.renderConfig, syncFuncs)
 }
 
 func (optr *Operator) getOsImageURL(namespace string) (string, error) {
