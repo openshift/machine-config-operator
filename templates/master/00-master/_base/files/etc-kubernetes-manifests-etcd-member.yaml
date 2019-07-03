@@ -13,7 +13,7 @@ contents:
     spec:
       initContainers:
       - name: discovery
-        image: "{{.Images.machineConfigOperator}}"
+        image: "{{.Images.setupEtcdEnv}}"
         command: ["/usr/bin/setup-etcd-environment"]
         args:
         - "run"
