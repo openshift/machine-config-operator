@@ -598,7 +598,7 @@ func TestFIPS(t *testing.T) {
 		}
 		fips := string(fipsBytes)
 		if !strings.Contains(fips, "FIPS mode is enabled") {
-			t.Fatalf("FIPS hasn't been enabled")
+			t.Fatalf("FIPS hasn't been enabled on node %s: %s", node.Name, fips)
 		}
 		t.Logf("Node %s has expected FIPS mode", node.Name)
 	}
@@ -629,7 +629,7 @@ func TestFIPS(t *testing.T) {
 		}
 		fips := string(fipsBytes)
 		if !strings.Contains(fips, "FIPS mode is disabled") {
-			t.Fatalf("FIPS hasn't been disabled")
+			t.Fatalf("FIPS hasn't been disabled on node %s: %s", node.Name, fips)
 		}
 		t.Logf("Node %s has expected FIPS mode", node.Name)
 	}
