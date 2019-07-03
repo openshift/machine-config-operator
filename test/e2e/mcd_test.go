@@ -36,15 +36,11 @@ func TestMCDToken(t *testing.T) {
 	}
 
 	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
-	if err != nil {
-		t.Fatalf("%#v", err)
-	}
+	require.Nil(t, err)
 
 	for _, pod := range mcdList.Items {
 		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).DoRaw()
-		if err != nil {
-			t.Errorf("%s", err)
-		}
+		require.Nil(t, err)
 		for _, line := range strings.Split(string(res), "\n") {
 			if strings.Contains(line, "Unable to rotate token") {
 				t.Fatalf("found token rotation failure message: %s", line)
@@ -154,16 +150,11 @@ func TestMCDeployed(t *testing.T) {
 
 		t.Logf("Created %s", mcadd.Name)
 		renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
-		if err != nil {
-			t.Errorf("%v", err)
-		}
-		if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
+		err = waitForPoolComplete(t, cs, "worker", renderedConfig)
+		require.Nil(t, err)
 		nodes, err := getNodesByRole(cs, "worker")
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		for _, node := range nodes {
 			assert.Equal(t, renderedConfig, node.Annotations[constants.CurrentMachineConfigAnnotationKey])
 			assert.Equal(t, constants.MachineConfigDaemonStateDone, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey])
@@ -231,30 +222,21 @@ func TestUpdateSSH(t *testing.T) {
 	mcadd.Spec.Config = ignConfig
 
 	_, err := cs.MachineConfigs().Create(mcadd)
-	if err != nil {
-		t.Errorf("failed to create machine config %v", err)
-	}
+	require.Nil(t, err, "failed to create MC")
 	t.Logf("Created %s", mcadd.Name)
 
 	// grab the latest worker- MC
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
+	require.Nil(t, err)
 	nodes, err := getNodesByRole(cs, "worker")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		mcd, err := mcdForNode(cs, &node)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		mcdName := mcd.ObjectMeta.Name
 
 		// now rsh into that daemon and grep the authorized key file to check if 1234_test was written
@@ -286,34 +268,24 @@ func TestKernelArguments(t *testing.T) {
 	}
 
 	_, err := cs.MachineConfigs().Create(kargsMC)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
 	t.Logf("Created %s", kargsMC.Name)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
 	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
 		t.Fatal(err)
 	}
 	nodes, err := getNodesByRole(cs, "worker")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		mcd, err := mcdForNode(cs, &node)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		mcdName := mcd.ObjectMeta.Name
 		kargsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
 			"cat", "/rootfs/proc/cmdline").CombinedOutput()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		kargs := string(kargsBytes)
 		for _, v := range kargsMC.Spec.KernelArguments {
 			if !strings.Contains(kargs, v) {
@@ -343,9 +315,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 
 	// create the dummy MC now
 	_, err := cs.MachineConfigs().Create(mcadd)
-	if err != nil {
-		t.Errorf("failed to create machine config %v", err)
-	}
+	require.Nil(t, err, "failed to create machine config")
 
 	// verify the pool goes degraded
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
@@ -392,9 +362,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
 	// and we need it for the final check
 	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	if err != nil {
-		t.Error(err)
-	}
+	require.Nil(t, err)
 	workerOldMc := mcp.Status.Configuration.Name
 
 	// create the dummy MC now
@@ -404,9 +372,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	}
 
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
+	require.Nil(t, err)
 
 	// verify that one node picked the above up
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
@@ -491,9 +457,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the previous MC is deleted
 	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	if err != nil {
-		t.Error(err)
-	}
+	require.Nil(t, err)
 	workerOldMc := mcp.Status.Configuration.Name
 
 	// create the dummy MC now
@@ -503,9 +467,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	}
 
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcHostFile.Name)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
+	require.Nil(t, err)
 
 	// wait for the mcp to go back to previous config
 	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
@@ -523,17 +485,13 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	}
 
 	nodes, err := getNodesByRole(cs, "worker")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.Nil(t, err)
 
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMc)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		mcd, err := mcdForNode(cs, &node)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		mcdName := mcd.ObjectMeta.Name
 
 		found, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
@@ -587,15 +545,11 @@ func TestFIPS(t *testing.T) {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		mcd, err := mcdForNode(cs, &node)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		mcdName := mcd.ObjectMeta.Name
 		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
 			"chroot", "/rootfs", "fips-mode-setup", "--check").CombinedOutput()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		fips := string(fipsBytes)
 		if !strings.Contains(fips, "FIPS mode is enabled") {
 			t.Fatalf("FIPS hasn't been enabled")
@@ -618,15 +572,11 @@ func TestFIPS(t *testing.T) {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMc)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		mcd, err := mcdForNode(cs, &node)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		mcdName := mcd.ObjectMeta.Name
 		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
 			"chroot", "/rootfs", "fips-mode-setup", "--check").CombinedOutput()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.Nil(t, err)
 		fips := string(fipsBytes)
 		if !strings.Contains(fips, "FIPS mode is disabled") {
 			t.Fatalf("FIPS hasn't been disabled")
