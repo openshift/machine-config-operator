@@ -40,7 +40,7 @@ spec:
     plural: machineconfigpools
     # singular name to be used as an alias on the CLI and for display
     singular: machineconfigpool
-    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    # kind is normally the PascalCased singular type. Your resource manifests use this.
     kind: MachineConfigPool
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:

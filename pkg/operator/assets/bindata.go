@@ -216,7 +216,7 @@ spec:
     plural: controllerconfigs
     # singular name to be used as an alias on the CLI and for display
     singular: controllerconfig
-    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    # kind is normally the PascalCased singular type. Your resource manifests use this.
     kind: ControllerConfig
 `)
 
@@ -308,7 +308,7 @@ spec:
     plural: machineconfigs
     # singular name to be used as an alias on the CLI and for display
     singular: machineconfig
-    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    # kind is normally the PascalCased singular type. Your resource manifests use this.
     kind: MachineConfig
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
@@ -784,7 +784,7 @@ spec:
     plural: machineconfigpools
     # singular name to be used as an alias on the CLI and for display
     singular: machineconfigpool
-    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    # kind is normally the PascalCased singular type. Your resource manifests use this.
     kind: MachineConfigPool
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
