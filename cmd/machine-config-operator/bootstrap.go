@@ -30,15 +30,11 @@ var (
 		infraImage           string
 		kubeCAFile           string
 		kubeClientAgentImage string
-		mccImage             string
-		mcdImage             string
-		mcsImage             string
 		mcoImage             string
 		networkConfigFile    string
 		oscontentImage       string
 		pullSecretFile       string
 		rootCAFile           string
-		setupEtcdEnvImage    string
 		proxyConfigFile      string
 	}
 )
@@ -52,16 +48,12 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.MarkFlagRequired("dest-dir")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mccImage, "machine-config-controller-image", "", "Image for Machine Config Controller.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcsImage, "machine-config-server-image", "", "Image for Machine Config Server.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcdImage, "machine-config-daemon-image", "", "Image for Machine Config Daemon.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcoImage, "machine-config-operator-image", "", "Image for Machine Config Operator.")
 	bootstrapCmd.MarkFlagRequired("machine-config-operator-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
 	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
 	bootstrapCmd.MarkFlagRequired("etcd-image")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.setupEtcdEnvImage, "setup-etcd-env-image", "", "Image for Setup etcd Environment.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
 	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
@@ -83,15 +75,11 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{
-			MachineConfigOperator:   bootstrapOpts.mcoImage,
-			MachineConfigController: bootstrapOpts.mccImage,
-			MachineConfigDaemon:     bootstrapOpts.mcdImage,
-			MachineConfigServer:     bootstrapOpts.mcsImage,
-			MachineOSContent:        bootstrapOpts.oscontentImage,
+			MachineConfigOperator: bootstrapOpts.mcoImage,
+			MachineOSContent:      bootstrapOpts.oscontentImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
 			Etcd:            bootstrapOpts.etcdImage,
-			SetupEtcdEnv:    bootstrapOpts.setupEtcdEnvImage,
 			InfraImage:      bootstrapOpts.infraImage,
 			KubeClientAgent: bootstrapOpts.kubeClientAgentImage,
 		},
