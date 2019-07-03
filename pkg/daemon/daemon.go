@@ -384,8 +384,7 @@ func (dn *Daemon) syncNode(key string) error {
 	// Pass to the shared update prep method
 	current, desired, err := dn.prepUpdateFromCluster()
 	if err != nil {
-		glog.Infof("Unable to prep update: %s", err)
-		return err
+		return errors.Wrapf(err, "prepping update")
 	}
 	if current != nil || desired != nil {
 		if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
