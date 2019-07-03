@@ -109,11 +109,18 @@ func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
 }
 
 func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfiguration, selector *metav1.LabelSelector) *mcfgv1.KubeletConfig {
+	kcRaw, err := encodeKubeletConfig(kubeconf, kubeletconfigv1beta1.SchemeGroupVersion)
+	if err != nil {
+		panic(err)
+	}
+
 	return &mcfgv1.KubeletConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Spec: mcfgv1.KubeletConfigSpec{
-			KubeletConfig:             kubeconf,
+			KubeletConfig: &runtime.RawExtension{
+				Raw: kcRaw,
+			},
 			MachineConfigPoolSelector: selector,
 		},
 		Status: mcfgv1.KubeletConfigStatus{},
@@ -371,7 +378,16 @@ func TestKubeletConfigUpdates(t *testing.T) {
 
 			// Modify config
 			kcUpdate := kc1.DeepCopy()
-			kcUpdate.Spec.KubeletConfig.MaxPods = 101
+			kcDecoded, err := decodeKubeletConfig(kcUpdate.Spec.KubeletConfig.Raw)
+			if err != nil {
+				t.Errorf("KubeletConfig could not be unmarshalled")
+			}
+			kcDecoded.MaxPods = 101
+			kcRaw, err := encodeKubeletConfig(kcDecoded, kubeletconfigv1beta1.SchemeGroupVersion)
+			if err != nil {
+				t.Errorf("KubeletConfig could not be marshalled")
+			}
+			kcUpdate.Spec.KubeletConfig.Raw = kcRaw
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)

@@ -450,8 +450,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
 		}
+		specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
+		}
 		// Merge the Old and New
-		err = mergo.Merge(originalKubeConfig, cfg.Spec.KubeletConfig, mergo.WithOverride)
+		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
 		}

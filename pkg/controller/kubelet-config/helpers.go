@@ -67,10 +67,14 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool) string {
 
 // validates a KubeletConfig and returns an error if invalid
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
-	if cfg.Spec.KubeletConfig == nil {
+	if cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
 	}
-	kcValues := reflect.ValueOf(*cfg.Spec.KubeletConfig)
+	kcDecoded, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+	if err != nil {
+		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %v", err)
+	}
+	kcValues := reflect.ValueOf(*kcDecoded)
 	if !kcValues.IsValid() {
 		return fmt.Errorf("KubeletConfig is not valid")
 	}
