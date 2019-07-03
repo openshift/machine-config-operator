@@ -8,12 +8,10 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -27,6 +25,7 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/stretchr/testify/assert"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -147,8 +146,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		return
 	}
 
-	if reflect.TypeOf(actual) != reflect.TypeOf(expected) {
-		t.Errorf("Action has wrong type. Expected: %t. Got: %t", expected, actual)
+	if !assert.Equal(t, reflect.TypeOf(expected), reflect.TypeOf(actual)) {
 		return
 	}
 
@@ -157,29 +155,17 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		e, _ := expected.(core.CreateAction)
 		expObject := filterLastTransitionTime(e.GetObject())
 		object := filterLastTransitionTime(a.GetObject())
-
-		if !equality.Semantic.DeepEqual(expObject, object) {
-			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
-		}
+		assert.Equal(t, expObject, object)
 	case core.UpdateAction:
 		e, _ := expected.(core.UpdateAction)
 		expObject := filterLastTransitionTime(e.GetObject())
 		object := filterLastTransitionTime(a.GetObject())
-
-		if !equality.Semantic.DeepEqual(expObject, object) {
-			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
-		}
+		assert.Equal(t, expObject, object)
 	case core.PatchAction:
 		e, _ := expected.(core.PatchAction)
 		expPatch := e.GetPatch()
 		patch := a.GetPatch()
-
-		if !equality.Semantic.DeepEqual(expPatch, expPatch) {
-			t.Errorf("Action %s %s has wrong patch\nDiff:\n %s",
-				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expPatch, patch))
-		}
+		assert.Equal(t, expPatch, patch)
 	}
 }
 
@@ -261,9 +247,7 @@ func TestGetNodesForPool(t *testing.T) {
 			if err != nil && !test.err {
 				t.Fatal("expected non-nil error")
 			}
-			if len(got) != test.expected {
-				t.Fatalf("mismatch: got: %v want: %v", got, test.expected)
-			}
+			assert.Equal(t, test.expected, len(got))
 		})
 	}
 }
@@ -371,9 +355,7 @@ func TestGetPoolForNode(t *testing.T) {
 			if test.expected != nil {
 				test.expected.ObjectMeta.UID = ""
 			}
-			if !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("mismatch: got: %v want: %v", got, test.expected)
-			}
+			assert.Equal(t, test.expected, got)
 		})
 	}
 }
@@ -487,9 +469,7 @@ func TestMaxUnavailable(t *testing.T) {
 				t.Fatal("expected non-nil error")
 			}
 
-			if got != test.expected {
-				t.Fatalf("mismatch maxUnavailable: got %d want: %d", got, test.expected)
-			}
+			assert.Equal(t, test.expected, got)
 		})
 	}
 }
@@ -601,9 +581,7 @@ func TestGetCandidateMachines(t *testing.T) {
 			for _, node := range got {
 				nodeNames = append(nodeNames, node.Name)
 			}
-			if !reflect.DeepEqual(nodeNames, test.expected) {
-				t.Fatalf("mismatch: got %v want: %v", nodeNames, test.expected)
-			}
+			assert.Equal(t, test.expected, nodeNames)
 		})
 	}
 }
@@ -617,9 +595,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 	}{{
 		node: newNode("node-0", "", ""),
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
-				t.Fatal(actions)
-			}
+			assert.Equal(t, 2, len(actions))
 
 			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
 				t.Fatal(actions)
@@ -631,10 +607,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
 			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
-			}
+			assert.Equal(t, expected, actual)
 		},
 	}, {
 		node:       newNode("node-0", "", ""),
@@ -654,10 +627,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
 			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
-			}
+			assert.Equal(t, expected, actual)
 		},
 	}, {
 		node: newNode("node-0", "v0", ""),
@@ -676,10 +646,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
 			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
-			}
+			assert.Equal(t, expected, actual)
 		},
 	}, {
 		node:       newNode("node-0", "v0", ""),
@@ -699,10 +666,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
 			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
-			}
+			assert.Equal(t, expected, actual)
 		},
 	}, {
 		node: newNode("node-0", "v0", "v0"),
@@ -721,39 +685,36 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
 			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
-			}
+			assert.Equal(t, expected, actual)
 		},
 	}, {
 		node:       newNode("node-0", "v0", "v0"),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
-				t.Fatal(actions)
+			if !assert.Equal(t, len(actions), 2) {
+				return
 			}
 
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
+			if !assert.True(t, actions[0].Matches("get", "nodes")) {
+				return
+			}
+			if !assert.Equal(t, actions[0].(core.GetAction).GetName(), "node-0") {
+				return
 			}
 
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
+			if !assert.True(t, actions[1].Matches("patch", "nodes")) {
+				return
 			}
 
 			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
 			actual := actions[1].(core.PatchAction).GetPatch()
-
-			if !reflect.DeepEqual(expected, actual) {
-				t.Fatal(diff.ObjectDiff(string(expected), string(actual)))
-			}
+			assert.Equal(t, expected, actual)
 		},
 	}, {
 		node: newNode("node-0", "v0", "v1"),
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 1 {
-				t.Fatal(actions)
+			if !assert.Equal(t, 1, len(actions)) {
+				return
 			}
 
 			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
@@ -764,8 +725,8 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 		node:       newNode("node-0", "v0", "v1"),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 1 {
-				t.Fatal(actions)
+			if !assert.Equal(t, 1, len(actions)) {
+				return
 			}
 
 			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
@@ -791,8 +752,8 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 			c := f.newController()
 
 			err := c.setDesiredMachineConfigAnnotation(test.node.Name, "v1")
-			if err != nil {
-				t.Fatalf("expected non-nil error: %v", err)
+			if !assert.Nil(t, err) {
+				return
 			}
 
 			test.verify(filterInformerActions(f.kubeclient.Actions()), t)
