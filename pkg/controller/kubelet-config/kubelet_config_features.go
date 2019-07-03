@@ -115,12 +115,12 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
-		// Encode the new config into YAML
-		cfgYAML, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+		// Encode the new config into raw JSON
+		cfgJSON, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 		if err != nil {
 			return err
 		}
-		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
+		mc.Spec.Config = createNewKubeletIgnition(cfgJSON)
 		mc.ObjectMeta.Annotations = map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}
