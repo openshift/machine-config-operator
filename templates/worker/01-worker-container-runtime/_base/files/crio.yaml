@@ -203,7 +203,7 @@ contents:
     default_transport = "docker://"
 
     # pause_image is the image which we use to instantiate infra containers.
-    pause_image = "{{.Images.infraImage}}"
+    pause_image = "{{.Images.infraImageKey}}"
 
     # If not empty, the path to a docker/config.json-like file containing credentials
     # necessary for pulling the image specified by pause_image above.
