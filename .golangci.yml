@@ -6,7 +6,6 @@ run:
     - ".*_test\\.go"
     - "lib/.*"
 linters:
-  disable-all: true
   enable:
     - deadcode
     - depguard
