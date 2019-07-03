@@ -586,7 +586,24 @@ func TestGetCandidateMachines(t *testing.T) {
 	}
 }
 
+func assertPatchesNode0ToV1(t *testing.T, actions []core.Action) {
+	if !assert.Equal(t, 2, len(actions)) {
+		t.Fatal("actions")
+	}
+	if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
+		t.Fatal(actions)
+	}
+	if !actions[1].Matches("patch", "nodes") {
+		t.Fatal(actions)
+	}
+
+	expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
+	actual := actions[1].(core.PatchAction).GetPatch()
+	assert.Equal(t, expected, actual)
+}
+
 func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
+
 	tests := []struct {
 		node       *corev1.Node
 		extraannos map[string]string
@@ -595,120 +612,35 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 	}{{
 		node: newNode("node-0", "", ""),
 		verify: func(actions []core.Action, t *testing.T) {
-			assert.Equal(t, 2, len(actions))
-
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-			assert.Equal(t, expected, actual)
+			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
 		node:       newNode("node-0", "", ""),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
-				t.Fatal(actions)
-			}
-
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-			assert.Equal(t, expected, actual)
+			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
 		node: newNode("node-0", "v0", ""),
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
-				t.Fatal(actions)
-			}
-
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-			assert.Equal(t, expected, actual)
+			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
 		node:       newNode("node-0", "v0", ""),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
-				t.Fatal(actions)
-			}
-
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-			assert.Equal(t, expected, actual)
+			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
 		node: newNode("node-0", "v0", "v0"),
 		verify: func(actions []core.Action, t *testing.T) {
-			if len(actions) != 2 {
-				t.Fatal(actions)
-			}
-
-			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
-				t.Fatal(actions)
-			}
-
-			if !actions[1].Matches("patch", "nodes") {
-				t.Fatal(actions)
-			}
-
-			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-			assert.Equal(t, expected, actual)
+			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
 		node:       newNode("node-0", "v0", "v0"),
 		extraannos: map[string]string{"test": "extra-annotation"},
 		verify: func(actions []core.Action, t *testing.T) {
-			if !assert.Equal(t, len(actions), 2) {
-				return
-			}
-
-			if !assert.True(t, actions[0].Matches("get", "nodes")) {
-				return
-			}
-			if !assert.Equal(t, actions[0].(core.GetAction).GetName(), "node-0") {
-				return
-			}
-
-			if !assert.True(t, actions[1].Matches("patch", "nodes")) {
-				return
-			}
-
-			expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
-			actual := actions[1].(core.PatchAction).GetPatch()
-			assert.Equal(t, expected, actual)
+			assertPatchesNode0ToV1(t, actions)
 		},
 	}, {
 		node: newNode("node-0", "v0", "v1"),
