@@ -450,8 +450,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
 		}
+		specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
+		}
 		// Merge the Old and New
-		err = mergo.Merge(originalKubeConfig, cfg.Spec.KubeletConfig, mergo.WithOverride)
+		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
 		}
@@ -460,16 +464,16 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not merge FeatureGates: %v", err)
 		}
-		// Encode the new config into YAML
-		cfgYAML, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+		// Encode the new config into raw JSON
+		cfgJSON, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not encode YAML: %v", err)
+			return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
 		}
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
 		}
-		mc.Spec.Config = createNewKubeletIgnition(cfgYAML)
+		mc.Spec.Config = createNewKubeletIgnition(cfgJSON)
 
 		mc.SetAnnotations(map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,

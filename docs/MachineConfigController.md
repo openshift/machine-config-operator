@@ -166,7 +166,7 @@ The MachineConfigController performs the following operations:
 1. Renders the current MachineConfig (storage.files.contents[kubelet.conf]) into the KubeletConfiguration structure
 1. Loads the user's KubeletConfig instance
 1. Uses mergo to merge the two structures
-1. Serialize the KubeletConfig to yaml
+1. Serialize the KubeletConfig to json
 1. Create or Update a MachineConfig (called `99-[role]-kubelet-managed`) with a new (/etc/kubernetes/kubelet.conf)
 
 The machine will subseqently reboot by the MachineConfigDaemon to apply the new config.

@@ -88,7 +88,7 @@ The KubeletConfigController would perform the following steps:
 
 4. Use mergo to merge the two structures
 
-5. Serialize the KubeletConfig to yaml
+5. Serialize the KubeletConfig to json
 
 6. Create or Update an ignition /etc/kubernetes/kubelet.conf file within a 99-[role]-kubelet-managed MachineConfig
 

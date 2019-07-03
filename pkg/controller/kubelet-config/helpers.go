@@ -19,9 +19,9 @@ import (
 	kubeletconfigscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
 )
 
-func createNewKubeletIgnition(ymlconfig []byte) igntypes.Config {
+func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
 	mode := 0644
-	du := dataurl.New(ymlconfig, "text/plain")
+	du := dataurl.New(jsonConfig, "text/plain")
 	du.Encoding = dataurl.EncodingASCII
 	tempFile := igntypes.File{
 		Node: igntypes.Node{
@@ -67,10 +67,14 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool) string {
 
 // validates a KubeletConfig and returns an error if invalid
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
-	if cfg.Spec.KubeletConfig == nil {
+	if cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
 	}
-	kcValues := reflect.ValueOf(*cfg.Spec.KubeletConfig)
+	kcDecoded, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+	if err != nil {
+		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %v", err)
+	}
+	kcValues := reflect.ValueOf(*kcDecoded)
 	if !kcValues.IsValid() {
 		return fmt.Errorf("KubeletConfig is not valid")
 	}
@@ -150,7 +154,7 @@ func decodeKubeletConfig(data []byte) (*kubeletconfigv1beta1.KubeletConfiguratio
 }
 
 func encodeKubeletConfig(internal *kubeletconfigv1beta1.KubeletConfiguration, targetVersion schema.GroupVersion) ([]byte, error) {
-	encoder, err := newKubeletconfigYAMLEncoder(targetVersion)
+	encoder, err := newKubeletconfigJSONEncoder(targetVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +165,12 @@ func encodeKubeletConfig(internal *kubeletconfigv1beta1.KubeletConfiguration, ta
 	return data, nil
 }
 
-func newKubeletconfigYAMLEncoder(targetVersion schema.GroupVersion) (runtime.Encoder, error) {
+func newKubeletconfigJSONEncoder(targetVersion schema.GroupVersion) (runtime.Encoder, error) {
 	_, codecs, err := kubeletconfigscheme.NewSchemeAndCodecs()
 	if err != nil {
 		return nil, err
 	}
-	mediaType := "application/yaml"
+	mediaType := "application/json"
 	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), mediaType)
 	if !ok {
 		return nil, fmt.Errorf("unsupported media type %q", mediaType)
