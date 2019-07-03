@@ -232,8 +232,11 @@ func (ctrl *Controller) deleteContainerRuntimeConfig(obj interface{}) {
 			return
 		}
 	}
-	ctrl.cascadeDelete(cfg)
-	glog.V(4).Infof("Deleted ContainerRuntimeConfig %s and restored default config", cfg.Name)
+	if err := ctrl.cascadeDelete(cfg); err != nil {
+		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %v", cfg, err))
+	} else {
+		glog.V(4).Infof("Deleted ContainerRuntimeConfig %s and restored default config", cfg.Name)
+	}
 }
 
 func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.ContainerRuntimeConfig) error {
