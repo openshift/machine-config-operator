@@ -411,6 +411,7 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.Cu
 	return nil
 }
 
+//nolint:dupl
 func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) error {
 	var lastErr error
 	if err := wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
@@ -444,6 +445,7 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 	return nil
 }
 
+//nolint:dupl
 func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error {
 	var lastErr error
 	if err := wait.Poll(daemonsetRolloutPollInterval, daemonsetRolloutTimeout, func() (bool, error) {
