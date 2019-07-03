@@ -8,13 +8,23 @@ package operator
 // Change the installer to pass that arg with the image from the CVO
 // (some time later) Change the option to required and drop the default
 type Images struct {
+	RenderConfigImages
+	ControllerConfigImages
+}
+
+// RenderConfigImages are image names used to render templates under ./manifests/
+type RenderConfigImages struct {
 	MachineConfigOperator   string `json:"machineConfigOperator"`
 	MachineConfigController string `json:"machineConfigController"`
 	MachineConfigDaemon     string `json:"machineConfigDaemon"`
 	MachineConfigServer     string `json:"machineConfigServer"`
 	MachineOSContent        string `json:"machineOSContent"`
-	Etcd                    string `json:"etcd"`
-	SetupEtcdEnv            string `json:"setupEtcdEnv"`
-	InfraImage              string `json:"infraImage"`
-	KubeClientAgent         string `json:"kubeClientAgentImage"`
+}
+
+// ControllerConfigImages are image names used to render templates under ./templates/
+type ControllerConfigImages struct {
+	Etcd            string `json:"etcd"`
+	SetupEtcdEnv    string `json:"setupEtcdEnv"`
+	InfraImage      string `json:"infraImage"`
+	KubeClientAgent string `json:"kubeClientAgentImage"`
 }

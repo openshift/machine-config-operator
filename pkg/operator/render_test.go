@@ -55,8 +55,9 @@ func TestRenderAsset(t *testing.T) {
 		Path: "manifests/machineconfigcontroller/deployment.yaml",
 		RenderConfig: &renderConfig{
 			TargetNamespace: "testing-namespace",
-			Images: &Images{
-				MachineConfigOperator: "{MCO: PLACEHOLDER}"},
+			Images: &RenderConfigImages{
+				MachineConfigOperator: "{MCO: PLACEHOLDER}",
+			},
 		},
 		FindExpected: "image: {MCO: PLACEHOLDER}",
 	}, {
