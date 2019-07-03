@@ -51,7 +51,11 @@ update:
 verify:
 	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to verify generated code";  exit 1; }
 	@which golangci-lint 2> /dev/null >&1 || { echo "golangci-lint must be installed to lint code";  exit 1; }
+	@which gosec 2> /dev/null >&1 || { echo "gosec must be installed to lint code";  exit 1; }
 	golangci-lint run
+	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
+	# addressed
+	gosec -severity high --confidence medium -exclude G204 -quiet ./...
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
 
