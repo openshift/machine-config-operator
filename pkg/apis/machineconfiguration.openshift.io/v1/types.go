@@ -85,15 +85,14 @@ type ControllerConfigSpec struct {
 	// on all machines.
 	PullSecret *corev1.ObjectReference `json:"pullSecret,omitempty"`
 
-	// images is the map of images that are used by the controller,
-	// i.e. images for etcd Environment Setup, etcd, Kube Client Agent, and Infra containers.
+	// images is map of images that are used by the controller to render templates under ./templates/
 	Images map[string]string `json:"images"`
 
 	// osImageURL is the location of the container image that contains the OS update payload.
 	// Its value is taken from the data.osImageURL field on the machine-config-osimageurl ConfigMap.
 	OSImageURL string `json:"osImageURL"`
 
-	// Proxy holds the current proxy configuration for the nodes
+	// proxy holds the current proxy configuration for the nodes
 	Proxy *configv1.ProxyStatus `json:"proxy"`
 }
 

@@ -82,15 +82,19 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
 
 	imgs := operator.Images{
-		MachineConfigOperator:   bootstrapOpts.mcoImage,
-		MachineConfigController: bootstrapOpts.mccImage,
-		MachineConfigDaemon:     bootstrapOpts.mcdImage,
-		MachineConfigServer:     bootstrapOpts.mcsImage,
-		MachineOSContent:        bootstrapOpts.oscontentImage,
-		Etcd:                    bootstrapOpts.etcdImage,
-		SetupEtcdEnv:            bootstrapOpts.setupEtcdEnvImage,
-		InfraImage:              bootstrapOpts.infraImage,
-		KubeClientAgent:         bootstrapOpts.kubeClientAgentImage,
+		RenderConfigImages: operator.RenderConfigImages{
+			MachineConfigOperator:   bootstrapOpts.mcoImage,
+			MachineConfigController: bootstrapOpts.mccImage,
+			MachineConfigDaemon:     bootstrapOpts.mcdImage,
+			MachineConfigServer:     bootstrapOpts.mcsImage,
+			MachineOSContent:        bootstrapOpts.oscontentImage,
+		},
+		ControllerConfigImages: operator.ControllerConfigImages{
+			Etcd:            bootstrapOpts.etcdImage,
+			SetupEtcdEnv:    bootstrapOpts.setupEtcdEnvImage,
+			InfraImage:      bootstrapOpts.infraImage,
+			KubeClientAgent: bootstrapOpts.kubeClientAgentImage,
+		},
 	}
 
 	if err := operator.RenderBootstrap(
