@@ -3,7 +3,6 @@ package kubeletconfig
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	osev1 "github.com/openshift/api/config/v1"
@@ -11,7 +10,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -74,47 +72,29 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if err != nil {
 		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %v", err)
 	}
-	kcValues := reflect.ValueOf(*kcDecoded)
-	if !kcValues.IsValid() {
-		return fmt.Errorf("KubeletConfig is not valid")
+
+	// Check all the fields a user cannot set within the KubeletConfig CR.
+	// If a user were to set these values, the system may become unrecoverable
+	// (ie: not recover after a reboot).
+	// Therefore, if the KubeletConfig CR instance contains a non-zero or non-empty value
+	// for one of the following fields, the MCC will not apply the CR and error out instead.
+	if kcDecoded.CgroupDriver != "" {
+		return fmt.Errorf("KubeletConfiguration: cgroupDriver is not allowed to be set, but contains: %s", kcDecoded.CgroupDriver)
 	}
-	for _, bannedFieldName := range blacklistKubeletConfigurationFields {
-		v := kcValues.FieldByName(bannedFieldName)
-		if !v.IsValid() {
-			continue
-		}
-		err := fmt.Errorf("%v is not allowed to be set", bannedFieldName)
-		switch v.Kind() {
-		case reflect.Slice:
-			if v.Len() > 0 {
-				return err
-			}
-		case reflect.String:
-			if v.String() != "" {
-				return err
-			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if v.Int() != 0 {
-				return err
-			}
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if v.Uint() != 0 {
-				return err
-			}
-		case reflect.Struct:
-			if v.Type().String() == "v1.Duration" {
-				d := v.Interface().(metav1.Duration)
-				if d.Duration.String() != "0s" {
-					return err
-				}
-			}
-		case reflect.Map:
-			if len(v.MapKeys()) > 0 {
-				return err
-			}
-		default:
-			return fmt.Errorf("Invalid type in field %v", bannedFieldName)
-		}
+	if len(kcDecoded.ClusterDNS) > 0 {
+		return fmt.Errorf("KubeletConfiguration: clusterDNS is not allowed to be set, but contains: %s", kcDecoded.ClusterDNS)
+	}
+	if kcDecoded.ClusterDomain != "" {
+		return fmt.Errorf("KubeletConfiguration: clusterDomain is not allowed to be set, but contains: %s", kcDecoded.ClusterDomain)
+	}
+	if len(kcDecoded.FeatureGates) > 0 {
+		return fmt.Errorf("KubeletConfiguration: featureGates is not allowed to be set, but contains: %v", kcDecoded.FeatureGates)
+	}
+	if kcDecoded.RuntimeRequestTimeout.Duration != 0 {
+		return fmt.Errorf("KubeletConfiguration: runtimeRequestTimeout is not allowed to be set, but contains: %s", kcDecoded.RuntimeRequestTimeout.Duration)
+	}
+	if kcDecoded.StaticPodPath != "" {
+		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
 	}
 
 	return nil
