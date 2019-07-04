@@ -13,7 +13,7 @@ contents:
     spec:
       initContainers:
       - name: discovery
-        image: "{{.Images.setupEtcdEnv}}"
+        image: "{{.Images.setupEtcdEnvKey}}"
         command: ["/usr/bin/setup-etcd-environment"]
         args:
         - "run"
@@ -24,7 +24,7 @@ contents:
         - name: discovery
           mountPath: /run/etcd/
       - name: certs
-        image: "{{.Images.kubeClientAgentImage}}"
+        image: "{{.Images.kubeClientAgentImageKey}}"
         command:
         - /bin/sh
         - -c
@@ -77,7 +77,7 @@ contents:
           mountPath: /etc/kubernetes/kubeconfig
       containers:
       - name: etcd-member
-        image: "{{.Images.etcd}}"
+        image: "{{.Images.etcdKey}}"
         command:
         - /bin/sh
         - -c
@@ -136,7 +136,7 @@ contents:
           containerPort: 2379
           protocol: TCP
       - name: etcd-metrics
-        image: "{{.Images.etcd}}"
+        image: "{{.Images.etcdKey}}"
         command:
         - /bin/sh
         - -c

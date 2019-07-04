@@ -21,7 +21,7 @@ type renderConfig struct {
 	Version                string
 	ControllerConfig       mcfgv1.ControllerConfigSpec
 	APIServerURL           string
-	Images                 *Images
+	Images                 *RenderConfigImages
 	KubeAPIServerServingCA string
 }
 
