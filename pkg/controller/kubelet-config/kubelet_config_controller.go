@@ -62,21 +62,6 @@ var updateBackoff = wait.Backoff{
 
 var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set for KubeletConfig")
 
-// A list of fields a user cannot set within the KubeletConfig CR. If a user
-// were to set these values, then the system may become unrecoverable (ie: not
-// recover after a reboot).
-//
-// If the KubeletConfig CR instance contains a non-zero or non-empty value for
-// the following fields, then the MCC will not apply the CR and log the message.
-var blacklistKubeletConfigurationFields = []string{
-	"CgroupDriver",
-	"ClusterDNS",
-	"ClusterDomain",
-	"FeatureGates",
-	"RuntimeRequestTimeout",
-	"StaticPodPath",
-}
-
 // Controller defines the kubelet config controller.
 type Controller struct {
 	templatesDir string
