@@ -73,12 +73,12 @@ spec:
    pidsLimit: 2048
 ```
 
-Make sure to add a label under `matchLabels` in the containerRuntimeConfig CR and use that label in the machineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-crio: high-pid-limit`.
+Make sure to add a label under `matchLabels` in the ContainerRuntimeConfig CR and use that label in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-crio: high-pid-limit`.
 
-To roll out the pids limit changes to all the master nodes (can switch this to worker for the worker nodes), add `custom-crio: high-pid-limit` under labels in the machineConfigPool config.  
+To roll out the pids limit changes to all the worker nodes (can switch this to master for the master nodes), add `custom-crio: high-pid-limit` under labels in the machineConfigPool config.  
 
 ```
-oc edit machineconfigpool master
+oc edit machineconfigpool worker
 ```
 
 Snippet of the machineConfigPool config with the matching label added:
@@ -91,8 +91,7 @@ metadata:
   generation: 1
   labels:
     custom-crio: high-pid-limit
-    operator.machineconfiguration.openshift.io/required-for-upgrade: ""
-  name: master
+  name: worker
   ...
 ```
 
