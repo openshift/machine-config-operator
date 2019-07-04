@@ -76,6 +76,28 @@ spec:
     maxPods: 100
 ```
 
+Make sure to add a label under `matchLabels` in the KubeletConfig CR and use that label in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-kubelet: small-pods`.
+
+To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add `custom-kubelet: small-pods` under labels in the machineConfigPool config.  
+
+```
+oc edit machineconfigpool worker
+```
+
+Snippet of the machineConfigPool config with the matching label added:
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  creationTimestamp: 2019-04-10T16:39:39Z
+  generation: 1
+  labels:
+    custom-kubelet: small-pods
+  name: worker
+  ...
+```
+
 ## Implementation Details
 
 The KubeletConfigController would perform the following steps:
