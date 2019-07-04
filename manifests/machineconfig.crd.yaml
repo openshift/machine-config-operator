@@ -39,3 +39,186 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - mc
+  validation:
+    openAPIV3Schema:
+      type: object
+      properties:
+        apiVersion:
+          description: "APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources"
+          type: string
+        kind:
+          description: "Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds"
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: "spec hold the intent of how this operator should behave"
+          type: object
+          properties:
+            config:
+              description: "config contains options related to the configuration"
+              type: object
+              properties:
+                ignition:
+                  description: "ignition section contains metadata about the configuration itself"
+                  type: object
+                  properties:
+                    version:
+                      description: "version string is the semantic version number of the spec"
+                      type: string
+                storage:
+                  description: "storage describes the desired state of the system's storage devices"
+                  type: object
+                  properties:
+                    directories:
+                      description: "directories is the list of directories to be created"
+                      type: array
+                      items:
+                        description: "items is list of directories to be written"
+                        type: object
+                        properties:
+                          filesystem:
+                            description: "filesystem is the internal identifier of the filesystem in which to write the file. This matches the last filesystem with the given identifier"
+                            type: string
+                          mode:
+                            description: "mode is the file's permission mode. Note that the mode must be properly specified as a decimal value (i.e. 0644 -> 420)"
+                            type: integer
+                          path:
+                            description: "path is the absolute path to the file"
+                            type: string
+                          user:
+                            description: "user object specifies the file's owner"
+                            type: object
+                            properties:
+                              id:
+                                description: "id is the user ID of the owner"
+                                type: integer
+                              name:
+                                description: "name is the user name of the owner"
+                                type: string
+                          group:
+                            description: "group object specifies group of the owner"
+                            type: object
+                            properties:
+                              id:
+                                description: "id specifies group ID of the owner"
+                                type: integer
+                              name:
+                                description: "name is the group name of the owner"
+                                type: string
+                          overwrite:
+                            description: "overwrite specifies whether to delete preexisting nodes at the path"
+                            type: boolean
+                    files:
+                      description: "files is the list of files to be created"
+                      type: array
+                      items:
+                        description: "items is list of files to be written"
+                        type: object
+                        properties:
+                          contents:
+                            description: "contents specifies options related to the contents of the file"
+                            type: object
+                            properties:
+                              compression:
+                                description: "the type of compression used on the contents (null or gzip). Compression cannot be used with S3."
+                                type: string
+                              source:
+                                description: "source is the URL of the file contents. Supported schemes are http, https, tftp, s3, and data. When using http, it is advisable to use the verification option to ensure the contents haven't been modified."
+                                type: string
+                              verification:
+                                description: "verification specifies options related to the verification of the file contents"
+                                type: object
+                                properties:
+                                  hash:
+                                    description: "hash is the hash of the config, in the form <type>-<value> where type is sha512"
+                                    type: string
+                          filesystem:
+                            description: "filesystem is the internal identifier of the filesystem in which to write the file. This matches the last filesystem with the given identifier"
+                            type: string
+                          mode:
+                            description: "mode specifies the file's permission mode. Note that the mode must be properly specified as a decimal value (i.e. 0644 -> 420)"
+                            type: integer
+                          path:
+                            description: "path is the absolute path to the file"
+                            type: string
+                          user:
+                            description: "user object specifies the file's owner"
+                            type: object
+                            properties:
+                              id:
+                                description: "id is the user ID of the owner"
+                                type: integer
+                              name:
+                                description: "name is the user name of the owner"
+                                type: string
+                          group:
+                            description: "group object specifies group of the owner"
+                            type: object
+                            properties:
+                              id:
+                                description: "id specifies group ID of the owner"
+                                type: integer
+                              name:
+                                description: "name is the group name of the owner"
+                                type: string
+                          overwrite:
+                            description: "overwrite specifies whether to delete preexisting nodes at the path"
+                            type: boolean
+                          append:
+                            description: "append specifies whether to append to the specified file. Creates a new file if nothing exists at the path. Cannot be set if overwrite is set to true."
+                            type: boolean
+                systemd:
+                  description: "systemd describes the desired state of the systemd units"
+                  type: object
+                  properties:
+                    units:
+                      description: "units is a list of units to be configured"
+                      type: array
+                      items:
+                        description: "items describes unit configuration"
+                        type: object
+                        properties:
+                          name:
+                            description: "name is the name of the unit. This must be suffixed with a valid unit type (e.g. 'thing.service')"
+                            type: string
+                          enabled:
+                            description: "enabled describes whether or not the service shall be enabled. When true, the service is enabled. When false, the service is disabled. When omitted, the service is unmodified. In order for this to have any effect, the unit must have an install section"
+                            type: boolean
+                          mask:
+                            description: "mask describes whether or not the service shall be masked. When true, the service is masked by symlinking it to /dev/null"
+                            type: boolean
+                          contents:
+                            description: "contents is the contents of the unit"
+                            type: string
+                          dropins:
+                            description: "dropins is the list of drop-ins for the unit"
+                            type: array
+                            items:
+                              description: "items describes unit dropin"
+                              type: object
+                              properties:
+                                contents:
+                                  description: "contents is the contents of the drop-in"
+                                  type: string
+                                name:
+                                  description: "name is the name of the drop-in. This must be suffixed with '.conf'."
+                                  type: string
+          kargs:
+            description: "kargs contains a list of kernel arguments to be added"
+            type: array
+            items:
+              description: "kernel argument"
+              type: string
+          fips:
+            description: "fips controls FIPS mode"
+            type: boolean
+          osImageURL:
+            description: "osImageURL specifies the remote location that will be used to fetch the OS"
+            type: string
+      required:
+      - spec
