@@ -209,7 +209,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{
-		{Resource: "namespaces", Name: "openshift-machine-config-operator"},
+		{Resource: "namespaces", Name: optr.namespace},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "master"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
 		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "cluster"},
