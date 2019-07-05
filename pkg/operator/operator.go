@@ -1,7 +1,6 @@
 package operator
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -29,16 +28,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	configv1 "github.com/openshift/api/config/v1"
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 const (
@@ -333,72 +329,4 @@ func (optr *Operator) sync(key string) error {
 		{"required-pools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(syncFuncs)
-}
-
-func (optr *Operator) getOsImageURL(namespace string) (string, error) {
-	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(osImageConfigMapName)
-	if err != nil {
-		return "", err
-	}
-	return cm.Data["osImageURL"], nil
-}
-
-func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {
-	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
-	if err != nil {
-		return nil, err
-	}
-	if bd, bdok := cm.BinaryData[key]; bdok {
-		return bd, nil
-	} else if d, dok := cm.Data[key]; dok {
-		raw, err := base64.StdEncoding.DecodeString(d)
-		if err != nil {
-			// this is actually the result of a bad assumption.  configmap values are not encoded.
-			// After the installer pull merges, this entire attempt to decode can go away.
-			return []byte(d), nil
-		}
-		return raw, nil
-	} else {
-		return nil, fmt.Errorf("%s not found in %s/%s", key, namespace, name)
-	}
-}
-
-func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (string, error) {
-	cm, err := optr.clusterCmLister.ConfigMaps(namespace).Get(name)
-	if err != nil {
-		return "", err
-	}
-	if cc, ok := cm.Data[key]; ok {
-		return cc, nil
-	}
-	return "", fmt.Errorf("%s not found in %s/%s", key, namespace, name)
-}
-
-// getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
-// Each type of global configuration is named `cluster` for easy discovery in the cluster.
-func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, *configv1.Proxy, error) {
-	infra, err := optr.infraLister.Get("cluster")
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	network, err := optr.networkLister.Get("cluster")
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	proxy, err := optr.proxyLister.Get("cluster")
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, nil, nil, err
-	}
-	return infra, network, proxy, nil
-}
-
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
-	return &renderConfig{
-		TargetNamespace:        tnamespace,
-		Version:                version.Raw,
-		ControllerConfig:       *ccSpec,
-		Images:                 imgs,
-		APIServerURL:           apiServerURL,
-		KubeAPIServerServingCA: kubeAPIServerServingCA,
-	}
 }

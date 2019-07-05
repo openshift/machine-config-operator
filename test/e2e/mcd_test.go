@@ -342,7 +342,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcv1.MachineConfigPoolDegraded) {
+		if mcv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcv1.MachineConfigPoolRenderDegraded) {
 			return true, nil
 		}
 		return false, nil
@@ -400,7 +400,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolDegraded) && mcp.Status.DegradedMachineCount >= 1 {
+		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolNodeDegraded) && mcp.Status.DegradedMachineCount >= 1 {
 			return true, nil
 		}
 		return false, nil
