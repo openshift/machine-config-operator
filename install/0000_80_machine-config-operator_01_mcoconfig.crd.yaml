@@ -20,5 +20,5 @@ spec:
     plural: mcoconfigs
     # singular name to be used as an alias on the CLI and for display
     singular: mcoconfig
-    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    # kind is normally the PascalCased singular type. Your resource manifests use this.
     kind: MCOConfig
