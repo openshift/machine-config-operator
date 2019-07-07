@@ -119,7 +119,7 @@ type ControllerConfigStatusCondition struct {
 	// +nullable
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 
-	// reason is the reason for the condition's last transition.  Reasons are CamelCase
+	// reason is the reason for the condition's last transition.  Reasons are PascalCase
 	Reason string `json:"reason,omitempty"`
 
 	// message provides additional information about the current condition.
@@ -363,7 +363,7 @@ type KubeletConfigCondition struct {
 	// +nullable
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 
-	// reason is the reason for the condition's last transition.  Reasons are CamelCase
+	// reason is the reason for the condition's last transition.  Reasons are PascalCase
 	Reason string `json:"reason,omitempty"`
 
 	// message provides additional information about the current condition.
@@ -455,7 +455,7 @@ type ContainerRuntimeConfigCondition struct {
 	// +nullable
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 
-	// reason is the reason for the condition's last transition.  Reasons are CamelCase
+	// reason is the reason for the condition's last transition.  Reasons are PascalCase
 	Reason string `json:"reason,omitempty"`
 
 	// message provides additional information about the current condition.
