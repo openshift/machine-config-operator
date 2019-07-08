@@ -295,7 +295,7 @@ OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v{version n
 ## Hacking on `machine-os-content`
 
 If you own part of the operating system (from kernel to kubelet) you
-are part of the `machine-os-content`.  More information in [OSUpgrades.md].
+are part of the `machine-os-content`.  More information in [OSUpgrades.md](docs/OSUpgrades.md).
 You will want a workflow for testing changes to a cluster.
 
 ### Directly applying changes live to a node
