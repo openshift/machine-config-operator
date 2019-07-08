@@ -23,9 +23,11 @@ import (
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
+	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/daemon/journal"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
@@ -82,6 +84,11 @@ type Daemon struct {
 
 	// skipReboot skips the reboot after a sync, only valid with onceFrom != ""
 	skipReboot bool
+	// journalRebootRequested is set if we detected a journal message requesting a reboot
+	journalRebootRequested bool
+	// selfRebootRequested is set if we sent a journal message to ourself, used
+	// to avoid spamming the journal.
+	selfRebootRequested bool
 
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
@@ -375,17 +382,104 @@ func (dn *Daemon) syncNode(key string) error {
 		// currently we return immediately here, although
 		// I think we should change this to continue.
 		dn.booting = false
+		glog.Info("Completed MCD initialization")
 		return nil
 	}
 
-	// Pass to the shared update prep method
+	// Check for current != desired config *and* approval to reboot
 	current, desired, err := dn.prepUpdateFromCluster()
 	if err != nil {
 		return errors.Wrapf(err, "prepping update")
 	}
+
+	// Sync the reboot request flag from the journal to the annotation first.
+	_, rebootRequested := dn.node.Annotations[constants.MachineConfigDaemonRebootRequestedAnnotation]
+	if dn.journalRebootRequested && !rebootRequested {
+		node, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, map[string]string{constants.MachineConfigDaemonRebootRequestedAnnotation: ""})
+		if err != nil {
+			return errors.Wrapf(err, "failed to add reboot requested")
+		}
+		dn.node = node
+	}
+
+	// If we're not approved for reboot for some reason, we can't apply an update
+	_, rebootApproved := dn.node.Annotations[constants.MachineConfigDaemonRebootApprovedAnnotation]
+
 	if current != nil || desired != nil {
+		// We are instructed by the node controller to do an update.  Let's
+		// first ensure we have the reboot request annotation set.  In order
+		// to ensure that the code for *external* reboot requests which operates
+		// via the journal is tested, we use that same API to talk to ourself.
+		if !rebootRequested {
+			if !dn.selfRebootRequested {
+				glog.Info("Self-requesting reboot")
+				rationale := fmt.Sprintf("Updating to %s", desired.Name)
+				err := RequestReboot(rationale)
+				if err != nil {
+					return err
+				}
+				dn.selfRebootRequested = true
+			} else {
+				rebootRequests, err := journal.Query("_UID=0", fmt.Sprintf("MESSAGE_ID=%s", constants.RequestRebootJournalMessageID))
+				if err != nil {
+					return err
+				}
+				if len(rebootRequests) > 0 {
+					msg := rebootRequests[0]
+					glog.Infof("Query detected reboot request: %s", msg.Message)
+					dn.journalRebootRequested = true
+					node, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, map[string]string{constants.MachineConfigDaemonRebootRequestedAnnotation: ""})
+					if err != nil {
+						return errors.Wrapf(err, "failed to add reboot requested")
+					}
+					dn.node = node
+				} else {
+					glog.Infof("Queued self-reboot request, but haven't received it yet")
+				}
+			}
+			// Note the early return here; we wait
+			// for the reboot request to propagate before starting an update.
+			return nil
+		}
+		if !rebootApproved {
+
+			glog.Infof("Desired config is %s, but reboot is not approved", desired.Name)
+			return nil
+		}
+		// Start the update.
 		if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
 			return err
+		}
+	} else if rebootRequested {
+		// In this case, we have a request to reboot outside of a config change.
+		_, rebootApproved := dn.node.Annotations[constants.MachineConfigDaemonRebootApprovedAnnotation]
+		if rebootApproved {
+			// If we have the annotations, but there's nothing in the journal, then we must have done
+			// the reboot.  Remove both annotations.
+			if !dn.journalRebootRequested {
+				node, err := internal.UpdateNodeRetry(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.node.Name, func(node *corev1.Node) {
+					delete(node.Annotations, constants.MachineConfigDaemonRebootRequestedAnnotation)
+					delete(node.Annotations, constants.MachineConfigDaemonRebootApprovedAnnotation)
+				})
+				if err != nil {
+					return errors.Wrapf(err, "unsetting reboot annotations")
+				}
+				// And uncordon
+				if err := drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil); err != nil {
+					return errors.Wrapf(err, "uncordoning")
+				}
+				glog.Infof("Completed reboot")
+				dn.node = node
+			} else {
+				// A reboot is requested and approved, let's do it.
+				err := dn.drain()
+				if err != nil {
+					return errors.Wrapf(err, "draining failed")
+				}
+				return dn.reboot("rebooting due to annotation request")
+			}
+		} else {
+			glog.Info("Reboot is requested, but not approved yet")
 		}
 	}
 	glog.V(2).Infof("Node %s is already synced", node.Name)
@@ -488,6 +582,11 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		go dn.runKubeletHealthzMonitor(stopCh, dn.exitCh)
 	}
 
+	err := dn.runRebootRequestMonitor(stopCh, dn.exitCh)
+	if err != nil {
+		return errors.Wrapf(err, "failed to query journal for reboot requests")
+	}
+
 	defer utilruntime.HandleCrash()
 	defer dn.queue.ShutDown()
 
@@ -508,6 +607,27 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			glog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
 	}
+}
+
+// runLoginMonitor watches the journal for requests to reboot
+func (dn *Daemon) runRebootRequestMonitor(stopCh <-chan struct{}, exitCh chan<- error) error {
+	rebootMessages, rebootChan, err := journal.QueryAndStream(stopCh, exitCh, "_UID=0", fmt.Sprintf("MESSAGE_ID=%s", constants.RequestRebootJournalMessageID))
+	if err != nil {
+		return err
+	}
+	if len(rebootMessages) > 0 {
+		glog.Infof("Detected %d reboot requests, first: %s", len(rebootMessages), rebootMessages[len(rebootMessages)-1].Message)
+		dn.journalRebootRequested = true
+	}
+	go func() {
+		for {
+			msg := <-rebootChan
+			glog.Infof("Got reboot request: %s", msg.Message)
+			dn.journalRebootRequested = true
+			dn.enqueueNode(dn.node)
+		}
+	}()
+	return nil
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
@@ -1284,6 +1404,21 @@ func ValidPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// RequestReboot logs into the systemd journal a special reboot request
+// that the MCD watches for.
+func RequestReboot(rationale string) error {
+	rationale = fmt.Sprintf("mcd reboot request: %s", rationale)
+	var msg bytes.Buffer
+	msg.WriteString(fmt.Sprintf(`MESSAGE_ID=%s
+MESSAGE=%s`, constants.RequestRebootJournalMessageID, rationale))
+	logger := exec.Command("logger", "--journald")
+	logger.Stdin = &msg
+	if err := logger.Run(); err != nil {
+		return errors.Wrapf(err, "failed to run logger")
+	}
+	return nil
 }
 
 // senseAndLoadOnceFrom gets a hold of the content for supported onceFrom configurations,

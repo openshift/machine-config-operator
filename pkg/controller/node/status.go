@@ -19,6 +19,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 
 	newStatus := calculateStatus(pool, nodes)
 	if equality.Semantic.DeepEqual(pool.Status, newStatus) {
+		glog.V(4).Infof("Pool %s: No changes in status", pool.Name)
 		return nil
 	}
 
@@ -50,13 +51,17 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	}
 	degradedMachineCount := int32(len(degradedMachines))
 
+	requestingRebootMachines := getRequestingRebootMachines(nodes)
+	requestingRebootMachinesCount := int32(len(requestingRebootMachines))
+
 	status := mcfgv1.MachineConfigPoolStatus{
-		ObservedGeneration:      pool.Generation,
-		MachineCount:            machineCount,
-		UpdatedMachineCount:     updatedMachineCount,
-		ReadyMachineCount:       readyMachineCount,
-		UnavailableMachineCount: unavailableMachineCount,
-		DegradedMachineCount:    degradedMachineCount,
+		ObservedGeneration:          pool.Generation,
+		MachineCount:                machineCount,
+		UpdatedMachineCount:         updatedMachineCount,
+		ReadyMachineCount:           readyMachineCount,
+		UnavailableMachineCount:     unavailableMachineCount,
+		DegradedMachineCount:        degradedMachineCount,
+		RequestedRebootMachineCount: requestingRebootMachinesCount,
 	}
 
 	status.Configuration = pool.Status.Configuration
@@ -69,8 +74,9 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	allUpdated := updatedMachineCount == machineCount &&
 		readyMachineCount == machineCount &&
 		unavailableMachineCount == 0
+	rebootRequested := requestingRebootMachinesCount > 0
 
-	if allUpdated {
+	if allUpdated && !rebootRequested {
 		//TODO: update api to only have one condition regarding status of update.
 		updatedMsg := fmt.Sprintf("All nodes are updated with %s", pool.Spec.Configuration.Name)
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionTrue, "", updatedMsg)
@@ -85,7 +91,13 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	} else {
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
-		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name))
+		var msg string
+		if !allUpdated {
+			msg = fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name)
+		} else {
+			msg = fmt.Sprintf("Nodes requesting reboot: %d", requestingRebootMachinesCount)
+		}
+		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", msg)
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 	}
 
@@ -228,15 +240,31 @@ func isNodeUnavailable(node *corev1.Node) bool {
 	if !isNodeReady(node) {
 		return true
 	}
-	// Ready nodes are not unavailable
+
+	// If a reboot is both requested and approved, then the MCD may act on it,
+	// independent of the config state.
+	_, rebootRequestedSet := node.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+	_, rebootApprovedSet := node.Annotations[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation]
+	rebootApproved := rebootRequestedSet && rebootApprovedSet
+
+	// If the node is in a completed config state, it's unavailable
+	// iff reboot is approved.
 	if isNodeDone(node) {
+		return rebootApproved
+	}
+
+	// If it needs reboot approval, it's not unavailable.
+	if rebootRequestedSet && !rebootApprovedSet {
 		return false
 	}
+
 	// Now we know the node isn't ready - the current config must not
 	// equal target.  We want to further filter down on the MCD state.
 	// If a MCD is in a terminal (failing) state then we can safely retarget it.
-	// to a different config.  Or to say it another way, a node is unavailable
-	// if the MCD is working, or hasn't started work but the configs differ.
+	// to a different config.  We ignore reboot approval - this is an assumption
+	// that config changes override reboot approval.  Or in other words,
+	// if we have a config change *and* reboot is requested+approved, the MCD
+	// will keep trying to target that config rather than reboot.
 	return !isNodeMCDFailing(node)
 }
 
@@ -276,4 +304,21 @@ func getDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
 		}
 	}
 	return degraded
+}
+
+// getRequestingRebootMachines filters the nodes to ones which have
+// a reboot request annotation set.
+func getRequestingRebootMachines(nodes []*corev1.Node) []*corev1.Node {
+	var ret []*corev1.Node
+	for _, node := range nodes {
+		if node.Annotations == nil {
+			continue
+		}
+		_, ok := node.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+		if !ok {
+			continue
+		}
+		ret = append(ret, node)
+	}
+	return ret
 }

@@ -57,12 +57,15 @@ func newNode(name string, currentConfig, desiredConfig string) *corev1.Node {
 	var annos map[string]string
 	if currentConfig != "" || desiredConfig != "" {
 		var state string
+		annos = map[string]string{}
 		if currentConfig == desiredConfig {
 			state = daemonconsts.MachineConfigDaemonStateDone
 		} else {
 			state = daemonconsts.MachineConfigDaemonStateWorking
+			// For now the unit tests will skip the request/approval cycle
+			annos[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation] = ""
+			annos[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation] = ""
 		}
-		annos = map[string]string{}
 		annos[daemonconsts.CurrentMachineConfigAnnotationKey] = currentConfig
 		annos[daemonconsts.DesiredMachineConfigAnnotationKey] = desiredConfig
 		annos[daemonconsts.MachineConfigDaemonStateAnnotationKey] = state
@@ -115,6 +118,11 @@ func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig st
 		node.Annotations = map[string]string{}
 	}
 	node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey] = dstate
+	// We're skipping the request/approval in the unit tests for now
+	if currentConfig == desiredConfig && dstate == daemonconsts.MachineConfigDaemonStateDegraded {
+		delete(node.Annotations, daemonconsts.MachineConfigDaemonRebootRequestedAnnotation)
+		delete(node.Annotations, daemonconsts.MachineConfigDaemonRebootApprovedAnnotation)
+	}
 	return node
 }
 

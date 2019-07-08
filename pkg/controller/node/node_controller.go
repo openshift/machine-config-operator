@@ -379,6 +379,32 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	// TODO(abhinavdahiya): handle deletes.
 }
 
+// reconcileRebootApproval removes the approval annotation if there's no request
+func (ctrl *Controller) reconcileRebootApproval(poolName string, node *corev1.Node) (*corev1.Node, error) {
+	var retNode *corev1.Node
+
+	// If there's a stray approval with no request, delete it
+	_, rebootRequested := node.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+	_, rebootApproved := node.Annotations[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation]
+	if !rebootRequested && rebootApproved {
+		glog.Infof("Pool %s: Removing stale reboot approval for node %s", poolName, node.Name)
+		var err error
+		retNode, err = internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+			_, rebootRequested := node.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+			_, rebootApproved := node.Annotations[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation]
+			if !rebootRequested && rebootApproved {
+				delete(node.Annotations, daemonconsts.MachineConfigDaemonRebootApprovedAnnotation)
+			}
+		})
+		if err != nil {
+			return nil, goerrs.Wrapf(err, "updating reboot annotation")
+		}
+		return retNode, nil
+	}
+
+	return nil, nil
+}
+
 func (ctrl *Controller) addNode(obj interface{}) {
 	node := obj.(*corev1.Node)
 	if node.DeletionTimestamp != nil {
@@ -395,6 +421,9 @@ func (ctrl *Controller) addNode(obj interface{}) {
 		return
 	}
 	glog.V(4).Infof("Node %s added", node.Name)
+	if _, err := ctrl.reconcileRebootApproval(pool.Name, node); err != nil {
+		glog.Errorf("%v", err)
+	}
 	ctrl.enqueueMachineConfigPool(pool)
 }
 
@@ -447,7 +476,25 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		}
 	}
 
+	_, oldRebootRequested := oldNode.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+	_, newRebootRequested := curNode.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+	if oldRebootRequested != newRebootRequested {
+		glog.Infof("Pool %s: node %s changed reboot request state: %v", pool.Name, curNode.Name, newRebootRequested)
+		changed = true
+	}
+
+	newNode, err := ctrl.reconcileRebootApproval(pool.Name, curNode)
+	if err != nil {
+		glog.Errorf("%v", err)
+		return
+	}
+	if newNode != nil {
+		curNode = newNode
+		changed = true
+	}
+
 	if !changed {
+		glog.V(4).Infof("No relevant changes to pool %s node %s", pool.Name, curNode.Name)
 		return
 	}
 
@@ -677,8 +724,11 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	candidates := getCandidateMachines(pool, nodes, maxunavail)
+	if len(candidates) == 0 {
+		glog.V(3).Infof("Pool %s: No candidates to update", pool.Name)
+	}
 	for _, node := range candidates {
-		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Spec.Configuration.Name); err != nil {
+		if err := ctrl.updateCandidateNode(pool.Name, node, pool.Spec.Configuration.Name); err != nil {
 			return err
 		}
 	}
@@ -711,8 +761,16 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 	return nodes, nil
 }
 
-func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
-	glog.Infof("Setting node %s to desired config %s", nodeName, currentConfig)
+func (ctrl *Controller) updateCandidateNode(poolName string, node *corev1.Node, currentConfig string) error {
+	nodeName := node.Name
+	_, rebootRequested := node.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+	needsConfigChange := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != currentConfig
+
+	if needsConfigChange {
+		glog.Infof("Pool %s: Setting node %s to desired config %s", poolName, nodeName, currentConfig)
+	} else if rebootRequested {
+		glog.Infof("Pool %s: Approving node %s reboot", poolName, nodeName)
+	}
 	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
 		if err != nil {
@@ -722,16 +780,27 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 		if err != nil {
 			return err
 		}
-
-		newNode := oldNode.DeepCopy()
-		if newNode.Annotations == nil {
-			newNode.Annotations = map[string]string{}
-		}
-		if newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == currentConfig {
+		_, rebootRequested := oldNode.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+		_, rebootApproved := oldNode.Annotations[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation]
+		needsRebootApproval := rebootRequested && !rebootApproved
+		needsConfigChange := oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != currentConfig
+		if !needsRebootApproval && !needsConfigChange {
+			// The RebootRequested flag was most likely removed, nothing to do then.
 			return nil
 		}
-		newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = currentConfig
-		newData, err := json.Marshal(newNode)
+
+		curNode := oldNode.DeepCopy()
+		if curNode.Annotations == nil {
+			curNode.Annotations = map[string]string{}
+		}
+		if needsConfigChange {
+			curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = currentConfig
+		}
+		if rebootRequested {
+			curNode.Annotations[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation] = ""
+		}
+
+		newData, err := json.Marshal(curNode)
 		if err != nil {
 			return err
 		}
@@ -751,20 +820,25 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.
 	unavail := getUnavailableMachines(nodesInPool)
 	// If we're at capacity, there's nothing to do.
 	if len(unavail) >= maxUnavailable {
+		glog.V(3).Infof("Pool %s: No progress possible: unavail %v >= maxunavail %v", pool.Name, len(unavail), maxUnavailable)
 		return nil
 	}
 	capacity := maxUnavailable - len(unavail)
 	failingThisConfig := 0
-	// We only look at nodes which aren't already targeting our desired config
+	// We only look at nodes which aren't already targeting our desired config, or
+	// are requesting a reboot.
 	var nodes []*corev1.Node
 	for _, node := range nodesInPool {
-		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
+		_, rebootRequested := node.Annotations[daemonconsts.MachineConfigDaemonRebootRequestedAnnotation]
+		_, rebootApproved := node.Annotations[daemonconsts.MachineConfigDaemonRebootApprovedAnnotation]
+		needsRebootApproval := rebootRequested && !rebootApproved
+		targetingThisConfig := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig
+		if !needsRebootApproval && targetingThisConfig {
 			if isNodeMCDFailing(node) {
 				failingThisConfig++
 			}
 			continue
 		}
-
 		nodes = append(nodes, node)
 	}
 
@@ -772,9 +846,11 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.
 	// availability - it might be a transient issue, and if the issue
 	// clears we don't want multiple to update at once.
 	if failingThisConfig >= capacity {
+		glog.V(3).Infof("Pool %s: No progress possible: failingThisConfig %v >= capacity %v", pool.Name, failingThisConfig, capacity)
 		return nil
 	}
 	capacity -= failingThisConfig
+	glog.V(3).Infof("Pool %s: Capacity %v with %v nodes to progress", pool.Name, capacity, len(nodes))
 
 	if len(nodes) < capacity {
 		return nodes

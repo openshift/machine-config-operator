@@ -163,9 +163,28 @@ func TestMCDeployed(t *testing.T) {
 	}
 }
 
-func bumpPoolMaxUnavailableTo(t *testing.T, cs *framework.ClientSet, max int) {
-	pool, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	require.Nil(t, err)
+func setPoolPaused(cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool, pause bool) error {
+	if pool.Spec.Paused == pause {
+		return fmt.Errorf("pool %s is already in paused state: %v", pool.Name, pause)
+	}
+	old, err := json.Marshal(pool)
+	if err != nil {
+		return err
+	}
+	pool.Spec.Paused = pause
+	new, err := json.Marshal(pool)
+	if err != nil {
+		return err
+	}
+	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(old, new, old)
+	if err != nil {
+		return err
+	}
+	_, err = cs.MachineConfigPools().Patch("worker", types.MergePatchType, patch)
+	return err
+}
+
+func setPoolMaxUnavailable(t *testing.T, cs *framework.ClientSet, pool *mcfgv1.MachineConfigPool, max int) {
 	old, err := json.Marshal(pool)
 	require.Nil(t, err)
 	maxUnavailable := intstr.FromInt(max)
@@ -176,6 +195,12 @@ func bumpPoolMaxUnavailableTo(t *testing.T, cs *framework.ClientSet, max int) {
 	require.Nil(t, err)
 	_, err = cs.MachineConfigPools().Patch("worker", types.MergePatchType, patch)
 	require.Nil(t, err)
+}
+
+func bumpPoolMaxUnavailableTo(t *testing.T, cs *framework.ClientSet, max int) {
+	pool, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	setPoolMaxUnavailable(t, cs, pool, max)
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
@@ -591,4 +616,91 @@ func TestFIPS(t *testing.T) {
 		}
 		t.Logf("Node %s has expected FIPS mode", node.Name)
 	}
+}
+
+
+func TestRequestReboot(t *testing.T) {
+	cs := framework.NewClientSet("")
+	pool, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	// We must be starting from an updated pool
+	require.True(t, mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated))
+	maxUnavail :=  int(pool.Status.MachineCount - 1)
+	setPoolMaxUnavailable(t, cs, pool, maxUnavail)
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	nodeBootIds := make(map[string]string)
+	// We pause the pool to ensure that we can watch for the reboot-requested annotations
+	// without races.
+	err = setPoolPaused(cs, pool, true)
+	require.Nil(t, err)
+	for _, node := range nodes {
+		mcd, err := mcdForNode(cs, &node)
+		require.Nil(t, err)
+		mcdName := mcd.ObjectMeta.Name
+		bootIdBuf, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"cat", "/proc/sys/kernel/random/boot_id").CombinedOutput()
+		require.Nil(t, err)
+		nodeBootIds[node.Name] = string(bootIdBuf)
+		// We do this hack since the MCD is part of machine-os-content which we aren't building/overriding in CI right now
+		cmd := "cp -p /usr/bin/machine-config-daemon /rootfs/tmp && chroot /rootfs /tmp/machine-config-daemon request-reboot test-request-reboot"
+		err = exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"/bin/sh", "-c", cmd).Run()
+		require.Nil(t, err)
+	}
+	t.Log("requested reboot on all nodes")
+
+	// Wait for the rebooting annotations to show up
+	startTime := time.Now()
+	err = wait.Poll(5*time.Second, 2*time.Minute, func() (bool, error) {
+		nodes, err := getNodesByRole(cs, "worker")
+		require.Nil(t, err)
+		haveRebootingAnnotation := make(map[string]bool)
+		for _, node := range nodes {
+			node, err := cs.Nodes().Get(node.Name, metav1.GetOptions{})
+			require.Nil(t, err)
+			if _, ok := node.Annotations[constants.MachineConfigDaemonRebootRequestedAnnotation]; ok {
+				haveRebootingAnnotation[node.Name] = true
+			}
+		}
+		if len(haveRebootingAnnotation) == maxUnavail {
+			return true, nil
+		}
+		return false, nil
+	})
+	require.Nil(t, err)
+	t.Log("all reboot annotations appeared")
+
+	// Unpause the pool
+	err = setPoolPaused(cs, pool, false)
+	require.Nil(t, err)
+
+	startTime = time.Now()
+	err = wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
+		pool, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		require.Nil(t, err)
+		require.True(t, mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated))
+		curRequest := int(pool.Status.RequestedRebootMachineCount)
+		if curRequest > maxUnavail {
+			return false, fmt.Errorf("Requested reboot count is too high: %v", curRequest)
+		}
+		if curRequest == 0 {
+			return true, nil
+		}
+		return false, nil
+	})
+	t.Log("pool reported all reboots complete")
+
+	require.Nil(t, err)
+	for _, node := range nodes {
+		mcd, err := mcdForNode(cs, &node)
+		require.Nil(t, err)
+		mcdName := mcd.ObjectMeta.Name
+		bootIdBuf, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"cat", "/proc/sys/kernel/random/boot_id").CombinedOutput()
+		require.Nil(t, err)
+		bootId := string(bootIdBuf)
+		assert.NotEqual(t, nodeBootIds[node.Name], bootId)
+	}
+	t.Logf("Pool %s has completed rebooting (waited %v)", pool.Name, time.Since(startTime))
 }

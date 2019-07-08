@@ -176,7 +176,7 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 		e, _ := expected.(core.PatchAction)
 		expPatch := e.GetPatch()
 		patch := a.GetPatch()
-		assert.Equal(t, expPatch, patch)
+		assert.Equal(t, string(expPatch), string(patch))
 	}
 }
 
@@ -608,13 +608,12 @@ func assertPatchesNode0ToV1(t *testing.T, actions []core.Action) {
 		t.Fatal(actions)
 	}
 
-	expected := []byte(`{"metadata":{"annotations":{"machineconfiguration.openshift.io/desiredConfig":"v1"}}}`)
+	expected := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"v1"}}}`, daemonconsts.DesiredMachineConfigAnnotationKey)
 	actual := actions[1].(core.PatchAction).GetPatch()
-	assert.Equal(t, expected, actual)
+	assert.Equal(t, expected, string(actual))
 }
 
-func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
-
+func TestUpdateCandidateNode(t *testing.T) {
 	tests := []struct {
 		node       *corev1.Node
 		extraannos map[string]string
@@ -676,6 +675,24 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 				t.Fatal(actions)
 			}
 		},
+	}, {
+		node:       newNode("node-0", "v1", "v1"),
+		extraannos: map[string]string{daemonconsts.MachineConfigDaemonRebootRequestedAnnotation: ""},
+		verify: func(actions []core.Action, t *testing.T) {
+			if !assert.Equal(t, 2, len(actions)) {
+				t.Fatal("actions")
+			}
+			if !actions[0].Matches("get", "nodes") || actions[0].(core.GetAction).GetName() != "node-0" {
+				t.Fatal(actions)
+			}
+			if !actions[1].Matches("patch", "nodes") {
+				t.Fatal(actions)
+			}
+
+			expected := fmt.Sprintf(`{"metadata":{"annotations":{"%s":""}}}`, daemonconsts.MachineConfigDaemonRebootApprovedAnnotation)
+			actual := actions[1].(core.PatchAction).GetPatch()
+			assert.Equal(t, expected, string(actual))
+		},
 	}}
 
 	for idx, test := range tests {
@@ -694,7 +711,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			c := f.newController()
 
-			err := c.setDesiredMachineConfigAnnotation(test.node.Name, "v1")
+			err := c.updateCandidateNode("piscine", test.node, "v1")
 			if !assert.Nil(t, err) {
 				return
 			}

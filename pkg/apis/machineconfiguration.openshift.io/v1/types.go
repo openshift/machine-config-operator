@@ -256,6 +256,9 @@ type MachineConfigPoolStatus struct {
 	// A node is marked degraded if applying a configuration failed..
 	DegradedMachineCount int32 `json:"degradedMachineCount"`
 
+	// RequestedRebootMachineCount is the number of machines which have a reboot requested annotation.
+	RequestedRebootMachineCount int32 `json:"requestedRebootMachineCount"`
+
 	// conditions represents the latest available observations of current state.
 	// +optional
 	Conditions []MachineConfigPoolCondition `json:"conditions"`
