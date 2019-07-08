@@ -7,12 +7,18 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	configv1 "github.com/openshift/api/config/v1"
+	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	"github.com/openshift/machine-config-operator/internal"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	goerrs "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,6 +49,15 @@ const (
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	updateDelay = 5 * time.Second
+
+	// masterLabel defines the label associated with master node. The master taint uses the same label as taint's key
+	masterLabel = "node-role.kubernetes.io/master"
+
+	// workerLabel defines the label associated with worker node.
+	workerLabel = "node-role.kubernetes.io/worker"
+
+	// schedulerCRName that we're interested in watching.
+	schedulerCRName = "cluster"
 )
 
 var nodeUpdateBackoff = wait.Backoff{
@@ -66,6 +81,9 @@ type Controller struct {
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 
+	schedulerList         cligolistersv1.SchedulerLister
+	schedulerListerSynced cache.InformerSynced
+
 	queue workqueue.RateLimitingInterface
 }
 
@@ -73,6 +91,7 @@ type Controller struct {
 func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	schedulerInformer cligoinformersv1.SchedulerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -97,7 +116,11 @@ func New(
 		UpdateFunc: ctrl.updateNode,
 		DeleteFunc: ctrl.deleteNode,
 	})
-
+	schedulerInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.checkMasterNodesOnAdd,
+		UpdateFunc: ctrl.checkMasterNodesOnUpdate,
+		DeleteFunc: ctrl.checkMasterNodesOnDelete,
+	})
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
@@ -105,6 +128,9 @@ func New(
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
+
+	ctrl.schedulerList = schedulerInformer.Lister()
+	ctrl.schedulerListerSynced = schedulerInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -114,7 +140,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.nodeListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
 
@@ -128,11 +154,197 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
+	nodeList, err := ctrl.nodeLister.List(labels.SelectorFromSet(labels.Set{masterLabel: ""}))
+	if err != nil {
+		return nil, fmt.Errorf("error while listing master nodes %v", err)
+	}
+	return nodeList, nil
+}
+
+// checkMasterNodesOnAdd makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
+// cluster is created
+func (ctrl *Controller) checkMasterNodesOnAdd(obj interface{}) {
+	scheduler := obj.(*configv1.Scheduler)
+	if scheduler.Name != schedulerCRName {
+		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
+		return
+	}
+	areMastersSchedulable := scheduler.Spec.MastersSchedulable
+	currentMasters, err := ctrl.getCurrentMasters()
+	if err != nil {
+		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		return
+	}
+
+	// reconcile master labels and taints to make the master node schedulable, unschedulable
+	err = ctrl.reconcileSchedulableMasters(areMastersSchedulable, currentMasters)
+	if err != nil {
+		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		return
+	}
+}
+
+// checkMasterNodesOnDelete makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
+// cluster is created
+func (ctrl *Controller) checkMasterNodesOnDelete(obj interface{}) {
+	scheduler := obj.(*configv1.Scheduler)
+	if scheduler.Name != schedulerCRName {
+		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
+		return
+	}
+	currentMasters, err := ctrl.getCurrentMasters()
+	if err != nil {
+		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		return
+	}
+	// On deletion make all masters unschedulable to restore default behaviour
+	errs := ctrl.makeMastersUnSchedulable(currentMasters)
+	if len(errs) > 0 {
+		err = v1helpers.NewMultiLineAggregate(errs)
+		goerrs.Wrap(err, "Reconciling to make nodes schedulable/unschedulable failed")
+		return
+	}
+	return
+}
+
+// checkMasterNodesonUpdate makes the master nodes schedulable/unschedulable whenever scheduler
+// config CR with name cluster is updated
+func (ctrl *Controller) checkMasterNodesOnUpdate(old, cur interface{}) {
+	oldScheduler := old.(*configv1.Scheduler)
+	curScheduler := cur.(*configv1.Scheduler)
+
+	if oldScheduler.Name != schedulerCRName || curScheduler.Name != schedulerCRName {
+		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
+		return
+	}
+
+	if reflect.DeepEqual(oldScheduler.Spec, curScheduler.Spec) {
+		glog.V(4).Info("Scheduler config did not change")
+		return
+	}
+	// check the flag in scheduler spec
+	areMastersSchedulable := curScheduler.Spec.MastersSchedulable
+	currentMasters, err := ctrl.getCurrentMasters()
+	if err != nil {
+		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		return
+	}
+
+	// reconcile master labels and taints to make the master node schedulable, unschedulable
+	err = ctrl.reconcileSchedulableMasters(areMastersSchedulable, currentMasters)
+	if err != nil {
+		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		return
+	}
+	return
+}
+
+// reconcileSchedulableMasters reconciles the master nodes to make them schedulable or unschedulable
+func (ctrl *Controller) reconcileSchedulableMasters(areMastersSchedulable bool, currentMasters []*corev1.Node) error {
+	var errs []error
+	if areMastersSchedulable {
+		errs = ctrl.makeMastersSchedulable(currentMasters)
+	} else {
+		errs = ctrl.makeMastersUnSchedulable(currentMasters)
+	}
+	return v1helpers.NewMultiLineAggregate(errs)
+}
+
+// makeMastersSchedulable makes all the masters in the cluster schedulable
+func (ctrl *Controller) makeMastersSchedulable(currentMasters []*corev1.Node) []error {
+	var errs []error
+	for _, node := range currentMasters {
+		if CheckMasterIsAlreadySchedulable(node) {
+			continue
+		}
+		if err := ctrl.makeMasterNodeSchedulable(node); err != nil {
+			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %v", node.Name, err))
+		}
+	}
+	return errs
+}
+
+// makeMastersUnSchedulable makes all the masters in the cluster unschedulable
+func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) []error {
+	var errs []error
+	for _, node := range currentMasters {
+		if !CheckMasterIsAlreadySchedulable(node) {
+			continue
+		}
+		if err := ctrl.makeMasterNodeUnSchedulable(node); err != nil {
+			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %v", node.Name, err))
+		}
+	}
+	return errs
+
+}
+
+// makeMasterNodeUnSchedulable makes master node unschedulable by removing worker label and adding `NoSchedule`
+// master taint to the master node
+func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
+	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+		// Remove worker label
+		newLabels := node.Labels
+		if _, hasWorkerLabel := newLabels[workerLabel]; hasWorkerLabel {
+			delete(newLabels, workerLabel)
+		}
+		node.Labels = newLabels
+		// Add master taint
+		newTaints := node.Spec.Taints
+		masterUnSchedulableTaint := corev1.Taint{Key: masterLabel, Effect: corev1.TaintEffectNoSchedule}
+		newTaints = append(newTaints, masterUnSchedulableTaint)
+		node.Spec.Taints = newTaints
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// CheckMasterIsAlreadySchedulable checks if the given node has a worker label and doesn't have NoSchedule master
+// taint
+func CheckMasterIsAlreadySchedulable(node *corev1.Node) bool {
+	_, hasWorkerLabel := node.Labels[workerLabel]
+	hasMasterTaint := false
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == masterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
+			hasMasterTaint = true
+		}
+	}
+	return hasWorkerLabel && !hasMasterTaint
+}
+
+// makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master taint and
+// adding worker label
+func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
+	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+		// Add worker label
+		newLabels := node.Labels
+		if _, hasWorkerLabel := newLabels[workerLabel]; !hasWorkerLabel {
+			newLabels[workerLabel] = ""
+		}
+		node.Labels = newLabels
+		// Remove master taint
+		newTaints := []corev1.Taint{}
+		for _, t := range node.Spec.Taints {
+			if t.Key == masterLabel && t.Effect == corev1.TaintEffectNoSchedule {
+				continue
+			}
+			newTaints = append(newTaints, t)
+		}
+		node.Spec.Taints = newTaints
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
 	pool := obj.(*mcfgv1.MachineConfigPool)
 	glog.V(4).Infof("Adding MachineConfigPool %s", pool.Name)
 	ctrl.enqueueMachineConfigPool(pool)
-
 }
 
 func (ctrl *Controller) updateMachineConfigPool(old, cur interface{}) {

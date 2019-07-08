@@ -538,7 +538,7 @@ rules:
   resources: ["configmaps", "secrets"]
   verbs: ["*"]
 - apiGroups: ["config.openshift.io"]
-  resources: ["images", "clusterversions", "featuregates"]
+  resources: ["images", "clusterversions", "featuregates", "schedulers"]
   verbs: ["*"]
 - apiGroups: ["operator.openshift.io"]
   resources: ["imagecontentsourcepolicies"]
