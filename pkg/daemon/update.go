@@ -845,7 +845,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 func (dn *Daemon) getPendingStateLegacyLogger() (string, error) {
 	glog.Info("logger doesn't support --jounald, grepping the journal")
 
-	cmdLiteral := "journalctl -o cat | grep OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK"
+	cmdLiteral := "journalctl -o cat _UID=0 | grep OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK"
 	cmd := exec.Command("bash", "-c", cmdLiteral)
 	var combinedOutput bytes.Buffer
 	cmd.Stdout = &combinedOutput
@@ -910,7 +910,7 @@ func (dn *Daemon) getPendingState() (string, error) {
 	if !dn.loggerSupportsJournal {
 		return dn.getPendingStateLegacyLogger()
 	}
-	journalOutput, err := exec.Command("journalctl", "-o", "json", fmt.Sprintf("MESSAGE_ID=%s", pendingStateMessageID)).CombinedOutput()
+	journalOutput, err := exec.Command("journalctl", "-o", "json", "_UID=0", fmt.Sprintf("MESSAGE_ID=%s", pendingStateMessageID)).CombinedOutput()
 	if err != nil {
 		return "", errors.Wrap(err, "error running journalctl -o json")
 	}
