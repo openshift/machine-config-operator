@@ -92,7 +92,7 @@ func newFeatures(name string, enabled, disabled []string, labels map[string]stri
 	return &osev1.FeatureGate{
 		TypeMeta:   metav1.TypeMeta{APIVersion: osev1.GroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels, UID: types.UID(utilrand.String(5))},
-		Spec:       osev1.FeatureGateSpec{FeatureSet: ""},
+		Spec:       osev1.FeatureGateSpec{FeatureGateSelection: osev1.FeatureGateSelection{FeatureSet: ""}},
 	}
 }
 

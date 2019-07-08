@@ -13,6 +13,7 @@ type Proxy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// Spec holds user-settable values for the proxy configuration
+	// +kubebuilder:validation:Required
 	// +required
 	Spec ProxySpec `json:"spec"`
 	// status holds observed values from the cluster. They may not be overridden.

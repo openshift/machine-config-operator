@@ -41,7 +41,9 @@ func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	return &osev1.FeatureGate{
 		Spec: osev1.FeatureGateSpec{
-			FeatureSet: osev1.Default,
+			FeatureGateSelection: osev1.FeatureGateSelection{
+				FeatureSet: osev1.Default,
+			},
 		},
 	}
 }
