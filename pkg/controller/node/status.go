@@ -148,7 +148,7 @@ func isNodeDoneAt(node *corev1.Node, targetConfig string) bool {
 	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == targetConfig
 }
 
-// isNodeMCDDone checks the MCD state
+// isNodeMCDState checks the MCD state against the state parameter
 func isNodeMCDState(node *corev1.Node, state string) bool {
 	dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
 	if !ok || dstate == "" {
@@ -158,7 +158,7 @@ func isNodeMCDState(node *corev1.Node, state string) bool {
 	return dstate == state
 }
 
-// isNodeMCDFailing says whether the MCD has unsuccessfully applied an update
+// isNodeMCDFailing checks if the MCD has unsuccessfully applied an update
 func isNodeMCDFailing(node *corev1.Node) bool {
 	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
 		return false
@@ -167,8 +167,8 @@ func isNodeMCDFailing(node *corev1.Node) bool {
 		isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateUnreconcilable)
 }
 
-// getUpdatedMachines filters the provided nodes to ones whose current config
-// matches the desired config, which also matches the target config.
+// getUpdatedMachines filters the provided nodes to return the nodes whose
+// current config matches the desired config, which also matches the target config,
 // and the "done" flag is set.
 func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) []*corev1.Node {
 	var updated []*corev1.Node
@@ -180,8 +180,8 @@ func getUpdatedMachines(poolTargetConfig string, nodes []*corev1.Node) []*corev1
 	return updated
 }
 
-// getReadyMachines filters the provided nodes to ones which are updated
-// and marked ready.
+// getReadyMachines filters the provided nodes to return the nodes
+// that are updated and marked ready
 func getReadyMachines(currentConfig string, nodes []*corev1.Node) []*corev1.Node {
 	updated := getUpdatedMachines(currentConfig, nodes)
 	var ready []*corev1.Node
@@ -221,8 +221,8 @@ func isNodeReady(node *corev1.Node) bool {
 	return checkNodeReady(node) == nil
 }
 
-// isNodeUnavailable is the backend for getUnavailableMachines;
-// see the docs for that for more information.
+// isNodeUnavailable is a helper function for getUnavailableMachines
+// See the docs of getUnavailableMachines for more info
 func isNodeUnavailable(node *corev1.Node) bool {
 	// Unready nodes are unavailable
 	if !isNodeReady(node) {
@@ -242,10 +242,9 @@ func isNodeUnavailable(node *corev1.Node) bool {
 
 // getUnavailableMachines returns the set of nodes which are
 // either marked unscheduleable, or have a MCD actively working.
-// The reason for checking the MCD state is that if the MCD is actively
-// working (or hasn't started) then the node *may* go unschedulable in the future, so we
-// don't want to potentially start another node update exceeding our
-// maxUnavailable.
+// If the MCD is actively working (or hasn't started) then the
+// node *may* go unschedulable in the future, so we don't want to
+// potentially start another node update exceeding our maxUnavailable.
 // Somewhat the opposite of getReadyNodes().
 func getUnavailableMachines(nodes []*corev1.Node) []*corev1.Node {
 	var unavail []*corev1.Node
