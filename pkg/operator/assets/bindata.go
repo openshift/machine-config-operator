@@ -421,6 +421,7 @@ spec:
       containers:
       - name: machine-config-controller
         image: {{.Images.MachineConfigController}}
+        command: ["/usr/bin/machine-config-controller"]
         args:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
@@ -570,6 +571,7 @@ spec:
       containers:
       - name: machine-config-daemon
         image: {{.Images.MachineConfigDaemon}}
+        command: ["/usr/bin/machine-config-daemon"]
         args:
           - "start"
         resources:
@@ -923,6 +925,7 @@ spec:
       containers:
       - name: machine-config-server
         image: {{.Images.MachineConfigServer}}
+        command: ["/usr/bin/machine-config-server"]
         args:
           - "start"
           - "--apiserver-url={{.APIServerURL}}"
