@@ -407,13 +407,14 @@ func (dn *Daemon) enqueueDefault(node *corev1.Node) {
 }
 
 const (
+	logindUnit = "systemd-logind.service"
 	// IDs are taken from https://cgit.freedesktop.org/systemd/systemd/plain/src/systemd/sd-messages.h
 	sdMessageSessionStart = "8d45620c1a4348dbb17410da57c60c66"
 )
 
 // detectEarlySSHAccessesFromBoot taints the node if we find a login before the daemon started up.
 func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
-	journalOutput, err := exec.Command("journalctl", "-b", "-o", "cat", "MESSAGE_ID="+sdMessageSessionStart).CombinedOutput()
+	journalOutput, err := exec.Command("journalctl", "-b", "-o", "cat", "-u", logindUnit, "MESSAGE_ID="+sdMessageSessionStart).CombinedOutput()
 	if err != nil {
 		return err
 	}
@@ -515,7 +516,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
-	cmd := exec.Command("journalctl", "-b", "-f", "-o", "cat", "MESSAGE_ID="+sdMessageSessionStart)
+	cmd := exec.Command("journalctl", "-b", "-f", "-o", "cat", "-u", logindUnit, "MESSAGE_ID="+sdMessageSessionStart)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		exitCh <- err
