@@ -105,3 +105,7 @@ images.rhel7: $(imc7)
 # This was copied from https://github.com/openshift/cluster-image-registry-operato
 test-e2e:
 	go test -timeout 75m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+
+Dockerfile.rhel7: Dockerfile Makefile
+	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
+	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
