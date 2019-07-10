@@ -385,7 +385,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
-			f.mccrLister = append(f.mccrLister, ctrcfg1)
+			f.mccrLister = append(f.mccrLister, ctrcfgUpdate)
 			f.objects = append(f.objects, mcs, ctrcfgUpdate)
 
 			c = f.newController()
@@ -486,16 +486,16 @@ func TestImageConfigUpdate(t *testing.T) {
 			// Perform Update
 			f = newFixture(t)
 
-			// Modify config
+			// Modify image config
 			imgcfgUpdate := imgcfg1.DeepCopy()
 			imgcfgUpdate.Spec.RegistrySources.InsecureRegistries = []string{"test.io"}
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
-			f.imgLister = append(f.imgLister, imgcfg1)
+			f.imgLister = append(f.imgLister, imgcfgUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfgUpdate)
 			f.objects = append(f.objects, mcs1, mcs2)
 
 			c = f.newController()
