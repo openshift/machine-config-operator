@@ -17,12 +17,9 @@ clean:
 _build-%:
 	WHAT=$* hack/build-go.sh
 
-# Build image for a component. Intended to be called via another target.
-# Example:
-#    make _image-machine-config-daemon
-_image-%:
-	@which podman 2> /dev/null >&1 || { echo "podman must be installed to build an image";  exit 1; }
-	WHAT=$* hack/build-image.sh
+# Use podman to build the image.
+image:
+	hack/build-image.sh
 
 # Build + push + deploy image for a component. Intended to be called via another target.
 # Example:
