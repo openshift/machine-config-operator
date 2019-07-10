@@ -597,12 +597,11 @@ func (dn *Daemon) enableUnit(unit igntypes.Unit) error {
 	servicePath := filepath.Join(pathSystemd, unit.Name)
 	err := renameio.Symlink(servicePath, wantsPath)
 	if err != nil {
-		glog.Warningf("Cannot enable unit %s: %s", unit.Name, err)
-	} else {
-		glog.Infof("Enabled %s", unit.Name)
-		glog.V(2).Infof("Symlinked %s to %s", servicePath, wantsPath)
+		return err
 	}
-	return err
+	glog.Infof("Enabled %s", unit.Name)
+	glog.V(2).Infof("Symlinked %s to %s", servicePath, wantsPath)
+	return nil
 }
 
 // disableUnit disables a systemd unit via symlink removal
