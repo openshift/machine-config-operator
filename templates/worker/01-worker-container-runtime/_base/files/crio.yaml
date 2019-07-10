@@ -118,17 +118,6 @@ contents:
     # only the capabilities defined in the containers json file by the user/kube
     # will be added.
     default_capabilities = [
-        "CHOWN",
-        "DAC_OVERRIDE",
-        "FSETID",
-        "FOWNER",
-        "NET_RAW",
-        "SETGID",
-        "SETUID",
-        "SETPCAP",
-        "NET_BIND_SERVICE",
-        "SYS_CHROOT",
-        "KILL",
     ]
 
     # List of default sysctls. If it is empty or commented out, only the sysctls
@@ -145,6 +134,7 @@ contents:
 
     # Path to OCI hooks directories for automatically executed hooks.
     hooks_dir = [
+        "/usr/share/containers/oci/hooks.d"
     ]
 
     # List of default mounts for each container. **Deprecated:** this option will
@@ -274,9 +264,10 @@ contents:
     [crio.network]
 
     # Path to the directory where CNI configuration files are located.
+    # Note this default is changed from the RPM.
     network_dir = "/etc/kubernetes/cni/net.d/"
 
-    # Paths to directories where CNI plugin binaries are located.
-    plugin_dirs = [
-        "/var/lib/cni/bin",
-    ]
+    # Path to directories where CNI plugin binaries are located.
+    # This option is deprecated and will be replaced with plugin_dirs
+    # Note this default is changed from the RPM.
+    plugin_dir = "/var/lib/cni/bin"
