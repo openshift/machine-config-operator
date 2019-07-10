@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig"
@@ -67,23 +68,19 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		return nil, err
 	}
 
+	infraPlatformString := ""
+	// The PlatformStatus field is set in cluster versions >= 4.2
+	// Otherwise use the Platform field
+	if infra.Status.PlatformStatus != nil {
+		infraPlatformString = string(infra.Status.PlatformStatus.Type)
+	} else {
+		//nolint:staticcheck
+		infraPlatformString = string(infra.Status.Platform)
+	}
+
 	platform := "none"
-	//nolint:staticcheck
-	switch infra.Status.Platform {
-	case configv1.AWSPlatformType:
-		platform = "aws"
-	case configv1.AzurePlatformType:
-		platform = "azure"
-	case configv1.BareMetalPlatformType:
-		platform = "baremetal"
-	case configv1.GCPPlatformType:
-		platform = "gcp"
-	case configv1.OpenStackPlatformType:
-		platform = "openstack"
-	case configv1.LibvirtPlatformType:
-		platform = "libvirt"
-	case configv1.VSpherePlatformType:
-		platform = "vsphere"
+	if infraPlatformString != "" {
+		platform = strings.ToLower(infraPlatformString)
 	}
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{
