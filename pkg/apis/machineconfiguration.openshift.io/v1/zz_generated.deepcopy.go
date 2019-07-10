@@ -253,6 +253,11 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		*out = new(configv1.ProxyStatus)
 		**out = **in
 	}
+	if in.Infra != nil {
+		in, out := &in.Infra, &out.Infra
+		*out = new(configv1.Infrastructure)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 
