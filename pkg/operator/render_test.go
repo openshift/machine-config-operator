@@ -138,7 +138,6 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 	}, {
 		Infra: &configv1.Infrastructure{
 			Status: configv1.InfrastructureStatus{
-				PlatformStatus:      &configv1.PlatformStatus{},
 				EtcdDiscoveryDomain: "tt.testing",
 			}},
 		Network: &configv1.Network{

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig"
@@ -68,19 +67,14 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		return nil, err
 	}
 
-	infraPlatformString := ""
+	platform := "none"
 	// The PlatformStatus field is set in cluster versions >= 4.2
 	// Otherwise use the Platform field
+	// nolint:staticcheck
 	if infra.Status.PlatformStatus != nil {
-		infraPlatformString = string(infra.Status.PlatformStatus.Type)
-	} else {
-		//nolint:staticcheck
-		infraPlatformString = string(infra.Status.Platform)
-	}
-
-	platform := "none"
-	if infraPlatformString != "" {
-		platform = strings.ToLower(infraPlatformString)
+		platform = string(infra.Status.PlatformStatus.Type)
+	} else if string(infra.Status.Platform) != "" {
+		platform = string(infra.Status.Platform)
 	}
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{

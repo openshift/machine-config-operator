@@ -17,6 +17,7 @@ import (
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -33,16 +34,16 @@ const (
 	filesDir = "files"
 	unitsDir = "units"
 
-	// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
-	platformAWS       = "aws"
-	platformAzure     = "azure"
-	platformBaremetal = "baremetal"
-	platformGCP       = "gcp"
-	platformOpenstack = "openstack"
-	platformLibvirt   = "libvirt"
-	platformNone      = "none"
-	platformVSphere   = "vsphere"
-	platformBase      = "_base"
+	platformAWS       = string(configv1.AWSPlatformType)
+	platformAzure     = string(configv1.AzurePlatformType)
+	platformOpenstack = string(configv1.OpenStackPlatformType)
+	platformGCP       = string(configv1.GCPPlatformType)
+	platformLibvirt   = string(configv1.LibvirtPlatformType)
+	platformNone      = string(configv1.NonePlatformType)
+	platformVSphere   = string(configv1.VSpherePlatformType)
+	platformBareMetal = string(configv1.BareMetalPlatformType)
+	// TODO: Remove platformBase
+	platformBase = "_base"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -128,7 +129,7 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 		return "", fmt.Errorf("cannot generate MachineConfigs when no platform is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenstack, platformLibvirt, platformNone:
+	case platformAWS, platformAzure, platformBareMetal, platformGCP, platformOpenstack, platformLibvirt, platformNone:
 		return ic.Platform, nil
 	default:
 		// platformNone is used for a non-empty, but currently unsupported platform.

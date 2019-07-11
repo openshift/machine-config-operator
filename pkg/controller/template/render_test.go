@@ -26,23 +26,23 @@ func TestCloudProvider(t *testing.T) {
 		platform string
 		res      string
 	}{{
-		platform: "aws",
-		res:      "aws",
+		platform: platformAWS,
+		res:      platformAWS,
 		// OpenStack cloud config is disabled
 		//}, {
-		//platform: "openstack",
-		//res:      "openstack",
+		//platform: platformOpenstack,
+		//res:      platformOpenstack,
 	}, {
-		platform: "baremetal",
+		platform: platformBareMetal,
 		res:      "",
 	}, {
-		platform: "gcp",
+		platform: platformGCP,
 		res:      "gce",
 	}, {
-		platform: "libvirt",
+		platform: platformLibvirt,
 		res:      "",
 	}, {
-		platform: "none",
+		platform: platformNone,
 		res:      "",
 	}}
 	for idx, c := range cases {
@@ -73,22 +73,22 @@ func TestCloudConfigFlag(t *testing.T) {
 		content  string
 		res      string
 	}{{
-		platform: "aws",
+		platform: platformAWS,
 		content:  "",
 		res:      "",
 	}, {
-		platform: "azure",
+		platform: platformAzure,
 		content:  "",
 		res:      "",
 	}, {
-		platform: "aws",
+		platform: platformAWS,
 		content: `
 [dummy-config]
     option = a
 `,
 		res: "",
 	}, {
-		platform: "azure",
+		platform: platformAzure,
 		content: `
 [dummy-config]
     option = a
@@ -233,18 +233,18 @@ const (
 
 var (
 	configs = map[string]string{
-		"aws":       "./test_data/controller_config_aws.yaml",
-		"baremetal": "./test_data/controller_config_baremetal.yaml",
-		"gcp":    "./test_data/controller_config_gcp.yaml",
-		"openstack": "./test_data/controller_config_openstack.yaml",
-		"libvirt":   "./test_data/controller_config_libvirt.yaml",
-		"none":      "./test_data/controller_config_none.yaml",
-		"vsphere":   "./test_data/controller_config_vsphere.yaml",
+		platformAWS:       "./test_data/controller_config_aws.yaml",
+		platformBareMetal: "./test_data/controller_config_baremetal.yaml",
+		platformGCP:       "./test_data/controller_config_gcp.yaml",
+		platformOpenstack: "./test_data/controller_config_openstack.yaml",
+		platformLibvirt:   "./test_data/controller_config_libvirt.yaml",
+		platformNone:      "./test_data/controller_config_none.yaml",
+		platformVSphere:   "./test_data/controller_config_vsphere.yaml",
 	}
 )
 
 func TestInvalidPlatform(t *testing.T) {
-	controllerConfig, err := controllerConfigFromFile(configs["aws"])
+	controllerConfig, err := controllerConfigFromFile(configs[platformAWS])
 	if err != nil {
 		t.Fatalf("failed to get controllerconfig config: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestInvalidPlatform(t *testing.T) {
 	}
 
 	// explicitly blocked
-	controllerConfig.Spec.Platform = "_base"
+	controllerConfig.Spec.Platform = platformBase
 	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
