@@ -30,8 +30,8 @@ type CreateOption string
 type Device string
 
 type Directory struct {
-	Node
-	DirectoryEmbedded1
+	Node               `json:"node,omitempty"`
+	DirectoryEmbedded1 `json:"directoryEmbedded1,omitempty"`
 }
 
 type DirectoryEmbedded1 struct {
@@ -45,8 +45,8 @@ type Disk struct {
 }
 
 type File struct {
-	Node
-	FileEmbedded1
+	Node          `json:"node,omitempty"`
+	FileEmbedded1 `json:"fileEmbedded1,omitempty"`
 }
 
 type FileContents struct {
@@ -82,8 +82,8 @@ type IgnitionConfig struct {
 }
 
 type Link struct {
-	Node
-	LinkEmbedded1
+	Node          `json:"node,omitempty"`
+	LinkEmbedded1 `json:"linkEmbedded1,omitempty"`
 }
 
 type LinkEmbedded1 struct {
