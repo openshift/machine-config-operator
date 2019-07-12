@@ -229,47 +229,39 @@ In those situations, you will need to:
 2) build a custom release payload
 3) install a cluster with your custom release payload
 
-## Build the MCO components images
+## Build MCO image
 
-To build the image for any component run:
+To build an image that contains all MCO components (mcc/mcd/mco/mcs/setup-etcd-env) run:
 
 ```
-make image-{component}
+make image
 ```
 
-`{component}` can be either `operator`, `daemon`, `controller` or `server`.
+After the build is complete, make sure to push the image to a registry (i.e. `podman push localhost/machine-config-operator quay.io/user/machine-config-operator`).
 
-After the build is complete, make sure to push the image to a registry (i.e. `podman push localhost/machine-config-{component} quay.io/user/machine-config-{component}`).
+You can also use the script [hack/push-image.sh](hack/push-image.sh) to push the image 
+generated in `make image` to the container registry of your choice. For example, after logging 
+in via the command-line:
+
+```
+REPO={docker.io/username} /hack/push-image.sh
+```
 
 Quay.io or any other public registry isn't strictly required - you can use a local
 registry as long as those images are pullable.
 
 ## Build a custom release payload
 
-Now that your have your custom component images, to build a custom release payload, run:
+Now that your have your custom image, to build a custom release payload, run:
 
 ```
 oc adm release new -n origin --server https://api.ci.openshift.org \
                                 --from-image-stream "{version number}" \
                                 --to-image quay.io/user/origin-release:v{version number} \
-                                machine-config-{component}=quay.io/user/machine-config-{component}:{tag}
+                                machine-config-operator=quay.io/user/machine-config-operator:latest
 ```
 
 `{version number}` is an openshift version, for example 4.1
-
-There's currently a [known limitation](https://github.com/openshift/machine-config-operator/issues/421) which prevents
-building a custom release payload using only a subset of the MCO components. You can work around that by
-creating a payload which contains all of them:
-
-```
-oc adm release new -n origin --server https://api.ci.openshift.org \
-                                --from-image-stream "{version number}" \
-                                --to-image quay.io/user/origin-release:v{version number} \
-                                machine-config-operator=quay.io/user/machine-config-operator:latest \
-                                machine-config-controller=quay.io/user/machine-config-controller:latest \
-                                machine-config-daemon=quay.io/user/machine-config-daemon:latest \
-                                machine-config-server=quay.io/user/machine-config-server:latest
-```
 
 Make sure you're using a relatively new `oc` binary from `openshift/origin`. The image must be pullable by
 remote resources (nodes), therefore using a local registry might not work.
