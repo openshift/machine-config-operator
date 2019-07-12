@@ -1,0 +1,12 @@
+name: "afterburn-hostname.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Afterburn Hostname
+
+  [Service]
+  ExecStart=/usr/bin/afterburn --provider openstack-metadata --hostname=/etc/hostname
+  Type=oneshot
+
+  [Install]
+  WantedBy=multi-user.target
