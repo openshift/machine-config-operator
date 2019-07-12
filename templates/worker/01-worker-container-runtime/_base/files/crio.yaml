@@ -202,6 +202,10 @@ contents:
     # image name as we receive it can't be parsed as a valid source reference
     default_transport = "docker://"
 
+    # The path to a file containing credentials necessary for pulling images from
+    # secure registries. The file is similar to that of /var/lib/kubelet/config.json
+    global_auth_file = "/var/lib/kubelet/config.json"
+
     # pause_image is the image which we use to instantiate infra containers.
     pause_image = "{{.Images.infraImageKey}}"
 
