@@ -1,0 +1,6 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/kubelet-ca.crt"
+contents:
+  inline: |
+{{.KubeAPIServerServingCAData | toString | indent 4}}
