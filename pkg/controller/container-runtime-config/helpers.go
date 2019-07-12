@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/docker/reference"
@@ -13,6 +15,7 @@ import (
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	crioconfig "github.com/kubernetes-sigs/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
@@ -51,12 +54,6 @@ type tomlConfigCRIO struct {
 		Image   struct{ crioconfig.ImageConfig }   `toml:"image"`
 		Network struct{ crioconfig.NetworkConfig } `toml:"network"`
 	} `toml:"crio"`
-}
-
-type tomlConfigRegistries struct {
-	Registries []sysregistriesv2.Registry `toml:"registry"`
-	// backwards compatibility to sysregistries v1
-	sysregistriesv2.V1TOMLConfig `toml:"registries"`
 }
 
 type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
@@ -244,22 +241,173 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	return newData.Bytes(), nil
 }
 
-func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string) ([]byte, error) {
-	tomlConf := new(tomlConfigRegistries)
-	if _, err := toml.Decode(string(data), tomlConf); err != nil {
+// scopeMatchesRegistry returns true if a scope value (as in sysregistriesv2.Registry.Prefix / sysregistriesv2.Endpoint.Location)
+// matches a host[:port] value in reg.
+func scopeMatchesRegistry(scope, reg string) bool {
+	if reg == scope {
+		return true
+	}
+	if len(scope) > len(reg) {
+		return strings.HasPrefix(scope, reg) && scope[len(reg)] == '/'
+	}
+	return false
+}
+
+// disjointOrderedMirrorSets processes icspRules and returns the resulting disjoint sets of mutual mirrors, each ordered in consistently with
+// the icspRules preference order (if possible)
+// This exists to merge different mirror sets, e.g. given mirror sets (B, C) and (A, B), it will combine them into a single (A, B, C) set.
+func disjointOrderedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([][]string, error) {
+	// Collect all mirror sets into a flat array to abstract the rest of the code from the ImageContentSourcePolicy format
+	mirrorSets := []*apioperatorsv1alpha1.RepositoryDigestMirrors{}
+	for _, icsp := range icspRules {
+		for i := range icsp.Spec.RepositoryDigestMirrors {
+			set := &icsp.Spec.RepositoryDigestMirrors[i]
+			if len(set.Sources) < 2 {
+				// No mirrors, or a single repository with no mirror relationship, is not really a mirror set.
+				continue
+			}
+			mirrorSets = append(mirrorSets, set)
+		}
+	}
+
+	// Build a graph with nodes == mirrors, union each mirror set.
+	unionGraph := newUnionGraph()
+	for _, set := range mirrorSets {
+		// Given set.Sources = (A,B,C,D), Union (A,B), (A,C), (A,D):
+		m1 := set.Sources[0] // The build of mirrorSets guarantees len(set.Sources) >= 2
+		for _, m2 := range set.Sources[1:] {
+			unionGraph.Union(m1, m2)
+		}
+	}
+	// Enumerate disjoint components
+	disjointSets := map[unionNode]*[]*apioperatorsv1alpha1.RepositoryDigestMirrors{} // Key == the root returned by unionGraph.Find()
+	for _, set := range mirrorSets {
+		// The build of mirrorSets guarantees len(set.Sources) >= 2
+		root := unionGraph.Find(set.Sources[0]) // == union.Find(set.Sources[x]) for any other x
+		ds, ok := disjointSets[root]
+		if !ok {
+			ds = &[]*apioperatorsv1alpha1.RepositoryDigestMirrors{}
+			disjointSets[root] = ds
+		}
+		*ds = append(*ds, set)
+	}
+
+	// Sort the sets of mirrors to ensure deterministic output
+	type dsOrderedKey struct {
+		mapKey  unionNode
+		sortKey string // == The legicographically first mirror in the disjointSets element
+	}
+	dsKeys := []dsOrderedKey{}
+	for mapKey, ds := range disjointSets {
+		sortKey := ""
+		// The build of disjointSets guarantees len(ds) > 0, len(ds[0].Sources) >= 2
+		for _, set := range *ds {
+			for _, src := range set.Sources {
+				if sortKey == "" || sortKey > src {
+					sortKey = src
+				}
+			}
+		}
+		dsKeys = append(dsKeys, dsOrderedKey{
+			mapKey:  mapKey,
+			sortKey: sortKey,
+		})
+	}
+	sort.Slice(dsKeys, func(i, j int) bool {
+		return dsKeys[i].sortKey < dsKeys[j].sortKey
+	})
+	// Convert the sets of mirrors
+	res := [][]string{}
+	for _, dsKey := range dsKeys {
+		ds := disjointSets[dsKey.mapKey]
+		topoGraph := newTopoGraph()
+		for _, set := range *ds {
+			// The build of mirrorSets guarantees len(set.Sources) >= 2, i.e. that this loop runs at least once for every set,
+			// and that every node in topoGraph is implicitly added by topoGraph.AddEdge (there are no unconnected nodes that we would
+			// have to add separately from the edges).
+			for i := 0; i+1 < len(set.Sources); i++ {
+				topoGraph.AddEdge(set.Sources[i], set.Sources[i+1])
+			}
+		}
+		sortedRepos, err := topoGraph.Sorted()
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, sortedRepos)
+	}
+	return res, nil
+}
+
+func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
+	tomlConf := sysregistriesv2.V2RegistriesConf{}
+	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
 	}
 
-	if internalInsecure != nil {
-		tomlConf.Insecure = sysregistriesv2.V1TOMLregistries{Registries: internalInsecure}
+	// getRegistryEntry returns a pointer to a modifiable Registry object corresponding to scope,
+	// creating it if necessary.
+	// NOTE: We never generate entries with Prefix != Location, so everything in updateRegistriesConfig
+	// only checks Location.
+	// NOTE: The pointer is valid only until the next getRegistryEntry call.
+	getRegistryEntry := func(scope string) *sysregistriesv2.Registry {
+		for i := range tomlConf.Registries {
+			if tomlConf.Registries[i].Location == scope {
+				return &tomlConf.Registries[i]
+			}
+		}
+		tomlConf.Registries = append(tomlConf.Registries, sysregistriesv2.Registry{
+			Endpoint: sysregistriesv2.Endpoint{Location: scope},
+		})
+		return &tomlConf.Registries[len(tomlConf.Registries)-1]
 	}
-	if internalBlocked != nil {
-		tomlConf.Block = sysregistriesv2.V1TOMLregistries{Registries: internalBlocked}
+
+	mirrorSets, err := disjointOrderedMirrorSets(icspRules)
+	if err != nil {
+		return nil, err
+	}
+	for _, sortedRepos := range mirrorSets {
+		for _, primaryRepo := range sortedRepos {
+			reg := getRegistryEntry(primaryRepo)
+			reg.MirrorByDigestOnly = true
+			for _, mirror := range sortedRepos {
+				reg.Mirrors = append(reg.Mirrors, sysregistriesv2.Endpoint{Location: mirror})
+			}
+		}
+	}
+
+	// internalInsecure and internalBlocked are lists of registries; now that mirrors can be configured at a namespace/repo level,
+	// configuration at the namespace/repo level would shadow the registry-level entries; so, propagate the insecure/blocked
+	// flags to the child namespaces as well.
+	for _, insecureReg := range internalInsecure {
+		reg := getRegistryEntry(insecureReg)
+		reg.Insecure = true
+		for i := range tomlConf.Registries {
+			reg := &tomlConf.Registries[i]
+			if scopeMatchesRegistry(reg.Location, insecureReg) {
+				reg.Insecure = true
+			}
+			for j := range reg.Mirrors {
+				mirror := &reg.Mirrors[j]
+				if scopeMatchesRegistry(mirror.Location, insecureReg) {
+					mirror.Insecure = true
+				}
+			}
+		}
+	}
+	for _, blockedReg := range internalBlocked {
+		reg := getRegistryEntry(blockedReg)
+		reg.Blocked = true
+		for i := range tomlConf.Registries {
+			reg := &tomlConf.Registries[i]
+			if scopeMatchesRegistry(reg.Location, blockedReg) {
+				reg.Blocked = true
+			}
+		}
 	}
 
 	var newData bytes.Buffer
 	encoder := toml.NewEncoder(&newData)
-	if err := encoder.Encode(*tomlConf); err != nil {
+	if err := encoder.Encode(tomlConf); err != nil {
 		return nil, err
 	}
 
