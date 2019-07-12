@@ -70,6 +70,9 @@ type ControllerConfigSpec struct {
 
 	// TODO: Use string for CA data
 
+	// kubeAPIServerServingCAData managed Kubelet to API Server Cert... Rotated automatically
+	KubeAPIServerServingCAData []byte `json:"kubeAPIServerServingCAData"`
+
 	// etcdCAData specifies the etcd CA data
 	EtcdCAData []byte `json:"etcdCAData"`
 
