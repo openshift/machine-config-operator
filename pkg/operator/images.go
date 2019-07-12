@@ -14,17 +14,13 @@ type Images struct {
 
 // RenderConfigImages are image names used to render templates under ./manifests/
 type RenderConfigImages struct {
-	MachineConfigOperator   string `json:"machineConfigOperator"`
-	MachineConfigController string `json:"machineConfigController"`
-	MachineConfigDaemon     string `json:"machineConfigDaemon"`
-	MachineConfigServer     string `json:"machineConfigServer"`
-	MachineOSContent        string `json:"machineOSContent"`
+	MachineConfigOperator string `json:"machineConfigOperator"`
+	MachineOSContent      string `json:"machineOSContent"`
 }
 
 // ControllerConfigImages are image names used to render templates under ./templates/
 type ControllerConfigImages struct {
 	Etcd            string `json:"etcd"`
-	SetupEtcdEnv    string `json:"setupEtcdEnv"`
 	InfraImage      string `json:"infraImage"`
 	KubeClientAgent string `json:"kubeClientAgentImage"`
 }

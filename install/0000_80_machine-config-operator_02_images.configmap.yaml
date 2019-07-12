@@ -7,11 +7,7 @@ data:
   images.json: >
     {
       "machineConfigOperator": "registry.svc.ci.openshift.org/openshift:machine-config-operator",
-      "machineConfigController": "registry.svc.ci.openshift.org/openshift:machine-config-controller",
-      "machineConfigDaemon": "registry.svc.ci.openshift.org/openshift:machine-config-daemon",
-      "machineConfigServer": "registry.svc.ci.openshift.org/openshift:machine-config-server",
       "etcd": "registry.svc.ci.openshift.org/openshift:etcd",
-      "setupEtcdEnv": "registry.svc.ci.openshift.org/openshift:setup-etcd-environment",
       "infraImage": "registry.svc.ci.openshift.org/openshift:pod",
       "kubeClientAgentImage": "registry.svc.ci.openshift.org/openshift:kube-client-agent"
     }
