@@ -92,7 +92,6 @@ contents:
           set +a
 
           exec etcd \
-            --discovery-srv {{.EtcdDiscoveryDomain}} \
             --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
             --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \
@@ -122,6 +121,8 @@ contents:
           mountPath: /etc/etcd/
 
         env:
+        - name: ETCDCTL_API
+          value: "3"
         - name: ETCD_DATA_DIR
           value: "/var/lib/etcd"
         - name: ETCD_NAME
@@ -162,6 +163,9 @@ contents:
           mountPath: /run/etcd/
         - name: certs
           mountPath: /etc/ssl/etcd/
+        env:
+        - name: ETCDCTL_API
+          value: "3"
         ports:
         - name: metric
           containerPort: 9979
