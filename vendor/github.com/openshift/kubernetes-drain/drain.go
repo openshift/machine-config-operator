@@ -22,6 +22,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	golog "github.com/go-log/log"
@@ -37,8 +38,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	typedappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	typedextensionsv1beta1 "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
 	typedpolicyv1beta1 "k8s.io/client-go/kubernetes/typed/policy/v1beta1"
 )
 
@@ -238,8 +239,8 @@ func (o *DrainOptions) unreplicatedFilter(pod corev1.Pod) (bool, *warning, *fata
 }
 
 type DaemonSetFilterOptions struct {
-	client typedextensionsv1beta1.ExtensionsV1beta1Interface
-	force bool
+	client           typedappsv1.AppsV1Interface
+	force            bool
 	ignoreDaemonSets bool
 }
 
@@ -328,8 +329,8 @@ func getPodsForDeletion(client kubernetes.Interface, node *corev1.Node, options 
 	fs := podStatuses{}
 
 	daemonSetOptions := &DaemonSetFilterOptions{
-		client: client.ExtensionsV1beta1(),
-		force: options.Force,
+		client:           client.AppsV1(),
+		force:            options.Force,
 		ignoreDaemonSets: options.IgnoreDaemonsets,
 	}
 
@@ -399,7 +400,7 @@ func deleteOrEvictPods(client kubernetes.Interface, pods []corev1.Pod, options *
 	}
 
 	getPodFn := func(namespace, name string) (*corev1.Pod, error) {
-		return client.CoreV1().Pods(options.Namespace).Get(name, metav1.GetOptions{})
+		return client.CoreV1().Pods(namespace).Get(name, metav1.GetOptions{})
 	}
 
 	if len(policyGroupVersion) > 0 {
@@ -412,9 +413,13 @@ func deleteOrEvictPods(client kubernetes.Interface, pods []corev1.Pod, options *
 
 func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.Pod, policyGroupVersion string, options *DrainOptions, getPodFn func(namespace, name string) (*corev1.Pod, error)) error {
 	returnCh := make(chan error, 1)
+	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
 
 	for _, pod := range pods {
-		go func(pod corev1.Pod, returnCh chan error) {
+		wg.Add(1)
+		go func(pod corev1.Pod, returnCh chan error, stopCh chan struct{}) {
+			defer wg.Done()
 			var err error
 			for {
 				err = evictPod(client, pod, policyGroupVersion, options.GracePeriodSeconds)
@@ -424,8 +429,14 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 					returnCh <- nil
 					return
 				} else if apierrors.IsTooManyRequests(err) {
-					logf(options.Logger, "error when evicting pod %q (will retry after 5s): %v", pod.Name, err)
-					time.Sleep(5 * time.Second)
+					select {
+					case <-stopCh:
+						logf(options.Logger, "Received channel close for pod %q. Returning!!!", pod.Name)
+						return
+					default:
+						logf(options.Logger, "error when evicting pod %q (will retry after 5s): %v", pod.Name, err)
+						time.Sleep(5 * time.Second)
+					}
 				} else {
 					returnCh <- fmt.Errorf("error when evicting pod %q: %v", pod.Name, err)
 					return
@@ -438,7 +449,7 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 			} else {
 				returnCh <- fmt.Errorf("error when waiting for pod %q terminating: %v", pod.Name, err)
 			}
-		}(pod, returnCh)
+		}(pod, returnCh, stopCh)
 	}
 
 	doneCount := 0
@@ -461,9 +472,14 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 				errors = append(errors, err)
 			}
 		case <-globalTimeoutCh:
+			logf(options.Logger, "Closing stopCh")
+			close(stopCh)
+			wg.Wait()
 			return fmt.Errorf("Drain did not complete within %v", globalTimeout)
 		}
 	}
+	close(stopCh)
+	wg.Wait()
 	return utilerrors.NewAggregate(errors)
 }
 
