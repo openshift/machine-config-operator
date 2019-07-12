@@ -86,11 +86,17 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		out = f
 	}
 
+	if err := writeEnvironmentFile(map[string]string{
+		"DISCOVERY_SRV": runOpts.discoverySRV,
+	}, out, true); err != nil {
+		return err
+	}
+
 	return writeEnvironmentFile(map[string]string{
 		"IPV4_ADDRESS":      ip,
 		"DNS_NAME":          dns,
 		"WILDCARD_DNS_NAME": fmt.Sprintf("*.%s", runOpts.discoverySRV),
-	}, out)
+	}, out, false)
 }
 
 func ipAddrs() ([]string, error) {
@@ -150,10 +156,14 @@ func reverseLookupSelf(service, proto, name, self string) (string, error) {
 	return selfTarget, nil
 }
 
-func writeEnvironmentFile(m map[string]string, w io.Writer) error {
+func writeEnvironmentFile(m map[string]string, w io.Writer, export bool) error {
 	var buffer bytes.Buffer
 	for k, v := range m {
-		buffer.WriteString(fmt.Sprintf("ETCD_%s=%s\n", k, v))
+		env := fmt.Sprintf("ETCD_%s=%s\n", k, v)
+		if export == true {
+			env = fmt.Sprintf("export %s", env)
+		}
+		buffer.WriteString(env)
 	}
 	if _, err := buffer.WriteTo(w); err != nil {
 		return err
