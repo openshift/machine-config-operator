@@ -3,7 +3,7 @@ COMPONENTS = daemon controller server operator
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 
-.PHONY: clean test test-unit test-e2e verify update
+.PHONY: clean test test-unit test-e2e verify update install-tools
 # Remove build artifaces
 # Example:
 #    make clean
@@ -40,16 +40,19 @@ test-unit:
 # Run the code generation tasks.
 # Example:
 #    make update
-update:
-	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to update generated code";  exit 1; }
+update: install-go-bindata
 	hack/update-codegen.sh
 	hack/update-generated-bindata.sh
+
+install-go-bindata:
+	hack/install-go-bindata.sh
+
+install-tools: install-go-bindata
 
 # Run verification steps
 # Example:
 #    make verify
-verify:
-	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to verify generated code";  exit 1; }
+verify: install-tools
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
 
