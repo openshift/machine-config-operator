@@ -137,6 +137,7 @@ func createControllers(ctx *controllercommon.ControllerContext) []controllercomm
 		node.New(
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
 		),

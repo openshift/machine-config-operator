@@ -41,8 +41,7 @@ func (cb *Builder) KubeClient(name string) (kubernetes.Interface, error) {
 	return kubernetes.NewForConfig(rest.AddUserAgent(cb.config, name))
 }
 
-// ConfigClientOrDie returns the kubernetes client interface for security related kubernetes objects
-// such as pod security policy, security context.
+// ConfigClientOrDie returns the config client interface for openshift
 func (cb *Builder) ConfigClientOrDie(name string) configclientset.Interface {
 	return configclientset.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }

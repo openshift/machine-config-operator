@@ -90,11 +90,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:36960cb772f2dc8cf3b35e862f0705bc860c212e928e0939a3c287b44771497a"
+  digest = "1:fdd135f63857b858859a5a2e361a117622824826a78ce9d8c058144a0f89c7ba"
   name = "github.com/containerd/cgroups"
   packages = ["."]
   pruneopts = "NUT"
-  revision = "db272301ab8449d05f062e6db6f13d8a6aaff466"
+  revision = "d596c78861b15c27a9ac82975aca4413390b9b49"
 
 [[projects]]
   digest = "1:613f0e16a97fc2dccc0d3c31b615eb3c8ecc57295b34949d47917ee1dde1476c"
@@ -266,7 +266,7 @@
   revision = "869f871628b6baa9cfbc11732cdf6546b17c1298"
 
 [[projects]]
-  digest = "1:2d0636a8c490d2272dd725db26f74a537111b99b9dbdda0d8b98febe63702aa4"
+  digest = "1:796f9c63c68774a89eade387a8476e45ec2b34f5649b0726983204202c3649d6"
   name = "github.com/golang/protobuf"
   packages = [
     "proto",
@@ -276,8 +276,8 @@
     "ptypes/timestamp",
   ]
   pruneopts = "NUT"
-  revision = "b5d812f8a3706043e23a9cd5babf2e5423744d30"
-  version = "v1.3.1"
+  revision = "6c65a5562fc06764971b7c5d05c76c75e84bdbf7"
+  version = "v1.3.2"
 
 [[projects]]
   digest = "1:52c5834e2bebac9030c97cc0798ac11c3aa8a39f098aeb419f142533da6cd3cc"
@@ -431,7 +431,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:34b38d09bae90735a8c185e289f7dcf18a6d2471ef529ec21a8d7cef117bf795"
+  digest = "1:3d9aff47bf9bdd8dade83f2dcf3aaffbecbb1d886a5b73b7c4cf604545f286dc"
   name = "github.com/openshift/api"
   packages = [
     "config/v1",
@@ -439,7 +439,7 @@
     "operator/v1alpha1",
   ]
   pruneopts = "NUT"
-  revision = "076caf201561527c42b501fed3e82638877f7562"
+  revision = "35c8395fe70d56cb00077f4b89bcf1567af9a79c"
 
 [[projects]]
   branch = "master"
@@ -483,9 +483,12 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:fb1baca237786871362ee17ee7d8d3bbda8345adc517b387e00b34467080dca7"
+  digest = "1:7595f93ec718b635fc637139b75413aaee09e9a9363c193300397db7bacb2b3b"
   name = "github.com/openshift/library-go"
-  packages = ["pkg/config/clusteroperator/v1helpers"]
+  packages = [
+    "pkg/config/clusteroperator/v1helpers",
+    "pkg/operator/v1helpers",
+  ]
   pruneopts = "NUT"
   revision = "f8abdcd57c468b7f49a91caa77212c12bd05fa9f"
 
@@ -605,14 +608,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:04a5fe5e30285936ae29208ad5752b5ad761f2638f96a45daa5fe0eee34a3547"
+  digest = "1:5f0606c755c423ee9970d55028e0ee09df03e33297a39d6b83c2502dc9a2193f"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "NUT"
-  revision = "04f50cda93cbb67f2afa353c52f342100e80e625"
+  revision = "fae7ac547cb717d141c433a2a173315e216b64c4"
 
 [[projects]]
   digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
@@ -649,7 +652,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:7026eea9c10a8cfaa11a68d8e15259f09a1706dce5b9d736aa032991b5a2749d"
+  digest = "1:59988b91533530837bdec96e34fefa9df629d8ee89f3603387c57763b9fed432"
   name = "golang.org/x/tools"
   packages = [
     "go/ast/astutil",
@@ -666,7 +669,7 @@
     "internal/semver",
   ]
   pruneopts = "NUT"
-  revision = "72ffa07ba3db8d09f5215feec0f89464f3028f8e"
+  revision = "9a621aea19f8341c01da59e0d42dd97700f677d0"
 
 [[projects]]
   digest = "1:372cd8eba449f9b6db06677d0e73fa193ec5b19aaee148f355503ab6127045ca"
@@ -690,7 +693,7 @@
   name = "google.golang.org/genproto"
   packages = ["googleapis/rpc/status"]
   pruneopts = "NUT"
-  revision = "710ae3a149df3775bfc2e9efb7f4fb97b186b233"
+  revision = "3bdd9d9f5532d75d09efb230bd767d265245cfe5"
 
 [[projects]]
   digest = "1:2faab8e13984b728cde9ced456912a0fc5cd43da5b9a4b45b749dc3ae63f27b2"
@@ -1133,7 +1136,7 @@
   name = "k8s.io/kube-openapi"
   packages = ["pkg/util/proto"]
   pruneopts = "NUT"
-  revision = "db7b694dc208eead64d38030265f702db593fcf2"
+  revision = "33be087ad058f99c78e067996202b60230737e49"
 
 [[projects]]
   digest = "1:c315e859e0da8b226202d60b2df6c48b17568468503ba080b4e3a30ad99887b4"
@@ -1164,7 +1167,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0f33a050a0280c85a0ffe1480f4160e689c6ce9a94109023be5a884218fd1ec1"
+  digest = "1:d3e62eb3f97ef31de7ba84e84954ef9f9def7f83bfd21792449f17dae2f11e4a"
   name = "k8s.io/utils"
   packages = [
     "buffer",
@@ -1173,7 +1176,7 @@
     "trace",
   ]
   pruneopts = "NUT"
-  revision = "c55fbcfc754a5b2ec2fbae8fb9dcac36bdba6a12"
+  revision = "fac88abaa1020f13782606257be375d74483369d"
 
 [[projects]]
   digest = "1:8730e0150dfb2b7e173890c8b9868e7a273082ef8e39f4940e3506a481cf895c"
@@ -1194,6 +1197,7 @@
     "github.com/blang/semver",
     "github.com/containers/image/docker/reference",
     "github.com/containers/image/pkg/sysregistriesv2",
+    "github.com/containers/image/types",
     "github.com/containers/storage/pkg/config",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
@@ -1223,6 +1227,7 @@
     "github.com/openshift/client-go/operator/listers/operator/v1alpha1",
     "github.com/openshift/kubernetes-drain",
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
+    "github.com/openshift/library-go/pkg/operator/v1helpers",
     "github.com/pkg/errors",
     "github.com/spf13/cobra",
     "github.com/spf13/pflag",

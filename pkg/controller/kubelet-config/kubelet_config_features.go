@@ -62,7 +62,9 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		glog.V(2).Infof("FeatureSet %v is missing, using default", key)
 		features = &osev1.FeatureGate{
 			Spec: osev1.FeatureGateSpec{
-				FeatureSet: osev1.Default,
+				FeatureGateSelection: osev1.FeatureGateSelection{
+					FeatureSet: osev1.Default,
+				},
 			},
 		}
 	} else if err != nil {

@@ -21,6 +21,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
+	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
+	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -37,8 +40,9 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client     *fake.Clientset
-	kubeclient *k8sfake.Clientset
+	client          *fake.Clientset
+	kubeclient      *k8sfake.Clientset
+	schedulerClient *fakeconfigv1client.Clientset
 
 	mcpLister  []*mcfgv1.MachineConfigPool
 	nodeLister []*corev1.Node
@@ -46,8 +50,10 @@ type fixture struct {
 	kubeactions []core.Action
 	actions     []core.Action
 
-	kubeobjects []runtime.Object
-	objects     []runtime.Object
+	kubeobjects      []runtime.Object
+	objects          []runtime.Object
+	schedulerObjects []runtime.Object
+	schedulerLister  []*apicfgv1.Scheduler
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -61,14 +67,17 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
+	f.schedulerClient = fakeconfigv1client.NewSimpleClientset(f.schedulerObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
+	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
-		f.kubeclient, f.client)
+		ci.Config().V1().Schedulers(), f.kubeclient, f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.nodeListerSynced = alwaysReady
+	c.schedulerListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -85,7 +94,9 @@ func (f *fixture) newController() *Controller {
 	for _, m := range f.nodeLister {
 		k8sI.Core().V1().Nodes().Informer().GetIndexer().Add(m)
 	}
-
+	for _, c := range f.schedulerLister {
+		ci.Config().V1().Schedulers().Informer().GetIndexer().Add(c)
+	}
 	return c
 }
 
