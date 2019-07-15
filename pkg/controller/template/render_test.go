@@ -37,7 +37,7 @@ func TestCloudProvider(t *testing.T) {
 		res:      "",
 	}, {
 		platform: "gcp",
-		res:      "gcp",
+		res:      "gce",
 	}, {
 		platform: "libvirt",
 		res:      "",
