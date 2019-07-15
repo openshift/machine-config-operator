@@ -50,6 +50,8 @@ const (
 	//
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
+
+	builtInLabelKey = "machineconfiguration.openshift.io/mco-built-in"
 )
 
 var (
@@ -625,8 +627,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
-	// Find all the MachineConfig pools
-	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
+	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
+	if err != nil {
+		return err
+	}
+	// Find all the MCO built in MachineConfigPools
+	mcpPools, err := ctrl.mcpLister.List(sel)
 	if err != nil {
 		return err
 	}
