@@ -1287,6 +1287,7 @@ metadata:
   name: master
   labels:
     "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
+    "machineconfiguration.openshift.io/mco-built-in": ""
 spec:
   machineConfigSelector:
     matchLabels:
@@ -1314,6 +1315,8 @@ var _manifestsWorkerMachineconfigpoolYaml = []byte(`apiVersion: machineconfigura
 kind: MachineConfigPool
 metadata:
   name: worker
+  labels:
+    "machineconfiguration.openshift.io/mco-built-in": ""
 spec:
   machineConfigSelector:
     matchLabels:

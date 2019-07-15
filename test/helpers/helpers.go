@@ -49,9 +49,11 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 			APIVersion: mcfgv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   name,
-			Labels: map[string]string{},
-			UID:    types.UID(utilrand.String(5)),
+			Name: name,
+			Labels: map[string]string{
+				"machineconfiguration.openshift.io/mco-built-in": "",
+			},
+			UID: types.UID(utilrand.String(5)),
 		},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			NodeSelector:          nodeSelector,
