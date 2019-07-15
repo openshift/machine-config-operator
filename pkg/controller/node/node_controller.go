@@ -170,7 +170,13 @@ func (ctrl *Controller) checkMasterNodesOnAdd(obj interface{}) {
 		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
 		return
 	}
-	areMastersSchedulable := scheduler.Spec.MastersSchedulable
+	var areMastersSchedulable bool
+	if scheduler.Spec == (configv1.SchedulerSpec{}) {
+		glog.V(4).Infof("Scheduler spec is nil, so set master as unschedulable")
+		areMastersSchedulable = false
+	} else {
+		areMastersSchedulable = scheduler.Spec.MastersSchedulable
+	}
 	currentMasters, err := ctrl.getCurrentMasters()
 	if err != nil {
 		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
