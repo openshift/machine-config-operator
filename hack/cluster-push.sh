@@ -18,12 +18,10 @@ fi
 registry=$(oc get -n openshift-image-registry -o json route/image-registry | jq -r ".spec.host")
 curl -k --head https://"${registry}" >/dev/null
 
-WHAT=${WHAT:-machine-config-daemon}
 imgname=machine-config-operator
 LOCAL_IMGNAME=localhost/${imgname}:latest
 REMOTE_IMGNAME=openshift-machine-config-operator/${imgname}
 if [ "${do_build}" = 1 ]; then
-    export WHAT
     ./hack/build-image.sh
 fi
 $podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
@@ -35,47 +33,52 @@ oc project openshift-machine-config-operator
 
 IN_CLUSTER_NAME=image-registry.openshift-image-registry.svc:5000/${imageid}
 
+# Scale down the operator now to avoid it racing with our update.
+oc scale --replicas=0 deploy/machine-config-operator
+
 # Patch the images.json
 tmpf=$(mktemp)
 oc get -o json configmap/machine-config-operator-images > ${tmpf}
 outf=$(mktemp)
 python3 > ${outf} <<EOF
 import sys,json
-what="${WHAT}".split('-')[-1]
 cm=json.load(open("${tmpf}"))
 images = json.loads(cm['data']['images.json'])
-images["machineConfig"+what[0].upper()+what[1:]] = "${IN_CLUSTER_NAME}"
+for k in images:
+  if k.startswith('machineConfig'):
+    images[k] = "${IN_CLUSTER_NAME}"
 cm['data']['images.json'] = json.dumps(images)
 json.dump(cm, sys.stdout)
 EOF
 oc replace -f ${outf}
 rm ${tmpf} ${outf}
 
-# The operator still controls the deployment, scale it down
-# and patch directly for increased speed
-oc scale --replicas=0 deploy/machine-config-operator
+for x in operator controller server daemon; do
 patch=$(mktemp)
 cat >${patch} <<EOF
 spec:
   template:
      spec:
        containers:
-         - name: ${WHAT}
+         - name: machine-config-${x}
            image: ${IN_CLUSTER_NAME}
 EOF
 
-# And for speed, patch the deployment directly
-case $WHAT in
-    machine-config-controller|machine-config-operator)
-        target=deploy/${WHAT}
+# And for speed, patch the deployment directly rather
+# than waiting for the operator to start up and do leader
+# election.
+case $x in
+    controller|operator)
+        target=deploy/machine-config-${x}
         ;;
-    machine-config-daemon|machine-config-server)
-        target=daemonset/${WHAT}
+    daemon|server)
+        target=daemonset/machine-config-${x}
         ;;
-    *) echo "Unhandled WHAT=$WHAT" && exit 1
+    *) echo "Unhandled $x" && exit 1
 esac
 
 oc patch "${target}" -p "$(cat ${patch})"
 rm ${patch}
-oc scale --replicas=1 deploy/machine-config-operator
 echo "Patched ${target}"
+done
+oc scale --replicas=1 deploy/machine-config-operator
