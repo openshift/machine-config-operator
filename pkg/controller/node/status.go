@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/golang/glog"
@@ -221,11 +222,24 @@ func isNodeReady(node *corev1.Node) bool {
 	return checkNodeReady(node) == nil
 }
 
+func isNodeOnHold(node *corev1.Node) bool {
+	owners, ok := node.Annotations[daemonconsts.NodeOnHoldAnnotationKey]
+	if !ok {
+		return false
+	}
+	ownersInt, _ := strconv.Atoi(owners)
+	// if ownersInt < 0, someone is messing up, reconciles to 0 ourselves
+	return ownersInt != 0
+}
+
 // isNodeUnavailable is a helper function for getUnavailableMachines
 // See the docs of getUnavailableMachines for more info
 func isNodeUnavailable(node *corev1.Node) bool {
 	// Unready nodes are unavailable
 	if !isNodeReady(node) {
+		return true
+	}
+	if isNodeOnHold(node) {
 		return true
 	}
 	// Ready nodes are not unavailable
