@@ -39,7 +39,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
+	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	if startOpts.imagesFile == "" {
 		glog.Fatal("--images-json cannot be empty")
