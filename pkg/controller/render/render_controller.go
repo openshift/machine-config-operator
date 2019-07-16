@@ -5,11 +5,11 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -526,9 +526,8 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	// Before merging all MCs for a specific pool, let's make sure each contains a valid Ignition Config
 	for _, config := range configs {
-		rpt := validate.ValidateWithoutSource(reflect.ValueOf(config.Spec.Config.Ignition))
-		if rpt.IsFatal() {
-			return nil, fmt.Errorf("machine config: %v contains invalid ignition config: %v", config.ObjectMeta.Name, rpt)
+		if err := ctrlcommon.ValidateIgnition(config.Spec.Config); err != nil {
+			return nil, err
 		}
 	}
 	merged := mcfgv1.MergeMachineConfigs(configs, cconfig.Spec.OSImageURL)
