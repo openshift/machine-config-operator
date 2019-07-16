@@ -267,7 +267,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	}
 	rcc := cc.DeepCopy()
 	rcc.Status.ObservedGeneration = 1
-	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version v0.0.0-was-not-built-properly"}}
 	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 
@@ -278,7 +278,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	ccc := cc.DeepCopy()
 	ccc.Status.ObservedGeneration = 1
 	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
-		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version v0.0.0-was-not-built-properly"},
 		{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionFalse},
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
@@ -306,7 +306,7 @@ func TestDoNothing(t *testing.T) {
 
 	rcc := cc.DeepCopy()
 	rcc.Status.ObservedGeneration = 1
-	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version v0.0.0-was-not-built-properly"}}
 	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 	for idx := range mcs {
@@ -315,7 +315,7 @@ func TestDoNothing(t *testing.T) {
 	ccc := cc.DeepCopy()
 	ccc.Status.ObservedGeneration = 1
 	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
-		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version v0.0.0-was-not-built-properly"},
 		{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionFalse},
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
@@ -343,7 +343,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 
 	rcc := cc.DeepCopy()
 	rcc.Status.ObservedGeneration = 1
-	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version v0.0.0-was-not-built-properly"}}
 	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 
@@ -354,7 +354,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	ccc := cc.DeepCopy()
 	ccc.Status.ObservedGeneration = 1
 	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
-		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version v0.0.0-was-not-built-properly"},
 		{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionFalse},
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
@@ -387,7 +387,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	}
 	rcc := cc.DeepCopy()
 	rcc.Status.ObservedGeneration = 1
-	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version 0.0.0-was-not-built-properly"}}
+	rcc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionTrue, Message: "syncing towards (1) generation using controller version v0.0.0-was-not-built-properly"}}
 	f.expectUpdateControllerConfigStatus(rcc)
 	f.expectGetSecretAction(ps)
 	for idx := range expmcs {
@@ -397,7 +397,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	ccc := cc.DeepCopy()
 	ccc.Status.ObservedGeneration = 1
 	ccc.Status.Conditions = []mcfgv1.ControllerConfigStatusCondition{
-		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version 0.0.0-was-not-built-properly"},
+		{Type: mcfgv1.TemplateControllerCompleted, Status: corev1.ConditionTrue, Message: "sync completed towards (1) generation using controller version v0.0.0-was-not-built-properly"},
 		{Type: mcfgv1.TemplateControllerRunning, Status: corev1.ConditionFalse},
 		{Type: mcfgv1.TemplateControllerFailing, Status: corev1.ConditionFalse},
 	}
