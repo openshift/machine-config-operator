@@ -355,8 +355,16 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
 
-	// create a bad MC w/o a filesystem field which is going to fail reconciling
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
+	// create a MC that contains a valid ignition config but is not reconcilable
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
+	mcadd.Spec.Config.Networkd = igntypes.Networkd{
+		Units: []igntypes.Networkdunit{
+			igntypes.Networkdunit{
+				Name:     "test.network",
+				Contents: "test contents",
+			},
+		},
+	}
 
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
