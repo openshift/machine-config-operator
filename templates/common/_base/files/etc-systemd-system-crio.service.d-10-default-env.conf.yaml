@@ -4,14 +4,14 @@ path: "/etc/systemd/system/crio.service.d/10-default-env.conf"
 contents:
   inline: |
     {{if .Proxy -}}
-    [Manager]
+    [Service]
     {{if .Proxy.HTTPProxy -}}
-    DefaultEnvironment=HTTP_PROXY="{{.Proxy.HTTPProxy}}"
+    Environment=HTTP_PROXY="{{.Proxy.HTTPProxy}}"
     {{end -}}
     {{if .Proxy.HTTPSProxy -}}
-    DefaultEnvironment=HTTPS_PROXY="{{.Proxy.HTTPSProxy}}"
+    Environment=HTTPS_PROXY="{{.Proxy.HTTPSProxy}}"
     {{end -}}
     {{if .Proxy.NoProxy -}}
-    DefaultEnvironment=NO_PROXY="{{.Proxy.NoProxy}}"
+    Environment=NO_PROXY="{{.Proxy.NoProxy}}"
     {{end -}}
-    {{end -}} 
+    {{end -}}
