@@ -71,7 +71,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
+	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{

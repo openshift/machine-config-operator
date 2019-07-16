@@ -17,7 +17,7 @@ import (
 // - does not modify `failing` condition.
 func (ctrl *Controller) syncRunningStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
-		reason := fmt.Sprintf("syncing towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Version)
+		reason := fmt.Sprintf("syncing towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Raw)
 		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionTrue, "", reason)
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *rcond)
 		if cfg.GetGeneration() != cfg.Status.ObservedGeneration && mcfgv1.IsControllerConfigStatusConditionPresentAndEqual(cfg.Status.Conditions, mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue) {
@@ -38,7 +38,7 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 		return nil
 	}
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
-		message := fmt.Sprintf("failed to syncing towards (%d) generation using controller version %s: %v", cfg.GetGeneration(), version.Version, oerr)
+		message := fmt.Sprintf("failed to syncing towards (%d) generation using controller version %s: %v", cfg.GetGeneration(), version.Raw, oerr)
 		fcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerFailing, corev1.ConditionTrue, "", message)
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *fcond)
 		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionFalse, "", "")
@@ -59,7 +59,7 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 // - sets the `completed` condition to `true`
 func (ctrl *Controller) syncCompletedStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
-		reason := fmt.Sprintf("sync completed towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Version)
+		reason := fmt.Sprintf("sync completed towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Raw)
 		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue, "", reason)
 		mcfgv1.SetControllerConfigStatusCondition(&cfg.Status, *acond)
 		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionFalse, "", "")
