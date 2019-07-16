@@ -11,11 +11,15 @@ import (
 )
 
 var (
+	// MasterSelector returns a label selector for masters nodes
 	MasterSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/master", "")
+	// WorkerSelector returns a label selector for workers nodes
 	WorkerSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/worker", "")
-	InfraSelector  = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", "")
+	// InfraSelector returns a label selector for infra nodes
+	InfraSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", "")
 )
 
+// NewMachineConfig returns a basic machine config with supplied labels, osurl & files added
 func NewMachineConfig(name string, labels map[string]string, osurl string, files []igntypes.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
@@ -43,6 +47,7 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 	}
 }
 
+// NewMachineConfigPool returns a MCP with supplied mcSelector, nodeSelector and machineconfig
 func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
 	return &mcfgv1.MachineConfigPool{
 		TypeMeta: metav1.TypeMeta{
