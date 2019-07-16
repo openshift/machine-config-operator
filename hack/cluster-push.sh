@@ -19,8 +19,9 @@ registry=$(oc get -n openshift-image-registry -o json route/image-registry | jq 
 curl -k --head https://"${registry}" >/dev/null
 
 WHAT=${WHAT:-machine-config-daemon}
-LOCAL_IMGNAME=localhost/${WHAT}:latest
-REMOTE_IMGNAME=openshift-machine-config-operator/${WHAT}
+imgname=machine-config-operator
+LOCAL_IMGNAME=localhost/${imgname}:latest
+REMOTE_IMGNAME=openshift-machine-config-operator/${imgname}
 if [ "${do_build}" = 1 ]; then
     export WHAT
     ./hack/build-image.sh
@@ -77,3 +78,4 @@ esac
 oc patch "${target}" -p "$(cat ${patch})"
 rm ${patch}
 oc scale --replicas=1 deploy/machine-config-operator
+echo "Patched ${target}"
