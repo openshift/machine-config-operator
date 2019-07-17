@@ -124,12 +124,16 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, error) {
 	switch ic.Platform {
 	case "":
-		return "", fmt.Errorf("cannot generate MachineConfigs with an empty platform field")
+		// if Platform is nil, return nil platform and an error message
+		return "", fmt.Errorf("cannot generate MachineConfigs when no platform is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
 	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenstack, platformLibvirt, platformNone:
 		return ic.Platform, nil
 	default:
+		// platformNone is used for a non-empty, but currently unsupported platform.
+		// This allows us to incrementally roll out new platforms across the project
+		// by provisioning platforms before all support is added.
 		glog.Warningf("Warning: the controller config referenced an unsupported platform: %s", ic.Platform)
 		return platformNone, nil
 	}
