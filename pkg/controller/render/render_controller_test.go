@@ -265,11 +265,13 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []igntypes.File{{
 		Node: igntypes.Node{
-			Path: "/dummy/0",
+			Filesystem: "root",
+			Path:       "/dummy/0",
 		},
 	}, {
 		Node: igntypes.Node{
-			Path: "/dummy/1",
+			Filesystem: "root",
+			Path:       "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -279,15 +281,20 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
 	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
-	if err != nil {
-		t.Fatalf("expected no error. Got: %v", err)
-	}
+	require.Nil(t, err)
 
+	// verify that an invalid igntion config (here a config with content and an empty version,
+	// will fail validation
 	mcs[1].Spec.Config.Ignition.Version = ""
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
-	if err == nil {
-		t.Fatalf("expected error. mcs contains a machine config with invalid ignconfig version")
-	}
+	require.NotNil(t, err)
+
+	// verify that a machine config with no ignition content will not fail validation
+	mcs[1].Spec.Config = igntypes.Config{}
+	mcs[1].Spec.KernelArguments = append(mcs[1].Spec.KernelArguments, "test1")
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	require.Nil(t, err)
+
 }
 
 func TestUpdatesGeneratedMachineConfig(t *testing.T) {
@@ -295,11 +302,13 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []igntypes.File{{
 		Node: igntypes.Node{
-			Path: "/dummy/0",
+			Filesystem: "root",
+			Path:       "/dummy/0",
 		},
 	}, {
 		Node: igntypes.Node{
-			Path: "/dummy/1",
+			Filesystem: "root",
+			Path:       "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -359,11 +368,13 @@ func TestDoNothing(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []igntypes.File{{
 		Node: igntypes.Node{
-			Path: "/dummy/0",
+			Filesystem: "root",
+			Path:       "/dummy/0",
 		},
 	}, {
 		Node: igntypes.Node{
-			Path: "/dummy/1",
+			Filesystem: "root",
+			Path:       "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{

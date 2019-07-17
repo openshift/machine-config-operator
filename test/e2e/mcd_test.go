@@ -9,7 +9,7 @@ import (
 	"time"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
@@ -70,9 +70,9 @@ func createIgnFile(path, content, fs string, mode int) igntypes.File {
 	}
 }
 
-func createMCToAddFile(name, filename, data, fs string) *mcv1.MachineConfig {
+func createMCToAddFile(name, filename, data, fs string) *mcfgv1.MachineConfig {
 	// create a dummy MC
-	mcadd := &mcv1.MachineConfig{}
+	mcadd := &mcfgv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
 		Name: fmt.Sprintf("%s-%s", name, uuid.NewUUID()),
 		// TODO(runcom): hardcoded to workers for safety
@@ -122,7 +122,7 @@ func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 		if mcp.Status.Configuration.Name != target {
 			return false, nil
 		}
-		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolUpdated) {
+		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) {
 			return true, nil
 		}
 		return false, nil
@@ -204,7 +204,7 @@ func TestUpdateSSH(t *testing.T) {
 
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("sshkeys-worker-%s", uuid.NewUUID())
-	mcadd := &mcv1.MachineConfig{}
+	mcadd := &mcfgv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
 		Name:   mcName,
 		Labels: mcLabelForWorkers(),
@@ -256,12 +256,12 @@ func TestUpdateSSH(t *testing.T) {
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
-	kargsMC := &mcv1.MachineConfig{
+	kargsMC := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
 			Labels: mcLabelForWorkers(),
 		},
-		Spec: mcv1.MachineConfigSpec{
+		Spec: mcfgv1.MachineConfigSpec{
 			Config:          ctrlcommon.NewIgnConfig(),
 			KernelArguments: []string{"nosmt", "foo=bar"},
 		},
@@ -323,7 +323,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolDegraded) {
+		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
 			return true, nil
 		}
 		return false, nil
@@ -342,7 +342,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcv1.MachineConfigPoolRenderDegraded) {
+		if mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 			return true, nil
 		}
 		return false, nil
@@ -355,8 +355,16 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
 
-	// create a bad MC w/o a filesystem field which is going to fail reconciling
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
+	// create a MC that contains a valid ignition config but is not reconcilable
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
+	mcadd.Spec.Config.Networkd = igntypes.Networkd{
+		Units: []igntypes.Networkdunit{
+			igntypes.Networkdunit{
+				Name:     "test.network",
+				Contents: "test contents",
+			},
+		},
+	}
 
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
@@ -400,7 +408,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if mcv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcv1.MachineConfigPoolNodeDegraded) && mcp.Status.DegradedMachineCount >= 1 {
+		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded) && mcp.Status.DegradedMachineCount >= 1 {
 			return true, nil
 		}
 		return false, nil
@@ -508,12 +516,12 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 func TestFIPS(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
-	fipsMC := &mcv1.MachineConfig{
+	fipsMC := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("fips-%s", uuid.NewUUID()),
 			Labels: mcLabelForWorkers(),
 		},
-		Spec: mcv1.MachineConfigSpec{
+		Spec: mcfgv1.MachineConfigSpec{
 			Config: ctrlcommon.NewIgnConfig(),
 			Fips:   true,
 		},

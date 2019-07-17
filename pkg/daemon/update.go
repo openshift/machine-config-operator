@@ -16,11 +16,11 @@ import (
 	"time"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
 	drain "github.com/openshift/kubernetes-drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
@@ -316,9 +316,8 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// Ignition section
 	// First check if this is a generally valid Ignition Config
-	rpt := validate.ValidateWithoutSource(reflect.ValueOf(newIgn))
-	if rpt.IsFatal() {
-		return nil, errors.Errorf("invalid Ignition config found: %v", rpt)
+	if err := ctrlcommon.ValidateIgnition(newIgn); err != nil {
+		return nil, err
 	}
 
 	// if the config versions are different, all bets are off. this probably
