@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 
-# Build an image and push it to the cluster registry.
-# You must have first run `cluster-push-prep.sh` once.
-# Assumptions: You have set KUBECONFIG to point to your local cluster,
-# and you have exposed the registry via e.g.
-# https://github.com/openshift/installer/issues/411#issuecomment-445165262
+# Build the MCO image and push it to the cluster registry,
+# then directly patch the deployments/daemonsets to use that image.
+# This is generally faster than building a new release image and
+# upgrading to it, but also consequently doesn't work the same way as production
+# upgrades work.
+#
+# To use this, you must first run `cluster-push-prep.sh` (once) for your cluster.
+#
+# Assumptions: You have set KUBECONFIG to point to your cluster.
 
 set -xeuo pipefail
 
@@ -22,7 +26,7 @@ imgname=machine-config-operator
 LOCAL_IMGNAME=localhost/${imgname}:latest
 REMOTE_IMGNAME=openshift-machine-config-operator/${imgname}
 if [ "${do_build}" = 1 ]; then
-    ./hack/build-image.sh
+    ./hack/build-image
 fi
 $podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
 

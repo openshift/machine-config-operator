@@ -1,0 +1,46 @@
+#!/usr/bin/python3
+import os, sys, json, subprocess
+# Wrapper for building the MCO image which is oriented
+# around the git hash, to only build if it changes.
+
+imgname = "localhost/machine-config-operator:latest"
+vskey = 'vcs-ref'
+# Strip these out to avoid confusion.
+openshift_keys = ['io.openshift.build.commit' + k for k in ['author', 'date', 'id', 'message', 'ref']]
+vcs_keys = ['vcs-ref', 'vcs-type', 'vcs-url']
+
+gitrev = subprocess.check_output(['git', 'rev-parse', "HEAD"], encoding='UTF-8').strip()
+gitdesc = subprocess.check_output(['git', 'describe', '--tags', '--always', gitrev], encoding='UTF-8').strip()
+
+# Support overriding podman via environment variable;
+# From @cgwalters :
+# I do development inside https://github.com/cgwalters/coretoolbox
+# and `podman` there tries to run recursively which doesn't work
+# at all today, so I have an alias `podman-host-sudo` that calls
+# out to the host (and also uses `sudo`)
+# to ensure we're using overlayfs and we don't hit rootless bugs.
+podman = os.environ.get('podman', 'podman')
+
+inspect_data = None
+try:
+    inspect_data = subprocess.check_output([podman, 'inspect', '--type=image', imgname], stderr=subprocess.DEVNULL)
+except subprocess.CalledProcessError as e:
+    pass
+
+if inspect_data is None:
+    print("No previous build")
+else:
+    inspect = json.loads(inspect_data)[0]
+    labels = inspect.get('Config', {}).get('Labels')
+    prev_ref = labels.get('vcs-ref')
+    if prev_ref == gitrev:
+        print(f"Previous build {imgname} matches HEAD commit: {gitrev}")
+        sys.exit(0)
+    print(f"Previous commit: {prev_ref}")
+    print(f"HEAD commit: {gitrev}")
+    args = [podman, 'build', '-t', imgname, '-f', 'Dockerfile', '--no-cache']
+    for k in openshift_keys:
+        args.append(f'--label={k}=')
+    args.extend([f'--label=vcs-ref={gitrev}', '--label=vcs-type=git', '--label=vcs-url='])
+    print(subprocess.list2cmdline(args))
+    os.execlp(podman, *args)
