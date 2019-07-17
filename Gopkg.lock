@@ -81,14 +81,6 @@
   version = "v1"
 
 [[projects]]
-  digest = "1:45c41cd27a8d986998680bfc86da0bbff5fa4f90d0f446c00636c8b099028ffe"
-  name = "github.com/blang/semver"
-  packages = ["."]
-  pruneopts = "NUT"
-  revision = "ba2c2ddd89069b46a7011d4106f6868f17ee1705"
-  version = "v3.6.1"
-
-[[projects]]
   branch = "master"
   digest = "1:fdd135f63857b858859a5a2e361a117622824826a78ce9d8c058144a0f89c7ba"
   name = "github.com/containerd/cgroups"
@@ -431,7 +423,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:3d9aff47bf9bdd8dade83f2dcf3aaffbecbb1d886a5b73b7c4cf604545f286dc"
+  digest = "1:e92977080ffd645c40ccbaff10d915ab89c4e6556e84e2d0900f4c40d331a744"
   name = "github.com/openshift/api"
   packages = [
     "config/v1",
@@ -439,7 +431,7 @@
     "operator/v1alpha1",
   ]
   pruneopts = "NUT"
-  revision = "35c8395fe70d56cb00077f4b89bcf1567af9a79c"
+  revision = "25a4eebe16c8bcb53e28605f8d5b91df392daeba"
 
 [[projects]]
   branch = "master"
@@ -1194,7 +1186,6 @@
     "github.com/Masterminds/sprig",
     "github.com/apparentlymart/go-cidr/cidr",
     "github.com/ashcrow/osrelease",
-    "github.com/blang/semver",
     "github.com/containers/image/docker/reference",
     "github.com/containers/image/pkg/sysregistriesv2",
     "github.com/containers/image/types",
