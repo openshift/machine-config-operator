@@ -65,7 +65,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.V(2).Infof("Options parsed: %+v", startOpts)
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Version, version.Hash)
+	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	onceFromMode := startOpts.onceFrom != ""
 	if !onceFromMode {
