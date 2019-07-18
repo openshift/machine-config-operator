@@ -265,7 +265,9 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 		return fmt.Errorf("configuration spec for pool %s is empty", pool.GetName())
 	}
 	if pool.Status.Configuration.Name == "" {
-		return fmt.Errorf("configuration status for pool %s is empty", pool.GetName())
+		// if status is empty, it means the node controller hasn't seen any node at the target configuration
+		// we bubble up any error from the pool to make the info more visible
+		return fmt.Errorf("configuration status for pool %s is empty: %s", pool.GetName(), machineConfigPoolStatus(pool))
 	}
 	if len(pool.Status.Configuration.Source) == 0 {
 		return fmt.Errorf("list of MachineConfigs that were used to generate configuration for pool %s is empty", pool.GetName())
@@ -303,7 +305,7 @@ func machineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) string {
 	switch {
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded):
 		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolRenderDegraded)
-		return fmt.Sprintf("pool is degraded because rendering fails with %q", cond.Reason)
+		return fmt.Sprintf("pool is degraded because rendering fails with %q: %q", cond.Reason, cond.Message)
 	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded):
 		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolNodeDegraded)
 		return fmt.Sprintf("pool is degraded because nodes fail with %q: %q", cond.Reason, cond.Message)
