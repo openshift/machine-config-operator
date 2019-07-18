@@ -1,19 +1,19 @@
 package e2e_test
 
 import (
-	"github.com/pkg/errors"
 	"encoding/json"
 	"fmt"
+	"github.com/pkg/errors"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	ignv2_2types "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/stretchr/testify/assert"
 	mcv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -334,8 +334,16 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
 	bumpPoolMaxUnavailableTo(t, cs, 3)
 
-	// create a bad MC w/o a filesystem field which is going to fail reconciling
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "")
+	// create a MC that contains a valid ignition config but is not reconcilable
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
+	mcadd.Spec.Config.Networkd = ignv2_2types.Networkd{
+		Units: []ignv2_2types.Networkdunit{
+			ignv2_2types.Networkdunit{
+				Name:     "test.network",
+				Contents: "test contents",
+			},
+		},
+	}
 
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
