@@ -89,9 +89,14 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			MachineOSContent:      bootstrapOpts.oscontentImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
-			Etcd:            bootstrapOpts.etcdImage,
-			InfraImage:      bootstrapOpts.infraImage,
-			KubeClientAgent: bootstrapOpts.kubeClientAgentImage,
+			Etcd:                bootstrapOpts.etcdImage,
+			InfraImage:          bootstrapOpts.infraImage,
+			KubeClientAgent:     bootstrapOpts.kubeClientAgentImage,
+			Keepalived:          bootstrapOpts.keepalivedImage,
+			Coredns:             bootstrapOpts.corednsImage,
+			MdnsPublisher:       bootstrapOpts.mdnsPublisherImage,
+			Haproxy:             bootstrapOpts.haproxyImage,
+			BaremetalRuntimeCfg: bootstrapOpts.baremetalRuntimeCfgImage,
 		},
 	}
 
