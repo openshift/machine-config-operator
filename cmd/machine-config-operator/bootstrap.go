@@ -87,8 +87,11 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{
-			MachineConfigOperator: bootstrapOpts.mcoImage,
-			MachineOSContent:      bootstrapOpts.oscontentImage,
+			MachineConfigOperator:        bootstrapOpts.mcoImage,
+			MachineOSContent:             bootstrapOpts.oscontentImage,
+			KeepalivedBootstrap:          bootstrapOpts.keepalivedImage,
+			CorednsBootstrap:             bootstrapOpts.corednsImage,
+			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
 			Etcd:                bootstrapOpts.etcdImage,
