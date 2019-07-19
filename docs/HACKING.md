@@ -2,44 +2,16 @@
 
 # Hacking on the MCO
 
-These instructions have been tested inside a Fedora 29 podman container (on a FSB29 host).
+These instructions have been tested inside a Fedora 30 toolbox (podman) container (on a FSB30 host).
 It should also work to run these commands directly on a host system if you haven't yet
 containerized your workflow.  You will need build dependencies such as a `go` compiler,
 and the image builds rely on `podman`.
 
 ## Prerequisites
 
-1. Create a cluster using [the installer](https://github.com/openshift/installer/).  These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
+Most changes you'll want to test live against a real cluster.  Use [the installer](https://github.com/openshift/installer/), and in particular you'll want to use the "latest CI" release of the installer.  As of the time of this writing, that's 4.2.  More information on the [release page](https://openshift-release.svc.ci.openshift.org/).
 
-1. (libvirt) Set up a local proxy
-
-1. (libvirt) Additional registry config (see below)
-
-The steps here come from [this comment](https://github.com/openshift/installer/issues/411#issuecomment-445165262) which provides a way for libvirt developers to expose their registry.
-
-Allow your client binary to bind low ports:
-
-```
-sudo setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/oc
-```
-
-(Or `kubectl` depending on your setup.  You may prefer to copy the `oc` binary elsewhere before writing to it as well.)
-
-
-Now, forward port `443` to the router:
-
-```
-oc -n openshift-ingress port-forward svc/router-internal-default 443
-```
-
-Leave that process running in a separate terminal. In a new terminal, run step 4.
-
-4. (all platforms) Run the cluster push prep script
-```
-hack/cluster-push-prep.sh
-```
-
-(Libvirt Users) You might get an error about needing to add the registry to your `/etc/hosts`; do that and then rerun the script.
+These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
 
 ## Building Components
 
@@ -49,17 +21,9 @@ While you're still in the mode of testing builds, use `make`:
 $ make daemon
 ```
 
-You can also `make controller` and `make operator`.
+You can also `make controller` and `make operator`, or just `make binaries` to build all of them.
 
-When you want to push to the cluster, use the `deploy-` prefix, e.g.:
-
-```
-make deploy-daemon
-```
-
-(Like above, you can use `operator` or `controller` in place of `daemon`).
-
-Use `oc get pods -w` to watch for your new code to be deployed.
+See below for [deploying changes to a live cluster](#running-in-a-cluster).
 
 ## Updating the Manifests
 
@@ -217,7 +181,7 @@ export KUBECONFIG=$XDG_RUNTIME_DIR/kubeconfig
 And from there debug the live cluster while the tests are running. Though be
 aware that it will be quickly torn down as soon as the tests have completed.
 
-# Building and installing a custom release image for testing the MCO
+# Running in a cluster
 
 During MCO development there are certain test scenarios
 that require a cluster running with a custom release to properly test your
@@ -236,6 +200,9 @@ To build an image that contains all MCO components (mcc/mcd/mco/mcs/setup-etcd-e
 ```
 make image
 ```
+
+This script keys off the git commit which gets embedded as the standard `vcs-ref`
+image label, so if you want to deploy new changes, you'll need to `git commit`.
 
 After the build is complete, make sure to push the image to a registry (i.e. `podman push localhost/machine-config-operator quay.io/user/machine-config-operator`).
 
@@ -282,6 +249,24 @@ the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
 
 ```
 OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v{version number} bin/openshift-install create cluster --log-level=debug
+```
+
+## Quickly deploying changes without upgrading
+
+Doing the "push container, new release image" flow can be slow.  We also have
+an alternative workflow:
+
+Do this once:
+
+```
+$ ./hack/cluster-push-prep.sh
+```
+
+Note this will scale down the CVO and hence disable upgrades.
+
+Then, to directly push your images, run:
+```
+$ ./hack/cluster-push.sh
 ```
 
 ## Hacking on `machine-os-content`

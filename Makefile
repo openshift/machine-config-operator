@@ -19,7 +19,7 @@ _build-%:
 
 # Use podman to build the image.
 image:
-	hack/build-image.sh
+	hack/build-image
 
 # Build + push + deploy image for a component. Intended to be called via another target.
 # Example:
