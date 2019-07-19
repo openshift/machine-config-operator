@@ -39,98 +39,113 @@ func TestScopeMatchesRegistry(t *testing.T) {
 	}
 }
 
-func TestDisjointOrderedMirrorSets(t *testing.T) {
+func TestMergedMirorSets(t *testing.T) {
 	for _, c := range []struct {
 		name   string
-		input  [][][]string
-		result [][]string
+		input  [][]apioperatorsv1alpha1.RepositoryDigestMirrors
+		result []apioperatorsv1alpha1.RepositoryDigestMirrors
 	}{
 		{
 			name:   "Empty",
-			input:  [][][]string{},
-			result: [][]string{},
+			input:  [][]apioperatorsv1alpha1.RepositoryDigestMirrors{},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{},
 		},
 		{
 			name: "Irrelevant singletons",
-			input: [][][]string{
+			input: [][]apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{
-					nil,
-					{},
-				},
-				{
-					{"a.example.com"},
-					{"b.example.com"},
+					{Source: "a.example.com", Mirrors: nil},
+					{Source: "b.example.com", Mirrors: []string{}},
 				},
 			},
-			result: [][]string{},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{},
 		},
 		// The registry names below start with an irrelevant letter, usually counting from the end of the alphabet, to verify that
 		// the result is based on the order in the Sources array and is not just alphabetically-sorted.
 		{
-			name: "Separate ordered sets",
-			input: [][][]string{
+			name: "Separate mirror sets",
+			input: [][]apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{
-					{"z1.example.net", "y2.example.net", "x3.example.net"},
+					{Source: "source.example.net", Mirrors: []string{"z1.example.net", "y2.example.net", "x3.example.net"}},
 				},
 				{
-					{"z1.example.com", "y2.example.com", "x3.example.com"},
+					{Source: "source.example.com", Mirrors: []string{"z1.example.com", "y2.example.com", "x3.example.com"}},
 				},
 			},
-			result: [][]string{
-				{"z1.example.com", "y2.example.com", "x3.example.com"},
-				{"z1.example.net", "y2.example.net", "x3.example.net"},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{Source: "source.example.com", Mirrors: []string{"z1.example.com", "y2.example.com", "x3.example.com"}},
+				{Source: "source.example.net", Mirrors: []string{"z1.example.net", "y2.example.net", "x3.example.net"}},
 			},
 		},
 		{
 			name: "Sets with a shared element - strict order",
-			input: [][][]string{
+			input: [][]apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{
-					{"z1.example.net", "y2.example.net"},
-					{"z1.example.com", "y2.example.com"},
+					{Source: "source.example.net", Mirrors: []string{"z1.example.net", "y2.example.net"}},
+					{Source: "source.example.com", Mirrors: []string{"z1.example.com", "y2.example.com"}},
 				},
 				{
-					{"y2.example.net", "x3.example.net"},
-					{"y2.example.com", "x3.example.com"},
+					{Source: "source.example.net", Mirrors: []string{"y2.example.net", "x3.example.net"}},
+					{Source: "source.example.com", Mirrors: []string{"y2.example.com", "x3.example.com"}},
 				},
 			},
-			result: [][]string{
-				{"z1.example.com", "y2.example.com", "x3.example.com"},
-				{"z1.example.net", "y2.example.net", "x3.example.net"},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{Source: "source.example.com", Mirrors: []string{"z1.example.com", "y2.example.com", "x3.example.com"}},
+				{Source: "source.example.net", Mirrors: []string{"z1.example.net", "y2.example.net", "x3.example.net"}},
+			},
+		},
+		{
+			// This is not technically impossible, and it could be in principle used to set up last-fallback mirrors that
+			// are only accessed if the source is not available.
+			// WARNING: The order in this case is unspecified by the ICSP specification, and may change at any time;
+			// this test case only ensures that the corner case is handled reasonably, and that the output is stable
+			// (i.e. the operator does not cause unnecessary changes in output objects.)
+			name: "Source included in mirrors",
+			input: [][]apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{
+					{Source: "source.example.com", Mirrors: []string{"z1.example.com", "source.example.com", "y2.example.com"}},
+					{Source: "source.example.com", Mirrors: []string{"source.example.com", "y2.example.com", "x3.example.com"}},
+				},
+			},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{Source: "source.example.com", Mirrors: []string{"z1.example.com", "source.example.com", "y2.example.com", "x3.example.com"}},
 			},
 		},
 		// More complex mirror set combinations are mostly tested in TestTopoGraph
 		{
 			name: "Example",
-			input: [][][]string{
+			input: [][]apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{ // Vendor-provided default configuration
-					{"registry1.vendor.com", "registry2.vendor.com"},
+					{Source: "source.vendor.com", Mirrors: []string{"registry2.vendor.com"}},
 				},
 				{ // Vendor2-provided default configuration
-					{"registry1.vendor2.com", "registry2.vendor2.com"},
+					{Source: "source.vendor2.com", Mirrors: []string{"registry1.vendor2.com", "registry2.vendor2.com"}},
 				},
 				{ // Admin-configured local mirrors:
-					{"local-mirror.example.com", "registry1.vendor.com"},
-					{"local-mirror2.example.com", "registry2.vendor2.com", "registry1.vendor2.com"}, // Opposite order of the vendor’s mirrors
+					{Source: "source.vendor.com", Mirrors: []string{"local-mirror.example.com"}},
+					// Opposite order of the vendor’s mirrors.
+					// WARNING: The order in this case is unspecified by the ICSP specification, and may change at any time;
+					// this test case only ensures that the corner case is handled reasonably, and that the output is stable
+					// (i.e. the operator does not cause unnecessary changes in output objects.)
+					{Source: "source.vendor2.com", Mirrors: []string{"local-mirror2.example.com", "registry2.vendor2.com", "registry1.vendor2.com"}},
 				},
 			},
-			result: [][]string{
-				{"local-mirror.example.com", "registry1.vendor.com", "registry2.vendor.com"},
-				{"local-mirror2.example.com", "registry1.vendor2.com", "registry2.vendor2.com"},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{Source: "source.vendor.com", Mirrors: []string{"local-mirror.example.com", "registry2.vendor.com"}},
+				{Source: "source.vendor2.com", Mirrors: []string{"local-mirror2.example.com", "registry1.vendor2.com", "registry2.vendor2.com"}},
 			},
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			in := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
-			for _, l1 := range c.input {
-				in1 := apioperatorsv1alpha1.ImageContentSourcePolicy{}
-				for _, l2 := range l1 {
-					in1.Spec.RepositoryDigestMirrors = append(in1.Spec.RepositoryDigestMirrors, apioperatorsv1alpha1.RepositoryDigestMirrors{
-						Sources: l2,
-					})
-				}
-				in = append(in, &in1)
+			for _, rdms := range c.input {
+				in = append(in, &apioperatorsv1alpha1.ImageContentSourcePolicy{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: rdms,
+					},
+				})
 			}
-			res, err := disjointOrderedMirrorSets(in)
+			res, err := mergedMirrorSets(in)
 			if err != nil {
 				t.Errorf("Error %v", err)
 				return
@@ -210,9 +225,10 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
 				{
 					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
-						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
-							{Sources: []string{"insecure.com/ns-i1", "blocked.com/ns-b1", "unrelated.com/ns-u1"}},
-							{Sources: []string{"blocked.com/ns-b/ns2-b", "unrelated.com/ns-u2", "insecure.com/ns-i2"}},
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []string{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b"}},
 						},
 					},
 				},
@@ -227,31 +243,7 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 						Blocked:            true,
 						MirrorByDigestOnly: true,
 						Mirrors: []sysregistriesv2.Endpoint{
-							{Location: "blocked.com/ns-b/ns2-b"},
-							{Location: "unrelated.com/ns-u2"},
-							{Location: "insecure.com/ns-i2", Insecure: true},
-						},
-					},
-					{
-						Endpoint: sysregistriesv2.Endpoint{
-							Location: "unrelated.com/ns-u2",
-						},
-						MirrorByDigestOnly: true,
-						Mirrors: []sysregistriesv2.Endpoint{
-							{Location: "blocked.com/ns-b/ns2-b"},
-							{Location: "unrelated.com/ns-u2"},
-							{Location: "insecure.com/ns-i2", Insecure: true},
-						},
-					},
-					{
-						Endpoint: sysregistriesv2.Endpoint{
-							Location: "insecure.com/ns-i2",
-							Insecure: true,
-						},
-						MirrorByDigestOnly: true,
-						Mirrors: []sysregistriesv2.Endpoint{
-							{Location: "blocked.com/ns-b/ns2-b"},
-							{Location: "unrelated.com/ns-u2"},
+							{Location: "other.com/ns-o2"},
 							{Location: "insecure.com/ns-i2", Insecure: true},
 						},
 					},
@@ -263,32 +255,19 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 						},
 						MirrorByDigestOnly: true,
 						Mirrors: []sysregistriesv2.Endpoint{
-							{Location: "insecure.com/ns-i1", Insecure: true},
 							{Location: "blocked.com/ns-b1"},
-							{Location: "unrelated.com/ns-u1"},
+							{Location: "other.com/ns-o1"},
 						},
 					},
+
 					{
 						Endpoint: sysregistriesv2.Endpoint{
-							Location: "blocked.com/ns-b1",
-						},
-						Blocked:            true,
-						MirrorByDigestOnly: true,
-						Mirrors: []sysregistriesv2.Endpoint{
-							{Location: "insecure.com/ns-i1", Insecure: true},
-							{Location: "blocked.com/ns-b1"},
-							{Location: "unrelated.com/ns-u1"},
-						},
-					},
-					{
-						Endpoint: sysregistriesv2.Endpoint{
-							Location: "unrelated.com/ns-u1",
+							Location: "other.com/ns-o3",
 						},
 						MirrorByDigestOnly: true,
 						Mirrors: []sysregistriesv2.Endpoint{
-							{Location: "insecure.com/ns-i1", Insecure: true},
-							{Location: "blocked.com/ns-b1"},
-							{Location: "unrelated.com/ns-u1"},
+							{Location: "insecure.com/ns-i2", Insecure: true},
+							{Location: "blocked.com/ns-b/ns3-b"},
 						},
 					},
 
