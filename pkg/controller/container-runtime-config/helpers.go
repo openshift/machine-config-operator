@@ -253,87 +253,67 @@ func scopeMatchesRegistry(scope, reg string) bool {
 	return false
 }
 
-// disjointOrderedMirrorSets processes icspRules and returns the resulting disjoint sets of mutual mirrors, each ordered in consistently with
-// the icspRules preference order (if possible)
-// This exists to merge different mirror sets, e.g. given mirror sets (B, C) and (A, B), it will combine them into a single (A, B, C) set.
-func disjointOrderedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([][]string, error) {
-	// Collect all mirror sets into a flat array to abstract the rest of the code from the ImageContentSourcePolicy format
-	mirrorSets := []*apioperatorsv1alpha1.RepositoryDigestMirrors{}
+// mergedMirrorSets processes icspRules and returns a set of RepositoryDigestMirrors, one for each Source value,
+// ordered consistently with the preference order of the individual entries (if possible)
+// E.g. given mirror sets (B, C) and (A, B), it will combine them into a single (A, B, C) set.
+func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]apioperatorsv1alpha1.RepositoryDigestMirrors, error) {
+	disjointSets := map[string]*[]*apioperatorsv1alpha1.RepositoryDigestMirrors{} // Key == Source
 	for _, icsp := range icspRules {
 		for i := range icsp.Spec.RepositoryDigestMirrors {
 			set := &icsp.Spec.RepositoryDigestMirrors[i]
-			if len(set.Sources) < 2 {
-				// No mirrors, or a single repository with no mirror relationship, is not really a mirror set.
-				continue
+			if len(set.Mirrors) == 0 {
+				continue // No mirrors is not really a mirror set.
 			}
-			mirrorSets = append(mirrorSets, set)
+			ds, ok := disjointSets[set.Source]
+			if !ok {
+				ds = &[]*apioperatorsv1alpha1.RepositoryDigestMirrors{}
+				disjointSets[set.Source] = ds
+			}
+			*ds = append(*ds, set)
 		}
 	}
 
-	// Build a graph with nodes == mirrors, union each mirror set.
-	unionGraph := newUnionGraph()
-	for _, set := range mirrorSets {
-		// Given set.Sources = (A,B,C,D), Union (A,B), (A,C), (A,D):
-		m1 := set.Sources[0] // The build of mirrorSets guarantees len(set.Sources) >= 2
-		for _, m2 := range set.Sources[1:] {
-			unionGraph.Union(m1, m2)
-		}
+	// Sort the sets of mirrors by Source to ensure deterministic output
+	sources := []string{}
+	for key := range disjointSets {
+		sources = append(sources, key)
 	}
-	// Enumerate disjoint components
-	disjointSets := map[unionNode]*[]*apioperatorsv1alpha1.RepositoryDigestMirrors{} // Key == the root returned by unionGraph.Find()
-	for _, set := range mirrorSets {
-		// The build of mirrorSets guarantees len(set.Sources) >= 2
-		root := unionGraph.Find(set.Sources[0]) // == union.Find(set.Sources[x]) for any other x
-		ds, ok := disjointSets[root]
-		if !ok {
-			ds = &[]*apioperatorsv1alpha1.RepositoryDigestMirrors{}
-			disjointSets[root] = ds
-		}
-		*ds = append(*ds, set)
-	}
-
-	// Sort the sets of mirrors to ensure deterministic output
-	type dsOrderedKey struct {
-		mapKey  unionNode
-		sortKey string // == The legicographically first mirror in the disjointSets element
-	}
-	dsKeys := []dsOrderedKey{}
-	for mapKey, ds := range disjointSets {
-		sortKey := ""
-		// The build of disjointSets guarantees len(ds) > 0, len(ds[0].Sources) >= 2
-		for _, set := range *ds {
-			for _, src := range set.Sources {
-				if sortKey == "" || sortKey > src {
-					sortKey = src
-				}
-			}
-		}
-		dsKeys = append(dsKeys, dsOrderedKey{
-			mapKey:  mapKey,
-			sortKey: sortKey,
-		})
-	}
-	sort.Slice(dsKeys, func(i, j int) bool {
-		return dsKeys[i].sortKey < dsKeys[j].sortKey
-	})
+	sort.Strings(sources)
 	// Convert the sets of mirrors
-	res := [][]string{}
-	for _, dsKey := range dsKeys {
-		ds := disjointSets[dsKey.mapKey]
+	res := []apioperatorsv1alpha1.RepositoryDigestMirrors{}
+	for _, source := range sources {
+		ds := disjointSets[source]
 		topoGraph := newTopoGraph()
 		for _, set := range *ds {
-			// The build of mirrorSets guarantees len(set.Sources) >= 2, i.e. that this loop runs at least once for every set,
-			// and that every node in topoGraph is implicitly added by topoGraph.AddEdge (there are no unconnected nodes that we would
-			// have to add separately from the edges).
-			for i := 0; i+1 < len(set.Sources); i++ {
-				topoGraph.AddEdge(set.Sources[i], set.Sources[i+1])
+			for i := 0; i+1 < len(set.Mirrors); i++ {
+				topoGraph.AddEdge(set.Mirrors[i], set.Mirrors[i+1])
 			}
+			sourceInGraph := false
+			for _, m := range set.Mirrors {
+				if m == source {
+					sourceInGraph = true
+					break
+				}
+			}
+			if !sourceInGraph {
+				// The build of mirrorSets guarantees len(set.Mirrors) > 0.
+				topoGraph.AddEdge(set.Mirrors[len(set.Mirrors)-1], source)
+			}
+			// Every node in topoGraph, including source, is implicitly added by topoGraph.AddEdge (there are no unconnected nodes that we would
+			// have to add separately from the edges).
 		}
 		sortedRepos, err := topoGraph.Sorted()
 		if err != nil {
 			return nil, err
 		}
-		res = append(res, sortedRepos)
+		if sortedRepos[len(sortedRepos)-1] == source {
+			// We don't need to explicitly include source in the list, it will be automatically tried last per the semantics of sysregistriesv2. Mirrors.
+			sortedRepos = sortedRepos[:len(sortedRepos)-1]
+		}
+		res = append(res, apioperatorsv1alpha1.RepositoryDigestMirrors{
+			Source:  source,
+			Mirrors: sortedRepos,
+		})
 	}
 	return res, nil
 }
@@ -361,17 +341,15 @@ func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []str
 		return &tomlConf.Registries[len(tomlConf.Registries)-1]
 	}
 
-	mirrorSets, err := disjointOrderedMirrorSets(icspRules)
+	mirrorSets, err := mergedMirrorSets(icspRules)
 	if err != nil {
 		return nil, err
 	}
-	for _, sortedRepos := range mirrorSets {
-		for _, primaryRepo := range sortedRepos {
-			reg := getRegistryEntry(primaryRepo)
-			reg.MirrorByDigestOnly = true
-			for _, mirror := range sortedRepos {
-				reg.Mirrors = append(reg.Mirrors, sysregistriesv2.Endpoint{Location: mirror})
-			}
+	for _, mirrorSet := range mirrorSets {
+		reg := getRegistryEntry(mirrorSet.Source)
+		reg.MirrorByDigestOnly = true
+		for _, mirror := range mirrorSet.Mirrors {
+			reg.Mirrors = append(reg.Mirrors, sysregistriesv2.Endpoint{Location: mirror})
 		}
 	}
 

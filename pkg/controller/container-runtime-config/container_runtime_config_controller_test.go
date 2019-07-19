@@ -592,7 +592,7 @@ func TestICSPUpdate(t *testing.T) {
 			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 			icsp := newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
-				{Sources: []string{"built-in1.example.com", "built-in-2.example.com"}},
+				{Source: "built-in-source.example.com", Mirrors: []string{"built-in-mirror.example.com"}},
 			})
 
 			f.ccLister = append(f.ccLister, cc)
@@ -630,7 +630,7 @@ func TestICSPUpdate(t *testing.T) {
 			// Modify ICSP
 			icspUpdate := icsp.DeepCopy()
 			icspUpdate.Spec.RepositoryDigestMirrors = append(icspUpdate.Spec.RepositoryDigestMirrors, apioperatorsv1alpha1.RepositoryDigestMirrors{
-				Sources: []string{"local-mirror.local", "built-in1.example.com"},
+				Source: "built-in-source.example.com", Mirrors: []string{"local-mirror.local"},
 			})
 
 			f.ccLister = append(f.ccLister, cc)
