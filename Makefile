@@ -3,7 +3,7 @@ COMPONENTS = daemon controller server operator
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 
-.PHONY: clean test test-unit test-e2e verify update
+.PHONY: clean test test-unit test-e2e verify update install-tools
 # Remove build artifaces
 # Example:
 #    make clean
@@ -37,18 +37,22 @@ test-unit:
 # Run the code generation tasks.
 # Example:
 #    make update
-update:
-	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to update generated code";  exit 1; }
+update: install-go-bindata
 	hack/update-codegen.sh
 	hack/update-generated-bindata.sh
+
+install-go-bindata:
+	hack/install-go-bindata.sh
+
+install-tools: install-go-bindata
+	# mktemp -d is required to avoid the creation of go modules related files in the project root
+	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/securego/gosec/cmd/gosec@4b59c948083cd711b6a8aac8f32721b164899f57
+	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.17.1
 
 # Run verification steps
 # Example:
 #    make verify
-verify:
-	@which go-bindata 2> /dev/null >&1 || { echo "go-bindata must be installed to verify generated code";  exit 1; }
-	@which golangci-lint 2> /dev/null >&1 || { echo "golangci-lint must be installed to lint code";  exit 1; }
-	@which gosec 2> /dev/null >&1 || { echo "gosec must be installed to lint code";  exit 1; }
+verify: install-tools
 	golangci-lint run
 	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
 	# addressed
