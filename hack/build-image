@@ -27,6 +27,7 @@ try:
 except subprocess.CalledProcessError as e:
     pass
 
+# Check if MCO image exists locally
 if inspect_data is None:
     print("No previous build")
 else:
@@ -37,10 +38,11 @@ else:
         print(f"Previous build {imgname} matches HEAD commit: {gitrev}")
         sys.exit(0)
     print(f"Previous commit: {prev_ref}")
-    print(f"HEAD commit: {gitrev}")
-    args = [podman, 'build', '-t', imgname, '-f', 'Dockerfile', '--no-cache']
-    for k in openshift_keys:
-        args.append(f'--label={k}=')
-    args.extend([f'--label=vcs-ref={gitrev}', '--label=vcs-type=git', '--label=vcs-url='])
-    print(subprocess.list2cmdline(args))
-    os.execlp(podman, *args)
+
+print(f"HEAD commit: {gitrev}")
+args = [podman, 'build', '-t', imgname, '-f', 'Dockerfile', '--no-cache']
+for k in openshift_keys:
+    args.append(f'--label={k}=')
+args.extend([f'--label=vcs-ref={gitrev}', '--label=vcs-type=git', '--label=vcs-url='])
+print(subprocess.list2cmdline(args))
+os.execlp(podman, *args)
