@@ -48,3 +48,23 @@ spec:
     from:
       kind: DockerImage
       name: quay.io/openshift/origin-cli:latest
+  - name: keepalived-ipfailover
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:keepalived-ipfailover
+  - name: coredns
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:coredns
+  - name: mdns-publisher
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:mdns-publisher
+  - name: haproxy-router
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:haproxy-router
+  - name: baremetal-runtimecfg
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:baremetal-runtimecfg
