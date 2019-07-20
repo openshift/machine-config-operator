@@ -771,24 +771,20 @@ func (dn *Daemon) writePendingConfig(desiredConfig *mcfgv1.MachineConfig) error 
 
 // XXX: drop this
 // we need this compatibility layer for now
-func (dn *Daemon) getPendingConfig() (string, error) {
+func (dn *Daemon) getPendingConfig() (*pendingConfigState, error) {
 	s, err := ioutil.ReadFile("/etc/machine-config-daemon/state.json")
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return "", errors.Wrapf(err, "loading transient state")
+			return nil, errors.Wrapf(err, "loading transient state")
 		}
 		dn.logSystem("error loading pending config %v", err)
-		return "", nil
+		return nil, nil
 	}
 	var p pendingConfigState
 	if err := json.Unmarshal([]byte(s), &p); err != nil {
-		return "", errors.Wrapf(err, "parsing transient state")
+		return nil, errors.Wrapf(err, "parsing transient state")
 	}
-
-	if p.BootID == dn.bootID {
-		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", p.PendingConfig, dn.bootID)
-	}
-	return p.PendingConfig, nil
+	return &p, nil
 }
 
 func (dn *Daemon) getCurrentConfigOnDisk() (*mcfgv1.MachineConfig, error) {
@@ -820,22 +816,41 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
 func (dn *Daemon) CheckStateOnBoot() error {
-	pendingConfigName, err := dn.getPendingState()
+	pendingState, err := dn.getPendingState()
 	if err != nil {
 		return err
 	}
+	var pendingConfigName, bootID string
+	if pendingState != nil {
+		pendingConfigName = pendingState.Message
+		bootID = pendingState.BootID
+	}
 	// XXX: drop this
 	// we need this compatibility layer for now
-	if pendingConfigName == "" {
-		pendingConfigName, err = dn.getPendingConfig()
+	if pendingState == nil {
+		legacyPendingState, err := dn.getPendingConfig()
 		if err != nil {
 			return err
 		}
+		if legacyPendingState != nil {
+			pendingConfigName = legacyPendingState.PendingConfig
+			bootID = legacyPendingState.BootID
+		}
 	}
+
 	state, err := dn.getStateAndConfigs(pendingConfigName)
 	if err != nil {
 		return err
 	}
+
+	// if we have a pendingConfig but we're into the same bootid, the MCD has been likely killed
+	// with force (OOM for instance). If the kill happened after we applied the update but we
+	// were there draining for instance, instead of perma-failing the next sync, re-try the drain+reboot phase
+	if state.pendingConfig != nil && bootID == dn.bootID {
+		dn.logSystem("killed by kube, retrying...")
+		return dn.drainAndReboot(state.pendingConfig)
+	}
+
 	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
 		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
 	}
