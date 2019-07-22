@@ -92,6 +92,7 @@ func RenderBootstrap(
 	// Append the kube-ca if given.
 	if _, ok := filesData[kubeAPIServerServingCA]; ok {
 		bundle = append(bundle, filesData[kubeAPIServerServingCA]...)
+		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
 	}
 
 	spec.EtcdCAData = filesData[etcdCAFile]

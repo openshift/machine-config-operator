@@ -22,7 +22,7 @@ contents: |
         --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_version=${VERSION_ID},node.openshift.io/os_id=${ID} \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
-        --client-ca-file=/etc/kubernetes/ca.crt \
+        --client-ca-file=/etc/kubernetes/kubelet-ca.crt \
         --cloud-provider= \
          \
         --anonymous-auth=false \

@@ -1,7 +1,10 @@
 package operator
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -497,3 +500,27 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
 )
+
+func mergeCertWithCABundle(initialBundle, newBundle []byte, subject string) []byte {
+	mergedBytes := []byte{}
+	for len(initialBundle) > 0 {
+		b, next := pem.Decode(initialBundle)
+		if b == nil {
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil {
+			glog.Warningf("Could not parse initial bundle certificate: %v", err)
+			continue
+		}
+		if strings.Contains(c.Subject.String(), subject) {
+			// merge and replace this cert with the new one
+			mergedBytes = append(mergedBytes, newBundle...)
+		} else {
+			// merge the original cert
+			mergedBytes = append(mergedBytes, pem.EncodeToMemory(b)...)
+		}
+		initialBundle = next
+	}
+	return mergedBytes
+}

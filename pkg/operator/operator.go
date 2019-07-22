@@ -74,16 +74,17 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	crdLister       apiextlistersv1beta1.CustomResourceDefinitionLister
-	mcpLister       mcfglistersv1.MachineConfigPoolLister
-	ccLister        mcfglistersv1.ControllerConfigLister
-	mcLister        mcfglistersv1.MachineConfigLister
-	deployLister    appslisterv1.DeploymentLister
-	daemonsetLister appslisterv1.DaemonSetLister
-	infraLister     configlistersv1.InfrastructureLister
-	networkLister   configlistersv1.NetworkLister
-	mcoCmLister     corelisterv1.ConfigMapLister
-	clusterCmLister corelisterv1.ConfigMapLister
+	crdLister        apiextlistersv1beta1.CustomResourceDefinitionLister
+	mcpLister        mcfglistersv1.MachineConfigPoolLister
+	ccLister         mcfglistersv1.ControllerConfigLister
+	mcLister         mcfglistersv1.MachineConfigLister
+	deployLister     appslisterv1.DeploymentLister
+	daemonsetLister  appslisterv1.DaemonSetLister
+	infraLister      configlistersv1.InfrastructureLister
+	networkLister    configlistersv1.NetworkLister
+	mcoCmLister      corelisterv1.ConfigMapLister
+	clusterCmLister  corelisterv1.ConfigMapLister
+	oseKubeAPILister corelisterv1.ConfigMapLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -98,6 +99,7 @@ type Operator struct {
 	serviceAccountInformerSynced     cache.InformerSynced
 	clusterRoleInformerSynced        cache.InformerSynced
 	clusterRoleBindingInformerSynced cache.InformerSynced
+	oseKubeAPIListerSynced           cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -126,6 +128,7 @@ func New(
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
+	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -156,6 +159,7 @@ func New(
 		infraInformer.Informer(),
 		networkInformer.Informer(),
 		mcpInformer.Informer(),
+		oseKubeAPIInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -170,6 +174,8 @@ func New(
 	optr.ccListerSynced = controllerConfigInformer.Informer().HasSynced
 	optr.mcLister = mcInformer.Lister()
 	optr.mcListerSynced = mcInformer.Informer().HasSynced
+	optr.oseKubeAPILister = oseKubeAPIInformer.Lister()
+	optr.oseKubeAPIListerSynced = oseKubeAPIInformer.Informer().HasSynced
 
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -218,7 +224,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.serviceAccountInformerSynced,
 		optr.clusterRoleInformerSynced,
 		optr.clusterRoleBindingInformerSynced,
-		optr.networkListerSynced) {
+		optr.networkListerSynced,
+		optr.oseKubeAPIListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}
@@ -342,10 +349,19 @@ func (optr *Operator) sync(key string) error {
 	}
 	// as described by the name this is essentially static, but it no worse than what was here before.  Since changes disrupt workloads
 	// and since must perfectly match what the installer creates, this is effectively frozen in time.
-	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
+	initialKubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
 	if err != nil {
 		return err
 	}
+	// Fetch the following configmap and merge into the the initial CA. The CA is the same for the first year, and will rotate
+	// automatically afterwards.
+	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-kube-apiserver-operator", "kube-apiserver-to-kubelet-client-ca", "ca-bundle.crt")
+	if err != nil {
+		kubeAPIServerServingCABytes = initialKubeAPIServerServingCABytes
+	} else {
+		kubeAPIServerServingCABytes = mergeCertWithCABundle(initialKubeAPIServerServingCABytes, kubeAPIServerServingCABytes, "kube-apiserver-to-kubelet-signer")
+	}
+
 	bundle := make([]byte, 0)
 	bundle = append(bundle, rootCA...)
 	bundle = append(bundle, kubeAPIServerServingCABytes...)
@@ -377,6 +393,7 @@ func (optr *Operator) sync(key string) error {
 		spec.CloudProviderConfig = cc
 	}
 
+	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.EtcdCAData = etcdCA
 	spec.EtcdMetricCAData = etcdMetricCA
 	spec.RootCAData = bundle
