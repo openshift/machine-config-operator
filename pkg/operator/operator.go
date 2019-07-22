@@ -67,17 +67,18 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	crdLister       apiextlistersv1beta1.CustomResourceDefinitionLister
-	mcpLister       mcfglistersv1.MachineConfigPoolLister
-	ccLister        mcfglistersv1.ControllerConfigLister
-	mcLister        mcfglistersv1.MachineConfigLister
-	deployLister    appslisterv1.DeploymentLister
-	daemonsetLister appslisterv1.DaemonSetLister
-	infraLister     configlistersv1.InfrastructureLister
-	networkLister   configlistersv1.NetworkLister
-	mcoCmLister     corelisterv1.ConfigMapLister
-	clusterCmLister corelisterv1.ConfigMapLister
-	proxyLister     configlistersv1.ProxyLister
+	crdLister        apiextlistersv1beta1.CustomResourceDefinitionLister
+	mcpLister        mcfglistersv1.MachineConfigPoolLister
+	ccLister         mcfglistersv1.ControllerConfigLister
+	mcLister         mcfglistersv1.MachineConfigLister
+	deployLister     appslisterv1.DeploymentLister
+	daemonsetLister  appslisterv1.DaemonSetLister
+	infraLister      configlistersv1.InfrastructureLister
+	networkLister    configlistersv1.NetworkLister
+	mcoCmLister      corelisterv1.ConfigMapLister
+	clusterCmLister  corelisterv1.ConfigMapLister
+	proxyLister      configlistersv1.ProxyLister
+	oseKubeAPILister corelisterv1.ConfigMapLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -93,6 +94,7 @@ type Operator struct {
 	clusterRoleInformerSynced        cache.InformerSynced
 	clusterRoleBindingInformerSynced cache.InformerSynced
 	proxyListerSynced                cache.InformerSynced
+	oseKubeAPIListerSynced           cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -123,6 +125,7 @@ func New(
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
+	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -154,6 +157,7 @@ func New(
 		networkInformer.Informer(),
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
+		oseKubeAPIInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -170,6 +174,8 @@ func New(
 	optr.mcListerSynced = mcInformer.Informer().HasSynced
 	optr.proxyLister = proxyInformer.Lister()
 	optr.proxyListerSynced = proxyInformer.Informer().HasSynced
+	optr.oseKubeAPILister = oseKubeAPIInformer.Lister()
+	optr.oseKubeAPIListerSynced = oseKubeAPIInformer.Informer().HasSynced
 
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -219,7 +225,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.clusterRoleInformerSynced,
 		optr.clusterRoleBindingInformerSynced,
 		optr.networkListerSynced,
-		optr.proxyListerSynced) {
+		optr.proxyListerSynced,
+		optr.oseKubeAPIListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}

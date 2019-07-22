@@ -11,6 +11,7 @@ import (
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	apiextinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
@@ -31,14 +32,15 @@ func resyncPeriod() func() time.Duration {
 type ControllerContext struct {
 	ClientBuilder *clients.Builder
 
-	NamespacedInformerFactory                    mcfginformers.SharedInformerFactory
-	InformerFactory                              mcfginformers.SharedInformerFactory
-	KubeInformerFactory                          informers.SharedInformerFactory
-	KubeNamespacedInformerFactory                informers.SharedInformerFactory
-	OpenShiftConfigKubeNamespacedInformerFactory informers.SharedInformerFactory
-	APIExtInformerFactory                        apiextinformers.SharedInformerFactory
-	ConfigInformerFactory                        configinformers.SharedInformerFactory
-	OperatorInformerFactory                      operatorinformers.SharedInformerFactory
+	NamespacedInformerFactory                           mcfginformers.SharedInformerFactory
+	InformerFactory                                     mcfginformers.SharedInformerFactory
+	KubeInformerFactory                                 informers.SharedInformerFactory
+	KubeNamespacedInformerFactory                       informers.SharedInformerFactory
+	OpenShiftConfigKubeNamespacedInformerFactory        informers.SharedInformerFactory
+	OpenShiftKubeAPIServerKubeNamespacedInformerFactory informers.SharedInformerFactory
+	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
+	ConfigInformerFactory                               configinformers.SharedInformerFactory
+	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -61,6 +63,14 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
 	kubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), targetNamespace, nil)
 	openShiftConfigKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient, resyncPeriod()(), "openshift-config", nil)
+	openShiftKubeAPIServerKubeNamespacedSharedInformer := informers.NewFilteredSharedInformerFactory(kubeClient,
+		resyncPeriod()(),
+		"openshift-kube-apiserver-operator",
+		func(opt *metav1.ListOptions) {
+			opt.FieldSelector = fields.OneTermEqualSelector("metadata.name", "kube-apiserver-to-kubelet-client-ca").String()
+		},
+	)
+
 	// filter out CRDs that do not have the MCO label
 	assignFilterLabels := func(opts *metav1.ListOptions) {
 		labelsMap, err := labels.ConvertSelectorToLabelsMap(opts.LabelSelector)
@@ -76,17 +86,18 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
 	return &ControllerContext{
-		ClientBuilder:                                cb,
-		NamespacedInformerFactory:                    sharedNamespacedInformers,
-		InformerFactory:                              sharedInformers,
-		KubeInformerFactory:                          kubeSharedInformer,
-		KubeNamespacedInformerFactory:                kubeNamespacedSharedInformer,
-		OpenShiftConfigKubeNamespacedInformerFactory: openShiftConfigKubeNamespacedSharedInformer,
-		APIExtInformerFactory:                        apiExtSharedInformer,
-		ConfigInformerFactory:                        configSharedInformer,
-		OperatorInformerFactory:                      operatorSharedInformer,
-		Stop:                                         stop,
-		InformersStarted:                             make(chan struct{}),
-		ResyncPeriod:                                 resyncPeriod(),
+		ClientBuilder:                                       cb,
+		NamespacedInformerFactory:                           sharedNamespacedInformers,
+		InformerFactory:                                     sharedInformers,
+		KubeInformerFactory:                                 kubeSharedInformer,
+		KubeNamespacedInformerFactory:                       kubeNamespacedSharedInformer,
+		OpenShiftConfigKubeNamespacedInformerFactory:        openShiftConfigKubeNamespacedSharedInformer,
+		OpenShiftKubeAPIServerKubeNamespacedInformerFactory: openShiftKubeAPIServerKubeNamespacedSharedInformer,
+		APIExtInformerFactory:                               apiExtSharedInformer,
+		ConfigInformerFactory:                               configSharedInformer,
+		OperatorInformerFactory:                             operatorSharedInformer,
+		Stop:                                                stop,
+		InformersStarted:                                    make(chan struct{}),
+		ResyncPeriod:                                        resyncPeriod(),
 	}
 }

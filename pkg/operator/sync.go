@@ -1,10 +1,13 @@
 package operator
 
 import (
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -112,10 +115,20 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 	// as described by the name this is essentially static, but it no worse than what was here before.  Since changes disrupt workloads
 	// and since must perfectly match what the installer creates, this is effectively frozen in time.
-	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
+	initialKubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
 	if err != nil {
 		return err
 	}
+
+	// Fetch the following configmap and merge into the the initial CA. The CA is the same for the first year, and will rotate
+	// automatically afterwards.
+	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-kube-apiserver-operator", "kube-apiserver-to-kubelet-client-ca", "ca-bundle.crt")
+	if err != nil {
+		kubeAPIServerServingCABytes = initialKubeAPIServerServingCABytes
+	} else {
+		kubeAPIServerServingCABytes = mergeCertWithCABundle(initialKubeAPIServerServingCABytes, kubeAPIServerServingCABytes, "kube-apiserver-to-kubelet-signer")
+	}
+
 	bundle := make([]byte, 0)
 	bundle = append(bundle, rootCA...)
 	bundle = append(bundle, kubeAPIServerServingCABytes...)
@@ -147,6 +160,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		spec.CloudProviderConfig = cc
 	}
 
+	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.EtcdCAData = etcdCA
 	spec.EtcdMetricCAData = etcdMetricCA
 	spec.RootCAData = bundle
@@ -664,4 +678,28 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		APIServerURL:           apiServerURL,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
 	}
+}
+
+func mergeCertWithCABundle(initialBundle, newBundle []byte, subject string) []byte {
+	mergedBytes := []byte{}
+	for len(initialBundle) > 0 {
+		b, next := pem.Decode(initialBundle)
+		if b == nil {
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil {
+			glog.Warningf("Could not parse initial bundle certificate: %v", err)
+			continue
+		}
+		if strings.Contains(c.Subject.String(), subject) {
+			// merge and replace this cert with the new one
+			mergedBytes = append(mergedBytes, newBundle...)
+		} else {
+			// merge the original cert
+			mergedBytes = append(mergedBytes, pem.EncodeToMemory(b)...)
+		}
+		initialBundle = next
+	}
+	return mergedBytes
 }
