@@ -1,7 +1,0 @@
-filesystem: "root"
-mode: 0644
-path: "/etc/NetworkManager/conf.d/dhcp-client.conf"
-contents:
-  inline: |
-    [main]
-    dhcp=dhclient

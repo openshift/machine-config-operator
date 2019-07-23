@@ -1,0 +1,17 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/coredns/Corefile.tmpl"
+contents:
+  inline: |
+    . {
+        errors
+        health
+        mdns {{ .EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}}
+        forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
+        cache 30
+        reload
+        hosts /etc/coredns/api-int.hosts {{ .EtcdDiscoveryDomain }} {
+            {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .EtcdDiscoveryDomain }}
+            fallthrough
+        }
+    }

@@ -1,6 +1,0 @@
-contents:
-  source: data:,kind%3A%20Pod%0AapiVersion%3A%20v1%0Ametadata%3A%0A%20%20name%3A%20coredns%0A%20%20namespace%3A%20kube-system%0A%20%20creationTimestamp%3A%0A%20%20deletionGracePeriodSeconds%3A%2065%0A%20%20labels%3A%0A%20%20%20%20app%3A%20kni-infra-mdns%0Aspec%3A%0A%20%20volumes%3A%0A%20%20-%20name%3A%20conf-dir%0A%20%20%20%20hostPath%3A%0A%20%20%20%20%20%20path%3A%20%22%2Fetc%2Fkubernetes%2Fstatic-pod-resources%2Fcoredns%22%0A%20%20containers%3A%0A%20%20-%20name%3A%20coredns%0A%20%20%20%20securityContext%3A%0A%20%20%20%20%20%20privileged%3A%20true%0A%20%20%20%20image%3A%20quay.io%2Fopenshift%2Forigin-coredns%3Alatest%0A%20%20%20%20args%3A%0A%20%20%20%20-%20%22--conf%22%0A%20%20%20%20-%20%22%2Fetc%2Fcoredns%2FCorefile%22%0A%20%20%20%20resources%3A%0A%20%20%20%20%20%20requests%3A%0A%20%20%20%20%20%20%20%20cpu%3A%20150m%0A%20%20%20%20%20%20%20%20memory%3A%201Gi%0A%20%20%20%20volumeMounts%3A%0A%20%20%20%20-%20name%3A%20conf-dir%0A%20%20%20%20%20%20mountPath%3A%20%22%2Fetc%2Fcoredns%22%0A%20%20%20%20terminationMessagePolicy%3A%20FallbackToLogsOnError%0A%20%20%20%20imagePullPolicy%3A%20IfNotPresent%0A%20%20hostNetwork%3A%20true%0A%20%20tolerations%3A%0A%20%20-%20operator%3A%20Exists%0A%20%20priorityClassName%3A%20system-node-critical%0Astatus%3A%20%7B%7D%0A
-  verification: {}
-filesystem: root
-mode: 420
-path: /etc/kubernetes/manifests/coredns.yaml

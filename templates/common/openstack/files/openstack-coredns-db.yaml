@@ -1,19 +1,17 @@
 filesystem: "root"
 mode: 0644
-path: "/etc/kubernetes/static-pod-resources/coredns/coredns.db"
+path: "/etc/coredns/node-dns-db"
 contents:
   inline: |
-    $ORIGIN {{.EtcdDiscoveryDomain}}.
-    @    3600 IN SOA host.{{.EtcdDiscoveryDomain}}. hostmaster (
-                                    2          ; serial
+    $ORIGIN {{ .EtcdDiscoveryDomain }}.
+    @    3600 IN SOA host.{{ .EtcdDiscoveryDomain }}. hostmaster (
+                                    2017042752 ; serial
                                     7200       ; refresh (2 hours)
                                     3600       ; retry (1 hour)
                                     1209600    ; expire (2 weeks)
                                     3600       ; minimum (1 hour)
                                     )
-
-    api IN A {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
     api-int IN A {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
+    api IN A {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
 
-    ; FIXME(mandre) change it to INGRESS_VIP
-    *.apps IN A {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
+    *.apps  IN  A {{ .Infra.Status.PlatformStatus.OpenStack.IngressIP }}
