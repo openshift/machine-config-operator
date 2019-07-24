@@ -599,7 +599,7 @@ spec:
     name: IgnitionVersion
     type: string
   - JSONPath: .metadata.creationTimestamp
-    name: Created
+    name: Age
     type: date
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
