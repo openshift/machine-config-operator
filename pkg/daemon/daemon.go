@@ -829,7 +829,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// and if we still have a pendingConfig it means we've been killed by kube after 600s
 	// take a stab at that and re-run the drain+reboot routine
 	if state.pendingConfig != nil && bootID == dn.bootID {
-		dn.logSystem("killed by kube, retrying...")
+		dn.logSystem("drain interrupted, retrying")
 		return dn.drainAndReboot(state.pendingConfig)
 	}
 
