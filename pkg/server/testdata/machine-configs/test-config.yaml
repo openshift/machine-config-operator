@@ -190,7 +190,7 @@ spec:
                     --cloud-provider=aws \
                      \
                     --register-with-taints=node-role.kubernetes.io/etcd=:NoSchedule \
-                    $CGROUP_DRIVER_FLAG \
+                    $CGROUP_DRIVER_FLAG
               Restart=always
               RestartSec=10
               [Install]
