@@ -49,10 +49,14 @@ func TestMCDToken(t *testing.T) {
 	}
 }
 
-func mcLabelForWorkers() map[string]string {
+func mcLabelForRole(role string) map[string]string {
 	mcLabels := make(map[string]string)
-	mcLabels["machineconfiguration.openshift.io/role"] = "worker"
+	mcLabels["machineconfiguration.openshift.io/role"] = role
 	return mcLabels
+}
+
+func mcLabelForWorkers() map[string]string {
+	return mcLabelForRole("worker")
 }
 
 func createIgnFile(path, content, fs string, mode int) igntypes.File {
@@ -70,20 +74,23 @@ func createIgnFile(path, content, fs string, mode int) igntypes.File {
 	}
 }
 
-func createMCToAddFile(name, filename, data, fs string) *mcfgv1.MachineConfig {
+func createMCToAddFileForRole(name, role, filename, data, fs string) *mcfgv1.MachineConfig {
 	// create a dummy MC
 	mcadd := &mcfgv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
 		Name: fmt.Sprintf("%s-%s", name, uuid.NewUUID()),
 		// TODO(runcom): hardcoded to workers for safety
-		Labels: mcLabelForWorkers(),
+		Labels: mcLabelForRole(role),
 	}
-
 	ignConfig := ctrlcommon.NewIgnConfig()
 	ignFile := createIgnFile(filename, "data:,"+data, fs, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
 	mcadd.Spec.Config = ignConfig
 	return mcadd
+}
+
+func createMCToAddFile(name, filename, data, fs string) *mcfgv1.MachineConfig {
+	return createMCToAddFileForRole(name, "worker", filename, data, fs)
 }
 
 // waitForRenderedConfig polls a MachineConfigPool until it has
@@ -590,5 +597,61 @@ func TestFIPS(t *testing.T) {
 			t.Fatalf("FIPS hasn't been disabled on node %s: %s", node.Name, fips)
 		}
 		t.Logf("Node %s has expected FIPS mode", node.Name)
+	}
+}
+
+func TestCustomPool(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	require.NotEmpty(t, nodes)
+	infraNode := nodes[0]
+	out, err := exec.Command("oc", "label", "node", infraNode.Name, "node-role.kubernetes.io/infra=").CombinedOutput()
+	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
+
+	infraMCP := &mcfgv1.MachineConfigPool{}
+	infraMCP.Name = "infra"
+	nodeSelector := metav1.LabelSelector{}
+	infraMCP.Spec.NodeSelector = &nodeSelector
+	infraMCP.Spec.NodeSelector.MatchLabels = make(map[string]string)
+	infraMCP.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/infra"] = ""
+	mcSelector := metav1.LabelSelector{}
+	infraMCP.Spec.MachineConfigSelector = &mcSelector
+	infraMCP.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{
+		metav1.LabelSelectorRequirement{
+			Key: "machineconfiguration.openshift.io/role",
+			Operator: metav1.LabelSelectorOpIn,
+			Values: []string{"worker", "infra"},
+		},
+	}
+	_, err = cs.MachineConfigPools().Create(infraMCP)
+	require.Nil(t, err)
+
+	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool", "root")
+	_, err = cs.MachineConfigs().Create(infraMC)
+	require.Nil(t, err)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", infraMC.Name)
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "infra", renderedConfig)
+	require.Nil(t, err)
+
+	nodes, err = getNodesByRole(cs, "infra")
+	require.Nil(t, err)
+	require.Len(t, nodes, 1)
+
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		require.Nil(t, err)
+		mcdName := mcd.ObjectMeta.Name
+		out, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"cat", "/rootfs/etc/mco-custom-pool").CombinedOutput()
+		require.Nil(t, err, "failed to cat test file: %s", string(out))
+		if string(out) != "mco-custom-pool" {
+			t.Fatalf("Unexpected infra MC content on node %s: %s", node.Name, out)
+		}
+		t.Logf("Node %s has expected infra MC content", node.Name)
 	}
 }
