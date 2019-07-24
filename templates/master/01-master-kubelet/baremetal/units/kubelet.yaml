@@ -27,7 +27,7 @@ contents: |
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \
-        --v=3 \
+        --v=3
 
   Restart=always
   RestartSec=10
