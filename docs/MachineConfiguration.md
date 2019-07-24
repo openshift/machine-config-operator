@@ -94,10 +94,12 @@ Ignition config keys as well.
 ### KernelArguments
 
 This extends the host's kernel arguments.  Use this for e.g. [nosmt](https://access.redhat.com/solutions/rhel-smt).
+As of the time of this writing (OpenShift 4.2 development), you can set this field for "day 2" configuration
+once a cluster has been created.  However, it will cause problems to set this in [install-time MachineConfig objects](https://github.com/openshift/installer/blob/master/docs/user/customization.md#install-time-customization-for-machine-configuration).  Further, changing this will incur an extra reboot when adding workers to a cluster.  For more information, see [this issue](https://github.com/openshift/machine-config-operator/issues/798).  It is currently planned to fix this for OpenShift 4.3.
 
 ### FIPS
 
-This allows to enable/disable [FIPS mode](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/security_guide/chap-federal_standards_and_regulations). If any of the configuration has FIPS enabled, it'll be set.
+This allows to enable/disable [FIPS mode](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/security_guide/chap-federal_standards_and_regulations). If any of the configuration has FIPS enabled, it'll be set.  A similar restriction applies to this as for `KernelArguments` above.
 
 ### OSImageURL
 
