@@ -122,7 +122,7 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 	}
 
 	// Skip draining of the node when we're not cluster driven
-	if dn.onceFrom == "" {
+	if dn.kubeClient != nil {
 		dn.logSystem("Update prepared; beginning drain")
 
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
@@ -157,7 +157,7 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 	}
 
 	// reboot. this function shouldn't actually return.
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()), defaultRebootTimeout, rebootCommand(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName())))
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
@@ -183,14 +183,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	oldConfigName := oldConfig.GetName()
-	newConfigName := newConfig.GetName()
-	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
-	// We skip out of Reconcilable if there is no Kind and we are in runOnce mode. The
-	// reason is that there is a good chance a previous state is not available to match against.
-	if oldConfig.Kind == "" && dn.onceFrom != "" {
-		glog.Info("Missing kind in old config. Assuming no prior state.")
+	oldConfigUnset := oldConfig == nil
+	if oldConfigUnset {
+		// Rather than change the rest of the code to deal
+		// with a nil oldConfig, just pass an empty one in
+		// most places.
+		emptyMC := mcfgv1.MachineConfig{}
+		oldConfig = &emptyMC
 	} else {
+		oldConfigName := oldConfig.GetName()
+		newConfigName := newConfig.GetName()
+		glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+
 		// make sure we can actually reconcile this state
 		diff, reconcilableError := Reconcilable(oldConfig, newConfig)
 
@@ -240,7 +244,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 	defer func() {
-		if retErr != nil {
+		if retErr != nil && !oldConfigUnset {
 			if err := dn.storeCurrentConfigOnDisk(oldConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back current config on disk %v", err)
 				return
@@ -1003,22 +1007,22 @@ func (dn *Daemon) cancelSIGTERM() {
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
-func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exec.Cmd) error {
+func (dn *Daemon) reboot(rationale string) error {
+	// Now that everything is done, avoid delaying shutdown.
+	dn.cancelSIGTERM()
+	dn.Close()
+
+	if dn.skipReboot {
+		return nil
+	}
+
 	// We'll only have a recorder if we're cluster driven
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
 	}
 	dn.logSystem("initiating reboot: %s", rationale)
 
-	// Now that everything is done, avoid delaying shutdown.
-	dn.cancelSIGTERM()
-
-	dn.Close()
-
-	if dn.skipReboot && dn.onceFrom != "" { // the dn.onceFrom check is just a triple check that we're not messing with in-cluster MCDs
-		glog.Info("MCD is not rebooting in onceFrom with --skip-reboot")
-		return nil
-	}
+	rebootCmd := rebootCommand(rationale)
 
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
@@ -1030,7 +1034,7 @@ func (dn *Daemon) reboot(rationale string, timeout time.Duration, rebootCmd *exe
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
-	time.Sleep(timeout)
+	time.Sleep(defaultRebootTimeout)
 
 	// if everything went well, this should be unreachable.
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
