@@ -40,7 +40,7 @@ else:
     print(f"Previous commit: {prev_ref}")
 
 print(f"HEAD commit: {gitrev}")
-args = [podman, 'build', '-t', imgname, '-f', 'Dockerfile', '--no-cache']
+args = [podman, 'build', '-t', imgname, '--no-cache', '.']
 for k in openshift_keys:
     args.append(f'--label={k}=')
 args.extend([f'--label=vcs-ref={gitrev}', '--label=vcs-type=git', '--label=vcs-url='])
