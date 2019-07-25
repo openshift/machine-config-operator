@@ -651,23 +651,11 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		// Get MachineConfig
 		managedKey := getManagedKeyReg(pool)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			var registriesTOML []byte
-			if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
-				// Generate the original registries config
-				_, _, originalRegistriesIgn, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
-				if err != nil {
-					return fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
-				}
-				dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
-				if err != nil {
-					return fmt.Errorf("could not decode original registries config: %v", err)
-				}
-				registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs, icspRules)
-				if err != nil {
-					return fmt.Errorf("could not update registries config with new changes: %v", err)
-				}
+			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
+				insecureRegs, blockedRegs, icspRules)
+			if err != nil {
+				return err
 			}
-			registriesIgn := createNewRegistriesConfigIgnition(registriesTOML)
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("could not find MachineConfig: %v", err)
@@ -686,7 +674,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
 			}
-			mc.Spec.Config = registriesIgn
+			mc.Spec.Config = *registriesIgn
 			mc.ObjectMeta.Annotations = map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			}
@@ -715,6 +703,28 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	}
 
 	return nil
+}
+
+func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
+	insecureRegs, blockedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*igntypes.Config, error) {
+	var registriesTOML []byte
+	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
+		// Generate the original registries config
+		_, _, originalRegistriesIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+		if err != nil {
+			return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
+		}
+		dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+		if err != nil {
+			return nil, fmt.Errorf("could not decode original registries config: %v", err)
+		}
+		registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs, icspRules)
+		if err != nil {
+			return nil, fmt.Errorf("could not update registries config with new changes: %v", err)
+		}
+	}
+	registriesIgn := createNewRegistriesConfigIgnition(registriesTOML)
+	return &registriesIgn, nil
 }
 
 func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig) error {
