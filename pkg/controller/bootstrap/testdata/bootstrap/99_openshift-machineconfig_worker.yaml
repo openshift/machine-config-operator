@@ -1,0 +1,25 @@
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-worker-ssh
+spec:
+  config:
+    ignition:
+      config: {}
+      security:
+        tls: {}
+      timeouts: {}
+      version: 2.2.0
+    networkd: {}
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - ssh-rsa SSH-AUTHORIZED-KEY
+    storage: {}
+    systemd: {}
+  osImageURL: ""
