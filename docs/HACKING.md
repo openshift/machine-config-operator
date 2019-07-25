@@ -206,8 +206,8 @@ image label, so if you want to deploy new changes, you'll need to `git commit`.
 
 After the build is complete, make sure to push the image to a registry (i.e. `podman push localhost/machine-config-operator quay.io/user/machine-config-operator`).
 
-You can also use the script [hack/push-image.sh](hack/push-image.sh) to push the image 
-generated in `make image` to the container registry of your choice. For example, after logging 
+You can also use the script [hack/push-image.sh](hack/push-image.sh) to push the image
+generated in `make image` to the container registry of your choice. For example, after logging
 in via the command-line:
 
 ```
@@ -272,7 +272,7 @@ $ ./hack/cluster-push.sh
 ## Hacking on `machine-os-content`
 
 If you own part of the operating system (from kernel to kubelet) you
-are part of the `machine-os-content`.  More information in [OSUpgrades.md](docs/OSUpgrades.md).
+are part of the `machine-os-content`.  More information in [OSUpgrades.md](OSUpgrades.md).
 You will want a workflow for testing changes to a cluster.
 
 ### Directly applying changes live to a node
