@@ -438,12 +438,20 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		glog.Infof("Pool %s: node %s has completed update to %s", pool.Name, curNode.Name, curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
 	} else {
-		annos := []string{daemonconsts.CurrentMachineConfigAnnotationKey, daemonconsts.DesiredMachineConfigAnnotationKey, daemonconsts.MachineConfigDaemonStateAnnotationKey}
+		annos := []string{
+			daemonconsts.CurrentMachineConfigAnnotationKey,
+			daemonconsts.DesiredMachineConfigAnnotationKey,
+			daemonconsts.MachineConfigDaemonStateAnnotationKey,
+		}
 		for _, anno := range annos {
 			if oldNode.Annotations[anno] != curNode.Annotations[anno] {
 				glog.Infof("Pool %s: node %s changed %s = %s", pool.Name, curNode.Name, anno, curNode.Annotations[anno])
 				changed = true
 			}
+		}
+		if !reflect.DeepEqual(oldNode.Labels, curNode.Labels) {
+			glog.Infof("Pool %s: node %s changed labels", pool.Name, curNode.Name)
+			changed = true
 		}
 	}
 
