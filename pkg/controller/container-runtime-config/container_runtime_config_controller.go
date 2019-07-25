@@ -377,10 +377,10 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, ctrl.templatesDir)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
 	}
@@ -517,7 +517,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 			isNotFound := errors.IsNotFound(err)
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, originalCRIOIgn, _, err := ctrl.generateOriginalContainerRuntimeConfigs(controllerConfig, role)
+			originalStorageIgn, originalCRIOIgn, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 			}
@@ -654,7 +654,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			var registriesTOML []byte
 			if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
 				// Generate the original registries config
-				_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(controllerConfig, role)
+				_, _, originalRegistriesIgn, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
 				if err != nil {
 					return fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
 				}
