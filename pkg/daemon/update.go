@@ -39,7 +39,20 @@ const (
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsCommand is the command to use when enabling or disabling FIPS
 	fipsCommand = "/usr/libexec/rhcos-tools/coreos-fips"
+	// fipsEnabledFile is the filepath for checking if FIPS mode is enabled on the system
+	fipsEnabledFile = "/proc/sys/crypto/fips_enabled"
 )
+
+func checkFipsEnabled() (bool, error) {
+	raw, err := ioutil.ReadFile(fipsEnabledFile)
+	if err != nil {
+		return false, errors.Wrap(err, "failed checking if FIPS enabled")
+	}
+	if len(raw) < 1 {
+		return false, fmt.Errorf("unknown FIPS mode: no data in %s", fipsEnabledFile)
+	}
+	return string(raw) != "0", nil
+}
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
@@ -162,6 +175,15 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 
 var errUnreconcilable = errors.New("unreconcilable")
 
+func recoverCurrentConfig(config *mcfgv1.MachineConfig) error {
+	fips, err := checkFipsEnabled()
+	if err != nil {
+		return err
+	}
+	curr.Spec.Fips = fips
+	return nil
+}
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if dn.nodeWriter != nil {
@@ -188,8 +210,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		// Rather than change the rest of the code to deal
 		// with a nil oldConfig, just pass an empty one in
 		// most places.
-		emptyMC := mcfgv1.MachineConfig{}
-		oldConfig = &emptyMC
+		oldConfig = &mcfgv1.MachineConfig{}
+		if err := recoverCurrentConfig(oldConfig); err != nil {
+			glog.Warningf("unable to recover current config: %v", err)
+		}
 	} else {
 		oldConfigName := oldConfig.GetName()
 		newConfigName := newConfig.GetName()
