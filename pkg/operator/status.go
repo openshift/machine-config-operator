@@ -125,10 +125,6 @@ func (optr *Operator) syncProgressingStatus() error {
 }
 
 func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1.ClusterOperatorStatusCondition) error {
-	existingCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, status.Type)
-	if existingCondition.Status != status.Status {
-		status.LastTransitionTime = metav1.Now()
-	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, status)
 	optr.setOperatorStatusExtension(&co.Status, nil)
 	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
