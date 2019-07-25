@@ -177,6 +177,27 @@ func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
 	return optr.updateStatus(co, coStatus)
 }
 
+// syncUpgradeableStatus applies the new condition to the mco's ClusterOperator object.
+func (optr *Operator) syncUpgradeableStatus() error {
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
+	}
+	if co == nil {
+		return nil
+	}
+	// Report default "Upgradeable=True" status. When known hazardous states for upgrades are
+	// determined, specific "Upgradeable=False" status can be added with messages for how admins
+	// can resolve it.
+	// [ref] https://github.com/openshift/cluster-version-operator/blob/8402d219f36fc79e03edf45918785376113f2cc1/docs/dev/clusteroperator.md#what-should-an-operator-report-with-clusteroperator-custom-resource
+	coStatus := configv1.ClusterOperatorStatusCondition{
+		Type:   configv1.OperatorUpgradeable,
+		Status: configv1.ConditionTrue,
+		Reason: "AsExpected",
+	}
+	return optr.updateStatus(co, coStatus)
+}
+
 func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {
 	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(optr.name, metav1.GetOptions{})
 	if meta.IsNoMatchError(err) {
