@@ -377,11 +377,7 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
-	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not get ControllerConfig %v", err)
-	}
+func (ctrl *Controller) generateOriginalContainerRuntimeConfigs(cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, ctrl.templatesDir)
@@ -492,6 +488,12 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	// Get ControllerConfig
+	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig %v", err)
+	}
+
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.getPoolsForContainerRuntimeConfig(cfg)
 	if err != nil {
@@ -515,7 +517,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 			isNotFound := errors.IsNotFound(err)
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, originalCRIOIgn, _, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
+			originalStorageIgn, originalCRIOIgn, _, err := ctrl.generateOriginalContainerRuntimeConfigs(controllerConfig, role)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 			}
@@ -619,6 +621,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
+	// Get ControllerConfig
+	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig %v", err)
+	}
+
 	// Find all ImageContentSourcePolicy objects
 	icspRules, err := ctrl.icspLister.List(labels.Everything())
 	if err != nil && errors.IsNotFound(err) {
@@ -646,7 +654,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			var registriesTOML []byte
 			if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
 				// Generate the original registries config
-				_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
+				_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(controllerConfig, role)
 				if err != nil {
 					return fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
 				}
