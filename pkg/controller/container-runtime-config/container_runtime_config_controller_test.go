@@ -332,20 +332,26 @@ func (f *fixture) expectUpdateContainerRuntimeConfig(config *mcfgv1.ContainerRun
 }
 
 func (f *fixture) verifyRegistriesConfigContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy) {
-	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
-	// configuration file.
 	icsps := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
 	if icsp != nil {
 		icsps = append(icsps, icsp)
 	}
+	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(mcName, metav1.GetOptions{})
+	require.NoError(t, err)
+	verifyRegistriesConfigContents(t, updatedMC, mcName, imgcfg, icsps)
+}
+
+func verifyRegistriesConfigContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy) {
+	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
+	// configuration file.
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
 		imgcfg.Spec.RegistrySources.BlockedRegistries, icsps)
 	require.NoError(t, err)
-	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(mcName, metav1.GetOptions{})
-	require.NoError(t, err)
-	require.Len(t, updatedMC.Spec.Config.Storage.Files, 1)
-	file := updatedMC.Spec.Config.Storage.Files[0]
+
+	assert.Equal(t, mcName, mc.ObjectMeta.Name)
+	require.Len(t, mc.Spec.Config.Storage.Files, 1)
+	file := mc.Spec.Config.Storage.Files[0]
 	assert.Equal(t, registriesConfigPath, file.Node.Path)
 	registriesConf, err := dataurl.DecodeString(file.Contents.Source)
 	require.NoError(t, err)
@@ -665,6 +671,33 @@ func TestICSPUpdate(t *testing.T) {
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
 				f.verifyRegistriesConfigContents(t, mcName, imgcfg1, icspUpdate)
+			}
+		})
+	}
+}
+
+func TestRunImageBootstrap(t *testing.T) {
+	emptyImgCfg := &apicfgv1.Image{}
+
+	for _, platform := range []string{"aws", "none", "unrecognized"} {
+		t.Run(platform, func(t *testing.T) {
+			cc := newControllerConfig(common.ControllerConfigName, platform)
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			}
+			icspRules := []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
+					{Source: "built-in-source.example.com", Mirrors: []string{"built-in-mirror.example.com"}},
+					{Source: "built-in-source.example.com", Mirrors: []string{"local-mirror.local"}},
+				}),
+			}
+
+			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules)
+			require.NoError(t, err)
+			require.Len(t, mcs, len(pools))
+			for i := range pools {
+				verifyRegistriesConfigContents(t, mcs[i], getManagedKeyReg(pools[i]), emptyImgCfg, icspRules)
 			}
 		})
 	}
