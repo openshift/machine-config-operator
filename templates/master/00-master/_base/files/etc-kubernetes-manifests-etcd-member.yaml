@@ -23,6 +23,13 @@ contents:
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/
+        - name: sa
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount/
+        env:
+        - name: ETCD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
       - name: certs
         image: "{{.Images.kubeClientAgentImageKey}}"
         command:
@@ -105,6 +112,10 @@ contents:
             --listen-client-urls=https://0.0.0.0:2379 \
             --listen-peer-urls=https://0.0.0.0:2380 \
             --listen-metrics-urls=https://0.0.0.0:9978 \
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 5"]
         resources:
           requests:
             memory: 600Mi
@@ -129,6 +140,10 @@ contents:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        - name: ETCD_INITIAL_CLUSTER
+          valueFrom:
+            fieldRef:
+               fieldPath: metadata.annotations['etcd.operator.openshift.io/scale']
         ports:
         - name: peer
           containerPort: 2380
@@ -157,6 +172,10 @@ contents:
             --cert-file /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.crt \
             --cacert /etc/ssl/etcd/ca.crt \
             --trusted-ca-file /etc/ssl/etcd/metric-ca.crt \
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 5"]
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: discovery
@@ -191,3 +210,6 @@ contents:
       - name: conf
         hostPath:
           path: /etc/etcd
+      - name: sa
+        hostPath:
+          path: /etc/kubernetes/static-pod-resources/etcd-member/secrets/kubernetes.io/sa-token
