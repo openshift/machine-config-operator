@@ -94,7 +94,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 
 	if proxy != nil {
 		if proxy.Status == (configv1.ProxyStatus{}) {
-			glog.Info("Not setting proxy config because Proxy status is empty")
+			glog.V(2).Info("Not setting proxy config because Proxy status is empty")
 		} else {
 			ccSpec.Proxy = &proxy.Status
 		}
