@@ -643,14 +643,13 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		// Get MachineConfig
 		managedKey := getManagedKeyReg(pool)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			// Generate the original registries config
-			_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
-			if err != nil {
-				return fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
-			}
-
 			var registriesTOML []byte
 			if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
+				// Generate the original registries config
+				_, _, originalRegistriesIgn, err := ctrl.generateOriginalContainerRuntimeConfigs(role)
+				if err != nil {
+					return fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
+				}
 				dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
 				if err != nil {
 					return fmt.Errorf("could not decode original registries config: %v", err)
@@ -660,12 +659,12 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 					return fmt.Errorf("could not update registries config with new changes: %v", err)
 				}
 			}
+			registriesIgn := createNewRegistriesConfigIgnition(registriesTOML)
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("could not find MachineConfig: %v", err)
 			}
 			isNotFound := errors.IsNotFound(err)
-			registriesIgn := createNewRegistriesConfigIgnition(registriesTOML)
 			if !isNotFound && equality.Semantic.DeepEqual(registriesIgn, mc.Spec.Config) {
 				// if the configuration for the registries is equal, we still need to compare
 				// the generated controller version because during an upgrade we need a new one
