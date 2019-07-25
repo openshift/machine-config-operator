@@ -151,6 +151,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
+	additionalTrustBundle, err := optr.getCAsFromConfigMap("openshift-config-managed", "user-ca-bundle", "ca-bundle.crt")
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	spec.AdditionalTrustBundle = additionalTrustBundle
+
 	// if the cloudConfig is set in infra read the cloud config reference
 	if infra.Spec.CloudConfig.Name != "" {
 		cc, err := optr.getCloudConfigFromConfigMap("openshift-config", infra.Spec.CloudConfig.Name, infra.Spec.CloudConfig.Key)

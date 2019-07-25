@@ -19,6 +19,7 @@ import (
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
+	additionalTrustBundleFile,
 	proxyFile,
 	clusterConfigConfigMapFile,
 	infraFile, networkFile,
@@ -76,9 +77,26 @@ func RenderBootstrap(
 	if !ok {
 		return fmt.Errorf("expected *configv1.Network found %T", obji)
 	}
+
 	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
 	if err != nil {
 		return err
+	}
+
+	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if additionalTrustBundleData != nil {
+		obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), additionalTrustBundleData)
+		if err != nil {
+			return err
+		}
+		additionalTrustBundle, ok := obji.(*corev1.ConfigMap)
+		if !ok {
+			return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+		}
+		spec.AdditionalTrustBundle = additionalTrustBundle.BinaryData["ca-bundle.crt"]
 	}
 
 	// if the cloudConfig is set in infra read the cloudConfigFile
