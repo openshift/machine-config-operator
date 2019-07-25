@@ -64,6 +64,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing available status: %v", err)
 	}
 
+	if err := optr.syncUpgradeableStatus(); err != nil {
+		return fmt.Errorf("error syncing upgradeble status: %v", err)
+	}
+
 	if err := optr.syncVersion(); err != nil {
 		return fmt.Errorf("error syncing version: %v", err)
 	}
