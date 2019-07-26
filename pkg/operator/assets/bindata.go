@@ -1610,7 +1610,7 @@ var _manifestsOpenstackCorednsCorefileTmpl = []byte(`. {
     cache 30
     reload
     hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
         fallthrough
     }
 }
