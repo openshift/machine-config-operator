@@ -9,8 +9,6 @@
 
 set -xeuo pipefail
 
-podman=${podman:-podman}
-
 oc -n openshift-cluster-version scale --replicas=0 deploy/cluster-version-operator
 if ! oc get -n openshift-image-registry route/image-registry &>/dev/null; then
     oc expose -n openshift-image-registry svc/image-registry
@@ -26,12 +24,6 @@ if ! curl -k --head https://"${registry}" >/dev/null; then
         exit 1
     fi
 fi
-builder_secretid=$(oc get -n openshift-machine-config-operator secret | egrep '^builder-token-'| head -1 | cut -f 1 -d ' ')
-echo "podman login ${registry} ..."
-set +x
-secret="$(oc get -n openshift-machine-config-operator -o json secret/${builder_secretid} | jq -r '.data.token' | base64 -d)"
-$podman login --tls-verify=false -u unused -p "${secret}" "${registry}"
-set -x
 
 # And allow everything to pull from our namespace
 oc -n openshift-machine-config-operator policy add-role-to-group registry-viewer system:anonymous
