@@ -423,7 +423,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:c94bba30993ebfe6eb036983b04ad6ac6b89377d2f6dfeb729f39109ddbda053"
+  digest = "1:c73e66fb08463eb969add0a45509c5233679396bfa1fe9422afc54838167e576"
   name = "github.com/openshift/api"
   packages = [
     "config/v1",
@@ -431,7 +431,7 @@
     "operator/v1alpha1",
   ]
   pruneopts = "NUT"
-  revision = "9525304a0adb725ab4a4a54539a1a6bf6cc343d3"
+  revision = "b7d4eb0fa1e0c1e03f97c97c08d0ef1f025c0838"
 
 [[projects]]
   branch = "master"
@@ -1280,7 +1280,6 @@
     "k8s.io/client-go/tools/leaderelection",
     "k8s.io/client-go/tools/leaderelection/resourcelock",
     "k8s.io/client-go/tools/record",
-    "k8s.io/client-go/util/cert",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/client-go/util/retry",
     "k8s.io/client-go/util/workqueue",
