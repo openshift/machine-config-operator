@@ -28,10 +28,9 @@ func TestCloudProvider(t *testing.T) {
 	}{{
 		platform: "aws",
 		res:      "aws",
-		// OpenStack cloud config is disabled
-		//}, {
-		//platform: "openstack",
-		//res:      "openstack",
+	}, {
+		platform: "openstack",
+		res:      "openstack",
 	}, {
 		platform: "baremetal",
 		res:      "",
