@@ -10,8 +10,5 @@ contents:
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
         cache 30
         reload
-        hosts /etc/coredns/api-int.hosts {{ .EtcdDiscoveryDomain }} {
-            {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .EtcdDiscoveryDomain }}
-            fallthrough
-        }
+        file /etc/coredns/node-dns-db {{ .EtcdDiscoveryDomain }}
     }
