@@ -88,7 +88,7 @@ func RenderBootstrap(
 		return err
 	}
 	if additionalTrustBundleData != nil {
-		obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), additionalTrustBundleData)
+		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), additionalTrustBundleData)
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func RenderBootstrap(
 		if !ok {
 			return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
 		}
-		spec.AdditionalTrustBundle = additionalTrustBundle.BinaryData["ca-bundle.crt"]
+		spec.AdditionalTrustBundle = []byte(additionalTrustBundle.Data["ca-bundle.crt"])
 	}
 
 	// if the cloudConfig is set in infra read the cloudConfigFile
