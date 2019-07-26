@@ -82,6 +82,10 @@ type ControllerConfigSpec struct {
 	// rootCAData specifies the root CA data
 	RootCAData []byte `json:"rootCAData"`
 
+	// additionalTrustBundle is a certificate bundle that will be added to the nodes
+	// trusted certificate store.
+	AdditionalTrustBundle []byte `json:"additionalTrustBundle"`
+
 	// TODO: Investigate using a ConfigMapNameReference for the PullSecret and OSImageURL
 
 	// pullSecret is the default pull secret that needs to be installed

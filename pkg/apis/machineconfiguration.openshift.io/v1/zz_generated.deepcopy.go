@@ -241,6 +241,11 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
 	}
+	if in.AdditionalTrustBundle != nil {
+		in, out := &in.AdditionalTrustBundle, &out.AdditionalTrustBundle
+		*out = make([]byte, len(*in))
+		copy(*out, *in)
+	}
 	if in.PullSecret != nil {
 		in, out := &in.PullSecret, &out.PullSecret
 		*out = new(corev1.ObjectReference)
