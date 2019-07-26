@@ -38,7 +38,7 @@ The `manifests` folder also contains global manifests at its root.
 Every time you modify any of the manifests in `manifests` please run the following command to update the `bindata` for Machine Config Operator.
 
 ```sh
-./hack/update-generated-bindata.sh
+make update
 ```
 
 # Unit Tests
@@ -89,21 +89,6 @@ dep ensure
 This [guide](https://golang.github.io/dep/docs/daily-dep.html) a great source to learn more about using `dep` is .
 
 For the sake of your fellow reviewers, commit vendored code separately from any other changes.
-
-# Turn on verbose mode for development
-
-Given you already have a cluster up and running, you can turn verbose on (level 4)
-for any given component with:
-
-```sh
-oc patch daemonset/machine-config-daemon --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--v=4"}]'
-```
-
-You can replace `daemonset/machine-config-daemon` with any other MCO component.
-If the component already has a `--v=` flag set, the command above still adds
-verbose and ignores the previous one already set.
-If you watch the pods, you'll notice your component restarting as well.
-Note this still requires [disabling the CVO](https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusterversion.md#disabling-the-cluster-version-operator).
 
 # Developing the MCD without building images
 
