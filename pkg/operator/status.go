@@ -125,10 +125,6 @@ func (optr *Operator) syncProgressingStatus() error {
 }
 
 func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1.ClusterOperatorStatusCondition) error {
-	existingCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, status.Type)
-	if existingCondition.Status != status.Status {
-		status.LastTransitionTime = metav1.Now()
-	}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, status)
 	optr.setOperatorStatusExtension(&co.Status, nil)
 	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
@@ -181,6 +177,27 @@ func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
 	return optr.updateStatus(co, coStatus)
 }
 
+// syncUpgradeableStatus applies the new condition to the mco's ClusterOperator object.
+func (optr *Operator) syncUpgradeableStatus() error {
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
+	}
+	if co == nil {
+		return nil
+	}
+	// Report default "Upgradeable=True" status. When known hazardous states for upgrades are
+	// determined, specific "Upgradeable=False" status can be added with messages for how admins
+	// can resolve it.
+	// [ref] https://github.com/openshift/cluster-version-operator/blob/8402d219f36fc79e03edf45918785376113f2cc1/docs/dev/clusteroperator.md#what-should-an-operator-report-with-clusteroperator-custom-resource
+	coStatus := configv1.ClusterOperatorStatusCondition{
+		Type:   configv1.OperatorUpgradeable,
+		Status: configv1.ConditionTrue,
+		Reason: "AsExpected",
+	}
+	return optr.updateStatus(co, coStatus)
+}
+
 func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {
 	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(optr.name, metav1.GetOptions{})
 	if meta.IsNoMatchError(err) {
@@ -204,9 +221,15 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	if err != nil {
 		return nil, err
 	}
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
-	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+		Type: configv1.OperatorUpgradeable, Status: configv1.ConditionUnknown, Reason: "NoData"})
+
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: optr.namespace},
