@@ -117,7 +117,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	poolsdir := filepath.Join(destDir, "machine-pools")
-	if err := os.MkdirAll(poolsdir, 0664); err != nil {
+	if err := os.MkdirAll(poolsdir, 0764); err != nil {
 		return err
 	}
 	for _, p := range fpools {
@@ -132,7 +132,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	configdir := filepath.Join(destDir, "machine-configs")
-	if err := os.MkdirAll(configdir, 0664); err != nil {
+	if err := os.MkdirAll(configdir, 0764); err != nil {
 		return err
 	}
 	for _, c := range gconfigs {
