@@ -1,0 +1,14 @@
+name: "openstack-cloud-config-symlink.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Create a symlink '/etc/kubernetes/cloud.conf' -> '/etc/kubernetes/cloud-config'
+  Before=kubelet.service
+  ConditionPathExists=!/etc/kubernetes/cloud-config
+
+  [Service]
+  ExecStart=/usr/bin/ln -s /etc/kubernetes/cloud.conf /etc/kubernetes/cloud-config
+  Type=oneshot
+
+  [Install]
+  WantedBy=multi-user.target
