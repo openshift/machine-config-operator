@@ -58,11 +58,13 @@ contents:
           }
           set -ex
           declare -r haproxy_sock="/var/run/haproxy/haproxy-master.sock"
+          declare -r haproxy_log_sock="/var/run/haproxy/haproxy-log.sock"
           export -f msg_handler
           export -f reload_haproxy
           if [ -S "$haproxy_sock" ]; then
               rm "$haproxy_sock"
           fi
+          socat UNIX-RECV:${haproxy_log_sock} STDOUT &
           socat UNIX-LISTEN:${haproxy_sock},fork system:'bash -c msg_handler'
         volumeMounts:
         - name: conf-dir
