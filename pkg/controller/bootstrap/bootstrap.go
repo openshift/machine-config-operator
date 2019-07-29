@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 
@@ -116,17 +116,21 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 
+	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, scheme.Scheme, scheme.Scheme)
+	encoder := scheme.Codecs.EncoderForVersion(serializer, v1.GroupVersion)
+
 	poolsdir := filepath.Join(destDir, "machine-pools")
 	if err := os.MkdirAll(poolsdir, 0764); err != nil {
 		return err
 	}
 	for _, p := range fpools {
-		b, err := yaml.Marshal(p)
+		buf := bytes.Buffer{}
+		err := encoder.Encode(p, &buf)
 		if err != nil {
 			return err
 		}
 		path := filepath.Join(poolsdir, fmt.Sprintf("%s.yaml", p.Name))
-		if err := ioutil.WriteFile(path, b, 0664); err != nil {
+		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
 			return err
 		}
 	}
@@ -136,12 +140,13 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 	for _, c := range gconfigs {
-		b, err := yaml.Marshal(c)
+		buf := bytes.Buffer{}
+		err := encoder.Encode(c, &buf)
 		if err != nil {
 			return err
 		}
 		path := filepath.Join(configdir, fmt.Sprintf("%s.yaml", c.Name))
-		if err := ioutil.WriteFile(path, b, 0664); err != nil {
+		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
 			return err
 		}
 	}
