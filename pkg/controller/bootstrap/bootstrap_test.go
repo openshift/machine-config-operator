@@ -1,11 +1,22 @@
 package bootstrap
 
 import (
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/vincent-petithory/dataurl"
+
 	"k8s.io/apimachinery/pkg/util/diff"
+
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/openshift/machine-config-operator/lib/resourceread"
 )
 
 func TestParseManifests(t *testing.T) {
@@ -116,4 +127,41 @@ data:
 		})
 	}
 
+}
+
+func TestBootstrapRun(t *testing.T) {
+	destDir, err := ioutil.TempDir("", "controller-bootstrap")
+	require.NoError(t, err)
+	defer os.RemoveAll(destDir)
+
+	bootstrap := New("../../../templates", "testdata/bootstrap", "testdata/bootstrap/machineconfigcontroller-pull-secret")
+	err = bootstrap.Run(destDir)
+	require.NoError(t, err)
+
+	for _, poolName := range []string{"master", "worker"} {
+		t.Run(poolName, func(t *testing.T) {
+			paths, err := filepath.Glob(filepath.Join(destDir, "machine-configs", fmt.Sprintf("rendered-%s-*.yaml", poolName)))
+			require.NoError(t, err)
+			require.Len(t, paths, 1)
+			mcBytes, err := ioutil.ReadFile(paths[0])
+			require.NoError(t, err)
+			mc, err := resourceread.ReadMachineConfigV1(mcBytes)
+			require.NoError(t, err)
+
+			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy
+			var registriesConfig *igntypes.File
+			for i := range mc.Spec.Config.Storage.Files {
+				f := &mc.Spec.Config.Storage.Files[i]
+				if f.Path == "/etc/containers/registries.conf" {
+					registriesConfig = f
+				}
+			}
+			require.NotNil(t, registriesConfig)
+			dataURL, err := dataurl.DecodeString(registriesConfig.Contents.Source)
+			require.NoError(t, err)
+			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
+			// maintained in pkg/controller/continer-runtime-config.
+			assert.Contains(t, string(dataURL.Data), "registry.mirror.example.com/ocp")
+		})
+	}
 }
