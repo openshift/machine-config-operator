@@ -654,4 +654,22 @@ func TestCustomPool(t *testing.T) {
 		}
 		t.Logf("Node %s has expected infra MC content", node.Name)
 	}
+
+	out, err = exec.Command("oc", "label", "node", infraNode.Name, "node-role.kubernetes.io/infra-").CombinedOutput()
+	require.Nil(t, err, "unable to remove infra label from node %s: %s", infraNode.Name, string(out))
+
+	workerMCP, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		node, err := cs.Nodes().Get(infraNode.Name, metav1.GetOptions{})
+		require.Nil(t, err)
+		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+	}
+	err = waitForPoolComplete(t, cs, "infra", renderedConfig)
+	require.Nil(t, err)
 }
