@@ -1,0 +1,10 @@
+apiVersion: operator.openshift.io/v1alpha1
+kind: ImageContentSourcePolicy
+metadata:
+  creationTimestamp: null
+  name: image-policy-0
+spec:
+  repositoryDigestMirrors:
+  - mirrors:
+    - registry.mirror.example.com/ocp
+    source: registry.product.example.org/ocp/4.2-DATE-VERSION
