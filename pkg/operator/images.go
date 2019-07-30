@@ -16,6 +16,12 @@ type Images struct {
 type RenderConfigImages struct {
 	MachineConfigOperator string `json:"machineConfigOperator"`
 	MachineOSContent      string `json:"machineOSContent"`
+	// These have to be named differently from the ones in ControllerConfigImages
+	// or we get errors about ambiguous selectors because both structs are
+	// combined in the Images struct.
+	KeepalivedBootstrap          string `json:"keepalived"`
+	CorednsBootstrap             string `json:"coredns"`
+	BaremetalRuntimeCfgBootstrap string `json:"baremetalRuntimeCfg"`
 }
 
 // ControllerConfigImages are image names used to render templates under ./templates/

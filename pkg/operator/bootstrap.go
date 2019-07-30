@@ -169,6 +169,26 @@ func RenderBootstrap(
 		name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
 		filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
 	}}
+
+	if infra.Status.PlatformStatus.BareMetal != nil {
+		manifests = append(manifests, []struct {
+			name     string
+			data     []byte
+			filename string
+		}{{
+			name:     "manifests/baremetal/coredns.yaml",
+			filename: "baremetal/manifests/coredns.yaml",
+		}, {
+			name:     "manifests/baremetal/coredns-corefile.tmpl",
+			filename: "baremetal/static-pod-resources/coredns/Corefile.tmpl",
+		}, {
+			name:     "manifests/baremetal/keepalived.yaml",
+			filename: "baremetal/manifests/keepalived.yaml",
+		}, {
+			name:     "manifests/baremetal/keepalived.conf.tmpl",
+			filename: "baremetal/static-pod-resources/keepalived/keepalived.conf.tmpl",
+		}}...)
+	}
 	for _, m := range manifests {
 		var b []byte
 		var err error
