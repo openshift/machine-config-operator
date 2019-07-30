@@ -1,0 +1,6 @@
+contents:
+  source: data:,
+  verification: {}
+filesystem: root
+mode: 420
+path: /etc/kubernetes/kubelet-ca.crt
