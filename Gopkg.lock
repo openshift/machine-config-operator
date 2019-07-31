@@ -467,11 +467,12 @@
   revision = "c44a8b61b9f46cd9e802384dfeda0bc9942db68a"
 
 [[projects]]
-  digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
+  branch = "master"
+  digest = "1:cdf4d8665620f7588f2edcc6cd88dcf5f9497f1dc4758eb49ace646e4d7c8f3d"
   name = "github.com/openshift/kubernetes-drain"
   packages = ["."]
   pruneopts = "NUT"
-  revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
+  revision = "d20a33f09dbf11716de3110d7759f384ba9ef7c3"
 
 [[projects]]
   branch = "master"
