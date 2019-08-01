@@ -16,6 +16,7 @@
 // manifests/machineconfigcontroller/sa.yaml
 // manifests/machineconfigdaemon/clusterrole.yaml
 // manifests/machineconfigdaemon/clusterrolebinding.yaml
+// manifests/machineconfigdaemon/cookie-secret.yaml
 // manifests/machineconfigdaemon/daemonset.yaml
 // manifests/machineconfigdaemon/events-clusterrole.yaml
 // manifests/machineconfigdaemon/events-rolebinding-default.yaml
@@ -1022,6 +1023,19 @@ rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs"]
   verbs: ["*"]
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
 `)
 
 func manifestsMachineconfigdaemonClusterroleYamlBytes() ([]byte, error) {
@@ -1051,6 +1065,21 @@ subjects:
 - kind: ServiceAccount
   namespace: {{.TargetNamespace}}
   name: machine-config-daemon
+---
+# Bind auth-delegator role to the MCD service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: machine-config-daemon
+  namespace: {{.TargetNamespace}}
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  namespace: {{.TargetNamespace}}
+  name: machine-config-daemon
 `)
 
 func manifestsMachineconfigdaemonClusterrolebindingYamlBytes() ([]byte, error) {
@@ -1064,6 +1093,31 @@ func manifestsMachineconfigdaemonClusterrolebindingYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "manifests/machineconfigdaemon/clusterrolebinding.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsMachineconfigdaemonCookieSecretYaml = []byte(`apiVersion: v1
+kind: Secret
+metadata:
+  name: cookie-secret
+  namespace: {{.TargetNamespace}}
+type: Opaque
+data:
+  cookie-secret: {{.GenerateProxyCookieSecret}}
+`)
+
+func manifestsMachineconfigdaemonCookieSecretYamlBytes() ([]byte, error) {
+	return _manifestsMachineconfigdaemonCookieSecretYaml, nil
+}
+
+func manifestsMachineconfigdaemonCookieSecretYaml() (*asset, error) {
+	bytes, err := manifestsMachineconfigdaemonCookieSecretYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/machineconfigdaemon/cookie-secret.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -1104,6 +1158,31 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: spec.nodeName
+      - name: oauth-proxy
+        image: {{.Images.OauthProxy}}
+        ports:
+        - containerPort: 9001
+          name: metrics
+          protocol: TCP
+        args:
+        - --https-address=:9001
+        - --provider=openshift
+        - --openshift-service-account=machine-config-daemon
+        - --upstream=http://127.0.0.1:8080
+        - --tls-cert=/etc/tls/private/tls.crt
+        - --tls-key=/etc/tls/private/tls.key
+        - --cookie-secret-file=/etc/tls/cookie-secret/cookie-secret
+        - '--openshift-sar={"resource": "namespaces", "verb": "get"}'
+        - '--openshift-delegate-urls={"/": {"resource": "namespaces", "verb": "get"}}'
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: proxy-tls
+        - mountPath: /etc/tls/cookie-secret
+          name: cookie-secret
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
@@ -1122,6 +1201,12 @@ spec:
         - name: rootfs
           hostPath:
             path: /
+        - name: proxy-tls
+          secret:
+            secretName: proxy-tls
+        - name: cookie-secret
+          secret:
+            secretName: cookie-secret
 `)
 
 func manifestsMachineconfigdaemonDaemonsetYamlBytes() ([]byte, error) {
@@ -2023,6 +2108,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigcontroller/sa.yaml":                              manifestsMachineconfigcontrollerSaYaml,
 	"manifests/machineconfigdaemon/clusterrole.yaml":                         manifestsMachineconfigdaemonClusterroleYaml,
 	"manifests/machineconfigdaemon/clusterrolebinding.yaml":                  manifestsMachineconfigdaemonClusterrolebindingYaml,
+	"manifests/machineconfigdaemon/cookie-secret.yaml":                       manifestsMachineconfigdaemonCookieSecretYaml,
 	"manifests/machineconfigdaemon/daemonset.yaml":                           manifestsMachineconfigdaemonDaemonsetYaml,
 	"manifests/machineconfigdaemon/events-clusterrole.yaml":                  manifestsMachineconfigdaemonEventsClusterroleYaml,
 	"manifests/machineconfigdaemon/events-rolebinding-default.yaml":          manifestsMachineconfigdaemonEventsRolebindingDefaultYaml,
@@ -2109,6 +2195,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"machineconfigdaemon": &bintree{nil, map[string]*bintree{
 			"clusterrole.yaml":                &bintree{manifestsMachineconfigdaemonClusterroleYaml, map[string]*bintree{}},
 			"clusterrolebinding.yaml":         &bintree{manifestsMachineconfigdaemonClusterrolebindingYaml, map[string]*bintree{}},
+			"cookie-secret.yaml":              &bintree{manifestsMachineconfigdaemonCookieSecretYaml, map[string]*bintree{}},
 			"daemonset.yaml":                  &bintree{manifestsMachineconfigdaemonDaemonsetYaml, map[string]*bintree{}},
 			"events-clusterrole.yaml":         &bintree{manifestsMachineconfigdaemonEventsClusterroleYaml, map[string]*bintree{}},
 			"events-rolebinding-default.yaml": &bintree{manifestsMachineconfigdaemonEventsRolebindingDefaultYaml, map[string]*bintree{}},
