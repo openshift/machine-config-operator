@@ -68,3 +68,7 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:baremetal-runtimecfg
+  - name: cli
+    from:
+      kind: DockerImage
+      name: quay.io/openshift/origin-cli:v4.0
