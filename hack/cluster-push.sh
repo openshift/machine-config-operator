@@ -29,7 +29,7 @@ fi
 builder_secretid=$(oc get -n openshift-machine-config-operator secret | egrep '^builder-token-'| head -1 | cut -f 1 -d ' ')
 secret="$(oc get -n openshift-machine-config-operator -o json secret/${builder_secretid} | jq -r '.data.token' | base64 -d)"
 
-if [[ "${podman}" =~ "docker" ]]; then
+if [[ "${podman:-}" =~ "docker" ]]; then
   imgstorage="docker-daemon:"
 else
   imgstorage="containers-storage:"
