@@ -384,6 +384,22 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		return err
 	}
 
+	// Only generate a new proxy cookie secret if the secret does not exist or if it has been deleted.
+	_, err = optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get("cookie-secret", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		cookieSecretBytes, err := renderAsset(config, "manifests/machineconfigdaemon/cookie-secret.yaml")
+		if err != nil {
+			return err
+		}
+		cookieSecret := resourceread.ReadSecretV1OrDie(cookieSecretBytes)
+		_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), cookieSecret)
+		if err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
 	mcdBytes, err := renderAsset(config, "manifests/machineconfigdaemon/daemonset.yaml")
 	if err != nil {
 		return err
