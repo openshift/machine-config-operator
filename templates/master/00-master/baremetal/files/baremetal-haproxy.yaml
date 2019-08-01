@@ -65,6 +65,9 @@ contents:
               rm "$haproxy_sock"
           fi
           socat UNIX-RECV:${haproxy_log_sock} STDOUT &
+          if [ -s "/etc/haproxy/haproxy.cfg" ]; then
+              /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid &
+          fi
           socat UNIX-LISTEN:${haproxy_sock},fork system:'bash -c msg_handler'
         volumeMounts:
         - name: conf-dir
