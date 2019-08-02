@@ -19,8 +19,8 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign "gopkg.in/coreos/ignition.v0/config/v2_2"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	"github.com/golang/glog"
 	drain "github.com/openshift/kubernetes-drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"

@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"

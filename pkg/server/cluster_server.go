@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

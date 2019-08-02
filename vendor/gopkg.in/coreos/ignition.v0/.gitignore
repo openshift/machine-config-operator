@@ -1,0 +1,4 @@
+gopath/
+bin/
+*.swp
+*.test

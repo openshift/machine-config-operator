@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	ign "github.com/coreos/ignition/config/v2_2"
+	ign "gopkg.in/coreos/ignition.v0/config/v2_2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

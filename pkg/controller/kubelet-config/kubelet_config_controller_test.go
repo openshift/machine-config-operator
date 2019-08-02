@@ -24,7 +24,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/controller/common"

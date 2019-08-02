@@ -1,8 +1,8 @@
 package v1
 
 import (
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign "gopkg.in/coreos/ignition.v0/config/v2_2"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 

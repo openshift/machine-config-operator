@@ -149,31 +149,6 @@
   version = "v20"
 
 [[projects]]
-  digest = "1:fb5b2aed0d774e210c1f2c0893e620cb3fa98957d3b925d0378f93b9613eb605"
-  name = "github.com/coreos/ignition"
-  packages = [
-    "config/shared/errors",
-    "config/shared/validations",
-    "config/util",
-    "config/v1",
-    "config/v1/types",
-    "config/v2_0",
-    "config/v2_0/types",
-    "config/v2_1",
-    "config/v2_1/types",
-    "config/v2_2",
-    "config/v2_2/types",
-    "config/v2_3_experimental/types",
-    "config/validate",
-    "config/validate/astjson",
-    "config/validate/astnode",
-    "config/validate/report",
-  ]
-  pruneopts = "NUT"
-  revision = "76107251acd117c6d3e5b4dae2b47f82f944984b"
-  version = "v0.26.0"
-
-[[projects]]
   digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
@@ -731,6 +706,31 @@
   version = "v1.22.0"
 
 [[projects]]
+  digest = "1:d1e3b952b9342a4217989390bd6f430b0017b400424cee507625fb0b635ec050"
+  name = "gopkg.in/coreos/ignition.v0"
+  packages = [
+    "config/shared/errors",
+    "config/shared/validations",
+    "config/util",
+    "config/v1",
+    "config/v1/types",
+    "config/v2_0",
+    "config/v2_0/types",
+    "config/v2_1",
+    "config/v2_1/types",
+    "config/v2_2",
+    "config/v2_2/types",
+    "config/v2_3_experimental/types",
+    "config/validate",
+    "config/validate/astjson",
+    "config/validate/astnode",
+    "config/validate/report",
+  ]
+  pruneopts = "T"
+  revision = "76107251acd117c6d3e5b4dae2b47f82f944984b"
+  version = "v0.26.0"
+
+[[projects]]
   digest = "1:2d1fbdc6777e5408cabeb02bf336305e724b925ff4546ded0fa8715a7267922a"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -1193,9 +1193,6 @@
     "github.com/containers/storage/pkg/config",
     "github.com/coreos/container-linux-config-transpiler/config",
     "github.com/coreos/container-linux-config-transpiler/config/types",
-    "github.com/coreos/ignition/config/v2_2",
-    "github.com/coreos/ignition/config/v2_2/types",
-    "github.com/coreos/ignition/config/validate",
     "github.com/davecgh/go-spew/spew",
     "github.com/ghodss/yaml",
     "github.com/golang/glog",
@@ -1227,6 +1224,9 @@
     "github.com/stretchr/testify/require",
     "github.com/vincent-petithory/dataurl",
     "golang.org/x/time/rate",
+    "gopkg.in/coreos/ignition.v0/config/v2_2",
+    "gopkg.in/coreos/ignition.v0/config/v2_2/types",
+    "gopkg.in/coreos/ignition.v0/config/validate",
     "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
     "k8s.io/api/policy/v1beta1",
@@ -1247,6 +1247,7 @@
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/runtime/serializer",
+    "k8s.io/apimachinery/pkg/runtime/serializer/json",
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/apimachinery/pkg/util/diff",
     "k8s.io/apimachinery/pkg/util/errors",

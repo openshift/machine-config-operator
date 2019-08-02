@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"

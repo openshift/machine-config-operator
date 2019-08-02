@@ -4,8 +4,8 @@ import (
 	"io/ioutil"
 	"reflect"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	validate "github.com/coreos/ignition/config/validate"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
+	validate "gopkg.in/coreos/ignition.v0/config/validate"
 	"github.com/golang/glog"
 	errors "github.com/pkg/errors"
 )

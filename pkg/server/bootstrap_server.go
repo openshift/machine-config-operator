@@ -6,7 +6,7 @@ import (
 	"os"
 	"path"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "gopkg.in/coreos/ignition.v0/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
