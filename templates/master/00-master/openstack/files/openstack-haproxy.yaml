@@ -1,0 +1,107 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/manifests/haproxy.yaml"
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: haproxy
+      namespace: openshift-kni-infra
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: kni-infra-api-lb
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/haproxy"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes/kubeconfig"
+      - name: run-dir
+        empty-dir: {}
+      - name: conf-dir
+        hostPath:
+          path: "/etc/haproxy"
+      - name: chroot-host
+        hostPath:
+          path: "/"
+      containers:
+      - name: haproxy
+        image: {{.Images.haproxyImage}}
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          reload_haproxy()
+          {
+            old_pids=$(pidof haproxy)
+            if [ -n "$old_pids" ]; then
+                /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid -x /var/lib/haproxy/run/haproxy.sock -sf $old_pids &
+            else
+                /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid &
+            fi
+          }
+
+          msg_handler()
+          {
+            while read -r line; do
+              echo "The client send: $line"  >&2
+              # currently only 'reload' msg is supported
+              if [ "$line" = reload ]; then
+                  reload_haproxy
+              fi
+            done
+          }
+          set -ex
+          declare -r haproxy_sock="/var/run/haproxy/haproxy-master.sock"
+          export -f msg_handler
+          export -f reload_haproxy
+          if [ -S "$haproxy_sock" ]; then
+              rm "$haproxy_sock"
+          fi
+          socat UNIX-LISTEN:${haproxy_sock},fork system:'bash -c msg_handler'
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/haproxy"
+        - name: run-dir
+          mountPath: "/var/run/haproxy"
+        livenessProbe:
+          initialDelaySeconds: 10
+          httpGet:
+            path: /healthz
+            port: 50936
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      - name: haproxy-monitor
+        securityContext:
+          privileged: true
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - monitor
+        - "/etc/kubernetes/kubeconfig"
+        - "/config/haproxy.cfg.tmpl"
+        - "/etc/haproxy/haproxy.cfg"
+        - "--api-vip"
+        - "{{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}"
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/haproxy"
+        - name: run-dir
+          mountPath: "/var/run/haproxy"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: chroot-host
+          mountPath: "/host"
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}

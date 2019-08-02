@@ -1,0 +1,75 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/manifests/mdns-publisher.yaml"
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: mdns-publisher
+      namespace: openshift-kni-infra
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: kni-infra-mdns
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/mdns"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes/kubeconfig"
+      - name: conf-dir
+        hostPath:
+          path: "/etc/mdns"
+      initContainers:
+      - name: render-config
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - runtimecfg
+        - render
+        - "/etc/kubernetes/kubeconfig"
+        - "--api-vip"
+        - "{{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}"
+        - "--dns-vip"
+        - "{{ .Infra.Status.PlatformStatus.OpenStack.NodeDNSIP }}"
+        - "--ingress-vip"
+        - "{{ .Infra.Status.PlatformStatus.OpenStack.IngressIP }}"
+        - "/config"
+        - "--out-dir"
+        - "/etc/mdns"
+        resources: {}
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: conf-dir
+          mountPath: "/etc/mdns"
+        imagePullPolicy: IfNotPresent
+      containers:
+      - name: mdns-publisher
+        image: {{.Images.mdnsPublisherImage}}
+        args:
+        - "--debug"
+        resources:
+          requests:
+            cpu: 150m
+            memory: 1Gi
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/mdns"
+        livenessProbe:
+          exec:
+            command:
+            - pgrep
+            - mdns-publisher
+          initialDelaySeconds: 10
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}
