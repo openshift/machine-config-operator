@@ -4,23 +4,10 @@ spec:
   tags:
   # machine-config-operator is the new master mco image that contains all of the 
   # component images:mco, mcc, mcs, mcd & setup etcd
-  # TO-DO: in future PR other component images will be deleted
   - name: machine-config-operator
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:machine-config-operator
-  - name: machine-config-controller
-    from:
-      kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:machine-config-controller
-  - name: machine-config-server
-    from:
-      kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:machine-config-server
-  - name: machine-config-daemon
-    from:
-      kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:machine-config-daemon
   - name: etcd
     from:
       kind: DockerImage
@@ -29,10 +16,6 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:pod
-  - name: setup-etcd-environment
-    from:
-      kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:setup-etcd-environment
   # This one is special, it's the OS payload
   # https://github.com/openshift/machine-config-operator/issues/183
   # See the machine-config-osimageurl configmap.
