@@ -10,6 +10,25 @@
   version = "v0.3.1"
 
 [[projects]]
+  digest = "1:dc9a4d45d78cfb93260316db90bd0647ad20c1af5ce7ccd1bbc4fa417cb40ea7"
+  name = "github.com/InVisionApp/go-health"
+  packages = [
+    ".",
+    "checkers",
+  ]
+  pruneopts = "NUT"
+  revision = "06e1878ab5a8acf6e841861c6cbfcc4d3036add0"
+  version = "v2.1.0"
+
+[[projects]]
+  digest = "1:38e80fb6f25ad94a601b2e7bc7718517ada1eded101fb0577bc9e214e5d7ea33"
+  name = "github.com/InVisionApp/go-logger"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "c377c6c3f6a48a6366517e86f77bafea18454ff1"
+  version = "v1.0.1"
+
+[[projects]]
   digest = "1:25870183293a3fb61cc9afd060a61d63a486f091db72af01a8ea3449f5ca530d"
   name = "github.com/Masterminds/goutils"
   packages = ["."]
@@ -1184,6 +1203,8 @@
   analyzer-version = 1
   input-imports = [
     "github.com/BurntSushi/toml",
+    "github.com/InVisionApp/go-health",
+    "github.com/InVisionApp/go-health/checkers",
     "github.com/Masterminds/sprig",
     "github.com/apparentlymart/go-cidr/cidr",
     "github.com/ashcrow/osrelease",
@@ -1247,6 +1268,7 @@
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/runtime/serializer",
+    "k8s.io/apimachinery/pkg/runtime/serializer/json",
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/apimachinery/pkg/util/diff",
     "k8s.io/apimachinery/pkg/util/errors",
