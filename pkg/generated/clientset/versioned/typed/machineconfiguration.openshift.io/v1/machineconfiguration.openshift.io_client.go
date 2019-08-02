@@ -14,7 +14,6 @@ type MachineconfigurationV1Interface interface {
 	ContainerRuntimeConfigsGetter
 	ControllerConfigsGetter
 	KubeletConfigsGetter
-	MCOConfigsGetter
 	MachineConfigsGetter
 	MachineConfigPoolsGetter
 }
@@ -34,10 +33,6 @@ func (c *MachineconfigurationV1Client) ControllerConfigs() ControllerConfigInter
 
 func (c *MachineconfigurationV1Client) KubeletConfigs() KubeletConfigInterface {
 	return newKubeletConfigs(c)
-}
-
-func (c *MachineconfigurationV1Client) MCOConfigs(namespace string) MCOConfigInterface {
-	return newMCOConfigs(c, namespace)
 }
 
 func (c *MachineconfigurationV1Client) MachineConfigs() MachineConfigInterface {

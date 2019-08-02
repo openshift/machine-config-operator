@@ -40,20 +40,20 @@ required = [
     unused-packages = false
 
 [[constraint]]
-  name = "github.com/stretchr/testify"
-  version = "v1.3.0"
-
-[[constraint]]
   name = "github.com/apparentlymart/go-cidr"
   version = "1.0.0"
 
 [[constraint]]
-  name = "github.com/google/renameio"
-  version = "v0.1.0"
-
-[[constraint]]
   name = "github.com/ashcrow/osrelease"
   version = "1.0.0"
+
+[[constraint]]
+  name = "github.com/containers/image"
+  version = "v2.0.0"
+
+[[constraint]]
+  name = "github.com/containers/storage"
+  revision = "0b67c788f2d234c9fecc3d372d93160869381166"
 
 [[constraint]]
   name = "github.com/coreos/container-linux-config-transpiler"
@@ -70,6 +70,10 @@ required = [
 [[constraint]]
   name = "github.com/golang/glog"
   revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
+
+[[constraint]]
+  name = "github.com/google/renameio"
+  version = "v0.1.0"
 
 [[constraint]]
   name = "github.com/Masterminds/sprig"
@@ -94,6 +98,10 @@ required = [
 [[constraint]]
   name = "github.com/spf13/cobra"
   version = "v0.0.3"
+
+[[constraint]]
+  name = "github.com/stretchr/testify"
+  version = "v1.3.0"
 
 [[constraint]]
   name = "github.com/vincent-petithory/dataurl"
@@ -144,18 +152,12 @@ required = [
   name = "k8s.io/apimachinery"
   version = "kubernetes-1.14.0"
 
+# TODO: include why the override is required
 [[override]]
   name = "k8s.io/apiserver"
   version = "kubernetes-1.14.0"
 
-[[constraint]]
-  revision = "0b67c788f2d234c9fecc3d372d93160869381166"
-  name = "github.com/containers/storage"
-
+# TODO: include why the override is required
 [[override]]
   name = "github.com/opencontainers/runtime-spec"
   revision = "29686dbc5559d93fb1ef402eeda3e35c38d75af4"
-
-[[constraint]]
-  name = "github.com/containers/image"
-  version = "v2.0.0"
