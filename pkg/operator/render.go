@@ -25,6 +25,7 @@ type renderConfig struct {
 	APIServerURL           string
 	Images                 *RenderConfigImages
 	KubeAPIServerServingCA string
+	Infra                  configv1.Infrastructure
 }
 
 func renderAsset(config *renderConfig, path string) ([]byte, error) {

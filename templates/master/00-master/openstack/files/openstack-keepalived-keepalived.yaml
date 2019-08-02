@@ -1,0 +1,73 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
+contents:
+  inline: |
+    vrrp_script chk_ocp {
+        script "/usr/bin/curl -o /dev/null -kLs https://0:6443/readyz"
+        interval 1
+        weight 50
+    }
+    vrrp_script chk_dns {
+        script "/usr/bin/host -t SRV _etcd-server-ssl._tcp.{{ .EtcdDiscoveryDomain }} localhost"
+        interval 1
+        weight 50
+    }
+    # TODO: Improve this check. The port is assumed to be alive.
+    # Need to assess what is the ramification if the port is not there.
+    vrrp_script chk_ingress {
+        script "/usr/bin/curl -o /dev/null -kLs http://0:1936/healthz"
+        interval 1
+        weight 50
+    }
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_API {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.APIVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_api_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        }
+        track_script {
+            chk_ocp
+        }
+    }
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_DNS {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.DNSVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_dns_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.DNSVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        }
+        track_script {
+            chk_dns
+        }
+    }
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        authentication {
+            auth_type PASS
+            auth_pass cluster_uuid_ingress_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        }
+        track_script {
+            chk_ingress
+        }
+    }
