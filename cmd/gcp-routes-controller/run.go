@@ -82,6 +82,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 
 	errCh := make(chan error)
 	tracker := &healthTracker{
+		state:            unknownTrackerState,
 		ErrCh:            errCh,
 		SuccessThreshold: 2,
 		FailureThreshold: 10,
