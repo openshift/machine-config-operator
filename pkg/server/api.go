@@ -48,7 +48,7 @@ func (a *APIServer) Serve() {
 		Handler: a.handler,
 	}
 
-	glog.Info("launching server")
+	glog.Infof("Launching server on %s", mcs.Addr)
 	if a.insecure {
 		// Serve a non TLS server.
 		if err := mcs.ListenAndServe(); err != http.ErrServerClosed {
