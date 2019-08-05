@@ -36,6 +36,7 @@ var (
 		kubeClientAgentImage      string
 		mcoImage                  string
 		mdnsPublisherImage        string
+		oauthProxyImage           string
 		networkConfigFile         string
 		oscontentImage            string
 		pullSecretFile            string
@@ -76,6 +77,8 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mdnsPublisherImage, "mdns-publisher-image", "", "Image for mdns-publisher.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
+
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -92,6 +95,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			KeepalivedBootstrap:          bootstrapOpts.keepalivedImage,
 			CorednsBootstrap:             bootstrapOpts.corednsImage,
 			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
+			OauthProxy:                   bootstrapOpts.oauthProxyImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
 			Etcd:                bootstrapOpts.etcdImage,
