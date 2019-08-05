@@ -73,6 +73,8 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	httpCheck, err := checkers.NewHTTP(&checkers.HTTPConfig{
 		URL: uri,
 		Client: &http.Client{Transport: &http.Transport{
+			// #nosec G402
+			// health checks to https endpoints can use InsecureSkipVerify.
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}},
 	})
