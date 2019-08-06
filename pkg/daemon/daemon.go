@@ -154,7 +154,7 @@ var (
 )
 
 // rebootCommand creates a new transient systemd unit to reboot the system.
-// We explictily try to stop kubelet.service first, before anything else; this
+// We explicitly try to stop kubelet.service first, before anything else; this
 // way we ensure the rest of system stays running, because kubelet may need
 // to do "graceful" shutdown by e.g. de-registering with a load balancer.
 // However note we use `;` instead of `&&` so we keep rebooting even
@@ -365,7 +365,7 @@ func (dn *Daemon) syncNode(key string) error {
 
 	// Take care of the very first sync of the MCD on a node.
 	// This loads the node annotation from the bootstrap (if we're really bootstrapping)
-	// and then proceed to checking the state of the node, which includes
+	// and then proceeds to check the state of the node, which includes
 	// finalizing an update and/or reconciling the current and desired machine configs.
 	if dn.booting {
 		if err := dn.checkStateOnFirstRun(); err != nil {
@@ -934,8 +934,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 				return err
 			}
 		}
-		// if we're degraded here, it means we got an error likely on startup and we retried
-		// if it's the case, clear it out
+		// If we're degraded here, it means we got an error likely on startup and we retried.
+		// If that's the case, clear it out.
 		if state.state == constants.MachineConfigDaemonStateDegraded {
 			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
 				return errors.Wrap(err, "error setting node's state to Done")
@@ -1184,7 +1184,7 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 }
 
 // checkUnits validates the contents of all the units in the
-// target config and retursn true if they match.
+// target config and returns true if they match.
 func checkUnits(units []igntypes.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
