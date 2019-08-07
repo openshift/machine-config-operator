@@ -198,5 +198,15 @@ func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[st
 	for _, featDisabled := range set.Disabled {
 		rv[featDisabled] = false
 	}
+	// The CustomNoUpgrade options can potentially override our defaults. This is
+	// expected behavior and can potentially break a cluster.
+	if features.Spec.FeatureSet == osev1.CustomNoUpgrade && features.Spec.CustomNoUpgrade != nil {
+		for _, featEnabled := range features.Spec.CustomNoUpgrade.Enabled {
+			rv[featEnabled] = true
+		}
+		for _, featDisabled := range features.Spec.CustomNoUpgrade.Disabled {
+			rv[featDisabled] = false
+		}
+	}
 	return &rv, nil
 }
