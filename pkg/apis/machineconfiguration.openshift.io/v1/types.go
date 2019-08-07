@@ -11,32 +11,6 @@ import (
 )
 
 // +genclient
-// +genclient:noStatus
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// MCOConfig describes configuration for MachineConfigOperator.
-type MCOConfig struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec MCOConfigSpec `json:"spec"`
-}
-
-// MCOConfigSpec is the spec for MCOConfig resource.
-type MCOConfigSpec struct {
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// MCOConfigList is a list of MCOConfig resources
-type MCOConfigList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
-
-	Items []MCOConfig `json:"items"`
-}
-
-// +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
