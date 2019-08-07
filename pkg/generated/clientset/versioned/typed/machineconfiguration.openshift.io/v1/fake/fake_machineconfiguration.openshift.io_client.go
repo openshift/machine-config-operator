@@ -24,10 +24,6 @@ func (c *FakeMachineconfigurationV1) KubeletConfigs() v1.KubeletConfigInterface 
 	return &FakeKubeletConfigs{c}
 }
 
-func (c *FakeMachineconfigurationV1) MCOConfigs(namespace string) v1.MCOConfigInterface {
-	return &FakeMCOConfigs{c, namespace}
-}
-
 func (c *FakeMachineconfigurationV1) MachineConfigs() v1.MachineConfigInterface {
 	return &FakeMachineConfigs{c}
 }
