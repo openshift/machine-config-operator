@@ -155,11 +155,34 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
+	var trustBundle []byte
+	certPool := x509.NewCertPool()
+	// this is the generic trusted bundle for things like self-signed registries.
 	additionalTrustBundle, err := optr.getCAsFromConfigMap("openshift-config", "user-ca-bundle", "ca-bundle.crt")
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	spec.AdditionalTrustBundle = additionalTrustBundle
+	if len(additionalTrustBundle) > 0 {
+		if !certPool.AppendCertsFromPEM(additionalTrustBundle) {
+			return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", "openshift-config", "user-ca-bundle")
+		}
+		trustBundle = append(trustBundle, additionalTrustBundle...)
+	}
+
+	// this is the trusted bundle specific for proxy things and can differ from the generic one above.
+	if proxy != nil && proxy.Spec.TrustedCA.Name != "" && proxy.Spec.TrustedCA.Name != "user-ca-bundle" {
+		proxyTrustBundle, err := optr.getCAsFromConfigMap("openshift-config", proxy.Spec.TrustedCA.Name, "ca-bundle.crt")
+		if err != nil {
+			return err
+		}
+		if len(proxyTrustBundle) > 0 {
+			if !certPool.AppendCertsFromPEM(proxyTrustBundle) {
+				return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", "openshift-config", proxy.Spec.TrustedCA.Name)
+			}
+			trustBundle = append(trustBundle, proxyTrustBundle...)
+		}
+	}
+	spec.AdditionalTrustBundle = trustBundle
 
 	// if the cloudConfig is set in infra read the cloud config reference
 	if infra.Spec.CloudConfig.Name != "" {
