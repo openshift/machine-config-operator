@@ -155,7 +155,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
-	additionalTrustBundle, err := optr.getCAsFromConfigMap("openshift-config-managed", "user-ca-bundle", "ca-bundle.crt")
+	additionalTrustBundle, err := optr.getCAsFromConfigMap("openshift-config", "user-ca-bundle", "ca-bundle.crt")
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
