@@ -121,7 +121,7 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 // waitForPoolComplete polls a pool until it has completed an update to target
 func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
 	startTime := time.Now()
-	if err := wait.Poll(2*time.Second, 10*time.Minute, func() (bool, error) {
+	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -145,7 +145,7 @@ func TestMCDeployed(t *testing.T) {
 	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	// TODO: bring this back to 10
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 3; i++ {
 		startTime := time.Now()
 		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
 
