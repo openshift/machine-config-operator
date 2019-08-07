@@ -38,8 +38,14 @@ import (
 
 // NameSystems returns the name system used by the generators in this package.
 func NameSystems() namer.NameSystems {
+	// If you change this, make sure you get the other instances in listers and informers
 	pluralExceptions := map[string]string{
-		"Endpoints": "Endpoints",
+		"DNS":                        "DNSes",
+		"DNSList":                    "DNSList",
+		"Endpoints":                  "Endpoints",
+		"Features":                   "Features",
+		"FeaturesList":               "FeaturesList",
+		"SecurityContextConstraints": "SecurityContextConstraints",
 	}
 	lowercaseNamer := namer.NewAllLowercasePluralNamer(pluralExceptions)
 
@@ -49,6 +55,18 @@ func NameSystems() namer.NameSystems {
 			// you can put your fully qualified package like
 			// to generate a name that doesn't conflict with your group.
 			// "k8s.io/apis/events/v1beta1.Event": "EventResource"
+			"github.com/openshift/origin/pkg/build/apis/build/v1.Build":          "BuildResource",
+			"github.com/openshift/origin/pkg/build/apis/build.Build":             "BuildResource",
+			"github.com/openshift/origin/pkg/image/apis/image/v1.Image":          "ImageResource",
+			"github.com/openshift/origin/pkg/image/apis/image.Image":             "ImageResource",
+			"github.com/openshift/origin/pkg/project/apis/project/v1.Project":    "ProjectResource",
+			"github.com/openshift/origin/pkg/project/apis/project.Project":       "ProjectResource",
+			"github.com/openshift/origin/pkg/route/apis/route/v1.Route":          "RouteResource",
+			"github.com/openshift/origin/pkg/route/apis/route.Route":             "RouteResource",
+			"github.com/openshift/origin/pkg/template/apis/template/v1.Template": "TemplateResource",
+			"github.com/openshift/origin/pkg/template/apis/template.Template":    "TemplateResource",
+			"github.com/openshift/origin/pkg/user/apis/user/v1.User":             "UserResource",
+			"github.com/openshift/origin/pkg/user/apis/user.User":                "UserResource",
 		},
 		KeyFunc: func(t *types.Type) string {
 			return t.Name.Package + "." + t.Name.Name
@@ -61,6 +79,18 @@ func NameSystems() namer.NameSystems {
 			// you can put your fully qualified package like
 			// to generate a name that doesn't conflict with your group.
 			// "k8s.io/apis/events/v1beta1.Event": "eventResource"
+			"github.com/openshift/origin/pkg/build/apis/build/v1.Build":          "buildResource",
+			"github.com/openshift/origin/pkg/build/apis/build.Build":             "buildResource",
+			"github.com/openshift/origin/pkg/image/apis/image/v1.Image":          "imageResource",
+			"github.com/openshift/origin/pkg/image/apis/image.Image":             "imageResource",
+			"github.com/openshift/origin/pkg/project/apis/project/v1.Project":    "projectResource",
+			"github.com/openshift/origin/pkg/project/apis/project.Project":       "projectResource",
+			"github.com/openshift/origin/pkg/route/apis/route/v1.Route":          "routeResource",
+			"github.com/openshift/origin/pkg/route/apis/route.Route":             "routeResource",
+			"github.com/openshift/origin/pkg/template/apis/template/v1.Template": "templateResource",
+			"github.com/openshift/origin/pkg/template/apis/template.Template":    "templateResource",
+			"github.com/openshift/origin/pkg/user/apis/user/v1.User":             "userResource",
+			"github.com/openshift/origin/pkg/user/apis/user.User":                "userResource",
 		},
 		KeyFunc: func(t *types.Type) string {
 			return t.Name.Package + "." + t.Name.Name

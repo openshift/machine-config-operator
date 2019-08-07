@@ -747,7 +747,8 @@
   version = "v2.2.2"
 
 [[projects]]
-  digest = "1:a937ed4322409fa22924f02124fd0727c19662f73cf15406646d19bdce972df2"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:2c08d0d7d6648191c650fdea93fc307fc189f125fa5601eafce44b4a0eec0a29"
   name = "k8s.io/api"
   packages = [
     "admissionregistration/v1beta1",
@@ -788,11 +789,12 @@
     "storage/v1beta1",
   ]
   pruneopts = "NUT"
-  revision = "40a48860b5abbba9aa891b02b32da429b08d96a0"
-  version = "kubernetes-1.14.0"
+  revision = "5b6d4ec96213966713b65f5d4aa1ee1b765f2c7c"
+  source = "https://github.com/openshift/kubernetes-api"
 
 [[projects]]
-  digest = "1:31899aedda94c441afbb45de7dd89a80c199c7574898a43bc8fddc77f24bf811"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:d639bf3302aa4b935f2370b900b62ded7be7f3b5b1087a5f88ab06ac4172d5df"
   name = "k8s.io/apiextensions-apiserver"
   packages = [
     "pkg/apis/apiextensions",
@@ -808,11 +810,12 @@
     "pkg/features",
   ]
   pruneopts = "NUT"
-  revision = "53c4693659ed354d76121458fb819202dd1635fa"
-  version = "kubernetes-1.14.0"
+  revision = "ef1fb026cb0ebf50e765bba38c951dc095f7fddf"
+  source = "https://github.com/openshift/kubernetes-apiextensions-apiserver"
 
 [[projects]]
-  digest = "1:b57b75c38691f07a09996a86f49e17c552aa0a6c163ef37dc392a2e775de9981"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:a9e60f70fc4b6c5e1bc52b0f899d12b2861c3df0a60ec3a2a9399695bc103722"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -863,10 +866,11 @@
     "third_party/forked/golang/reflect",
   ]
   pruneopts = "NUT"
-  revision = "d7deff9243b165ee192f5551710ea4285dcfd615"
-  version = "kubernetes-1.14.0"
+  revision = "eab709b58ad6d98573ce6daddb9f6d17487efe6c"
+  source = "https://github.com/openshift/kubernetes-apimachinery"
 
 [[projects]]
+  branch = "origin-4.2-kubernetes-1.14.0"
   digest = "1:fe60b6d8b8208ecb0e70e97963fef38ce27443c6934ec00a37f80a3f9372f42b"
   name = "k8s.io/apiserver"
   packages = [
@@ -874,11 +878,12 @@
     "pkg/util/feature",
   ]
   pruneopts = "NUT"
-  revision = "8b27c41bdbb11ff103caa673315e097bf0289171"
-  version = "kubernetes-1.14.0"
+  revision = "392b5b3e5888849e57618271955c58ccf2f44351"
+  source = "https://github.com/openshift/kubernetes-apiserver"
 
 [[projects]]
-  digest = "1:85f25c196bc700354adc889a397f6550105865ad2588704094276f78f6e9d9ba"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:ad463c4a8237123f1a307a50ce81f7a8b5f3fb24788204fb1533fbc7c680f292"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -1072,8 +1077,8 @@
     "util/workqueue",
   ]
   pruneopts = "NUT"
-  revision = "6ee68ca5fd8355d024d02f9db0b3b667e8357a0f"
-  version = "v11.0.0"
+  revision = "70952d66b5d131aa0142ceaebfe6d6da51178878"
+  source = "https://github.com/openshift/kubernetes-client-go"
 
 [[projects]]
   branch = "release-1.14"
@@ -1084,7 +1089,8 @@
   revision = "622ee4517beeb1ac87477a2a8b1a56ffce1f193d"
 
 [[projects]]
-  digest = "1:742ce70d2c6de0f02b5331a25d4d549f55de6b214af22044455fd6e6b451cad9"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:7c3ffb9947e4d037fe7679b20ceaf9194cda39595b9e0cb685b6ad722c290b6c"
   name = "k8s.io/code-generator"
   packages = [
     "cmd/client-gen",
@@ -1099,8 +1105,8 @@
     "pkg/util",
   ]
   pruneopts = ""
-  revision = "50b561225d70b3eb79a1faafd3dfe7b1a62cbe73"
-  version = "kubernetes-1.14.0"
+  revision = "f40157d9638d05ebf65421a9bbad5a7f68878b65"
+  source = "https://github.com/openshift/kubernetes-code-generator"
 
 [[projects]]
   digest = "1:ef304112ae16a07050b858a8e82ccfe9d9e0abc20aef1e55b6543b4b6df54eee"
@@ -1132,15 +1138,17 @@
   revision = "33be087ad058f99c78e067996202b60230737e49"
 
 [[projects]]
-  digest = "1:c315e859e0da8b226202d60b2df6c48b17568468503ba080b4e3a30ad99887b4"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:3dc839e83d8d6a188cab5221df953045b81ac393ba15885987c8880d6b7bdb3f"
   name = "k8s.io/kubelet"
   packages = ["config/v1beta1"]
   pruneopts = "NUT"
-  revision = "f6da02f583256d1a15cc44a101c80bfa2080a46f"
-  version = "kubernetes-1.14.0"
+  revision = "60e43eba885b922ab5b385950859964a534af90a"
+  source = "https://github.com/openshift/kubernetes-kubelet"
 
 [[projects]]
-  digest = "1:0bd5372fbaa570bdfc706fe659328f88d9016a756ce41dbb5c292ea3a3ec8a21"
+  branch = "origin-4.2-kubernetes-1.14.0"
+  digest = "1:1602eb63f2e599439ea25d55284c3a5a29e09e7c8d83f5f2d768709b6536872d"
   name = "k8s.io/kubernetes"
   packages = [
     "pkg/apis/core",
@@ -1156,7 +1164,8 @@
     "pkg/master/ports",
   ]
   pruneopts = "NUT"
-  revision = "v1.14.0"
+  revision = "f1e14d6cbefa18f3680fa91510a35c04b8706610"
+  source = "https://github.com/openshift/kubernetes"
 
 [[projects]]
   branch = "master"
@@ -1247,6 +1256,7 @@
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/runtime/serializer",
+    "k8s.io/apimachinery/pkg/runtime/serializer/json",
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/apimachinery/pkg/util/diff",
     "k8s.io/apimachinery/pkg/util/errors",
