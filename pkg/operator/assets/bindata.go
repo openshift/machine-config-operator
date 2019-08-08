@@ -1822,6 +1822,9 @@ spec:
       path: "/etc/kubernetes/kubeconfig"
   - name: conf-dir
     empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
   initContainers:
   - name: render-config
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
@@ -1838,6 +1841,8 @@ spec:
     - "/config"
     - "--out-dir"
     - "/etc/keepalived"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
     resources: {}
     volumeMounts:
     - name: resource-dir
@@ -1846,6 +1851,8 @@ spec:
       mountPath: "/etc/kubernetes/kubeconfig"
     - name: conf-dir
       mountPath: "/etc/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
     imagePullPolicy: IfNotPresent
   containers:
   - name: keepalived
