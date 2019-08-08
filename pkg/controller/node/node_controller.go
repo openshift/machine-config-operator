@@ -384,16 +384,18 @@ func (ctrl *Controller) addNode(obj interface{}) {
 		ctrl.reconcileMaster(node)
 	}
 
-	pool, err := ctrl.getPoolForNode(node)
+	pools, err := ctrl.getPoolsForNode(node)
 	if err != nil {
-		glog.Errorf("error finding pools for node: %v", err)
+		glog.Errorf("error finding pools for node %s: %v", node.Name, err)
 		return
 	}
-	if pool == nil {
+	if pools == nil {
 		return
 	}
 	glog.V(4).Infof("Node %s added", node.Name)
-	ctrl.enqueueMachineConfigPool(pool)
+	for _, pool := range pools {
+		ctrl.enqueueMachineConfigPool(pool)
+	}
 }
 
 func (ctrl *Controller) updateNode(old, cur interface{}) {
@@ -408,7 +410,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		ctrl.reconcileMaster(curNode)
 	}
 
-	pool, err := ctrl.getPoolForNode(curNode)
+	pool, err := ctrl.getPrimaryPoolForNode(curNode)
 	if err != nil {
 		glog.Errorf("error finding pool for node: %v", err)
 		return
@@ -461,7 +463,17 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		return
 	}
 
-	ctrl.enqueueMachineConfigPool(pool)
+	pools, err := ctrl.getPoolsForNode(curNode)
+	if err != nil {
+		glog.Errorf("error finding pools for node: %v", err)
+		return
+	}
+	if pools == nil {
+		return
+	}
+	for _, pool := range pools {
+		ctrl.enqueueMachineConfigPool(pool)
+	}
 }
 
 func (ctrl *Controller) deleteNode(obj interface{}) {
@@ -480,22 +492,24 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 		}
 	}
 
-	pool, err := ctrl.getPoolForNode(node)
+	pools, err := ctrl.getPoolsForNode(node)
 	if err != nil {
 		glog.Errorf("error finding pools for node: %v", err)
 		return
 	}
-	if pool == nil {
+	if pools == nil {
 		return
 	}
 	glog.V(4).Infof("Node %s delete", node.Name)
-	ctrl.enqueueMachineConfigPool(pool)
+	for _, pool := range pools {
+		ctrl.enqueueMachineConfigPool(pool)
+	}
 }
 
-// getPoolForNode chooses the MachineConfigPool that should be used for a given node.
+// getPoolsForNode chooses the MachineConfigPools that should be used for a given node.
 // It disambiguates in the case where e.g. a node has both master/worker roles applied,
-// and where a custom role may be used.
-func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfigPool, error) {
+// and where a custom role may be used. It returns a slice of all the pools the node belongs to.
+func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineConfigPool, error) {
 	pl, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
@@ -541,16 +555,28 @@ func (ctrl *Controller) getPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfig
 			return nil, fmt.Errorf("node %s has both master role and custom role %s", node.Name, custom[0].Name)
 		}
 		// One custom role, let's use its pool
-		return custom[0], nil
+		return []*mcfgv1.MachineConfigPool{custom[0], worker}, nil
 	} else if master != nil {
 		// In the case where a node is both master/worker, have it live under
 		// the master pool. This occurs in CodeReadyContainers and general
 		// "single node" deployments, which one may want to do for testing bare
 		// metal, etc.
-		return master, nil
+		return []*mcfgv1.MachineConfigPool{master}, nil
 	}
 	// Otherwise, it's a worker with no custom roles.
-	return worker, nil
+	return []*mcfgv1.MachineConfigPool{worker}, nil
+}
+
+// getPrimaryPoolForNode uses getPoolsForNode and returns the first one which is the one the node targets
+func (ctrl *Controller) getPrimaryPoolForNode(node *corev1.Node) (*mcfgv1.MachineConfigPool, error) {
+	pools, err := ctrl.getPoolsForNode(node)
+	if err != nil {
+		return nil, err
+	}
+	if pools == nil {
+		return nil, nil
+	}
+	return pools[0], nil
 }
 
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
@@ -708,9 +734,12 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 
 	nodes := []*corev1.Node{}
 	for _, n := range initialNodes {
-		p, err := ctrl.getPoolForNode(n)
+		p, err := ctrl.getPrimaryPoolForNode(n)
 		if err != nil {
 			glog.Warningf("can't get pool for node %q: %v", n.Name, err)
+			continue
+		}
+		if p == nil {
 			continue
 		}
 		if p.Name != pool.Name {

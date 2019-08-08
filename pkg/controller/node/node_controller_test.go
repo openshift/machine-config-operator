@@ -28,8 +28,8 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
-	"github.com/stretchr/testify/assert"
 	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -263,7 +263,7 @@ func TestGetNodesForPool(t *testing.T) {
 	}
 }
 
-func TestGetPoolForNode(t *testing.T) {
+func TestGetPrimaryPoolForNode(t *testing.T) {
 	tests := []struct {
 		pools     []*mcfgv1.MachineConfigPool
 		nodeLabel map[string]string
@@ -355,7 +355,7 @@ func TestGetPoolForNode(t *testing.T) {
 
 			c := f.newController()
 
-			got, err := c.getPoolForNode(node)
+			got, err := c.getPrimaryPoolForNode(node)
 			if err != nil && !test.err {
 				t.Fatal("expected non-nil error")
 			}
@@ -706,15 +706,16 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 func TestShouldMakeProgress(t *testing.T) {
 	f := newFixture(t)
-	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
-		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
@@ -755,16 +756,17 @@ func TestEmptyCurrentMachineConfig(t *testing.T) {
 
 func TestPaused(t *testing.T) {
 	f := newFixture(t)
-	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	mcp.Spec.Paused = true
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
-		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
@@ -780,15 +782,16 @@ func TestPaused(t *testing.T) {
 
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 	f := newFixture(t)
-	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
@@ -804,15 +807,16 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 
 func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	f := newFixture(t)
-	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
-		newNodeWithLabel("node-1", "v0", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v0", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
@@ -828,17 +832,18 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 
 func TestShouldDoNothing(t *testing.T) {
 	f := newFixture(t)
-	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "v1")
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/master": ""}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/master": ""}),
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 	status := calculateStatus(mcp, nodes)
 	mcp.Status = status
 
-	f.mcpLister = append(f.mcpLister, mcp)
-	f.objects = append(f.objects, mcp)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
