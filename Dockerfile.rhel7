@@ -16,6 +16,9 @@ RUN WHAT=machine-config-server ./hack/build-go.sh; \
 RUN WHAT=setup-etcd-environment ./hack/build-go.sh; \
     mkdir -p /tmp/build; \
     cp /go/src/github.com/openshift/machine-config-operator/_output/linux/$(go env GOARCH)/setup-etcd-environment /tmp/build/setup-etcd-environment
+RUN WHAT=gcp-routes-controller ./hack/build-go.sh; \
+    mkdir -p /tmp/build; \
+    cp /go/src/github.com/openshift/machine-config-operator/_output/linux/$(go env GOARCH)/gcp-routes-controller /tmp/build/gcp-routes-controller
 
 FROM registry.svc.ci.openshift.org/ocp/4.0:base
 COPY --from=builder /tmp/build/machine-config-operator /usr/bin/
@@ -26,5 +29,6 @@ COPY --from=builder /tmp/build/machine-config-controller /usr/bin/
 COPY templates /etc/mcc/templates
 COPY --from=builder /tmp/build/machine-config-server /usr/bin/
 COPY --from=builder /tmp/build/setup-etcd-environment /usr/bin/
+COPY --from=builder /tmp/build/gcp-routes-controller /usr/bin/
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true

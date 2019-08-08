@@ -132,6 +132,7 @@ func RenderBootstrap(
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:            imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey:         imgs.MachineConfigOperator,
+		templatectrl.GCPRoutesControllerKey:  imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:           imgs.InfraImage,
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
 		templatectrl.KeepalivedKey:           imgs.Keepalived,
