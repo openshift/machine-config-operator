@@ -1,0 +1,35 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/manifests/gcp-routes-controller.yaml"
+contents:
+  inline: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: gcp-routes-controller
+      namespace: kube-system
+    spec:
+      containers:
+      - name: gcp-routes-controller
+        image: "{{.Images.gcpRoutesControllerKey}}"
+        command: ["gcp-routes-controller"]
+        args:
+        - "run"
+        - "--health-check-url=https://127.0.0.1:6443/healthz"
+        terminationMessagePolicy: FallbackToLogsOnError
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /rootfs
+          name: rootfs
+      hostNetwork: true
+      hostPID: true
+      priorityClassName: system-node-critical
+      tolerations:
+      - operator: "Exists"
+      restartPolicy: Always
+      volumes:
+      - name: rootfs
+        hostPath:
+          path: /
+
