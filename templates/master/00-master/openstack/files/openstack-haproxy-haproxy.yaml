@@ -5,7 +5,7 @@ contents:
   inline: |
     defaults
       mode    tcp
-      log     global
+      log     /var/run/haproxy/haproxy-log.sock local0
       option  dontlognull
       retries 3
       timeout http-request 10s
