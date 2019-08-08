@@ -28,10 +28,9 @@ func TestCloudProvider(t *testing.T) {
 	}{{
 		platform: "aws",
 		res:      "aws",
-		// OpenStack cloud config is disabled
-		//}, {
-		//platform: "openstack",
-		//res:      "openstack",
+	}, {
+		platform: "openstack",
+		res:      "openstack",
 	}, {
 		platform: "baremetal",
 		res:      "",
@@ -235,7 +234,7 @@ var (
 	configs = map[string]string{
 		"aws":       "./test_data/controller_config_aws.yaml",
 		"baremetal": "./test_data/controller_config_baremetal.yaml",
-		"gcp":    "./test_data/controller_config_gcp.yaml",
+		"gcp":       "./test_data/controller_config_gcp.yaml",
 		"openstack": "./test_data/controller_config_openstack.yaml",
 		"libvirt":   "./test_data/controller_config_libvirt.yaml",
 		"none":      "./test_data/controller_config_none.yaml",

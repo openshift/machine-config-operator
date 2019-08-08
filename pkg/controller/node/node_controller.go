@@ -165,30 +165,7 @@ func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
 // checkMasterNodesOnAdd makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
 // cluster is created
 func (ctrl *Controller) checkMasterNodesOnAdd(obj interface{}) {
-	scheduler := obj.(*configv1.Scheduler)
-	if scheduler.Name != schedulerCRName {
-		glog.V(4).Infof("We don't care about CRs other than cluster created for scheduler config")
-		return
-	}
-	var areMastersSchedulable bool
-	if scheduler.Spec == (configv1.SchedulerSpec{}) {
-		glog.V(4).Infof("Scheduler spec is nil, so set master as unschedulable")
-		areMastersSchedulable = false
-	} else {
-		areMastersSchedulable = scheduler.Spec.MastersSchedulable
-	}
-	currentMasters, err := ctrl.getCurrentMasters()
-	if err != nil {
-		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
-		return
-	}
-
-	// reconcile master labels and taints to make the master node schedulable, unschedulable
-	err = ctrl.reconcileSchedulableMasters(areMastersSchedulable, currentMasters)
-	if err != nil {
-		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
-		return
-	}
+	ctrl.reconcileMasters()
 }
 
 // checkMasterNodesOnDelete makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
@@ -229,46 +206,8 @@ func (ctrl *Controller) checkMasterNodesOnUpdate(old, cur interface{}) {
 		glog.V(4).Info("Scheduler config did not change")
 		return
 	}
-	// check the flag in scheduler spec
-	areMastersSchedulable := curScheduler.Spec.MastersSchedulable
-	currentMasters, err := ctrl.getCurrentMasters()
-	if err != nil {
-		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
-		return
-	}
 
-	// reconcile master labels and taints to make the master node schedulable, unschedulable
-	err = ctrl.reconcileSchedulableMasters(areMastersSchedulable, currentMasters)
-	if err != nil {
-		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
-		return
-	}
-	return
-}
-
-// reconcileSchedulableMasters reconciles the master nodes to make them schedulable or unschedulable
-func (ctrl *Controller) reconcileSchedulableMasters(areMastersSchedulable bool, currentMasters []*corev1.Node) error {
-	var errs []error
-	if areMastersSchedulable {
-		errs = ctrl.makeMastersSchedulable(currentMasters)
-	} else {
-		errs = ctrl.makeMastersUnSchedulable(currentMasters)
-	}
-	return v1helpers.NewMultiLineAggregate(errs)
-}
-
-// makeMastersSchedulable makes all the masters in the cluster schedulable
-func (ctrl *Controller) makeMastersSchedulable(currentMasters []*corev1.Node) []error {
-	var errs []error
-	for _, node := range currentMasters {
-		if CheckMasterIsAlreadySchedulable(node) {
-			continue
-		}
-		if err := ctrl.makeMasterNodeSchedulable(node); err != nil {
-			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %v", node.Name, err))
-		}
-	}
-	return errs
+	ctrl.reconcileMasters()
 }
 
 // makeMastersUnSchedulable makes all the masters in the cluster unschedulable
@@ -379,11 +318,70 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	// TODO(abhinavdahiya): handle deletes.
 }
 
+// Determine if masters are currently configured as schedulable
+func (ctrl *Controller) getMastersSchedulable() (bool, error) {
+	schedulerList, err := ctrl.schedulerList.List(labels.SelectorFromSet(nil))
+	if err != nil {
+		return false, fmt.Errorf("error while listing scheduler config %v", err)
+	}
+	for _, sched := range schedulerList {
+		if sched.Name == schedulerCRName {
+			return sched.Spec.MastersSchedulable, nil
+		}
+	}
+	return false, nil
+}
+
+// Determine if a given Node is a master
+func (ctrl *Controller) isMaster(node *corev1.Node) bool {
+	_, master := node.ObjectMeta.Labels[masterLabel]
+	return master
+}
+
+// Given a master Node, ensure it reflects the current mastersSchedulable setting
+func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
+	mastersSchedulable, err := ctrl.getMastersSchedulable()
+	if err != nil {
+		goerrs.Wrap(err, "Getting scheduler config failed")
+		return
+	}
+	alreadySchedulable := CheckMasterIsAlreadySchedulable(node)
+	if mastersSchedulable && !alreadySchedulable {
+		err = ctrl.makeMasterNodeSchedulable(node)
+		if err != nil {
+			goerrs.Wrap(err, "Failed making master Node schedulable")
+			return
+		}
+	} else if !mastersSchedulable && alreadySchedulable {
+		err = ctrl.makeMasterNodeUnSchedulable(node)
+		if err != nil {
+			goerrs.Wrap(err, "Failed making master Node unschedulable")
+			return
+		}
+	}
+}
+
+// Get a list of current masters and apply scheduler config to them
+func (ctrl *Controller) reconcileMasters() {
+	currentMasters, err := ctrl.getCurrentMasters()
+	if err != nil {
+		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		return
+	}
+	for _, node := range currentMasters {
+		ctrl.reconcileMaster(node)
+	}
+}
+
 func (ctrl *Controller) addNode(obj interface{}) {
 	node := obj.(*corev1.Node)
 	if node.DeletionTimestamp != nil {
 		ctrl.deleteNode(node)
 		return
+	}
+
+	if ctrl.isMaster(node) {
+		ctrl.reconcileMaster(node)
 	}
 
 	pool, err := ctrl.getPoolForNode(node)
@@ -404,6 +402,10 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	if !isNodeManaged(curNode) {
 		return
+	}
+
+	if ctrl.isMaster(curNode) {
+		ctrl.reconcileMaster(curNode)
 	}
 
 	pool, err := ctrl.getPoolForNode(curNode)
@@ -438,12 +440,20 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		glog.Infof("Pool %s: node %s has completed update to %s", pool.Name, curNode.Name, curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
 	} else {
-		annos := []string{daemonconsts.CurrentMachineConfigAnnotationKey, daemonconsts.DesiredMachineConfigAnnotationKey, daemonconsts.MachineConfigDaemonStateAnnotationKey}
+		annos := []string{
+			daemonconsts.CurrentMachineConfigAnnotationKey,
+			daemonconsts.DesiredMachineConfigAnnotationKey,
+			daemonconsts.MachineConfigDaemonStateAnnotationKey,
+		}
 		for _, anno := range annos {
 			if oldNode.Annotations[anno] != curNode.Annotations[anno] {
 				glog.Infof("Pool %s: node %s changed %s = %s", pool.Name, curNode.Name, anno, curNode.Annotations[anno])
 				changed = true
 			}
+		}
+		if !reflect.DeepEqual(oldNode.Labels, curNode.Labels) {
+			glog.Infof("Pool %s: node %s changed labels", pool.Name, curNode.Name)
+			changed = true
 		}
 	}
 

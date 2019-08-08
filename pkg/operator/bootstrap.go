@@ -19,6 +19,7 @@ import (
 
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
+	additionalTrustBundleFile,
 	proxyFile,
 	clusterConfigConfigMapFile,
 	infraFile, networkFile,
@@ -76,9 +77,26 @@ func RenderBootstrap(
 	if !ok {
 		return fmt.Errorf("expected *configv1.Network found %T", obji)
 	}
+
 	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
 	if err != nil {
 		return err
+	}
+
+	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if additionalTrustBundleData != nil {
+		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), additionalTrustBundleData)
+		if err != nil {
+			return err
+		}
+		additionalTrustBundle, ok := obji.(*corev1.ConfigMap)
+		if !ok {
+			return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+		}
+		spec.AdditionalTrustBundle = []byte(additionalTrustBundle.Data["ca-bundle.crt"])
 	}
 
 	// if the cloudConfig is set in infra read the cloudConfigFile
@@ -116,6 +134,11 @@ func RenderBootstrap(
 		templatectrl.SetupEtcdEnvKey:         imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:           imgs.InfraImage,
 		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
+		templatectrl.KeepalivedKey:           imgs.Keepalived,
+		templatectrl.CorednsKey:              imgs.Coredns,
+		templatectrl.MdnsPublisherKey:        imgs.MdnsPublisher,
+		templatectrl.HaproxyKey:              imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey:  imgs.BaremetalRuntimeCfg,
 	}
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
@@ -146,6 +169,47 @@ func RenderBootstrap(
 		name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
 		filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
 	}}
+
+	if infra.Status.PlatformStatus.BareMetal != nil {
+		manifests = append(manifests, []struct {
+			name     string
+			data     []byte
+			filename string
+		}{{
+			name:     "manifests/baremetal/coredns.yaml",
+			filename: "baremetal/manifests/coredns.yaml",
+		}, {
+			name:     "manifests/baremetal/coredns-corefile.tmpl",
+			filename: "baremetal/static-pod-resources/coredns/Corefile.tmpl",
+		}, {
+			name:     "manifests/baremetal/keepalived.yaml",
+			filename: "baremetal/manifests/keepalived.yaml",
+		}, {
+			name:     "manifests/baremetal/keepalived.conf.tmpl",
+			filename: "baremetal/static-pod-resources/keepalived/keepalived.conf.tmpl",
+		}}...)
+	}
+
+	if infra.Status.PlatformStatus.OpenStack != nil {
+		manifests = append(manifests, []struct {
+			name     string
+			data     []byte
+			filename string
+		}{{
+			name:     "manifests/openstack/coredns.yaml",
+			filename: "openstack/manifests/coredns.yaml",
+		}, {
+			name:     "manifests/openstack/coredns-corefile.tmpl",
+			filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
+		}, {
+			name:     "manifests/openstack/keepalived.yaml",
+			filename: "openstack/manifests/keepalived.yaml",
+		}, {
+			name:     "manifests/openstack/keepalived.conf.tmpl",
+			filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
+		}}...)
+	}
+
 	for _, m := range manifests {
 		var b []byte
 		var err error

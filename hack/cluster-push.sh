@@ -12,8 +12,6 @@
 
 set -xeuo pipefail
 
-podman=${podman:-podman}
-
 do_build=1
 if [ "${1:-}" = "-n" ]; then
     do_build=0
@@ -28,9 +26,17 @@ REMOTE_IMGNAME=openshift-machine-config-operator/${imgname}
 if [ "${do_build}" = 1 ]; then
     ./hack/build-image
 fi
-$podman push --tls-verify=false "${LOCAL_IMGNAME}" ${registry}/${REMOTE_IMGNAME}
+builder_secretid=$(oc get -n openshift-machine-config-operator secret | egrep '^builder-token-'| head -1 | cut -f 1 -d ' ')
+secret="$(oc get -n openshift-machine-config-operator -o json secret/${builder_secretid} | jq -r '.data.token' | base64 -d)"
 
-digest=$(skopeo inspect --tls-verify=false docker://${registry}/${REMOTE_IMGNAME} | jq -r .Digest)
+if [[ "${podman:-}" =~ "docker" ]]; then
+  imgstorage="docker-daemon:"
+else
+  imgstorage="containers-storage:"
+fi
+skopeo copy --dest-tls-verify=false --dest-creds unused:${secret} "${imgstorage}${LOCAL_IMGNAME}" "docker://${registry}/${REMOTE_IMGNAME}"
+
+digest=$(skopeo inspect --creds unused:${secret} --tls-verify=false docker://${registry}/${REMOTE_IMGNAME} | jq -r .Digest)
 imageid=${REMOTE_IMGNAME}@${digest}
 
 oc project openshift-machine-config-operator

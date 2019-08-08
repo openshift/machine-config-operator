@@ -9,17 +9,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 )
 
 // Bootstrap defines boostrap mode for Machine Config Controller
@@ -59,9 +61,16 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 
+	scheme := runtime.NewScheme()
+	v1.Install(scheme)
+	apioperatorsv1alpha1.Install(scheme)
+	codecFactory := serializer.NewCodecFactory(scheme)
+	decoder := codecFactory.UniversalDecoder(v1.GroupVersion, apioperatorsv1alpha1.GroupVersion)
+
 	var cconfig *v1.ControllerConfig
 	var pools []*v1.MachineConfigPool
 	var configs []*v1.MachineConfig
+	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	for _, info := range infos {
 		if info.IsDir() {
 			continue
@@ -79,7 +88,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 
 		for idx, m := range manifests {
-			obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(v1.SchemeGroupVersion), m.Raw)
+			obji, err := runtime.Decode(decoder, m.Raw)
 			if err != nil {
 				if runtime.IsNotRegisteredError(err) {
 					// don't care
@@ -96,6 +105,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				configs = append(configs, obj)
 			case *v1.ControllerConfig:
 				cconfig = obj
+			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
+				icspRules = append(icspRules, obj)
 			default:
 				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -111,37 +122,48 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, iconfigs...)
 
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, rconfigs...)
+
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
 		return err
 	}
 
+	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, scheme, scheme)
+	encoder := codecFactory.EncoderForVersion(serializer, v1.GroupVersion)
+
 	poolsdir := filepath.Join(destDir, "machine-pools")
-	if err := os.MkdirAll(poolsdir, 0664); err != nil {
+	if err := os.MkdirAll(poolsdir, 0764); err != nil {
 		return err
 	}
 	for _, p := range fpools {
-		b, err := yaml.Marshal(p)
+		buf := bytes.Buffer{}
+		err := encoder.Encode(p, &buf)
 		if err != nil {
 			return err
 		}
 		path := filepath.Join(poolsdir, fmt.Sprintf("%s.yaml", p.Name))
-		if err := ioutil.WriteFile(path, b, 0664); err != nil {
+		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
 			return err
 		}
 	}
 
 	configdir := filepath.Join(destDir, "machine-configs")
-	if err := os.MkdirAll(configdir, 0664); err != nil {
+	if err := os.MkdirAll(configdir, 0764); err != nil {
 		return err
 	}
 	for _, c := range gconfigs {
-		b, err := yaml.Marshal(c)
+		buf := bytes.Buffer{}
+		err := encoder.Encode(c, &buf)
 		if err != nil {
 			return err
 		}
 		path := filepath.Join(configdir, fmt.Sprintf("%s.yaml", c.Name))
-		if err := ioutil.WriteFile(path, b, 0664); err != nil {
+		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
 			return err
 		}
 	}

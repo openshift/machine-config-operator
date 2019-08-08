@@ -423,7 +423,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:c94bba30993ebfe6eb036983b04ad6ac6b89377d2f6dfeb729f39109ddbda053"
+  digest = "1:c73e66fb08463eb969add0a45509c5233679396bfa1fe9422afc54838167e576"
   name = "github.com/openshift/api"
   packages = [
     "config/v1",
@@ -431,7 +431,7 @@
     "operator/v1alpha1",
   ]
   pruneopts = "NUT"
-  revision = "9525304a0adb725ab4a4a54539a1a6bf6cc343d3"
+  revision = "b7d4eb0fa1e0c1e03f97c97c08d0ef1f025c0838"
 
 [[projects]]
   branch = "master"
@@ -467,11 +467,12 @@
   revision = "c44a8b61b9f46cd9e802384dfeda0bc9942db68a"
 
 [[projects]]
-  digest = "1:f7646c654e93258958dba300641f8f674d5a9ed015c11119793ba1156e2acbe9"
+  branch = "master"
+  digest = "1:cdf4d8665620f7588f2edcc6cd88dcf5f9497f1dc4758eb49ace646e4d7c8f3d"
   name = "github.com/openshift/kubernetes-drain"
   packages = ["."]
   pruneopts = "NUT"
-  revision = "c2e51be1758efa30d71a4d30dc4e2db86b70a4df"
+  revision = "d20a33f09dbf11716de3110d7759f384ba9ef7c3"
 
 [[projects]]
   branch = "master"
@@ -1280,7 +1281,6 @@
     "k8s.io/client-go/tools/leaderelection",
     "k8s.io/client-go/tools/leaderelection/resourcelock",
     "k8s.io/client-go/tools/record",
-    "k8s.io/client-go/util/cert",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/client-go/util/retry",
     "k8s.io/client-go/util/workqueue",

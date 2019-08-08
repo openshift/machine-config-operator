@@ -12,4 +12,19 @@ const (
 
 	// KubeClientAgentImageKey is the key that references the kube-client-agent image in the controller
 	KubeClientAgentImageKey string = "kubeClientAgentImageKey"
+
+	// KeepalivedKey is the key that references the keepalived-ipfailover image in the controller
+	KeepalivedKey string = "keepalivedImage"
+
+	// CorednsKey is the key that references the coredns image in the controller
+	CorednsKey string = "corednsImage"
+
+	// MdnsPublisherKey is the key that references the mdns-publisher image in the controller
+	MdnsPublisherKey string = "mdnsPublisherImage"
+
+	// HaproxyKey is the key that references the haproxy-router image in the controller
+	HaproxyKey string = "haproxyImage"
+
+	// BaremetalRuntimeCfgKey is the key that references the baremetal-runtimecfg image in the controller
+	BaremetalRuntimeCfgKey string = "baremetalRuntimeCfgImage"
 )
