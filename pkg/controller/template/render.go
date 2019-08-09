@@ -180,11 +180,6 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	platformDirs := []string{}
 	// Loop over templates/common which applies everywhere
 	for _, dir := range []string{platformBase, platform} {
-		// Bypass OpenStack template rendering until
-		// https://github.com/openshift/installer/pull/1959 merges
-		if dir == platformOpenStack && config.ControllerConfigSpec.Infra.Status.PlatformStatus.OpenStack == nil {
-			continue
-		}
 		basePath := filepath.Join(templateDir, "common", dir)
 		exists, err := existsDir(basePath)
 		if err != nil {
@@ -197,11 +192,6 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	}
 	// And now over the target e.g. templates/master
 	for _, dir := range []string{platformBase, platform} {
-		// Bypass OpenStack template rendering until
-		// https://github.com/openshift/installer/pull/1959 merges
-		if dir == platformOpenStack && config.ControllerConfigSpec.Infra.Status.PlatformStatus.OpenStack == nil {
-			continue
-		}
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
 		if err != nil {
