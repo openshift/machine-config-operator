@@ -34,19 +34,27 @@ contents:
       if [ -f "$ASSET_DIR/backup/etcd-ca-bundle.crt" ] && [ -f "$ASSET_DIR/backup/etcd-client.crt" ] && [ -f "$ASSET_DIR/backup/etcd-client.key" ]; then
          echo "etcd client certs already backed up and available $ASSET_DIR/backup/"
       else
-        for i in {1..10}; do
-            SECRET_DIR="${CONFIG_FILE_DIR}/static-pod-resources/kube-apiserver-pod-${i}/secrets/etcd-client"
-            CONFIGMAP_DIR="${CONFIG_FILE_DIR}/static-pod-resources/kube-apiserver-pod-${i}/configmaps/etcd-serving-ca"
-            if [ -f "$CONFIGMAP_DIR/ca-bundle.crt" ] && [ -f "$SECRET_DIR/tls.crt" ] && [ -f "$SECRET_DIR/tls.key" ]; then
-              cp $CONFIGMAP_DIR/ca-bundle.crt $ASSET_DIR/backup/etcd-ca-bundle.crt
-              cp $SECRET_DIR/tls.crt $ASSET_DIR/backup/etcd-client.crt
-              cp $SECRET_DIR/tls.key $ASSET_DIR/backup/etcd-client.key
-              break
-            else
-              echo "$SECRET_DIR does not contain etcd client certs, trying next source .."
-            fi
+        STATIC_DIRS=($(ls -d "${CONFIG_FILE_DIR}"/static-pod-resources/kube-apiserver-pod-[0-9]*))
+        if [ "$?" -ne 0 ]; then
+          echo "error finding static-pod-resources"
+          exit 1
+        fi
+        for APISERVER_POD_DIR in "${STATIC_DIRS[@]}"; do
+          SECRET_DIR="${APISERVER_POD_DIR}/secrets/etcd-client"
+          CONFIGMAP_DIR="${APISERVER_POD_DIR}/configmaps/etcd-serving-ca"
+          if [ -f "$CONFIGMAP_DIR/ca-bundle.crt" ] && [ -f "$SECRET_DIR/tls.crt" ] && [ -f "$SECRET_DIR/tls.key" ]; then
+            echo "etcd client certs found in $APISERVER_POD_DIR backing up to $ASSET_DIR/backup/"
+            cp $CONFIGMAP_DIR/ca-bundle.crt $ASSET_DIR/backup/etcd-ca-bundle.crt
+            cp $SECRET_DIR/tls.crt $ASSET_DIR/backup/etcd-client.crt
+            cp $SECRET_DIR/tls.key $ASSET_DIR/backup/etcd-client.key
+            return 0
+          else
+            echo "${APISERVER_POD_DIR} does not contain etcd client certs, trying next .."
+          fi
         done
-       fi
+        echo "backup failed: client certs not found"
+        exit 1
+      fi
     }
 
     # backup current etcd-member pod manifest
