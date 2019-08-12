@@ -526,7 +526,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	// Before merging all MCs for a specific pool, let's make sure each contains a valid Ignition Config
 	for _, config := range configs {
-		rpt := validate.ValidateWithoutSource(reflect.ValueOf(config.Spec.Config.Ignition))
+		rpt := validate.ValidateWithoutSource(reflect.ValueOf(config.Spec.Config))
 		if rpt.IsFatal() {
 			return nil, fmt.Errorf("machine config: %v contains invalid ignition config: %v", config.ObjectMeta.Name, rpt)
 		}

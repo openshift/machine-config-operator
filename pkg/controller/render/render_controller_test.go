@@ -59,7 +59,7 @@ func newMachineConfigPool(name string, selector *metav1.LabelSelector, currentMa
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.MachineConfigPoolSpec{
 			MachineConfigSelector: selector,
-			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
+			Configuration:         mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
 		},
 		Status: mcfgv1.MachineConfigPoolStatus{
 			Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: currentMachineConfig}},
@@ -296,11 +296,13 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
 	files := []ignv2_2types.File{{
 		Node: ignv2_2types.Node{
-			Path: "/dummy/0",
+			Filesystem: "root",
+			Path:       "/dummy/0",
 		},
 	}, {
 		Node: ignv2_2types.Node{
-			Path: "/dummy/1",
+			Filesystem: "root",
+			Path:       "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -326,11 +328,13 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
 	files := []ignv2_2types.File{{
 		Node: ignv2_2types.Node{
-			Path: "/dummy/0",
+			Filesystem: "root",
+			Path:       "/dummy/0",
 		},
 	}, {
 		Node: ignv2_2types.Node{
-			Path: "/dummy/1",
+			Filesystem: "root",
+			Path:       "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -390,11 +394,13 @@ func TestDoNothing(t *testing.T) {
 	mcp := newMachineConfigPool("test-cluster-master", metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role", "master"), "")
 	files := []ignv2_2types.File{{
 		Node: ignv2_2types.Node{
-			Path: "/dummy/0",
+			Filesystem: "root",
+			Path:       "/dummy/0",
 		},
 	}, {
 		Node: ignv2_2types.Node{
-			Path: "/dummy/1",
+			Filesystem: "root",
+			Path:       "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
