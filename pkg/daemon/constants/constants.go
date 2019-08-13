@@ -14,6 +14,8 @@ const (
 	DesiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
 	// MachineConfigDaemonStateAnnotationKey is used to fetch the state of the daemon on the machine.
 	MachineConfigDaemonStateAnnotationKey = "machineconfiguration.openshift.io/state"
+	// OpenShiftOperatorManagedLabel is used to filter out kube objects that don't need to be synced by the MCO
+	OpenShiftOperatorManagedLabel = "openshift.io/operator-managed"
 	// MachineConfigDaemonStateWorking is set by daemon when it is applying an update.
 	MachineConfigDaemonStateWorking = "Working"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.
