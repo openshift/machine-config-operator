@@ -3,7 +3,7 @@ package constants
 const (
 	// XXX
 	//
-	// Add a constant here, if and only if: it's exported (of course) and it's reused across all the project.
+	// Add a constant here, if and only if: it's exported (of course) and it's reused across the entire project.
 	// Otherwise, prefer an unexported const in a specific package.
 	//
 	// XXX
@@ -21,7 +21,7 @@ const (
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.
 	MachineConfigDaemonStateDone = "Done"
 	// MachineConfigDaemonStateDegraded is set by daemon when an error not caused by a bad MachineConfig
-	// is thrown during an udpate.
+	// is thrown during an update.
 	MachineConfigDaemonStateDegraded = "Degraded"
 	// MachineConfigDaemonStateUnreconcilable is set by the daemon when a MachineConfig cannot be applied.
 	MachineConfigDaemonStateUnreconcilable = "Unreconcilable"
