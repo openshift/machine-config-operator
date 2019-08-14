@@ -40,6 +40,11 @@ contents:
     ETCD_STATIC_RESOURCES="${CONFIG_FILE_DIR}/static-pod-resources/etcd-member"
     STOPPED_STATIC_PODS="${ASSET_DIR}/tmp/stopped-static-pods"
 
+    if [ ! -f "$SNAPSHOT_FILE" ]; then
+      echo "etcd snapshot $SNAPSHOT_FILE does not exist."
+      exit 1
+    fi
+
     source "/usr/local/bin/openshift-recovery-tools"
 
     function run {
