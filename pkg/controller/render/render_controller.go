@@ -513,7 +513,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	if err != nil {
 		return err
 	}
-	glog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, generated.Name)
+	glog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)
 
 	if err := ctrl.garbageCollectRenderedConfigs(pool); err != nil {
 		return err
