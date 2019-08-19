@@ -281,14 +281,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 }
 
 func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
-	if current.Spec.Fips == desired.Spec.Fips {
+	if current.Spec.FIPS == desired.Spec.FIPS {
 		return nil
 	}
 	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
 		return errors.New("Updating FIPS on non-RHCOS nodes is not supported")
 	}
 	arg := "enable"
-	if !desired.Spec.Fips {
+	if !desired.Spec.FIPS {
 		arg = "disable"
 	}
 	cmd := exec.Command(fipsCommand, arg)
@@ -420,7 +420,7 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 	return &MachineConfigDiff{
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
 		kargs:    !reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments),
-		fips:     oldConfig.Spec.Fips != newConfig.Spec.Fips,
+		fips:     oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
 		passwd:   passwdChanged,
 		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
