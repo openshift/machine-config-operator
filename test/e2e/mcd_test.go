@@ -530,7 +530,7 @@ func TestFIPS(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: ctrlcommon.NewIgnConfig(),
-			Fips:   true,
+			FIPS:   true,
 		},
 	}
 
