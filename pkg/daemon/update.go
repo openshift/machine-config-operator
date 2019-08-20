@@ -284,6 +284,9 @@ func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
 	if current.Spec.Fips == desired.Spec.Fips {
 		return nil
 	}
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+		return errors.New("Updating FIPS on non-RHCOS nodes is not supported")
+	}
 	arg := "enable"
 	if !desired.Spec.Fips {
 		arg = "disable"
