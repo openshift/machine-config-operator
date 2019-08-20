@@ -60,7 +60,7 @@ var updateBackoff = wait.Backoff{
 	Jitter:   1.0,
 }
 
-var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set for KubeletConfig")
+var errCouldNotFindMCPSet = newForgetError(errors.New("could not find any MachineConfigPool set for KubeletConfig"))
 
 // Controller defines the kubelet config controller.
 type Controller struct {
@@ -271,7 +271,12 @@ func (ctrl *Controller) processNextWorkItem() bool {
 }
 
 func (ctrl *Controller) handleErr(err error, key interface{}) {
-	if err == nil || err == errCouldNotFindMCPSet {
+	if err == nil {
+		ctrl.queue.Forget(key)
+		return
+	}
+
+	if _, ok := err.(*forgetError); ok {
 		ctrl.queue.Forget(key)
 		return
 	}
@@ -386,7 +391,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	// Validate the KubeletConfig CR
 	if err := validateUserKubeletConfig(cfg); err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(cfg, newForgetError(err))
 	}
 
 	// Find all MachineConfigPools
