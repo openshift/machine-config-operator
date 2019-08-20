@@ -157,7 +157,7 @@ func New(
 
 	ctrl.featLister = featInformer.Lister()
 	ctrl.featListerSynced = featInformer.Informer().HasSynced
-	
+
 	ctrl.patchKubeletConfigsFunc = ctrl.patchKubeletConfigs
 
 	return ctrl
@@ -290,6 +290,11 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
+	if _, ok := err.(*forgetError); ok {
+		ctrl.queue.Forget(key)
+		return
+	}
+
 	if ctrl.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
@@ -401,7 +406,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	// Validate the KubeletConfig CR
 	if err := validateUserKubeletConfig(cfg); err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(cfg, newForgetError(err))
 	}
 
 	// Find all MachineConfigPools
