@@ -61,9 +61,7 @@ contents:
           declare -r haproxy_log_sock="/var/run/haproxy/haproxy-log.sock"
           export -f msg_handler
           export -f reload_haproxy
-          if [ -S "$haproxy_sock" ]; then
-              rm "$haproxy_sock"
-          fi
+          rm -f "$haproxy_sock" "$haproxy_log_sock"
           socat UNIX-RECV:${haproxy_log_sock} STDOUT &
           if [ -s "/etc/haproxy/haproxy.cfg" ]; then
               /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid &
