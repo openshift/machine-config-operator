@@ -325,15 +325,15 @@ func (optr *Operator) sync(key string) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure.
 	var syncFuncs = []syncFunc{
-		// "render-config" must always run first as it sets the renderConfig in the operator
+		// "RenderConfig" must always run first as it sets the renderConfig in the operator
 		// for the sync funcs below
-		{"render-config", optr.syncRenderConfig},
-		{"pools", optr.syncMachineConfigPools},
-		{"mcd", optr.syncMachineConfigDaemon},
-		{"mcc", optr.syncMachineConfigController},
-		{"mcs", optr.syncMachineConfigServer},
+		{"RenderConfig", optr.syncRenderConfig},
+		{"MachineConfigPools", optr.syncMachineConfigPools},
+		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
+		{"MachineConfigController", optr.syncMachineConfigController},
+		{"MachineConfigServer", optr.syncMachineConfigServer},
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
-		{"required-pools", optr.syncRequiredMachineConfigPools},
+		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(syncFuncs)
 }
