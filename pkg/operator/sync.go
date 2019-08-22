@@ -39,19 +39,27 @@ type syncFunc struct {
 	fn   func(config *renderConfig) error
 }
 
+type syncError struct {
+	task string
+	err  error
+}
+
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
 
-	var syncErr error
+	var syncErr syncError
 	for _, sf := range syncFuncs {
 		startTime := time.Now()
-		syncErr = sf.fn(optr.renderConfig)
+		syncErr = syncError{
+			task: sf.name,
+			err:  sf.fn(optr.renderConfig),
+		}
 		if optr.inClusterBringup {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
-		if syncErr != nil {
+		if syncErr.err != nil {
 			break
 		}
 	}
@@ -72,12 +80,12 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing version: %v", err)
 	}
 
-	if optr.inClusterBringup && syncErr == nil {
+	if optr.inClusterBringup && syncErr.err == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
 
-	return syncErr
+	return syncErr.err
 }
 
 func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
