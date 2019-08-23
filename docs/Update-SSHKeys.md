@@ -1,4 +1,4 @@
-# Updating SSH Keys with the MCD
+# Managing SSH Keys with the MCD
 
 By default, the OpenShift 4.0 installer creates a single user named `core` (derived in spirit from CoreOS Container Linux) with optional SSH keys specified at install time.
 
@@ -21,6 +21,39 @@ You will need the following information for the MachineConfig that will be used 
 - `machineconfiguration.openshift.io/role:` the MachineConfig that is updated will be applied to all nodes with the role specified here. For example: `master` or `worker`
 
 - `sshAuthorizedKeys:` you will need one or more public keys to be assigned to user `core`.  Multiple SSH Keys should begin on different lines and each be preceded by `-`.
+
+## Creating SSH for a pool
+
+In case your cluster has been installed without providing the ssh key for the `core` user at installation time (verify that `99-worker-ssh`/`99-master-ssh` are missing, by checking `oc get machineconfigs`),
+you can easily create a MachineConfig that will ship the SSH keys to the nodes in a pool:
+
+```console
+$ cat 99-worker-ssh.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 99-worker-ssh
+spec:
+  config:
+    ignition:
+      version: 2.2.0
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - ssh-rsa ABC123....
+        - ssh-ed25519 XYZ7890....
+```
+
+Then just create the file with `oc`:
+
+```console
+$ oc create -f 99-worker-ssh.yaml
+```
+
+The MCO will take care of shipping the SSH keys to the nodes in the `worker` pool. The same procedure applies to any other pool in the cluster.
 
 ## Updating SSH for workers
 
