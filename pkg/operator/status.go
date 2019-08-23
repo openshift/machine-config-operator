@@ -235,7 +235,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 		{Resource: "namespaces", Name: optr.namespace},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "master"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
-		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "cluster"},
+		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "machine-config-controller"},
 	}
 	// During an installation we report the RELEASE_VERSION as soon as the component is created.
 	// For both normal runs and upgrades, this code isn't hit and we get the right version every
