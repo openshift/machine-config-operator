@@ -158,6 +158,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorAvailable,
@@ -170,6 +171,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -198,6 +200,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -230,6 +233,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -256,6 +260,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -288,6 +293,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -320,6 +326,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -343,10 +350,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					expectOperatorFail: true,
@@ -376,10 +385,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					expectOperatorFail: true,
@@ -405,10 +416,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					expectOperatorFail: true,
@@ -442,6 +455,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -464,10 +478,12 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorDegraded,
 							Status: configv1.ConditionTrue,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					expectOperatorFail: true,
@@ -495,6 +511,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorUpgradeable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 					},
 					syncFuncs: []syncFunc{
@@ -545,6 +562,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					}
 				}
 				assert.Equal(t, cond.Status, condition.Status, "test case %d, sync call %d, expected condition %v to be %v, but got %v", idx, j, condition.Type, cond.Status, condition.Status)
+				assert.Equal(t, cond.Reason, condition.Reason, "test case %d, sync call %d, expected reason to be %v, but got %v", idx, j, cond.Reason, condition.Reason)
 			}
 		}
 	}

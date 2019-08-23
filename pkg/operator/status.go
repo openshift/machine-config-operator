@@ -132,11 +132,11 @@ func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1
 }
 
 const (
-	failedToSyncReason = "FailedToSync"
+	asExpectedReason = "AsExpected"
 )
 
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
+func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -148,22 +148,30 @@ func (optr *Operator) syncDegradedStatus(ierr error) (err error) {
 	optrVersion, _ := optr.vStore.Get("operator")
 	degraded := configv1.ConditionTrue
 	var message, reason string
-	if ierr == nil {
+	if ierr.err == nil {
 		degraded = configv1.ConditionFalse
 	} else {
 		if optr.vStore.Equal(co.Status.Versions) {
 			// syncing the state to exiting version.
-			message = fmt.Sprintf("Failed to resync %s because: %v", optrVersion, ierr.Error())
+			message = fmt.Sprintf("Failed to resync %s because: %v", optrVersion, ierr.err.Error())
 		} else {
-			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.Error())
+			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.err.Error())
 		}
-		reason = failedToSyncReason
+		reason = ierr.task + "Failed"
 
 		// set progressing
 		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionTrue, Message: fmt.Sprintf("Unable to apply %s", optrVersion)})
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+				Type:    configv1.OperatorProgressing,
+				Status:  configv1.ConditionTrue,
+				Message: fmt.Sprintf("Unable to apply %s", optrVersion),
+			})
 		} else {
-			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse, Message: fmt.Sprintf("Error while reconciling %s", optrVersion)})
+			cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{
+				Type:    configv1.OperatorProgressing,
+				Status:  configv1.ConditionFalse,
+				Message: fmt.Sprintf("Error while reconciling %s", optrVersion),
+			})
 		}
 	}
 
@@ -193,7 +201,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 	coStatus := configv1.ClusterOperatorStatusCondition{
 		Type:   configv1.OperatorUpgradeable,
 		Status: configv1.ConditionTrue,
-		Reason: "AsExpected",
+		Reason: asExpectedReason,
 	}
 	return optr.updateStatus(co, coStatus)
 }
