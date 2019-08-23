@@ -1,0 +1,8 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/sysctl.d/inotify.conf"
+contents:
+  inline: |
+ 
+    fs.inotify.max_user_watches = 65536
+    fs.inotify.max_user_instances = 8192
