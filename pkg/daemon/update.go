@@ -747,8 +747,12 @@ func (dn *Daemon) writeFiles(files []igntypes.File) error {
 	return nil
 }
 
+func origParentDir() string {
+	return filepath.Join("/etc", "machine-config-daemon", "orig")
+}
+
 func origFileName(fpath string) string {
-	return fpath + ".mcdorig"
+	return filepath.Join(origParentDir(), fpath+".mcdorig")
 }
 
 func createOrigFile(fpath string) error {
@@ -760,6 +764,9 @@ func createOrigFile(fpath string) error {
 	if _, err := os.Stat(origFileName(fpath)); err == nil {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
 		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(origFileName(fpath)), 0755); err != nil {
+		return errors.Wrapf(err, "creating orig parent dir: %v", err)
 	}
 	if out, err := exec.Command("cp", "-a", "--reflink=auto", fpath, origFileName(fpath)).CombinedOutput(); err != nil {
 		return errors.Wrapf(err, "creating orig file for %q: %s", fpath, string(out))
