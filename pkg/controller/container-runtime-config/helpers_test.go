@@ -39,7 +39,33 @@ func TestScopeMatchesRegistry(t *testing.T) {
 	}
 }
 
-func TestMergedMirorSets(t *testing.T) {
+func TestRDMContainsARealMirror(t *testing.T) {
+	const source = "source.example.com"
+
+	for _, tt := range []struct {
+		mirrors  []string
+		expected bool
+	}{
+		{[]string{}, false},                                  // No mirrors listed
+		{[]string{"mirror.local"}, true},                     // A single real mirror
+		{[]string{source}, false},                            // The source only
+		{[]string{source, source, source}, false},            // Source only, repeated
+		{[]string{"mirror.local", source}, true},             // Both
+		{[]string{source, "mirror.local"}, true},             // Both
+		{[]string{"m1.local", "m2.local", "m3.local"}, true}, // Multiple real mirrors
+	} {
+		t.Run(fmt.Sprintf("%#v", tt.mirrors), func(t *testing.T) {
+			set := apioperatorsv1alpha1.RepositoryDigestMirrors{
+				Source:  source,
+				Mirrors: tt.mirrors,
+			}
+			res := rdmContainsARealMirror(&set)
+			assert.Equal(t, tt.expected, res)
+		})
+	}
+}
+
+func TestMergedMirrorSets(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		input  [][]apioperatorsv1alpha1.RepositoryDigestMirrors
@@ -110,6 +136,17 @@ func TestMergedMirorSets(t *testing.T) {
 			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{Source: "source.example.com", Mirrors: []string{"z1.example.com", "source.example.com", "y2.example.com", "x3.example.com"}},
 			},
+		},
+		{
+			// Worst case of the above: _only_ the source included in mirrors, even perhaps several times.
+			name: "Mirrors includes only source",
+			input: [][]apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{
+					{Source: "source.example.com", Mirrors: []string{"source.example.com"}},
+					{Source: "source.example.net", Mirrors: []string{"source.example.net", "source.example.net", "source.example.net"}},
+				},
+			},
+			result: []apioperatorsv1alpha1.RepositoryDigestMirrors{},
 		},
 		// More complex mirror set combinations are mostly tested in TestTopoGraph
 		{
