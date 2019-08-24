@@ -83,6 +83,16 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
+type drainLogger struct{}
+
+func (dl *drainLogger) Logf(format string, v ...interface{}) {
+	glog.Infof(format, v...)
+}
+
+func (dl *drainLogger) Log(v ...interface{}) {
+	glog.Info(v...)
+}
+
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -126,6 +136,7 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 				Force:              true,
 				GracePeriodSeconds: 600,
 				IgnoreDaemonsets:   true,
+				Logger:             &drainLogger{},
 			})
 			if err == nil {
 				return true, nil
