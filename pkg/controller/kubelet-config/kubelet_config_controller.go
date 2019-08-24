@@ -51,7 +51,7 @@ const (
 
 var (
 	// controllerKind contains the schema.GroupVersionKind for this controller type.
-	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ContainerRuntimeConfig")
+	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("KubeletConfig")
 )
 
 var updateBackoff = wait.Backoff{
