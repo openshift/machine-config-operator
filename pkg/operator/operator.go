@@ -411,11 +411,11 @@ func (optr *Operator) sync(key string) error {
 	// syncFuncs is the list of sync functions that are executed in order.
 	// any error marks sync as failure but continues to next syncFunc
 	var syncFuncs = []syncFunc{
-		{"pools", optr.syncMachineConfigPools},
-		{"mcd", optr.syncMachineConfigDaemon},
-		{"mcc", optr.syncMachineConfigController},
-		{"mcs", optr.syncMachineConfigServer},
-		{"required-pools", optr.syncRequiredMachineConfigPools},
+		{"MachineConfigPools", optr.syncMachineConfigPools},
+		{"MachineConfigDaemon", optr.syncMachineConfigDaemon},
+		{"MachineConfigController", optr.syncMachineConfigController},
+		{"MachineConfigServer", optr.syncMachineConfigServer},
+		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
 	return optr.syncAll(rc, syncFuncs)
 }
