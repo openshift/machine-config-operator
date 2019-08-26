@@ -98,7 +98,7 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	return res, nil
 }
 
-func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
+func updateRegistriesConfig(data []byte, insecureRegistries, blockedRegistries []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
 	tomlConf := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
@@ -133,10 +133,10 @@ func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []str
 		}
 	}
 
-	// internalInsecure and internalBlocked are lists of registries; now that mirrors can be configured at a namespace/repo level,
+	// insecureRegistries and blockedRegistries are lists of registries; now that mirrors can be configured at a namespace/repo level,
 	// configuration at the namespace/repo level would shadow the registry-level entries; so, propagate the insecure/blocked
 	// flags to the child namespaces as well.
-	for _, insecureReg := range internalInsecure {
+	for _, insecureReg := range insecureRegistries {
 		reg := getRegistryEntry(insecureReg)
 		reg.Insecure = true
 		for i := range tomlConf.Registries {
@@ -152,7 +152,7 @@ func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []str
 			}
 		}
 	}
-	for _, blockedReg := range internalBlocked {
+	for _, blockedReg := range blockedRegistries {
 		reg := getRegistryEntry(blockedReg)
 		reg.Blocked = true
 		for i := range tomlConf.Registries {
