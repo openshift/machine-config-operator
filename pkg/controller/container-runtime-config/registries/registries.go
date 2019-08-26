@@ -1,12 +1,9 @@
 package registries
 
 import (
-	"bytes"
-	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	"github.com/containers/image/pkg/sysregistriesv2"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 )
@@ -98,32 +95,33 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	return res, nil
 }
 
-func updateRegistriesConfig(data []byte, insecureRegistries, blockedRegistries []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
-	tomlConf := sysregistriesv2.V2RegistriesConf{}
-	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
-		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
-	}
-
+// EditRegistriesConfig edits, IN PLACE, the /etc/containers/registries.conf configuration provided in config, to:
+// - Mark whole registries in insecureRegistries as insecure (TLS is not required, and TLS certificate verification is not required when TLS is used)
+// - Mark whole registries in blockedRegistries as blocked (any attempts to access them fail)
+// - Implement ImageContentSourcePolicy rules in icspRules.
+// “Whole registries” above means that the configuration applies to everything on that registry, including any possible separately-configured
+// namespaces/repositories within that registry.
+func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureRegistries, blockedRegistries []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) error {
 	// getRegistryEntry returns a pointer to a modifiable Registry object corresponding to scope,
 	// creating it if necessary.
 	// NOTE: We never generate entries with Prefix != Location, so everything in updateRegistriesConfig
 	// only checks Location.
 	// NOTE: The pointer is valid only until the next getRegistryEntry call.
 	getRegistryEntry := func(scope string) *sysregistriesv2.Registry {
-		for i := range tomlConf.Registries {
-			if tomlConf.Registries[i].Location == scope {
-				return &tomlConf.Registries[i]
+		for i := range config.Registries {
+			if config.Registries[i].Location == scope {
+				return &config.Registries[i]
 			}
 		}
-		tomlConf.Registries = append(tomlConf.Registries, sysregistriesv2.Registry{
+		config.Registries = append(config.Registries, sysregistriesv2.Registry{
 			Endpoint: sysregistriesv2.Endpoint{Location: scope},
 		})
-		return &tomlConf.Registries[len(tomlConf.Registries)-1]
+		return &config.Registries[len(config.Registries)-1]
 	}
 
 	mirrorSets, err := mergedMirrorSets(icspRules)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, mirrorSet := range mirrorSets {
 		reg := getRegistryEntry(mirrorSet.Source)
@@ -139,8 +137,8 @@ func updateRegistriesConfig(data []byte, insecureRegistries, blockedRegistries [
 	for _, insecureReg := range insecureRegistries {
 		reg := getRegistryEntry(insecureReg)
 		reg.Insecure = true
-		for i := range tomlConf.Registries {
-			reg := &tomlConf.Registries[i]
+		for i := range config.Registries {
+			reg := &config.Registries[i]
 			if scopeMatchesRegistry(reg.Location, insecureReg) {
 				reg.Insecure = true
 			}
@@ -155,19 +153,12 @@ func updateRegistriesConfig(data []byte, insecureRegistries, blockedRegistries [
 	for _, blockedReg := range blockedRegistries {
 		reg := getRegistryEntry(blockedReg)
 		reg.Blocked = true
-		for i := range tomlConf.Registries {
-			reg := &tomlConf.Registries[i]
+		for i := range config.Registries {
+			reg := &config.Registries[i]
 			if scopeMatchesRegistry(reg.Location, blockedReg) {
 				reg.Blocked = true
 			}
 		}
 	}
-
-	var newData bytes.Buffer
-	encoder := toml.NewEncoder(&newData)
-	if err := encoder.Encode(tomlConf); err != nil {
-		return nil, err
-	}
-
-	return newData.Bytes(), nil
+	return nil
 }

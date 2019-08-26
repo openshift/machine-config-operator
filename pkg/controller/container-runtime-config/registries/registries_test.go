@@ -195,7 +195,7 @@ func TestMergedMirrorSets(t *testing.T) {
 	}
 }
 
-func TestUpdateRegistriesConfig(t *testing.T) {
+func TestEditRegistriesConfig(t *testing.T) {
 	templateConfig := sysregistriesv2.V2RegistriesConf{ // This matches templates/*/01-*-container-runtime/_base/files/container-registries.yaml
 		UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
 	}
@@ -326,25 +326,27 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := updateRegistriesConfig(templateBytes, tt.insecure, tt.blocked, tt.icspRules)
+			// Create config from templateBytes to get a fresh copy we can edit.
+			config := sysregistriesv2.V2RegistriesConf{}
+			_, err := toml.Decode(string(templateBytes), &config)
+			require.NoError(t, err)
+			err = EditRegistriesConfig(&config, tt.insecure, tt.blocked, tt.icspRules)
 			if err != nil {
 				t.Errorf("updateRegistriesConfig() error = %v", err)
 				return
 			}
-			gotConf := sysregistriesv2.V2RegistriesConf{}
-			if _, err := toml.Decode(string(got), &gotConf); err != nil {
-				t.Errorf("error unmarshalling result: %v", err)
-				return
-			}
 			// This assumes a specific order of Registries entries, which does not actually matter; ideally, this would
 			// sort the two arrays before comparing, but right now hard-coding the order works well enough.
-			if !reflect.DeepEqual(gotConf, tt.want) {
-				t.Errorf("updateRegistriesConfig() Diff:\n %s", diff.ObjectGoPrintDiff(tt.want, gotConf))
+			if !reflect.DeepEqual(config, tt.want) {
+				t.Errorf("updateRegistriesConfig() Diff:\n %s", diff.ObjectGoPrintDiff(tt.want, config))
 			}
 			// Ensure that the generated configuration is actually valid.
+			buf := bytes.Buffer{}
+			err = toml.NewEncoder(&buf).Encode(config)
+			require.NoError(t, err)
 			registriesConf, err := ioutil.TempFile("", "registries.conf")
 			require.NoError(t, err)
-			_, err = registriesConf.Write(got)
+			_, err = registriesConf.Write(buf.Bytes())
 			require.NoError(t, err)
 			defer os.Remove(registriesConf.Name())
 			_, err = sysregistriesv2.GetRegistries(&types.SystemContext{
