@@ -892,8 +892,12 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
-	if !dn.validateOnDiskState(expectedConfig) {
-		return fmt.Errorf("unexpected on-disk state validating against %s", expectedConfig.GetName())
+	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err != nil {
+		if !dn.validateOnDiskState(expectedConfig) {
+			return fmt.Errorf("unexpected on-disk state validating against %s", expectedConfig.GetName())
+		}
+	} else {
+		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 	}
 	glog.Info("Validated on-disk state")
 

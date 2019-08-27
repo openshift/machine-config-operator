@@ -40,4 +40,9 @@ const (
 	// object so that Ignition can process it on first boot, and then the MCD can act on
 	// non-Ignition fields such as the osImageURL and kernelArguments.
 	MachineConfigEncapsulatedPath = "/etc/ignition-machine-config-encapsulated.json"
+
+	// MachineConfigDaemonForceFile if present causes the MCD to skip checking the validity of the
+	// "currentConfig" state.  Create this file (empty contents is fine) if you wish the MCD
+	// to proceed and attempt to "reconcile" to the new "desiredConfig" state regardless.
+	MachineConfigDaemonForceFile = "/run/machine-config-daemon-force"
 )
