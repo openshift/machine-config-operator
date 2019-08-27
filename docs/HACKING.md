@@ -202,7 +202,17 @@ remote resources (nodes), therefore using a local registry might not work.
 Any registry credentials need to be present in `~/.docker/config.json` for `oc` to interact with the registry.
 
 When the command above finishes, your custom release payload is going to be available
-at the location you specified via the `--to-image` flag for the installer to be consumed.
+at the location you specified via the `--to-image` flag for the installer to be consumed. E.g.:
+
+```
+oc adm upgrade --force --to-image quay.io/user/origin-release:v{version number}
+```
+
+To watch the upgrade you can do:
+
+```
+watch oc get clusterversion
+```
 
 Note for quay.io users: images pushed to your personal account are going to be private by default.
 If you want to keep the release payload image private you will need to provide
