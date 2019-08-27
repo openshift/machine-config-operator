@@ -408,7 +408,7 @@ const (
 	sdMessageSessionStart = "8d45620c1a4348dbb17410da57c60c66"
 )
 
-// detectEarlySSHAccessesFromBoot taints the node if we find a login before the daemon started up.
+// detectEarlySSHAccessesFromBoot annotates the node if we find a login before the daemon started up.
 func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 	journalOutput, err := exec.Command("journalctl", "-b", "-o", "cat", "-u", logindUnit, "MESSAGE_ID="+sdMessageSessionStart).CombinedOutput()
 	if err != nil {
