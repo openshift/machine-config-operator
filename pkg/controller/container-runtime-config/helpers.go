@@ -253,6 +253,16 @@ func scopeMatchesRegistry(scope, reg string) bool {
 	return false
 }
 
+// rdmContainsARealMirror returns true if set.Mirrors contains at least one entry that is not set.Source.
+func rdmContainsARealMirror(set *apioperatorsv1alpha1.RepositoryDigestMirrors) bool {
+	for _, mirror := range set.Mirrors {
+		if mirror != set.Source {
+			return true
+		}
+	}
+	return false
+}
+
 // mergedMirrorSets processes icspRules and returns a set of RepositoryDigestMirrors, one for each Source value,
 // ordered consistently with the preference order of the individual entries (if possible)
 // E.g. given mirror sets (B, C) and (A, B), it will combine them into a single (A, B, C) set.
@@ -261,8 +271,8 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	for _, icsp := range icspRules {
 		for i := range icsp.Spec.RepositoryDigestMirrors {
 			set := &icsp.Spec.RepositoryDigestMirrors[i]
-			if len(set.Mirrors) == 0 {
-				continue // No mirrors is not really a mirror set.
+			if !rdmContainsARealMirror(set) {
+				continue // No mirrors (or mirrors that only repeat the authoritative source) is not really a mirror set.
 			}
 			ds, ok := disjointSets[set.Source]
 			if !ok {
@@ -299,8 +309,8 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 				// The build of mirrorSets guarantees len(set.Mirrors) > 0.
 				topoGraph.AddEdge(set.Mirrors[len(set.Mirrors)-1], source)
 			}
-			// Every node in topoGraph, including source, is implicitly added by topoGraph.AddEdge (there are no unconnected nodes that we would
-			// have to add separately from the edges).
+			// Every node in topoGraph, including source, is implicitly added by topoGraph.AddEdge (every mirror set contains at least one non-source mirror,
+			// so there are no unconnected nodes that we would have to add separately from the edges).
 		}
 		sortedRepos, err := topoGraph.Sorted()
 		if err != nil {
