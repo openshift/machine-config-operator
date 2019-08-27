@@ -104,4 +104,4 @@ This allows to enable/disable [FIPS mode](https://access.redhat.com/documentatio
 ### OSImageURL
 
 You should not attempt to set this field; it is controlled by the operator and injected directly into the final `rendered-` config.
-For more information, see [OSUpgrades.md].
+For more information, see [OSUpgrades.md](OSUpgrades.md).
