@@ -53,6 +53,9 @@ contents:
         securityContext:
           privileged: true
         image: {{.Images.keepalivedImage}}
+        env:
+          - name: NSS_SDB_USE_CACHE
+            value: "no"
         command:
         - /usr/sbin/keepalived
         args:
