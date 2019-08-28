@@ -336,6 +336,9 @@ spec:
     securityContext:
       privileged: true
     image: {{ .Images.KeepalivedBootstrap }}
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
     command:
     - /usr/sbin/keepalived
     args:
@@ -1859,6 +1862,9 @@ spec:
     securityContext:
       privileged: true
     image: {{ .Images.KeepalivedBootstrap }}
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
     command:
     - /usr/sbin/keepalived
     args:
