@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -86,9 +87,18 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		out = f
 	}
 
-	if err := writeEnvironmentFile(map[string]string{
+	exportEnv := map[string]string{
 		"DISCOVERY_SRV": runOpts.discoverySRV,
-	}, out, true); err != nil {
+	}
+
+	// enable etcd to run using s390 and s390x. Because these are not officially supported upstream
+	// etcd requires population of environment variable ETCD_UNSUPPORTED_ARCH at runtime.
+	// https://github.com/etcd-io/etcd/blob/master/Documentation/op-guide/supported-platform.md
+	arch := runtime.GOARCH
+	if strings.HasPrefix(arch, "s390") {
+		exportEnv["UNSUPPORTED_ARCH"] = arch
+	}
+	if err := writeEnvironmentFile(exportEnv, out, true); err != nil {
 		return err
 	}
 
