@@ -4,6 +4,9 @@ path: "/usr/local/bin/openshift-recovery-tools"
 contents:
   inline: |
     #!/usr/bin/env bash
+    export ETCDCTL_API=3
+
+    ETCDCTL_WITH_TLS="$ETCDCTL --cert $ASSET_DIR/backup/etcd-client.crt --key $ASSET_DIR/backup/etcd-client.key --cacert $ASSET_DIR/backup/etcd-ca-bundle.crt"
 
     init() {
       ASSET_BIN=${ASSET_DIR}/bin
@@ -25,7 +28,7 @@ contents:
         && tar -xzf $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -C $ASSET_DIR/shared --strip-components=1 \
         && mv $ASSET_DIR/shared/etcdctl $ASSET_DIR/bin \
         && rm $ASSET_DIR/shared/etcd \
-        && ETCDCTL_API=3 $ASSET_DIR/bin/etcdctl version
+        && $ASSET_DIR/bin/etcdctl version
     }
 
     #backup etcd client certs
@@ -89,11 +92,7 @@ contents:
     }
 
     snapshot_data_dir() {
-      ETCDCTL_API=3 ${ETCDCTL} \
-        --cert $ASSET_DIR/backup/etcd-client.crt \
-        --key $ASSET_DIR/backup/etcd-client.key \
-        --cacert $ASSET_DIR/backup/etcd-ca-bundle.crt \
-        snapshot save ${SNAPSHOT_FILE}
+      ${ETCDCTL_WITH_TLS} snapshot save ${SNAPSHOT_FILE}
     }
 
     # backup etcd peer, server and metric certs
@@ -153,7 +152,7 @@ contents:
       fi
 
       echo "Restoring etcd member $ETCD_NAME from snapshot.."
-      env ETCDCTL_API=3 ${ETCDCTL} snapshot restore $SNAPSHOT_FILE \
+      ${ETCDCTL} snapshot restore $SNAPSHOT_FILE \
         --name $ETCD_NAME \
         --initial-cluster ${ETCD_INITIAL_CLUSTER} \
         --initial-cluster-token etcd-cluster-1 \
@@ -196,7 +195,7 @@ contents:
     EOF
     }
 
-    # add member cluster
+    # add member to cluster
     etcd_member_add() {
       echo "Updating etcd membership.."
       if [ -d "$ETCD_DATA_DIR" ]; then
@@ -204,22 +203,43 @@ contents:
         rm -rf $ETCD_DATA_DIR
       fi
 
-      RESPONSE=$(env ETCDCTL_API=3 $ETCDCTL --cert $ASSET_DIR/backup/etcd-client.crt --key $ASSET_DIR/backup/etcd-client.key --cacert $ASSET_DIR/backup/etcd-ca-bundle.crt \
-        --endpoints ${RECOVERY_SERVER_IP}:2379 member add $ETCD_NAME --peer-urls=https://${ETCD_DNS_NAME}:2380)
-
-       if [ $? -eq 0 ]; then
-         echo "$RESPONSE"
-         APPEND_CONF=$(echo "$RESPONSE" | sed -e '1,2d')
-         echo -e "\n\n#[recover]\n$APPEND_CONF" >> $ETCD_CONFIG
-       else
-         echo "$RESPONSE"
-         exit 1
-       fi
+      RESPONSE=$($ETCDCTL_WITH_TLS --endpoints ${RECOVERY_SERVER_IP}:2379 member add $ETCD_NAME --peer-urls=https://${ETCD_DNS_NAME}:2380)
+      if [ $? -eq 0 ]; then
+        echo "$RESPONSE"
+        APPEND_CONF=$(echo "$RESPONSE" | sed -e '1,2d')
+        echo -e "\n\n#[recover]\n$APPEND_CONF" >> $ETCD_CONFIG
+      else
+        echo "$RESPONSE"
+        exit 1
+      fi
     }
 
     start_etcd() {
       echo "Starting etcd.."
       mv ${MANIFEST_STOPPED_DIR}/etcd-member.yaml $MANIFEST_DIR
+    }
+
+    # remove member from cluster by name
+    etcd_member_remove() {
+      NAME="$1"
+
+      if [ -z "$NAME" ]; then
+        echo "etcd_member_remove requires 1 argument NAME"
+        exit 1
+      fi
+
+      ID=$($ETCDCTL_WITH_TLS member list | awk -F "," "/\s${NAME}\,/"'{print $1}')
+      if [ "$?" -ne 0 ] || [ -z "$ID" ]; then
+        echo "could not find etcd member $NAME to remove."
+        exit 1
+      fi
+
+      $ETCDCTL_WITH_TLS member remove $ID
+      if [ "$?" -ne 0 ]; then
+        echo "removing etcd member $NAME with ID: $ID failed"
+        exit 1
+      fi
+      echo "etcd member $NAME with $ID successfully removed.."
     }
 
     populate_template() {
