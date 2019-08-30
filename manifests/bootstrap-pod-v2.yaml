@@ -21,6 +21,7 @@ spec:
         memory: 50Mi
     securityContext:
       privileged: true
+    terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
     - name: bootstrap-manifests
       mountPath: /etc/mcc/bootstrap
@@ -32,6 +33,7 @@ spec:
     command: ["/usr/bin/machine-config-server"]
     args:
       - "bootstrap"
+    terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
     - name: server-certs
       mountPath: /etc/ssl/mcs
