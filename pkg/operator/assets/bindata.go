@@ -402,6 +402,7 @@ spec:
         memory: 50Mi
     securityContext:
       privileged: true
+    terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
     - name: bootstrap-manifests
       mountPath: /etc/mcc/bootstrap
@@ -413,6 +414,7 @@ spec:
     command: ["/usr/bin/machine-config-server"]
     args:
       - "bootstrap"
+    terminationMessagePolicy: FallbackToLogsOnError
     volumeMounts:
     - name: server-certs
       mountPath: /etc/ssl/mcs
@@ -939,6 +941,7 @@ spec:
           requests:
             cpu: 20m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
@@ -1092,6 +1095,7 @@ spec:
             memory: 50Mi
         securityContext:
           privileged: true
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
           - mountPath: /rootfs
             name: rootfs
@@ -1450,6 +1454,7 @@ spec:
           requests:
             cpu: 20m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: certs
           mountPath: /etc/ssl/mcs

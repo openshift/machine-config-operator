@@ -20,6 +20,7 @@ contents:
         - "--discovery-srv=__ETCD_DISCOVERY_DOMAIN__"
         - "--output-file=/run/etcd/environment"
         - "--v=4"
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/

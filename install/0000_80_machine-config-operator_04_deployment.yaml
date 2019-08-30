@@ -28,6 +28,7 @@ spec:
         env:
           - name: RELEASE_VERSION
             value: "0.0.1-snapshot"
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: root-ca
           mountPath: /etc/ssl/kubernetes/ca.crt
