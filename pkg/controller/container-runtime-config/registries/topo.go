@@ -1,4 +1,4 @@
-package containerruntimeconfig
+package registries
 
 import (
 	"container/list"
