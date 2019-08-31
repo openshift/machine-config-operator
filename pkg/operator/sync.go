@@ -221,7 +221,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerURL)
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
 	return nil
 }
 
