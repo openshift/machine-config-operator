@@ -99,7 +99,10 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
+	return dn.drainAndReboot(newConfig)
+}
 
+func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
 		return errors.Wrapf(err, "failed to log pending config: %s", string(out))
 	}
@@ -730,7 +733,7 @@ func (dn *Daemon) isLoggingToJournalSupported() bool {
 	return strings.Contains(string(loggerOutput), "--journald")
 }
 
-func (dn *Daemon) getPendingStateLegacyLogger() (string, error) {
+func (dn *Daemon) getPendingStateLegacyLogger() (*journalMsg, error) {
 	glog.Info("logger doesn't support --jounald, grepping the journal")
 
 	cmdLiteral := "journalctl -o cat | grep OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK"
@@ -739,7 +742,7 @@ func (dn *Daemon) getPendingStateLegacyLogger() (string, error) {
 	cmd.Stdout = &combinedOutput
 	cmd.Stderr = &combinedOutput
 	if err := cmd.Start(); err != nil {
-		return "", errors.Wrap(err, "failed shelling out to journalctl -o cat")
+		return nil, errors.Wrap(err, "failed shelling out to journalctl -o cat")
 	}
 	if err := cmd.Wait(); err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
@@ -749,44 +752,42 @@ func (dn *Daemon) getPendingStateLegacyLogger() (string, error) {
 				// grep exit with 1 if it doesn't find anything
 				// from man: Normally, the exit status is 0 if selected lines are found and 1 otherwise. But the exit status is 2 if an error occurred
 				if status.ExitStatus() == 1 {
-					return "", nil
+					return nil, nil
 				}
 				if status.ExitStatus() > 1 {
-					return "", errors.Wrapf(fmt.Errorf("grep exited with %s", combinedOutput.Bytes()), "failed to grep on journal output: %v", exiterr)
+					return nil, errors.Wrapf(fmt.Errorf("grep exited with %s", combinedOutput.Bytes()), "failed to grep on journal output: %v", exiterr)
 				}
 			}
 		} else {
-			return "", errors.Wrap(err, "command wait error")
+			return nil, errors.Wrap(err, "command wait error")
 		}
 	}
 	journalOutput := combinedOutput.Bytes()
 	// just an extra safety check?
 	if len(journalOutput) == 0 {
-		return "", nil
+		return nil, nil
 	}
 	return dn.processJournalOutput(journalOutput)
 }
 
-func (dn *Daemon) processJournalOutput(journalOutput []byte) (string, error) {
+type journalMsg struct {
+	Message   string `json:"MESSAGE,omitempty"`
+	BootID    string `json:"BOOT_ID,omitempty"`
+	Pending   string `json:"PENDING,omitempty"`
+	OldLogger string `json:"OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK,omitempty"` // unused today
+}
+
+func (dn *Daemon) processJournalOutput(journalOutput []byte) (*journalMsg, error) {
 	lines := strings.Split(strings.TrimSpace(string(journalOutput)), "\n")
 	last := lines[len(lines)-1]
-	type journalMsg struct {
-		Message   string `json:"MESSAGE,omitempty"`
-		BootID    string `json:"BOOT_ID,omitempty"`
-		Pending   string `json:"PENDING,omitempty"`
-		OldLogger string `json:"OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK,omitempty"` // unused today
-	}
 	entry := &journalMsg{}
 	if err := json.Unmarshal([]byte(last), entry); err != nil {
-		return "", errors.Wrap(err, "getting pending state from journal")
+		return nil, errors.Wrap(err, "getting pending state from journal")
 	}
 	if entry.Pending == "0" {
-		return "", nil
+		return nil, nil
 	}
-	if entry.BootID == dn.bootID {
-		return "", fmt.Errorf("pending config %s bootID %s matches current! Failed to reboot?", entry.Message, dn.bootID)
-	}
-	return entry.Message, nil
+	return entry, nil
 }
 
 // getPendingState loads the JSON state we cache across attempting to apply
@@ -794,16 +795,16 @@ func (dn *Daemon) processJournalOutput(journalOutput []byte) (string, error) {
 // The bootID is stored in the pending state; if it is unchanged, we assume
 // that we failed to reboot; that for now should be a fatal error, in order to avoid
 // reboot loops.
-func (dn *Daemon) getPendingState() (string, error) {
+func (dn *Daemon) getPendingState() (*journalMsg, error) {
 	if !dn.loggerSupportsJournal {
 		return dn.getPendingStateLegacyLogger()
 	}
 	journalOutput, err := exec.Command("journalctl", "-o", "json", fmt.Sprintf("MESSAGE_ID=%s", pendingStateMessageID)).CombinedOutput()
 	if err != nil {
-		return "", errors.Wrap(err, "error running journalctl -o json")
+		return nil, errors.Wrap(err, "error running journalctl -o json")
 	}
 	if len(journalOutput) == 0 {
-		return "", nil
+		return nil, nil
 	}
 	return dn.processJournalOutput(journalOutput)
 }
