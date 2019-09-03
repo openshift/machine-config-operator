@@ -167,7 +167,7 @@ required = [
 
 [[constraint]]
   name = "github.com/containers/image"
-  version = "v2.0.0"
+  version = "v3.0.0"
 
 [[constraint]]
   name = "github.com/InVisionApp/go-health"

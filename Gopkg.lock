@@ -108,7 +108,7 @@
   revision = "d596c78861b15c27a9ac82975aca4413390b9b49"
 
 [[projects]]
-  digest = "1:613f0e16a97fc2dccc0d3c31b615eb3c8ecc57295b34949d47917ee1dde1476c"
+  digest = "1:b95fbd6527c5857d6292de810cd8756777c624b0e9b02903f8f8bedeac39132a"
   name = "github.com/containers/image"
   packages = [
     "docker/reference",
@@ -116,8 +116,8 @@
     "types",
   ]
   pruneopts = "NUT"
-  revision = "abf32c4ea589cb8e96bdca5a478dba68f11980e5"
-  version = "v2.0.0"
+  revision = "186df8702a61dd6ed16a88532ed9a10ddc679132"
+  version = "v3.0.2"
 
 [[projects]]
   digest = "1:490deff6409bd7c1e531e143c3adc5bf5e5ff39a7bad6a69f41d5efe95a7ec07"
