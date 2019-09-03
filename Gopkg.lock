@@ -475,12 +475,12 @@
   revision = "0255926f53935175fe90b8e7672c4c06c17d79e6"
 
 [[projects]]
-  branch = "master"
-  digest = "1:cdf4d8665620f7588f2edcc6cd88dcf5f9497f1dc4758eb49ace646e4d7c8f3d"
-  name = "github.com/openshift/kubernetes-drain"
-  packages = ["."]
+  branch = "openshift-4.1-cluster-api-0.0.0-alpha.4"
+  digest = "1:9a7d52b9df3f2c44692d76a3408b186f9e343a283dbb72c83a9dfb0f5ea786db"
+  name = "github.com/openshift/cluster-api"
+  packages = ["pkg/drain"]
   pruneopts = "NUT"
-  revision = "d20a33f09dbf11716de3110d7759f384ba9ef7c3"
+  revision = "53b696be18ad63f7a21f603a4311044a9697807c"
 
 [[projects]]
   branch = "master"
@@ -1183,13 +1183,14 @@
     "github.com/openshift/client-go/config/informers/externalversions",
     "github.com/openshift/client-go/config/informers/externalversions/config/v1",
     "github.com/openshift/client-go/config/listers/config/v1",
-    "github.com/openshift/kubernetes-drain",
+    "github.com/openshift/cluster-api/pkg/drain",
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
     "github.com/pkg/errors",
     "github.com/spf13/cobra",
     "github.com/stretchr/testify/assert",
     "github.com/stretchr/testify/require",
     "github.com/vincent-petithory/dataurl",
+    "golang.org/x/time/rate",
     "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
     "k8s.io/api/policy/v1beta1",
