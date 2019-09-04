@@ -486,12 +486,12 @@
   revision = "c44a8b61b9f46cd9e802384dfeda0bc9942db68a"
 
 [[projects]]
-  branch = "master"
-  digest = "1:cdf4d8665620f7588f2edcc6cd88dcf5f9497f1dc4758eb49ace646e4d7c8f3d"
-  name = "github.com/openshift/kubernetes-drain"
-  packages = ["."]
+  branch = "openshift-4.2-cluster-api-0.1.0"
+  digest = "1:9a7d52b9df3f2c44692d76a3408b186f9e343a283dbb72c83a9dfb0f5ea786db"
+  name = "github.com/openshift/cluster-api"
+  packages = ["pkg/drain"]
   pruneopts = "NUT"
-  revision = "d20a33f09dbf11716de3110d7759f384ba9ef7c3"
+  revision = "072f7d777dc81aac0dd222686e1516dd9e7db38b"
 
 [[projects]]
   branch = "master"
@@ -1247,7 +1247,7 @@
     "github.com/openshift/client-go/operator/informers/externalversions",
     "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1",
     "github.com/openshift/client-go/operator/listers/operator/v1alpha1",
-    "github.com/openshift/kubernetes-drain",
+    "github.com/openshift/cluster-api/pkg/drain",
     "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers",
     "github.com/openshift/library-go/pkg/operator/v1helpers",
     "github.com/pkg/errors",

@@ -22,7 +22,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	golog "github.com/go-log/log"
@@ -414,12 +413,16 @@ func deleteOrEvictPods(client kubernetes.Interface, pods []corev1.Pod, options *
 func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.Pod, policyGroupVersion string, options *DrainOptions, getPodFn func(namespace, name string) (*corev1.Pod, error)) error {
 	returnCh := make(chan error, 1)
 	stopCh := make(chan struct{})
-	var wg sync.WaitGroup
+	// 0 timeout means infinite, we use MaxInt64 to represent it.
+	var globalTimeout time.Duration
+	if options.Timeout == 0 {
+		globalTimeout = time.Duration(math.MaxInt64)
+	} else {
+		globalTimeout = options.Timeout
+	}
 
 	for _, pod := range pods {
-		wg.Add(1)
 		go func(pod corev1.Pod, returnCh chan error, stopCh chan struct{}) {
-			defer wg.Done()
 			var err error
 			for {
 				err = evictPod(client, pod, policyGroupVersion, options.GracePeriodSeconds)
@@ -431,7 +434,7 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 				} else if apierrors.IsTooManyRequests(err) {
 					select {
 					case <-stopCh:
-						logf(options.Logger, "Received channel close for pod %q. Returning!!!", pod.Name)
+						returnCh <- fmt.Errorf("global timeout!! Skip eviction retries for pod %q", pod.Name)
 						return
 					default:
 						logf(options.Logger, "error when evicting pod %q (will retry after 5s): %v", pod.Name, err)
@@ -443,7 +446,7 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 				}
 			}
 			podArray := []corev1.Pod{pod}
-			_, err = waitForDelete(podArray, 1*time.Second, time.Duration(math.MaxInt64), true, options.Logger, getPodFn)
+			_, err = waitForDelete(podArray, 1*time.Second, time.Duration(globalTimeout), true, options.Logger, getPodFn)
 			if err == nil {
 				returnCh <- nil
 			} else {
@@ -455,13 +458,6 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 	doneCount := 0
 	var errors []error
 
-	// 0 timeout means infinite, we use MaxInt64 to represent it.
-	var globalTimeout time.Duration
-	if options.Timeout == 0 {
-		globalTimeout = time.Duration(math.MaxInt64)
-	} else {
-		globalTimeout = options.Timeout
-	}
 	globalTimeoutCh := time.After(globalTimeout)
 	numPods := len(pods)
 	for doneCount < numPods {
@@ -474,12 +470,8 @@ func evictPods(client typedpolicyv1beta1.PolicyV1beta1Interface, pods []corev1.P
 		case <-globalTimeoutCh:
 			logf(options.Logger, "Closing stopCh")
 			close(stopCh)
-			wg.Wait()
-			return fmt.Errorf("Drain did not complete within %v", globalTimeout)
 		}
 	}
-	close(stopCh)
-	wg.Wait()
 	return utilerrors.NewAggregate(errors)
 }
 
