@@ -84,8 +84,8 @@ required = [
   branch = "master"
 
 [[constraint]]
-  name = "github.com/openshift/kubernetes-drain"
-  branch = "master"
+  name = "github.com/openshift/cluster-api"
+  branch = "openshift-4.2-cluster-api-0.1.0"
 
 [[constraint]]
   name = "github.com/openshift/library-go"
