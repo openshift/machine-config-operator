@@ -4,6 +4,7 @@ path: "/etc/kubernetes/static-pod-resources/haproxy/haproxy.cfg.tmpl"
 contents:
   inline: |
     defaults
+      maxconn 20000
       mode    tcp
       log     /var/run/haproxy/haproxy-log.sock local0
       option  dontlognull
@@ -35,5 +36,5 @@ contents:
        option  log-health-checks
        balance roundrobin
     {{`{{- range .LBConfig.Backends }}
-       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 3s fall 3 rise 3
+       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 3s fall 2 rise 3
     {{- end }}`}}
