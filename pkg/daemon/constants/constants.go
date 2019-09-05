@@ -34,4 +34,9 @@ const (
 	// EtcPivotFile is used by the `pivot` command
 	// For more information, see https://github.com/openshift/pivot/pull/25/commits/c77788a35d7ee4058d1410e89e6c7937bca89f6c#diff-04c6e90faac2675aa89e2176d2eec7d8R44
 	EtcPivotFile = "/etc/pivot/image-pullspec"
+
+	// MachineConfigDaemonForceFile if present causes the MCD to skip checking the validity of the
+	// "currentConfig" state.  Create this file (empty contents is fine) if you wish the MCD
+	// to proceed and attempt to "reconcile" to the new "desiredConfig" state regardless.
+	MachineConfigDaemonForceFile = "/run/machine-config-daemon-force"
 )
