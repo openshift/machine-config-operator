@@ -15,7 +15,6 @@ import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
@@ -30,22 +29,32 @@ type syncFunc struct {
 	fn   func(config renderConfig) error
 }
 
+type syncError struct {
+	task string
+	err  error
+}
+
 func (optr *Operator) syncAll(rconfig renderConfig, syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
 		return fmt.Errorf("error syncing progressing status: %v", err)
 	}
 
-	var errs []error
+	var syncErr syncError
 	for _, sf := range syncFuncs {
 		startTime := time.Now()
-		errs = append(errs, sf.fn(rconfig))
+		syncErr = syncError{
+			task: sf.name,
+			err:  sf.fn(rconfig),
+		}
 		if optr.inClusterBringup {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
+		if syncErr.err != nil {
+			break
+		}
 	}
 
-	agg := utilerrors.NewAggregate(errs)
-	if err := optr.syncDegradedStatus(agg); err != nil {
+	if err := optr.syncDegradedStatus(syncErr); err != nil {
 		return fmt.Errorf("error syncing degraded status: %v", err)
 	}
 
@@ -57,12 +66,12 @@ func (optr *Operator) syncAll(rconfig renderConfig, syncFuncs []syncFunc) error 
 		return fmt.Errorf("error syncing version: %v", err)
 	}
 
-	if optr.inClusterBringup && agg == nil {
+	if optr.inClusterBringup && syncErr.err == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
 	}
 
-	return agg
+	return syncErr.err
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {
