@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,8 +17,13 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
+
+const EtcdScalingAnnotationKey = "etcd.operator.openshift.io/scale"
 
 var (
 	runCmd = &cobra.Command{
@@ -35,11 +41,23 @@ var (
 	}
 )
 
+type EtcdScaling struct {
+	Metadata *metav1.ObjectMeta `json:"metadata,omitempty"`
+	Members  []Member           `json:"members,omitempty"`
+}
+
+type Member struct {
+	ID         uint64   `json:"ID,omitempty"`
+	Name       string   `json:"name,omitempty"`
+	PeerURLS   []string `json:"peerURLs,omitempty"`
+	ClientURLS []string `json:"clientURLs,omitempty"`
+}
+
 func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.PersistentFlags().StringVar(&runOpts.discoverySRV, "discovery-srv", "", "DNS domain used to populate envs from SRV query.")
 	rootCmd.PersistentFlags().StringVar(&runOpts.outputFile, "output-file", "", "file where the envs are written. If empty, prints to Stdout.")
-	rootCmd.PersistentFlags().BoolVar(&runOpts.bootstrapSRV, "bootstrap-srv", true, "use SRV discovery for bootstraping etcd cluster.")
+	rootCmd.PersistentFlags().BoolVar(&runOpts.bootstrapSRV, "srv-bootstrap", true, "use SRV discovery for bootstraping etcd cluster.")
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -53,6 +71,20 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		return errors.New("--discovery-srv cannot be empty")
 	}
 
+	etcdName := os.Getenv("ETCD_NAME")
+	if etcdName == "" {
+		return fmt.Errorf("environment variable ETCD_NAME has no value")
+	}
+
+	etcdDataDir := os.Getenv("ETCD_DATA_DIR")
+	if etcdDataDir == "" {
+		return fmt.Errorf("environment variable ETCD_DATA_DIR has no value")
+	}
+
+	if !inCluster() {
+		glog.V(4).Infof("KUBERNETES_SERVICE_HOST or KUBERNETES_SERVICE_PORT contain no value, running in standalone mode.")
+	}
+
 	ips, err := ipAddrs()
 	if err != nil {
 		return err
@@ -62,7 +94,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	var ip string
 	if err := wait.PollImmediate(30*time.Second, 5*time.Minute, func() (bool, error) {
 		for _, cand := range ips {
-			found, err := reverseLookupSelf("etcd-server-ssl", "tcp", runOpts.discoverySRV, cand)
+			found, err := reverseLookup("etcd-server-ssl", "tcp", runOpts.discoverySRV, cand, runOpts.bootstrapSRV)
 			if err != nil {
 				glog.Errorf("error looking up self for candidate IP %s: %v", cand, err)
 				continue
@@ -80,10 +112,54 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 	glog.Infof("dns name is %s", dns)
 
-	// initialize envs used to bootstrap etcd
-	exportEnv, err := setBootstrapEnv(runOpts.outputFile, runOpts.discoverySRV, runOpts.bootstrapSRV)
-	if err != nil {
-		return err
+	exportEnv := make(map[string]string)
+	if _, err := os.Stat(fmt.Sprintf("%s/member", etcdDataDir)); os.IsNotExist(err) && !runOpts.bootstrapSRV && inCluster() {
+		duration := 10 * time.Second
+		wait.PollInfinite(duration, func() (bool, error) {
+			if _, err := os.Stat("/var/run/secrets/kubernetes.io/serviceaccount/token"); os.IsNotExist(err) {
+				glog.Errorf("serviceaccount failed: %v", err)
+				return false, nil
+			}
+			return true, nil
+		})
+
+		clientConfig, err := rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
+		client, err := kubernetes.NewForConfig(clientConfig)
+		if err != nil {
+			return fmt.Errorf("error creating client: %v", err)
+		}
+		var e EtcdScaling
+		// wait forever for success and retry every duration interval
+		wait.PollInfinite(duration, func() (bool, error) {
+			result, err := client.CoreV1().ConfigMaps("openshift-etcd").Get("member-config", metav1.GetOptions{})
+			if err != nil {
+				glog.Errorf("error creating client %v", err)
+				return false, nil
+			}
+			if err := json.Unmarshal([]byte(result.Annotations[EtcdScalingAnnotationKey]), &e); err != nil {
+				glog.Errorf("error decoding result %v", err)
+				return false, nil
+			}
+			if e.Metadata.Name != etcdName {
+				glog.Errorf("could not find self in member-config")
+				return false, nil
+			}
+			members := e.Members
+			if len(members) == 0 {
+				glog.Errorf("no members found in member-config")
+				return false, nil
+			}
+			var memberList []string
+			for _, m := range members {
+				memberList = append(memberList, fmt.Sprintf("%s=%s", m.Name, m.PeerURLS[0]))
+			}
+			memberList = append(memberList, fmt.Sprintf("%s=https://%s:2380", etcdName, dns))
+			exportEnv["INITIAL_CLUSTER"] = strings.Join(memberList, ",")
+			return true, nil
+		})
 	}
 
 	out := os.Stdout
@@ -94,6 +170,12 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		}
 		defer f.Close()
 		out = f
+	}
+
+	if runOpts.bootstrapSRV {
+		exportEnv["DISCOVERY_SRV"] = runOpts.discoverySRV
+	} else {
+		exportEnv["NAME"] = etcdName
 	}
 
 	// enable etcd to run using s390 and s390x. Because these are not officially supported upstream
@@ -167,29 +249,44 @@ func ipAddrs() ([]string, error) {
 	return ips, nil
 }
 
+func reverseLookup(service, proto, name, self string, bootstrapSRV bool) (string, error) {
+	if bootstrapSRV || inCluster() {
+		return reverseLookupSelf(service, proto, name, self)
+	}
+	return lookupTargetMatchSelf(fmt.Sprintf("etcd-bootstrap.%s", name), self)
+}
+
 // returns the target from the SRV record that resolves to self.
 func reverseLookupSelf(service, proto, name, self string) (string, error) {
 	_, srvs, err := net.LookupSRV(service, proto, name)
 	if err != nil {
 		return "", err
 	}
-	selfTarget := ""
 	for _, srv := range srvs {
 		glog.V(4).Infof("checking against %s", srv.Target)
-		addrs, err := net.LookupHost(srv.Target)
+		selfTarget, err := lookupTargetMatchSelf(srv.Target, self)
 		if err != nil {
-			return "", fmt.Errorf("could not resolve member %q", srv.Target)
+			return "", err
 		}
-
-		for _, addr := range addrs {
-			if addr == self {
-				selfTarget = strings.Trim(srv.Target, ".")
-				break
-			}
+		if selfTarget != "" {
+			return selfTarget, nil
 		}
 	}
-	if selfTarget == "" {
-		return "", fmt.Errorf("could not find self")
+	return "", fmt.Errorf("could not find self")
+}
+
+//
+func lookupTargetMatchSelf(target string, self string) (string, error) {
+	addrs, err := net.LookupHost(target)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve member %q", target)
+	}
+	selfTarget := ""
+	for _, addr := range addrs {
+		if addr == self {
+			selfTarget = strings.Trim(target, ".")
+			break
+		}
 	}
 	return selfTarget, nil
 }
@@ -207,4 +304,11 @@ func writeEnvironmentFile(m map[string]string, w io.Writer, export bool) error {
 		return err
 	}
 	return nil
+}
+
+func inCluster() bool {
+	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" || os.Getenv("KUBERNETES_SERVICE_PORT") == "" {
+		return false
+	}
+	return true
 }
