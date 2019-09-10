@@ -2,6 +2,7 @@ package containerruntimeconfig
 
 import (
 	"bytes"
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/pkg/sysregistriesv2"
+	signature "github.com/containers/image/signature"
 	"github.com/containers/image/types"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
@@ -172,6 +174,88 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 				SystemRegistriesConfPath: registriesConf.Name(),
 			})
 			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestUpdatePolicyJSON(t *testing.T) {
+	templateConfig := signature.Policy{
+		Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+		Transports: map[string]signature.PolicyTransportScopes{
+			"docker-daemon": map[string]signature.PolicyRequirements{
+				"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+			},
+		},
+	}
+	buf := bytes.Buffer{}
+	err := json.NewEncoder(&buf).Encode(templateConfig)
+	require.NoError(t, err)
+	templateBytes := buf.Bytes()
+
+	tests := []struct {
+		name             string
+		allowed, blocked []string
+		want             signature.Policy
+	}{
+		{
+			name: "unchanged",
+			want: templateConfig,
+		},
+		{
+			name:    "allowed",
+			allowed: []string{"allow.io"},
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRReject()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"allow.io": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"allow.io": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+		},
+		{
+			name:    "blocked",
+			blocked: []string{"block.com"},
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"block.com": signature.PolicyRequirements{signature.NewPRReject()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"block.com": signature.PolicyRequirements{signature.NewPRReject()},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed)
+			if err != nil {
+				t.Errorf("updatePolicyJSON() error = %v", err)
+				return
+			}
+			gotConf := signature.Policy{}
+			if err := json.Unmarshal(got, &gotConf); err != nil {
+				t.Errorf("error unmarshalling result: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(gotConf, tt.want) {
+				t.Errorf("updatePolicyJSON() Diff:\n %s", diff.ObjectGoPrintDiff(tt.want, gotConf))
+			}
+			// Ensure that the generated configuration is actually valid.
+			_, err = signature.NewPolicyFromBytes(got)
+			require.NoError(t, err)
 		})
 	}
 }

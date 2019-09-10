@@ -378,17 +378,17 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, *igntypes.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
+		return nil, nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
 	}
 	// Find generated storage.config, and crio.config
 	var (
-		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig *igntypes.File
-		errStorage, errCRIO, errRegistries                           error
+		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON *igntypes.File
+		errStorage, errCRIO, errRegistries, errPolicy                               error
 	)
 	// Find storage config
 	for _, gmc := range generatedConfigs {
@@ -414,11 +414,19 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 			break
 		}
 	}
-	if errStorage != nil || errCRIO != nil || errRegistries != nil {
-		return nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v, %v", errStorage, errCRIO, errRegistries)
+	// Find Policy JSON
+	for _, gmc := range generatedConfigs {
+		config, errPolicy = findPolicyJSON(gmc)
+		if errPolicy == nil {
+			gmcPolicyJSON = config
+			break
+		}
+	}
+	if errStorage != nil || errCRIO != nil || errRegistries != nil || errPolicy != nil {
+		return nil, nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v, %v, %v", errStorage, errCRIO, errRegistries, errPolicy)
 	}
 
-	return gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, nil
+	return gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
@@ -518,7 +526,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 			isNotFound := errors.IsNotFound(err)
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, originalCRIOIgn, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
+			originalStorageIgn, originalCRIOIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 			}
@@ -541,7 +549,10 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
 			}
-			mc.Spec.Config = createNewCtrRuntimeConfigIgnition(storageTOML, crioTOML)
+			mc.Spec.Config = createNewIgnition(map[string][]byte{
+				storageConfigPath: storageTOML,
+				crioConfigPath:    crioTOML,
+			})
 
 			mc.SetAnnotations(map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
@@ -614,8 +625,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
-	// Go through the registries in the image spec to get and validate the registries
-	insecureRegs, blockedRegs, err := getValidRegistries(&clusterVersionCfg.Status, &imgcfg.Spec)
+	// Go through the registries in the image spec to get and validate the blocked registries
+	blockedRegs, err := getValidBlockedRegistries(&clusterVersionCfg.Status, &imgcfg.Spec)
 	if err != nil && err != errParsingReference {
 		glog.V(2).Infof("%v, skipping....", err)
 	} else if err == errParsingReference {
@@ -653,7 +664,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		managedKey := getManagedKeyReg(pool)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
-				insecureRegs, blockedRegs, icspRules)
+				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries, icspRules)
 			if err != nil {
 				return err
 			}
@@ -707,14 +718,20 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*igntypes.Config, error) {
-	var registriesTOML []byte
+	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*igntypes.Config, error) {
+
+	var (
+		registriesTOML []byte
+		policyJSON     []byte
+	)
+
+	// Generate the original registries config
+	_, _, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
+	}
+
 	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
-		// Generate the original registries config
-		_, _, originalRegistriesIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
-		if err != nil {
-			return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
-		}
 		dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
@@ -724,7 +741,20 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update registries config with new changes: %v", err)
 		}
 	}
-	registriesIgn := createNewRegistriesConfigIgnition(registriesTOML)
+	if blockedRegs != nil || allowedRegs != nil {
+		dataURL, err := dataurl.DecodeString(originalPolicyIgn.Contents.Source)
+		if err != nil {
+			return nil, fmt.Errorf("could not decode original policy json: %v", err)
+		}
+		policyJSON, err = updatePolicyJSON(dataURL.Data, blockedRegs, allowedRegs)
+		if err != nil {
+			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
+		}
+	}
+	registriesIgn := createNewIgnition(map[string][]byte{
+		registriesConfigPath: registriesTOML,
+		policyConfigPath:     policyJSON,
+	})
 	return &registriesIgn, nil
 }
 
@@ -734,6 +764,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *v1.ControllerConfig
 	// ImageConfig is not available.
 	insecureRegs := []string(nil)
 	blockedRegs := []string(nil)
+	allowedRegs := []string(nil)
 
 	var res []*v1.MachineConfig
 	for _, pool := range mcpPools {
@@ -741,7 +772,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *v1.ControllerConfig
 		managedKey := getManagedKeyReg(pool)
 
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role,
-			insecureRegs, blockedRegs, icspRules)
+			insecureRegs, blockedRegs, allowedRegs, icspRules)
 		if err != nil {
 			return nil, err
 		}

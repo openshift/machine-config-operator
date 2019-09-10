@@ -45,6 +45,7 @@ var (
 	// This matches templates/*/container-registries.yaml, and will have to be updated with those files.  Ideally
 	// it would be nice to extract this dynamically.
 	templateRegistriesConfig = []byte("unqualified-search-registries = ['registry.access.redhat.com', 'docker.io']\n")
+	templatePolicyJSON       = []byte("{\"default\":[{\"type\":\"reject\"}],\"transports\":{\"docker-daemon\":{\"\":[{\"type\":\"insecureAcceptAnything\"}]}}}\n")
 )
 
 const (
@@ -331,31 +332,54 @@ func (f *fixture) expectUpdateContainerRuntimeConfig(config *mcfgv1.ContainerRun
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, "status", config))
 }
 
-func (f *fixture) verifyRegistriesConfigContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy) {
+func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, verifyPolicyJSON bool) {
 	icsps := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
 	if icsp != nil {
 		icsps = append(icsps, icsp)
 	}
 	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(mcName, metav1.GetOptions{})
 	require.NoError(t, err)
-	verifyRegistriesConfigContents(t, updatedMC, mcName, imgcfg, icsps)
+	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, verifyPolicyJSON)
 }
 
-func verifyRegistriesConfigContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy) {
+func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, verifyPolicyJSON bool) {
 	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
 	// configuration file.
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
 		imgcfg.Spec.RegistrySources.BlockedRegistries, icsps)
 	require.NoError(t, err)
-
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
-	require.Len(t, mc.Spec.Config.Storage.Files, 1)
-	file := mc.Spec.Config.Storage.Files[0]
-	assert.Equal(t, registriesConfigPath, file.Node.Path)
-	registriesConf, err := dataurl.DecodeString(file.Contents.Source)
+	if verifyPolicyJSON {
+		// If there is a change to the policy.json file then there will be 2 files
+		require.Len(t, mc.Spec.Config.Storage.Files, 2)
+	} else {
+		require.Len(t, mc.Spec.Config.Storage.Files, 1)
+	}
+	regfile := mc.Spec.Config.Storage.Files[0]
+	if regfile.Node.Path != registriesConfigPath {
+		regfile = mc.Spec.Config.Storage.Files[1]
+	}
+	assert.Equal(t, registriesConfigPath, regfile.Node.Path)
+	registriesConf, err := dataurl.DecodeString(regfile.Contents.Source)
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf.Data))
+
+	// Validate the policy.json contents if a change is expected from the tests
+	if verifyPolicyJSON {
+		expectedPolicyJSON, err := updatePolicyJSON(templatePolicyJSON,
+			imgcfg.Spec.RegistrySources.BlockedRegistries,
+			imgcfg.Spec.RegistrySources.AllowedRegistries)
+		require.NoError(t, err)
+		policyfile := mc.Spec.Config.Storage.Files[1]
+		if policyfile.Node.Path != policyConfigPath {
+			policyfile = mc.Spec.Config.Storage.Files[0]
+		}
+		assert.Equal(t, policyConfigPath, policyfile.Node.Path)
+		policyJSON, err := dataurl.DecodeString(policyfile.Contents.Source)
+		require.NoError(t, err)
+		assert.Equal(t, string(expectedPolicyJSON), string(policyJSON.Data))
+	}
 }
 
 // The pathc bytes to expect when creating/updating a containerruntimeconfig
@@ -481,7 +505,7 @@ func TestImageConfigCreate(t *testing.T) {
 			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
@@ -501,7 +525,7 @@ func TestImageConfigCreate(t *testing.T) {
 			f.run("cluster")
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
-				f.verifyRegistriesConfigContents(t, mcName, imgcfg1, nil)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, true)
 			}
 		})
 	}
@@ -517,7 +541,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			cc := newControllerConfig(common.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
 			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
@@ -544,6 +568,10 @@ func TestImageConfigUpdate(t *testing.T) {
 
 			f.validateActions()
 			close(stopCh)
+
+			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, true)
+			}
 
 			// Perform Update
 			f = newFixture(t)
@@ -579,6 +607,10 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.validateActions()
 
 			close(stopCh)
+
+			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfgUpdate, nil, true)
+			}
 		})
 	}
 }
@@ -627,7 +659,7 @@ func TestICSPUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
-				f.verifyRegistriesConfigContents(t, mcName, imgcfg1, icsp)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icsp, false)
 			}
 
 			// Perform Update
@@ -670,7 +702,7 @@ func TestICSPUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
-				f.verifyRegistriesConfigContents(t, mcName, imgcfg1, icspUpdate)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icspUpdate, false)
 			}
 		})
 	}
@@ -697,7 +729,7 @@ func TestRunImageBootstrap(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, mcs, len(pools))
 			for i := range pools {
-				verifyRegistriesConfigContents(t, mcs[i], getManagedKeyReg(pools[i]), emptyImgCfg, icspRules)
+				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], getManagedKeyReg(pools[i]), emptyImgCfg, icspRules, false)
 			}
 		})
 	}
@@ -736,7 +768,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range failureTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
-		insecure, blocked, err := getValidRegistries(&cvcfg.Status, &imgcfg.Spec)
+		blocked, err := getValidBlockedRegistries(&cvcfg.Status, &imgcfg.Spec)
 		if err == nil {
 			t.Errorf("%s: failed", test.name)
 		}
@@ -745,16 +777,13 @@ func TestRegistriesValidation(t *testing.T) {
 				t.Errorf("%s: failed to filter out registry being used by payload", test.name)
 			}
 		}
-		if len(insecure) == 0 {
-			t.Errorf("%s: failed to copy over the insecure registries from the image spec", test.name)
-		}
 	}
 
 	// Successful Tests
 	for _, test := range successTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
-		insecure, blocked, err := getValidRegistries(&cvcfg.Status, &imgcfg.Spec)
+		blocked, err := getValidBlockedRegistries(&cvcfg.Status, &imgcfg.Spec)
 		if err != nil {
 			t.Errorf("%s: failed", test.name)
 		}
@@ -762,9 +791,6 @@ func TestRegistriesValidation(t *testing.T) {
 			if reg == "blah.io" {
 				t.Errorf("%s: failed to filter out registry being used by payload", test.name)
 			}
-		}
-		if len(insecure) == 0 {
-			t.Errorf("%s: failed to copy over the insecure registries from the image spec", test.name)
 		}
 	}
 }
