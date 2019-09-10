@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/joho/godotenv"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -39,7 +40,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&runOpts.discoverySRV, "discovery-srv", "", "DNS domain used to populate envs from SRV query.")
 	rootCmd.PersistentFlags().StringVar(&runOpts.outputFile, "output-file", "", "file where the envs are written. If empty, prints to Stdout.")
 	rootCmd.PersistentFlags().BoolVar(&runOpts.bootstrapSRV, "bootstrap-srv", true, "use SRV discovery for bootstraping etcd cluster.")
-
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -80,6 +80,12 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 	glog.Infof("dns name is %s", dns)
 
+	// initialize envs used to bootstrap etcd
+	exportEnv, err := setBootstrapEnv(runOpts.outputFile, runOpts.discoverySRV, runOpts.bootstrapSRV)
+	if err != nil {
+		return err
+	}
+
 	out := os.Stdout
 	if runOpts.outputFile != "" {
 		f, err := os.Create(runOpts.outputFile)
@@ -88,11 +94,6 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		}
 		defer f.Close()
 		out = f
-	}
-
-	exportEnv := make(map[string]string)
-	if runOpts.bootstrapSRV {
-		exportEnv["DISCOVERY_SRV"] = runOpts.discoverySRV
 	}
 
 	// enable etcd to run using s390 and s390x. Because these are not officially supported upstream
@@ -111,6 +112,29 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		"DNS_NAME":          dns,
 		"WILDCARD_DNS_NAME": fmt.Sprintf("*.%s", runOpts.discoverySRV),
 	}, out, false)
+}
+
+// setBootstrapEnv populates and returns a map based on envs from file.
+func setBootstrapEnv(envFile, discoverySRV string, bootstrapSRV bool) (map[string]string, error) {
+	bootstrapEnv := make(map[string]string)
+	if _, err := os.Stat(envFile); !os.IsNotExist(err) {
+		recoveryEnv, err := godotenv.Read(envFile)
+		if err != nil {
+			return nil, err
+		}
+		// persist any observed envs used for recovery
+		for _, val := range []string{"INITIAL_CLUSTER", "INITIAL_CLUSTER_STATE"} {
+			rkey := fmt.Sprintf("ETCD_%s", val)
+			if recoveryEnv[rkey] != "" {
+				bootstrapEnv[val] = recoveryEnv[rkey]
+			}
+		}
+	}
+	// define srv discovery if enabeled and not in recovery mode
+	if len(bootstrapEnv) == 0 && bootstrapSRV {
+		bootstrapEnv["DISCOVERY_SRV"] = discoverySRV
+	}
+	return bootstrapEnv, nil
 }
 
 func ipAddrs() ([]string, error) {
