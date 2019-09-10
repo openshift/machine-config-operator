@@ -30,13 +30,16 @@ var (
 		discoverySRV string
 		ifName       string
 		outputFile   string
+		bootstrapSRV bool
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	rootCmd.PersistentFlags().StringVar(&runOpts.discoverySRV, "discovery-srv", "", "DNS domain used to bootstrap initial etcd cluster.")
+	rootCmd.PersistentFlags().StringVar(&runOpts.discoverySRV, "discovery-srv", "", "DNS domain used to populate envs from SRV query.")
 	rootCmd.PersistentFlags().StringVar(&runOpts.outputFile, "output-file", "", "file where the envs are written. If empty, prints to Stdout.")
+	rootCmd.PersistentFlags().BoolVar(&runOpts.bootstrapSRV, "bootstrap-srv", true, "use SRV discovery for bootstraping etcd cluster.")
+
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -87,8 +90,9 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		out = f
 	}
 
-	exportEnv := map[string]string{
-		"DISCOVERY_SRV": runOpts.discoverySRV,
+	exportEnv := make(map[string]string)
+	if runOpts.bootstrapSRV {
+		exportEnv["DISCOVERY_SRV"] = runOpts.discoverySRV
 	}
 
 	// enable etcd to run using s390 and s390x. Because these are not officially supported upstream
