@@ -32,7 +32,13 @@ fi
 
 mkdir -p ${BIN_PATH}
 
+# Use the containers_image_openpgp flag to avoid the default CGO implementation of signatures dragged in by
+# containers/image/signature, which we use only to edit the /etc/containers/policy.json file without doing any cryptography
 CGO_ENABLED=0
+
+if [[ $WHAT == "machine-config-controller" ]]; then
+    GOFLAGS="-tags=containers_image_openpgp"
+fi
 
 echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE}, ${HASH})"
 CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build ${GOFLAGS} -ldflags "${GLDFLAGS} -s -w" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}

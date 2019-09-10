@@ -1,0 +1,19 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/containers/policy.json"
+contents:
+  inline: |
+    {
+        "default": [
+            {
+                "type": "insecureAcceptAnything"
+            }
+        ],
+        "transports":
+            {
+                "docker-daemon":
+                    {
+                        "": [{"type":"insecureAcceptAnything"}]
+                    }
+            }
+    }
