@@ -97,8 +97,8 @@ contents:
 
     # backup etcd peer, server and metric certs
     backup_certs() {
-      COUNT=$(ls $ETCD_STATIC_RESOURCES/system\:etcd-* 2>/dev/null | wc -l)
-      BACKUP_COUNT=$(ls $ASSET_DIR/backup/system\:etcd-* 2>/dev/null | wc -l)
+      COUNT=$(ls $ETCD_STATIC_RESOURCES/system\:etcd-* 2>/dev/null | wc -l) || true
+      BACKUP_COUNT=$(ls $ASSET_DIR/backup/system\:etcd-* 2>/dev/null | wc -l) || true
 
       if [ "$BACKUP_COUNT" -gt 1 ]; then
         echo "etcd TLS certificate backups found in $ASSET_DIR/backup.."
@@ -170,9 +170,9 @@ contents:
 
     # generate a kubeconf like file for the cert agent to consume and contact signer.
     gen_config() {
-      CA=$(base64 $ASSET_DIR/backup/etcd-ca-bundle.crt | tr -d '\n')
-      CERT=$(base64 $ASSET_DIR/backup/etcd-client.crt | tr -d '\n')
-      KEY=$(base64 $ASSET_DIR/backup/etcd-client.key | tr -d '\n')
+      CA=$(base64 $ASSET_DIR/backup/etcd-ca-bundle.crt | tr -d '\n') || true
+      CERT=$(base64 $ASSET_DIR/backup/etcd-client.crt | tr -d '\n') || true
+      KEY=$(base64 $ASSET_DIR/backup/etcd-client.key | tr -d '\n') || true
 
       cat > $ETCD_STATIC_RESOURCES/.recoveryconfig << EOF
     clusters:
@@ -228,7 +228,7 @@ contents:
         exit 1
       fi
 
-      ID=$($ETCDCTL_WITH_TLS member list | awk -F "," "/\s${NAME}\,/"'{print $1}')
+      ID=$($ETCDCTL_WITH_TLS member list | awk -F "," "/\s${NAME}\,/"'{print $1}') || true
       if [ "$?" -ne 0 ] || [ -z "$ID" ]; then
         echo "could not find etcd member $NAME to remove."
         exit 1
@@ -338,8 +338,8 @@ contents:
       if [ -f "$RUN_ENV" ] && [ -s "$RUN_ENV" ];then
         return 0
       fi
-      SRV_A_RECORD=$(dig +noall +answer SRV _etcd-server-ssl._tcp.${DISCOVERY_DOMAIN} | grep -oP '(?<=2380 ).*[^\.]' | xargs)
-      HOST_IPS=$(ip -o addr |  grep -oP '(?<=inet )(\d{1,3}\.?){4}')
+      SRV_A_RECORD=$(dig +noall +answer SRV _etcd-server-ssl._tcp.${DISCOVERY_DOMAIN} | grep -oP '(?<=2380 ).*[^\.]' | xargs) || true
+      HOST_IPS=$(ip -o addr |  grep -oP '(?<=inet )(\d{1,3}\.?){4}') || true
 
       if [ -z "$SRV_A_RECORD" ]; then
         echo "SRV A record query for ${DISCOVERY_DOMAIN} failed please update DNS"
@@ -373,9 +373,9 @@ contents:
 
     # validate_etcd_name uses regex to return the etcd member name key from ETCD_INITIAL_CLUSTER matching the local ETCD_DNS_NAME.
     validate_etcd_name() {
-      ETCD_NAME=$(echo ${ETCD_INITIAL_CLUSTER} | grep -oP "(?<=)[^,,\s]*(?==[^=]*${ETCD_DNS_NAME}\b)")
+      ETCD_NAME=$(echo ${ETCD_INITIAL_CLUSTER} | grep -oP "(?<=)[^,,\s]*(?==[^=]*${ETCD_DNS_NAME}\b)") || true
       if [ -z "$ETCD_NAME" ]; then
-        echo "${ETCD_DNS_NAME} is not found in ${ETCD_INITIAL_CLUSTER}"
+        echo "Validating INITIAL_CLUSTER failed: ${ETCD_DNS_NAME} is not found in ${ETCD_INITIAL_CLUSTER}"
         exit 1
       fi
       echo "$ETCD_NAME"

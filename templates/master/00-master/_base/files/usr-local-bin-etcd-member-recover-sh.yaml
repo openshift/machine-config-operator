@@ -5,6 +5,9 @@ contents:
   inline: |
     #!/usr/bin/env bash
 
+    set -o errexit
+    set -o pipefail
+
     # example
     # export SETUP_ETCD_ENVIRONMENT=$(oc adm release info --image-for machine-config-operator --registry-config=./config.json)
     # export KUBE_CLIENT_AGENT=$(oc adm release info --image-for kube-client-agent --registry-config=./config.json)
@@ -53,7 +56,7 @@ contents:
       init
       dl_etcdctl
       backup_manifest
-      DISCOVERY_DOMAIN=$(grep -oP '(?<=discovery-srv=).*[^"]' $ASSET_DIR/backup/etcd-member.yaml )
+      DISCOVERY_DOMAIN=$(grep -oP '(?<=discovery-srv=).*[^"]' $ASSET_DIR/backup/etcd-member.yaml ) || true
       if [ -z "$DISCOVERY_DOMAIN" ]; then
         echo "Discovery domain can not be extracted from $ASSET_DIR/backup/etcd-member.yaml"
         exit 1
@@ -67,7 +70,7 @@ contents:
       backup_certs
       remove_certs
       gen_config
-      CLUSTER_NAME=$(echo ${DISCOVERY_DOMAIN} | grep -oP '^.*?(?=\.)')
+      CLUSTER_NAME=$(echo ${DISCOVERY_DOMAIN} | grep -oP '^.*?(?=\.)') || true
       populate_template '__ETCD_DISCOVERY_DOMAIN__' "$DISCOVERY_DOMAIN" "$TEMPLATE" "$ASSET_DIR/tmp/etcd-generate-certs.stage1"
       populate_template '__SETUP_ETCD_ENVIRONMENT__' "$SETUP_ETCD_ENVIRONMENT" "$ASSET_DIR/tmp/etcd-generate-certs.stage1" "$ASSET_DIR/tmp/etcd-generate-certs.stage2"
       populate_template '__KUBE_CLIENT_AGENT__' "$KUBE_CLIENT_AGENT" "$ASSET_DIR/tmp/etcd-generate-certs.stage2" "$MANIFEST_STOPPED_DIR/etcd-generate-certs.yaml"
