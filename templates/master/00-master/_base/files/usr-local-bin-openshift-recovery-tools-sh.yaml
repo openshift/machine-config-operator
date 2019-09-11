@@ -375,7 +375,7 @@ contents:
     validate_etcd_name() {
       ETCD_NAME=$(echo ${ETCD_INITIAL_CLUSTER} | grep -oP "(?<=)[^,,\s]*(?==[^=]*${ETCD_DNS_NAME}\b)") || true
       if [ -z "$ETCD_NAME" ]; then
-        echo "Validating INITIAL_CLUSTER failed: ${ETCD_DNS_NAME} is not found in ${ETCD_INITIAL_CLUSTER}"
+        echo "Validating INITIAL_CLUSTER failed: ${ETCD_DNS_NAME} is not found in ${ETCD_INITIAL_CLUSTER}" >&2
         exit 1
       fi
       echo "$ETCD_NAME"
