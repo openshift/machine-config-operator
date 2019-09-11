@@ -226,7 +226,7 @@ contents:
 
     # image_volumes controls how image volumes are handled.
     # The valid values are mkdir and ignore.
-    image_volumes = "mkdir"
+    image_volumes = "bind"
 
     # CRI-O reads its configured registries defaults from the containers/image configuration
     # file, /etc/containers/registries.conf. Modify registries.conf if you want to
