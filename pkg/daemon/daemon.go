@@ -464,6 +464,7 @@ func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 					glog.Info("Got SIGTERM, but actively updating")
 				} else {
 					close(signaled)
+					return
 				}
 			}
 		}
