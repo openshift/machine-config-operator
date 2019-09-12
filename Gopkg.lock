@@ -362,6 +362,14 @@
   version = "v1.0"
 
 [[projects]]
+  digest = "1:da62aa6632d04e080b8a8b85a59ed9ed1550842a0099a55f3ae3a20d02a3745a"
+  name = "github.com/joho/godotenv"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "23d116af351c84513e1946b527c88823e476be13"
+  version = "v1.3.0"
+
+[[projects]]
   digest = "1:12d3de2c11e54ea37d7f00daf85088ad5e61ec4e8a1f828d6c8b657976856be7"
   name = "github.com/json-iterator/go"
   packages = ["."]
@@ -1231,6 +1239,7 @@
     "github.com/golang/glog",
     "github.com/google/renameio",
     "github.com/imdario/mergo",
+    "github.com/joho/godotenv",
     "github.com/kubernetes-sigs/cri-o/pkg/config",
     "github.com/opencontainers/go-digest",
     "github.com/openshift/api/config/v1",
