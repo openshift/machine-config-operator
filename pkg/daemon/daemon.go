@@ -216,10 +216,10 @@ func New(
 		}
 	}
 
-	// RHEL 7.6 logger (util-linux) doesn't have the --journald flag
+	// RHEL 7.6/Centos 7 logger (util-linux) doesn't have the --journald flag
 	loggerSupportsJournal := true
 	if !mock {
-		if operatingSystem == machineConfigDaemonOSRHEL {
+		if operatingSystem == machineConfigDaemonOSRHEL || operatingSystem == machineConfigDaemonOSCENTOS {
 			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
 			if err != nil {
 				return nil, errors.Wrapf(err, "running logger --help")
