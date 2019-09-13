@@ -20,7 +20,7 @@ import (
 	"github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
-	drain "github.com/openshift/kubernetes-drain"
+	drain "github.com/openshift/cluster-api/pkg/drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	errors "github.com/pkg/errors"
