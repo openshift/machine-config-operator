@@ -7,12 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"net"
 	"os"
-	"path"
 	"runtime"
 	"strings"
 	"time"
@@ -111,7 +108,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 				ip = cand
 				return true, nil
 			}
-			glog.V(4).Infof("no matching dns for %s", cand)
+			glog.V(4).Infof("no matching dns for %s in %s: %v", cand, runOpts.discoverySRV, err)
 		}
 		return false, nil
 	}); err != nil {
@@ -157,10 +154,6 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 			members := e.Members
 			if len(members) == 0 {
 				glog.Errorf("no members found in member-config")
-				return false, nil
-			}
-			err = waitForCerts(client, "openshift-etcd", etcdName, e.PodFQDN)
-			if err != nil {
 				return false, nil
 			}
 			var memberList []string
@@ -323,75 +316,4 @@ func inCluster() bool {
 		return false
 	}
 	return true
-}
-
-// TODO: Port this logic into Quay
-func waitForCerts(client *kubernetes.Clientset, secretNamespace, podName, podFQDN string) error {
-	peerSecretName := podName + "-peer"
-	serverSecretName := podName + "-server"
-	metricSecretName := podName + "-metric"
-	peerCN := "system:etcd-peer:" + podFQDN
-	secretCN := "system:etcd-server:" + podFQDN
-	metricCN := "system:etcd-metric:" + podFQDN
-
-	glog.Infof("getting peer secret %v/%v\n", secretNamespace, peerSecretName)
-	if err := writeSecret(client, peerSecretName, secretNamespace, peerCN); err != nil {
-		return err
-	}
-
-	// wait for server certs
-	glog.Infof("getting server secret %v/%v\n", secretNamespace, serverSecretName)
-	if err := writeSecret(client, serverSecretName, secretNamespace, secretCN); err != nil {
-		return err
-	}
-
-	// wait for server certs
-	glog.Infof("getting metric secret %v/%v\n", secretNamespace, metricSecretName)
-	if err := writeSecret(client, metricSecretName, secretNamespace, metricCN); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func writeSecret(client *kubernetes.Clientset, secretName, secretNamespace, cn string) error {
-	glog.Infof("getting secret %v/%v\n", secretNamespace, secretNamespace)
-	secret, err := client.CoreV1().Secrets(secretNamespace).Get(secretName, metav1.GetOptions{})
-	if err != nil {
-		glog.Errorf("error in getting secret %s/%s: %v", secretNamespace, secretName, err)
-		return err
-	}
-	glog.Infof("ensure secret keys %v/%v\n", secretNamespace, secretName)
-	err = ensureCertKeys(secret.Data)
-	if err != nil {
-		return err
-	}
-
-	glog.Infof("writing secret to %v\n", cn)
-	err = writeToFile(secret, cn)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func ensureCertKeys(data map[string][]byte) error {
-	if len(data["tls.crt"]) == 0 || len(data["tls.key"]) == 0 {
-		return fmt.Errorf("invalid secret data")
-	}
-	return nil
-}
-
-func writeToFile(s *v1.Secret, commonName string) error {
-	// write out signed certificate to disk
-	certFile := path.Join(assetDir, commonName+".crt")
-	//fmt.Printf("%s", s.Data["tls.crt"])
-	if err := ioutil.WriteFile(certFile, s.Data["tls.crt"], 0644); err != nil {
-		return fmt.Errorf("unable to write to %s: %v", certFile, err)
-	}
-	keyFile := path.Join(assetDir, commonName+".key")
-	if err := ioutil.WriteFile(keyFile, s.Data["tls.key"], 0644); err != nil {
-		return fmt.Errorf("unable to write to %s: %v", keyFile, err)
-	}
-	return nil
 }
