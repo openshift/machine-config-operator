@@ -9,12 +9,13 @@ contents:
       log     /var/run/haproxy/haproxy-log.sock local0
       option  dontlognull
       retries 3
-      timeout http-request 10s
-      timeout queue        1m
-      timeout connect      10s
-      timeout client       86400s
-      timeout server       86400s
-      timeout tunnel       86400s
+      timeout http-keep-alive 10s
+      timeout http-request    1m
+      timeout queue           1m
+      timeout connect         10s
+      timeout client          86400s
+      timeout server          86400s
+      timeout tunnel          86400s
     frontend  main
       bind :{{`{{ .LBConfig.LbPort }}`}}
       default_backend masters
