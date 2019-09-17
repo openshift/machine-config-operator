@@ -53,6 +53,7 @@ contents:
       validate_environment
       source  /run/etcd/environment
       backup_etcd_conf
+      backup_etcd_client_certs
       stop_etcd
       backup_data_dir
       etcd_member_add
