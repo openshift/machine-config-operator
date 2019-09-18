@@ -7,11 +7,11 @@ contents:
     apiVersion: v1
     metadata:
       name: keepalived
-      namespace: openshift-kni-infra
+      namespace: openshift-openstack-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: kni-infra-vrrp
+        app: openstack-infra-vrrp
     spec:
       volumes:
       - name: resource-dir

@@ -7,11 +7,11 @@ contents:
     apiVersion: v1
     metadata:
       name: haproxy
-      namespace: openshift-kni-infra
+      namespace: openshift-openstack-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: kni-infra-api-lb
+        app: openstack-infra-api-lb
     spec:
       volumes:
       - name: resource-dir
