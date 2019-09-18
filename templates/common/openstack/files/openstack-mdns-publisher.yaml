@@ -7,11 +7,11 @@ contents:
     apiVersion: v1
     metadata:
       name: mdns-publisher
-      namespace: openshift-kni-infra
+      namespace: openshift-openstack-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: kni-infra-mdns
+        app: openstack-infra-mdns
     spec:
       volumes:
       - name: resource-dir
