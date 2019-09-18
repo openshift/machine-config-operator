@@ -17,4 +17,14 @@ metadata:
   labels:
     name: openshift-openstack-infra
     openshift.io/run-level: "1"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-kni-infra
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    name: openshift-kni-infra
+    openshift.io/run-level: "1"
 
