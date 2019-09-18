@@ -17,7 +17,6 @@ contents:
     containerLogMaxSize: 50Mi
     maxPods: 250
     rotateCertificates: true
-    runtimeRequestTimeout: 10m
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemReserved:
