@@ -98,6 +98,12 @@ var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     reload
     hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
         {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+    template IN A {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+        match .*.apps.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         fallthrough
     }
 }
