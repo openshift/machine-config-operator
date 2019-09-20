@@ -86,6 +86,13 @@ contents:
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
-      - operator: Exists
+      - key: node.kubernetes.io/not-ready
+        effect: NoExecute
+        operator: Exists
+        tolerationSeconds: 120
+      - key: node.kubernetes.io/unreachable
+        effect: NoExecute
+        operator: Exists
+        tolerationSeconds: 120
       priorityClassName: system-node-critical
     status: {}
