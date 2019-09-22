@@ -7,7 +7,7 @@ contents:
     apiVersion: v1
     metadata:
       name: coredns
-      namespace: openshift-openstack-infra
+      namespace: non-existent
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
