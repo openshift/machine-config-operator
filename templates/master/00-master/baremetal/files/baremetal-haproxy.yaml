@@ -7,7 +7,7 @@ contents:
     apiVersion: v1
     metadata:
       name: haproxy
-      namespace: non-existent
+      namespace: openshift-kni-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
