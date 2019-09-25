@@ -1269,6 +1269,22 @@ spec:
     description: When progress is blocked on updating one or more nodes, or the pool configuration is failing.
     name: Degraded
     type: string
+  - JSONPath: .status.machineCount
+    description: Total number of machines in the machine config pool
+    name: MachineCount
+    type: number
+  - JSONPath: .status.readyMachineCount
+    description: Total number of ready machines targeted by the pool
+    name: ReadyMachineCount
+    type: number
+  - JSONPath: .status.updatedMachineCount
+    description: Total number of machines targeted by the pool that have the CurrentMachineConfig as their config
+    name: UpdatedMachineCount
+    type: number
+  - JSONPath: .status.degradedMachineCount
+    description: Total number of machines marked degraded (or unreconcilable)
+    name: DegradedMachineCount
+    type: number
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
