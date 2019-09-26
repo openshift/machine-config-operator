@@ -1,0 +1,6 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/udev/rules.d/60-block.rules"
+contents:
+  inline: |
+    ACTION=="add|change", KERNEL=="xvd[a-z]", ATTR{queue/scheduler}="bfq"
