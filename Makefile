@@ -1,7 +1,9 @@
 COMPONENTS = daemon controller server operator
+GO111MODULE?=on
 
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
+export GO111MODULE
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
 # Remove build artifaces
@@ -37,12 +39,21 @@ test-unit:
 # Run the code generation tasks.
 # Example:
 #    make update
-update: install-go-bindata
+update: install-go-bindata install-go-deps
 	hack/update-codegen.sh
 	hack/update-generated-bindata.sh
 
 install-go-bindata:
 	hack/install-go-bindata.sh
+
+install-go-deps:
+	go mod tidy
+	go mod vendor
+	go mod verify
+	# go mod does not vendor in scripts so we need to get them manually
+	# NOTE: Make sure to keep this up-to-date with the version specified in go.mod
+	[ ! -f ./vendor/k8s.io/code-generator/generate-groups.sh ] && curl https://raw.githubusercontent.com/openshift/kubernetes-code-generator/origin-4.2-kubernetes-1.14.6/generate-groups.sh > ./vendor/k8s.io/code-generator/generate-groups.sh && chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
+	[ ! -f ./vendor/k8s.io/code-generator/generate-internal-groups.sh ] && curl https://raw.githubusercontent.com/openshift/kubernetes-code-generator/origin-4.2-kubernetes-1.14.6/generate-internal-groups.sh > ./vendor/k8s.io/code-generator/generate-internal-groups.sh && chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 install-tools: install-go-bindata
 	# mktemp -d is required to avoid the creation of go modules related files in the project root
