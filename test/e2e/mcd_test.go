@@ -260,48 +260,48 @@ func TestUpdateSSH(t *testing.T) {
 	}
 }
 
-func TestKernelArguments(t *testing.T) {
-	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 2)
-	kargsMC := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
-			Labels: mcLabelForWorkers(),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config:          ctrlcommon.NewIgnConfig(),
-			KernelArguments: []string{"foo=bar"},
-		},
-	}
+// func TestKernelArguments(t *testing.T) {
+// 	cs := framework.NewClientSet("")
+// 	bumpPoolMaxUnavailableTo(t, cs, 2)
+// 	kargsMC := &mcfgv1.MachineConfig{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
+// 			Labels: mcLabelForWorkers(),
+// 		},
+// 		Spec: mcfgv1.MachineConfigSpec{
+// 			Config:          ctrlcommon.NewIgnConfig(),
+// 			KernelArguments: []string{"foo=bar"},
+// 		},
+// 	}
 
-	_, err := cs.MachineConfigs().Create(kargsMC)
-	require.Nil(t, err)
-	t.Logf("Created %s", kargsMC.Name)
-	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
-	require.Nil(t, err)
-	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
-	nodes, err := getNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		kargsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"cat", "/rootfs/proc/cmdline").CombinedOutput()
-		require.Nil(t, err)
-		kargs := string(kargsBytes)
-		for _, v := range kargsMC.Spec.KernelArguments {
-			if !strings.Contains(kargs, v) {
-				t.Fatalf("Missing '%s' in kargs", v)
-			}
-		}
-		t.Logf("Node %s has expected kargs", node.Name)
-	}
-}
+// 	_, err := cs.MachineConfigs().Create(kargsMC)
+// 	require.Nil(t, err)
+// 	t.Logf("Created %s", kargsMC.Name)
+// 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
+// 	require.Nil(t, err)
+// 	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	nodes, err := getNodesByRole(cs, "worker")
+// 	require.Nil(t, err)
+// 	for _, node := range nodes {
+// 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+// 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 		mcd, err := mcdForNode(cs, &node)
+// 		require.Nil(t, err)
+// 		mcdName := mcd.ObjectMeta.Name
+// 		kargsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+// 			"cat", "/rootfs/proc/cmdline").CombinedOutput()
+// 		require.Nil(t, err)
+// 		kargs := string(kargsBytes)
+// 		for _, v := range kargsMC.Spec.KernelArguments {
+// 			if !strings.Contains(kargs, v) {
+// 				t.Fatalf("Missing '%s' in kargs", v)
+// 			}
+// 		}
+// 		t.Logf("Node %s has expected kargs", node.Name)
+// 	}
+// }
 
 func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error) {
 	listOptions := metav1.ListOptions{
