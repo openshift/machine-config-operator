@@ -142,7 +142,7 @@ func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
+	bumpPoolMaxUnavailableTo(t, cs, 2)
 
 	// TODO: bring this back to 10
 	for i := 0; i < 3; i++ {
@@ -207,7 +207,7 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 
 func TestUpdateSSH(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
+	bumpPoolMaxUnavailableTo(t, cs, 2)
 
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("sshkeys-worker-%s", uuid.NewUUID())
@@ -262,7 +262,7 @@ func TestUpdateSSH(t *testing.T) {
 
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
+	bumpPoolMaxUnavailableTo(t, cs, 2)
 	kargsMC := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
@@ -360,7 +360,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 
 func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
+	bumpPoolMaxUnavailableTo(t, cs, 2)
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
@@ -465,7 +465,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
+	bumpPoolMaxUnavailableTo(t, cs, 2)
 
 	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test", "root")
 
@@ -522,7 +522,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 
 func TestFIPS(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
+	bumpPoolMaxUnavailableTo(t, cs, 2)
 	fipsMC := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("fips-%s", uuid.NewUUID()),
