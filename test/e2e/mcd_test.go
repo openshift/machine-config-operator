@@ -270,7 +270,7 @@ func TestKernelArguments(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config:          ctrlcommon.NewIgnConfig(),
-			KernelArguments: []string{"nosmt", "foo=bar"},
+			KernelArguments: []string{"foo=bar"},
 		},
 	}
 
