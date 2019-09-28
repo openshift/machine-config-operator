@@ -26,7 +26,7 @@ contents:
     fi
 
     SNAPSHOT_FILE="$1"
-    ETCD_INITIAL_CLUSTER="$2"
+    INITIAL_CLUSTER="$2"
     ASSET_DIR=./assets
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
@@ -48,6 +48,7 @@ contents:
     source "/usr/local/bin/openshift-recovery-tools"
 
     function run {
+      ETCD_INITIAL_CLUSTER="${INITIAL_CLUSTER}"
       init
       dl_etcdctl
       backup_manifest
@@ -58,6 +59,7 @@ contents:
       fi
       validate_environment
       source /run/etcd/environment
+      ETCD_INITIAL_CLUSTER="${INITIAL_CLUSTER}"
       ETCD_NAME=$(validate_etcd_name)
       stop_static_pods
       stop_etcd
