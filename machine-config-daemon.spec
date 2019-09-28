@@ -32,6 +32,6 @@ install -D -m 0755 cmd/machine-config-daemon/pivot.sh $RPM_BUILD_ROOT/%{_bindir}
 
 %files
 %license LICENSE
-%doc README.md
+%doc docs/README.md
 %{_libexecdir}/%{name}
 %{_bindir}/pivot
