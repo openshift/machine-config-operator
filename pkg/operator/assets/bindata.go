@@ -1670,7 +1670,7 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: coredns
-  namespace: non-existent
+  namespace: openshift-openstack-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
@@ -1831,7 +1831,7 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: keepalived
-  namespace: non-existent
+  namespace: openshift-openstack-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
