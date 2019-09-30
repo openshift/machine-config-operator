@@ -97,7 +97,7 @@ var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+    hosts {
         {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }}
         fallthrough
     }

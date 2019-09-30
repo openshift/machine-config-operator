@@ -10,7 +10,7 @@ contents:
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
         cache 30
         reload
-        hosts /etc/coredns/api-int.hosts {{ .EtcdDiscoveryDomain }} {
+        hosts {
             {{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api-int.{{ .EtcdDiscoveryDomain }}
             fallthrough
         }
