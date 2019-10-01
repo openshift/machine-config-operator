@@ -121,7 +121,7 @@ required = [
 
 [[constraint]]
   name = "k8s.io/kubelet"
-  branch = "origin-4.2-kubernetes-1.14.0"
+  branch = "origin-4.3-kubernetes-1.16.0"
   source = "https://github.com/openshift/kubernetes-kubelet"
 
 [[constraint]]

@@ -103,6 +103,7 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 			"ExperimentalCriticalPodAnnotation", // sig-pod, sjenning
 			"RotateKubeletServerCertificate",    // sig-pod, sjenning
 			"SupportPodPidsLimit",               // sig-pod, sjenning
+			"TLSSecurityProfile",                // sig-network, danehans
 		},
 		Disabled: []string{
 			"LocalStorageCapacityIsolation", // sig-pod, sjenning
@@ -117,6 +118,7 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 			"ExperimentalCriticalPodAnnotation", // sig-pod, sjenning
 			"RotateKubeletServerCertificate",    // sig-pod, sjenning
 			"SupportPodPidsLimit",               // sig-pod, sjenning
+			"TLSSecurityProfile",                // sig-network, danehans
 		},
 		Disabled: []string{
 			"LocalStorageCapacityIsolation", // sig-pod, sjenning
