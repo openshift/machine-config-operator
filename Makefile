@@ -5,6 +5,11 @@ GO111MODULE?=on
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 export GO111MODULE
 
+# grab the version from a dummy pkg in k8s.io/code-generator from vendor/modules.txt (read by go list)
+versionPath=$(shell GO111MODULE=on go list -f {{.Dir}} k8s.io/code-generator/cmd/client-gen)
+codegeneratorRoot=$(versionPath:/cmd/client-gen=)
+codegeneratorTarget:=./vendor/k8s.io/code-generator
+
 .PHONY: clean test test-unit test-e2e verify update install-tools
 # Remove build artifaces
 # Example:
@@ -47,10 +52,10 @@ go-deps:
 	go mod tidy
 	go mod vendor
 	go mod verify
-	# go mod does not vendor in scripts so we need to get them manually
-	# NOTE: Make sure to keep this up-to-date with the version specified in go.mod
-	[ ! -f ./vendor/k8s.io/code-generator/generate-groups.sh ] && curl https://raw.githubusercontent.com/openshift/kubernetes-code-generator/origin-4.2-kubernetes-1.14.6/generate-groups.sh > ./vendor/k8s.io/code-generator/generate-groups.sh && chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
-	[ ! -f ./vendor/k8s.io/code-generator/generate-internal-groups.sh ] && curl https://raw.githubusercontent.com/openshift/kubernetes-code-generator/origin-4.2-kubernetes-1.14.6/generate-internal-groups.sh > ./vendor/k8s.io/code-generator/generate-internal-groups.sh && chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
+	# go mod does not vendor in scripts so we need to get them manually...
+	@mkdir -p $(codegeneratorRoot)
+	@cp $(codegeneratorRoot)/generate-groups.sh $(codegeneratorTarget) && chmod +x $(codegeneratorTarget)/generate-groups.sh
+	@cp $(codegeneratorRoot)/generate-internal-groups.sh $(codegeneratorTarget) && chmod +x $(codegeneratorTarget)/generate-internal-groups.sh
 
 install-tools:
 	# mktemp -d is required to avoid the creation of go modules related files in the project root
