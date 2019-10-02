@@ -12,6 +12,8 @@ import (
 	_ "k8s.io/code-generator/cmd/defaulter-gen"
 	_ "k8s.io/code-generator/cmd/informer-gen"
 	_ "k8s.io/code-generator/cmd/lister-gen"
+	_ "github.com/go-bindata/go-bindata"
+	_ "github.com/go-bindata/go-bindata/go-bindata"
 	// TODO: Investigate openapi-gen
 	// _ "k8s.io/code-generator/cmd/openapi-gen"
 )
