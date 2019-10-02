@@ -39,14 +39,11 @@ test-unit:
 # Run the code generation tasks.
 # Example:
 #    make update
-update: install-go-bindata install-go-deps
+update:
 	hack/update-codegen.sh
 	hack/update-generated-bindata.sh
 
-install-go-bindata:
-	hack/install-go-bindata.sh
-
-install-go-deps:
+go-deps:
 	go mod tidy
 	go mod vendor
 	go mod verify
@@ -55,7 +52,7 @@ install-go-deps:
 	[ ! -f ./vendor/k8s.io/code-generator/generate-groups.sh ] && curl https://raw.githubusercontent.com/openshift/kubernetes-code-generator/origin-4.2-kubernetes-1.14.6/generate-groups.sh > ./vendor/k8s.io/code-generator/generate-groups.sh && chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
 	[ ! -f ./vendor/k8s.io/code-generator/generate-internal-groups.sh ] && curl https://raw.githubusercontent.com/openshift/kubernetes-code-generator/origin-4.2-kubernetes-1.14.6/generate-internal-groups.sh > ./vendor/k8s.io/code-generator/generate-internal-groups.sh && chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
-install-tools: install-go-bindata
+install-tools:
 	# mktemp -d is required to avoid the creation of go modules related files in the project root
 	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/securego/gosec/cmd/gosec@4b59c948083cd711b6a8aac8f32721b164899f57
 	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.17.1
