@@ -61,7 +61,7 @@ func (in *ContainerRuntimeConfigCondition) DeepCopy() *ContainerRuntimeConfigCon
 func (in *ContainerRuntimeConfigList) DeepCopyInto(out *ContainerRuntimeConfigList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]ContainerRuntimeConfig, len(*in))
@@ -189,7 +189,7 @@ func (in *ControllerConfig) DeepCopyObject() runtime.Object {
 func (in *ControllerConfigList) DeepCopyInto(out *ControllerConfigList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]ControllerConfig, len(*in))
@@ -370,7 +370,7 @@ func (in *KubeletConfigCondition) DeepCopy() *KubeletConfigCondition {
 func (in *KubeletConfigList) DeepCopyInto(out *KubeletConfigList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]KubeletConfig, len(*in))
@@ -479,7 +479,7 @@ func (in *MCOConfig) DeepCopyObject() runtime.Object {
 func (in *MCOConfigList) DeepCopyInto(out *MCOConfigList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]MCOConfig, len(*in))
@@ -528,7 +528,7 @@ func (in *MCOConfigSpec) DeepCopy() *MCOConfigSpec {
 func (in *MachineConfigList) DeepCopyInto(out *MachineConfigList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]MachineConfig, len(*in))
@@ -606,7 +606,7 @@ func (in *MachineConfigPoolCondition) DeepCopy() *MachineConfigPoolCondition {
 func (in *MachineConfigPoolList) DeepCopyInto(out *MachineConfigPoolList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	out.ListMeta = in.ListMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]MachineConfigPool, len(*in))

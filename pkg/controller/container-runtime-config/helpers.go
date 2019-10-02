@@ -13,7 +13,7 @@ import (
 	signature "github.com/containers/image/signature"
 	storageconfig "github.com/containers/storage/pkg/config"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	crioconfig "github.com/kubernetes-sigs/cri-o/pkg/config"
+	crioconfig "github.com/cri-o/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"

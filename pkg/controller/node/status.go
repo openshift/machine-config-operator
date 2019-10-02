@@ -203,7 +203,7 @@ func checkNodeReady(node *corev1.Node) error {
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
 			return fmt.Errorf("node %s is reporting NotReady", node.Name)
 		}
-		if cond.Type == corev1.NodeOutOfDisk && cond.Status != corev1.ConditionFalse {
+		if cond.Type == corev1.NodeDiskPressure && cond.Status != corev1.ConditionFalse {
 			return fmt.Errorf("node %s is reporting OutOfDisk", node.Name)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
