@@ -36,12 +36,7 @@ import (
 // NameSystems returns the name system used by the generators in this package.
 func NameSystems() namer.NameSystems {
 	pluralExceptions := map[string]string{
-		"DNS":                        "DNSes",
-		"DNSList":                    "DNSList",
-		"Endpoints":                  "Endpoints",
-		"Features":                   "Features",
-		"FeaturesList":               "FeaturesList",
-		"SecurityContextConstraints": "SecurityContextConstraints",
+		"Endpoints": "Endpoints",
 	}
 	return namer.NameSystems{
 		"public":             namer.NewPublicNamer(0),
@@ -288,7 +283,7 @@ func factoryInterfacePackage(basePackage string, boilerplate []byte, clientSetPa
 
 func groupPackage(basePackage string, groupVersions clientgentypes.GroupVersions, boilerplate []byte) generator.Package {
 	packagePath := filepath.Join(basePackage, groupVersions.PackageName)
-	groupPkgName := strings.Split(string(groupVersions.Group), ".")[0]
+	groupPkgName := strings.Split(string(groupVersions.PackageName), ".")[0]
 
 	return &generator.DefaultPackage{
 		PackageName: groupPkgName,
