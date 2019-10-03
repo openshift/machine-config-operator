@@ -70,10 +70,10 @@ type NodeUpdaterClient interface {
 	RunPivot(string) error
 }
 
-// TODO(runcom): make this private to pkg/daemon!!!
-//
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
+//
+// TODO(runcom): make this private to pkg/daemon!!!
 type RpmOstreeClient struct{}
 
 // NewNodeUpdaterClient returns a new instance of the default DeploymentClient (RpmOstreeClient)
@@ -138,7 +138,7 @@ func podmanRemove(cid string) {
 	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
-// pullAndRebase potentially rebases system if not already rebased.
+// PullAndRebase potentially rebases system if not already rebased.
 func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid string, changed bool, err error) {
 	defaultDeployment, err := r.getBootedDeployment()
 	if err != nil {
@@ -353,12 +353,12 @@ func followPivotJournalLogs(stopCh <-chan time.Time) {
 
 // runGetOut executes a command, logging it, and return the stdout output.
 func runGetOut(command string, args ...string) ([]byte, error) {
-	glog.Infof("Running captured: %s %s\n", command, strings.Join(args, " "))
+	glog.Infof("Running captured: %s %s", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
 	cmd.Stderr = os.Stderr
 	rawOut, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "error running %s %s: %s", command, strings.Join(args, " "), string(rawOut))
 	}
 	return rawOut, nil
 }

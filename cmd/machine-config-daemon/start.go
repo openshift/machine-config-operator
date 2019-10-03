@@ -12,6 +12,7 @@ import (
 	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -54,8 +55,11 @@ func bindPodMounts(rootMount string) error {
 		return err
 	}
 	// This will only affect our mount namespace, not the host
-	mnt := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets)
-	return mnt.Run()
+	output, err := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets).CombinedOutput()
+	if err != nil {
+		return errors.Wrapf(err, "failed to mount /run/secrets to %s: %s", targetSecrets, string(output))
+	}
+	return nil
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -71,7 +75,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if !onceFromMode {
 		// in the daemon case
 		if err := bindPodMounts(startOpts.rootMount); err != nil {
-			glog.Fatalf("Binding pod mounts: %s", err)
+			glog.Fatalf("Binding pod mounts: %+v", err)
 		}
 	}
 
