@@ -8,6 +8,7 @@ import (
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/machine-config-operator/internal/clients"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	apiextinformers "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,7 +79,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 			glog.Warningf("unable to convert selector %q to map: %v", opts.LabelSelector, err)
 			return
 		}
-		opts.LabelSelector = labels.Merge(labelsMap, map[string]string{"openshift.io/operator-managed": ""}).String()
+		opts.LabelSelector = labels.Merge(labelsMap, map[string]string{daemonconsts.OpenShiftOperatorManagedLabel: ""}).String()
 	}
 	apiExtSharedInformer := apiextinformers.NewSharedInformerFactoryWithOptions(apiExtClient, resyncPeriod()(),
 		apiextinformers.WithNamespace(targetNamespace), apiextinformers.WithTweakListOptions(assignFilterLabels))
