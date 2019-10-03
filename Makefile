@@ -63,7 +63,8 @@ go-deps:
 install-tools:
 	# mktemp -d is required to avoid the creation of go modules related files in the project root
 	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/securego/gosec/cmd/gosec@4b59c948083cd711b6a8aac8f32721b164899f57
-	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
+	#cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
+	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint -mod=vendor ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 
 # Run verification steps
 # Example:
