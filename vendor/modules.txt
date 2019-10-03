@@ -269,7 +269,7 @@ github.com/coreos/ignition/config/v1/types
 github.com/coreos/pkg/dlopen
 # github.com/creack/pty v1.1.9
 github.com/creack/pty
-# github.com/cri-o/cri-o v0.0.0-00010101000000-000000000000 => github.com/haircommander/cri-o v1.9.0-beta.2.0.20191002183327-24dcc7272b13
+# github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26
 github.com/cri-o/cri-o/pkg/config
 github.com/cri-o/cri-o/internal/oci
 github.com/cri-o/cri-o/internal/version

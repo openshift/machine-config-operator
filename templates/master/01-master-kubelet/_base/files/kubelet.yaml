@@ -27,4 +27,5 @@ contents:
       ExperimentalCriticalPodAnnotation: true
       SupportPodPidsLimit: true
       LocalStorageCapacityIsolation: false
+      TLSSecurityProfile: true
     serverTLSBootstrap: true

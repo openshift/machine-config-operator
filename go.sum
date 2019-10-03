@@ -192,6 +192,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d/go.mod h1:ma
 github.com/creack/pty v1.1.7/go.mod h1:lj5s0c3V2DBrqTV7llrYr5NG6My20zk30Fl46Y7DoTY=
 github.com/creack/pty v1.1.9 h1:uDmaGzcdjhF4i/plgjmEsriH11Y0o7RKapEf/LDaM3w=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
+github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26 h1:CncYqSfI3xVfedl3cQCCHKEx+nU4QGjcSVk3W8lyFhE=
+github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26/go.mod h1:Zyf/AWxspq/FDHRYERdpXYUvLQPiC5Vz1lVNl/TpuBY=
 github.com/cri-o/ocicni v0.1.1-0.20190702175919-7762645d18ca h1:CJstDqYy9ClWuPcDHMTCAiUS+ckekluYetGR2iYYWuo=
 github.com/cri-o/ocicni v0.1.1-0.20190702175919-7762645d18ca/go.mod h1:BO0al9TKber3XUTucLzKgoG5sq8qiOB41H7zSdfw6r8=
 github.com/cyphar/filepath-securejoin v0.2.1/go.mod h1:FpkQEhXnPnOthhzymB7CGsFk2G9VLXONKD9G7QGMM+4=
@@ -448,8 +450,6 @@ github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgf
 github.com/grpc-ecosystem/grpc-gateway v1.3.0/go.mod h1:RSKVYQBd5MCa4OVpNdGskqpgL2+G+NZTnrVHpWWfpdw=
 github.com/grpc-ecosystem/grpc-gateway v1.9.0/go.mod h1:vNeuVxBJEsws4ogUvrchl83t/GYV9WGTSLVdBhOQFDY=
 github.com/grpc-ecosystem/grpc-gateway v1.9.2/go.mod h1:vNeuVxBJEsws4ogUvrchl83t/GYV9WGTSLVdBhOQFDY=
-github.com/haircommander/cri-o v1.9.0-beta.2.0.20191002183327-24dcc7272b13 h1:jgtstP4GvVsqmh02FLE9N0QK1/973wAZxa0xWmh8Pzg=
-github.com/haircommander/cri-o v1.9.0-beta.2.0.20191002183327-24dcc7272b13/go.mod h1:Zyf/AWxspq/FDHRYERdpXYUvLQPiC5Vz1lVNl/TpuBY=
 github.com/hashicorp/errwrap v1.0.0 h1:hLrqtEDnRye3+sgx6z4qVLNuviH3MR5aQ0ykNJa/UYA=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
 github.com/hashicorp/go-multierror v1.0.0 h1:iVjPR7a6H0tWELX5NxNe7bYopibicUzc7uPribsnS6o=
