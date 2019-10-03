@@ -16,6 +16,7 @@ contents:
     clusterDomain: cluster.local
     containerLogMaxSize: 50Mi
     maxPods: 250
+    rotateCertificates: true
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemReserved:
