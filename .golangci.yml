@@ -27,7 +27,7 @@ linters:
     #- scopelint
     - staticcheck
     - structcheck
-    - typecheck
+    #- typecheck
     - unconvert
     - unparam
     - varcheck
