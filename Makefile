@@ -61,10 +61,8 @@ go-deps:
 	@cp $(codegeneratorRoot)/generate-internal-groups.sh $(codegeneratorTarget) && chmod +x $(codegeneratorTarget)/generate-internal-groups.sh
 
 install-tools:
-	# mktemp -d is required to avoid the creation of go modules related files in the project root
-	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/securego/gosec/cmd/gosec@4b59c948083cd711b6a8aac8f32721b164899f57
-	#cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint -mod=vendor ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
+	GO111MODULE=on go build -o $(GOPATH)/bin/gosec -mod=vendor ./vendor/github.com/securego/gosec/cmd/gosec
 
 # Run verification steps
 # Example:

@@ -622,7 +622,7 @@ github.com/modern-go/reflect2
 github.com/mrunalp/fileutils
 # github.com/mtrmac/gpgme v0.0.0-20170102180018-b2432428689c
 github.com/mtrmac/gpgme
-# github.com/nbutton23/zxcvbn-go v0.0.0-20171102151520-eafdab6b0663
+# github.com/nbutton23/zxcvbn-go v0.0.0-20180912185939-ae427f1e4c1d
 github.com/nbutton23/zxcvbn-go
 github.com/nbutton23/zxcvbn-go/match
 github.com/nbutton23/zxcvbn-go/matching
@@ -741,6 +741,11 @@ github.com/prometheus/procfs/internal/fs
 github.com/seccomp/containers-golang
 # github.com/seccomp/libseccomp-golang v0.9.1
 github.com/seccomp/libseccomp-golang
+# github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
+github.com/securego/gosec/cmd/gosec
+github.com/securego/gosec
+github.com/securego/gosec/output
+github.com/securego/gosec/rules
 # github.com/sirupsen/logrus v1.4.2
 github.com/sirupsen/logrus
 # github.com/sourcegraph/go-diff v0.5.1
@@ -838,18 +843,18 @@ golang.org/x/text/width
 # golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 golang.org/x/time/rate
 # golang.org/x/tools v0.0.0-20191002234911-9ade4c73f2af
-golang.org/x/tools/go/loader
 golang.org/x/tools/go/packages
+golang.org/x/tools/go/loader
 golang.org/x/tools/go/ssa
 golang.org/x/tools/go/ssa/ssautil
-golang.org/x/tools/imports
-golang.org/x/tools/go/ast/astutil
-golang.org/x/tools/go/buildutil
-golang.org/x/tools/go/internal/cgo
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/packagesdriver
 golang.org/x/tools/internal/gopathwalk
 golang.org/x/tools/internal/semver
+golang.org/x/tools/imports
+golang.org/x/tools/go/ast/astutil
+golang.org/x/tools/go/buildutil
+golang.org/x/tools/go/internal/cgo
 golang.org/x/tools/go/types/typeutil
 golang.org/x/tools/go/analysis
 golang.org/x/tools/go/analysis/passes/asmdecl
@@ -875,9 +880,9 @@ golang.org/x/tools/go/analysis/passes/unmarshal
 golang.org/x/tools/go/analysis/passes/unreachable
 golang.org/x/tools/go/analysis/passes/unsafeptr
 golang.org/x/tools/go/analysis/passes/unusedresult
-golang.org/x/tools/internal/imports
 golang.org/x/tools/go/internal/gcimporter
 golang.org/x/tools/internal/fastwalk
+golang.org/x/tools/internal/imports
 golang.org/x/tools/go/analysis/passes/buildssa
 golang.org/x/tools/go/analysis/passes/internal/analysisutil
 golang.org/x/tools/go/analysis/passes/inspect
