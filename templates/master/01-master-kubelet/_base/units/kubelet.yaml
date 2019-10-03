@@ -18,7 +18,6 @@ contents: |
       kubelet \
         --config=/etc/kubernetes/kubelet.conf \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
-        --rotate-certificates \
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
