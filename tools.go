@@ -14,6 +14,7 @@ import (
 	_ "k8s.io/code-generator/cmd/lister-gen"
 	_ "github.com/go-bindata/go-bindata"
 	_ "github.com/go-bindata/go-bindata/go-bindata"
+	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	// TODO: Investigate openapi-gen
 	// _ "k8s.io/code-generator/cmd/openapi-gen"
 )
