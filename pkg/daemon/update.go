@@ -137,7 +137,7 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 			err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
 				DeleteLocalData:    true,
 				Force:              true,
-				GracePeriodSeconds: 600,
+				GracePeriodSeconds: -1,
 				IgnoreDaemonsets:   true,
 				Logger:             &drainLogger{},
 			})
