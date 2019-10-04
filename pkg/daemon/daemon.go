@@ -1154,6 +1154,11 @@ func compareOSImageURL(current, desired string) (bool, error) {
 		return true, nil
 	}
 
+	// If we're not in pivot:// right now, then it must not match.
+	if current == "" {
+		return false, nil
+	}
+
 	if current == desired {
 		return true, nil
 	}

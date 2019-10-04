@@ -114,14 +114,16 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 }
 
 // GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
+// Returns the empty string if the host doesn't have a custom origin that matches pivot://
+// (This could be the case for e.g. FCOS, or a future RHCOS which comes not-pivoted by default)
 func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 	bootedDeployment, err := r.getBootedDeployment()
 	if err != nil {
 		return "", "", err
 	}
 
-	// the canonical image URL is stored in the custom origin field by the pivot tool
-	osImageURL := "<not pivoted>"
+	// the canonical image URL is stored in the custom origin field.
+	osImageURL := ""
 	if len(bootedDeployment.CustomOrigin) > 0 {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
 			osImageURL = bootedDeployment.CustomOrigin[0][len("pivot://"):]
@@ -150,7 +152,11 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		if strings.HasPrefix(defaultDeployment.CustomOrigin[0], "pivot://") {
 			previousPivot = defaultDeployment.CustomOrigin[0][len("pivot://"):]
 			glog.Infof("Previous pivot: %s", previousPivot)
+		} else {
+			glog.Infof("Previous custom origin: %s", defaultDeployment.CustomOrigin[0])
 		}
+	} else {
+		glog.Info("Current origin is not custom")
 	}
 
 	var authArgs []string
@@ -168,14 +174,16 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		args = append(args, container)
 		pivotutils.RunExt(false, numRetriesNetCommands, "podman", args...)
 	} else {
-		var targetMatched bool
-		targetMatched, err = compareOSImageURL(previousPivot, container)
-		if err != nil {
-			return
-		}
-		if targetMatched {
-			changed = false
-			return
+		if previousPivot != "" {
+			var targetMatched bool
+			targetMatched, err = compareOSImageURL(previousPivot, container)
+			if err != nil {
+				return
+			}
+			if targetMatched {
+				changed = false
+				return
+			}
 		}
 
 		// Pull the image
