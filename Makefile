@@ -1,7 +1,14 @@
 COMPONENTS = daemon controller server operator
+GO111MODULE?=on
 
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
+export GO111MODULE
+
+# grab the version from a dummy pkg in k8s.io/code-generator from vendor/modules.txt (read by go list)
+versionPath=$(shell GO111MODULE=on go list -f {{.Dir}} k8s.io/code-generator/cmd/client-gen)
+codegeneratorRoot=$(versionPath:/cmd/client-gen=)
+codegeneratorTarget:=./vendor/k8s.io/code-generator
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
 # Remove build artifaces
@@ -37,14 +44,20 @@ test-unit:
 # Run the code generation tasks.
 # Example:
 #    make update
-update: install-go-bindata
+update:
 	hack/update-codegen.sh
 	hack/update-generated-bindata.sh
 
-install-go-bindata:
-	hack/install-go-bindata.sh
+go-deps:
+	go mod tidy
+	go mod vendor
+	go mod verify
+	# go mod does not vendor in scripts so we need to get them manually...
+	@mkdir -p $(codegeneratorRoot)
+	@cp $(codegeneratorRoot)/generate-groups.sh $(codegeneratorTarget) && chmod +x $(codegeneratorTarget)/generate-groups.sh
+	@cp $(codegeneratorRoot)/generate-internal-groups.sh $(codegeneratorTarget) && chmod +x $(codegeneratorTarget)/generate-internal-groups.sh
 
-install-tools: install-go-bindata
+install-tools:
 	# mktemp -d is required to avoid the creation of go modules related files in the project root
 	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/securego/gosec/cmd/gosec@4b59c948083cd711b6a8aac8f32721b164899f57
 	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.17.1
