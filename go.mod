@@ -98,6 +98,7 @@ require (
 )
 
 replace (
+	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070
 	k8s.io/api => github.com/openshift/kubernetes-api v0.0.0-20190709164144-5b6d4ec96213
 	k8s.io/apiextensions-apiserver => github.com/openshift/kubernetes-apiextensions-apiserver v0.0.0-20190729141842-ef1fb026cb0e
 	k8s.io/apimachinery => github.com/openshift/kubernetes-apimachinery v0.0.0-20190321181449-eab709b58ad6

@@ -180,7 +180,7 @@ github.com/openshift/client-go/config/clientset/versioned/typed/config/v1/fake
 github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1/fake
 github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1/fake
 github.com/openshift/client-go/operator/listers/operator/v1
-# github.com/openshift/cluster-api v0.0.0-20190829140302-072f7d777dc8
+# github.com/openshift/cluster-api v0.0.0-20190829140302-072f7d777dc8 => github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070
 github.com/openshift/cluster-api/pkg/drain
 # github.com/openshift/library-go v0.0.0-20190704075327-f8abdcd57c46
 github.com/openshift/library-go/pkg/operator/v1helpers
