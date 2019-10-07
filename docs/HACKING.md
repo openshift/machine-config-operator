@@ -62,32 +62,13 @@ All tests (unit and e2e) can be executed with:
 
 # Managing Go Dependencies
 
-We follow a hard flattening approach; i.e. direct and inherited dependencies are installed in the base `vendor/`.
+Dependencies are managed with [go modules](https://github.com/golang/go/wiki/Modules) but committed directly to the repository. 
 
-Dependencies are managed with [dep](https://golang.github.io/dep/) but committed directly to the repository. If you don't have dep, install the latest release from [Installation](https://golang.github.io/dep/docs/installation.html) link.
-
-We require at least the following versions for dep:
-
-```
-dep:
- version     : v0.5.0
- build date  : 2018-07-26
- git hash    : 224a564
- go version  : go1.10.3
-```
-
-To add a new dependency:
-
-- Edit the `Gopkg.toml` file to add your dependency.
-- Ensure you add a `version` field for the tag or the `revision` field for commit id you want to pin to.
-- Revendor the dependencies:
+After updating the go code using `import` statements to reference the desired new packages, add the new dependencies by running:
 
 ```sh
-dep ensure
+make go-deps
 ```
-
-This [guide](https://golang.github.io/dep/docs/daily-dep.html) a great source to learn more about using `dep` is .
-
 For the sake of your fellow reviewers, commit vendored code separately from any other changes.
 
 # Developing the MCD without building images
