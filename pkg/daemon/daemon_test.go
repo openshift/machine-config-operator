@@ -10,6 +10,7 @@ import (
 	"time"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -128,6 +129,9 @@ func TestCompareOSImageURL(t *testing.T) {
 	if m || err == nil {
 		t.Fatalf("Expected err")
 	}
+	m, err = compareOSImageURL("", refA)
+	assert.False(t, m)
+	assert.Nil(t, err)
 }
 
 type fixture struct {
