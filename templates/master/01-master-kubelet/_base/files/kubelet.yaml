@@ -10,7 +10,6 @@ contents:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
     maxPods: 250
-    runtimeRequestTimeout: 10m
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemReserved:
