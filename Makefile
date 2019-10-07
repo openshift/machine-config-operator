@@ -4,6 +4,9 @@ GO111MODULE?=on
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 export GO111MODULE
+export GOPROXY=https://proxy.golang.org
+
+GOFLAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
 # grab the version from a dummy pkg in k8s.io/code-generator from vendor/modules.txt (read by go list)
 versionPath=$(shell GO111MODULE=on go list -f {{.Dir}} k8s.io/code-generator/cmd/client-gen)
@@ -39,7 +42,7 @@ test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit:
-	go test -count=1 -v ./cmd/... ./pkg/... ./lib/...
+	go test -tags=$(GOFLAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
 
 # Run the code generation tasks.
 # Example:
@@ -58,15 +61,14 @@ go-deps:
 	@cp $(codegeneratorRoot)/generate-internal-groups.sh $(codegeneratorTarget) && chmod +x $(codegeneratorTarget)/generate-internal-groups.sh
 
 install-tools:
-	# mktemp -d is required to avoid the creation of go modules related files in the project root
-	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/securego/gosec/cmd/gosec@4b59c948083cd711b6a8aac8f32721b164899f57
-	cd $(shell mktemp -d) && GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.17.1
+	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint -mod=vendor ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
+	GO111MODULE=on go build -o $(GOPATH)/bin/gosec -mod=vendor ./vendor/github.com/securego/gosec/cmd/gosec
 
 # Run verification steps
 # Example:
 #    make verify
 verify: install-tools
-	golangci-lint run
+	golangci-lint run --build-tags=$(GOFLAGS)
 	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
 	# addressed
 	gosec -severity high --confidence medium -exclude G204 -quiet ./...

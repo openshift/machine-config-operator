@@ -198,12 +198,12 @@ func checkNodeReady(node *corev1.Node) error {
 		cond := &node.Status.Conditions[i]
 		// We consider the node for scheduling only when its:
 		// - NodeReady condition status is ConditionTrue,
-		// - NodeOutOfDisk condition status is ConditionFalse,
+		// - NodeDiskPressure condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
 			return fmt.Errorf("node %s is reporting NotReady", node.Name)
 		}
-		if cond.Type == corev1.NodeOutOfDisk && cond.Status != corev1.ConditionFalse {
+		if cond.Type == corev1.NodeDiskPressure && cond.Status != corev1.ConditionFalse {
 			return fmt.Errorf("node %s is reporting OutOfDisk", node.Name)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
