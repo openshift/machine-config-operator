@@ -36,12 +36,7 @@ import (
 // NameSystems returns the name system used by the generators in this package.
 func NameSystems() namer.NameSystems {
 	pluralExceptions := map[string]string{
-		"DNS":                        "DNSes",
-		"DNSList":                    "DNSList",
-		"Endpoints":                  "Endpoints",
-		"Features":                   "Features",
-		"FeaturesList":               "FeaturesList",
-		"SecurityContextConstraints": "SecurityContextConstraints",
+		"Endpoints": "Endpoints",
 	}
 	return namer.NameSystems{
 		"public":             namer.NewPublicNamer(0),

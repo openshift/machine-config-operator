@@ -12,9 +12,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
-	kubeletconfigscheme "k8s.io/kubernetes/pkg/kubelet/apis/config/scheme"
 )
 
 func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
@@ -148,14 +148,12 @@ func encodeKubeletConfig(internal *kubeletconfigv1beta1.KubeletConfiguration, ta
 }
 
 func newKubeletconfigJSONEncoder(targetVersion schema.GroupVersion) (runtime.Encoder, error) {
-	_, codecs, err := kubeletconfigscheme.NewSchemeAndCodecs()
-	if err != nil {
-		return nil, err
-	}
-	mediaType := "application/json"
-	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), mediaType)
+	scheme := runtime.NewScheme()
+	kubeletconfigv1beta1.AddToScheme(scheme)
+	codecs := serializer.NewCodecFactory(scheme)
+	info, ok := runtime.SerializerInfoForMediaType(codecs.SupportedMediaTypes(), runtime.ContentTypeJSON)
 	if !ok {
-		return nil, fmt.Errorf("unsupported media type %q", mediaType)
+		return nil, fmt.Errorf("unsupported media type %q", runtime.ContentTypeJSON)
 	}
 	return codecs.EncoderForVersion(info.Serializer, targetVersion), nil
 }
