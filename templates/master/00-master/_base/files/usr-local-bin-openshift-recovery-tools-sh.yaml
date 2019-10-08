@@ -138,10 +138,12 @@ contents:
     }
 
     remove_certs() {
-      COUNT=$(ls $ETCD_STATIC_RESOURCES/system\:etcd-* 2>/dev/null | wc -l)
+      COUNT=$(ls $ETCD_STATIC_RESOURCES/system\:etcd-* 2>/dev/null | wc -l) || true
       if [ "$COUNT" -gt 1 ]; then
          echo "Removing etcd certs.."
          rm -f $ETCD_STATIC_RESOURCES/system\:etcd-*
+      else
+         echo "remove_certs: etcd TLS certificates are not found."
       fi
     }
 
