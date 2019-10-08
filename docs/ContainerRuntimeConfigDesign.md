@@ -12,9 +12,9 @@ The MCO contains the logic to write the crio.conf and storage.conf configuration
 
 The following goals should not require explicit knowledge of a customer to know the right command-line or configuration options to use within the ContainerRuntime.
 
-1. setting pids limit
+1. Setting pids limit
 
-2. setting log level
+2. Setting log level
 
 3. Setting max log size
 
@@ -105,7 +105,7 @@ The ContainerRuntimeConfigController would perform the following steps:
 
 3. Load the ContainerRuntimeConfig from the passed in Spec.ContainerRuntimeConfig
 
-4. User mergo to merge the two structures
+4. Use mergo to merge the two structures
 
 5. Serialize the ContainerRuntimeConfig to the respective toml files: storage.conf, and crio.conf
 

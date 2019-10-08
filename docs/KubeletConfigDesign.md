@@ -124,7 +124,7 @@ First time installs will **always** install with CRI-O. After the initial instal
 
 Setting the options with the KubeletConfig CRD will cause the node to drain and reboot. Upon reboot, the machine will be reconfigured to use docker as the runtime via Machine Config Daemon and a rollout to each node.
 
-**_Note: Docker is only available in BYOR_\*\***_HEL _\***\*_configurations._**
+**_Note: Docker is only available in Bring-Your-Own-RHEL (User Provisioned Infrastructure) configurations._**
 
 TODO: Network Daemon?
 
