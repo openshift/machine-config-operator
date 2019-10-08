@@ -1,6 +1,6 @@
 # Managing SSH Keys with the MCD
 
-By default, the OpenShift 4.0 installer creates a single user named `core` (derived in spirit from CoreOS Container Linux) with optional SSH keys specified at install time.
+By default, the OpenShift 4 installer creates a single user named `core` (derived in spirit from CoreOS Container Linux) with optional SSH keys specified at install time.
 
 This controller supports updating the SSH keys of user `core` via a MachineConfig object. The SSH keys are updated for all members of the MachineConfig pool specified in the MachineConfig, for example: all worker nodes.
 

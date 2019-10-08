@@ -146,9 +146,11 @@ Following annotations on node object will be used by UpdateController to coordin
 
 With these three fields it becomes possible to determine the update progress of the machine:
 
-a. desiredConfig == currentConfig : The machine is up-to-date.
-b. desiredConfig != currentConfig && state == working : The machine is not up-to-date, but is in the process of updating.
-c. desiredConfig != currentConfig && state == degraded : The machine is not up-to-date and MachineConfigDaemon cannot apply the desired configuration.
+  a. desiredConfig == currentConfig : The machine is up-to-date.
+
+  b. desiredConfig != currentConfig && state == working : The machine is not up-to-date, but is in the process of updating.
+
+  c. desiredConfig != currentConfig && state == degraded : The machine is not up-to-date and MachineConfigDaemon cannot apply the desired configuration.
 
 Node is marked updated by UpdateController only when `NodeReady` is reported by kubelet when case (a) is true.
 
@@ -166,7 +168,7 @@ The MachineConfigController performs the following operations:
 1. Renders the current MachineConfig (storage.files.contents[kubelet.conf]) into the KubeletConfiguration structure
 1. Loads the user's KubeletConfig instance
 1. Uses mergo to merge the two structures
-1. Serialize the KubeletConfig to json
-1. Create or Update a MachineConfig (called `99-[role]-kubelet-managed`) with a new (/etc/kubernetes/kubelet.conf)
+1. Serializes the KubeletConfig to json
+1. Creates or Updates a MachineConfig (called `99-[role]-kubelet-managed`) with a new /etc/kubernetes/kubelet.conf
 
 The machine will subseqently reboot by the MachineConfigDaemon to apply the new config.
