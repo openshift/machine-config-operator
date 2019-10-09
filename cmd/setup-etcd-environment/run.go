@@ -117,6 +117,8 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	glog.Infof("dns name is %s", dns)
 
 	exportEnv := make(map[string]string)
+
+	endpoints := make([]string, 0)
 	if _, err := os.Stat(fmt.Sprintf("%s/member", etcdDataDir)); os.IsNotExist(err) && !runOpts.bootstrapSRV && inCluster() {
 		duration := 10 * time.Second
 		wait.PollInfinite(duration, func() (bool, error) {
@@ -165,6 +167,21 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 			exportEnv["INITIAL_CLUSTER_STATE"] = "existing"
 			return true, nil
 		})
+
+		ep, err := client.CoreV1().Endpoints("openshift-etcd").Get("etcd", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if len(ep.Subsets) >= 1 {
+			if len(ep.Subsets[0].Addresses) == 0 {
+				endpoints = append(endpoints, "https://etcd-bootstrap."+runOpts.discoverySRV+":2379")
+			} else {
+				for _, s := range ep.Subsets[0].Addresses {
+					endpoints = append(endpoints, "https://"+s.IP+":2379")
+				}
+			}
+		}
+		exportEnv["ENDPOINTS"] = strings.Join(endpoints, ",")
 	}
 
 	out := os.Stdout
