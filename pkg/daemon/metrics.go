@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var DefaultBindAddress = ":8080"
+var DefaultBindAddress = ":8797"
 
 func StartMetricsListener(addr string, stopCh chan struct{}) {
 	if addr == "" {

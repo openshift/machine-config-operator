@@ -44,7 +44,7 @@ spec:
         - --https-address=:9001
         - --provider=openshift
         - --openshift-service-account=machine-config-daemon
-        - --upstream=http://127.0.0.1:8080
+        - --upstream=http://127.0.0.1:8797
         - --tls-cert=/etc/tls/private/tls.crt
         - --tls-key=/etc/tls/private/tls.key
         - --cookie-secret-file=/etc/tls/cookie-secret/cookie-secret
