@@ -14,5 +14,6 @@ data:
       "corednsImage": "registry.svc.ci.openshift.org/openshift:coredns",
       "mdnsPublisherImage": "registry.svc.ci.openshift.org/openshift:mdns-publisher",
       "haproxyImage": "registry.svc.ci.openshift.org/openshift:haproxy-router",
-      "baremetalRuntimeCfgImage": "registry.svc.ci.openshift.org/openshift:baremetal-runtimecfg"
+      "baremetalRuntimeCfgImage": "registry.svc.ci.openshift.org/openshift:baremetal-runtimecfg",
+      "oauthProxy": "registry.svc.ci.openshift.org/openshift:oauth-proxy"
     }

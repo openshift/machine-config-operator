@@ -16,6 +16,10 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:pod
+  - name: oauth-proxy
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:oauth-proxy
   # This one is special, it's the OS payload
   # https://github.com/openshift/machine-config-operator/issues/183
   # See the machine-config-osimageurl configmap.

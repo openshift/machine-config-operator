@@ -33,6 +33,7 @@ var (
 		fromIgnition           bool
 		kubeletHealthzEnabled  bool
 		kubeletHealthzEndpoint string
+		promMetricsURL         string
 	}
 )
 
@@ -45,6 +46,7 @@ func init() {
 	startCmd.PersistentFlags().BoolVar(&startOpts.skipReboot, "skip-reboot", false, "Skips reboot after a sync, applies only in once-from")
 	startCmd.PersistentFlags().BoolVar(&startOpts.kubeletHealthzEnabled, "kubelet-healthz-enabled", true, "kubelet healthz endpoint monitoring")
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeletHealthzEndpoint, "kubelet-healthz-endpoint", "http://localhost:10248/healthz", "healthz endpoint to check health")
+	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsURL, "metrics-url", "127.0.0.1:8797", "URL for prometheus metrics listener")
 }
 
 // bindPodMounts ensures that the daemon can still see e.g. /run/secrets/kubernetes.io
@@ -134,6 +136,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// This channel is used to ensure all spawned goroutines exit when we exit.
 	stopCh := make(chan struct{})
 	defer close(stopCh)
+
+	// Start local metrics listener
+	go daemon.StartMetricsListener(startOpts.promMetricsURL, stopCh)
 
 	ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items

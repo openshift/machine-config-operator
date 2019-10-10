@@ -22,6 +22,7 @@ type RenderConfigImages struct {
 	KeepalivedBootstrap          string `json:"keepalived"`
 	CorednsBootstrap             string `json:"coredns"`
 	BaremetalRuntimeCfgBootstrap string `json:"baremetalRuntimeCfg"`
+	OauthProxy                   string `json:"oauthProxy"`
 }
 
 // ControllerConfigImages are image names used to render templates under ./templates/
