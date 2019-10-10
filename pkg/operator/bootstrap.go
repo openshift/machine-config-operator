@@ -17,6 +17,12 @@ import (
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
 
+type manifest struct {
+	name     string
+	data     []byte
+	filename string
+}
+
 // RenderBootstrap writes to destinationDir static Pods.
 func RenderBootstrap(
 	additionalTrustBundleFile,
@@ -144,92 +150,31 @@ func RenderBootstrap(
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
 
-	manifests := []struct {
-		name     string
-		data     []byte
-		filename string
-	}{{
-		name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
-		filename: "bootstrap/manifests/machineconfigcontroller-controllerconfig.yaml",
-	}, {
-		name:     "manifests/master.machineconfigpool.yaml",
-		filename: "bootstrap/manifests/master.machineconfigpool.yaml",
-	}, {
-		name:     "manifests/worker.machineconfigpool.yaml",
-		filename: "bootstrap/manifests/worker.machineconfigpool.yaml",
-	}, {
-		name:     "manifests/bootstrap-pod-v2.yaml",
-		filename: "bootstrap/machineconfigoperator-bootstrap-pod.yaml",
-	}, {
-		data:     filesData[pullSecretFile],
-		filename: "bootstrap/manifests/machineconfigcontroller-pull-secret",
-	}, {
-		name:     "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
-		filename: "manifests/csr-bootstrap-role-binding.yaml",
-	}, {
-		name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
-		filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
-	}}
+	manifests := []manifest{
+		{
+			name:     "manifests/machineconfigcontroller/controllerconfig.yaml",
+			filename: "bootstrap/manifests/machineconfigcontroller-controllerconfig.yaml",
+		}, {
+			name:     "manifests/master.machineconfigpool.yaml",
+			filename: "bootstrap/manifests/master.machineconfigpool.yaml",
+		}, {
+			name:     "manifests/worker.machineconfigpool.yaml",
+			filename: "bootstrap/manifests/worker.machineconfigpool.yaml",
+		}, {
+			name:     "manifests/bootstrap-pod-v2.yaml",
+			filename: "bootstrap/machineconfigoperator-bootstrap-pod.yaml",
+		}, {
+			data:     filesData[pullSecretFile],
+			filename: "bootstrap/manifests/machineconfigcontroller-pull-secret",
+		}, {
+			name:     "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
+			filename: "manifests/csr-bootstrap-role-binding.yaml",
+		}, {
+			name:     "manifests/machineconfigserver/kube-apiserver-serving-ca-configmap.yaml",
+			filename: "manifests/kube-apiserver-serving-ca-configmap.yaml",
+		}}
 
-	if infra.Status.PlatformStatus.BareMetal != nil {
-		manifests = append(manifests, []struct {
-			name     string
-			data     []byte
-			filename string
-		}{{
-			name:     "manifests/baremetal/coredns.yaml",
-			filename: "baremetal/manifests/coredns.yaml",
-		}, {
-			name:     "manifests/baremetal/coredns-corefile.tmpl",
-			filename: "baremetal/static-pod-resources/coredns/Corefile.tmpl",
-		}, {
-			name:     "manifests/baremetal/keepalived.yaml",
-			filename: "baremetal/manifests/keepalived.yaml",
-		}, {
-			name:     "manifests/baremetal/keepalived.conf.tmpl",
-			filename: "baremetal/static-pod-resources/keepalived/keepalived.conf.tmpl",
-		}}...)
-	}
-
-	if infra.Status.PlatformStatus.OpenStack != nil {
-		manifests = append(manifests, []struct {
-			name     string
-			data     []byte
-			filename string
-		}{{
-			name:     "manifests/openstack/coredns.yaml",
-			filename: "openstack/manifests/coredns.yaml",
-		}, {
-			name:     "manifests/openstack/coredns-corefile.tmpl",
-			filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
-		}, {
-			name:     "manifests/openstack/keepalived.yaml",
-			filename: "openstack/manifests/keepalived.yaml",
-		}, {
-			name:     "manifests/openstack/keepalived.conf.tmpl",
-			filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
-		}}...)
-	}
-
-	if infra.Status.PlatformStatus.Ovirt != nil {
-		manifests = append(manifests, []struct {
-			name     string
-			data     []byte
-			filename string
-		}{{
-			name:     "manifests/ovirt/coredns.yaml",
-			filename: "ovirt/manifests/coredns.yaml",
-		}, {
-			name:     "manifests/ovirt/coredns-corefile.tmpl",
-			filename: "ovirt/static-pod-resources/coredns/Corefile.tmpl",
-		}, {
-			name:     "manifests/ovirt/keepalived.yaml",
-			filename: "ovirt/manifests/keepalived.yaml",
-		}, {
-			name:     "manifests/ovirt/keepalived.conf.tmpl",
-			filename: "ovirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
-		}}...)
-	}
+	manifests = appendManifestsByPlatform(manifests, *infra)
 
 	for _, m := range manifests {
 		var b []byte
@@ -257,4 +202,72 @@ func RenderBootstrap(
 		}
 	}
 	return nil
+}
+
+func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructure) []manifest {
+
+	if infra.Status.PlatformStatus.BareMetal != nil {
+		manifests = append(manifests,
+			manifest{
+				name:     "manifests/baremetal/coredns.yaml",
+				filename: "baremetal/manifests/coredns.yaml",
+			},
+			manifest{
+				name:     "manifests/baremetal/coredns-corefile.tmpl",
+				filename: "baremetal/static-pod-resources/coredns/Corefile.tmpl",
+			},
+			manifest{
+				name:     "manifests/baremetal/keepalived.yaml",
+				filename: "baremetal/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/baremetal/keepalived.conf.tmpl",
+				filename: "baremetal/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
+
+	if infra.Status.PlatformStatus.OpenStack != nil {
+		manifests = append(manifests,
+			manifest{
+				name:     "manifests/openstack/coredns.yaml",
+				filename: "openstack/manifests/coredns.yaml",
+			},
+			manifest{
+				name:     "manifests/openstack/coredns-corefile.tmpl",
+				filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
+			},
+			manifest{
+				name:     "manifests/openstack/keepalived.yaml",
+				filename: "openstack/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/openstack/keepalived.conf.tmpl",
+				filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
+
+	if infra.Status.PlatformStatus.Ovirt != nil {
+		manifests = append(manifests,
+			manifest{
+				name:     "manifests/ovirt/coredns.yaml",
+				filename: "ovirt/manifests/coredns.yaml",
+			},
+			manifest{
+				name:     "manifests/ovirt/coredns-corefile.tmpl",
+				filename: "ovirt/static-pod-resources/coredns/Corefile.tmpl",
+			},
+			manifest{
+				name:     "manifests/ovirt/keepalived.yaml",
+				filename: "ovirt/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/ovirt/keepalived.conf.tmpl",
+				filename: "ovirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
+
+	return manifests
 }
