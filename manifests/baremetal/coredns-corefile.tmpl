@@ -1,6 +1,6 @@
 . {
     errors
-    health
+    health :18080
     mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}}
     forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
     cache 30

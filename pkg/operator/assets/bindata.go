@@ -92,7 +92,7 @@ func (fi bindataFileInfo) Sys() interface{} {
 
 var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     errors
-    health
+    health :18080
     mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
@@ -189,7 +189,7 @@ spec:
     readinessProbe:
       httpGet:
         path: /health
-        port: 8080
+        port: 18080
         scheme: HTTP
       initialDelaySeconds: 10
       periodSeconds: 10
@@ -199,7 +199,7 @@ spec:
     livenessProbe:
       httpGet:
         path: /health
-        port: 8080
+        port: 18080
         scheme: HTTP
       initialDelaySeconds: 60
       timeoutSeconds: 5
