@@ -52,6 +52,7 @@ require (
 	github.com/openshift/cluster-api v0.0.0-20190923092624-4024de4fa64d
 	github.com/openshift/library-go v0.0.0-20191002112944-09fe7ddc84d4
 	github.com/pkg/errors v0.8.1
+	github.com/prometheus/client_golang v1.1.0
 	github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5

@@ -2,6 +2,7 @@ package operator
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 type renderConfig struct {
@@ -114,4 +116,10 @@ func clusterDNSIP(iprange string) (string, error) {
 		return "", err
 	}
 	return ip.String(), nil
+}
+
+// GenerateProxyCookieSecret creates a random b64 encoded secret
+// for the proxy cookie secret object
+func (rc renderConfig) GenerateProxyCookieSecret() string {
+	return base64.StdEncoding.EncodeToString([]byte(utilrand.String(32)))
 }

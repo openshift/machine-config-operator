@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: machine-config-daemon
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: machine-config-daemon
+spec:
+  endpoints:
+  - interval: 30s
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    port: metrics
+    scheme: https
+    path: /metrics
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: machine-config-daemon.openshift-machine-config-operator.svc
+  namespaceSelector:
+    matchNames:
+    - openshift-machine-config-operator
+  selector:
+    matchLabels:
+      k8s-app: machine-config-daemon
