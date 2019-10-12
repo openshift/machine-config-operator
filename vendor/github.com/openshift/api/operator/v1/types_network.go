@@ -75,7 +75,7 @@ type NetworkSpec struct {
 // HostPrefix (in CIDR notation) will be allocated when nodes join the cluster.
 // Not all network providers support multiple ClusterNetworks
 type ClusterNetworkEntry struct {
-	CIDR       string `json:"cidr"`
+	CIDR string `json:"cidr"`
 	// +kubebuilder:validation:Minimum=0
 	HostPrefix uint32 `json:"hostPrefix"`
 }
@@ -258,7 +258,7 @@ type KuryrConfig struct {
 	OpenStackServiceNetwork string `json:"openStackServiceNetwork,omitempty"`
 }
 
-// ovnKubernetesConfig is the proposed configuration parameters for networks
+// ovnKubernetesConfig contains the configuration parameters for networks
 // using the ovn-kubernetes network project
 type OVNKubernetesConfig struct {
 	// mtu is the MTU to use for the tunnel interface. This must be 100
@@ -267,6 +267,11 @@ type OVNKubernetesConfig struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	MTU *uint32 `json:"mtu,omitempty"`
+	// geneve port is the UDP port to be used by geneve encapulation.
+	// Default is 6081
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	GenevePort *uint32 `json:"genevePort,omitempty"`
 }
 
 // NetworkType describes the network plugin type to configure
