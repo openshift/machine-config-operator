@@ -1286,6 +1286,11 @@ func (in *OVNKubernetesConfig) DeepCopyInto(out *OVNKubernetesConfig) {
 		*out = new(uint32)
 		**out = **in
 	}
+	if in.GenevePort != nil {
+		in, out := &in.GenevePort, &out.GenevePort
+		*out = new(uint32)
+		**out = **in
+	}
 	return
 }
 

@@ -47,10 +47,11 @@ require (
 	github.com/mailru/easyjson v0.7.0 // indirect
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1
-	github.com/openshift/api v3.9.1-0.20191001124347-8033e226059b+incompatible
+	github.com/openshift/api v3.9.1-0.20191002160657-d92789481b05+incompatible
 	github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0
 	github.com/openshift/cluster-api v0.0.0-20190923092624-4024de4fa64d
-	github.com/openshift/library-go v0.0.0-20191002112944-09fe7ddc84d4
+	github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901
+	github.com/openshift/runtime-utils v0.0.0-20191011150825-9169de69ebf6
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.1.0
 	github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d
