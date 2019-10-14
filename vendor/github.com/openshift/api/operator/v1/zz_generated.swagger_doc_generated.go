@@ -451,8 +451,9 @@ func (NetworkStatus) SwaggerDoc() map[string]string {
 }
 
 var map_OVNKubernetesConfig = map[string]string{
-	"":    "ovnKubernetesConfig is the proposed configuration parameters for networks using the ovn-kubernetes network project",
-	"mtu": "mtu is the MTU to use for the tunnel interface. This must be 100 bytes smaller than the uplink mtu. Default is 1400",
+	"":           "ovnKubernetesConfig contains the configuration parameters for networks using the ovn-kubernetes network project",
+	"mtu":        "mtu is the MTU to use for the tunnel interface. This must be 100 bytes smaller than the uplink mtu. Default is 1400",
+	"genevePort": "geneve port is the UDP port to be used by geneve encapulation. Default is 6081",
 }
 
 func (OVNKubernetesConfig) SwaggerDoc() map[string]string {
