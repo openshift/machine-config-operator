@@ -679,6 +679,8 @@ github.com/opencontainers/selinux v1.3.0/go.mod h1:+BLncwf63G4dgOzykXAxcmnFlUaOl
 github.com/openshift/api v3.9.1-0.20190810003144-27fb16909b15+incompatible/go.mod h1:dh9o4Fs58gpFXGSYfnVxGR9PnV53I8TW84pQaJDdGiY=
 github.com/openshift/api v3.9.1-0.20191002160657-d92789481b05+incompatible h1:pJi5juYTFwGV9coGQetdTBQayln4OadcrSW/ZKJ6FUw=
 github.com/openshift/api v3.9.1-0.20191002160657-d92789481b05+incompatible/go.mod h1:dh9o4Fs58gpFXGSYfnVxGR9PnV53I8TW84pQaJDdGiY=
+github.com/openshift/api v3.9.1-0.20191014195513-c9253efc14f4+incompatible h1:DbCFLVo331sLLExHtpxwQTpbTiFNVcoJG7hf76oGnNY=
+github.com/openshift/api v3.9.1-0.20191014195513-c9253efc14f4+incompatible/go.mod h1:dh9o4Fs58gpFXGSYfnVxGR9PnV53I8TW84pQaJDdGiY=
 github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0 h1:U0rtkdPj1lTC5iQwN3Ev+FgyZUTsJFg60rc0ExTGLpc=
 github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070 h1:Yw3cWSzWhZ9Kh8WqX6tOccVPs9BWUp4jDfb6I8AU/pg=
