@@ -667,7 +667,7 @@ github.com/opencontainers/runtime-tools/error
 # github.com/opencontainers/selinux v1.3.0
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/go-selinux/label
-# github.com/openshift/api v3.9.1-0.20191001124347-8033e226059b+incompatible
+# github.com/openshift/api v3.9.1-0.20191002160657-d92789481b05+incompatible
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/operator/v1
@@ -704,9 +704,11 @@ github.com/openshift/imagebuilder/dockerfile/parser
 github.com/openshift/imagebuilder/dockerfile/command
 github.com/openshift/imagebuilder/signal
 github.com/openshift/imagebuilder/strslice
-# github.com/openshift/library-go v0.0.0-20191002112944-09fe7ddc84d4
+# github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901
 github.com/openshift/library-go/pkg/operator/v1helpers
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
+# github.com/openshift/runtime-utils v0.0.0-20191011150825-9169de69ebf6
+github.com/openshift/runtime-utils/pkg/registries
 # github.com/opentracing/opentracing-go v1.1.0
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/log
