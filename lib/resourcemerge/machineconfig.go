@@ -71,6 +71,11 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
 
+	if !equality.Semantic.DeepEqual(existing.Proxy, required.Proxy) {
+		*modified = true
+		existing.Proxy = required.Proxy
+	}
+
 	if required.PullSecret != nil && !equality.Semantic.DeepEqual(existing.PullSecret, required.PullSecret) {
 		existing.PullSecret = required.PullSecret
 		*modified = true
