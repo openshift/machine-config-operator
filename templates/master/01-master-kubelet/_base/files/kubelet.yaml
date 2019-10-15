@@ -25,7 +25,9 @@ contents:
     featureGates:
       RotateKubeletServerCertificate: true
       ExperimentalCriticalPodAnnotation: true
+      NodeDisruptionExclusion: true
       SupportPodPidsLimit: true
-      LocalStorageCapacityIsolation: false
       TLSSecurityProfile: true
+      LegacyNodeRoleBehavior: false
+      ServiceNodeExclusion: true
     serverTLSBootstrap: true

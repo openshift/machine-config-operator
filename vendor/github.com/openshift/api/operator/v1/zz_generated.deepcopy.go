@@ -5,6 +5,7 @@
 package v1
 
 import (
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -681,6 +682,11 @@ func (in *IngressControllerSpec) DeepCopyInto(out *IngressControllerSpec) {
 		*out = new(NodePlacement)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.TLSSecurityProfile != nil {
+		in, out := &in.TLSSecurityProfile, &out.TLSSecurityProfile
+		*out = new(configv1.TLSSecurityProfile)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 
@@ -708,6 +714,11 @@ func (in *IngressControllerStatus) DeepCopyInto(out *IngressControllerStatus) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.TLSProfile != nil {
+		in, out := &in.TLSProfile, &out.TLSProfile
+		*out = new(configv1.TLSProfileSpec)
+		(*in).DeepCopyInto(*out)
 	}
 	return
 }
