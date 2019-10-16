@@ -403,6 +403,9 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		if err := ctrl.syncRunningStatus(cfg); err != nil {
 			return err
 		}
+	} else {
+		glog.V(2).Info("ControllerConfig didn't change, skipping templates sync")
+		return nil
 	}
 
 	var pullSecretRaw []byte
