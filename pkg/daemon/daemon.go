@@ -187,6 +187,7 @@ func New(
 
 	var (
 		osImageURL string
+		osVersion  string
 		err        error
 	)
 
@@ -194,13 +195,13 @@ func New(
 	if !mock {
 		operatingSystem, err = getHostRunningOS()
 		if err != nil {
+			HostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, errors.Wrapf(err, "checking operating system")
 		}
 	}
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == machineConfigDaemonOSRHCOS {
-		var osVersion string
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -227,6 +228,9 @@ func New(
 			loggerSupportsJournal = strings.Contains(string(loggerOutput), "--journald")
 		}
 	}
+
+	// report OS & version (if RHCOS) to prometheus
+	HostOS.WithLabelValues(operatingSystem, osVersion).Set(1)
 
 	return &Daemon{
 		mock:                  mock,
