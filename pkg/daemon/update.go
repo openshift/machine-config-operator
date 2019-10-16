@@ -163,7 +163,7 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 
 var errUnreconcilable = errors.New("unreconcilable")
 
-func canonicalizeEmptyConfig(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
+func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	if config != nil {
 		return config
 	}
@@ -175,9 +175,9 @@ func canonicalizeEmptyConfig(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig
 	}
 }
 
-func (dn *Daemon) checkUpdateDiff(oldConfig, newConfig *mcfgv1.MachineConfig) bool {
+func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) bool {
 	var diff *MachineConfigDiff
-	oldConfig = canonicalizeEmptyConfig(oldConfig)
+	oldConfig = canonicalizeEmptyMC(oldConfig)
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 	diff = NewMachineConfigDiff(oldConfig, newConfig)
@@ -190,7 +190,7 @@ func (dn *Daemon) checkUpdateDiff(oldConfig, newConfig *mcfgv1.MachineConfig) bo
 
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
-	oldConfig = canonicalizeEmptyConfig(oldConfig)
+	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
@@ -333,21 +333,18 @@ type MachineConfigDiff struct {
 	units    bool
 }
 
-// See if this was Rust we wouldn't have nullable pointers by default...
-func canonicalizeStringArray(a []string) []string {
-	if a == nil {
-		return []string{}
-	}
-	return a
-}
-
 // NewMachineConfigDiff compares two MachineConfig objects.
 func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) *MachineConfigDiff {
 	oldIgn := oldConfig.Spec.Config
 	newIgn := newConfig.Spec.Config
+
+	// Both nil and empty slices are of zero length,
+	// consider them as equal while comparing KernelArguments in both MachineConfigs
+	kargsEmpty := len(oldConfig.Spec.KernelArguments) == 0 && len(newConfig.Spec.KernelArguments) == 0
+
 	return &MachineConfigDiff{
 		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs:    !reflect.DeepEqual(canonicalizeStringArray(oldConfig.Spec.KernelArguments), canonicalizeStringArray(newConfig.Spec.KernelArguments)),
+		kargs:    !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:     oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
 		passwd:   !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
 		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
