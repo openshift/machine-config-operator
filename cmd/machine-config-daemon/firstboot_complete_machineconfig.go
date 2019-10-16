@@ -36,12 +36,7 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	err = dn.RunFirstbootCompleteMachineconfig()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return dn.RunFirstbootCompleteMachineconfig()
 }
 
 func executeFirstbootCompleteMachineConfig(cmd *cobra.Command, args []string) {

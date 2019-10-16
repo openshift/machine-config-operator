@@ -9,9 +9,9 @@ import (
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -197,8 +197,8 @@ func TestMachineConfigDiff(t *testing.T) {
 	assert.False(t, diff.IsEmpty())
 	assert.True(t, diff.osUpdate)
 
-	emptyMc := canonicalizeEmptyConfig(nil)
-	otherEmptyMc := canonicalizeEmptyConfig(nil)
+	emptyMc := canonicalizeEmptyMC(nil)
+	otherEmptyMc := canonicalizeEmptyMC(nil)
 	emptyMc.Spec.KernelArguments = nil
 	otherEmptyMc.Spec.KernelArguments = []string{}
 	diff = NewMachineConfigDiff(emptyMc, otherEmptyMc)

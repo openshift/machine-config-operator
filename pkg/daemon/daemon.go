@@ -459,12 +459,12 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 
 	// Start with an empty config, then add our *booted* osImageURL to
 	// it, reflecting the current machine state.
-	oldConfig := canonicalizeEmptyConfig(nil)
+	oldConfig := canonicalizeEmptyMC(nil)
 	oldConfig.Spec.OSImageURL = dn.bootedOSImageURL
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.
-	if !dn.checkUpdateDiff(oldConfig, &mc) {
+	if !dn.compareMachineConfig(oldConfig, &mc) {
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
 			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
