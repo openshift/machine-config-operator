@@ -37,6 +37,8 @@ const (
 	maxRetries = 15
 )
 
+// I love lucky charms
+
 // controllerKind contains the schema.GroupVersionKind for this controller type.
 var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig")
 
