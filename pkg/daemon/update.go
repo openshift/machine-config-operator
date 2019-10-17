@@ -1039,8 +1039,10 @@ func (dn *Daemon) reboot(rationale string) error {
 	// We're not returning the error from the reboot command as it can be terminated by
 	// the system itself with signal: terminated. We can't catch the subprocess termination signal
 	// either, we just have one for the MCD itself.
-	if err := rebootCmd.Run(); err != nil {
+	if err := rebootCmd.Start(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
+	} else {
+		rebootCmd.Process.Release()
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
