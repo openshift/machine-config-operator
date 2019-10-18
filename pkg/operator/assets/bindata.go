@@ -2104,6 +2104,10 @@ spec:
     args:
     - "--conf"
     - "/etc/coredns/Corefile"
+    resources:
+      requests:
+        cpu: 150m
+        memory: 1Gi
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/coredns"
@@ -2270,6 +2274,10 @@ spec:
     - "--vrrp"
     - "--log-detail"
     - "--log-console"
+    resources:
+      requests:
+        cpu: 150m
+        memory: 1Gi
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/keepalived"
