@@ -68,6 +68,10 @@ contents:
 
           rm -f "$keepalived_sock"
           socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
+        resources:
+          requests:
+            cpu: 150m
+            memory: 1Gi
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/keepalived"
