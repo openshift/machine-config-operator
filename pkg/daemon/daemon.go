@@ -444,6 +444,49 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 	return errors.New("unsupported onceFrom type provided")
 }
 
+// RunFirstbootCompleteMachineconfig is run via systemd on the first boot
+// to complete processing of the target MachineConfig.
+func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
+	data, err := ioutil.ReadFile(constants.MachineConfigEncapsulatedPath)
+	if err != nil {
+		return err
+	}
+	var mc mcfgv1.MachineConfig
+	err = json.Unmarshal(data, &mc)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse MachineConfig")
+	}
+
+	// Start with an empty config, then add our *booted* osImageURL to
+	// it, reflecting the current machine state.
+	oldConfig := canonicalizeEmptyMC(nil)
+	oldConfig.Spec.OSImageURL = dn.bootedOSImageURL
+	// Currently, we generally expect the bootimage to be older, but in the special
+	// case of having bootimage == machine-os-content, and no kernel arguments
+	// specified, then we don't need to do anything here.
+	if !dn.compareMachineConfig(oldConfig, &mc) {
+		// Removing this file signals completion of the initial MC processing.
+		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
+			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
+		}
+		return nil
+	}
+
+	dn.skipReboot = true
+	err = dn.update(nil, &mc)
+	if err != nil {
+		return err
+	}
+
+	// Removing this file signals completion of the initial MC processing.
+	if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
+		return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
+	}
+
+	dn.skipReboot = false
+	return dn.reboot(fmt.Sprintf("Completing firstboot provisioning to %s", mc.GetName()))
+}
+
 // InstallSignalHandler installs the handler for the signals the daemon should act on
 func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
 	termChan := make(chan os.Signal, 2048)
