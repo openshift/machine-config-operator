@@ -1032,19 +1032,13 @@ func (dn *Daemon) reboot(rationale string) error {
 	}
 	dn.logSystem("initiating reboot: %s", rationale)
 
-	stopKubeletCmd := stopKubeletCommand()
-	if err := stopKubeletCmd.Run(); err != nil {
-		dn.logSystem("failed to stop kubelet: %v", err)
-	} else {
-		dn.logSystem("successfully stopped kubelet")
-	}
+	rebootCmd := rebootCommand(rationale)
 
 	// reboot, executed async via systemd-run so that the reboot command is executed
 	// in the context of the host asynchronously from us
 	// We're not returning the error from the reboot command as it can be terminated by
 	// the system itself with signal: terminated. We can't catch the subprocess termination signal
 	// either, we just have one for the MCD itself.
-	rebootCmd := rebootCommand(rationale)
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
 	}
