@@ -1,0 +1,30 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
+contents:
+  inline: |
+    # TODO: Improve this check. The port is assumed to be alive.
+    # Need to assess what is the ramification if the port is not there.
+    vrrp_script chk_ingress {
+        script "/usr/bin/curl -o /dev/null -kLs http://0:1936/healthz"
+        interval 1
+        weight 50
+    }
+
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        authentication {
+            auth_type PASS
+            auth_pass cluster_uuid_ingress_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        }
+        track_script {
+            chk_ingress
+        }
+    }
