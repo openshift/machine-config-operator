@@ -1,0 +1,22 @@
+name: "machine-config-daemon-firstboot.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Firstboot
+  # Make sure it runs only on OSTree booted system
+  ConditionPathExists=/run/ostree-booted
+  # This effectively disables this unit unitl we get latest
+  # machine-config-daemon package into bootimage
+  ConditionPathExists=!/etc/pivot/image-pullspec
+  ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+  BindsTo=ignition-firstboot-complete.service
+  After=ignition-firstboot-complete.service
+  Before=kubelet.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/libexec/machine-config-daemon firstboot-complete-machineconfig
+
+  [Install]
+  WantedBy=multi-user.target
