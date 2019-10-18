@@ -8,6 +8,11 @@ GOFLAGS=${GOFLAGS:-}
 GLDFLAGS=${GLDFLAGS:-}
 
 eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
+if [ -z "${GOHOSTOS:-}" ] || [ -z "${GOHOSTARCH:-}" ]; then
+  go env
+  echo 'Failed to find expected variables in `go env` output above' 1>&2
+  exit 1
+fi
 
 : "${GOOS:=${GOHOSTOS}}"
 : "${GOARCH:=${GOHOSTARCH}}"
