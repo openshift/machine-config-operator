@@ -17,3 +17,9 @@ as straightforward to make any "day 2" changes to them.
 In the future, it's likely the MCO will gain better support for per-node configuration
 as well as tools to more easily manipulate Ignition, so there is less need to edit the
 Ignition JSON directly.
+
+## Q: Why are my workers showing older versions of RHCOS?
+
+Today, the MCO only blocks on upgrades of control plane nodes.  `oc get clusterversion` effectively reports the version of the control plane. 
+
+To watch rollout of worker nodes, you should look at `oc describe machineconfigpool/worker` (as well as other custom pools, if any).
