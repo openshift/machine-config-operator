@@ -13,6 +13,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,6 +66,7 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 				Namespace: "default",
 				Name:      "coreos-pull-secret",
 			},
+			Version: version.Hash,
 		},
 	}
 }

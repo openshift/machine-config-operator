@@ -219,6 +219,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		templatectrl.HaproxyKey:              imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey:  imgs.BaremetalRuntimeCfg,
 	}
+	spec.Version = version.Hash
 
 	// create renderConfig
 	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)

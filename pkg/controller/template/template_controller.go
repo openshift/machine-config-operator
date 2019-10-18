@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -403,9 +404,10 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		if err := ctrl.syncRunningStatus(cfg); err != nil {
 			return err
 		}
-	} else {
-		glog.V(2).Info("ControllerConfig didn't change, skipping templates sync")
-		return nil
+	}
+
+	if cfg.Spec.Version != version.Hash {
+		return ctrl.syncFailingStatus(cfg, fmt.Errorf("refusing to retemplate with different ControllerConfig and MCC versions: %s != %s", cfg.Spec.Version, version.Hash))
 	}
 
 	var pullSecretRaw []byte

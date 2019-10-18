@@ -76,5 +76,10 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 		*modified = true
 	}
 
+	if existing.Version != required.Version {
+		*modified = true
+		existing.Version = required.Version
+	}
+
 	mergeMap(modified, &existing.Images, required.Images)
 }

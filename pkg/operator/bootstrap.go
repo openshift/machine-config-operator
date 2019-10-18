@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 // RenderBootstrap writes to destinationDir static Pods.
@@ -141,6 +142,7 @@ func RenderBootstrap(
 		templatectrl.HaproxyKey:              imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey:  imgs.BaremetalRuntimeCfg,
 	}
+	spec.Version = version.Hash
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
 
