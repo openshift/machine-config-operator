@@ -106,7 +106,7 @@ type ControllerConfigSpec struct {
 	// TODO this makes platform redundant as everything is contained inside Infra.Status
 	Infra *configv1.Infrastructure `json:"infra"`
 
-	// TODO(runcom): 
+	// version is a guard that stores the current CC version for the given controller it was generated for.
 	Version string `json:"version"`
 }
 
