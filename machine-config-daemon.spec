@@ -18,12 +18,8 @@ BuildRequires:  %{?go_compiler:compiler(go-compiler)}%{!?go_compiler:golang >= 1
 
 %prep
 %autosetup -Sgit -n machine-config-operator-%{commit}
-mkdir -p src/github.com/openshift/
-ln -sr . src/github.com/openshift/machine-config-operator
 
 %build
-export GOPATH=`pwd`
-cd src/github.com/openshift/machine-config-operator
 env VERSION_OVERRIDE=%{version} SOURCE_GIT_COMMIT=%{commit} make daemon
 
 %install
