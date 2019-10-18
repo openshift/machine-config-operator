@@ -11,7 +11,7 @@ contents:
     spec:
       containers:
       - name: gcp-routes-controller
-        image: "{{.Images.gcpRoutesControllerKey}}"
+        image: "{{.Images.gcpRoutesController}}"
         command: ["gcp-routes-controller"]
         args:
         - "run"

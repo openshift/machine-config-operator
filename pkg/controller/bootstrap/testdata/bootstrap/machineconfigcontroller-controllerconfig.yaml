@@ -18,7 +18,7 @@ spec:
     keepalivedImage: ""
     kubeClientAgentImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     mdnsPublisherImage: ""
-    setupEtcdEnvKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    setupEtcdEnv: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
   infra:
     apiVersion: config.openshift.io/v1
     kind: Infrastructure

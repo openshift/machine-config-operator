@@ -220,6 +220,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		templatectrl.BaremetalRuntimeCfgKey:  imgs.BaremetalRuntimeCfg,
 	}
 
+	glog.Infof("runcom: ControllerConfig.Images: %+v", spec.Images)
+
+	if spec.Images[templatectrl.SetupEtcdEnvKey] == "" {
+		return fmt.Errorf("setupEtcdEnvImage is freaking empty")
+	}
+
 	// create renderConfig
 	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
 	return nil
