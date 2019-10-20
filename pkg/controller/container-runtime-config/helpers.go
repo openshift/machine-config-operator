@@ -76,7 +76,6 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 		configdu.Encoding = dataurl.EncodingASCII
 		configTempFile := igntypes.File{
 			Node: igntypes.Node{
-				Filesystem: "root",
 				Path:       filePath,
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
