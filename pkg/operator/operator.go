@@ -334,6 +334,11 @@ func (optr *Operator) sync(key string) error {
 		return err
 	}
 
+	optrVersion, _ := optr.vStore.Get("operator")
+	if imgs.ReleaseVersion != optrVersion {
+		return fmt.Errorf("refusing to read images.json version %q, operator version %q", imgs.ReleaseVersion, optrVersion)
+	}
+
 	// sync up CAs
 	etcdCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-serving-ca", "ca-bundle.crt")
 	if err != nil {
