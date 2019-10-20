@@ -732,7 +732,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	}
 
 	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
-		dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalRegistriesIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
 		}
@@ -742,7 +742,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		}
 	}
 	if blockedRegs != nil || allowedRegs != nil {
-		dataURL, err := dataurl.DecodeString(originalPolicyIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalPolicyIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original policy json: %v", err)
 		}
