@@ -74,6 +74,7 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 		}
 		configdu := dataurl.New(data, "text/plain")
 		configdu.Encoding = dataurl.EncodingASCII
+		strConfigdu := configdu.String()
 		configTempFile := igntypes.File{
 			Node: igntypes.Node{
 				Path:       filePath,
@@ -81,7 +82,7 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,
 				Contents: igntypes.FileContents{
-					Source: configdu.String(),
+					Source: &strConfigdu,
 				},
 			},
 		}
