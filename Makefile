@@ -1,4 +1,6 @@
-COMPONENTS = daemon controller server operator
+MCO_COMPONENTS = daemon controller server operator
+EXTRA_COMPONENTS = setup-etcd-environment gcp-routes-controller
+ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
 GO111MODULE?=on
 
 # vim: noexpandtab ts=8
@@ -77,15 +79,12 @@ verify: install-tools
 
 # Template for defining build targets for binaries.
 define target_template =
- .PHONY: $(1) machine-config-$(1)
- machine-config-$(1): _build-machine-config-$(1)
- $(1): machine-config-$(1)
-
- mc += $(1)
+ .PHONY: $(1)
+ $(1): _build-$(1)
 endef
-
 # Create a target for each component
-$(foreach C, $(COMPONENTS), $(eval $(call target_template,$(C))))
+$(foreach C, $(EXTRA_COMPONENTS), $(eval $(call target_template,$(C))))
+$(foreach C, $(MCO_COMPONENTS), $(eval $(call target_template,$(patsubst %,machine-config-%,$(C)))))
 
 # Template for image builds.
 define image_template =
@@ -99,14 +98,14 @@ define image_template =
 endef
 
 # Generate 'image_template' for each component
-$(foreach C, $(COMPONENTS), $(eval $(call image_template,$(C))))
+$(foreach C, $(MCO_COMPONENTS), $(eval $(call image_template,$(C))))
 
 .PHONY: binaries images images.rhel7
 
 # Build all binaries:
 # Example:
 #    make binaries
-binaries: $(mc)
+binaries: $(patsubst %,_build-%,$(ALL_COMPONENTS))
 
 # Build all images:
 # Example:
