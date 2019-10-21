@@ -33,6 +33,13 @@ var (
 			Name: "mcd_drain",
 		}, []string{"message", "err"})
 
+	// MCDPivotErr shows errors encountered during pivot
+	MCDPivotErr = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_pivot_err",
+			Help: "errors encountered during pivot",
+		}, []string{"pivot_target", "err"})
+
 	// MCDState is state of mcd for indicated node (ex: degraded)
 	MCDState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -47,8 +54,10 @@ func registerMCDMetrics() {
 	prometheus.MustRegister(MCDSSHAccessed)
 	prometheus.MustRegister(MCDDrain)
 	prometheus.MustRegister(MCDState)
+	prometheus.MustRegister(MCDPivotErr)
 
 	MCDDrain.WithLabelValues("", "").Set(0)
+	MCDPivotErr.WithLabelValues("", "").Set(0)
 
 }
 
