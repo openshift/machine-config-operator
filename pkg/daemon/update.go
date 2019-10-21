@@ -100,10 +100,10 @@ func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
-	return dn.drainAndReboot(newConfig)
+	return dn.finalizeAndReboot(newConfig)
 }
 
-func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
 		return errors.Wrapf(err, "failed to log pending config: %s", string(out))
 	}
@@ -122,43 +122,47 @@ func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error)
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
 	}
 
-	// Skip draining of the node when we're not cluster driven
-	if dn.kubeClient != nil {
-		dn.logSystem("Update prepared; beginning drain")
-
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
-
-		backoff := wait.Backoff{
-			Steps:    5,
-			Duration: 10 * time.Second,
-			Factor:   2,
-		}
-		var lastErr error
-		if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-			err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
-				DeleteLocalData:    true,
-				Force:              true,
-				GracePeriodSeconds: -1,
-				IgnoreDaemonsets:   true,
-				Logger:             &drainLogger{},
-			})
-			if err == nil {
-				return true, nil
-			}
-			lastErr = err
-			glog.Infof("Draining failed with: %v, retrying", err)
-			return false, nil
-		}); err != nil {
-			if err == wait.ErrWaitTimeout {
-				return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
-			}
-			return errors.Wrap(err, "failed to drain node")
-		}
-		dn.logSystem("drain complete")
-	}
-
 	// reboot. this function shouldn't actually return.
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
+}
+
+func (dn *Daemon) drain() error {
+	// Skip draining of the node when we're not cluster driven
+	if dn.kubeClient == nil {
+		return nil
+	}
+	dn.logSystem("Update prepared; beginning drain")
+
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 10 * time.Second,
+		Factor:   2,
+	}
+	var lastErr error
+	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
+			DeleteLocalData:    true,
+			Force:              true,
+			GracePeriodSeconds: -1,
+			IgnoreDaemonsets:   true,
+			Logger:             &drainLogger{},
+		})
+		if err == nil {
+			return true, nil
+		}
+		lastErr = err
+		glog.Infof("Draining failed with: %v, retrying", err)
+		return false, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
+		}
+		return errors.Wrap(err, "failed to drain node")
+	}
+	dn.logSystem("drain complete")
+	return nil
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
@@ -233,6 +237,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+
+	if err := dn.drain(); err != nil {
+		return err
+	}
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
