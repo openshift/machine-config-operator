@@ -13,6 +13,8 @@ const (
 	machineConfigDaemonOSRHEL = "RHEL"
 	// machineConfigDaemonOSCENTOS denotes CENTOS
 	machineConfigDaemonOSCENTOS = "CENTOS"
+	// machineConfigDaemonOSFCOS denotes FCOS
+	machineConfigDaemonOSFCOS = "FCOS"
 )
 
 // getHostRunningOS reads os-release from the rootFs prefix to return what
@@ -27,6 +29,11 @@ func getHostRunningOS() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	if or.ID == "fedora" && or.VARIANT_ID == "coreos" {
+		return machineConfigDaemonOSFCOS, nil
+	}
+
 	// See https://github.com/openshift/redhat-release-coreos/blob/master/redhat-release-coreos.spec
 	switch or.ID {
 	case "rhcos":
