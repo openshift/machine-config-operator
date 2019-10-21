@@ -921,6 +921,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 	glog.Infof("Updating OS to %s", newURL)
 	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
+		MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
 		return fmt.Errorf("failed to run pivot: %v", err)
 	}
 

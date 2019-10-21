@@ -351,6 +351,7 @@ func followPivotJournalLogs(stopCh <-chan time.Time) {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		glog.Fatal(err)
+		MCDPivotErr.WithLabelValues("", err.Error()).SetToCurrentTime()
 	}
 
 	go func() {
