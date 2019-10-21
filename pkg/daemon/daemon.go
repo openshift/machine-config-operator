@@ -201,7 +201,8 @@ func New(
 	}
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS
-	if operatingSystem == machineConfigDaemonOSRHCOS {
+	if isOSTreeBased(operatingSystem) {
+		var osVersion string
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -770,7 +771,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 // dynamically after a reboot.
 func (dn *Daemon) LogSystemData() {
 	// Print status if available
-	if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
+	if isOSTreeBased(dn.OperatingSystem) {
 		status, err := dn.NodeUpdaterClient.GetStatus()
 		if err != nil {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
@@ -1257,7 +1258,7 @@ func compareOSImageURL(current, desired string) (bool, error) {
 // Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 	// Nothing to do if we're not on RHCOS
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+	if !isOSTreeBased(dn.OperatingSystem) {
 		glog.Infof(`Not booted into Red Hat CoreOS, ignoring target OSImageURL %s`, osImageURL)
 		return true, nil
 	}
