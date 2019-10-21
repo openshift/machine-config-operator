@@ -879,6 +879,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	if state.pendingConfig != nil && bootID == dn.bootID {
 		dn.logSystem("drain interrupted, retrying")
 		if err := dn.drain(); err != nil {
+			MCDDrain.WithLabelValues("", err.Error()).Set(0)
 			return err
 		}
 		return dn.finalizeAndReboot(state.pendingConfig)
