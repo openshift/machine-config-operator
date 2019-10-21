@@ -32,6 +32,13 @@ var (
 		prometheus.GaugeOpts{
 			Name: "mcd_drain",
 		}, []string{"message", "err"})
+
+	// MCDState is state of mcd for indicated node (ex: degraded)
+	MCDState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_state",
+			Help: "state of daemon on specified node",
+		}, []string{"state", "reason"})
 )
 
 func registerMCDMetrics() {
@@ -39,6 +46,7 @@ func registerMCDMetrics() {
 	prometheus.MustRegister(HostOS)
 	prometheus.MustRegister(MCDSSHAccessed)
 	prometheus.MustRegister(MCDDrain)
+	prometheus.MustRegister(MCDState)
 
 	MCDDrain.WithLabelValues("", "").Set(0)
 

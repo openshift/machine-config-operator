@@ -741,6 +741,16 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		glog.Infof("Pending config: %s", pendingConfigName)
 	}
 
+	var degradedReason string
+	if state == constants.MachineConfigDaemonStateDegraded {
+		degradedReason, err = getNodeAnnotation(dn.node, constants.MachineConfigDaemonReasonAnnotationKey)
+		if err != nil {
+			glog.Errorf("Could not retrieve degraded reason. err: %v", err)
+		}
+	}
+
+	MCDState.WithLabelValues(state, degradedReason).SetToCurrentTime()
+
 	return &stateAndConfigs{
 		bootstrapping: bootstrapping,
 		currentConfig: currentConfig,
