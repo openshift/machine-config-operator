@@ -1258,7 +1258,7 @@ func checkUnits(units []igntypes.Unit) bool {
 		}
 
 		path := filepath.Join(pathSystemd, u.Name)
-		if *u.Mask {
+		if u.Mask != nil && *u.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
 				glog.Errorf("state validation: error while evaluation symlink for path: %q, err: %v", path, err)
