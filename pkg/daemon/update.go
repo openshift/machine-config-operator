@@ -313,7 +313,7 @@ func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
 	if current.Spec.FIPS == desired.Spec.FIPS {
 		return nil
 	}
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+	if !isOstreeBased(dn.OperatingSystem) {
 		return errors.New("Updating FIPS on non-RHCOS nodes is not supported")
 	}
 	arg := "enable"
@@ -519,13 +519,22 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	return cmdArgs
 }
 
+func isOstreeBased(osName string) bool {
+	switch osName {
+	case machineConfigDaemonOSRHCOS, machineConfigDaemonOSFCOS:
+		return true
+	}
+	return false
+}
+
 // updateKernelArguments adjusts the kernel args
 func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	diff := generateKargsCommand(oldConfig, newConfig)
 	if len(diff) == 0 {
 		return nil
 	}
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+
+	if !isOstreeBased(dn.OperatingSystem) {
 		return fmt.Errorf("Updating kargs on non-RHCOS nodes is not supported: %v", diff)
 	}
 
@@ -886,7 +895,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []igntypes.PasswdUser) error {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+	if !isOstreeBased(dn.OperatingSystem) {
 		glog.V(2).Info("Updating of non RHCOS nodes are not supported")
 		return nil
 	}
