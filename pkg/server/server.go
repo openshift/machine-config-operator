@@ -129,10 +129,12 @@ func getNodeAnnotation(conf string) (string, error) {
 
 func appendFileToIgnition(conf *igntypes.Config, outPath string, contents *string) {
 	fileMode := int(420)
+	overwrite := true
 	source := getEncodedContent(contents)
 	file := igntypes.File{
 		Node: igntypes.Node{
-			Path: outPath,
+			Path:      outPath,
+			Overwrite: &overwrite,
 		},
 		FileEmbedded1: igntypes.FileEmbedded1{
 			Contents: igntypes.FileContents{

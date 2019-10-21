@@ -66,6 +66,7 @@ type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfigu
 func createNewIgnition(configs map[string][]byte) igntypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
+	overwrite := true
 	// Create ignitions
 	for filePath, data := range configs {
 		// If the file is not included, the data will be nil so skip over
@@ -78,6 +79,7 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 		configTempFile := igntypes.File{
 			Node: igntypes.Node{
 				Path:       filePath,
+				Overwrite: &overwrite,
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,

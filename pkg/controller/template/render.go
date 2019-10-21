@@ -289,13 +289,14 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcf
 
 func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 	var ctCfg fcct_base_0_1.Config
-
+	overwrite := true
 	// Convert data to Ignition resources
 	for _, d := range files {
 		f := new(fcct_base_0_1.File)
 		if err := yaml.Unmarshal([]byte(d), f); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
 		}
+		f.Overwrite = &overwrite
 
 		// Add the file to the config
 		ctCfg.Storage.Files = append(ctCfg.Storage.Files, *f)
