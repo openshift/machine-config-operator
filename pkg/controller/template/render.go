@@ -105,6 +105,10 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 	}
 
 	cfgs := []*mcfgv1.MachineConfig{}
+	// This func doesn't process "common"
+	// common templates are only added to 00-<role>
+	// templates/<role>/{00-<role>,01-<role>-container-runtime,01-<role>-kubelet}
+	var commonAdded bool
 	for _, info := range infos {
 		if !info.IsDir() {
 			glog.Infof("ignoring non-directory path %q", info.Name())
@@ -112,7 +116,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 		}
 		name := info.Name()
 		namePath := filepath.Join(path, name)
-		nameConfig, err := generateMachineConfigForName(config, role, name, templateDir, namePath)
+		nameConfig, err := generateMachineConfigForName(config, role, name, templateDir, namePath, &commonAdded)
 		if err != nil {
 			return nil, err
 		}
@@ -172,26 +176,29 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 	return filepath.Walk(path, walkFn)
 }
 
-func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string) (*mcfgv1.MachineConfig, error) {
+func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
 	platform, err := platformFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
 		return nil, err
 	}
 
 	platformDirs := []string{}
-	// Loop over templates/common which applies everywhere
-	for _, dir := range []string{platformBase, platform} {
-		basePath := filepath.Join(templateDir, "common", dir)
-		exists, err := existsDir(basePath)
-		if err != nil {
-			return nil, err
+	if !*commonAdded {
+		// Loop over templates/common which applies everywhere
+		for _, dir := range []string{platformBase, platform} {
+			basePath := filepath.Join(templateDir, "common", dir)
+			exists, err := existsDir(basePath)
+			if err != nil {
+				return nil, err
+			}
+			if !exists {
+				continue
+			}
+			platformDirs = append(platformDirs, basePath)
 		}
-		if !exists {
-			continue
-		}
-		platformDirs = append(platformDirs, basePath)
+		*commonAdded = true
 	}
-	// And now over the target e.g. templates/master
+	// And now over the target e.g. templates/master/00-master,01-master-container-runtime,01-master-kubelet
 	for _, dir := range []string{platformBase, platform} {
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
