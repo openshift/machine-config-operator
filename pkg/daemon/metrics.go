@@ -26,12 +26,21 @@ var (
 			Name: "ssh_accessed",
 			Help: "indicates whether ssh access attempt",
 		})
+
+	// MCDDrain shows drain duration in seconds if successful or error
+	MCDDrain = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_drain",
+		}, []string{"message", "err"})
 )
 
 func registerMCDMetrics() {
 
 	prometheus.MustRegister(HostOS)
 	prometheus.MustRegister(MCDSSHAccessed)
+	prometheus.MustRegister(MCDDrain)
+
+	MCDDrain.WithLabelValues("", "").Set(0)
 
 }
 

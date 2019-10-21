@@ -131,7 +131,9 @@ func (dn *Daemon) drain() error {
 	if dn.kubeClient == nil {
 		return nil
 	}
+
 	dn.logSystem("Update prepared; beginning drain")
+	startTime := time.Now()
 
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
@@ -161,7 +163,12 @@ func (dn *Daemon) drain() error {
 		}
 		return errors.Wrap(err, "failed to drain node")
 	}
+
 	dn.logSystem("drain complete")
+	t := time.Since(startTime).Seconds()
+	glog.Infof("Successful drain took %v sec", t)
+	MCDDrain.WithLabelValues("success", "").Set(t)
+
 	return nil
 }
 
@@ -239,6 +246,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	if err := dn.drain(); err != nil {
+		MCDDrain.WithLabelValues("", err.Error()).Set(0)
 		return err
 	}
 
