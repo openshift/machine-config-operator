@@ -19,11 +19,19 @@ var (
 			Name: "mcd_host_os_and_version",
 			Help: "os that MCD is running on and version if RHCOS",
 		}, []string{"os", "version"})
+
+	// MCDSSHAccessed shows ssh access count for a node
+	MCDSSHAccessed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ssh_accessed",
+			Help: "indicates whether ssh access attempt",
+		})
 )
 
 func registerMCDMetrics() {
 
 	prometheus.MustRegister(HostOS)
+	prometheus.MustRegister(MCDSSHAccessed)
 
 }
 

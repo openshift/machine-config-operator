@@ -146,6 +146,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error, client corev1client.NodeInte
 
 // SetSSHAccessed sets the ssh annotation to accessed
 func (nw *clusterNodeWriter) SetSSHAccessed(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error {
+	MCDSSHAccessed.Inc()
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}
