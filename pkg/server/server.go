@@ -16,11 +16,6 @@ const (
 	// defaultMachineKubeConfPath defines the default location
 	// of the KubeConfig file on the machine.
 	defaultMachineKubeConfPath = "/etc/kubernetes/kubeconfig"
-
-	// defaultFileSystem defines the default file system to be
-	// used for writing the ignition files created by the
-	// server.
-	defaultFileSystem = "root"
 )
 
 // kubeconfigFunc fetches the kubeconfig that needs to be served.

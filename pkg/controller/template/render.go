@@ -312,10 +312,6 @@ func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
 	}
 
-	// ignCfg, rep := fcconfig.Convert(ctCfg, "", nil)
-	// if rep.IsFatal() {
-	// 	return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
-	// }
 	ignCfg, err := ctCfg.ToIgn3_0()
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert config to Ignition config %s", err)

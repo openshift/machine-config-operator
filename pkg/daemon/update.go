@@ -779,15 +779,10 @@ func (dn *Daemon) writeFiles(files []igntypes.File) error {
 		if file.Mode != nil {
 			mode = os.FileMode(*file.Mode)
 		}
-		var (
-			uid, gid = -1, -1
-		)
 		// set chown if file information is provided
-		if &file.User != nil || &file.Group != nil {
-			uid, gid, err = getFileOwnership(file)
-			if err != nil {
-				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
-			}
+		uid, gid, err := getFileOwnership(file)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
 		}
 		if err := createOrigFile(file.Path); err != nil {
 			return err
@@ -829,29 +824,25 @@ func createOrigFile(fpath string) error {
 // This is essentially ResolveNodeUidAndGid() from Ignition; XXX should dedupe
 func getFileOwnership(file igntypes.File) (int, int, error) {
 	uid, gid := 0, 0 // default to root
-	if &file.User != nil {
-		if file.User.ID != nil {
-			uid = *file.User.ID
-		} else if *file.User.Name != "" {
-			osUser, err := user.Lookup(*file.User.Name)
-			if err != nil {
-				return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %v", file.User.Name)
-			}
-			glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, *file.User.Name)
-			uid, _ = strconv.Atoi(osUser.Uid)
+	if file.User.ID != nil {
+		uid = *file.User.ID
+	} else if *file.User.Name != "" {
+		osUser, err := user.Lookup(*file.User.Name)
+		if err != nil {
+			return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %v", file.User.Name)
 		}
+		glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, *file.User.Name)
+		uid, _ = strconv.Atoi(osUser.Uid)
 	}
-	if &file.Group != nil {
-		if file.Group.ID != nil {
-			gid = *file.Group.ID
-		} else if *file.Group.Name != "" {
-			osGroup, err := user.LookupGroup(*file.Group.Name)
-			if err != nil {
-				return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %v", file.Group.Name)
-			}
-			glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, *file.Group.Name)
-			gid, _ = strconv.Atoi(osGroup.Gid)
+	if file.Group.ID != nil {
+		gid = *file.Group.ID
+	} else if *file.Group.Name != "" {
+		osGroup, err := user.LookupGroup(*file.Group.Name)
+		if err != nil {
+			return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %v", file.Group.Name)
 		}
+		glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, *file.Group.Name)
+		gid, _ = strconv.Atoi(osGroup.Gid)
 	}
 	return uid, gid, nil
 }
