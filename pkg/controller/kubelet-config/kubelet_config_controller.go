@@ -2,6 +2,7 @@ package kubeletconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -13,7 +14,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	macherrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,6 +60,8 @@ var updateBackoff = wait.Backoff{
 	Duration: 100 * time.Millisecond,
 	Jitter:   1.0,
 }
+
+var errCouldNotFindMCPSet = newForgetError(errors.New("could not find any MachineConfigPool set for KubeletConfig"))
 
 // A list of fields a user cannot set within the KubeletConfig CR. If a user
 // were to set these values, then the system may become unrecoverable (ie: not
@@ -237,7 +240,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 	}
 	mcName := cfg.GetFinalizers()[0]
 	err := ctrl.client.Machineconfiguration().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !macherrors.IsNotFound(err) {
 		return err
 	}
 	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
@@ -380,7 +383,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	// Fetch the KubeletConfig
 	cfg, err := ctrl.mckLister.Get(name)
-	if errors.IsNotFound(err) {
+	if macherrors.IsNotFound(err) {
 		glog.V(2).Infof("KubeletConfig %v has been deleted", key)
 		return nil
 	}
@@ -422,7 +425,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	features, err := ctrl.featLister.Get(clusterFeatureInstanceName)
-	if errors.IsNotFound(err) {
+	if macherrors.IsNotFound(err) {
 		features = createNewDefaultFeatureGate()
 	} else if err != nil {
 		glog.V(2).Infof("%v", err)
@@ -441,10 +444,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		// Get MachineConfig
 		managedKey := getManagedKubeletConfigKey(pool)
 		mc, err := ctrl.client.Machineconfiguration().MachineConfigs().Get(managedKey, metav1.GetOptions{})
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !macherrors.IsNotFound(err) {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
-		isNotFound := errors.IsNotFound(err)
+		isNotFound := macherrors.IsNotFound(err)
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
 		if err != nil {
@@ -509,7 +512,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, err := ctrl.mckLister.Get(kc.Name)
-		if errors.IsNotFound(err) {
+		if macherrors.IsNotFound(err) {
 			return nil
 		}
 		if err != nil {
@@ -545,7 +548,7 @@ func (ctrl *Controller) patchKubeletConfigs(name string, patch []byte) error {
 func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, err := ctrl.mckLister.Get(kc.Name)
-		if errors.IsNotFound(err) {
+		if macherrors.IsNotFound(err) {
 			return nil
 		}
 		if err != nil {
@@ -593,7 +596,7 @@ func (ctrl *Controller) getPoolsForKubeletConfig(config *mcfgv1.KubeletConfig) (
 	}
 
 	if len(pools) == 0 {
-		return nil, fmt.Errorf("could not find any MachineConfigPool set for KubeletConfig %s", config.Name)
+		return nil, errCouldNotFindMCPSet
 	}
 
 	return pools, nil
