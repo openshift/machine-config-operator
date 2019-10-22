@@ -154,10 +154,6 @@ func ipAddrs() ([]string, error) {
 		if ip == nil {
 			continue
 		}
-		ip = ip.To4()
-		if ip == nil {
-			continue // not an ipv4 address
-		}
 		if !ip.IsGlobalUnicast() {
 			continue // we only want global unicast address
 		}
