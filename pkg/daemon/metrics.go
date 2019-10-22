@@ -46,19 +46,28 @@ var (
 			Name: "mcd_state",
 			Help: "state of daemon on specified node",
 		}, []string{"state", "reason"})
+
+	metricsList = []prometheus.Collector{
+		HostOS,
+		MCDSSHAccessed,
+		MCDDrain,
+		MCDPivotErr,
+		MCDState,
+	}
 )
 
-func registerMCDMetrics() {
-
-	prometheus.MustRegister(HostOS)
-	prometheus.MustRegister(MCDSSHAccessed)
-	prometheus.MustRegister(MCDDrain)
-	prometheus.MustRegister(MCDState)
-	prometheus.MustRegister(MCDPivotErr)
+func registerMCDMetrics() error {
+	for _, metric := range metricsList {
+		err := prometheus.Register(metric)
+		if err != nil {
+			return err
+		}
+	}
 
 	MCDDrain.WithLabelValues("", "").Set(0)
 	MCDPivotErr.WithLabelValues("", "").Set(0)
 
+	return nil
 }
 
 // StartMetricsListener is metrics listener via http on localhost
@@ -68,7 +77,9 @@ func StartMetricsListener(addr string, stopCh chan struct{}) {
 	}
 
 	glog.Info("Registering Prometheus metrics")
-	registerMCDMetrics()
+	if err := registerMCDMetrics(); err != nil {
+		glog.Errorf("unable to register metrics: %v", err)
+	}
 
 	glog.Infof("Starting metrics listener on %s", addr)
 	mux := http.NewServeMux()
