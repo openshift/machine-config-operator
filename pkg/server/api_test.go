@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 )
 
 type mockServer struct {
@@ -50,8 +50,8 @@ func TestAPIHandler(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, 143)
+				checkBodyLength(t, response, 143)
 			},
 		},
 		{
@@ -63,7 +63,7 @@ func TestAPIHandler(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, 143)
 				checkBodyLength(t, response, 0)
 			},
 		},
@@ -224,8 +224,8 @@ func TestAPIServer(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, 143)
+				checkBodyLength(t, response, 143)
 			},
 		},
 		{
@@ -237,7 +237,7 @@ func TestAPIServer(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, 143)
 				checkBodyLength(t, response, 0)
 			},
 		},
