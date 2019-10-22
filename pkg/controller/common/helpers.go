@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"reflect"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	validate "github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	errors "github.com/pkg/errors"

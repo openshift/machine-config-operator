@@ -12,9 +12,8 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
-	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
-	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	fcct_base_0_1 "github.com/coreos/fcct/base/v0_1"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -289,11 +288,11 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcf
 }
 
 func transpileToIgn(files, units []string) (*igntypes.Config, error) {
-	var ctCfg cttypes.Config
+	var ctCfg fcct_base_0_1.Config
 
 	// Convert data to Ignition resources
 	for _, d := range files {
-		f := new(cttypes.File)
+		f := new(fcct_base_0_1.File)
 		if err := yaml.Unmarshal([]byte(d), f); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
 		}
@@ -303,7 +302,7 @@ func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 	}
 
 	for _, d := range units {
-		u := new(cttypes.SystemdUnit)
+		u := new(fcct_base_0_1.Unit)
 		if err := yaml.Unmarshal([]byte(d), u); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
 		}
@@ -312,9 +311,13 @@ func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
 	}
 
-	ignCfg, rep := ctconfig.Convert(ctCfg, "", nil)
-	if rep.IsFatal() {
-		return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
+	// ignCfg, rep := fcconfig.Convert(ctCfg, "", nil)
+	// if rep.IsFatal() {
+	// 	return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
+	// }
+	ignCfg, err := ctCfg.ToIgn3_0()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert config to Ignition config %s", err)
 	}
 
 	return &ignCfg, nil

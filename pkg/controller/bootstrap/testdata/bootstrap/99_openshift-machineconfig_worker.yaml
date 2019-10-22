@@ -13,8 +13,7 @@ spec:
       security:
         tls: {}
       timeouts: {}
-      version: 2.2.0
-    networkd: {}
+      version: 3.0.0
     passwd:
       users:
       - name: core

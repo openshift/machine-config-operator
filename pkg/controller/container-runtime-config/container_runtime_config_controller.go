@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -584,7 +584,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
 func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
-	dataURL, err := dataurl.DecodeString(origFile.Contents.Source)
+	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
 	}
