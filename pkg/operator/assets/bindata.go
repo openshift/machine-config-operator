@@ -2053,7 +2053,7 @@ metadata:
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: kni-infra-mdns
+    app: ovirt-infra-mdns
 spec:
   volumes:
   - name: resource-dir
@@ -2214,7 +2214,7 @@ metadata:
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: kni-infra-vrrp
+    app: ovirt-infra-vrrp
 spec:
   volumes:
   - name: resource-dir
