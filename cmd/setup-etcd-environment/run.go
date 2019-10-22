@@ -64,7 +64,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		for _, cand := range ips {
 			found, err := reverseLookupSelf("etcd-server-ssl", "tcp", runOpts.discoverySRV, cand)
 			if err != nil {
-				glog.Errorf("error looking up self: %v", err)
+				glog.Errorf("error looking up self for candidate IP %s: %v", cand, err)
 				continue
 			}
 			if found != "" {
