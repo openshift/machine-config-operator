@@ -15,7 +15,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 )
 
@@ -157,7 +157,7 @@ func TestBootstrapRun(t *testing.T) {
 				}
 			}
 			require.NotNil(t, registriesConfig)
-			dataURL, err := dataurl.DecodeString(registriesConfig.Contents.Source)
+			dataURL, err := dataurl.DecodeString(*registriesConfig.Contents.Source)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
 			// maintained in pkg/controller/continer-runtime-config.

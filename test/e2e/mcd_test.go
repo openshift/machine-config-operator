@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -61,13 +61,12 @@ func createIgnFile(path, content, fs string, mode int) igntypes.File {
 	return igntypes.File{
 		FileEmbedded1: igntypes.FileEmbedded1{
 			Contents: igntypes.FileContents{
-				Source: content,
+				Source: &content,
 			},
 			Mode: &mode,
 		},
 		Node: igntypes.Node{
-			Filesystem: fs,
-			Path:       path,
+			Path: path,
 		},
 	}
 }
@@ -343,14 +342,14 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	mcadd.Spec.Config.Networkd = igntypes.Networkd{
-		Units: []igntypes.Networkdunit{
-			igntypes.Networkdunit{
-				Name:     "test.network",
-				Contents: "test contents",
-			},
-		},
-	}
+	// mcadd.Spec.Config.Networkd = igntypes.Networkd{
+	// 	Units: []igntypes.Networkdunit{
+	// 		igntypes.Networkdunit{
+	// 			Name:     "test.network",
+	// 			Contents: "test contents",
+	// 		},
+	// 	},
+	// }
 
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
