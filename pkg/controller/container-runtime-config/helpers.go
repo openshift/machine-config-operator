@@ -12,7 +12,7 @@ import (
 	"github.com/containers/image/pkg/sysregistriesv2"
 	signature "github.com/containers/image/signature"
 	storageconfig "github.com/containers/storage/pkg/config"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	crioconfig "github.com/cri-o/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -67,6 +67,7 @@ type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfigu
 func createNewIgnition(configs map[string][]byte) igntypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
+	overwrite := true
 	// Create ignitions
 	for filePath, data := range configs {
 		// If the file is not included, the data will be nil so skip over
@@ -75,15 +76,16 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 		}
 		configdu := dataurl.New(data, "text/plain")
 		configdu.Encoding = dataurl.EncodingASCII
+		strConfigdu := configdu.String()
 		configTempFile := igntypes.File{
 			Node: igntypes.Node{
-				Filesystem: "root",
-				Path:       filePath,
+				Path:      filePath,
+				Overwrite: &overwrite,
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,
 				Contents: igntypes.FileContents{
-					Source: configdu.String(),
+					Source: &strConfigdu,
 				},
 			},
 		}

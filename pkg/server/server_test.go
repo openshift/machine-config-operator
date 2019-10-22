@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	yaml "github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -31,7 +31,7 @@ var (
 func TestStringDecode(t *testing.T) {
 	inp := "data:,Hello%2C%20world!"
 	exp := "Hello, world!"
-	dec, err := getDecodedContent(inp)
+	dec, err := getDecodedContent(&inp)
 	if err != nil {
 		t.Errorf("expected error to be nil, received: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestStringDecode(t *testing.T) {
 func TestStringEncode(t *testing.T) {
 	inp := "Hello, world!"
 	exp := "data:,Hello%2C%20world!"
-	enc := getEncodedContent(inp)
+	enc := getEncodedContent(&inp)
 	if exp != enc {
 		t.Errorf("string encode failed. exp: %s, got: %s", exp, enc)
 	}
@@ -104,12 +104,13 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	kcString := string(kc)
+	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, &kcString)
 	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, &anno)
 
 	// initialize bootstrap server and get config.
 	bs := &bootstrapServer{
@@ -195,12 +196,13 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	kcString := string(kc)
+	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, &kcString)
 	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, &anno)
 
 	res, err := csc.GetConfig(poolRequest{
 		machineConfigPool: testPool,
@@ -280,8 +282,7 @@ func createUnitMap(units []igntypes.Unit) map[string]igntypes.Unit {
 func createFileMap(files []igntypes.File) map[string]igntypes.File {
 	m := make(map[string]igntypes.File)
 	for i := range files {
-		file := path.Join(files[i].Filesystem, files[i].Path)
-		m[file] = files[i]
+		m[files[i].Path] = files[i]
 	}
 	return m
 }

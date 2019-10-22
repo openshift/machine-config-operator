@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/davecgh/go-spew/spew"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -178,7 +178,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				Config: igntypes.Config{
 					Passwd: igntypes.Passwd{
 						Users: []igntypes.PasswdUser{{
-							HomeDir: "/home/dummy",
+							Name: "dummy",
 						}},
 					},
 				},
@@ -202,7 +202,7 @@ func TestApplyMachineConfig(t *testing.T) {
 					Config: igntypes.Config{
 						Passwd: igntypes.Passwd{
 							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy",
+								Name: "dummy",
 							}},
 						},
 					},
@@ -221,7 +221,7 @@ func TestApplyMachineConfig(t *testing.T) {
 					Config: igntypes.Config{
 						Passwd: igntypes.Passwd{
 							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy-prev",
+								Name: "dummy-prev",
 							}},
 						},
 					},
@@ -234,7 +234,7 @@ func TestApplyMachineConfig(t *testing.T) {
 				Config: igntypes.Config{
 					Passwd: igntypes.Passwd{
 						Users: []igntypes.PasswdUser{{
-							HomeDir: "/home/dummy",
+							Name: "dummy",
 						}},
 					},
 				},
@@ -258,7 +258,7 @@ func TestApplyMachineConfig(t *testing.T) {
 					Config: igntypes.Config{
 						Passwd: igntypes.Passwd{
 							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy",
+								Name: "dummy",
 							}},
 						},
 					},
