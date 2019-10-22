@@ -47,12 +47,20 @@ var (
 			Help: "state of daemon on specified node",
 		}, []string{"state", "reason"})
 
+	// KubeletHealthState logs kubelet health failures and tallys count
+	KubeletHealthState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_kubelet_state",
+			Help: "state of kubelet health monitor",
+		}, []string{"err"})
+
 	metricsList = []prometheus.Collector{
 		HostOS,
 		MCDSSHAccessed,
 		MCDDrain,
 		MCDPivotErr,
 		MCDState,
+		KubeletHealthState,
 	}
 )
 
@@ -66,6 +74,7 @@ func registerMCDMetrics() error {
 
 	MCDDrain.WithLabelValues("", "").Set(0)
 	MCDPivotErr.WithLabelValues("", "").Set(0)
+	KubeletHealthState.WithLabelValues("").Set(0)
 
 	return nil
 }

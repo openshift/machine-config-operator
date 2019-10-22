@@ -612,6 +612,7 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 	failureCount := 0
+	KubeletHealthState.WithLabelValues("").Set(float64(failureCount))
 	for {
 		select {
 		case <-stopCh:
@@ -620,11 +621,15 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 			if err := dn.getHealth(); err != nil {
 				glog.Warningf("Failed kubelet health check: %v", err)
 				failureCount++
+				KubeletHealthState.WithLabelValues(err.Error()).Set(float64(failureCount))
 				if failureCount >= kubeletHealthzFailureThreshold {
-					exitCh <- fmt.Errorf("kubelet health failure threshold reached")
+					thresholdMessage := "kubelet health failure threshold reached"
+					KubeletHealthState.WithLabelValues(thresholdMessage).Set(float64(failureCount))
+					exitCh <- fmt.Errorf(thresholdMessage)
 				}
 			} else {
 				failureCount = 0 // reset failure count on success
+				KubeletHealthState.WithLabelValues("").Set(float64(failureCount))
 			}
 		}
 	}
