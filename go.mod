@@ -10,7 +10,6 @@ require (
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.20.0+incompatible
 	github.com/Microsoft/go-winio v0.4.14 // indirect
-	github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083 // indirect
 	github.com/ajeddeloh/yaml v0.0.0-20170912190910-6b94386aeefd // indirect
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/apparentlymart/go-cidr v1.0.0
@@ -29,6 +28,7 @@ require (
 	github.com/containers/storage v1.13.4
 	github.com/coreos/container-linux-config-transpiler v0.9.0
 	github.com/coreos/ignition v0.26.0
+	github.com/coreos/ignition/v2 v2.0.1 // indirect
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26
 	github.com/davecgh/go-spew v1.1.1
