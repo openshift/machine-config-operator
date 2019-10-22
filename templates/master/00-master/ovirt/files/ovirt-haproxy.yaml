@@ -11,7 +11,7 @@ contents:
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: openstack-infra-api-lb
+        app: ovirt-infra-api-lb
     spec:
       volumes:
       - name: resource-dir
