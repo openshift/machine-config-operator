@@ -107,10 +107,35 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return fmt.Errorf("Failed to parse IP '%s'", ip)
+	}
+
+	escapedIP := ip
+	escapedAllIPs := "0.0.0.0"
+	localhostIP := "127.0.0.1"
+	escapedLocalhostIP := "127.0.0.1"
+	if parsedIP.To4() == nil {
+		// This is an IPv6 address, not IPv4.
+
+		// When using an IPv6 address in a URL, we must wrap the address portion in
+		// [::] so that a ":port" suffix can still be added and parsed correctly.
+		escapedIP = fmt.Sprintf("[%s]", ip)
+		escapedAllIPs = "[::]"
+		localhostIP = "::1"
+		escapedLocalhostIP = "[::1]"
+	}
+
 	return writeEnvironmentFile(map[string]string{
-		"IPV4_ADDRESS":      ip,
-		"DNS_NAME":          dns,
-		"WILDCARD_DNS_NAME": fmt.Sprintf("*.%s", runOpts.discoverySRV),
+		// TODO This can actually be IPv6, so we should rename this ...
+		"IPV4_ADDRESS":         ip,
+		"ESCAPED_IP_ADDR":      escapedIP,
+		"ESCAPED_ALL_IPS":      escapedAllIPs,
+		"LOCALHOST_IP":         localhostIP,
+		"ESCAPED_LOCALHOST_IP": escapedLocalhostIP,
+		"DNS_NAME":             dns,
+		"WILDCARD_DNS_NAME":    fmt.Sprintf("*.%s", runOpts.discoverySRV),
 	}, out, false)
 }
 
