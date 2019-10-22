@@ -9,19 +9,30 @@ require (
 	github.com/Masterminds/goutils v1.1.0 // indirect
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.20.0+incompatible
+	github.com/Microsoft/go-winio v0.4.14 // indirect
 	github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083 // indirect
 	github.com/ajeddeloh/yaml v0.0.0-20170912190910-6b94386aeefd // indirect
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/apparentlymart/go-cidr v1.0.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
+	github.com/containerd/containerd v1.2.9 // indirect
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6 // indirect
+	github.com/containerd/fifo v0.0.0-20190226154929-a9fb20d87448 // indirect
+	github.com/containerd/go-runc v0.0.0-20190603165425-9007c2405372 // indirect
+	github.com/containerd/project v0.0.0-20190513184420-7fb81da5e663 // indirect
+	github.com/containerd/ttrpc v0.0.0-20190613183316-1fb3814edf44 // indirect
+	github.com/containernetworking/plugins v0.8.2 // indirect
+	github.com/containers/buildah v1.11.2 // indirect
+	github.com/containers/conmon v2.0.0+incompatible // indirect
 	github.com/containers/image v3.0.2+incompatible
+	github.com/containers/libpod v1.5.1 // indirect
 	github.com/containers/storage v1.13.4
 	github.com/coreos/container-linux-config-transpiler v0.9.0
 	github.com/coreos/ignition v0.26.0
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26
 	github.com/davecgh/go-spew v1.1.1
+	github.com/docker/docker v0.7.3-0.20190410184157-6d18c6a06295 // indirect
 	github.com/docker/docker-credential-helpers v0.6.3 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
@@ -32,6 +43,7 @@ require (
 	github.com/go-log/log v0.0.0-00010101000000-000000000000 // indirect
 	github.com/go-openapi/jsonreference v0.19.3 // indirect
 	github.com/go-openapi/spec v0.19.3 // indirect
+	github.com/go-zoo/bone v1.3.0 // indirect
 	github.com/gogo/protobuf v1.3.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc // indirect
@@ -44,9 +56,12 @@ require (
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.7
 	github.com/joho/godotenv v1.3.0
+	github.com/kr/pty v1.1.8 // indirect
 	github.com/mailru/easyjson v0.7.0 // indirect
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1
+	github.com/opencontainers/runtime-spec v1.0.1 // indirect
+	github.com/opencontainers/selinux v1.3.0 // indirect
 	github.com/openshift/api v3.9.1-0.20191014195513-c9253efc14f4+incompatible
 	github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0
 	github.com/openshift/cluster-api v0.0.0-20190923092624-4024de4fa64d
@@ -54,21 +69,26 @@ require (
 	github.com/openshift/runtime-utils v0.0.0-20191011150825-9169de69ebf6
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.1.0
+	github.com/seccomp/containers-golang v0.3.1 // indirect
 	github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.4.0
+	github.com/urfave/cli v1.22.1 // indirect
+	github.com/vbatts/git-validation v1.0.0 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	go4.org v0.0.0-20190313082347-94abd6928b1d // indirect
 	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc // indirect
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
 	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0 // indirect
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
 	golang.org/x/sys v0.0.0-20191002091554-b397fe3ad8ed // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 	golang.org/x/tools v0.0.0-20191002234911-9ade4c73f2af // indirect
 	gonum.org/v1/gonum v0.0.0-20190929233944-b20cf7805fc4 // indirect
 	gonum.org/v1/netlib v0.0.0-20190926062253-2d6e29b73a19 // indirect
+	google.golang.org/grpc v1.23.1 // indirect
 	gopkg.in/yaml.v2 v2.2.4 // indirect
 	k8s.io/api v0.0.0
 	k8s.io/apiextensions-apiserver v0.0.0
@@ -79,6 +99,8 @@ require (
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d // indirect
 	k8s.io/kubelet v0.0.0
+	k8s.io/kubernetes v0.0.0 // indirect
+	k8s.io/utils v0.0.0-20190920012459-5008bf6f8cd6 // indirect
 )
 
 replace (
