@@ -6,6 +6,7 @@ metadata:
 data:
   images.json: >
     {
+      "releaseVersion": "0.0.1-snapshot",
       "machineConfigOperator": "registry.svc.ci.openshift.org/openshift:machine-config-operator",
       "etcd": "registry.svc.ci.openshift.org/openshift:etcd",
       "infraImage": "registry.svc.ci.openshift.org/openshift:pod",
