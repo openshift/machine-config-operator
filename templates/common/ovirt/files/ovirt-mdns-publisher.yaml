@@ -7,7 +7,7 @@ contents:
     apiVersion: v1
     metadata:
       name: mdns-publisher
-      namespace: openshift-kni-infra
+      namespace: openshift-ovirt-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
