@@ -136,16 +136,17 @@ func RenderBootstrap(
 	spec.PullSecret = nil
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
-		templatectrl.EtcdImageKey:            imgs.Etcd,
-		templatectrl.SetupEtcdEnvKey:         imgs.MachineConfigOperator,
-		templatectrl.GCPRoutesControllerKey:  imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:           imgs.InfraImage,
-		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
-		templatectrl.KeepalivedKey:           imgs.Keepalived,
-		templatectrl.CorednsKey:              imgs.Coredns,
-		templatectrl.MdnsPublisherKey:        imgs.MdnsPublisher,
-		templatectrl.HaproxyKey:              imgs.Haproxy,
-		templatectrl.BaremetalRuntimeCfgKey:  imgs.BaremetalRuntimeCfg,
+		templatectrl.EtcdImageKey:                imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey:             imgs.MachineConfigOperator,
+		templatectrl.GCPRoutesControllerKey:      imgs.MachineConfigOperator,
+		templatectrl.InfraImageKey:               imgs.InfraImage,
+		templatectrl.KubeClientAgentImageKey:     imgs.KubeClientAgent,
+		templatectrl.ClusterEtcdOperatorImageKey: imgs.ClusterEtcdOperator,
+		templatectrl.KeepalivedKey:               imgs.Keepalived,
+		templatectrl.CorednsKey:                  imgs.Coredns,
+		templatectrl.MdnsPublisherKey:            imgs.MdnsPublisher,
+		templatectrl.HaproxyKey:                  imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey:      imgs.BaremetalRuntimeCfg,
 	}
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
