@@ -213,16 +213,17 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
-		templatectrl.EtcdImageKey:            imgs.Etcd,
-		templatectrl.SetupEtcdEnvKey:         imgs.MachineConfigOperator,
-		templatectrl.GCPRoutesControllerKey:  imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:           imgs.InfraImage,
-		templatectrl.KubeClientAgentImageKey: imgs.KubeClientAgent,
-		templatectrl.KeepalivedKey:           imgs.Keepalived,
-		templatectrl.CorednsKey:              imgs.Coredns,
-		templatectrl.MdnsPublisherKey:        imgs.MdnsPublisher,
-		templatectrl.HaproxyKey:              imgs.Haproxy,
-		templatectrl.BaremetalRuntimeCfgKey:  imgs.BaremetalRuntimeCfg,
+		templatectrl.EtcdImageKey:                imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey:             imgs.MachineConfigOperator,
+		templatectrl.GCPRoutesControllerKey:      imgs.MachineConfigOperator,
+		templatectrl.InfraImageKey:               imgs.InfraImage,
+		templatectrl.KubeClientAgentImageKey:     imgs.KubeClientAgent,
+		templatectrl.ClusterEtcdOperatorImageKey: imgs.ClusterEtcdOperator,
+		templatectrl.KeepalivedKey:               imgs.Keepalived,
+		templatectrl.CorednsKey:                  imgs.Coredns,
+		templatectrl.MdnsPublisherKey:            imgs.MdnsPublisher,
+		templatectrl.HaproxyKey:                  imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey:      imgs.BaremetalRuntimeCfg,
 	}
 
 	// create renderConfig
