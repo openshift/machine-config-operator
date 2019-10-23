@@ -42,6 +42,7 @@ require (
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.7
 	github.com/joho/godotenv v1.3.0
+	github.com/lib/pq v1.2.0 // indirect
 	github.com/mailru/easyjson v0.7.0 // indirect
 	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1
@@ -52,20 +53,23 @@ require (
 	github.com/openshift/runtime-utils v0.0.0-20191011150825-9169de69ebf6
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.1.0
-	github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d
+	github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.4.0
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	go4.org v0.0.0-20190313082347-94abd6928b1d // indirect
-	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc // indirect
+	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 // indirect
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
-	golang.org/x/net v0.0.0-20191002035440-2ec189313ef0 // indirect
-	golang.org/x/sys v0.0.0-20191002091554-b397fe3ad8ed // indirect
+	golang.org/x/net v0.0.0-20191021144547-ec77196f6094 // indirect
+	golang.org/x/sys v0.0.0-20191022100944-742c48ecaeb7 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
+	golang.org/x/tools v0.0.0-20191022213345-0bbdf54effa2 // indirect
+	golang.org/x/xerrors v0.0.0-20191011141410-1b5146add898 // indirect
 	gonum.org/v1/gonum v0.0.0-20190929233944-b20cf7805fc4 // indirect
 	gonum.org/v1/netlib v0.0.0-20190926062253-2d6e29b73a19 // indirect
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v2 v2.2.4 // indirect
 	k8s.io/api v0.0.0
 	k8s.io/apiextensions-apiserver v0.0.0
