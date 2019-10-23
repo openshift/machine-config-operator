@@ -361,7 +361,8 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 		regfile = mc.Spec.Config.Storage.Files[1]
 	}
 	assert.Equal(t, registriesConfigPath, regfile.Node.Path)
-	registriesConf, err := dataurl.DecodeString(regfile.Contents.Source)
+	source := regfile.Contents.Source
+	registriesConf, err := dataurl.DecodeString(*source)
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf.Data))
 
@@ -376,7 +377,8 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			policyfile = mc.Spec.Config.Storage.Files[0]
 		}
 		assert.Equal(t, policyConfigPath, policyfile.Node.Path)
-		policyJSON, err := dataurl.DecodeString(policyfile.Contents.Source)
+		source := policyfile.Contents.Source
+		policyJSON, err := dataurl.DecodeString(*source)
 		require.NoError(t, err)
 		assert.Equal(t, string(expectedPolicyJSON), string(policyJSON.Data))
 	}
