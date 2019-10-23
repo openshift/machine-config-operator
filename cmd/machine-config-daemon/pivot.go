@@ -36,7 +36,8 @@ const (
 // TODO: fill out the whitelist
 // tuneableArgsWhitelist contains allowed keys for tunable arguments
 var tuneableArgsWhitelist = map[string]bool{
-	"nosmt": true,
+	"nosmt":            true,
+	"mitigations=auto": true,
 }
 
 var pivotCmd = &cobra.Command{
