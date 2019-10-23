@@ -20,10 +20,10 @@ These instructions will be kept up to date generally against the leading edge of
 While you're still in the mode of testing builds, use `make`:
 
 ```
-$ make daemon
+$ make machine-config-daemon
 ```
 
-You can also `make controller` and `make operator`, or just `make binaries` to build all of them.
+You can also `make machine-config-controller` and `make machine-config-operator`, or just `make binaries` to build all of them.
 
 See below for [deploying changes to a live cluster](#running-in-a-cluster).
 
@@ -48,7 +48,7 @@ make update
 Unit tests (that don't interact with a running cluster) can be executed on a per
 package basis with `go test`:
 
-`go test -v github.com/openshift/machine-config-operator/pkg/apis`
+`go test -v github.com/openshift/machine-config-operator/pkg/apis/...`
 
 To disable go test caching in go > 1.10:
 
@@ -257,7 +257,7 @@ You will want a workflow for testing changes to a cluster.
 
 ### Directly applying changes live to a node
 
-The simplest workflow is to `use oc debug node/` to start testing your changes on a single worker node.
+The simplest workflow is to use `oc debug node/` to start testing your changes on a single worker node.
 Commands to use here include `rpm-ostree usroverlay` and/or `rpm-ostree override replace`.
 The first one gives you a writable overlayfs on `/usr` and you can easily
 replace binaries there (e.g. `/usr/bin/crio`).  For anything that requires a reboot
