@@ -36,7 +36,9 @@ const (
 // TODO: fill out the whitelist
 // tuneableArgsWhitelist contains allowed keys for tunable arguments
 var tuneableArgsWhitelist = map[string]bool{
-	"nosmt": true,
+	"nosmt":                              true,
+	"systemd.unified_cgroup_hierarchy=0": true,
+	"mitigations=auto,nosmt":             true,
 }
 
 var pivotCmd = &cobra.Command{
