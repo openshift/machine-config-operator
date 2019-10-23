@@ -37,7 +37,9 @@ const (
 // TODO: fill out the allowlists
 // tuneableRHCOSArgsAllowlist contains allowed keys for tunable kernel arguments on RHCOS
 var tuneableRHCOSArgsAllowlist = map[string]bool{
-	"nosmt": true,
+	"nosmt":                              true,
+	"systemd.unified_cgroup_hierarchy=0": true,
+	"mitigations=auto,nosmt":             true,
 }
 
 // tuneableFCOSArgsAllowlist contains allowed keys for tunable kernel arguments on FCOS
