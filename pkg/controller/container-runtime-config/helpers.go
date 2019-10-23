@@ -78,7 +78,7 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 		strConfigdu := configdu.String()
 		configTempFile := igntypes.File{
 			Node: igntypes.Node{
-				Path:       filePath,
+				Path:      filePath,
 				Overwrite: &overwrite,
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
