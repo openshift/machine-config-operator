@@ -54,6 +54,12 @@ var (
 			Help: "state of kubelet health monitor",
 		}, []string{"err"})
 
+	// MCDRebootErr logs success/failure of reboot and errors
+	MCDRebootErr = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_reboot_err",
+		}, []string{"message", "err"})
+
 	metricsList = []prometheus.Collector{
 		HostOS,
 		MCDSSHAccessed,
@@ -61,6 +67,7 @@ var (
 		MCDPivotErr,
 		MCDState,
 		KubeletHealthState,
+		MCDRebootErr,
 	}
 )
 
@@ -75,6 +82,7 @@ func registerMCDMetrics() error {
 	MCDDrain.WithLabelValues("", "").Set(0)
 	MCDPivotErr.WithLabelValues("", "").Set(0)
 	KubeletHealthState.WithLabelValues("").Set(0)
+	MCDRebootErr.WithLabelValues("", "").Set(0)
 
 	return nil
 }
