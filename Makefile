@@ -1,16 +1,7 @@
 MCO_COMPONENTS = daemon controller server operator
 EXTRA_COMPONENTS = setup-etcd-environment gcp-routes-controller
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
-PREFIX ?= /usr
 GO111MODULE?=on
-
-# Copied from coreos-assembler
-GOARCH := $(shell uname -m)
-ifeq ($(GOARCH),x86_64)
-	GOARCH = amd64
-else ifeq ($(GOARCH),aarch64)
-	GOARCH = arm64
-endif
 
 # vim: noexpandtab ts=8
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
@@ -109,17 +100,12 @@ endef
 # Generate 'image_template' for each component
 $(foreach C, $(MCO_COMPONENTS), $(eval $(call image_template,$(C))))
 
-.PHONY: binaries install images images.rhel7
+.PHONY: binaries images images.rhel7
 
 # Build all binaries:
 # Example:
 #    make binaries
 binaries: $(patsubst %,_build-%,$(ALL_COMPONENTS))
-
-install: binaries
-	for component in $(ALL_COMPONENTS); do \
-	  install -D -m 0755 _output/linux/$(GOARCH)/$${component} $(DESTDIR)$(PREFIX)/bin/$${component}; \
-	done
 
 # Build all images:
 # Example:
