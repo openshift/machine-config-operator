@@ -13,11 +13,9 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  # Extract binaries to temporary dir due to selinux
-  ExecStart=/usr/bin/mkdir -p /opt/openshift/bin
-  ExecStart=/usr/bin/podman run --quiet --net=host --volume "/opt/openshift/bin:/host/usr/local/bin:z" --entrypoint=cp "{{ .Images.setupEtcdEnvKey }}" /usr/bin/machine-config-daemon /host/usr/local/bin
-  ExecStart=/usr/bin/cp /opt/openshift/bin/machine-config-daemon /usr/local/bin/machine-config-daemon
-  ExecStart=/usr/bin/rm -rf /opt/openshift
+  ExecStart=/usr/bin/sh -c "/usr/bin/podman run --quiet --net=host --entrypoint=sh '{{ .Images.setupEtcdEnvKey }}' cat /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon"
+  ExecStart=/usr/bin/chmod +x /usr/local/bin/machine-config-daemon
+  ExecStart=/usr/bin/restorecon /usr/local/bin/machine-config-daemon
 
   [Install]
   WantedBy=multi-user.target
