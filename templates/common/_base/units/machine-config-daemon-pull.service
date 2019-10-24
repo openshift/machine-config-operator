@@ -1,0 +1,23 @@
+name: "machine-config-daemon-pull.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Install
+  # This only applies to ostree (MCD) systems;
+  # see also https://github.com/openshift/machine-config-operator/issues/1046
+  ConditionPathExists=/run/ostree-booted
+  ConditionPathExists=/etc/pivot/image-pullspec
+  After=ignition-firstboot-complete.service
+  Before=machine-config-daemon-host.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  # Extract binaries to temporary dir due to selinux
+  ExecStart=/usr/bin/mkdir -p /opt/openshift/bin
+  ExecStart=/usr/bin/podman run --quiet --net=host --volume "/opt/openshift/bin:/host/usr/local/bin:z" --entrypoint=cp "{{ .Images.MachineConfigOperator }}" /usr/bin/machine-config-daemon /host/usr/local/bin
+  ExecStart=/usr/bin/cp /opt/openshift/bin/machine-config-daemon /usr/local/bin/machine-config-daemon
+  ExecStart=/usr/bin/rm -rf /opt/openshift
+
+  [Install]
+  WantedBy=multi-user.target
