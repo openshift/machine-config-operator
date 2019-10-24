@@ -9,14 +9,13 @@ contents: |
   ConditionPathExists=/etc/pivot/image-pullspec
   # If pivot exists, defer to it.  Note similar code in update.go
   ConditionPathExists=!/usr/lib/systemd/system/pivot.service
-  After=ignition-firstboot-complete.service
   Before=kubelet.service
 
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
   # TODO add --from-etc-pullspec after ratcheting
-  ExecStart=/usr/libexec/machine-config-daemon pivot
+  ExecStart=/usr/local/bin/machine-config-daemon pivot
 
   [Install]
   WantedBy=multi-user.target
