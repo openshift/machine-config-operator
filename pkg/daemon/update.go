@@ -158,16 +158,21 @@ func (dn *Daemon) drain() error {
 		glog.Infof("Draining failed with: %v, retrying", err)
 		return false, nil
 	}); err != nil {
+		failTime := fmt.Sprintf("%v sec", time.Since(startTime).Seconds())
 		if err == wait.ErrWaitTimeout {
+			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
+			MCDDrainErr.WithLabelValues(failTime, failMsg).SetToCurrentTime()
 			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
 		}
+		MCDDrainErr.WithLabelValues(failTime, err.Error()).SetToCurrentTime()
 		return errors.Wrap(err, "failed to drain node")
 	}
 
 	dn.logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
-	glog.Infof("Successful drain took %v sec", t)
-	MCDDrain.WithLabelValues("success", "").Set(t)
+	glog.Infof("Successful drain took %v seconds", t)
+	successTime := fmt.Sprintf("%v sec", t)
+	MCDDrainErr.WithLabelValues(successTime, "").SetToCurrentTime()
 
 	return nil
 }
@@ -246,7 +251,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	if err := dn.drain(); err != nil {
-		MCDDrain.WithLabelValues("", err.Error()).Set(0)
 		return err
 	}
 
