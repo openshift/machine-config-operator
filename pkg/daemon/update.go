@@ -622,6 +622,13 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
+				if _, err := os.Stat(origFileName(path)); err == nil {
+					if err := os.Rename(origFileName(path), path); err != nil {
+						return err
+					}
+					glog.V(2).Infof("Restored dropoin %q", path)
+					continue
+				}
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := os.Remove(path); err != nil {
 					newErr := fmt.Errorf("unable to delete %s: %s", path, err)
@@ -696,6 +703,9 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+			if err := createOrigFile(dpath); err != nil {
+				return err
+			}
 			if err := writeFileAtomicallyWithDefaults(dpath, []byte(u.Dropins[i].Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
 			}
