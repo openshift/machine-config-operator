@@ -826,7 +826,7 @@ func getFileOwnership(file igntypes.File) (int, int, error) {
 	uid, gid := 0, 0 // default to root
 	if file.User.ID != nil {
 		uid = *file.User.ID
-	} else if *file.User.Name != "" {
+	} else if file.User.Name != nil && *file.User.Name != "" {
 		osUser, err := user.Lookup(*file.User.Name)
 		if err != nil {
 			return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %v", file.User.Name)
@@ -836,7 +836,7 @@ func getFileOwnership(file igntypes.File) (int, int, error) {
 	}
 	if file.Group.ID != nil {
 		gid = *file.Group.ID
-	} else if *file.Group.Name != "" {
+	} else if file.Group.Name != nil && *file.Group.Name != "" {
 		osGroup, err := user.LookupGroup(*file.Group.Name)
 		if err != nil {
 			return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %v", file.Group.Name)
