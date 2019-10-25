@@ -181,7 +181,7 @@ generated in `make image` to the container registry of your choice. For example,
 in via the command-line:
 
 ```
-REPO={docker.io/username} /hack/push-image.sh
+REPO={docker.io/username} ./hack/push-image.sh
 ```
 
 Quay.io or any other public registry isn't strictly required - you can use a local
