@@ -1,6 +1,6 @@
 filesystem: "root"
 mode: 0644
-path: "/etc/systemd/system/kubelet.service.d/10-default-env.conf"
+path: "/etc/systemd/system/kubelet.service.d/10-mco-default-env.conf"
 contents:
   inline: |
     {{if .Proxy -}}
