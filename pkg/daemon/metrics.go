@@ -27,11 +27,12 @@ var (
 			Help: "indicates whether ssh access attempt",
 		})
 
-	// MCDDrain shows drain duration in seconds if successful or error
-	MCDDrain = prometheus.NewGaugeVec(
+	// MCDDrainErr logs errors received during failed drain
+	MCDDrainErr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mcd_drain",
-		}, []string{"message", "err"})
+			Help: "errors from failed drain",
+		}, []string{"drain_time", "err"})
 
 	// MCDPivotErr shows errors encountered during pivot
 	MCDPivotErr = prometheus.NewGaugeVec(
@@ -63,7 +64,7 @@ var (
 	metricsList = []prometheus.Collector{
 		HostOS,
 		MCDSSHAccessed,
-		MCDDrain,
+		MCDDrainErr,
 		MCDPivotErr,
 		MCDState,
 		KubeletHealthState,
@@ -79,7 +80,7 @@ func registerMCDMetrics() error {
 		}
 	}
 
-	MCDDrain.WithLabelValues("", "").Set(0)
+	MCDDrainErr.WithLabelValues("", "").Set(0)
 	MCDPivotErr.WithLabelValues("", "").Set(0)
 	KubeletHealthState.WithLabelValues("").Set(0)
 	MCDRebootErr.WithLabelValues("", "").Set(0)
