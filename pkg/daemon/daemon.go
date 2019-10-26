@@ -1004,6 +1004,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
 			if err := dn.completeUpdate(dn.node, state.pendingConfig.GetName()); err != nil {
+				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return err
 			}
 		}
@@ -1011,11 +1012,14 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		// If that's the case, clear it out.
 		if state.state == constants.MachineConfigDaemonStateDegraded {
 			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
+				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+				MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
 				return errors.Wrap(err, "error setting node's state to Done")
 			}
 		}
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
+		MCDUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
 
 		// All good!
 		return nil

@@ -61,6 +61,13 @@ var (
 			Name: "mcd_reboot_err",
 		}, []string{"message", "err"})
 
+	// MCDUpdateState logs completed update or error
+	MCDUpdateState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "mcd_update_state",
+			Help: "completed update config or error",
+		}, []string{"config", "err"})
+
 	metricsList = []prometheus.Collector{
 		HostOS,
 		MCDSSHAccessed,
@@ -69,6 +76,7 @@ var (
 		MCDState,
 		KubeletHealthState,
 		MCDRebootErr,
+		MCDUpdateState,
 	}
 )
 
@@ -84,6 +92,7 @@ func registerMCDMetrics() error {
 	MCDPivotErr.WithLabelValues("", "").Set(0)
 	KubeletHealthState.WithLabelValues("").Set(0)
 	MCDRebootErr.WithLabelValues("", "").Set(0)
+	MCDUpdateState.WithLabelValues("", "").Set(0)
 
 	return nil
 }
