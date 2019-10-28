@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"net"
 	"os"
 	"runtime"
@@ -16,9 +15,11 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/joho/godotenv"
+	ceoapi "github.com/openshift/cluster-etcd-operator/pkg/operator/api"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -43,19 +44,6 @@ var (
 		bootstrapSRV bool
 	}
 )
-
-type EtcdScaling struct {
-	Metadata *metav1.ObjectMeta `json:"metadata,omitempty"`
-	Members  []Member           `json:"members,omitempty"`
-	PodFQDN  string             `json:"podFQDN,omitempty"`
-}
-
-type Member struct {
-	ID         uint64   `json:"ID,omitempty"`
-	Name       string   `json:"name,omitempty"`
-	PeerURLS   []string `json:"peerURLs,omitempty"`
-	ClientURLS []string `json:"clientURLs,omitempty"`
-}
 
 func init() {
 	rootCmd.AddCommand(runCmd)
@@ -137,7 +125,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("error creating client: %v", err)
 		}
-		var e EtcdScaling
+		var e ceoapi.EtcdScaling
 		// wait forever for success and retry every duration interval
 		wait.PollInfinite(duration, func() (bool, error) {
 			result, err := client.CoreV1().ConfigMaps("openshift-etcd").Get("member-config", metav1.GetOptions{})
@@ -172,15 +160,26 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if len(ep.Subsets) >= 1 {
-			if len(ep.Subsets[0].Addresses) == 0 {
+		hostEtcdEndpoint, err := client.CoreV1().Endpoints("openshift-etcd").Get("host-etcd", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if len(hostEtcdEndpoint.Subsets) != 1 {
+			return fmt.Errorf("openshift-etcd/host-etcd endpoint subset length should be %d, found %d", 1, len(hostEtcdEndpoint.Subsets))
+		}
+		for _, member := range hostEtcdEndpoint.Subsets[0].Addresses {
+			if member.Hostname == "etcd-bootstrap" {
 				endpoints = append(endpoints, "https://etcd-bootstrap."+runOpts.discoverySRV+":2379")
-			} else {
-				for _, s := range ep.Subsets[0].Addresses {
-					endpoints = append(endpoints, "https://"+s.IP+":2379")
-				}
+				break
 			}
 		}
+		if len(ep.Subsets) != 1 {
+			return fmt.Errorf("openshift-etcd/etcd endpoint subset length should be %d, found %d", 1, len(ep.Subsets))
+		}
+		for _, s := range ep.Subsets[0].Addresses {
+			endpoints = append(endpoints, "https://"+s.IP+":2379")
+		}
+
 		exportEnv["ENDPOINTS"] = strings.Join(endpoints, ",")
 	}
 
