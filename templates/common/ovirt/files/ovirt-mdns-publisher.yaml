@@ -11,7 +11,7 @@ contents:
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: kni-infra-mdns
+        app: ovirt-infra-mdns
     spec:
       volumes:
       - name: resource-dir
