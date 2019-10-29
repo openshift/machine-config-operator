@@ -131,7 +131,9 @@ func (dn *Daemon) drain() error {
 	if dn.kubeClient == nil {
 		return nil
 	}
+
 	dn.logSystem("Update prepared; beginning drain")
+	startTime := time.Now()
 
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
@@ -156,12 +158,22 @@ func (dn *Daemon) drain() error {
 		glog.Infof("Draining failed with: %v, retrying", err)
 		return false, nil
 	}); err != nil {
+		failTime := fmt.Sprintf("%v sec", time.Since(startTime).Seconds())
 		if err == wait.ErrWaitTimeout {
+			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
+			MCDDrainErr.WithLabelValues(failTime, failMsg).SetToCurrentTime()
 			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
 		}
+		MCDDrainErr.WithLabelValues(failTime, err.Error()).SetToCurrentTime()
 		return errors.Wrap(err, "failed to drain node")
 	}
+
 	dn.logSystem("drain complete")
+	t := time.Since(startTime).Seconds()
+	glog.Infof("Successful drain took %v seconds", t)
+	successTime := fmt.Sprintf("%v sec", t)
+	MCDDrainErr.WithLabelValues(successTime, "").SetToCurrentTime()
+
 	return nil
 }
 
@@ -913,6 +925,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 
 	glog.Infof("Updating OS to %s", newURL)
 	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
+		MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
 		return fmt.Errorf("failed to run pivot: %v", err)
 	}
 
@@ -1092,11 +1105,13 @@ func (dn *Daemon) reboot(rationale string) error {
 	// either, we just have one for the MCD itself.
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
+		MCDRebootErr.WithLabelValues("failed to run reboot", err.Error()).SetToCurrentTime()
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
 	time.Sleep(defaultRebootTimeout)
 
 	// if everything went well, this should be unreachable.
+	MCDRebootErr.WithLabelValues("reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }

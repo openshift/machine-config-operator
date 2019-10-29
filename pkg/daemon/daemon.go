@@ -187,6 +187,7 @@ func New(
 
 	var (
 		osImageURL string
+		osVersion  string
 		err        error
 	)
 
@@ -194,13 +195,13 @@ func New(
 	if !mock {
 		operatingSystem, err = getHostRunningOS()
 		if err != nil {
+			HostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, errors.Wrapf(err, "checking operating system")
 		}
 	}
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS
 	if operatingSystem == machineConfigDaemonOSRHCOS {
-		var osVersion string
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -227,6 +228,9 @@ func New(
 			loggerSupportsJournal = strings.Contains(string(loggerOutput), "--journald")
 		}
 	}
+
+	// report OS & version (if RHCOS) to prometheus
+	HostOS.WithLabelValues(operatingSystem, osVersion).Set(1)
 
 	return &Daemon{
 		mock:                  mock,
@@ -608,6 +612,7 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 	failureCount := 0
+	KubeletHealthState.WithLabelValues("").Set(float64(failureCount))
 	for {
 		select {
 		case <-stopCh:
@@ -616,11 +621,15 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 			if err := dn.getHealth(); err != nil {
 				glog.Warningf("Failed kubelet health check: %v", err)
 				failureCount++
+				KubeletHealthState.WithLabelValues(err.Error()).Set(float64(failureCount))
 				if failureCount >= kubeletHealthzFailureThreshold {
-					exitCh <- fmt.Errorf("kubelet health failure threshold reached")
+					thresholdMessage := "kubelet health failure threshold reached"
+					KubeletHealthState.WithLabelValues(thresholdMessage).Set(float64(failureCount))
+					exitCh <- fmt.Errorf(thresholdMessage)
 				}
 			} else {
 				failureCount = 0 // reset failure count on success
+				KubeletHealthState.WithLabelValues("").Set(float64(failureCount))
 			}
 		}
 	}
@@ -736,6 +745,16 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 
 		glog.Infof("Pending config: %s", pendingConfigName)
 	}
+
+	var degradedReason string
+	if state == constants.MachineConfigDaemonStateDegraded {
+		degradedReason, err = getNodeAnnotation(dn.node, constants.MachineConfigDaemonReasonAnnotationKey)
+		if err != nil {
+			glog.Errorf("Could not retrieve degraded reason. err: %v", err)
+		}
+	}
+
+	MCDState.WithLabelValues(state, degradedReason).SetToCurrentTime()
 
 	return &stateAndConfigs{
 		bootstrapping: bootstrapping,
@@ -985,6 +1004,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
 			if err := dn.completeUpdate(dn.node, state.pendingConfig.GetName()); err != nil {
+				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return err
 			}
 		}
@@ -992,11 +1012,14 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		// If that's the case, clear it out.
 		if state.state == constants.MachineConfigDaemonStateDegraded {
 			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
+				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+				MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
 				return errors.Wrap(err, "error setting node's state to Done")
 			}
 		}
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
+		MCDUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
 
 		// All good!
 		return nil

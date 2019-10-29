@@ -72,6 +72,7 @@ func (nw *clusterNodeWriter) SetDone(client corev1client.NodeInterface, lister c
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
@@ -88,6 +89,7 @@ func (nw *clusterNodeWriter) SetWorking(client corev1client.NodeInterface, liste
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateWorking, "").SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
@@ -106,6 +108,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error, client corev1client.No
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateUnreconcilable,
 		constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
 	}
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, err.Error()).SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
@@ -129,6 +132,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error, client corev1client.NodeInte
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
 	}
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, err.Error()).SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
@@ -146,6 +150,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error, client corev1client.NodeInte
 
 // SetSSHAccessed sets the ssh annotation to accessed
 func (nw *clusterNodeWriter) SetSSHAccessed(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error {
+	MCDSSHAccessed.Inc()
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}
