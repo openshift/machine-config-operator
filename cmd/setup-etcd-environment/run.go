@@ -26,7 +26,7 @@ import (
 
 const (
 	EtcdScalingAnnotationKey = "etcd.operator.openshift.io/scale"
-	assetDir                 = "/etc/ssl/etcd"
+	etcdInitialExisting      = "existing"
 )
 
 var (
@@ -152,7 +152,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 			}
 			memberList = append(memberList, fmt.Sprintf("%s=https://%s:2380", etcdName, dns))
 			exportEnv["INITIAL_CLUSTER"] = strings.Join(memberList, ",")
-			exportEnv["INITIAL_CLUSTER_STATE"] = "existing"
+			exportEnv["INITIAL_CLUSTER_STATE"] = etcdInitialExisting
 			return true, nil
 		})
 
@@ -181,6 +181,12 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		exportEnv["ENDPOINTS"] = strings.Join(endpoints, ",")
+	} else {
+		// initialize envs used to bootstrap etcd
+		exportEnv, err = setBootstrapEnv(runOpts.outputFile, runOpts.discoverySRV, runOpts.bootstrapSRV)
+		if err != nil {
+			return err
+		}
 	}
 
 	out := os.Stdout
@@ -297,7 +303,7 @@ func reverseLookupSelf(service, proto, name, self string) (string, error) {
 }
 
 //
-func lookupTargetMatchSelf(target string, self string) (string, error) {
+func lookupTargetMatchSelf(target, self string) (string, error) {
 	addrs, err := net.LookupHost(target)
 	if err != nil {
 		return "", fmt.Errorf("could not resolve member %q", target)
