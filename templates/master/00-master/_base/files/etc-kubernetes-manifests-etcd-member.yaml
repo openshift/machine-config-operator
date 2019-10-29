@@ -176,6 +176,8 @@ contents:
         - name: metric
           containerPort: 9979
           protocol: TCP
+        securityContext:
+          privileged: true
       hostNetwork: true
       priorityClassName: system-node-critical
       tolerations:
