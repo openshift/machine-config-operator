@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: machine-config-daemon
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: machine-config-daemon
+spec:
+  groups:
+    - name: mcd-reboot-error
+      rules:
+        - alert: MCDRebootError
+          expr: |
+             mcd_reboot_err > 0
+          labels:
+            severity: critical
+          annotations:
+            message: "Reboot failed on {{ $labels.node }} , update may be blocked"
+    - name: mcd-drain-error
+      rules:
+        - alert: MCDDrainError
+          expr: |
+            mcd_drain > 0
+          labels:
+            severity: critical
+          annotations:
+            message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details:  oc logs -f -n openshift-machine-config-operator machine-config-daemon-<hash> -c machine-config-daemon"
+    - name: mcd-pivot-error
+      rules:
+        - alert: MCDPivotError
+          expr: |
+            mcd_pivot_err > 0
+          labels:
+            severity: warning
+          annotations:
+            message: "Error detected in pivot logs on {{ $labels.node }} "
+    - name: mcd-kubelet-health-state-error
+      rules:
+        - alert: KubeletHealthState
+          expr: |
+            mcd_kubelet_state > 2
+          labels:
+            severity: warning
+          annotations:
+            message: "Kubelet health failure threshold reached"
