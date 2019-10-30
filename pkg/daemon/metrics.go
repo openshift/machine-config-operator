@@ -24,7 +24,7 @@ var (
 	MCDSSHAccessed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "ssh_accessed",
-			Help: "indicates whether ssh access attempt",
+			Help: "indicates a successful SSH login",
 		})
 
 	// MCDDrainErr logs errors received during failed drain
