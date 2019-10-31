@@ -13,7 +13,7 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/bin/podman run --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon
+  ExecStart=/usr/bin/sh -c "/usr/bin/podman run --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon"
   ExecStart=/usr/bin/chmod +x /usr/local/bin/machine-config-daemon
   ExecStart=/usr/bin/restorecon /usr/local/bin/machine-config-daemon
 
