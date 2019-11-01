@@ -7,15 +7,16 @@ contents: |
   # see also https://github.com/openshift/machine-config-operator/issues/1046
   ConditionPathExists=/run/ostree-booted
   ConditionPathExists=/etc/pivot/image-pullspec
+  ConditionPathExists=/var/lib/kubelet/config.json
   After=ignition-firstboot-complete.service
   Before=machine-config-daemon-host.service
 
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/bin/sh -c "/usr/bin/podman run --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon"
+  ExecStart=/usr/bin/sh -c "/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon"
   ExecStart=/usr/bin/chmod +x /usr/local/bin/machine-config-daemon
-  ExecStart=/usr/bin/restorecon /usr/local/bin/machine-config-daemon
+  ExecStart=/usr/sbin/restorecon /usr/local/bin/machine-config-daemon
 
   [Install]
   WantedBy=multi-user.target
