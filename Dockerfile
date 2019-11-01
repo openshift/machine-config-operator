@@ -1,7 +1,6 @@
 FROM registry.svc.ci.openshift.org/openshift/release:golang-1.12 AS builder
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
-RUN make binaries
 # FIXME once we can depend on a new enough host that supports globs for COPY,
 # just use that.  For now we work around this by copying a tarball.
 RUN make install DESTDIR=./instroot && tar -C instroot -cf instroot.tar .
