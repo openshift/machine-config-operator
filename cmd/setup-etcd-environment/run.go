@@ -104,83 +104,13 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 	glog.Infof("dns name is %s", dns)
 
-	exportEnv := make(map[string]string)
+	var exportEnv map[string]string
 
-	endpoints := make([]string, 0)
 	if _, err := os.Stat(fmt.Sprintf("%s/member", etcdDataDir)); os.IsNotExist(err) && !runOpts.bootstrapSRV && inCluster() {
-		duration := 10 * time.Second
-		wait.PollInfinite(duration, func() (bool, error) {
-			if _, err := os.Stat("/var/run/secrets/kubernetes.io/serviceaccount/token"); os.IsNotExist(err) {
-				glog.Errorf("serviceaccount failed: %v", err)
-				return false, nil
-			}
-			return true, nil
-		})
-
-		clientConfig, err := rest.InClusterConfig()
-		if err != nil {
-			panic(err.Error())
-		}
-		client, err := kubernetes.NewForConfig(clientConfig)
-		if err != nil {
-			return fmt.Errorf("error creating client: %v", err)
-		}
-		var e ceoapi.EtcdScaling
-		// wait forever for success and retry every duration interval
-		wait.PollInfinite(duration, func() (bool, error) {
-			result, err := client.CoreV1().ConfigMaps("openshift-etcd").Get("member-config", metav1.GetOptions{})
-			if err != nil {
-				glog.Errorf("error creating client %v", err)
-				return false, nil
-			}
-			if err := json.Unmarshal([]byte(result.Annotations[EtcdScalingAnnotationKey]), &e); err != nil {
-				glog.Errorf("error decoding result %v", err)
-				return false, nil
-			}
-			if e.Metadata.Name != etcdName {
-				glog.Errorf("could not find self in member-config")
-				return false, nil
-			}
-			members := e.Members
-			if len(members) == 0 {
-				glog.Errorf("no members found in member-config")
-				return false, nil
-			}
-			var memberList []string
-			for _, m := range members {
-				memberList = append(memberList, fmt.Sprintf("%s=%s", m.Name, m.PeerURLS[0]))
-			}
-			memberList = append(memberList, fmt.Sprintf("%s=https://%s:2380", etcdName, dns))
-			exportEnv["INITIAL_CLUSTER"] = strings.Join(memberList, ",")
-			exportEnv["INITIAL_CLUSTER_STATE"] = etcdInitialExisting
-			return true, nil
-		})
-
-		ep, err := client.CoreV1().Endpoints("openshift-etcd").Get("etcd", metav1.GetOptions{})
+		exportEnv, err = setExportEnv(etcdName, dns)
 		if err != nil {
 			return err
 		}
-		hostEtcdEndpoint, err := client.CoreV1().Endpoints("openshift-etcd").Get("host-etcd", metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if len(hostEtcdEndpoint.Subsets) != 1 {
-			return fmt.Errorf("openshift-etcd/host-etcd endpoint subset length should be %d, found %d", 1, len(hostEtcdEndpoint.Subsets))
-		}
-		for _, member := range hostEtcdEndpoint.Subsets[0].Addresses {
-			if member.Hostname == "etcd-bootstrap" {
-				endpoints = append(endpoints, "https://etcd-bootstrap."+runOpts.discoverySRV+":2379")
-				break
-			}
-		}
-		if len(ep.Subsets) != 1 {
-			return fmt.Errorf("openshift-etcd/etcd endpoint subset length should be %d, found %d", 1, len(ep.Subsets))
-		}
-		for _, s := range ep.Subsets[0].Addresses {
-			endpoints = append(endpoints, "https://"+s.IP+":2379")
-		}
-
-		exportEnv["ENDPOINTS"] = strings.Join(endpoints, ",")
 	} else {
 		// initialize envs used to bootstrap etcd
 		exportEnv, err = setBootstrapEnv(runOpts.outputFile, runOpts.discoverySRV, runOpts.bootstrapSRV)
@@ -221,6 +151,86 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		"DNS_NAME":          dns,
 		"WILDCARD_DNS_NAME": fmt.Sprintf("*.%s", runOpts.discoverySRV),
 	}, out, false)
+}
+
+func setExportEnv(etcdName, dns string) (map[string]string, error) {
+	exportEnv := make(map[string]string)
+	duration := 10 * time.Second
+	wait.PollInfinite(duration, func() (bool, error) {
+		if _, err := os.Stat("/var/run/secrets/kubernetes.io/serviceaccount/token"); os.IsNotExist(err) {
+			glog.Errorf("serviceaccount failed: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+
+	clientConfig, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	client, err := kubernetes.NewForConfig(clientConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error creating client: %v", err)
+	}
+	var e ceoapi.EtcdScaling
+	// wait forever for success and retry every duration interval
+	wait.PollInfinite(duration, func() (bool, error) {
+		result, err := client.CoreV1().ConfigMaps("openshift-etcd").Get("member-config", metav1.GetOptions{})
+		if err != nil {
+			glog.Errorf("error creating client %v", err)
+			return false, nil
+		}
+		if err := json.Unmarshal([]byte(result.Annotations[EtcdScalingAnnotationKey]), &e); err != nil {
+			glog.Errorf("error decoding result %v", err)
+			return false, nil
+		}
+		if e.Metadata.Name != etcdName {
+			glog.Errorf("could not find self in member-config")
+			return false, nil
+		}
+		members := e.Members
+		if len(members) == 0 {
+			glog.Errorf("no members found in member-config")
+			return false, nil
+		}
+		var memberList []string
+		for _, m := range members {
+			memberList = append(memberList, fmt.Sprintf("%s=%s", m.Name, m.PeerURLS[0]))
+		}
+		memberList = append(memberList, fmt.Sprintf("%s=https://%s:2380", etcdName, dns))
+		exportEnv["INITIAL_CLUSTER"] = strings.Join(memberList, ",")
+		exportEnv["INITIAL_CLUSTER_STATE"] = etcdInitialExisting
+		return true, nil
+	})
+
+	ep, err := client.CoreV1().Endpoints("openshift-etcd").Get("etcd", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	hostEtcdEndpoint, err := client.CoreV1().Endpoints("openshift-etcd").Get("host-etcd", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if len(hostEtcdEndpoint.Subsets) != 1 {
+		return nil, fmt.Errorf("openshift-etcd/host-etcd endpoint subset length should be %d, found %d", 1, len(hostEtcdEndpoint.Subsets))
+	}
+
+	endpoints := make([]string, 0)
+	for _, member := range hostEtcdEndpoint.Subsets[0].Addresses {
+		if member.Hostname == "etcd-bootstrap" {
+			endpoints = append(endpoints, "https://etcd-bootstrap."+runOpts.discoverySRV+":2379")
+			break
+		}
+	}
+	if len(ep.Subsets) != 1 {
+		return nil, fmt.Errorf("openshift-etcd/etcd endpoint subset length should be %d, found %d", 1, len(ep.Subsets))
+	}
+	for _, s := range ep.Subsets[0].Addresses {
+		endpoints = append(endpoints, "https://"+s.IP+":2379")
+	}
+
+	exportEnv["ENDPOINTS"] = strings.Join(endpoints, ",")
+	return exportEnv, nil
 }
 
 // setBootstrapEnv populates and returns a map based on envs from file.
