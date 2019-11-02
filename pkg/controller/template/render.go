@@ -327,6 +327,9 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["skip"] = skipMissing
 	funcs["etcdServerCertDNSNames"] = etcdServerCertDNSNames
 	funcs["etcdPeerCertDNSNames"] = etcdPeerCertDNSNames
+	funcs["etcdServerCertCommand"] = etcdServerCertCommand
+	funcs["etcdPeerCertCommand"] = etcdPeerCertCommand
+	funcs["etcdMetricCertCommand"] = etcdMetricCertCommand
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
@@ -376,6 +379,90 @@ func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 		cfg.EtcdDiscoveryDomain, // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
 	}
 	return strings.Join(dnsNames, ","), nil
+}
+
+func etcdServerCertCommand(cfg RenderConfig) (interface{}, error) {
+	commands := []string{}
+	if cfg.Images[ClusterEtcdOperatorImageKey] == "" {
+		serverCertDNS, err := etcdServerCertDNSNames(cfg)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, []string{
+			"kube-client-agent \\",
+			"  request \\",
+			"  --kubeconfig=/etc/kubernetes/kubeconfig \\",
+			"  --orgname=system:etcd-servers \\",
+			"  --assetsdir=/etc/ssl/etcd \\",
+			fmt.Sprintf("  --dnsnames=%s \\", serverCertDNS),
+			"  --commonname=system:etcd-server:${ETCD_DNS_NAME} \\",
+			"  --ipaddrs=${ETCD_IPV4_ADDRESS},127.0.0.1 \\",
+		}...)
+	} else {
+		commands = append(commands, []string{
+			"cluster-etcd-operator \\",
+			"  mount \\",
+			"  --assetsdir=/etc/ssl/etcd \\",
+			"  --commonname=system:etcd-server:${ETCD_DNS_NAME} \\",
+		}...)
+	}
+	return commands, nil
+}
+
+func etcdPeerCertCommand(cfg RenderConfig) (interface{}, error) {
+	commands := []string{}
+	if cfg.Images[ClusterEtcdOperatorImageKey] == "" {
+		peerCertDNS, err := etcdPeerCertDNSNames(cfg)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, []string{
+			"kube-client-agent \\",
+			"  request \\",
+			"  --kubeconfig=/etc/kubernetes/kubeconfig \\",
+			"  --orgname=system:etcd-peers \\",
+			"  --assetsdir=/etc/ssl/etcd \\",
+			fmt.Sprintf("  --dnsnames=%s \\", peerCertDNS),
+			"  --commonname=system:etcd-peer:${ETCD_DNS_NAME} \\",
+			"  --ipaddrs=${ETCD_IPV4_ADDRESS} \\",
+		}...)
+	} else {
+		commands = append(commands, []string{
+			"cluster-etcd-operator \\",
+			"  mount \\",
+			"  --assetsdir=/etc/ssl/etcd \\",
+			"  --commonname=system:etcd-peer:${ETCD_DNS_NAME} \\",
+		}...)
+	}
+	return commands, nil
+}
+
+func etcdMetricCertCommand(cfg RenderConfig) (interface{}, error) {
+	commands := []string{}
+	if cfg.Images[ClusterEtcdOperatorImageKey] == "" {
+		metricCertDNS, err := etcdServerCertDNSNames(cfg)
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, []string{
+			"kube-client-agent \\",
+			"  request \\",
+			"  --kubeconfig=/etc/kubernetes/kubeconfig \\",
+			"  --orgname=system:etcd-metrics \\",
+			"  --assetsdir=/etc/ssl/etcd \\",
+			fmt.Sprintf("  --dnsnames=%s \\", metricCertDNS),
+			"  --commonname=system:etcd-metric:${ETCD_DNS_NAME} \\",
+			"  --ipaddrs=${ETCD_IPV4_ADDRESS} \\",
+		}...)
+	} else {
+		commands = append(commands, []string{
+			"cluster-etcd-operator \\",
+			"  mount \\",
+			"  --assetsdir=/etc/ssl/etcd \\",
+			"  --commonname=system:etcd-metric:${ETCD_DNS_NAME} \\",
+		}...)
+	}
+	return commands, nil
 }
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {

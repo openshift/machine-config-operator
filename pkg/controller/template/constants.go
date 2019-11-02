@@ -16,6 +16,9 @@ const (
 	// KubeClientAgentImageKey is the key that references the kube-client-agent image in the controller
 	KubeClientAgentImageKey string = "kubeClientAgentImageKey"
 
+	// ClusterEtcdOperatorImageKey is the key that references the cluster-etcd-operator image in the controller
+	ClusterEtcdOperatorImageKey string = "clusterEtcdOperatorImageKey"
+
 	// KeepalivedKey is the key that references the keepalived-ipfailover image in the controller
 	KeepalivedKey string = "keepalivedImage"
 
