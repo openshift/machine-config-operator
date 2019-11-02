@@ -31,6 +31,10 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:kube-client-agent
+  - name: cluster-etcd-operator
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:cluster-etcd-operator
   - name: cli
     from:
       kind: DockerImage
