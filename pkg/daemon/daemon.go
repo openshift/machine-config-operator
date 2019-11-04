@@ -483,8 +483,8 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	}
 
 	// Removing this file signals completion of the initial MC processing.
-	if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
-		return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
+	if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
+		return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
 	}
 
 	dn.skipReboot = false
