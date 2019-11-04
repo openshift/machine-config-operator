@@ -685,6 +685,8 @@ github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0 h1:U0rtkdPj1lT
 github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070 h1:Yw3cWSzWhZ9Kh8WqX6tOccVPs9BWUp4jDfb6I8AU/pg=
 github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070/go.mod h1:mNsD1dsD4T57kV4/C6zTHke/Ro166xgnyyRZqkamiEU=
+github.com/openshift/cluster-etcd-operator v0.0.0-alpha.0.0.20191025163650-5854b5c48ce4 h1:EDZ2v8AqMnXgeT3bECcbamUg8Haz0V/iXqDMlu94Mrw=
+github.com/openshift/cluster-etcd-operator v0.0.0-alpha.0.0.20191025163650-5854b5c48ce4/go.mod h1:vcBAUefK8pQmTPQ3jlCemORXhnRnq3aTsfOSVeaWliY=
 github.com/openshift/imagebuilder v1.1.0 h1:oT704SkwMEzmIMU/+Uv1Wmvt+p10q3v2WuYMeFI18c4=
 github.com/openshift/imagebuilder v1.1.0/go.mod h1:9aJRczxCH0mvT6XQ+5STAQaPWz7OsWcU5/mRkt8IWeo=
 github.com/openshift/kubernetes v1.16.0-beta.0.0.20190913145653-2bd9643cee5b h1:b3r/3odnWNdjYRrwvXiqxLFbPYFQ+m2GblFK6RwTC9Y=
