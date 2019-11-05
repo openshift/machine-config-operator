@@ -43,6 +43,11 @@ const (
 	// non-Ignition fields such as the osImageURL and kernelArguments.
 	MachineConfigEncapsulatedPath = "/etc/ignition-machine-config-encapsulated.json"
 
+	// MachineConfigEncapsulatedBakPath defines the path where the machineconfigdaemom-firstboot.service
+	// will leave a copy of the encapsulated MachineConfig in MachineConfigEncapsulatedPath after
+	// processing for debugging and auditing purposes.
+	MachineConfigEncapsulatedBakPath = "/etc/ignition-machine-config-encapsulated.json.bak"
+
 	// MachineConfigDaemonForceFile if present causes the MCD to skip checking the validity of the
 	// "currentConfig" state.  Create this file (empty contents is fine) if you wish the MCD
 	// to proceed and attempt to "reconcile" to the new "desiredConfig" state regardless.
