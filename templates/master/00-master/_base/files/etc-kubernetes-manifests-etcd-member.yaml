@@ -74,7 +74,7 @@ contents:
           mountPath: /etc/ssl/etcd/
         - name: kubeconfig
           mountPath: /etc/kubernetes/kubeconfig
-    {{if .Images.clusterEtcdOperatorImageKey}}
+   {{if .Images.clusterEtcdOperatorImageKey}}
         - name: sa
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount/
    {{end}}
