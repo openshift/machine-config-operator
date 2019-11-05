@@ -1,7 +1,6 @@
 package e2e_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -20,9 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -144,7 +140,6 @@ func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	// TODO: bring this back to 10
 	for i := 0; i < 3; i++ {
@@ -172,21 +167,6 @@ func TestMCDeployed(t *testing.T) {
 	}
 }
 
-func bumpPoolMaxUnavailableTo(t *testing.T, cs *framework.ClientSet, max int) {
-	pool, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	old, err := json.Marshal(pool)
-	require.Nil(t, err)
-	maxUnavailable := intstr.FromInt(max)
-	pool.Spec.MaxUnavailable = &maxUnavailable
-	new, err := json.Marshal(pool)
-	require.Nil(t, err)
-	patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(old, new, old)
-	require.Nil(t, err)
-	_, err = cs.MachineConfigPools().Patch("worker", types.MergePatchType, patch)
-	require.Nil(t, err)
-}
-
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
 	// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
 	listOptions := metav1.ListOptions{
@@ -209,7 +189,6 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 
 func TestUpdateSSH(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("sshkeys-worker-%s", uuid.NewUUID())
@@ -264,7 +243,6 @@ func TestUpdateSSH(t *testing.T) {
 
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
 	kargsMC := &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
@@ -362,7 +340,6 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 
 func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
@@ -467,7 +444,6 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
 
 	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test", "root")
 
@@ -519,86 +495,6 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 		if strings.Contains(string(found), "mco-test") {
 			t.Fatalf("updated file doesn't contain expected data, got %s", found)
 		}
-	}
-}
-
-func TestFIPS(t *testing.T) {
-	cs := framework.NewClientSet("")
-	bumpPoolMaxUnavailableTo(t, cs, 3)
-	fipsMC := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("fips-%s", uuid.NewUUID()),
-			Labels: mcLabelForWorkers(),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: ctrlcommon.NewIgnConfig(),
-			FIPS:   true,
-		},
-	}
-
-	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	if err != nil {
-		t.Error(err)
-	}
-	workerOldMc := mcp.Status.Configuration.Name
-
-	_, err = cs.MachineConfigs().Create(fipsMC)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("Created %s", fipsMC.Name)
-	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", fipsMC.Name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
-	nodes, err := getNodesByRole(cs, "worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"chroot", "/rootfs", "fips-mode-setup", "--check").CombinedOutput()
-		require.Nil(t, err)
-		fips := string(fipsBytes)
-		if !strings.Contains(fips, "FIPS mode is enabled") {
-			t.Fatalf("FIPS hasn't been enabled on node %s: %s", node.Name, fips)
-		}
-		t.Logf("Node %s has expected FIPS mode", node.Name)
-	}
-
-	if err := cs.MachineConfigs().Delete(fipsMC.Name, &metav1.DeleteOptions{}); err != nil {
-		t.Error(err)
-	}
-	if err := waitForPoolComplete(t, cs, "worker", workerOldMc); err != nil {
-		t.Fatal(err)
-	}
-
-	nodes, err = getNodesByRole(cs, "worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMc)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		fipsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"chroot", "/rootfs", "fips-mode-setup", "--check").CombinedOutput()
-		require.Nil(t, err)
-		fips := string(fipsBytes)
-		if !strings.Contains(fips, "FIPS mode is disabled") {
-			t.Fatalf("FIPS hasn't been disabled on node %s: %s", node.Name, fips)
-		}
-		t.Logf("Node %s has expected FIPS mode", node.Name)
 	}
 }
 
