@@ -172,7 +172,7 @@ func (dn *Daemon) drain() error {
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
 	successTime := fmt.Sprintf("%v sec", t)
-	MCDDrainErr.WithLabelValues(successTime, "").SetToCurrentTime()
+	MCDDrainErr.WithLabelValues(successTime, "").Set(0)
 
 	return nil
 }
