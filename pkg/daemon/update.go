@@ -328,6 +328,23 @@ func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
 	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
 		return errors.New("Updating FIPS on non-RHCOS nodes is not supported")
 	}
+	// Our new thought around this is that really FIPS should be a "day 1"
+	// operation, and we don't want to make it really easy to undo.
+	// See also https://github.com/openshift/installer/pull/2594
+	// Anyone who wants to force this can change the MC flag, then
+	// `oc debug node` and run the disable command by hand, then reboot.
+	if current.Spec.FIPS && !desired.Spec.FIPS {
+		return errors.New("Refusing to undo FIPS mode")
+	}
+	// At this point, we must be trying to enable FIPS, since
+	// current != desired && desired per conditionals above
+	if _, err := os.Stat(fipsCommand); err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("Cannot enable FIPS after firstboot")
+		}
+		return errors.Wrapf(err, "Checking FIPS")
+	}
+
 	arg := "enable"
 	if !desired.Spec.FIPS {
 		arg = "disable"
