@@ -1,5 +1,7 @@
 %define debug_package %{nil}
+%{!?commit:
 %global commit          1bb46853cd115d5545aa6fd9f03fde92acce16f6
+}
 %global shortcommit     %(c=%{commit}; echo ${c:0:7})
 
 Name:           machine-config-daemon
