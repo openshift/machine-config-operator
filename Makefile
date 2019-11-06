@@ -42,12 +42,6 @@ _build-%:
 image:
 	hack/build-image
 
-# Build + push + deploy image for a component. Intended to be called via another target.
-# Example:
-#    make _deploy-machine-config-daemon
-_deploy-%:
-	WHAT=$* hack/cluster-push.sh
-
 # Run tests
 test: test-unit test-e2e
 
@@ -95,21 +89,7 @@ endef
 $(foreach C, $(EXTRA_COMPONENTS), $(eval $(call target_template,$(C))))
 $(foreach C, $(MCO_COMPONENTS), $(eval $(call target_template,$(patsubst %,machine-config-%,$(C)))))
 
-# Template for image builds.
-define image_template =
- .PHONY: image-$(1) image-machine-config-$(1) deploy-$(1) deploy-machine-config-$(1)
- image-machine-config-$(1): _image-machine-config-$(1) _build-machine-config-$(1)
- image-$(1): image-machine-config-$(1)
- deploy-machine-config-$(1): _deploy-machine-config-$(1)
- deploy-$(1): _deploy-machine-config-$(1)
-
- imc += image-$(1)
-endef
-
-# Generate 'image_template' for each component
-$(foreach C, $(MCO_COMPONENTS), $(eval $(call image_template,$(C))))
-
-.PHONY: binaries install images images.rhel7
+.PHONY: binaries install
 
 # Build all binaries:
 # Example:
@@ -120,16 +100,6 @@ install: binaries
 	for component in $(ALL_COMPONENTS); do \
 	  install -D -m 0755 _output/linux/$(GOARCH)/$${component} $(DESTDIR)$(PREFIX)/bin/$${component}; \
 	done
-
-# Build all images:
-# Example:
-#    make images
-images: $(imc)
-
-# Build all images for rhel7
-# Example:
-#    make images.rhel7
-images.rhel7: $(imc7)
 
 Dockerfile.rhel7: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
