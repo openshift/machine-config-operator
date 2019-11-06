@@ -201,13 +201,13 @@ func checkNodeReady(node *corev1.Node) error {
 		// - NodeDiskPressure condition status is ConditionFalse,
 		// - NodeNetworkUnavailable condition status is ConditionFalse.
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			return fmt.Errorf("node %s is reporting NotReady", node.Name)
+			return fmt.Errorf("node %s is reporting NotReady=%v", node.Name, cond.Status)
 		}
 		if cond.Type == corev1.NodeDiskPressure && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("node %s is reporting OutOfDisk", node.Name)
+			return fmt.Errorf("node %s is reporting OutOfDisk=%v", node.Name, cond.Status)
 		}
 		if cond.Type == corev1.NodeNetworkUnavailable && cond.Status != corev1.ConditionFalse {
-			return fmt.Errorf("node %s is reporting NetworkUnavailable", node.Name)
+			return fmt.Errorf("node %s is reporting NetworkUnavailable=%v", node.Name, cond.Status)
 		}
 	}
 	// Ignore nodes that are marked unschedulable
