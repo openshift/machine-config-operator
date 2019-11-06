@@ -1,0 +1,9 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/NetworkManager/conf.d/sdn.conf"
+contents:
+  inline: |
+    # ignore known SDN-managed devices
+    [device]
+    match-device=interface-name:br-int;interface-name:br-local;interface-name:br-nexthop,interface-name:k8s-*;interface-name:tun0;interface-name:br0;driver:veth
+    managed=0
