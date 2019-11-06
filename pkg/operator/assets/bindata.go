@@ -658,6 +658,22 @@ spec:
                     version:
                       description: "version string is the semantic version number of the spec"
                       type: string
+                passwd:
+                  type: object
+                  properties:
+                    users:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            description: "name of user. Must be \"core\" user."
+                            type: string
+                          sshAuthorizedKeys:
+                            description: "public keys to be assigned to user core"
+                            type: array
+                            items:
+                              type: string
                 storage:
                   description: "storage describes the desired state of the system's storage devices"
                   type: object
