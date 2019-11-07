@@ -133,7 +133,7 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 		return "", fmt.Errorf("cannot generate MachineConfigs when no platform is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenStack, platformLibvirt, platformOvirt, platformNone:
+	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenStack, platformLibvirt, platformOvirt, platformNone, platformVSphere:
 		return ic.Platform, nil
 	default:
 		// platformNone is used for a non-empty, but currently unsupported platform.
