@@ -110,18 +110,18 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfig
 			corev1.ConditionFalse,
 			fmt.Sprintf("Error: %v", err),
 		)
+		if len(args) > 0 {
+			format, ok := args[0].(string)
+			if ok {
+				condition.Message = fmt.Sprintf(format, args[1:]...)
+			}
+		}
 	} else {
 		condition = mcfgv1.NewKubeletConfigCondition(
 			mcfgv1.KubeletConfigSuccess,
 			corev1.ConditionTrue,
 			"Success",
 		)
-	}
-	if len(args) > 0 {
-		format, ok := args[0].(string)
-		if ok {
-			condition.Message = fmt.Sprintf(format, args[:1]...)
-		}
 	}
 	return *condition
 }

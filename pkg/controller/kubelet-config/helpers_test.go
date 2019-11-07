@@ -59,7 +59,7 @@ func TestWrapErrorWithCondition(t *testing.T) {
 			expected: mcfgv1.KubeletConfigCondition{
 				Type:    mcfgv1.KubeletConfigSuccess,
 				Status:  corev1.ConditionTrue,
-				Message: "look at this: look at this: %v",
+				Message: "Success",
 			},
 		},
 		{
@@ -69,7 +69,7 @@ func TestWrapErrorWithCondition(t *testing.T) {
 			expected: mcfgv1.KubeletConfigCondition{
 				Type:    mcfgv1.KubeletConfigFailure,
 				Status:  corev1.ConditionFalse,
-				Message: "look at this: look at this: %v",
+				Message: "look at this: stuff",
 			},
 		},
 	} {
