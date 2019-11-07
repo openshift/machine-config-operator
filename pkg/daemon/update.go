@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -38,8 +39,8 @@ const (
 	coreUserName = "core"
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
-	// fipsCommand is the command to use when enabling or disabling FIPS
-	fipsCommand = "/usr/libexec/rhcos-tools/coreos-fips"
+	// fipsFile is the file to check if FIPS is enabled
+	fipsFile = "/proc/sys/crypto/fips_enabled"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -306,55 +307,36 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.updateFIPS(oldConfig, newConfig); err != nil {
+	if err := dn.checkFIPS(oldConfig, newConfig); err != nil {
 		return err
 	}
-	defer func() {
-		if retErr != nil {
-			if err := dn.updateFIPS(newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back FIPS %v", err)
-				return
-			}
-		}
-	}()
 
 	return dn.updateOSAndReboot(newConfig)
 }
 
-func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
-	if current.Spec.FIPS == desired.Spec.FIPS {
-		return nil
-	}
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
-		return errors.New("Updating FIPS on non-RHCOS nodes is not supported")
-	}
+func (dn *Daemon) checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 	// Our new thought around this is that really FIPS should be a "day 1"
-	// operation, and we don't want to make it really easy to undo.
+	// operation, and we don't want to make it editable after the fact.
 	// See also https://github.com/openshift/installer/pull/2594
 	// Anyone who wants to force this can change the MC flag, then
 	// `oc debug node` and run the disable command by hand, then reboot.
-	if current.Spec.FIPS && !desired.Spec.FIPS {
-		return errors.New("Refusing to undo FIPS mode")
+	// If we detect that FIPS has been changed, we reject the update.
+
+	content, err := ioutil.ReadFile(fipsFile)
+	if err != nil {
+		return errors.Wrapf(err, "Error reading FIPS file at %s: %s", fipsFile, string(content))
 	}
-	// At this point, we must be trying to enable FIPS, since
-	// current != desired && desired per conditionals above
-	if _, err := os.Stat(fipsCommand); err != nil {
-		if os.IsNotExist(err) {
-			return errors.New("Cannot enable FIPS after firstboot")
-		}
-		return errors.Wrapf(err, "Checking FIPS")
+	nodeFIPS, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
+	if err != nil {
+		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
+	}
+	if desired.Spec.FIPS == nodeFIPS {
+		// Check if FIPS on the system is at the desired setting
+		current.Spec.FIPS = nodeFIPS
+		return nil
 	}
 
-	arg := "enable"
-	if !desired.Spec.FIPS {
-		arg = "disable"
-	}
-	cmd := exec.Command(fipsCommand, arg)
-	dn.logSystem("Running %s %s", fipsCommand, arg)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return errors.Wrapf(err, "%s FIPS: %s", arg, string(out))
-	}
-	return nil
+	return errors.New("detected change to FIPS flag. Refusing to modify FIPS on a running cluster")
 }
 
 // MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
