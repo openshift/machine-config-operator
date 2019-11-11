@@ -307,36 +307,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.checkFIPS(oldConfig, newConfig); err != nil {
-		return err
-	}
-
 	return dn.updateOSAndReboot(newConfig)
-}
-
-func (dn *Daemon) checkFIPS(current, desired *mcfgv1.MachineConfig) error {
-	// Our new thought around this is that really FIPS should be a "day 1"
-	// operation, and we don't want to make it editable after the fact.
-	// See also https://github.com/openshift/installer/pull/2594
-	// Anyone who wants to force this can change the MC flag, then
-	// `oc debug node` and run the disable command by hand, then reboot.
-	// If we detect that FIPS has been changed, we reject the update.
-
-	content, err := ioutil.ReadFile(fipsFile)
-	if err != nil {
-		return errors.Wrapf(err, "Error reading FIPS file at %s: %s", fipsFile, string(content))
-	}
-	nodeFIPS, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
-	if err != nil {
-		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
-	}
-	if desired.Spec.FIPS == nodeFIPS {
-		// Check if FIPS on the system is at the desired setting
-		current.Spec.FIPS = nodeFIPS
-		return nil
-	}
-
-	return errors.New("detected change to FIPS flag. Refusing to modify FIPS on a running cluster")
 }
 
 // MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
@@ -484,6 +455,12 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// we can reconcile any state changes in the systemd section.
 
+	// FIPS section
+	// We do not allow update to FIPS for a running cluster, so any changes here will be an error
+	if err := checkFIPS(oldConfig, newConfig); err != nil {
+		return nil, err
+	}
+
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
 	return NewMachineConfigDiff(oldConfig, newConfig), nil
@@ -508,6 +485,32 @@ func verifyUserFields(pwdUser igntypes.PasswdUser) error {
 		return errors.New("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
 	}
 	return nil
+}
+
+// checkFIPS verifies the state of FIPS on the system before an update.
+// Our new thought around this is that really FIPS should be a "day 1"
+// operation, and we don't want to make it editable after the fact.
+// See also https://github.com/openshift/installer/pull/2594
+// Anyone who wants to force this can change the MC flag, then
+// `oc debug node` and run the disable command by hand, then reboot.
+// If we detect that FIPS has been changed, we reject the update.
+func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
+
+	content, err := ioutil.ReadFile(fipsFile)
+	if err != nil {
+		return errors.Wrapf(err, "Error reading FIPS file at %s: %s", fipsFile, string(content))
+	}
+	nodeFIPS, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
+	if err != nil {
+		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
+	}
+	if desired.Spec.FIPS == nodeFIPS {
+		// Check if FIPS on the system is at the desired setting
+		current.Spec.FIPS = nodeFIPS
+		return nil
+	}
+
+	return errors.New("detected change to FIPS flag. Refusing to modify FIPS on a running cluster")
 }
 
 // generateKargsCommand performs a diff between the old/new MC kernelArguments,
