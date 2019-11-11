@@ -8,8 +8,7 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // Infrastructure holds cluster-wide information about Infrastructure.  The canonical name is `cluster`
 type Infrastructure struct {
-	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
+	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec holds user settable values for configuration
@@ -163,6 +162,8 @@ type GCPPlatformStatus struct {
 }
 
 // BareMetalPlatformStatus holds the current status of the BareMetal infrastructure provider.
+// For more information about the network architecture used with the BareMetal platform type, see:
+// https://github.com/openshift/installer/blob/master/docs/design/baremetal/networking-infrastructure.md
 type BareMetalPlatformStatus struct {
 	// apiServerInternalIP is an IP address to contact the Kubernetes API server that can be used
 	// by components inside the cluster, like kubelets using the infrastructure rather
@@ -228,12 +229,13 @@ type OvirtPlatformStatus struct {
 	// to the nodes in the cluster.
 	NodeDNSIP string `json:"nodeDNSIP,omitempty"`
 }
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // InfrastructureList is
 type InfrastructureList struct {
 	metav1.TypeMeta `json:",inline"`
-	// Standard object's metadata.
 	metav1.ListMeta `json:"metadata"`
-	Items           []Infrastructure `json:"items"`
+
+	Items []Infrastructure `json:"items"`
 }
