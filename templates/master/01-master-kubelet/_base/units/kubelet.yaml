@@ -22,6 +22,9 @@ contents: |
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
+{{- if .KubeletIPv6}}
+        --node-ip :: \
+{{- end}}
         --minimum-container-ttl-duration=6m0s \
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \

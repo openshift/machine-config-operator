@@ -71,6 +71,10 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	if err != nil {
 		return nil, err
 	}
+	ipv6, err := isSingleStackIPv6(network.Spec.ServiceNetwork)
+	if err != nil {
+		return nil, err
+	}
 
 	infraPlatformString := ""
 	// The PlatformStatus field is set in cluster versions >= 4.2
@@ -89,6 +93,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        dnsIP,
+		KubeletIPv6:         ipv6,
 		CloudProviderConfig: "",
 		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
 		Platform:            platform,
@@ -116,6 +121,19 @@ func clusterDNSIP(iprange string) (string, error) {
 		return "", err
 	}
 	return ip.String(), nil
+}
+
+func isSingleStackIPv6(serviceCIDRs []string) (bool, error) {
+	for _, cidr := range serviceCIDRs {
+		ip, _, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return false, err
+		}
+		if ip.To4() != nil {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // GenerateProxyCookieSecret creates a random b64 encoded secret
