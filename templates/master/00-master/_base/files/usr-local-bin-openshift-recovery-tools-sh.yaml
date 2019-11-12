@@ -331,7 +331,13 @@ contents:
 
     stop_all_containers() {
       echo "Stopping all containers.."
-      crictl ps -q | xargs -r crictl stop
+      conids=$(crictl ps -q)
+      while [ ! -z "$conids" ]; do
+          crictl stop $conids
+          echo "Waiting for all containers to stop"
+          sleep 5
+          conids=$(crictl ps -q)
+      done
     }
 
     # validate_environment performs the same actions as the discovery container in etcd-member init
