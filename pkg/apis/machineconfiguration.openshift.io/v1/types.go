@@ -108,6 +108,9 @@ type ControllerConfigSpec struct {
 	// infra holds the infrastructure details
 	// TODO this makes platform redundant as everything is contained inside Infra.Status
 	Infra *configv1.Infrastructure `json:"infra"`
+
+	// kubeletIPv6 is true to force a single-stack IPv6 kubelet config
+	KubeletIPv6 bool `json:"kubeletIPv6,omitempty"`
 }
 
 // ControllerConfigStatus is the status for ControllerConfig
