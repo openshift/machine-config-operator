@@ -5,6 +5,8 @@ metadata:
   namespace: openshift-machine-config-operator
   labels:
     k8s-app: machine-config-operator
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
 spec:
   replicas: 1
   selector:
