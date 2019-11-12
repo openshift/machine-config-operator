@@ -53,6 +53,7 @@ spec:
       - image: quay.io/openshift/origin-cli:latest
         imagePullPolicy: IfNotPresent
         name: guard
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /mnt/kube
           name: kubecerts
