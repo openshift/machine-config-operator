@@ -273,8 +273,14 @@ contents:
     }
 
     verify_certs() {
+      iterations=0
       while [ "$(ls $ETCD_STATIC_RESOURCES | wc -l)" -lt 9  ]; do
-        echo "Waiting for certs to generate.."
+        let iterations=$iterations+1
+        if [ $iterations -gt 60 ]; then
+          echo "Failed to verify cert generation after 60 iterations. Exiting!"
+          exit 1
+        fi
+        echo "Waiting for certs to generate... ($iterations/60)"
         sleep 10
       done
     }
