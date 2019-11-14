@@ -133,7 +133,7 @@ func platformFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (string, 
 		return "", fmt.Errorf("cannot generate MachineConfigs when no platform is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenStack, platformLibvirt, platformOvirt, platformNone:
+	case platformAWS, platformAzure, platformBaremetal, platformGCP, platformOpenStack, platformLibvirt, platformOvirt, platformVSphere, platformNone:
 		return ic.Platform, nil
 	default:
 		// platformNone is used for a non-empty, but currently unsupported platform.
@@ -467,10 +467,12 @@ func etcdMetricCertCommand(cfg RenderConfig) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	switch cfg.Platform {
-	case platformAWS, platformAzure, platformOpenStack, platformVSphere:
+	case platformAWS, platformAzure, platformOpenStack:
 		return cfg.Platform, nil
 	case platformGCP:
 		return "gce", nil
+	case platformVSphere:
+		return "", nil // kubelet crash errors when provider set to VSphere right now
 	default:
 		return "", nil
 	}
