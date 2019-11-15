@@ -21,7 +21,7 @@ contents: |
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
-        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+        --node-labels=node.kubernetes.io/worker,node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
