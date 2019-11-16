@@ -265,12 +265,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.updateFIPS(oldConfig, newConfig); err != nil {
+	if err := dn.updateFIPS(oldConfig); err != nil {
 		return err
 	}
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFIPS(newConfig, oldConfig); err != nil {
+			if err := dn.updateFIPS(oldConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back FIPS %v", err)
 				return
 			}
@@ -280,12 +280,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.updateOSAndReboot(newConfig)
 }
 
-func (dn *Daemon) updateFIPS(current, desired *mcfgv1.MachineConfig) error {
-	if current.Spec.Fips == desired.Spec.Fips {
-		return nil
-	}
+func (dn *Daemon) updateFIPS(current *mcfgv1.MachineConfig) error {
+	// desired FIPS is always set to current
 	arg := "enable"
-	if !desired.Spec.Fips {
+	if !current.Spec.Fips {
 		arg = "disable"
 	}
 	cmd := exec.Command(fipsCommand, arg)
