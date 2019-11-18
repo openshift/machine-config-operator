@@ -11,7 +11,7 @@ contents:
       labels:
         k8s-app: etcd
     spec:
-      containers:
+      initContainers:
       - name: generate-env
         image: "__SETUP_ETCD_ENVIRONMENT__"
         command: ["/usr/bin/setup-etcd-environment"]
@@ -19,11 +19,27 @@ contents:
         - "run"
         - "--discovery-srv=__ETCD_DISCOVERY_DOMAIN__"
         - "--output-file=/run/etcd/environment"
+        - "--bootstrap-srv=true"
         - "--v=4"
         terminationMessagePolicy: FallbackToLogsOnError
+        securityContext:
+          privileged: true
         volumeMounts:
         - name: discovery
           mountPath: /run/etcd/
+        - name: data-dir
+          mountPath: /var/lib/etcd/
+        - name: certs
+          mountPath: /etc/ssl/etcd/
+
+        env:
+        - name: ETCD_DATA_DIR
+          value: "/var/lib/etcd"
+        - name: ETCD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+      containers:
       - name: generate-certs
         image: "__KUBE_CLIENT_AGENT__"
         command:
@@ -68,6 +84,8 @@ contents:
                 --commonname=system:etcd-metric:${ETCD_DNS_NAME} \
                 --ipaddrs=${ETCD_IPV4_ADDRESS} \
     
+        securityContext:
+          privileged: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - name: discovery
@@ -86,3 +104,6 @@ contents:
       - name: discovery
         hostPath:
           path: /run/etcd
+      - name: data-dir
+        hostPath:
+          path: /var/lib/etcd
