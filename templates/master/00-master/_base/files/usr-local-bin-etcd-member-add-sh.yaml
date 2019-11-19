@@ -35,7 +35,6 @@ contents:
     ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
     ETCD_CONFIG=$RUN_ENV
     ETCDCTL=$ASSET_DIR/bin/etcdctl
-    ETCD_VERSION=v3.3.10
     ETCD_DATA_DIR=/var/lib/etcd
     ETCD_STATIC_RESOURCES="${CONFIG_FILE_DIR}/static-pod-resources/etcd-member"
     

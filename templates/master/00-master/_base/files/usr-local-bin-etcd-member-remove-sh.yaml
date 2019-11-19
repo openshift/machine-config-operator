@@ -26,7 +26,6 @@ contents:
     ASSET_DIR=./assets
     ASSET_DIR_TMP="$ASSET_DIR/tmp"
     ETCDCTL=$ASSET_DIR/bin/etcdctl
-    ETCD_VERSION=v3.3.10
     ETCD_DATA_DIR=/var/lib/etcd
     CONFIG_FILE_DIR=/etc/kubernetes
 

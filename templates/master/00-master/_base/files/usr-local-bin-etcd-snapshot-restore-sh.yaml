@@ -33,7 +33,6 @@ contents:
     MANIFEST_STOPPED_DIR="${ASSET_DIR}/manifests-stopped"
     RUN_ENV=/run/etcd/environment
 
-    ETCD_VERSION=v3.3.10
     ETCDCTL="${ASSET_DIR}/bin/etcdctl"
     ETCD_DATA_DIR=/var/lib/etcd
     ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
