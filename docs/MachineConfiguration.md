@@ -94,8 +94,23 @@ Ignition config keys as well.
 ### KernelArguments
 
 This extends the host's kernel arguments.  Use this for e.g. [nosmt](https://access.redhat.com/solutions/rhel-smt).
-As of the time of this writing (OpenShift 4.2 development), you can set this field for "day 2" configuration
-once a cluster has been created.  However, it will cause problems to set this in [install-time MachineConfig objects](https://github.com/openshift/installer/blob/master/docs/user/customization.md#install-time-customization-for-machine-configuration).  Further, changing this will incur an extra reboot when adding workers to a cluster.  For more information, see [this issue](https://github.com/openshift/machine-config-operator/issues/798).  It is currently planned to fix this for OpenShift 4.3.
+As of OpenShift 4.3, you can set this field for either "day 1" (install time) or "day 2" configuration
+once a cluster has been created. See [installer docs](https://github.com/openshift/installer/blob/master/docs/user/customization.md#nodes-with-custom-kernel-arguments) on how to set them as install-time MachineConfig objects. For "day 2" operation you can also add them as a similar machineconfig, incurring a reboot.
+
+Example MachineConfig to change kernel log level:
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: "master"
+  name: 99-master-kargs-loglevel
+spec:
+  kernelArguments:
+    - 'loglevel=7'
+```
+
+Note that for 4.2 clusters this is only supported as a "day 2" operation.
 
 #### nosmt
 When a machine boots with `nosmt` Kernel Argument, it disables multi-threading on that host and the system will only utilize physical CPU cores. While applying `nosmt` on any node in the cluster, ensure that enough CPU resources are available to schedule all pods, otherwise it can lead to a degraded cluster. For example: a basic 3 master and 3 worker node cluster having 2 physical CPU cores on each node should be fine.
