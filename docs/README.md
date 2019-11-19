@@ -22,16 +22,16 @@ One way to view the MCO is to treat the operating system itself as "just another
 Kubernetes component" that you can inspect and manage with `oc`.
 
 The MCO uses [CoreOS Ignition](https://github.com/coreos/ignition) as a configuration
-format.  Operating system updates use [rpm-ostree](http://github.com/projectatomic/rpm-ostree), with ostree updates encapsulated inside a container image.  More information in [OSUpgrades.md](docs/OSUpgrades.md).
+format.  Operating system updates use [rpm-ostree](http://github.com/projectatomic/rpm-ostree), with ostree updates encapsulated inside a container image.  More information in [OSUpgrades.md](OSUpgrades.md).
 
 # Sub-components and design
 
 This one git repository generates 4 components in a cluster; the `machine-config-operator`
 pod manages the remaining 3 sub-components.  Here are links to design docs:
 
- - [machine-config-server](docs/MachineConfigServer.md)
- - [machine-config-controller](docs/MachineConfigController.md)
- - [machine-config-daemon](docs/MachineConfigDaemon.md)
+ - [machine-config-server](MachineConfigServer.md)
+ - [machine-config-controller](MachineConfigController.md)
+ - [machine-config-daemon](MachineConfigDaemon.md)
 
 # Interacting with the MCO
 
@@ -136,21 +136,21 @@ a single MC apply to multiple labels, inline file encoding, etc.
 # What to look at after creating a MachineConfig
 
 Once you create a MachineConfig fragment like the above, the controller will generate a new "rendered" version that will be used as a target.
-For more information, see [MachineConfiguration](docs/MachineConfiguration.md).
+For more information, see [MachineConfiguration](MachineConfiguration.md).
 
 In particular, you should look at `oc describe machineconfigpool` and `oc describe clusteroperator/machine-config` as noted above.
 
 # More information about OS updates
 
-The model implemented by the MCO is that the cluster controls the operating system.  OS updates are just another entry in the release image.  For more information, see [OSUpgrades.md](docs/OSUpgrades.md).
+The model implemented by the MCO is that the cluster controls the operating system.  OS updates are just another entry in the release image.  For more information, see [OSUpgrades.md](OSUpgrades.md).
 
 # Developing the MCO
 
-See [HACKING.md](docs/HACKING.md).
+See [HACKING.md](HACKING.md).
 
 # Frequently Asked Questions
 
-See [FAQ.md](docs/FAQ.md).
+See [FAQ.md](FAQ.md).
 
 # Security Response
 
