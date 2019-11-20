@@ -14,6 +14,9 @@ type TLSSecurityProfile struct {
 	// are found to be insecure.  Depending on precisely which ciphers are available to a process, the list may be
 	// reduced.
 	//
+	// Note that the Modern profile is currently not supported because it is not
+	// yet well adopted by common software libraries.
+	//
 	// +unionDiscriminator
 	// +optional
 	Type TLSProfileType `json:"type"`
@@ -33,16 +36,23 @@ type TLSSecurityProfile struct {
 	//     - ECDHE-RSA-AES256-GCM-SHA384
 	//     - ECDHE-ECDSA-CHACHA20-POLY1305
 	//     - ECDHE-RSA-CHACHA20-POLY1305
+	//     - DHE-RSA-AES128-GCM-SHA256
+	//     - DHE-RSA-AES256-GCM-SHA384
+	//     - DHE-RSA-CHACHA20-POLY1305
 	//     - ECDHE-ECDSA-AES128-SHA256
 	//     - ECDHE-RSA-AES128-SHA256
 	//     - ECDHE-ECDSA-AES128-SHA
 	//     - ECDHE-RSA-AES128-SHA
+	//     - ECDHE-ECDSA-AES256-SHA384
 	//     - ECDHE-RSA-AES256-SHA384
 	//     - ECDHE-ECDSA-AES256-SHA
 	//     - ECDHE-RSA-AES256-SHA
+	//     - DHE-RSA-AES128-SHA256
+	//     - DHE-RSA-AES256-SHA256
 	//     - AES128-GCM-SHA256
 	//     - AES256-GCM-SHA384
 	//     - AES128-SHA256
+	//     - AES256-SHA256
 	//     - AES128-SHA
 	//     - AES256-SHA
 	//     - DES-CBC3-SHA
@@ -67,6 +77,8 @@ type TLSSecurityProfile struct {
 	//     - ECDHE-RSA-AES256-GCM-SHA384
 	//     - ECDHE-ECDSA-CHACHA20-POLY1305
 	//     - ECDHE-RSA-CHACHA20-POLY1305
+	//     - DHE-RSA-AES128-GCM-SHA256
+	//     - DHE-RSA-AES256-GCM-SHA384
 	//   minTLSVersion: TLSv1.2
 	//
 	// +optional
@@ -83,6 +95,8 @@ type TLSSecurityProfile struct {
 	//     - TLS_AES_256_GCM_SHA384
 	//     - TLS_CHACHA20_POLY1305_SHA256
 	//   minTLSVersion: TLSv1.3
+	//
+	// NOTE: Currently unsupported.
 	//
 	// +optional
 	// +nullable
@@ -154,6 +168,8 @@ type TLSProfileSpec struct {
 	//
 	//   minTLSVersion: TLSv1.1
 	//
+	// NOTE: currently the highest minTLSVersion allowed is VersionTLS12
+	//
 	MinTLSVersion TLSProtocolVersion `json:"minTLSVersion"`
 }
 
@@ -168,13 +184,13 @@ type TLSProtocolVersion string
 
 const (
 	// VersionTLSv10 is version 1.0 of the TLS security protocol.
-	VersionTLS10 TLSProtocolVersion = "VersionTLSv10"
+	VersionTLS10 TLSProtocolVersion = "VersionTLS10"
 	// VersionTLSv11 is version 1.1 of the TLS security protocol.
-	VersionTLS11 TLSProtocolVersion = "VersionTLSv11"
+	VersionTLS11 TLSProtocolVersion = "VersionTLS11"
 	// VersionTLSv12 is version 1.2 of the TLS security protocol.
-	VersionTLS12 TLSProtocolVersion = "VersionTLSv12"
+	VersionTLS12 TLSProtocolVersion = "VersionTLS12"
 	// VersionTLSv13 is version 1.3 of the TLS security protocol.
-	VersionTLS13 TLSProtocolVersion = "VersionTLSv13"
+	VersionTLS13 TLSProtocolVersion = "VersionTLS13"
 )
 
 // TLSProfiles Contains a map of TLSProfileType names to TLSProfileSpec.
@@ -194,16 +210,23 @@ var TLSProfiles = map[TLSProfileType]*TLSProfileSpec{
 			"ECDHE-RSA-AES256-GCM-SHA384",
 			"ECDHE-ECDSA-CHACHA20-POLY1305",
 			"ECDHE-RSA-CHACHA20-POLY1305",
+			"DHE-RSA-AES128-GCM-SHA256",
+			"DHE-RSA-AES256-GCM-SHA384",
+			"DHE-RSA-CHACHA20-POLY1305",
 			"ECDHE-ECDSA-AES128-SHA256",
 			"ECDHE-RSA-AES128-SHA256",
 			"ECDHE-ECDSA-AES128-SHA",
 			"ECDHE-RSA-AES128-SHA",
+			"ECDHE-ECDSA-AES256-SHA384",
 			"ECDHE-RSA-AES256-SHA384",
 			"ECDHE-ECDSA-AES256-SHA",
 			"ECDHE-RSA-AES256-SHA",
+			"DHE-RSA-AES128-SHA256",
+			"DHE-RSA-AES256-SHA256",
 			"AES128-GCM-SHA256",
 			"AES256-GCM-SHA384",
 			"AES128-SHA256",
+			"AES256-SHA256",
 			"AES128-SHA",
 			"AES256-SHA",
 			"DES-CBC3-SHA",
@@ -221,6 +244,8 @@ var TLSProfiles = map[TLSProfileType]*TLSProfileSpec{
 			"ECDHE-RSA-AES256-GCM-SHA384",
 			"ECDHE-ECDSA-CHACHA20-POLY1305",
 			"ECDHE-RSA-CHACHA20-POLY1305",
+			"DHE-RSA-AES128-GCM-SHA256",
+			"DHE-RSA-AES256-GCM-SHA384",
 		},
 		MinTLSVersion: VersionTLS12,
 	},

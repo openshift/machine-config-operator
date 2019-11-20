@@ -26,10 +26,8 @@ contents:
       memory: 500Mi
     featureGates:
       RotateKubeletServerCertificate: true
-      ExperimentalCriticalPodAnnotation: true
       NodeDisruptionExclusion: true
       SupportPodPidsLimit: true
-      TLSSecurityProfile: true
       LegacyNodeRoleBehavior: false
       ServiceNodeExclusion: true
     serverTLSBootstrap: true
