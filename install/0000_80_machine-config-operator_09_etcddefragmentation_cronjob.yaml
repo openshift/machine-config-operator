@@ -1,0 +1,55 @@
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: etcd-defrag
+  namespace: openshift-etcd
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          hostNetwork: true
+          containers:
+            - command: ["/usr/bin/sh"]
+              terminationMessagePolicy: FallbackToLogsOnError
+              args:
+                - "-c"
+                - |
+                  set -euo pipefail
+
+                  export ETCDCTL_API=3
+                  export ETCDCTL_CACERT=/etc/ssl/etcd/ca.crt ETCDCTL_CERT=$(find /etc/ssl/ -name *peer*crt) ETCDCTL_KEY=$(find /etc/ssl/ -name *peer*key)
+                  export ETCDCTL_ENDPOINTS=https://127.0.0.1:2379;
+                  for m in $(etcdctl member list); do
+                    [[ $m =~ "2379" ]] && echo "Defragmenting endpoint $m" && etcdctl --endpoints=$m defrag
+                    sleep 10
+                  done
+              image: registry.svc.ci.openshift.org/openshift:etcd
+              name: etcd-defrag
+              volumeMounts:
+                - mountPath: /etc/ssl/etcd/
+                  name: certs
+          nodeSelector:
+            node-role.kubernetes.io/master: ""
+          restartPolicy: OnFailure
+          tolerations:
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/master
+              operator: Exists
+            - effect: NoExecute
+              key: node.kubernetes.io/not-ready
+              operator: Exists
+              tolerationSeconds: 120
+            - effect: NoExecute
+              key: node.kubernetes.io/unreachable
+              operator: Exists
+              tolerationSeconds: 120
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/etcd
+              operator: Exists
+          volumes:
+            - hostPath:
+                path: /etc/kubernetes/static-pod-resources/etcd-member
+              name: certs
+  schedule: "* * * */1 *"
