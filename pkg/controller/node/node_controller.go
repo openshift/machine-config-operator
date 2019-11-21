@@ -555,7 +555,11 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 			return nil, fmt.Errorf("node %s has both master role and custom role %s", node.Name, custom[0].Name)
 		}
 		// One custom role, let's use its pool
-		return []*mcfgv1.MachineConfigPool{custom[0], worker}, nil
+		pls := []*mcfgv1.MachineConfigPool{custom[0]}
+		if worker != nil {
+			pls = append(pls, worker)
+		}
+		return pls, nil
 	} else if master != nil {
 		// In the case where a node is both master/worker, have it live under
 		// the master pool. This occurs in CodeReadyContainers and general
