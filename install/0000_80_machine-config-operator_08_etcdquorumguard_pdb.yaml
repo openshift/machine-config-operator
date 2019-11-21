@@ -3,6 +3,8 @@ kind: PodDisruptionBudget
 metadata:
   namespace: openshift-machine-config-operator
   name: etcd-quorum-guard
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
 spec:
   maxUnavailable: 1
   selector:
