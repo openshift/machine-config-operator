@@ -43,6 +43,9 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform: "none",
 		res:      "",
+	}, {
+		platform: "vsphere",
+		res:      "vsphere",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)

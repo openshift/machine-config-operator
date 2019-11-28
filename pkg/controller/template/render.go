@@ -467,12 +467,10 @@ func etcdMetricCertCommand(cfg RenderConfig) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	switch cfg.Platform {
-	case platformAWS, platformAzure, platformOpenStack:
+	case platformAWS, platformAzure, platformOpenStack, platformVSphere:
 		return cfg.Platform, nil
 	case platformGCP:
 		return "gce", nil
-	case platformVSphere:
-		return "", nil // kubelet crash errors when provider set to VSphere right now
 	default:
 		return "", nil
 	}
