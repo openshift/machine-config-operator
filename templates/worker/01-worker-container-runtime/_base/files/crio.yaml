@@ -104,7 +104,7 @@ contents:
     conmon = "/usr/libexec/crio/conmon"
 
     # Cgroup setting for conmon
-    # conmon_cgroup = "system.slice"
+    conmon_cgroup = "pod"
 
     # Environment variable list for the conmon process, used for passing necessary
     # environment variables to conmon or the runtime.
