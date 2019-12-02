@@ -8,7 +8,7 @@ contents: |
   ConditionPathExists=/run/ostree-booted
   ConditionPathExists=/etc/pivot/image-pullspec
   ConditionPathExists=/var/lib/kubelet/config.json
-  After=ignition-firstboot-complete.service
+  ConditionPathExists=!/usr/local/bin/machine-config-daemon
   Before=machine-config-daemon-host.service
 
   [Service]
