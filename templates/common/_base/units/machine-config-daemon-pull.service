@@ -9,6 +9,10 @@ contents: |
   ConditionPathExists=/etc/pivot/image-pullspec
   ConditionPathExists=/var/lib/kubelet/config.json
   ConditionPathExists=!/usr/local/bin/machine-config-daemon
+  # Run after network is available
+  After=network-online.target
+  Wants=network-online.target
+  # Pivot should run after MCD image is pulled
   Before=machine-config-daemon-host.service
 
   [Service]
