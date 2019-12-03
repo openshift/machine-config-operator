@@ -267,6 +267,23 @@ vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_DNS {
         {{`+"`"+`{{ .Cluster.DNSVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
     }
 }
+
+{{`+"`"+`{{if .Cluster.APIProvisioningVIP}}`+"`"+`}}
+vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_PROVISION {
+    state BACKUP
+    interface {{`+"`"+`{{ .VRRPProvInterface }}`+"`"+`}}
+    virtual_router_id {{`+"`"+`{{ .Cluster.APIProvisioningVirtualRouterID }}`+"`"+`}}
+    priority 140
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`+"`"+`{{ .Cluster.Name }}`+"`"+`}}_api_provisioning_vip
+    }
+    virtual_ipaddress {
+        {{`+"`"+`{{ .Cluster.APIProvisioningVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.ProvVIPNetmask }}`+"`"+`}}
+    }
+}
+{{`+"`"+`{{end}}`+"`"+`}}
 `)
 
 func manifestsBaremetalKeepalivedConfTmplBytes() ([]byte, error) {
