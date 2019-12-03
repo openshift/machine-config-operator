@@ -16,6 +16,9 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
+  # Image is being pulled explicitly so that an empty /usr/local/bin/machine-config-daemon won't be
+  # created in case there was a network problem
+  ExecStart=/usr/bin/podman pull --authfile=/var/lib/kubelet/config.json '{{ .Images.setupEtcdEnvKey }}'
   ExecStart=/usr/bin/sh -c "/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon"
   ExecStart=/usr/bin/chmod +x /usr/local/bin/machine-config-daemon
   ExecStart=/usr/sbin/restorecon /usr/local/bin/machine-config-daemon
