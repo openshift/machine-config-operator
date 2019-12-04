@@ -34,7 +34,6 @@ var (
 		keepalivedImage           string
 		kubeCAFile                string
 		kubeClientAgentImage      string
-		clusterEtcdOperatorImage  string
 		mcoImage                  string
 		mdnsPublisherImage        string
 		oauthProxyImage           string
@@ -64,7 +63,6 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("etcd-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
 	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.clusterEtcdOperatorImage, "cluster-etcd-operator-image", "", "Image for Cluster Etcd Operator. An empty string here means the cluster boots without CEO.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
@@ -103,7 +101,6 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			Etcd:                bootstrapOpts.etcdImage,
 			InfraImage:          bootstrapOpts.infraImage,
 			KubeClientAgent:     bootstrapOpts.kubeClientAgentImage,
-			ClusterEtcdOperator: bootstrapOpts.clusterEtcdOperatorImage,
 			Keepalived:          bootstrapOpts.keepalivedImage,
 			Coredns:             bootstrapOpts.corednsImage,
 			MdnsPublisher:       bootstrapOpts.mdnsPublisherImage,
