@@ -547,6 +547,13 @@ func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc
 			return err
 		}
 
+		// if the finalizer is already set then skip
+		for _, finalizerName := range newcfg.Finalizers {
+			if finalizerName == mc.Name {
+				return nil
+			}
+		}
+
 		kcTmp := newcfg.DeepCopy()
 		kcTmp.Finalizers = append(kcTmp.Finalizers, mc.Name)
 
