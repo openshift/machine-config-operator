@@ -604,7 +604,7 @@ spec:
     name: IgnitionVersion
     type: string
   - JSONPath: .metadata.creationTimestamp
-    name: Created
+    name: Age
     type: date
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
@@ -1390,6 +1390,9 @@ spec:
     description: Total number of machines marked degraded (or unreconcilable)
     name: DegradedMachineCount
     type: number
+  - JSONPath: .metadata.creationTimestamp
+    name: Age
+    type: date
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
