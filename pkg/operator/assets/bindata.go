@@ -185,8 +185,8 @@ spec:
     - "/etc/coredns/Corefile"
     resources:
       requests:
-        cpu: 150m
-        memory: 1Gi
+        cpu: 100m
+        memory: 200Mi
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/coredns"
@@ -355,8 +355,8 @@ spec:
     - "--log-console"
     resources:
       requests:
-        cpu: 150m
-        memory: 1Gi
+        cpu: 100m
+        memory: 200Mi
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/keepalived"
