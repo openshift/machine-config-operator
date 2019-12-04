@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
-
 	"github.com/opencontainers/go-digest"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 const (
@@ -214,15 +214,19 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		imgid = container
 	}
 
-	// Clean up a previous container
-	podmanRemove(pivottypes.PivotName)
+	containerName := pivottypes.PivotNamePrefix + string(uuid.NewUUID())
 
 	// `podman mount` wants a container, so let's make create a dummy one, but not run it
 	var cidBuf []byte
-	cidBuf, err = runGetOut("podman", "create", "--net=none", "--name", pivottypes.PivotName, imgid)
+	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, imgid)
 	if err != nil {
 		return
 	}
+	defer func() {
+		// Kill our dummy container
+		podmanRemove(containerName)
+	}()
+
 	cid := strings.TrimSpace(string(cidBuf))
 	// Use the container ID to find its mount point
 	var mntBuf []byte
@@ -281,9 +285,6 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 	if err != nil {
 		return
 	}
-
-	// Kill our dummy container
-	podmanRemove(pivottypes.PivotName)
 
 	// By default, delete the image.
 	if !keep {
