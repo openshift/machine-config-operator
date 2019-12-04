@@ -70,8 +70,8 @@ contents:
           socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
         resources:
           requests:
-            cpu: 150m
-            memory: 1Gi
+            cpu: 100m
+            memory: 200Mi
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/keepalived"
