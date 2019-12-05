@@ -1,0 +1,13 @@
+name: "post-network-changes.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Refresh Network Manager after ignition changed settings
+  Before=kubelet.service
+
+  [Service]
+  ExecStart=systemctl restart NetworkManager
+  Type=oneshot
+
+  [Install]
+  WantedBy=multi-user.target
