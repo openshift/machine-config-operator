@@ -9,15 +9,14 @@ require (
 	github.com/Masterminds/goutils v1.1.0 // indirect
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.20.0+incompatible
-	github.com/ajeddeloh/yaml v0.0.0-20170912190910-6b94386aeefd // indirect
-	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/apparentlymart/go-cidr v1.0.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6 // indirect
 	github.com/containers/image v3.0.2+incompatible
 	github.com/containers/storage v1.13.4
-	github.com/coreos/container-linux-config-transpiler v0.9.0
+	github.com/coreos/fcct v0.2.0
 	github.com/coreos/ignition v0.33.0
+	github.com/coreos/ignition/v2 v2.0.1
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26
 	github.com/davecgh/go-spew v1.1.1
