@@ -32,6 +32,7 @@ import (
 
 const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+	defaultClusterEtcdOperatorImage             = "registry.svc.ci.openshift.org/openshift:cluster-etcd-operator"
 )
 
 type syncFunc struct {
@@ -115,6 +116,11 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	optrVersion, _ := optr.vStore.Get("operator")
 	if imgs.ReleaseVersion != optrVersion {
 		return fmt.Errorf("refusing to read images.json version %q, operator version %q", imgs.ReleaseVersion, optrVersion)
+	}
+
+	//TODO: hexfusion remove after cluster-etcd-operator deployed via CVO as Unmanaged
+	if imgs.ControllerConfigImages.ClusterEtcdOperator == defaultClusterEtcdOperatorImage {
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
 	}
 
 	// sync up CAs
