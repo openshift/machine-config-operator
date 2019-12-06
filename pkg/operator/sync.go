@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -119,6 +120,23 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 	//TODO: hexfusion remove after cluster-etcd-operator deployed via CVO as Unmanaged
 	imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+
+	obj, err := optr.etcdInformer.Lister().Get("cluster")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			glog.Errorf("etcd CR not found: %#v", err)
+			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+		}
+	}
+	etcd, ok := obj.(*operatorv1.Etcd)
+	if !ok {
+		glog.Errorf("unable to type cast to etcd CR")
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+	}
+	if etcd.Spec.ManagementState == operatorv1.Unmanaged {
+		glog.V(4).Info("etcd cluster in unmanaged")
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+	}
 
 	// sync up CAs
 	etcdCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-serving-ca", "ca-bundle.crt")
