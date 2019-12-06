@@ -867,6 +867,9 @@ rules:
 - apiGroups: ["operator.openshift.io"]
   resources: ["imagecontentsourcepolicies"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["operator.openshift.io"]
+  resources: ["etcds"]
+  verbs: ["get", "list", "watch"]
 `)
 
 func manifestsMachineconfigcontrollerClusterroleYamlBytes() ([]byte, error) {
