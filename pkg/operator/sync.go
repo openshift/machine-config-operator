@@ -117,6 +117,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return fmt.Errorf("refusing to read images.json version %q, operator version %q", imgs.ReleaseVersion, optrVersion)
 	}
 
+	//TODO: hexfusion remove after cluster-etcd-operator deployed via CVO as Unmanaged
+	imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+
 	// sync up CAs
 	etcdCA, err := optr.getCAsFromConfigMap("openshift-config", "etcd-serving-ca", "ca-bundle.crt")
 	if err != nil {
