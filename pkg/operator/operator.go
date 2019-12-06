@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	rbacinformersv1 "k8s.io/client-go/informers/rbac/v1"
@@ -79,6 +80,7 @@ type Operator struct {
 	clusterCmLister  corelisterv1.ConfigMapLister
 	proxyLister      configlistersv1.ProxyLister
 	oseKubeAPILister corelisterv1.ConfigMapLister
+	etcdInformer     informers.GenericInformer
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -95,6 +97,7 @@ type Operator struct {
 	clusterRoleBindingInformerSynced cache.InformerSynced
 	proxyListerSynced                cache.InformerSynced
 	oseKubeAPIListerSynced           cache.InformerSynced
+	clusterEtcdSynced                cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -126,6 +129,7 @@ func New(
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
+	etcdInformer informers.GenericInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -141,6 +145,7 @@ func New(
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
+		etcdInformer:  etcdInformer,
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
@@ -158,6 +163,7 @@ func New(
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
 		oseKubeAPIInformer.Informer(),
+		etcdInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -192,6 +198,7 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
+	optr.clusterEtcdSynced = etcdInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
@@ -237,6 +244,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 			optr.mcpListerSynced,
 			optr.ccListerSynced,
 			optr.mcListerSynced,
+			optr.clusterEtcdSynced,
 		) {
 			glog.Error("failed to sync caches")
 			return

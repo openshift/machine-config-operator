@@ -42,6 +42,7 @@ type ControllerContext struct {
 	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
+	EtcdInformer                                        informers.GenericInformer
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -86,6 +87,17 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
+	etcdInformer, err := operatorSharedInformer.ForResource(schema.GroupVersionResource{
+		Group:    "operator.openshift.io",
+		Version:  "v1",
+		Resource: "etcds",
+	})
+
+	if err != nil {
+		glog.Errorf("unable to get etcd informer %#v", err)
+		return nil
+	}
+
 	return &ControllerContext{
 		ClientBuilder:                                       cb,
 		NamespacedInformerFactory:                           sharedNamespacedInformers,
@@ -97,6 +109,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 		APIExtInformerFactory:                               apiExtSharedInformer,
 		ConfigInformerFactory:                               configSharedInformer,
 		OperatorInformerFactory:                             operatorSharedInformer,
+		EtcdInformer:                                        etcdInformer,
 		Stop:                                                stop,
 		InformersStarted:                                    make(chan struct{}),
 		ResyncPeriod:                                        resyncPeriod(),
