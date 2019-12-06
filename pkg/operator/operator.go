@@ -8,6 +8,8 @@ import (
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	opeartorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	operatorlisterv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
@@ -16,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/informers"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	rbacinformersv1 "k8s.io/client-go/informers/rbac/v1"
@@ -24,6 +25,7 @@ import (
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisterv1 "k8s.io/client-go/listers/apps/v1"
 	corelisterv1 "k8s.io/client-go/listers/core/v1"
+
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
@@ -80,7 +82,7 @@ type Operator struct {
 	clusterCmLister  corelisterv1.ConfigMapLister
 	proxyLister      configlistersv1.ProxyLister
 	oseKubeAPILister corelisterv1.ConfigMapLister
-	etcdInformer     informers.GenericInformer
+	etcdLister       operatorlisterv1.EtcdLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -97,7 +99,7 @@ type Operator struct {
 	clusterRoleBindingInformerSynced cache.InformerSynced
 	proxyListerSynced                cache.InformerSynced
 	oseKubeAPIListerSynced           cache.InformerSynced
-	clusterEtcdSynced                cache.InformerSynced
+	etcdSynced                       cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -129,7 +131,7 @@ func New(
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
-	etcdInformer informers.GenericInformer,
+	etcdInformer opeartorv1.EtcdInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -145,7 +147,6 @@ func New(
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
-		etcdInformer:  etcdInformer,
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
@@ -198,7 +199,8 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
-	optr.clusterEtcdSynced = etcdInformer.Informer().HasSynced
+	optr.etcdLister = etcdInformer.Lister()
+	optr.etcdSynced = etcdInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
@@ -244,7 +246,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 			optr.mcpListerSynced,
 			optr.ccListerSynced,
 			optr.mcListerSynced,
-			optr.clusterEtcdSynced,
+			optr.etcdSynced,
 		) {
 			glog.Error("failed to sync caches")
 			return

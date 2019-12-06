@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
+	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
@@ -42,7 +43,7 @@ type ControllerContext struct {
 	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
-	EtcdInformer                                        informers.GenericInformer
+	EtcdInformer                                        operatorv1.EtcdInformer
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -87,16 +88,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
-	etcdInformer, err := operatorSharedInformer.ForResource(schema.GroupVersionResource{
-		Group:    "operator.openshift.io",
-		Version:  "v1",
-		Resource: "etcds",
-	})
-
-	if err != nil {
-		glog.Errorf("unable to get etcd informer %#v", err)
-		return nil
-	}
+	etcdInformer := operatorSharedInformer.Operator().V1().Etcds()
 
 	return &ControllerContext{
 		ClientBuilder:                                       cb,

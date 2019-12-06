@@ -97,7 +97,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if optr.inClusterBringup {
 		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
-		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
+		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced, optr.etcdSynced) {
 			return errors.New("failed to sync caches for informers")
 		}
 		glog.V(4).Info("Finished inClusterBringup informers cache sync")
@@ -208,7 +208,9 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 
 	//TODO: alaypatel07 remove after cluster-etcd-operator deployed via CVO as Managed
-	optr.setEtcdOperatorImage(&imgs)
+	if err = optr.setEtcdOperatorImage(&imgs); err != nil {
+		glog.Errorf("error setting etcd operator images: %#v", err)
+	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.EtcdCAData = etcdCA
@@ -742,30 +744,25 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	return infra, network, proxy, nil
 }
 
-func (optr *Operator) setEtcdOperatorImage(imgs *Images) {
-	obj, err := optr.etcdInformer.Lister().Get("cluster")
+func (optr *Operator) setEtcdOperatorImage(imgs *Images) error {
+	etcd, err := optr.etcdLister.Get("cluster")
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			glog.Errorf("etcd CR not found: %#v", err)
 			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-			return
+			// if the resource is not found, i.e. it is not created by CVO
+			// which means cluster-etcd-operator images is not part of CVO
+			return nil
 		}
-		glog.Errorf("error getting etcd CR: %#v", err)
 		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-		return
+		return fmt.Errorf("error getting etcd CR: %#v", err)
 	}
 
-	if etcd, ok := obj.(*operatorv1.Etcd); ok {
-		if etcd.Spec.ManagementState == operatorv1.Unmanaged {
-			glog.V(4).Info("etcd cluster in unmanaged")
-			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-			return
-		}
-		return
+	if etcd.Spec.ManagementState == operatorv1.Unmanaged {
+		glog.V(4).Info("etcd cluster in unmanaged")
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+		return nil
 	}
-	glog.Errorf("unable to typecast obj to etcd CR")
-	imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-	return
+	return nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {

@@ -83,6 +83,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.APIExtInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
 		go controller.Run(2, ctrlctx.Stop)
