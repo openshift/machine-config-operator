@@ -383,7 +383,7 @@ func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 
 func etcdServerCertCommand(cfg RenderConfig) (interface{}, error) {
 	commands := []string{}
-	if cfg.Images[ClusterEtcdOperatorImageKey] == "" {
+	if !cfg.ClusterEtcdOperatorEnabled {
 		serverCertDNS, err := etcdServerCertDNSNames(cfg)
 		if err != nil {
 			return nil, err
@@ -411,7 +411,7 @@ func etcdServerCertCommand(cfg RenderConfig) (interface{}, error) {
 
 func etcdPeerCertCommand(cfg RenderConfig) (interface{}, error) {
 	commands := []string{}
-	if cfg.Images[ClusterEtcdOperatorImageKey] == "" {
+	if !cfg.ClusterEtcdOperatorEnabled {
 		peerCertDNS, err := etcdPeerCertDNSNames(cfg)
 		if err != nil {
 			return nil, err
@@ -439,7 +439,7 @@ func etcdPeerCertCommand(cfg RenderConfig) (interface{}, error) {
 
 func etcdMetricCertCommand(cfg RenderConfig) (interface{}, error) {
 	commands := []string{}
-	if cfg.Images[ClusterEtcdOperatorImageKey] == "" {
+	if !cfg.ClusterEtcdOperatorEnabled {
 		metricCertDNS, err := etcdServerCertDNSNames(cfg)
 		if err != nil {
 			return nil, err

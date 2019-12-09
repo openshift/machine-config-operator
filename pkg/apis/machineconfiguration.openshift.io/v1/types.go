@@ -95,6 +95,9 @@ type ControllerConfigSpec struct {
 	// images is map of images that are used by the controller to render templates under ./templates/
 	Images map[string]string `json:"images"`
 
+	// ClusterEtcdOperatorEnabled is used to determine if etcd is managed by the operator or not
+	ClusterEtcdOperatorEnabled bool `json:"clusterEtcdOperatorEnabled"`
+
 	// osImageURL is the location of the container image that contains the OS update payload.
 	// Its value is taken from the data.osImageURL field on the machine-config-osimageurl ConfigMap.
 	OSImageURL string `json:"osImageURL"`

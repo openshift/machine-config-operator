@@ -68,6 +68,7 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 
 	setBytesIfSet(modified, &existing.EtcdCAData, required.EtcdCAData)
 	setBytesIfSet(modified, &existing.EtcdMetricCAData, required.EtcdMetricCAData)
+	setBool(modified, &existing.ClusterEtcdOperatorEnabled, required.ClusterEtcdOperatorEnabled)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
 

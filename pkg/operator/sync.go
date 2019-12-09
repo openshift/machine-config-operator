@@ -207,9 +207,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		spec.CloudProviderConfig = cc
 	}
 
-	//TODO: alaypatel07 remove after cluster-etcd-operator deployed via CVO as Managed
-	if err = optr.setEtcdOperatorImage(&imgs); err != nil {
-		glog.Errorf("error setting etcd operator images: %#v", err)
+	spec.ClusterEtcdOperatorEnabled, err = optr.isClusterEtcdOperatorEnabled()
+	if err != nil {
+		return err
+	}
+	if !spec.ClusterEtcdOperatorEnabled {
+		imgs.ClusterEtcdOperator = ""
 	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
@@ -744,30 +747,28 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	return infra, network, proxy, nil
 }
 
-func (optr *Operator) setEtcdOperatorImage(imgs *Images) error {
+func (optr *Operator) isClusterEtcdOperatorEnabled() (bool, error) {
 	if optr.etcdLister == nil {
 		// if the resource is not found, i.e. it is not created by CVO
 		// which means cluster-etcd-operator images is not part of CVO
-		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
 		glog.V(4).Info("etcd cr not found")
-		return nil
+		return false, nil
 	}
 	etcd, err := optr.etcdLister.Get("cluster")
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-			return nil
+			glog.Errorf("etcd CR not found: %#v", err)
+			return false, nil
 		}
-		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-		return fmt.Errorf("error getting etcd CR: %#v", err)
+		glog.Errorf("error getting etcd CR: %#v", err)
+		return false, err
 	}
 
 	if etcd.Spec.ManagementState == operatorv1.Unmanaged {
 		glog.V(4).Info("etcd cluster in unmanaged")
-		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-		return nil
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {

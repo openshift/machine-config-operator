@@ -9,6 +9,7 @@ import (
 	"github.com/golang/glog"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	configscheme "github.com/openshift/client-go/config/clientset/versioned/scheme"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,7 +31,7 @@ func RenderBootstrap(
 	clusterConfigConfigMapFile,
 	infraFile, networkFile,
 	cloudConfigFile,
-	etcdCAFile, etcdMetricCAFile, rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
+	etcdCAFile, etcdMetricCAFile, rootCAFile, etcdConfigFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
 	destinationDir string,
 ) error {
@@ -47,6 +48,9 @@ func RenderBootstrap(
 	}
 	if kubeAPIServerServingCA != "" {
 		files = append(files, kubeAPIServerServingCA)
+	}
+	if etcdConfigFile != "" {
+		files = append(files, etcdConfigFile)
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -130,6 +134,12 @@ func RenderBootstrap(
 		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
 	}
 
+	if isClusterEtcdOperatorEnabled(etcdConfigFile, filesData) {
+		spec.ClusterEtcdOperatorEnabled = true
+	} else {
+		spec.ClusterEtcdOperatorEnabled = false
+		imgs.ClusterEtcdOperator = ""
+	}
 	spec.EtcdCAData = filesData[etcdCAFile]
 	spec.EtcdMetricCAData = filesData[etcdMetricCAFile]
 	spec.RootCAData = bundle
@@ -271,4 +281,23 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	}
 
 	return manifests
+}
+
+func isClusterEtcdOperatorEnabled(etcdConfigFile string, filesData map[string][]byte) bool {
+	// Todo: alaypatel07 this should really be EtcdConfig CR.
+	if etcdConfigFile == "" {
+		glog.Info("etcdConfigFile empty")
+		return false
+	}
+	etcdObj, err := runtime.Decode(scheme.Codecs.UniversalDecoder(operatorv1.SchemeGroupVersion), filesData[etcdConfigFile])
+	if err != nil {
+		glog.Errorf("unable to decode *operatorv1.Etcd: %#v", err)
+		return false
+	}
+	etcd, ok := etcdObj.(*operatorv1.Etcd)
+	if !ok {
+		glog.Errorf("expected *operatorv1.Etcd found %T", etcdObj)
+		return false
+	}
+	return etcd.Spec.ManagementState == operatorv1.Managed
 }

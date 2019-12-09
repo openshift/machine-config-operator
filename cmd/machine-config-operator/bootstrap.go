@@ -26,6 +26,7 @@ var (
 		destinationDir            string
 		etcdCAFile                string
 		etcdImage                 string
+		etcdConfigFile            string
 		etcdMetricCAFile          string
 		haproxyImage              string
 		imagesConfigMapFile       string
@@ -64,6 +65,7 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("etcd-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
 	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdConfigFile, "etcd-config-file", "", "Etcd Config file.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.clusterEtcdOperatorImage, "cluster-etcd-operator-image", "", "Image for Cluster Etcd Operator. An empty string here means the cluster boots without CEO.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
@@ -118,7 +120,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.configFile,
 		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
 		bootstrapOpts.cloudConfigFile,
-		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
+		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.etcdConfigFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		&imgs,
 		bootstrapOpts.destinationDir,
 	); err != nil {

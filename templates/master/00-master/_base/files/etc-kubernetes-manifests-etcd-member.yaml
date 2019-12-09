@@ -19,7 +19,7 @@ contents:
         - "run"
         - "--discovery-srv={{.EtcdDiscoveryDomain}}"
         - "--output-file=/run/etcd/environment"
-        - "--bootstrap-srv={{if .Images.clusterEtcdOperatorImageKey}}{{false}}{{else}}{{true}}{{end}}"
+        - "--bootstrap-srv={{if .ClusterEtcdOperatorEnabled}}{{false}}{{else}}{{true}}{{end}}"
         - "--v=4"
         securityContext:
           privileged: true
@@ -30,7 +30,7 @@ contents:
           mountPath: /var/lib/etcd/
         - name: certs
           mountPath: /etc/ssl/etcd/
-    {{if .Images.clusterEtcdOperatorImageKey}}
+    {{if .ClusterEtcdOperatorEnabled}}
         - name: sa
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount/
     {{end}}
@@ -42,7 +42,7 @@ contents:
             fieldRef:
               fieldPath: metadata.name
       - name: certs
-        image: {{if .Images.clusterEtcdOperatorImageKey }}"{{.Images.clusterEtcdOperatorImageKey}}"{{else}}"{{.Images.kubeClientAgentImageKey}}"{{end}}
+        image: {{if .ClusterEtcdOperatorEnabled}}"{{.Images.clusterEtcdOperatorImageKey}}"{{else}}"{{.Images.kubeClientAgentImageKey}}"{{end}}
         command:
         - /bin/sh
         - -c
@@ -74,11 +74,11 @@ contents:
           mountPath: /etc/ssl/etcd/
         - name: kubeconfig
           mountPath: /etc/kubernetes/kubeconfig
-   {{if .Images.clusterEtcdOperatorImageKey}}
+   {{if .ClusterEtcdOperatorEnabled}}
         - name: sa
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount/
    {{end}}
-   {{if .Images.clusterEtcdOperatorImageKey}}
+   {{if .ClusterEtcdOperatorEnabled}}
       - name: membership
         image: "{{.Images.etcdKey}}"
         command:
@@ -238,7 +238,7 @@ contents:
       - name: conf
         hostPath:
           path: /etc/etcd
-   {{if .Images.clusterEtcdOperatorImageKey}}
+   {{if .ClusterEtcdOperatorEnabled}}
       - name: sa
         hostPath:
           path: /etc/kubernetes/static-pod-resources/etcd-member/secrets/kubernetes.io/sa-token
