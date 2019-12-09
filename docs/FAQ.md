@@ -23,3 +23,17 @@ Ignition JSON directly.
 Today, the MCO only blocks on upgrades of control plane nodes.  `oc get clusterversion` effectively reports the version of the control plane. 
 
 To watch rollout of worker nodes, you should look at `oc describe machineconfigpool/worker` (as well as other custom pools, if any).
+
+## Q: How does this relate to Machine API?
+
+There are two fundamental operators in OpenShift 4 that both include "machine" in their name:
+
+The Machine Config Operator (this repository) manages code and configuration "inside" the OS (and targets specifcally RHCOS).
+
+The [Machine API Operator](https://github.com/openshift/machine-api-operator) manages "machine" objects which represent underlying IaaS virtual ([or physical](https://github.com/openshift-metal3)) machines.
+
+In other words, they operate on fundamentally different levels, but they do interact.  For example, both currently will drain a node.  The MCO will drain when it's making changes, and machine API will drain when a machine object is deleted and has an associated node.
+
+Another linkage between the two is booting an instance; in IaaS scenarios the "user data" field (managed by machineAPI) will contain a "pointer Ignition config" that points to the Machine Config Server.
+
+However, these repositories have distinct teams.  Also, machineAPI is a derivative of a Kubernetes upstream project "cluster API", whereas the MCO is not.
