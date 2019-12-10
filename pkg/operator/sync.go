@@ -97,7 +97,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if optr.inClusterBringup {
 		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
-		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced, optr.etcdSynced) {
+		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
 			return errors.New("failed to sync caches for informers")
 		}
 		glog.V(4).Info("Finished inClusterBringup informers cache sync")
@@ -745,12 +745,17 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 }
 
 func (optr *Operator) setEtcdOperatorImage(imgs *Images) error {
+	if optr.etcdLister == nil {
+		// if the resource is not found, i.e. it is not created by CVO
+		// which means cluster-etcd-operator images is not part of CVO
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+		glog.V(4).Info("etcd cr not found")
+		return nil
+	}
 	etcd, err := optr.etcdLister.Get("cluster")
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-			// if the resource is not found, i.e. it is not created by CVO
-			// which means cluster-etcd-operator images is not part of CVO
 			return nil
 		}
 		imgs.ControllerConfigImages.ClusterEtcdOperator = ""

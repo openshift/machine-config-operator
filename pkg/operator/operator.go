@@ -164,7 +164,6 @@ func New(
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
 		oseKubeAPIInformer.Informer(),
-		etcdInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -199,8 +198,17 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
-	optr.etcdLister = etcdInformer.Lister()
-	optr.etcdSynced = etcdInformer.Informer().HasSynced
+	if etcdInformer != nil {
+		optr.etcdLister = etcdInformer.Lister()
+		optr.etcdSynced = etcdInformer.Informer().HasSynced
+		etcdInformer.Informer().AddEventHandler(optr.eventHandler())
+	} else {
+		optr.etcdLister = nil
+		optr.etcdSynced = func() bool {
+			// if etcd is not part of CVO it will return true immediately
+			return true
+		}
+	}
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
@@ -235,7 +243,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.clusterRoleBindingInformerSynced,
 		optr.networkListerSynced,
 		optr.proxyListerSynced,
-		optr.oseKubeAPIListerSynced) {
+		optr.oseKubeAPIListerSynced,
+		optr.etcdSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}
@@ -246,7 +255,6 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 			optr.mcpListerSynced,
 			optr.ccListerSynced,
 			optr.mcListerSynced,
-			optr.etcdSynced,
 		) {
 			glog.Error("failed to sync caches")
 			return

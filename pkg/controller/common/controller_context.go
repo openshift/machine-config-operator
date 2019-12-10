@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
+	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -88,7 +89,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
-	etcdInformer := operatorSharedInformer.Operator().V1().Etcds()
+	etcdInformer := getEtcdInformer(operatorClient, operatorSharedInformer)
 
 	return &ControllerContext{
 		ClientBuilder:                                       cb,
@@ -106,4 +107,19 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 		InformersStarted:                                    make(chan struct{}),
 		ResyncPeriod:                                        resyncPeriod(),
 	}
+}
+
+func getEtcdInformer(operatorClient operatorclientset.Interface, operatorSharedInformer operatorinformers.SharedInformerFactory) operatorv1.EtcdInformer {
+	operatorGroups, err := operatorClient.Discovery().ServerResourcesForGroupVersion("operator.openshift.io/v1")
+	if err != nil {
+		glog.Errorf("unable to get operatorGroups: %#v", err)
+		return nil
+	}
+
+	for _, o := range operatorGroups.APIResources {
+		if o.Kind == "Etcd" {
+			return operatorSharedInformer.Operator().V1().Etcds()
+		}
+	}
+	return nil
 }
