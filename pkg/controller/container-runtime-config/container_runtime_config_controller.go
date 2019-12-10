@@ -698,6 +698,11 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 					UID:        imgcfg.UID,
 				},
 			}
+			// Append image owner refs for must gather
+			icspOwnerRefs := gatherOwnerRefs(icspRules)
+			if len(icspOwnerRefs) > 0 {
+				mc.ObjectMeta.OwnerReferences = append(mc.ObjectMeta.OwnerReferences, icspOwnerRefs...)
+			}
 			// Create or Update, on conflict retry
 			if isNotFound {
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
@@ -788,6 +793,11 @@ func RunImageBootstrap(templateDir string, controllerConfig *v1.ControllerConfig
 				Kind:       "Image",
 				// Name and UID is not set, the first run of syncImageConfig will overwrite these values.
 			},
+		}
+		// Append image owner refs for must gather
+		icspOwnerRefs := gatherOwnerRefs(icspRules)
+		if len(icspOwnerRefs) > 0 {
+			mc.ObjectMeta.OwnerReferences = append(mc.ObjectMeta.OwnerReferences, icspOwnerRefs...)
 		}
 		res = append(res, mc)
 	}

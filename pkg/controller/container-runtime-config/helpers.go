@@ -22,6 +22,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -350,4 +351,21 @@ func getValidBlockedRegistries(clusterVersionStatus *apicfgv1.ClusterVersionStat
 		blockedRegs = append(blockedRegs, reg)
 	}
 	return blockedRegs, nil
+}
+
+func gatherOwnerRefs(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) []metav1.OwnerReference {
+	ownerRefs := []metav1.OwnerReference{}
+	if len(icspRules) == 0 {
+		return ownerRefs
+	}
+	for _, icspRule := range icspRules {
+		ownerRef := metav1.OwnerReference{
+			APIVersion: icspRule.APIVersion,
+			Kind:       icspRule.Kind,
+			Name:       icspRule.Name,
+			UID:        icspRule.UID,
+		}
+		ownerRefs = append(ownerRefs, ownerRef)
+	}
+	return ownerRefs
 }
