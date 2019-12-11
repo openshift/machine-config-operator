@@ -37,3 +37,15 @@ In other words, they operate on fundamentally different levels, but they do inte
 Another linkage between the two is booting an instance; in IaaS scenarios the "user data" field (managed by machineAPI) will contain a "pointer Ignition config" that points to the Machine Config Server.
 
 However, these repositories have distinct teams.  Also, machineAPI is a derivative of a Kubernetes upstream project "cluster API", whereas the MCO is not.
+
+## Q: If I change something manually on the host, will the MCO revert it?
+
+Usually, no.  Today, the MCO does not try to claim "exclusive" ownership over everything on the host system; it's just not feasible to do.
+
+If for example you write a daemonset that writes a custom systemd unit into e.g. `/etc/systemd/system`, or do so manually via `ssh`/`oc debug node` - OS upgrades will preserve that change (via libostree), and the MCO will not revert it.  The MCO/MCD only changes files included in `MachineConfigs`, there is no code to look for "unknown" files.
+
+Another case today is that the SDN operator will extract some binaries from its container image and drop them in `/opt`.
+
+If a file that *is* managed by MachineConfig is changed, the MCD will detect this and go degraded.  We go degraded rather than overwrite in order to avoid [reboot loops](https://github.com/openshift/machine-config-operator/pull/245).
+
+In the future, we would like to harden things more so that these things are more controlled, and ideally avoid having any persistent "unmanaged" state.  But it will take significant work to get there; and the status quo means that we can support other operators such as SDN (and e.g. [nmstate](https://github.com/nmstate/kubernetes-nmstate)) that may control parts of the host without the MCO's awareness.
