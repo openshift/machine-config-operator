@@ -157,11 +157,10 @@ contents:
     # ]
 
     # Path to OCI hooks directories for automatically executed hooks.
-    # Note: the default is just /usr/share/containers/oci/hooks.d, but /usr is immutable in RHCOS
-    # so we add /etc/containers/oci/hooks.d as well
+    # Note: the default is /usr/share/containers/oci/hooks.d, but /usr is immutable in RHCOS
+    # so we use /etc/containers/oci/hooks.d instead
     hooks_dir = [
         "/etc/containers/oci/hooks.d",
-        "/usr/share/containers/oci/hooks.d",
     ]
 
     # List of default mounts for each container. **Deprecated:** this option will
