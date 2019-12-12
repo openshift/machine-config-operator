@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"sync"
 	"syscall"
 	"time"
@@ -104,6 +105,19 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	if err := h.Start(); err != nil {
 		return fmt.Errorf("failed to start heath checker: %v", err)
 	}
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for sig := range c {
+			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
+			if err := exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run(); err != nil {
+				glog.Infof("Failed to terminate gcp routes service on signal: %s", err)
+			} else {
+				break
+			}
+		}
+	}()
 
 	for {
 		select {
