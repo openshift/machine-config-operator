@@ -38,7 +38,7 @@ contents:
       if [ -f "$ASSET_DIR/backup/etcd-ca-bundle.crt" ] && [ -f "$ASSET_DIR/backup/etcd-client.crt" ] && [ -f "$ASSET_DIR/backup/etcd-client.key" ]; then
          echo "etcd client certs already backed up and available $ASSET_DIR/backup/"
       else
-        STATIC_DIRS=($(ls -d "${CONFIG_FILE_DIR}"/static-pod-resources/kube-apiserver-pod-[0-9]*))
+        STATIC_DIRS=($(ls -td "${CONFIG_FILE_DIR}"/static-pod-resources/kube-apiserver-pod-[0-9]*))
         if [ "$?" -ne 0 ]; then
           echo "error finding static-pod-resources"
           exit 1
@@ -59,6 +59,17 @@ contents:
         echo "backup failed: client certs not found"
         exit 1
       fi
+    }
+
+    #backup latest static pod resources for kube-apiserver
+    backup_latest_kube_static_resources() {
+      echo "Trying to backup latest static pod resources.."
+      LATEST_STATIC_POD_DIR=$(ls -vd "${CONFIG_FILE_DIR}"/static-pod-resources/kube-apiserver-pod-[0-9]* | tail -1) || true
+      if [ -z "$LATEST_STATIC_POD_DIR" ]; then
+          echo "error finding static-pod-resources"
+          exit 1
+      fi
+      tar -cpf $BACKUP_TAR_FILE -C ${CONFIG_FILE_DIR} ${LATEST_STATIC_POD_DIR#$CONFIG_FILE_DIR/}
     }
 
     # backup current etcd-member pod manifest
@@ -148,6 +159,18 @@ contents:
       fi
     }
 
+    remove_kube_static_resources() {
+      # Only remove those directories that are greater or equal to the backed up revision.
+      REVISION=$(tar tf $BACKUP_FILE | grep -oP "(?<=static-pod-resources/kube-apiserver-)pod-[0-9]*" | head -1) || true
+      KUBE_DIRS=$(ls -vd ${CONFIG_FILE_DIR}/static-pod-resources/kube-apiserver-pod-[0-9]* | awk -v REV="${REVISION}$" '$0 ~ REV {seen=1} seen { print}') || true
+      if [ ! -z "${KUBE_DIRS}" ]; then
+         echo "Removing newer static pod resources..."
+         rm -rf ${KUBE_DIRS}
+      else
+         echo "remove_kube_static_resources: newer revisions of kube-apiserver-pod static resources are not found."
+      fi
+    }
+
     restore_snapshot() {
       if [ ! -f "$SNAPSHOT_FILE" ]; then
         echo "Snapshot file not found, restore failed: $SNAPSHOT_FILE."
@@ -162,6 +185,10 @@ contents:
         --skip-hash-check=true \
         --initial-advertise-peer-urls https://${ETCD_IPV4_ADDRESS}:2380 \
         --data-dir $ETCD_DATA_DIR
+    }
+
+    restore_kube_static_resources() {
+      tar -C ${CONFIG_FILE_DIR} -xzf $BACKUP_FILE static-pod-resources
     }
 
     patch_manifest() {
@@ -401,3 +428,4 @@ contents:
       fi
       echo "$ETCD_NAME"
     }
+
