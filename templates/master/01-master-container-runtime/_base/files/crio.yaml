@@ -161,7 +161,6 @@ contents:
     # so we add /etc/containers/oci/hooks.d as well
     hooks_dir = [
         "/etc/containers/oci/hooks.d",
-        "/usr/share/containers/oci/hooks.d",
     ]
 
     # List of default mounts for each container. **Deprecated:** this option will
