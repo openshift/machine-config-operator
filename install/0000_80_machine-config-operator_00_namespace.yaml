@@ -4,6 +4,7 @@ metadata:
   name: openshift-machine-config-operator
   annotations:
     openshift.io/node-selector: ""
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
   labels:
     name: openshift-machine-config-operator
     openshift.io/run-level: "1"
@@ -15,6 +16,7 @@ metadata:
   name: openshift-openstack-infra
   annotations:
     openshift.io/node-selector: ""
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
   labels:
     name: openshift-openstack-infra
     openshift.io/run-level: "1"
@@ -25,6 +27,7 @@ metadata:
   name: openshift-kni-infra
   annotations:
     openshift.io/node-selector: ""
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
   labels:
     name: openshift-kni-infra
     openshift.io/run-level: "1"
@@ -35,6 +38,7 @@ metadata:
   name: openshift-ovirt-infra
   annotations:
     openshift.io/node-selector: ""
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
   labels:
     name: openshift-ovirt-infra
     openshift.io/run-level: "1"

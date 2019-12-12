@@ -3,6 +3,8 @@ kind: ConfigMap
 metadata:
   name: machine-config-osimageurl
   namespace: openshift-machine-config-operator
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
 data:
   # The OS payload, managed by the daemon + pivot + rpm-ostree
   # https://github.com/openshift/machine-config-operator/issues/183

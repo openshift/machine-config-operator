@@ -3,6 +3,8 @@ kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: mcoconfigs.machineconfiguration.openshift.io
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
 spec:
   # group name to use for REST API: /apis/<group>/<version>
   group: machineconfiguration.openshift.io

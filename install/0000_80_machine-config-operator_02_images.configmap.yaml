@@ -3,6 +3,8 @@ kind: ConfigMap
 metadata:
   name: machine-config-operator-images
   namespace: openshift-machine-config-operator
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
 data:
   images.json: >
     {
