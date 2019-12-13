@@ -98,7 +98,15 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 
 // GenerateMachineConfigsForRole creates MachineConfigs for the role provided
 func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir string) ([]*mcfgv1.MachineConfig, error) {
-	path := filepath.Join(templateDir, role)
+	rolePath := role
+	//nolint:goconst
+	if role != "worker" && role != "master" {
+		// custom pools are only allowed to be worker's children
+		// and can reuse the worker templates
+		rolePath = "worker"
+	}
+
+	path := filepath.Join(templateDir, rolePath)
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
