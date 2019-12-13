@@ -179,7 +179,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	unexportedEnv := map[string]string{
 		// TODO This can actually be IPv6, so we should rename this ...
 		"IPV4_ADDRESS":         setupEnv.etcdIP,
-		"ESCAPED_IP_ADDR":      escapedIP,
+		"ESCAPED_IP_ADDRESS":   escapedIP,
 		"ESCAPED_ALL_IPS":      escapedAllIPs,
 		"LOCALHOST_IP":         localhostIP,
 		"ESCAPED_LOCALHOST_IP": escapedLocalhostIP,
