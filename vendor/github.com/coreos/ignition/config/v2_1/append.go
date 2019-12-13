@@ -64,11 +64,7 @@ func appendStruct(vOld, vNew reflect.Value) reflect.Value {
 		case reflect.Slice:
 			vfRes.Set(reflect.AppendSlice(vfOld, vfNew))
 		default:
-			if vfNew.Kind() == reflect.Ptr && vfNew.IsNil() {
-				vfRes.Set(vfOld)
-			} else {
-				vfRes.Set(vfNew)
-			}
+			vfRes.Set(vfNew)
 		}
 	}
 

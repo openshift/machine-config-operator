@@ -33,14 +33,7 @@ func validateURL(s string) error {
 	}
 
 	switch u.Scheme {
-	case "http", "https", "oem", "tftp":
-		return nil
-	case "s3":
-		if v, ok := u.Query()["versionId"]; ok {
-			if len(v) == 0 || v[0] == "" {
-				return errors.ErrInvalidS3ObjectVersionId
-			}
-		}
+	case "http", "https", "oem", "tftp", "s3":
 		return nil
 	case "data":
 		if _, err := dataurl.DecodeString(s); err != nil {

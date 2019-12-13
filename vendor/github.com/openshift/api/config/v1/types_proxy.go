@@ -12,7 +12,6 @@ import (
 type Proxy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
 	// Spec holds user-settable values for the proxy configuration
 	// +kubebuilder:validation:Required
 	// +required
@@ -84,7 +83,7 @@ type ProxyStatus struct {
 
 type ProxyList struct {
 	metav1.TypeMeta `json:",inline"`
+	// Standard object's metadata.
 	metav1.ListMeta `json:"metadata"`
-
-	Items []Proxy `json:"items"`
+	Items           []Proxy `json:"items"`
 }

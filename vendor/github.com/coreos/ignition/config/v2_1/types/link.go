@@ -1,4 +1,4 @@
-// Copyright 2016 CoreOS, Inc.
+// Copyright 2017 CoreOS, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,31 +15,19 @@
 package types
 
 import (
-	"net/url"
-
-	"github.com/coreos/ignition/config/shared/errors"
-	"github.com/vincent-petithory/dataurl"
+	"github.com/coreos/ignition/config/validate/report"
 )
 
-func validateURL(s string) error {
-	// Empty url is valid, indicates an empty file
-	if s == "" {
-		return nil
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return errors.ErrInvalidUrl
-	}
-
-	switch u.Scheme {
-	case "http", "https", "oem", "tftp", "s3":
-		return nil
-	case "data":
-		if _, err := dataurl.DecodeString(s); err != nil {
-			return err
+func (s LinkEmbedded1) ValidateTarget() report.Report {
+	r := report.Report{}
+	if !s.Hard {
+		err := validatePath(s.Target)
+		if err != nil {
+			r.Add(report.Entry{
+				Message: err.Error(),
+				Kind:    report.EntryError,
+			})
 		}
-		return nil
-	default:
-		return errors.ErrInvalidScheme
 	}
+	return r
 }

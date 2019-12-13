@@ -136,8 +136,9 @@ func (VersionAvailability) SwaggerDoc() map[string]string {
 }
 
 var map_ImageContentSourcePolicy = map[string]string{
-	"":     "ImageContentSourcePolicy holds cluster-wide information about how to handle registry mirror rules. When multiple policies are defined, the outcome of the behavior is defined on each field.",
-	"spec": "spec holds user settable values for configuration",
+	"":         "ImageContentSourcePolicy holds cluster-wide information about how to handle registry mirror rules. When multiple policies are defined, the outcome of the behavior is defined on each field.",
+	"metadata": "Standard object's metadata.",
+	"spec":     "spec holds user settable values for configuration",
 }
 
 func (ImageContentSourcePolicy) SwaggerDoc() map[string]string {
@@ -145,7 +146,8 @@ func (ImageContentSourcePolicy) SwaggerDoc() map[string]string {
 }
 
 var map_ImageContentSourcePolicyList = map[string]string{
-	"": "ImageContentSourcePolicyList lists the items in the ImageContentSourcePolicy CRD.",
+	"":         "ImageContentSourcePolicyList lists the items in the ImageContentSourcePolicy CRD.",
+	"metadata": "Standard object's metadata.",
 }
 
 func (ImageContentSourcePolicyList) SwaggerDoc() map[string]string {
