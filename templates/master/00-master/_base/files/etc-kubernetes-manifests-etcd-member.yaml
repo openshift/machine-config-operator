@@ -96,7 +96,7 @@ contents:
           set +a
 
           exec etcd \
-            --initial-advertise-peer-urls=https://${ETCD_ESCAPED_IP_ADDR}:2380 \
+            --initial-advertise-peer-urls=https://${ETCD_ESCAPED_IP_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
             --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \
             --trusted-ca-file=/etc/ssl/etcd/ca.crt \
@@ -105,7 +105,7 @@ contents:
             --peer-key-file=/etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key \
             --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
             --peer-client-cert-auth=true \
-            --advertise-client-urls=https://${ETCD_ESCAPED_IP_ADDR}:2379 \
+            --advertise-client-urls=https://${ETCD_ESCAPED_IP_ADDRESS}:2379 \
             --listen-client-urls=https://${ETCD_ESCAPED_ALL_IPS}:2379 \
             --listen-peer-urls=https://${ETCD_ESCAPED_ALL_IPS}:2380 \
             --listen-metrics-urls=https://${ETCD_ESCAPED_ALL_IPS}:9978 \
