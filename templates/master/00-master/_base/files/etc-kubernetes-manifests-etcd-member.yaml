@@ -135,7 +135,7 @@ contents:
           set +a
 
           exec etcd \
-            --initial-advertise-peer-urls=https://${ETCD_IPV4_ADDRESS}:2380 \
+            --initial-advertise-peer-urls=https://${ETCD_ESCAPED_IP_ADDRESS}:2380 \
             --cert-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.crt \
             --key-file=/etc/ssl/etcd/system:etcd-server:${ETCD_DNS_NAME}.key \
             --trusted-ca-file=/etc/ssl/etcd/ca.crt \
@@ -144,10 +144,10 @@ contents:
             --peer-key-file=/etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key \
             --peer-trusted-ca-file=/etc/ssl/etcd/ca.crt \
             --peer-client-cert-auth=true \
-            --advertise-client-urls=https://${ETCD_IPV4_ADDRESS}:2379 \
-            --listen-client-urls=https://0.0.0.0:2379 \
-            --listen-peer-urls=https://0.0.0.0:2380 \
-            --listen-metrics-urls=https://0.0.0.0:9978 \
+            --advertise-client-urls=https://${ETCD_ESCAPED_IP_ADDRESS}:2379 \
+            --listen-client-urls=https://${ETCD_ESCAPED_ALL_IPS}:2379 \
+            --listen-peer-urls=https://${ETCD_ESCAPED_ALL_IPS}:2380 \
+            --listen-metrics-urls=https://${ETCD_ESCAPED_ALL_IPS}:9978 \
         securityContext:
           privileged: true
         resources:
@@ -194,8 +194,8 @@ contents:
 
           exec etcd grpc-proxy start \
             --endpoints https://${ETCD_DNS_NAME}:9978 \
-            --metrics-addr https://0.0.0.0:9979 \
-            --listen-addr 127.0.0.1:9977 \
+            --metrics-addr https://${ETCD_ESCAPED_ALL_IPS}:9979 \
+            --listen-addr ${ETCD_ESCAPED_LOCALHOST_IP}:9977 \
             --key /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.key \
             --key-file /etc/ssl/etcd/system:etcd-metric:${ETCD_DNS_NAME}.key \
             --cert /etc/ssl/etcd/system:etcd-peer:${ETCD_DNS_NAME}.crt \
