@@ -404,7 +404,7 @@ func etcdServerCertCommand(cfg RenderConfig) (interface{}, error) {
 			"  --assetsdir=/etc/ssl/etcd \\",
 			fmt.Sprintf("  --dnsnames=%s \\", serverCertDNS),
 			"  --commonname=system:etcd-server:${ETCD_DNS_NAME} \\",
-			"  --ipaddrs=${ETCD_IPV4_ADDRESS},127.0.0.1 \\",
+			"  --ipaddrs=${ETCD_IPV4_ADDRESS},${ETCD_LOCALHOST_IP} \\",
 		}...)
 	} else {
 		commands = append(commands, []string{

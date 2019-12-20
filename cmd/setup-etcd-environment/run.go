@@ -156,9 +156,34 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	parsedIP := net.ParseIP(setupEnv.etcdIP)
+	if parsedIP == nil {
+		return fmt.Errorf("Failed to parse IP '%s'", setupEnv.etcdIP)
+	}
+
+	escapedIP := setupEnv.etcdIP
+	escapedAllIPs := "0.0.0.0"
+	localhostIP := "127.0.0.1"
+	escapedLocalhostIP := "127.0.0.1"
+	if parsedIP.To4() == nil {
+		// This is an IPv6 address, not IPv4.
+
+		// When using an IPv6 address in a URL, we must wrap the address portion in
+		// [::] so that a ":port" suffix can still be added and parsed correctly.
+		escapedIP = fmt.Sprintf("[%s]", setupEnv.etcdIP)
+		escapedAllIPs = "[::]"
+		localhostIP = "::1"
+		escapedLocalhostIP = "[::1]"
+	}
+
 	unexportedEnv := map[string]string{
-		"IPV4_ADDRESS":      setupEnv.etcdIP,
-		"WILDCARD_DNS_NAME": fmt.Sprintf("*.%s", setupEnv.opts.discoverySRV),
+		// TODO This can actually be IPv6, so we should rename this ...
+		"IPV4_ADDRESS":         setupEnv.etcdIP,
+		"ESCAPED_IP_ADDRESS":   escapedIP,
+		"ESCAPED_ALL_IPS":      escapedAllIPs,
+		"LOCALHOST_IP":         localhostIP,
+		"ESCAPED_LOCALHOST_IP": escapedLocalhostIP,
+		"WILDCARD_DNS_NAME":    fmt.Sprintf("*.%s", setupEnv.opts.discoverySRV),
 	}
 	if setupEnv.etcdDNS != "" {
 		unexportedEnv["DNS_NAME"] = setupEnv.etcdDNS
@@ -337,10 +362,6 @@ func ipAddrs(preferredIP string) ([]string, error) {
 		}
 		if ip == nil {
 			continue
-		}
-		ip = ip.To4()
-		if ip == nil {
-			continue // not an ipv4 address
 		}
 		if !ip.IsGlobalUnicast() {
 			continue // we only want global unicast address
