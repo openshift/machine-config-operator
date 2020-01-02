@@ -57,8 +57,7 @@ contents:
       backup_manifest
       backup_latest_kube_static_resources
       snapshot_data_dir
-      tar rf ${BACKUP_TAR_FILE} -C ${ASSET_DIR}/tmp snapshot.db
-      gzip ${BACKUP_TAR_FILE}
+      append_snapshot_to_tar_and_gzip
       rm -f ${SNAPSHOT_FILE}
       echo "snapshot db and kube resources are successfully saved to ${BACKUP_TAR_FILE}.gz!"
     }

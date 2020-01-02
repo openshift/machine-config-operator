@@ -38,8 +38,8 @@ contents:
       if [ -f "$ASSET_DIR/backup/etcd-ca-bundle.crt" ] && [ -f "$ASSET_DIR/backup/etcd-client.crt" ] && [ -f "$ASSET_DIR/backup/etcd-client.key" ]; then
          echo "etcd client certs already backed up and available $ASSET_DIR/backup/"
       else
-        STATIC_DIRS=($(ls -td "${CONFIG_FILE_DIR}"/static-pod-resources/kube-apiserver-pod-[0-9]*))
-        if [ "$?" -ne 0 ]; then
+        STATIC_DIRS=($(ls -td "${CONFIG_FILE_DIR}"/static-pod-resources/kube-apiserver-pod-[0-9]*)) || true
+        if [ -z "${STATIC_DIRS}" ]; then
           echo "error finding static-pod-resources"
           exit 1
         fi
@@ -69,7 +69,15 @@ contents:
           echo "error finding static-pod-resources"
           exit 1
       fi
+
+      # tar up the static kube resources, with the path relative to CONFIG_FILE_DIR
       tar -cpf $BACKUP_TAR_FILE -C ${CONFIG_FILE_DIR} ${LATEST_STATIC_POD_DIR#$CONFIG_FILE_DIR/}
+    }
+
+    append_snapshot_to_tar_and_gzip() {
+      # "r" flag is used to append snapshot.db to the existing tar archive
+      tar rf ${BACKUP_TAR_FILE} -C ${ASSET_DIR}/tmp snapshot.db
+      gzip ${BACKUP_TAR_FILE}
     }
 
     # backup current etcd-member pod manifest
