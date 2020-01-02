@@ -49,7 +49,7 @@ contents:
     function run {
       ETCD_INITIAL_CLUSTER="${INITIAL_CLUSTER}"
       init
-      if [ ${BACKUP_FILE#*.} = "tar.gz" ]; then
+      if [[ ${BACKUP_FILE} =~ \.tar\.gz$ ]]; then
         RESTORE_STATIC_RESOURCES="true"
         tar xzf ${BACKUP_FILE} -C ${ASSET_DIR}/tmp/ snapshot.db
         SNAPSHOT_FILE="${ASSET_DIR}/tmp/snapshot.db"
