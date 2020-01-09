@@ -901,6 +901,9 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		}
 	} else {
 		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
+			return errors.Wrap(err, "failed to remove force validation file")
+		}
 	}
 	glog.Info("Validated on-disk state")
 
