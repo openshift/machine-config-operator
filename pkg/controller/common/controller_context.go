@@ -89,7 +89,12 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
-	etcdInformer := getEtcdInformer(operatorClient, operatorSharedInformer)
+	etcdInformer, err := getEtcdInformer(operatorClient, operatorSharedInformer)
+	if err != nil {
+		// MCO pod needs to restart for transient apiserver errors
+		glog.Errorf("unable to query discovery API %#v", err)
+		WriteTerminationError(err)
+	}
 
 	return &ControllerContext{
 		ClientBuilder:                                       cb,
@@ -109,17 +114,17 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	}
 }
 
-func getEtcdInformer(operatorClient operatorclientset.Interface, operatorSharedInformer operatorinformers.SharedInformerFactory) operatorv1.EtcdInformer {
+func getEtcdInformer(operatorClient operatorclientset.Interface, operatorSharedInformer operatorinformers.SharedInformerFactory) (operatorv1.EtcdInformer, error) {
 	operatorGroups, err := operatorClient.Discovery().ServerResourcesForGroupVersion("operator.openshift.io/v1")
 	if err != nil {
 		glog.Errorf("unable to get operatorGroups: %#v", err)
-		return nil
+		return nil, err
 	}
 
 	for _, o := range operatorGroups.APIResources {
 		if o.Kind == "Etcd" {
-			return operatorSharedInformer.Operator().V1().Etcds()
+			return operatorSharedInformer.Operator().V1().Etcds(), nil
 		}
 	}
-	return nil
+	return nil, nil
 }
