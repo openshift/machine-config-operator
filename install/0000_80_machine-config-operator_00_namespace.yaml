@@ -38,3 +38,13 @@ metadata:
   labels:
     name: openshift-ovirt-infra
     openshift.io/run-level: "1"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-vsphere-infra
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    name: openshift-vsphere-infra
+    openshift.io/run-level: "1"
