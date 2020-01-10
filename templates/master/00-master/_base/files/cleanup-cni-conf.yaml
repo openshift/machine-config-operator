@@ -6,3 +6,4 @@ contents:
     r /etc/kubernetes/cni/net.d/80-openshift-network.conf
     r /etc/kubernetes/cni/net.d/10-ovn-kubernetes.conf
     r /etc/kubernetes/cni/net.d/00-multus.conf
+    D /var/lib/cni/networks/openshift-sdn/ 0755 root root - -
