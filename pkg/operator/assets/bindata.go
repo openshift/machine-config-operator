@@ -41,6 +41,10 @@
 // manifests/ovirt/coredns.yaml
 // manifests/ovirt/keepalived.conf.tmpl
 // manifests/ovirt/keepalived.yaml
+// manifests/vsphere/coredns-corefile.tmpl
+// manifests/vsphere/coredns.yaml
+// manifests/vsphere/keepalived.conf.tmpl
+// manifests/vsphere/keepalived.yaml
 // manifests/worker.machineconfigpool.yaml
 package assets
 
@@ -2330,6 +2334,296 @@ func manifestsOvirtKeepalivedYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
+    errors
+    health :18080
+    mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
+    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
+    cache 30
+    reload
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+}
+`)
+
+func manifestsVsphereCorednsCorefileTmplBytes() ([]byte, error) {
+	return _manifestsVsphereCorednsCorefileTmpl, nil
+}
+
+func manifestsVsphereCorednsCorefileTmpl() (*asset, error) {
+	bytes, err := manifestsVsphereCorednsCorefileTmplBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsVsphereCorednsYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: coredns
+  namespace: openshift-vsphere-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: vsphere-infra-mdns
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/coredns"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  initContainers:
+  - name: render-config
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - runtimecfg
+    - render
+    - "/etc/kubernetes/kubeconfig"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+    - "--dns-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+    - "/config"
+    - "--out-dir"
+    - "/etc/coredns"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    resources: {}
+    volumeMounts:
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: resource-dir
+      mountPath: "/config"
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    imagePullPolicy: IfNotPresent
+  containers:
+  - name: coredns
+    securityContext:
+      privileged: true
+    image: {{ .Images.CorednsBootstrap }}
+    args:
+    - "--conf"
+    - "/etc/coredns/Corefile"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 18080
+        scheme: HTTP
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
+      timeoutSeconds: 10
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 18080
+        scheme: HTTP
+      initialDelaySeconds: 60
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 5
+    terminationMessagePolicy: FallbackToLogsOnError
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsVsphereCorednsYamlBytes() ([]byte, error) {
+	return _manifestsVsphereCorednsYaml, nil
+}
+
+func manifestsVsphereCorednsYaml() (*asset, error) {
+	bytes, err := manifestsVsphereCorednsYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsVsphereKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
+# API VIPs.
+#
+# For more information, see installer/data/data/bootstrap/baremetal/README.md
+# in the installer repo.
+
+vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
+    state BACKUP
+    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
+    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
+    priority 50
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
+    }
+    virtual_ipaddress {
+        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+    }
+}
+
+vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_DNS {
+    state MASTER
+    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
+    virtual_router_id {{`+"`"+`{{.Cluster.DNSVirtualRouterID }}`+"`"+`}}
+    priority 140
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_dns_vip
+    }
+    virtual_ipaddress {
+        {{`+"`"+`{{ .Cluster.DNSVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+    }
+}
+`)
+
+func manifestsVsphereKeepalivedConfTmplBytes() ([]byte, error) {
+	return _manifestsVsphereKeepalivedConfTmpl, nil
+}
+
+func manifestsVsphereKeepalivedConfTmpl() (*asset, error) {
+	bytes, err := manifestsVsphereKeepalivedConfTmplBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsVsphereKeepalivedYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: keepalived
+  namespace: openshift-vsphere-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: vsphere-infra-vrrp
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/keepalived"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  initContainers:
+  - name: render-config
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - runtimecfg
+    - render
+    - "/etc/kubernetes/kubeconfig"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+    - "--dns-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+    - "/config"
+    - "--out-dir"
+    - "/etc/keepalived"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    resources: {}
+    volumeMounts:
+    - name: resource-dir
+      mountPath: "/config"
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    imagePullPolicy: IfNotPresent
+  containers:
+  - name: keepalived
+    securityContext:
+      privileged: true
+    image: {{ .Images.KeepalivedBootstrap }}
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
+    command:
+    - /usr/sbin/keepalived
+    args:
+    - "-f"
+    - "/etc/keepalived/keepalived.conf"
+    - "--dont-fork"
+    - "--vrrp"
+    - "--log-detail"
+    - "--log-console"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsVsphereKeepalivedYamlBytes() ([]byte, error) {
+	return _manifestsVsphereKeepalivedYaml, nil
+}
+
+func manifestsVsphereKeepalivedYaml() (*asset, error) {
+	bytes, err := manifestsVsphereKeepalivedYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsWorkerMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -2452,6 +2746,10 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/ovirt/coredns.yaml":                                           manifestsOvirtCorednsYaml,
 	"manifests/ovirt/keepalived.conf.tmpl":                                   manifestsOvirtKeepalivedConfTmpl,
 	"manifests/ovirt/keepalived.yaml":                                        manifestsOvirtKeepalivedYaml,
+	"manifests/vsphere/coredns-corefile.tmpl":                                manifestsVsphereCorednsCorefileTmpl,
+	"manifests/vsphere/coredns.yaml":                                         manifestsVsphereCorednsYaml,
+	"manifests/vsphere/keepalived.conf.tmpl":                                 manifestsVsphereKeepalivedConfTmpl,
+	"manifests/vsphere/keepalived.yaml":                                      manifestsVsphereKeepalivedYaml,
 	"manifests/worker.machineconfigpool.yaml":                                manifestsWorkerMachineconfigpoolYaml,
 }
 
@@ -2549,6 +2847,12 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"coredns.yaml":          &bintree{manifestsOvirtCorednsYaml, map[string]*bintree{}},
 			"keepalived.conf.tmpl":  &bintree{manifestsOvirtKeepalivedConfTmpl, map[string]*bintree{}},
 			"keepalived.yaml":       &bintree{manifestsOvirtKeepalivedYaml, map[string]*bintree{}},
+		}},
+		"vsphere": &bintree{nil, map[string]*bintree{
+			"coredns-corefile.tmpl": &bintree{manifestsVsphereCorednsCorefileTmpl, map[string]*bintree{}},
+			"coredns.yaml":          &bintree{manifestsVsphereCorednsYaml, map[string]*bintree{}},
+			"keepalived.conf.tmpl":  &bintree{manifestsVsphereKeepalivedConfTmpl, map[string]*bintree{}},
+			"keepalived.yaml":       &bintree{manifestsVsphereKeepalivedYaml, map[string]*bintree{}},
 		}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},
