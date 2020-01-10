@@ -29,8 +29,6 @@ HASH=${SOURCE_GIT_COMMIT:-$(git rev-parse --verify 'HEAD^{commit}')}
 
 GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE} -X ${REPO}/pkg/version.Hash=${HASH}"
 
-eval $(go env)
-
 if [ -z ${BIN_PATH+a} ]; then
 	export BIN_PATH=_output/${GOOS}/${GOARCH}
 fi
