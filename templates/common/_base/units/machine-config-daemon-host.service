@@ -1,5 +1,5 @@
 name: "machine-config-daemon-host.service"
-enabled: true
+enabled: false
 contents: |
   [Unit]
   Description=Machine Config Daemon Initial
