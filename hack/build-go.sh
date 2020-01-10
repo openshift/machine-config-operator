@@ -4,7 +4,7 @@ set -eu
 
 REPO=github.com/openshift/machine-config-operator
 WHAT=${WHAT:-machine-config-operator}
-GOFLAGS=${GOFLAGS:-}
+GOTAGS=${GOTAGS:-}
 GLDFLAGS=${GLDFLAGS:-}
 
 eval $(go env | grep -e "GOHOSTOS" -e "GOHOSTARCH")
@@ -40,8 +40,8 @@ mkdir -p ${BIN_PATH}
 CGO_ENABLED=0
 
 if [[ $WHAT == "machine-config-controller" ]]; then
-    GOFLAGS="containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
+    GOTAGS="containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 fi
 
 echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE}, ${HASH})"
-CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -mod=vendor -tags="${GOFLAGS}" -ldflags "${GLDFLAGS} -s -w" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}
+CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -mod=vendor -tags="${GOTAGS}" -ldflags "${GLDFLAGS} -s -w" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}
