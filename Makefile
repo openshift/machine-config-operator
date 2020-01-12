@@ -17,7 +17,7 @@ export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 export GO111MODULE
 export GOPROXY=https://proxy.golang.org
 
-GOFLAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
+GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
 # grab the version from a dummy pkg in k8s.io/code-generator from vendor/modules.txt (read by go list)
 versionPath=$(shell GO111MODULE=on go list -f {{.Dir}} k8s.io/code-generator/cmd/client-gen)
@@ -47,7 +47,7 @@ test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit:
-	go test -tags=$(GOFLAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
+	go test -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
 
 # Run the code generation tasks.
 # Example:
@@ -73,7 +73,7 @@ install-tools:
 # Example:
 #    make verify
 verify: install-tools
-	golangci-lint run --build-tags=$(GOFLAGS)
+	golangci-lint run --build-tags=$(GOTAGS)
 	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
 	# addressed
 	gosec -severity high --confidence medium -exclude G204 -quiet ./...
