@@ -30,4 +30,6 @@ contents:
       SupportPodPidsLimit: true
       LegacyNodeRoleBehavior: false
       ServiceNodeExclusion: true
+      SCTPSupport: true
+      IPv6DualStack: true
     serverTLSBootstrap: true
