@@ -73,7 +73,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
 
 	appenders := getAppenders(currConf, cs.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
-		if err := a(&mc.Spec.Config); err != nil {
+		if err := a(mc); err != nil {
 			return nil, err
 		}
 	}
