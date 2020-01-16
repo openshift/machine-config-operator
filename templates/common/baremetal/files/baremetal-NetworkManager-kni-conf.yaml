@@ -5,3 +5,5 @@ contents:
   inline: |
     [main]
     dhcp=dhclient
+    [connection]
+    ipv6.dhcp-duid=ll
