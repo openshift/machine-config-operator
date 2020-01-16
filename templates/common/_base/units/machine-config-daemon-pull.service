@@ -11,7 +11,7 @@ contents: |
   ConditionPathExists=!/usr/local/bin/machine-config-daemon
   # Pivot should run after MCD image is pulled
   Before=machine-config-daemon-host.service
-  After=network-online.service
+  After=network-online.target
 
   [Service]
   # Need oneshot to delay kubelet
