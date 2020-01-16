@@ -233,6 +233,9 @@ spec:
           fips:
             description: "fips controls FIPS mode"
             type: boolean
+          kernelType:
+            description: "contains which kernel we want to be running like default (traditional), realtime"
+            type: string
           osImageURL:
             description: "osImageURL specifies the remote location that will be used to fetch the OS"
             type: string
