@@ -56,21 +56,17 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
-	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc // indirect
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
-	golang.org/x/net v0.0.0-20191109021931-daa7c04131f5 // indirect
 	golang.org/x/sys v0.0.0-20191002091554-b397fe3ad8ed // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	golang.org/x/tools v0.0.0-20191002234911-9ade4c73f2af // indirect
 	gonum.org/v1/gonum v0.0.0-20190929233944-b20cf7805fc4 // indirect
 	gonum.org/v1/netlib v0.0.0-20190926062253-2d6e29b73a19 // indirect
-	k8s.io/api v0.0.0
+	k8s.io/api v0.17.1
 	k8s.io/apiextensions-apiserver v0.0.0
-	k8s.io/apimachinery v0.0.0
+	k8s.io/apimachinery v0.17.1
 	k8s.io/client-go v0.0.0
-	k8s.io/code-generator v0.0.0
+	k8s.io/code-generator v0.17.1
 	k8s.io/gengo v0.0.0-20190907103519-ebc107f98eab // indirect
-	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20190918143330-0270cf2f1c1d // indirect
 	k8s.io/kubelet v0.0.0
 )
@@ -80,6 +76,7 @@ replace (
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20200116145750-0e2ff1e215dd
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.0.0-20190905175716-d9fae7ce8d9e
