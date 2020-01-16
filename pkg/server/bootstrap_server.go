@@ -99,7 +99,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 
 	appenders := getAppenders(currConf, bsc.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
-		if err := a(&mc.Spec.Config); err != nil {
+		if err := a(mc); err != nil {
 			return nil, err
 		}
 	}

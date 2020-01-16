@@ -16,13 +16,27 @@ const (
 	// defaultMachineKubeConfPath defines the default location
 	// of the KubeConfig file on the machine.
 	defaultMachineKubeConfPath = "/etc/kubernetes/kubeconfig"
+
+	// machineConfigContentPath contains the raw machine-config content
+	// served by the MCS. This is extremely useful when debugging drifts
+	// between the installer and the MCO itself.
+	// This is different than /etc/machine-config-daemon/currentconfig written
+	// by the MCD but it's gonna be the same 99% of the time. The reason we
+	// need this is that on bootstrap + first install we don't have the MCD
+	// running and writing that file.
+	machineConfigContentPath = "/etc/mcs-machine-config-content.json"
+
+	// defaultFileSystem defines the default file system to be
+	// used for writing the ignition files created by the
+	// server.
+	defaultFileSystem = "root"
 )
 
 // kubeconfigFunc fetches the kubeconfig that needs to be served.
 type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
 
 // appenderFunc appends Config.
-type appenderFunc func(*igntypes.Config) error
+type appenderFunc func(*mcfgv1.MachineConfig) error
 
 // Server defines the interface that is implemented by different
 // machine config server implementations.
@@ -33,11 +47,14 @@ type Server interface {
 func getAppenders(currMachineConfig string, f kubeconfigFunc, osimageurl string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
-		func(config *igntypes.Config) error { return appendNodeAnnotations(config, currMachineConfig) },
+		func(mc *mcfgv1.MachineConfig) error { return appendNodeAnnotations(&mc.Spec.Config, currMachineConfig) },
 		// append pivot
-		func(config *igntypes.Config) error { return appendInitialPivot(config, osimageurl) },
+		func(mc *mcfgv1.MachineConfig) error { return appendInitialPivot(&mc.Spec.Config, osimageurl) },
 		// append kubeconfig.
-		func(config *igntypes.Config) error { return appendKubeConfig(config, f) },
+		func(mc *mcfgv1.MachineConfig) error { return appendKubeConfig(&mc.Spec.Config, f) },
+		// append the machineconfig content
+		//nolint:gocritic
+		func(mc *mcfgv1.MachineConfig) error { return appendInitialMachineConfig(mc) },
 	}
 	return appenders
 }
@@ -87,6 +104,19 @@ WantedBy=multi-user.target
 		Enabled:  boolToPtr(true),
 		Contents: &pivotUnit}
 	conf.Systemd.Units = append(conf.Systemd.Units, unit)
+	return nil
+}
+
+// appendInitialMachineConfig saves the full serialized MachineConfig that was served
+// by the MCS when the node first booted.  This currently is only used as a debugging aid
+// in cases where there is unexpected "drift" between the initial bootstrap MC/Ignition and the one
+// computed by the cluster.
+func appendInitialMachineConfig(mc *mcfgv1.MachineConfig) error {
+	mcJSON, err := json.MarshalIndent(mc, "", "    ")
+	if err != nil {
+		return err
+	}
+	appendFileToIgnition(&mc.Spec.Config, machineConfigContentPath, string(mcJSON))
 	return nil
 }
 
