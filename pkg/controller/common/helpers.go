@@ -7,6 +7,7 @@ import (
 	validate "github.com/coreos/ignition/config/validate"
 	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	errors "github.com/pkg/errors"
 )
 
@@ -38,6 +39,18 @@ func ValidateIgnition(cfg igntypes.Config) error {
 	}
 	if report := validate.ValidateWithoutSource(reflect.ValueOf(cfg)); report.IsFatal() {
 		return errors.Errorf("invalid Ignition config found: %v", report)
+	}
+	return nil
+}
+
+// ValidateMachineConfig validates that given MachineConfig Spec is valid.
+func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
+
+	if !(cfg.KernelType == "" || cfg.KernelType == "default" || cfg.KernelType == "realtime") {
+		return errors.Errorf("kernelType=%s is invalid", cfg.KernelType)
+	}
+	if err := ValidateIgnition(cfg.Config); err != nil {
+		return err
 	}
 	return nil
 }
