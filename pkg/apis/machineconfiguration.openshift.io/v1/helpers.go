@@ -32,12 +32,12 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 	}
 
 	// sets the KernelType if specified in any of the MachineConfig
+	// Setting kerneType to realtime in any of MachineConfig takes priority
 	for _, cfg := range configs {
 		if cfg.Spec.KernelType == "realtime" {
 			kernelType = cfg.Spec.KernelType
 			break
-		}
-		if kernelType == "default" && cfg.Spec.KernelType != "realtime" {
+		} else if kernelType == "default" {
 			kernelType = cfg.Spec.KernelType
 		}
 	}
