@@ -9,15 +9,14 @@ require (
 	github.com/Masterminds/goutils v1.1.0 // indirect
 	github.com/Masterminds/semver v1.4.2 // indirect
 	github.com/Masterminds/sprig v2.20.0+incompatible
-	github.com/ajeddeloh/yaml v0.0.0-20170912190910-6b94386aeefd // indirect
-	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/apparentlymart/go-cidr v1.0.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6 // indirect
 	github.com/containers/image v3.0.2+incompatible
 	github.com/containers/storage v1.13.4
-	github.com/coreos/container-linux-config-transpiler v0.9.0
+	github.com/coreos/fcct v0.2.0
 	github.com/coreos/ignition v0.33.0
+	github.com/coreos/ignition/v2 v2.0.1
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26
 	github.com/davecgh/go-spew v1.1.1
@@ -56,7 +55,6 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
-	golang.org/x/crypto v0.0.0-20191002192127-34f69633bfdc // indirect
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
 	golang.org/x/net v0.0.0-20191109021931-daa7c04131f5 // indirect
 	golang.org/x/sys v0.0.0-20191002091554-b397fe3ad8ed // indirect
@@ -80,8 +78,10 @@ replace (
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20191111211345-a27ff30ebf09
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
+	golang.org/x/tools => golang.org/x/tools v0.0.0-20200117220505-0cba7a3a9ee9
 	k8s.io/api => k8s.io/api v0.0.0-20190905175716-d9fae7ce8d9e
 	k8s.io/apiextensions-apiserver => github.com/openshift/kubernetes-apiextensions-apiserver v0.0.0-20190918161926-8f644eb6e783
 	k8s.io/apimachinery => k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655
