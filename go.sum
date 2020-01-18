@@ -193,6 +193,7 @@ github.com/containers/storage v1.13.5/go.mod h1:HELz8Sn+UVbPaUZMI8RvIG9doD4y4z6G
 github.com/coredns/corefile-migration v1.0.4/go.mod h1:OFwBp/Wc9dJt5cAZzHWMNhK1r5L0p0jDwIBc6j8NC8E=
 github.com/coreos/bbolt v1.3.2/go.mod h1:iRUV2dpdMOn7Bo10OQBFzIJO9kkE559Wcmn+qkEiiKk=
 github.com/coreos/bbolt v1.3.3/go.mod h1:iRUV2dpdMOn7Bo10OQBFzIJO9kkE559Wcmn+qkEiiKk=
+github.com/coreos/container-linux-config-transpiler v0.9.0/go.mod h1:SlcxXZQ2c42knj8pezMiQsM1f+ADxFMjGetuMKR/YSQ=
 github.com/coreos/etcd v3.3.10+incompatible/go.mod h1:uF7uidLiAD3TWHmW31ZFd/JWoc32PjwdhPthX9715RE=
 github.com/coreos/etcd v3.3.13+incompatible/go.mod h1:uF7uidLiAD3TWHmW31ZFd/JWoc32PjwdhPthX9715RE=
 github.com/coreos/fcct v0.4.0 h1:pbaRpgArcBDffpp/tt+kAKP2LSBTMi6zmj9J2bS4pJE=
