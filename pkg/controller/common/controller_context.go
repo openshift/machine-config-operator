@@ -6,9 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
-	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
-	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
@@ -44,7 +42,6 @@ type ControllerContext struct {
 	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
-	EtcdInformer                                        operatorv1.EtcdInformer
 
 	AvailableResources map[schema.GroupVersionResource]bool
 
@@ -89,13 +86,6 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
 
-	etcdInformer, err := getEtcdInformer(operatorClient, operatorSharedInformer)
-	if err != nil {
-		// MCO pod needs to restart for transient apiserver errors
-		glog.Errorf("unable to query discovery API %#v", err)
-		WriteTerminationError(err)
-	}
-
 	return &ControllerContext{
 		ClientBuilder:                                       cb,
 		NamespacedInformerFactory:                           sharedNamespacedInformers,
@@ -107,24 +97,8 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 		APIExtInformerFactory:                               apiExtSharedInformer,
 		ConfigInformerFactory:                               configSharedInformer,
 		OperatorInformerFactory:                             operatorSharedInformer,
-		EtcdInformer:                                        etcdInformer,
 		Stop:                                                stop,
 		InformersStarted:                                    make(chan struct{}),
 		ResyncPeriod:                                        resyncPeriod(),
 	}
-}
-
-func getEtcdInformer(operatorClient operatorclientset.Interface, operatorSharedInformer operatorinformers.SharedInformerFactory) (operatorv1.EtcdInformer, error) {
-	operatorGroups, err := operatorClient.Discovery().ServerResourcesForGroupVersion("operator.openshift.io/v1")
-	if err != nil {
-		glog.Errorf("unable to get operatorGroups: %#v", err)
-		return nil, err
-	}
-
-	for _, o := range operatorGroups.APIResources {
-		if o.Kind == "Etcd" {
-			return operatorSharedInformer.Operator().V1().Etcds(), nil
-		}
-	}
-	return nil, nil
 }

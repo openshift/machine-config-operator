@@ -5,6 +5,9 @@ import (
 	"flag"
 
 	"github.com/golang/glog"
+	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
+	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
+	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -51,6 +54,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 	run := func(ctx context.Context) {
 		ctrlctx := controllercommon.CreateControllerContext(cb, ctx.Done(), componentNamespace)
+		operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
+
+		etcdInformer, err := getEtcdInformer(operatorClient, ctrlctx.OperatorInformerFactory)
+		if err != nil {
+			// MCO pod needs to restart for transient apiserver errors
+			glog.Errorf("unable to query discovery API %#v", err)
+			controllercommon.WriteTerminationError(err)
+		}
 
 		controller := operator.New(
 			componentNamespace, componentName,
@@ -74,7 +85,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.ClientBuilder.APIExtClientOrDie(componentName),
 			ctrlctx.ClientBuilder.ConfigClientOrDie(componentName),
 			ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
-			ctrlctx.EtcdInformer,
+			etcdInformer,
 		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
@@ -104,4 +115,19 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		},
 	})
 	panic("unreachable")
+}
+
+func getEtcdInformer(operatorClient operatorclientset.Interface, operatorSharedInformer operatorinformers.SharedInformerFactory) (operatorv1.EtcdInformer, error) {
+	operatorGroups, err := operatorClient.Discovery().ServerResourcesForGroupVersion("operator.openshift.io/v1")
+	if err != nil {
+		glog.Errorf("unable to get operatorGroups: %#v", err)
+		return nil, err
+	}
+
+	for _, o := range operatorGroups.APIResources {
+		if o.Kind == "Etcd" {
+			return operatorSharedInformer.Operator().V1().Etcds(), nil
+		}
+	}
+	return nil, nil
 }
