@@ -4,7 +4,6 @@ metadata:
   name: machine-config-osimageurl
   namespace: openshift-machine-config-operator
 data:
-  releaseVersion: 0.0.1-snapshot
   # The OS payload, managed by the daemon + pivot + rpm-ostree
   # https://github.com/openshift/machine-config-operator/issues/183
   osImageURL: "registry.svc.ci.openshift.org/openshift:machine-os-content"

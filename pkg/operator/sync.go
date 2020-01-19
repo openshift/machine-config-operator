@@ -686,11 +686,6 @@ func (optr *Operator) getOsImageURL(namespace string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	releaseVersion := cm.Data["releaseVersion"]
-	optrVersion, _ := optr.vStore.Get("operator")
-	if releaseVersion != optrVersion {
-		return "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
-	}
 	return cm.Data["osImageURL"], nil
 }
 
