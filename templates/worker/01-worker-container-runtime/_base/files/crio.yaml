@@ -229,7 +229,7 @@ contents:
 
     # ManageNetworkNSLifecycle determines whether we pin and remove network namespace
     # and manage its lifecycle.
-    # manage_network_ns_lifecycle = false
+    manage_network_ns_lifecycle = true
 
     # The "crio.runtime.runtimes" table defines a list of OCI compatible runtimes.
     # The runtime to use is picked based on the runtime_handler provided by the CRI.
