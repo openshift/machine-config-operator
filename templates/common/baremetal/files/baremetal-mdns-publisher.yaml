@@ -24,6 +24,21 @@ contents:
         hostPath:
           path: "/etc/mdns"
       initContainers:
+      - name: verify-hostname
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: DEFAULT_LOCAL_HOSTNAME
+            value: "localhost"
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          while [ "$(hostname)" == "$DEFAULT_LOCAL_HOSTNAME" ]
+          do
+            echo "hostname is still ${DEFAULT_LOCAL_HOSTNAME}"
+            sleep 10
+          done
       - name: render-config
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
