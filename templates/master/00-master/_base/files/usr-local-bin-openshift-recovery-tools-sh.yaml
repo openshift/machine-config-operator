@@ -21,15 +21,25 @@ contents:
 
     # download and test etcdctl from upstream release assets
     dl_etcdctl() {
-      GOOGLE_URL=https://storage.googleapis.com/etcd
-      DOWNLOAD_URL=${GOOGLE_URL}
+      ETCDCTL_BIN="${ASSET_DIR}/bin/etcdctl"
+      if [ -f "$ETCDCTL_BIN" ]; then
+        echo "etcdctl binary found.."
+        LOCAL_ETCD_VERSION=$($ETCDCTL_BIN version | grep 'etcdctl' | awk '{print "v" $3}') || true
+        if [ "$LOCAL_ETCD_VERSION" != "$ETCD_VERSION" ]; then
+           echo "${ETCDCTL_BIN}: Version mismatch. Expected ${ETCD_VERSION} but found ${LOCAL_ETCD_VERSION}. Please remove or replace."
+           exit 1
+        fi
+      else
+        GOOGLE_URL=https://storage.googleapis.com/etcd
+        DOWNLOAD_URL=${GOOGLE_URL}
 
-      echo "Downloading etcdctl binary.."
-      curl -s -L ${DOWNLOAD_URL}/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -o $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz \
-        && tar -xzf $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -C $ASSET_DIR/shared --strip-components=1 \
-        && mv $ASSET_DIR/shared/etcdctl $ASSET_DIR/bin \
-        && rm $ASSET_DIR/shared/etcd \
-        && $ASSET_DIR/bin/etcdctl version
+        echo "Downloading etcdctl binary.."
+        curl -s -L ${DOWNLOAD_URL}/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -o $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz \
+          && tar -xzf $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -C $ASSET_DIR/shared --strip-components=1 \
+          && mv $ASSET_DIR/shared/etcdctl $ASSET_DIR/bin \
+          && rm $ASSET_DIR/shared/etcd \
+          && $ETCDCTL_BIN version
+      fi
     }
 
     #backup etcd client certs
