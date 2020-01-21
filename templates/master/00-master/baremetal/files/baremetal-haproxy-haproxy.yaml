@@ -16,10 +16,10 @@ contents:
       timeout server       86400s
       timeout tunnel       86400s
     frontend  main
-      bind :{{`{{ .LBConfig.LbPort }}`}}
+      bind :::{{`{{ .LBConfig.LbPort }}`}} v4v6
       default_backend masters
     listen health_check_http_url
-      bind :50936
+      bind :::50936 v4v6
       mode http
       monitor-uri /healthz
       option dontlognull
