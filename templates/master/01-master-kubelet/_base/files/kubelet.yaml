@@ -25,9 +25,11 @@ contents:
       cpu: 500m
       memory: 500Mi
     featureGates:
-      RotateKubeletServerCertificate: true
-      NodeDisruptionExclusion: true
-      SupportPodPidsLimit: true
+      IPv6DualStack: true
       LegacyNodeRoleBehavior: false
+      NodeDisruptionExclusion: true
+      RotateKubeletServerCertificate: true
+      SCTPSupport: true
       ServiceNodeExclusion: true
+      SupportPodPidsLimit: true
     serverTLSBootstrap: true
