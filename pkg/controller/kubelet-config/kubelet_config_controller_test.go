@@ -288,19 +288,19 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 }
 
 func (f *fixture) expectGetKubeletConfigAction(config *mcfgv1.KubeletConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "kubeletconfigs"}, config.Name))
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name))
 }
 
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectPatchKubeletConfig(config *mcfgv1.KubeletConfig, patch []byte) {
