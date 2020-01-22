@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -204,6 +205,11 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 			return err
 		}
 		spec.CloudProviderConfig = cc
+	}
+
+	//TODO: alaypatel07 remove after cluster-etcd-operator deployed via CVO as Managed
+	if err = optr.setEtcdOperatorImage(&imgs); err != nil {
+		glog.Errorf("error setting etcd operator images: %#v", err)
 	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
@@ -741,6 +747,32 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 		return nil, nil, nil, err
 	}
 	return infra, network, proxy, nil
+}
+
+func (optr *Operator) setEtcdOperatorImage(imgs *Images) error {
+	if optr.etcdLister == nil {
+		// if the resource is not found, i.e. it is not created by CVO
+		// which means cluster-etcd-operator images is not part of CVO
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+		glog.V(4).Info("etcd cr not found")
+		return nil
+	}
+	etcd, err := optr.etcdLister.Get("cluster")
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+			return nil
+		}
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+		return fmt.Errorf("error getting etcd CR: %#v", err)
+	}
+
+	if etcd.Spec.ManagementState == operatorv1.Unmanaged {
+		glog.V(4).Info("etcd cluster in unmanaged")
+		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
+		return nil
+	}
+	return nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
