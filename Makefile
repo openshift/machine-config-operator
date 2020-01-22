@@ -108,3 +108,13 @@ Dockerfile.rhel7: Dockerfile Makefile
 # This was copied from https://github.com/openshift/cluster-image-registry-operato
 test-e2e:
 	go test -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+
+include $(addprefix ./vendor/github.com/openshift/library-go/alpha-build-machinery/make/, \
+	targets/openshift/crd-schema-gen.mk \
+)
+
+# $1 - target name
+# $2 - apis
+# $3 - manifests
+# $4 - output
+$(call add-crd-gen,machineconfiguration,./pkg/apis/machineconfiguration.openshift.io/v1,./manifests,./manifests)
