@@ -207,7 +207,8 @@ func rtKernelUpdateAvailable(rpms []os.FileInfo, rtKernelPkg []string) (bool, er
 		found := false
 
 		if out, err = exec.Command("rpm", "-q", pkg).Output(); err != nil {
-			return false, err
+			wrappedErr := fmt.Errorf("Failed to run rpm -q : %v", err)
+			return false, wrappedErr
 		}
 		searchRpm := strings.TrimSpace(string(out)) + ".rpm"
 		for _, rpm := range rpms {
@@ -612,8 +613,8 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	return exec.Command("rpm-ostree", args...).Run()
 }
 
-// MountOSContainer mounts the container and returns the mountpoint
-func (dn *Daemon) MountOSContainer(container string) (mnt, containerName string, err error) {
+// mountOSContainer mounts the container and returns the mountpoint
+func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string, err error) {
 	var authArgs []string
 	if _, err = os.Stat(kubeletAuthFile); err == nil {
 		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
@@ -645,6 +646,10 @@ func (dn *Daemon) MountOSContainer(container string) (mnt, containerName string,
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
 // Right now it supports default (traditional) and realtime kernel
 func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// Do nothing if both old and new KernelType are of type default
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
+		return nil
+	}
 	// We support Kernel update only on RHCOS nodes
 	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
 		return fmt.Errorf("Updating kernel on non-RHCOS nodes is not supported")
@@ -652,8 +657,10 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
 	rtKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra"}
-	args := []string{}
+	var args []string
+
 	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
+
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
 		args = []string{"override", "reset"}
 		args = append(args, defaultKernel...)
@@ -661,14 +668,14 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		args = append(args, rtKernelUninstall...)
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-			return err
+			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 		}
 		return nil
 	}
 
 	var mnt, containerName string
 	var err error
-	if mnt, containerName, err = dn.MountOSContainer(newConfig.Spec.OSImageURL); err != nil {
+	if mnt, containerName, err = dn.mountOSContainer(newConfig.Spec.OSImageURL); err != nil {
 		return err
 	}
 
@@ -679,52 +686,60 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		dn.logSystem("Deleted container and removed OSContainer image")
 	}()
 
+	// Get kernel-rt packages from OSContainer
 	rtRegex := regexp.MustCompile("kernel-rt(.*).rpm")
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType || canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
+	files, err := ioutil.ReadDir(mnt)
+	if err != nil {
+		return err
+	}
+
+	rtKernelRpms := []os.FileInfo{}
+	for _, file := range files {
+		if rtRegex.MatchString(file.Name()) {
+			rtKernelRpms = append(rtKernelRpms, file)
+		}
+	}
+
+	if len(rtKernelRpms) == 0 {
+		// No kernel-rt rpm package found
+		return fmt.Errorf("No kernel-rt package available in the OSContainer with URL %s", newConfig.Spec.OSImageURL)
+	}
+
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
 		// Switch to RT kernel
 		args = []string{"override", "remove"}
 		args = append(args, defaultKernel...)
-		rpms, err := ioutil.ReadDir(mnt)
-		if err != nil {
-			return err
+		for _, rpm := range rtKernelRpms {
+			args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
 		}
 
-		for _, rpm := range rpms {
-			if rtRegex.MatchString(rpm.Name()) {
-				args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
-			}
+		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
+		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 		}
-
-		dn.logSystem("Switching to kernelType=%s,invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			args = []string{"uninstall"}
 			args = append(args, rtKernel...)
-			rpms, err := ioutil.ReadDir(mnt)
-			if err != nil {
-				return err
-			}
 			// Perform kernel-rt package update only if updated packages are available
 			var updateAvailable bool
-			if updateAvailable, err = rtKernelUpdateAvailable(rpms, rtKernel); err != nil {
-				return nil
+			if updateAvailable, err = rtKernelUpdateAvailable(rtKernelRpms, rtKernel); err != nil {
+				return err
 			} else if !updateAvailable {
 				return nil
 			}
-			for _, rpm := range rpms {
-				if rtRegex.MatchString(rpm.Name()) {
-					args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
-				}
+			for _, rpm := range rtKernelRpms {
+				args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
 			}
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
+			if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+				return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+			}
 		}
 	}
 
-	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-		return err
-	}
 	return nil
 }
 
