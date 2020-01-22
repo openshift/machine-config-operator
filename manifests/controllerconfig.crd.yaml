@@ -10,11 +10,11 @@ spec:
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
   versions:
-    - name: v1
-      # Each version can be enabled/disabled by Served flag.
-      served: true
-      # One and only one version must be marked as the storage version.
-      storage: true
+  - name: v1
+    # Each version can be enabled/disabled by Served flag.
+    served: true
+    # One and only one version must be marked as the storage version.
+    storage: true
   # either Namespaced or Cluster
   scope: Cluster
   subresources:
