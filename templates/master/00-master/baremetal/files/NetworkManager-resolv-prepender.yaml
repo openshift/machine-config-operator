@@ -12,7 +12,7 @@ contents:
         NAMESERVER_IP="{{.Infra.Status.PlatformStatus.BareMetal.NodeDNSIP}}"
         set +e
         if [[ -n "$NAMESERVER_IP" ]]; then
-            logger -s "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to other nameservers in /var/run/NetworkManager/resolv.conf"
+            logger -s "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
             sed "/^search .*$/a nameserver $NAMESERVER_IP" /var/run/NetworkManager/resolv.conf > /etc/resolv.conf
         else
             logger -s "NM resolv-prepender: Couldn't find a Virtual IP, just updating resolv.conf"
