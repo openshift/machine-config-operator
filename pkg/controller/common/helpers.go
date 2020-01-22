@@ -45,7 +45,6 @@ func ValidateIgnition(cfg igntypes.Config) error {
 
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
-
 	if !(cfg.KernelType == "" || cfg.KernelType == "default" || cfg.KernelType == "realtime") {
 		return errors.Errorf("kernelType=%s is invalid", cfg.KernelType)
 	}
