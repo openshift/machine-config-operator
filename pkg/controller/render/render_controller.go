@@ -524,9 +524,9 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
 func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
-	// Before merging all MCs for a specific pool, let's make sure each contains a valid Ignition Config
+	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid
 	for _, config := range configs {
-		if err := ctrlcommon.ValidateIgnition(config.Spec.Config); err != nil {
+		if err := ctrlcommon.ValidateMachineConfig(config.Spec); err != nil {
 			return nil, err
 		}
 	}
