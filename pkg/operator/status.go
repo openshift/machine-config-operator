@@ -217,7 +217,8 @@ func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) 
 	if err != nil {
 		return nil, err
 	}
-	return co, nil
+	coCopy := co.DeepCopy()
+	return coCopy, nil
 }
 
 func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, error) {
