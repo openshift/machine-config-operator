@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +11,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -72,13 +70,8 @@ func createIgnFile(path, content, fs string, mode int) igntypes.File {
 }
 
 func createMCToAddFileForRole(name, role, filename, data, fs string) *mcfgv1.MachineConfig {
-	// create a dummy MC
-	mcadd := &mcfgv1.MachineConfig{}
-	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name: fmt.Sprintf("%s-%s", name, uuid.NewUUID()),
-		// TODO(runcom): hardcoded to workers for safety
-		Labels: mcLabelForRole(role),
-	}
+	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
+
 	ignConfig := ctrlcommon.NewIgnConfig()
 	ignFile := createIgnFile(filename, "data:,"+data, fs, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
@@ -88,53 +81,6 @@ func createMCToAddFileForRole(name, role, filename, data, fs string) *mcfgv1.Mac
 
 func createMCToAddFile(name, filename, data, fs string) *mcfgv1.MachineConfig {
 	return createMCToAddFileForRole(name, "worker", filename, data, fs)
-}
-
-// waitForRenderedConfig polls a MachineConfigPool until it has
-// included the given mcName in its config, and returns the new
-// rendered config name.
-func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName string) (string, error) {
-	var renderedConfig string
-	startTime := time.Now()
-	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		for _, mc := range mcp.Spec.Configuration.Source {
-			if mc.Name == mcName {
-				renderedConfig = mcp.Spec.Configuration.Name
-				return true, nil
-			}
-		}
-		return false, nil
-	}); err != nil {
-		return "", errors.Wrapf(err, "machine config %s hasn't been picked by pool %s", mcName, pool)
-	}
-	t.Logf("Pool %s has rendered config %s with %s (waited %v)", pool, mcName, renderedConfig, time.Since(startTime))
-	return renderedConfig, nil
-}
-
-// waitForPoolComplete polls a pool until it has completed an update to target
-func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
-	startTime := time.Now()
-	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		if mcp.Status.Configuration.Name != target {
-			return false, nil
-		}
-		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) {
-			return true, nil
-		}
-		return false, nil
-	}); err != nil {
-		return errors.Wrapf(err, "pool %s didn't report updated to %s", pool, target)
-	}
-	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
-	return nil
 }
 
 func TestMCDeployed(t *testing.T) {
@@ -222,18 +168,11 @@ func TestUpdateSSH(t *testing.T) {
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
 
 		// now rsh into that daemon and grep the authorized key file to check if 1234_test was written
 		// must do both commands in same shell, combine commands into one exec.Command()
-		found, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"grep", "1234_test", "/rootfs/home/core/.ssh/authorized_keys").CombinedOutput()
-		if err != nil {
-			t.Fatalf("unable to read authorized_keys on daemon: %s got: %s got err: %v", mcdName, found, err)
-		}
-		if !strings.Contains(string(found), "1234_test") {
+		found := execCmdOnNode(t, cs, node, "grep", "1234_test", "/rootfs/home/core/.ssh/authorized_keys")
+		if !strings.Contains(found, "1234_test") {
 			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", found)
 		}
 		t.Logf("Node %s has SSH key", node.Name)
@@ -266,13 +205,7 @@ func TestKernelArguments(t *testing.T) {
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		kargsBytes, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"cat", "/rootfs/proc/cmdline").CombinedOutput()
-		require.Nil(t, err)
-		kargs := string(kargsBytes)
+		kargs := execCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
 		for _, v := range kargsMC.Spec.KernelArguments {
 			if !strings.Contains(kargs, v) {
 				t.Fatalf("Missing '%s' in kargs", v)
@@ -313,14 +246,8 @@ func TestKernelType(t *testing.T) {
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		// Worker node should have RT kernel
-		cmd, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"uname", "-a").CombinedOutput()
-		require.Nil(t, err)
-		kernelInfo := string(cmd)
+
+		kernelInfo := execCmdOnNode(t, cs, node, "uname", "-a")
 		if !strings.Contains(kernelInfo, "PREEMPT RT") {
 			t.Fatalf("Node %s doesn't have expected kernel", node.Name)
 		}
@@ -345,31 +272,13 @@ func TestKernelType(t *testing.T) {
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMC)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		// Worker node should now have default kernel
-		cmd, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"uname", "-a").CombinedOutput()
-		require.Nil(t, err)
-		kernelInfo := string(cmd)
+		kernelInfo := execCmdOnNode(t, cs, node, "uname", "-a")
 		if strings.Contains(kernelInfo, "PREEMPT RT") {
 			t.Fatalf("Node %s did not rollback successfully", node.Name)
 		}
 		t.Logf("Node %s has successfully rolled back", node.Name)
 	}
 
-}
-
-func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error) {
-	listOptions := metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
-	}
-	nodes, err := cs.Nodes().List(listOptions)
-	if err != nil {
-		return nil, err
-	}
-	return nodes.Items, nil
 }
 
 func TestPoolDegradedOnFailToRender(t *testing.T) {
@@ -430,15 +339,10 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	// 	},
 	// }
 
-	// grab the initial machineconfig used by the worker pool
-	// this MC is gonna be the one which is going to be reapplied once the bad MC is deleted
-	// and we need it for the final check
-	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	workerOldMc := mcp.Status.Configuration.Name
+	workerOldMc := getMcName(t, cs, "worker")
 
 	// create the dummy MC now
-	_, err = cs.MachineConfigs().Create(mcadd)
+	_, err := cs.MachineConfigs().Create(mcadd)
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
@@ -496,7 +400,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		mcp, err = cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -525,14 +429,10 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 
 	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test", "root")
 
-	// grab the initial machineconfig used by the worker pool
-	// this MC is gonna be the one which is going to be reapplied once the previous MC is deleted
-	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	workerOldMc := mcp.Status.Configuration.Name
+	workerOldMc := getMcName(t, cs, "worker")
 
 	// create the dummy MC now
-	_, err = cs.MachineConfigs().Create(mcHostFile)
+	_, err := cs.MachineConfigs().Create(mcHostFile)
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
@@ -561,16 +461,9 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	for _, node := range nodes {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMc)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
 
-		found, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
-			"cat", "/rootfs/etc/motd").CombinedOutput()
-		if err != nil {
-			t.Fatalf("unable to read test file on daemon: %s got: %s got err: %v", mcdName, found, err)
-		}
-		if strings.Contains(string(found), "mco-test") {
+		found := execCmdOnNode(t, cs, node, "cat", "/rootfs/etc/motd")
+		if strings.Contains(found, "mco-test") {
 			t.Fatalf("updated file doesn't contain expected data, got %s", found)
 		}
 	}
@@ -579,60 +472,29 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 func TestCustomPool(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	nodes, err := getNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	require.NotEmpty(t, nodes)
-	infraNode := nodes[0]
-	out, err := exec.Command("oc", "label", "node", infraNode.Name, "node-role.kubernetes.io/infra=").CombinedOutput()
-	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
+	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
-	infraMCP := &mcfgv1.MachineConfigPool{}
-	infraMCP.Name = "infra"
-	nodeSelector := metav1.LabelSelector{}
-	infraMCP.Spec.NodeSelector = &nodeSelector
-	infraMCP.Spec.NodeSelector.MatchLabels = make(map[string]string)
-	infraMCP.Spec.NodeSelector.MatchLabels["node-role.kubernetes.io/infra"] = ""
-	mcSelector := metav1.LabelSelector{}
-	infraMCP.Spec.MachineConfigSelector = &mcSelector
-	infraMCP.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{
-		metav1.LabelSelectorRequirement{
-			Key:      "machineconfiguration.openshift.io/role",
-			Operator: metav1.LabelSelectorOpIn,
-			Values:   []string{"worker", "infra"},
-		},
-	}
-	_, err = cs.MachineConfigPools().Create(infraMCP)
-	require.Nil(t, err)
+	createMCP(t, cs, "infra")
 
 	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool", "root")
-	_, err = cs.MachineConfigs().Create(infraMC)
+	_, err := cs.MachineConfigs().Create(infraMC)
 	require.Nil(t, err)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", infraMC.Name)
 	require.Nil(t, err)
 	err = waitForPoolComplete(t, cs, "infra", renderedConfig)
 	require.Nil(t, err)
 
-	nodes, err = getNodesByRole(cs, "infra")
-	require.Nil(t, err)
-	require.Len(t, nodes, 1)
+	infraNode := getSingleNodeByRole(t, cs, "infra")
 
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		mcd, err := mcdForNode(cs, &node)
-		require.Nil(t, err)
-		mcdName := mcd.ObjectMeta.Name
-		out, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", "-c", "machine-config-daemon", mcdName,
-			"cat", "/rootfs/etc/mco-custom-pool").CombinedOutput()
-		require.Nil(t, err, "failed to cat test file: %s", string(out))
-		if string(out) != "mco-custom-pool" {
-			t.Fatalf("Unexpected infra MC content on node %s: %s", node.Name, out)
-		}
-		t.Logf("Node %s has expected infra MC content", node.Name)
+	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+	out := execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/etc/mco-custom-pool")
+	if !strings.Contains(out, "mco-custom-pool") {
+		t.Fatalf("Unexpected infra MC content on node %s: %s", infraNode.Name, out)
 	}
+	t.Logf("Node %s has expected infra MC content", infraNode.Name)
 
-	out, err = exec.Command("oc", "label", "node", infraNode.Name, "node-role.kubernetes.io/infra-").CombinedOutput()
-	require.Nil(t, err, "unable to remove infra label from node %s: %s", infraNode.Name, string(out))
+	unlabelFunc()
 
 	workerMCP, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 	require.Nil(t, err)
