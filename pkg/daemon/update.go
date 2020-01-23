@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,10 +24,12 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -41,6 +44,10 @@ const (
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
 	fipsFile = "/proc/sys/crypto/fips_enabled"
+	// Traditional kernel
+	defaultKernelType = "default"
+	// Realtime kernel
+	realtimeKernelType = "realtime"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -192,6 +199,32 @@ func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	}
 }
 
+// Returns true if updated packages are available
+func rtKernelUpdateAvailable(rpms []os.FileInfo, rtKernelPkg []string) (bool, error) {
+	for _, pkg := range rtKernelPkg {
+		var out []byte
+		var err error
+		found := false
+
+		if out, err = exec.Command("rpm", "-q", pkg).Output(); err != nil {
+			wrappedErr := fmt.Errorf("Failed to run rpm -q : %v", err)
+			return false, wrappedErr
+		}
+		searchRpm := strings.TrimSpace(string(out)) + ".rpm"
+		for _, rpm := range rpms {
+			if rpm.Name() == searchRpm {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) bool {
 	var diff *MachineConfigDiff
 	oldConfig = canonicalizeEmptyMC(oldConfig)
@@ -307,6 +340,20 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	// Switch to real time kernel
+	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.switchKernel(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back Real time Kernel %v", err)
+				return
+			}
+		}
+	}()
+
 	return dn.updateOSAndReboot(newConfig)
 }
 
@@ -315,12 +362,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // and the MCO would just operate on that.  For now we're just doing this to get
 // improved logging.
 type MachineConfigDiff struct {
-	osUpdate bool
-	kargs    bool
-	fips     bool
-	passwd   bool
-	files    bool
-	units    bool
+	osUpdate   bool
+	kargs      bool
+	fips       bool
+	passwd     bool
+	files      bool
+	units      bool
+	kernelType bool
+}
+
+// canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
+func canonicalizeKernelType(kernelType string) string {
+	if kernelType == realtimeKernelType {
+		return realtimeKernelType
+	}
+	return defaultKernelType
 }
 
 // NewMachineConfigDiff compares two MachineConfig objects.
@@ -333,12 +389,13 @@ func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) *MachineCo
 	kargsEmpty := len(oldConfig.Spec.KernelArguments) == 0 && len(newConfig.Spec.KernelArguments) == 0
 
 	return &MachineConfigDiff{
-		osUpdate: oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs:    !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
-		fips:     oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
-		passwd:   !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
-		files:    !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
-		units:    !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
+		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
+		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
+		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
+		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
+		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
 	}
 }
 
@@ -554,6 +611,136 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	args := append([]string{"kargs"}, diff...)
 	dn.logSystem("Running rpm-ostree %v", args)
 	return exec.Command("rpm-ostree", args...).Run()
+}
+
+// mountOSContainer mounts the container and returns the mountpoint
+func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string, err error) {
+	var authArgs []string
+	if _, err = os.Stat(kubeletAuthFile); err == nil {
+		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+	}
+	// Pull the image
+	args := []string{"pull", "-q"}
+	args = append(args, authArgs...)
+	args = append(args, container)
+	pivotutils.RunExt(false, numRetriesNetCommands, "podman", args...)
+
+	containerName = "mcd-" + string(uuid.NewUUID())
+	// `podman mount` wants a container, so let's create a dummy one, but not run it
+	var cidBuf []byte
+	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, container)
+	if err != nil {
+		return
+	}
+
+	cid := strings.TrimSpace(string(cidBuf))
+	// Use the container ID to find its mount point
+	mntBuf, err := runGetOut("podman", "mount", cid)
+	if err != nil {
+		return
+	}
+	mnt = strings.TrimSpace(string(mntBuf))
+	return
+}
+
+// switchKernel updates kernel on host with the kernelType specified in MachineConfig.
+// Right now it supports default (traditional) and realtime kernel
+func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// Do nothing if both old and new KernelType are of type default
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
+		return nil
+	}
+	// We support Kernel update only on RHCOS nodes
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+		return fmt.Errorf("Updating kernel on non-RHCOS nodes is not supported")
+	}
+
+	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
+	rtKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra"}
+	var args []string
+
+	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
+
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
+		args = []string{"override", "reset"}
+		args = append(args, defaultKernel...)
+		rtKernelUninstall := []string{"--uninstall", "kernel-rt-core", "--uninstall", "kernel-rt-modules", "--uninstall", "kernel-rt-modules-extra"}
+		args = append(args, rtKernelUninstall...)
+		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
+		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+		}
+		return nil
+	}
+
+	var mnt, containerName string
+	var err error
+	if mnt, containerName, err = dn.mountOSContainer(newConfig.Spec.OSImageURL); err != nil {
+		return err
+	}
+
+	defer func() {
+		// Delete container and remove image once we are done with using rpms available in OSContainer
+		podmanRemove(containerName)
+		exec.Command("podman", "rmi", newConfig.Spec.OSImageURL).Run()
+		dn.logSystem("Deleted container and removed OSContainer image")
+	}()
+
+	// Get kernel-rt packages from OSContainer
+	rtRegex := regexp.MustCompile("kernel-rt(.*).rpm")
+	files, err := ioutil.ReadDir(mnt)
+	if err != nil {
+		return err
+	}
+
+	rtKernelRpms := []os.FileInfo{}
+	for _, file := range files {
+		if rtRegex.MatchString(file.Name()) {
+			rtKernelRpms = append(rtKernelRpms, file)
+		}
+	}
+
+	if len(rtKernelRpms) == 0 {
+		// No kernel-rt rpm package found
+		return fmt.Errorf("No kernel-rt package available in the OSContainer with URL %s", newConfig.Spec.OSImageURL)
+	}
+
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
+		// Switch to RT kernel
+		args = []string{"override", "remove"}
+		args = append(args, defaultKernel...)
+		for _, rpm := range rtKernelRpms {
+			args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
+		}
+
+		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
+		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+		}
+	}
+
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
+		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
+			args = []string{"uninstall"}
+			args = append(args, rtKernel...)
+			// Perform kernel-rt package update only if updated packages are available
+			var updateAvailable bool
+			if updateAvailable, err = rtKernelUpdateAvailable(rtKernelRpms, rtKernel); err != nil {
+				return err
+			} else if !updateAvailable {
+				return nil
+			}
+			for _, rpm := range rtKernelRpms {
+				args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
+			}
+			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
+			if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+				return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // updateFiles writes files specified by the nodeconfig to disk. it also writes
