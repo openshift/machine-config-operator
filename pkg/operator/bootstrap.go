@@ -29,7 +29,7 @@ func RenderBootstrap(
 	proxyFile,
 	clusterConfigConfigMapFile,
 	infraFile, networkFile,
-	cloudConfigFile,
+	cloudConfigFile, cloudProviderCAFile,
 	etcdCAFile, etcdMetricCAFile, rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
 	destinationDir string,
@@ -47,6 +47,9 @@ func RenderBootstrap(
 	}
 	if kubeAPIServerServingCA != "" {
 		files = append(files, kubeAPIServerServingCA)
+	}
+	if cloudProviderCAFile != "" {
+		files = append(files, cloudProviderCAFile)
 	}
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file)
@@ -128,6 +131,10 @@ func RenderBootstrap(
 	if _, ok := filesData[kubeAPIServerServingCA]; ok {
 		bundle = append(bundle, filesData[kubeAPIServerServingCA]...)
 		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
+	}
+	// Set the cloud-provider CA if given.
+	if data, ok := filesData[cloudProviderCAFile]; ok {
+		spec.CloudProviderCAData = data
 	}
 
 	spec.EtcdCAData = filesData[etcdCAFile]
