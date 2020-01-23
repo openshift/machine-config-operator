@@ -536,6 +536,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorUpgradeable, Status: configv1.ConditionUnknown})
 		co.Status.Versions = append(co.Status.Versions, configv1.OperandVersion{Name: "operator", Version: "test-version"})
+		optr.name = coName
 
 		for j, sync := range testCase.syncs {
 			optr.inClusterBringup = sync.inClusterBringUp
