@@ -70,6 +70,7 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setBytesIfSet(modified, &existing.EtcdMetricCAData, required.EtcdMetricCAData)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
+	setBytesIfSet(modified, &existing.CloudProviderCAData, required.CloudProviderCAData)
 
 	if !equality.Semantic.DeepEqual(existing.Proxy, required.Proxy) {
 		*modified = true
