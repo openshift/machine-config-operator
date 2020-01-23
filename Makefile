@@ -47,7 +47,7 @@ test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit:
-	go test -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
+	CGO_ENABLED=0 go test -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
 
 # Run the code generation tasks.
 # Example:

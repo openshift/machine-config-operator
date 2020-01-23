@@ -552,9 +552,13 @@ func verifyUserFields(pwdUser igntypes.PasswdUser) error {
 // `oc debug node` and run the disable command by hand, then reboot.
 // If we detect that FIPS has been changed, we reject the update.
 func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
-
 	content, err := ioutil.ReadFile(fipsFile)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// we just exit cleanly if we're not even on linux
+			glog.Infof("no %s on this system, skipping FIPS check", fipsFile)
+			return nil
+		}
 		return errors.Wrapf(err, "Error reading FIPS file at %s: %s", fipsFile, string(content))
 	}
 	nodeFIPS, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
@@ -566,7 +570,6 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 		current.Spec.FIPS = nodeFIPS
 		return nil
 	}
-
 	return errors.New("detected change to FIPS flag. Refusing to modify FIPS on a running cluster")
 }
 
