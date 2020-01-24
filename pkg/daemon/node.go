@@ -60,7 +60,7 @@ func getNodeAnnotationExt(node *corev1.Node, k string, allowNoent bool) (string,
 	v, ok := node.Annotations[k]
 	if !ok {
 		if !allowNoent {
-			return "", fmt.Errorf("%s annotation not found in %s", k, node)
+			return "", fmt.Errorf("%s annotation not found on node '%s'", k, node.Name)
 		}
 		return "", nil
 	}

@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"fmt"
+
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -104,11 +106,14 @@ func (nw *clusterNodeWriter) SetWorking(client corev1client.NodeInterface, liste
 // SetUnreconcilable sets the state to Unreconcilable.
 func (nw *clusterNodeWriter) SetUnreconcilable(err error, client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error {
 	glog.Errorf("Marking Unreconcilable due to: %v", err)
+	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
+	// annotation size limit (256 kb) at any point
+	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateUnreconcilable,
-		constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
+		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	MCDState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, err.Error()).SetToCurrentTime()
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, truncatedErr).SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
@@ -128,11 +133,14 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error, client corev1client.No
 // Returns an error if it couldn't set the annotation.
 func (nw *clusterNodeWriter) SetDegraded(err error, client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error {
 	glog.Errorf("Marking Degraded due to: %v", err)
+	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
+	// annotation size limit (256 kb) at any point
+	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
-		constants.MachineConfigDaemonReasonAnnotationKey: err.Error(),
+		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, err.Error()).SetToCurrentTime()
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, truncatedErr).SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
 		client:          client,
