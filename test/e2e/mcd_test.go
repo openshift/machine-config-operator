@@ -283,6 +283,47 @@ func TestKernelArguments(t *testing.T) {
 	}
 }
 
+func TestKernelType(t *testing.T) {
+	cs := framework.NewClientSet("")
+	kernelType := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("kerneltype-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config:     ctrlcommon.NewIgnConfig(),
+			KernelType: "realtime",
+		},
+	}
+
+	_, err := cs.MachineConfigs().Create(kernelType)
+	require.Nil(t, err)
+	t.Logf("Created %s", kernelType.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kernelType.Name)
+	require.Nil(t, err)
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		mcd, err := mcdForNode(cs, &node)
+		require.Nil(t, err)
+		mcdName := mcd.ObjectMeta.Name
+		// Worker node should have RT kernel
+		cmd, err := exec.Command("oc", "rsh", "-n", "openshift-machine-config-operator", mcdName,
+			"uname", "-a").CombinedOutput()
+		require.Nil(t, err)
+		kernelInfo := string(cmd)
+		if !strings.Contains(kernelInfo, "PREEMPT RT") {
+			t.Fatalf("Node %s doesn't have expected kernel", node.Name)
+		}
+		t.Logf("Node %s has expected kernel", node.Name)
+	}
+}
+
 func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error) {
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
