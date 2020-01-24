@@ -82,6 +82,9 @@ type ControllerConfigSpec struct {
 	// rootCAData specifies the root CA data
 	RootCAData []byte `json:"rootCAData"`
 
+	// cloudProvider specifies the cloud provider CA data
+	CloudProviderCAData []byte `json:"cloudProviderCAData"`
+
 	// additionalTrustBundle is a certificate bundle that will be added to the nodes
 	// trusted certificate store.
 	AdditionalTrustBundle []byte `json:"additionalTrustBundle"`

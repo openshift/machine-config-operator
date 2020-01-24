@@ -22,6 +22,7 @@ var (
 		baremetalRuntimeCfgImage  string
 		cloudConfigFile           string
 		configFile                string
+		cloudProviderCAFile       string
 		corednsImage              string
 		destinationDir            string
 		etcdCAFile                string
@@ -80,6 +81,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudProviderCAFile, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
 
 }
 
@@ -118,6 +120,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.configFile,
 		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
 		bootstrapOpts.cloudConfigFile,
+		bootstrapOpts.cloudProviderCAFile,
 		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		&imgs,
 		bootstrapOpts.destinationDir,
