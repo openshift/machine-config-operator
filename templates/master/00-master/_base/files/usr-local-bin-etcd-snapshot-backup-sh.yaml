@@ -34,8 +34,8 @@ contents:
 
     BACKUP_DIR="$1"
     DATESTRING=$(date "+%F_%H%M%S")
-    BACKUP_TAR_FILE=${BACKUP_DIR}/snapshot_db_kuberesources_$DATESTRING.tar
-    SNAPSHOT_FILE="${ASSET_DIR}/tmp/snapshot.db"
+    BACKUP_TAR_FILE=${BACKUP_DIR}/static_kuberesources_${DATESTRING}.tar.gz
+    SNAPSHOT_FILE="${BACKUP_DIR}/snapshot_${DATESTRING}.db"
 
     trap "rm -f ${BACKUP_TAR_FILE} ${SNAPSHOT_FILE}" ERR
 
@@ -57,9 +57,7 @@ contents:
       backup_manifest
       backup_latest_kube_static_resources
       snapshot_data_dir
-      append_snapshot_to_tar_and_gzip
-      rm -f ${SNAPSHOT_FILE}
-      echo "snapshot db and kube resources are successfully saved to ${BACKUP_TAR_FILE}.gz!"
+      echo "snapshot db and kube resources are successfully saved to ${BACKUP_DIR}!"
     }
 
     run
