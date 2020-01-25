@@ -14,8 +14,6 @@ type Interface interface {
 	ControllerConfigs() ControllerConfigInformer
 	// KubeletConfigs returns a KubeletConfigInformer.
 	KubeletConfigs() KubeletConfigInformer
-	// MCOConfigs returns a MCOConfigInformer.
-	MCOConfigs() MCOConfigInformer
 	// MachineConfigs returns a MachineConfigInformer.
 	MachineConfigs() MachineConfigInformer
 	// MachineConfigPools returns a MachineConfigPoolInformer.
@@ -46,11 +44,6 @@ func (v *version) ControllerConfigs() ControllerConfigInformer {
 // KubeletConfigs returns a KubeletConfigInformer.
 func (v *version) KubeletConfigs() KubeletConfigInformer {
 	return &kubeletConfigInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
-// MCOConfigs returns a MCOConfigInformer.
-func (v *version) MCOConfigs() MCOConfigInformer {
-	return &mCOConfigInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // MachineConfigs returns a MachineConfigInformer.
