@@ -193,7 +193,9 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 
 func (s *SetupEnv) getExportEnv() (map[string]string, error) {
 	// if etcd is managed by the operator populate ENV from configmap
-	if s.isEtcdScaling() {
+	// TODO: alaypatel07/hexfusion figure out a better way of implementing isScaling
+	// if s.isEtcdScaling() {
+	if inCluster() && !s.opts.bootstrapSRV {
 		return s.getOperatorEnv()
 	}
 	// initialize envs used to bootstrap etcd using SRV discovery or disaster recovery.
@@ -315,6 +317,7 @@ func (s *SetupEnv) getBootstrapEnv() (map[string]string, error) {
 // `cluster-etcd-operator` and returns true if yes. If false we can conclude that the member is already
 // part of the cluster or we have/are bootstrapping etcd using SRV discovery.
 func (s *SetupEnv) isEtcdScaling() bool {
+	// TODO: reimplement me!
 	if _, err := os.Stat(fmt.Sprintf("%s/member", s.etcdDataDir)); os.IsNotExist(err) && !s.opts.bootstrapSRV && inCluster() {
 		return true
 	}
@@ -339,6 +342,7 @@ func (s *SetupEnv) setClient() error {
 			return fmt.Errorf("error creating client: %v", err)
 		}
 		s.Client = client
+		return nil
 	}
 	glog.Infof("no client set")
 	return nil
