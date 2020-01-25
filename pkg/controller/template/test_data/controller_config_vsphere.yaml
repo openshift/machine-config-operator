@@ -19,3 +19,10 @@ spec:
     setupEtcdEnv: image/setupEtcdEnv:1
     infraImage: image/infraImage:1
     kubeClientAgentImage: image/kubeClientAgentImage:1
+  infra:
+    status:
+      platformStatus:
+        vsphere:
+          apiServerInternalIP: 10.0.0.1
+          ingressIP: 10.0.0.2
+          nodeDNSIP: 10.0.0.3

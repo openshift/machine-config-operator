@@ -276,6 +276,26 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 			},
 		)
 	}
+	if infra.Status.PlatformStatus.VSphere != nil {
+		manifests = append(manifests,
+			manifest{
+				name:     "manifests/vsphere/coredns.yaml",
+				filename: "vsphere/manifests/coredns.yaml",
+			},
+			manifest{
+				name:     "manifests/vsphere/coredns-corefile.tmpl",
+				filename: "vsphere/static-pod-resources/coredns/Corefile.tmpl",
+			},
+			manifest{
+				name:     "manifests/vsphere/keepalived.yaml",
+				filename: "vsphere/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/vsphere/keepalived.conf.tmpl",
+				filename: "vsphere/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
 
 	return manifests
 }
