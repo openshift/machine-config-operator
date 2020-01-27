@@ -52,6 +52,7 @@ type MachineConfigSpec struct {
     Config ign.Config `json:"config"`
     KernelArguments []string `json:"kernelArguments"`
     Fips bool `json:"fips"`
+    KernelType string `json:"kernelType"`
 }
 ```
 
@@ -114,6 +115,29 @@ Note that for 4.2 clusters this is only supported as a "day 2" operation.
 
 #### nosmt
 When a machine boots with `nosmt` Kernel Argument, it disables multi-threading on that host and the system will only utilize physical CPU cores. While applying `nosmt` on any node in the cluster, ensure that enough CPU resources are available to schedule all pods, otherwise it can lead to a degraded cluster. For example: a basic 3 master and 3 worker node cluster having 2 physical CPU cores on each node should be fine.
+
+### KernelType
+
+This feature is available with OCP 4.4 and onward releases as both `day 1` and `day 2` operation. It allows to choose between traditional and Real Time (RT) kernel on an RHCOS node. Supported values are
+`""` or `default` for traditional kernel and `realtime` for RT kernel.
+
+To set kernelType field during cluster install, see the [installer guide](https://github.com/openshift/installer/blob/master/docs/user/customization.md#Switching-RHCOS-host-kernel-using-KernelType).
+
+For day 2, create a MachineConfig and apply to the cluster using `oc create -f`
+
+Example MachineConfig to switch to RT kernel on worker nodes:
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: "worker"
+  name: worker-kerneltype
+spec:
+  kernelType: realtime
+```
+
+**Note:** The RT kernel lowers throughput (performance) in return for improved worst-case latency bounds. This feature is intended only for use cases that require consistent low latency. For more information, see the [Linux Foundation wiki](https://wiki.linuxfoundation.org/realtime/start) and the [RHEL RT portal](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_for_real_time/8/).
 
 ### FIPS
 
