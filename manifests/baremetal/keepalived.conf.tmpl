@@ -4,32 +4,50 @@
 # For more information, see installer/data/data/bootstrap/baremetal/README.md
 # in the installer repo.
 
-vrrp_instance {{`{{.Cluster.Name}}`}}_API {
+{{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
+{{`vrrp_instance {{.Cluster.Name}}_API {
     state BACKUP
-    interface {{`{{.VRRPInterface}}`}}
-    virtual_router_id {{`{{.Cluster.APIVirtualRouterID }}`}}
+    interface {{.VRRPInterface}}
+    virtual_router_id {{.Cluster.APIVirtualRouterID }}
     priority 50
     advert_int 1
+    unicast_src_ip {{.NonVirtualIP}}
+    unicast_peer {
+        {{range .LBConfig.Backends}}
+        {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
+        {{else}}
+        {{.NonVirtualIP}}
+        {{end}}
+    }
     authentication {
         auth_type PASS
-        auth_pass {{`{{.Cluster.Name}}`}}_api_vip
+        auth_pass {{.Cluster.Name}}_api_vip
     }
     virtual_ipaddress {
-        {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
     }
-}
+}`}}
 
-vrrp_instance {{`{{.Cluster.Name}}`}}_DNS {
+{{`vrrp_instance {{.Cluster.Name}}_DNS {
     state MASTER
-    interface {{`{{.VRRPInterface}}`}}
-    virtual_router_id {{`{{.Cluster.DNSVirtualRouterID }}`}}
+    interface {{.VRRPInterface}}
+    virtual_router_id {{.Cluster.DNSVirtualRouterID }}
     priority 140
     advert_int 1
+    unicast_src_ip {{.NonVirtualIP}}
+    unicast_peer {
+        {{range .LBConfig.Backends}}
+        {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
+        {{else}}
+        {{.NonVirtualIP}}
+        {{end}}
+    }
     authentication {
         auth_type PASS
-        auth_pass {{`{{.Cluster.Name}}`}}_dns_vip
+        auth_pass {{.Cluster.Name}}_dns_vip
     }
     virtual_ipaddress {
-        {{`{{ .Cluster.DNSVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        {{ .Cluster.DNSVIP }}/{{ .Cluster.VIPNetmask }}
     }
-}
+}`}}

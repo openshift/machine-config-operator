@@ -23,12 +23,21 @@ contents:
         weight 50
     }
 
+    {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
     vrrp_instance {{`{{ .Cluster.Name }}`}}_API {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
         virtual_router_id {{`{{ .Cluster.APIVirtualRouterID }}`}}
         priority 40
         advert_int 1
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{ .BootstrapIP }}`}}
+            {{`{{range .LBConfig.Backends}}
+            {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
+            {{end}}`}}
+        }
         authentication {
             auth_type PASS
             auth_pass {{`{{ .Cluster.Name }}`}}_api_vip
@@ -47,6 +56,13 @@ contents:
         virtual_router_id {{`{{ .Cluster.DNSVirtualRouterID }}`}}
         priority 40
         advert_int 1
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{ .BootstrapIP }}`}}
+            {{`{{range .LBConfig.Backends}}
+            {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
+            {{end}}`}}
+        }
         authentication {
             auth_type PASS
             auth_pass {{`{{ .Cluster.Name }}`}}_dns_vip
@@ -65,6 +81,12 @@ contents:
         virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
         priority 40
         advert_int 1
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{range .IngressConfig.Peers}}
+            {{if ne $nonVirtualIP .}}{{.}}{{end}}
+            {{end}}`}}
+        }
         authentication {
             auth_type PASS
             auth_pass cluster_uuid_ingress_vip
