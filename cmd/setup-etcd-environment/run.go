@@ -195,7 +195,7 @@ func (s *SetupEnv) getExportEnv() (map[string]string, error) {
 	// if etcd is managed by the operator populate ENV from configmap
 	// TODO: alaypatel07/hexfusion figure out a better way of implementing isScaling
 	// if s.isEtcdScaling() {
-	if inCluster() && !s.opts.bootstrapSRV {
+	if false && inCluster() && !s.opts.bootstrapSRV {
 		return s.getOperatorEnv()
 	}
 	// initialize envs used to bootstrap etcd using SRV discovery or disaster recovery.
