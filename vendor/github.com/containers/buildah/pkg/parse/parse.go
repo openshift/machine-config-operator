@@ -14,10 +14,10 @@ import (
 	"unicode"
 
 	"github.com/containers/buildah"
-	"github.com/containers/image/types"
+	"github.com/containers/image/v5/types"
 	"github.com/containers/storage/pkg/idtools"
-	"github.com/docker/go-units"
-	"github.com/opencontainers/runtime-spec/specs-go"
+	units "github.com/docker/go-units"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -583,6 +583,12 @@ func SystemContextFromOptions(c *cobra.Command) (*types.SystemContext, error) {
 		ctx.RegistriesDirPath = regConfDir
 	}
 	ctx.DockerRegistryUserAgent = fmt.Sprintf("Buildah/%s", buildah.Version)
+	if os, err := c.Flags().GetString("override-os"); err == nil {
+		ctx.OSChoice = os
+	}
+	if arch, err := c.Flags().GetString("override-arch"); err == nil {
+		ctx.ArchitectureChoice = arch
+	}
 	return ctx, nil
 }
 
