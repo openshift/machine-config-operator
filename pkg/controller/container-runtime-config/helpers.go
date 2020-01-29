@@ -55,6 +55,7 @@ type tomlConfigCRIO struct {
 		Runtime struct{ crioconfig.RuntimeConfig } `toml:"runtime"`
 		Image   struct{ crioconfig.ImageConfig }   `toml:"image"`
 		Network struct{ crioconfig.NetworkConfig } `toml:"network"`
+		Metrics struct{ crioconfig.MetricsConfig } `toml:"metrics"`
 	} `toml:"crio"`
 }
 
