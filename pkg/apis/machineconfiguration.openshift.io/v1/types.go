@@ -10,6 +10,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// MachineConfigRoleLabelKey is metadata key in the MachineConfig. Specifies the node role that config should be applied to.
+// For example: `master` or `worker`
+const MachineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
+
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
