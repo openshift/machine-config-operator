@@ -275,14 +275,10 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	return mcfg, nil
 }
 
-const (
-	machineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
-)
-
 // MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
 func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
 	labels := map[string]string{
-		machineConfigRoleLabelKey: role,
+		mcfgv1.MachineConfigRoleLabelKey: role,
 	}
 	return &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
