@@ -56,7 +56,9 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 // 4. Append the machine annotations file.
 // 5. Append the KubeConfig file.
 func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
-
+	if cr.machineConfigPool != "master" {
+		return nil, fmt.Errorf("refusing to serve bootstrap configuration to pool %q", cr.machineConfigPool)
+	}
 	// 1. Read the Machine Config Pool object.
 	fileName := path.Join(bsc.serverBaseDir, "machine-pools", cr.machineConfigPool+".yaml")
 	glog.Infof("reading file %q", fileName)
