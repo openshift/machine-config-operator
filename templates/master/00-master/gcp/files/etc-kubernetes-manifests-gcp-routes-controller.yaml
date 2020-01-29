@@ -15,7 +15,7 @@ contents:
         command: ["gcp-routes-controller"]
         args:
         - "run"
-        - "--health-check-url=https://127.0.0.1:6443/healthz"
+        - "--health-check-url=https://127.0.0.1:6443/readyz"
         resources:
           requests:
             cpu: 20m
