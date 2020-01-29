@@ -12,6 +12,18 @@ contents:
         k8s-app: etcd
     spec:
       initContainers:
+    {{if .Images.clusterEtcdOperatorImageKey}}
+      - name: wait-for-kube
+        image: "{{.Images.clusterEtcdOperatorImageKey}}"
+        command: ["/usr/bin/cluster-etcd-operator"]
+        args:
+        - "wait-for-kube"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: sa
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount/
+    {{end}}
       - name: discovery
         image: "{{.Images.setupEtcdEnvKey}}"
         command: ["/usr/bin/setup-etcd-environment"]
