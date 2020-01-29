@@ -131,7 +131,7 @@ func createMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	infraMCP.Spec.MachineConfigSelector = &mcSelector
 	infraMCP.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{
 		{
-			Key:      "machineconfiguration.openshift.io/role",
+			Key:      mcfgv1.MachineConfigRoleLabelKey,
 			Operator: metav1.LabelSelectorOpIn,
 			Values:   []string{"worker", mcpName},
 		},

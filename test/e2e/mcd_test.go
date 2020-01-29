@@ -47,7 +47,7 @@ func TestMCDToken(t *testing.T) {
 
 func mcLabelForRole(role string) map[string]string {
 	mcLabels := make(map[string]string)
-	mcLabels["machineconfiguration.openshift.io/role"] = role
+	mcLabels[mcfgv1.MachineConfigRoleLabelKey] = role
 	return mcLabels
 }
 

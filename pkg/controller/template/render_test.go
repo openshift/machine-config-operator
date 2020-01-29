@@ -296,7 +296,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Fatal("non-nil labels expected")
 			}
 
-			role, ok := cfg.Labels[machineConfigRoleLabelKey]
+			role, ok := cfg.Labels[mcfgv1.MachineConfigRoleLabelKey]
 			if !ok || role == "" {
 				t.Fatal("role label missing")
 			}
