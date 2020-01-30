@@ -221,10 +221,19 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 	if len(cfg.GetFinalizers()) == 0 {
 		return nil
 	}
-	mcName := cfg.GetFinalizers()[0]
-	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
-	if err != nil && !macherrors.IsNotFound(err) {
+	finalizerName := cfg.GetFinalizers()[0]
+	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(metav1.ListOptions{})
+	if err != nil {
 		return err
+	}
+	for _, mc := range mcs.Items {
+		if string(mc.GetUID()) == finalizerName || mc.GetName() == finalizerName {
+			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mc.GetName(), &metav1.DeleteOptions{})
+			if err != nil && !macherrors.IsNotFound(err) {
+				return err
+			}
+			break
+		}
 	}
 	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
 		return err
@@ -549,13 +558,13 @@ func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc
 
 		// if the finalizer is already set then skip
 		for _, finalizerName := range newcfg.Finalizers {
-			if finalizerName == mc.Name {
+			if finalizerName == mc.Name || finalizerName == string(mc.GetUID()) {
 				return nil
 			}
 		}
 
 		kcTmp := newcfg.DeepCopy()
-		kcTmp.Finalizers = append(kcTmp.Finalizers, mc.Name)
+		kcTmp.Finalizers = append(kcTmp.Finalizers, string(mc.GetUID()))
 
 		modJSON, err := json.Marshal(kcTmp)
 		if err != nil {
