@@ -121,7 +121,7 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := bs.GetConfig(poolRequest{
-		machineConfigPool: testPool,
+		machineConfigPool: "master",
 	})
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
@@ -130,6 +130,14 @@ func TestBootstrapServer(t *testing.T) {
 	// assert on the output.
 	validateIgnitionFiles(t, mc.Spec.Config.Storage.Files, res.Storage.Files)
 	validateIgnitionSystemd(t, mc.Spec.Config.Systemd.Units, res.Systemd.Units)
+
+	// verify bootstrap cannot serve ignition to other pool than master
+	res, err = bs.GetConfig(poolRequest{
+		machineConfigPool: testPool,
+	})
+	if err == nil {
+		t.Fatalf("expected bootstrap server to not serve ignition to non-master pools")
+	}
 }
 
 // TestClusterServer tests the behavior of the machine config server

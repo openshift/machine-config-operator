@@ -1,0 +1,24 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfigPool
+metadata:
+  creationTimestamp: null
+  name: master
+spec:
+  configuration:
+    name: test-config
+  machineConfigSelector:
+    matchLabels:
+      machineconfiguration.openshift.io/role: test
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/test: ""
+  maxUnavailable: null
+  paused: false
+status:
+  conditions: null
+  configuration:
+    name: test-config
+  machineCount: 0
+  readyMachineCount: 0
+  unavailableMachineCount: 0
+  updatedMachineCount: 0
