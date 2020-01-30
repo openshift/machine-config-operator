@@ -276,7 +276,7 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 			},
 		)
 	}
-	if infra.Status.PlatformStatus.VSphere != nil {
+	if infra.Status.PlatformStatus.VSphere != nil && infra.Status.PlatformStatus.VSphere.APIServerInternalIP != "" {
 		manifests = append(manifests,
 			manifest{
 				name:     "manifests/vsphere/coredns.yaml",
