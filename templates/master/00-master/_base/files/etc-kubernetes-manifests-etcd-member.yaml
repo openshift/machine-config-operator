@@ -111,7 +111,9 @@ contents:
             export ETCDCTL_API=3 ETCDCTL_CACERT=/etc/ssl/etcd/ca.crt ETCDCTL_CERT=$(find /etc/ssl/ -name *peer*crt) ETCDCTL_KEY=$(find /etc/ssl/ -name *peer*key) \
               ETCDCTL_ENDPOINTS="$ETCD_ENDPOINTS"
 
-            until $(etcdctl member list | grep $ETCD_DNS_NAME>/dev/null)
+            DEBUG=$(etcdctl member list)
+            echo "etcdctl result: $DEBUG"
+            until $(echo "$DEBUG" | grep $ETCD_DNS_NAME>/dev/null)
             do
               echo "waiting for $ETCD_DNS_NAME to be added to etcd membership"
               sleep 2
