@@ -20,15 +20,13 @@ contents:
 
     # download and test etcdctl from upstream release assets
     dl_etcdctl() {
-      GOOGLE_URL=https://storage.googleapis.com/etcd
-      DOWNLOAD_URL=${GOOGLE_URL}
-
-      echo "Downloading etcdctl binary.."
-      curl -s -L ${DOWNLOAD_URL}/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -o $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz \
-        && tar -xzf $ASSET_DIR/tmp/etcd-${ETCD_VERSION}-linux-amd64.tar.gz -C $ASSET_DIR/shared --strip-components=1 \
-        && mv $ASSET_DIR/shared/etcdctl $ASSET_DIR/bin \
-        && rm $ASSET_DIR/shared/etcd \
-        && $ASSET_DIR/bin/etcdctl version
+      local etcdimg="{{.Images.etcdKey}}"
+      local etcdctr=$(podman create "${etcdimg}")
+      local etcdmnt=$(podman mount "${etcdctr}")
+      cp ${etcdmnt}/bin/etcdctl $ASSET_DIR/bin
+      umount "${etcdmnt}"
+      podman rm "${etcdctr}"
+      $ASSET_DIR/bin/etcdctl version
     }
 
     #backup etcd client certs
