@@ -197,7 +197,7 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	if internal.PidsLimit > 0 {
 		tomlConf.Crio.Runtime.PidsLimit = internal.PidsLimit
 	}
-	if internal.LogSizeMax != (resource.Quantity{}) {
+	if internal.LogSizeMax.Value() != 0 {
 		tomlConf.Crio.Runtime.LogSizeMax = internal.LogSizeMax.Value()
 	}
 	if internal.LogLevel != "" {
