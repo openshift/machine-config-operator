@@ -29,7 +29,7 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
-        --v="${KUBELET_LOG_LEVEL}"
+        --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
   RestartSec=10
