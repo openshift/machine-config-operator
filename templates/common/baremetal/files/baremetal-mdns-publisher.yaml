@@ -34,11 +34,23 @@ contents:
         - "-c"
         - |
           #/bin/bash
-          while [ "$(hostname)" == "$DEFAULT_LOCAL_HOSTNAME" ]
+          function get_hostname()
+          {
+            if [[ -s /etc/mdns/hostname ]]; then
+              cat /etc/mdns/hostname
+            else
+              # if hostname wasn't updated by NM script, read hostname
+              hostname
+            fi
+          }
+          while [ "$(get_hostname)" == "$DEFAULT_LOCAL_HOSTNAME" ]
           do
             echo "hostname is still ${DEFAULT_LOCAL_HOSTNAME}"
-            sleep 10
+            sleep 1
           done
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/mdns"
       - name: render-config
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
