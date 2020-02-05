@@ -29,18 +29,35 @@ contents:
         env:
           - name: DEFAULT_LOCAL_HOSTNAME
             value: "localhost"
+          - name: RUNTIMECFG_HOSTNAME_PATH
+            value: "/etc/mdns/hostname"
         command:
         - "/bin/bash"
         - "-c"
         - |
           #/bin/bash
-          while [ "$(hostname)" == "$DEFAULT_LOCAL_HOSTNAME" ]
+          function get_hostname()
+          {
+            if [[ -s $RUNTIMECFG_HOSTNAME_PATH ]]; then
+              cat $RUNTIMECFG_HOSTNAME_PATH
+            else
+              # if hostname wasn't updated by NM script, read hostname
+              hostname
+            fi
+          }
+          while [ "$(get_hostname)" == "$DEFAULT_LOCAL_HOSTNAME" ]
           do
             echo "hostname is still ${DEFAULT_LOCAL_HOSTNAME}"
-            sleep 10
+            sleep 1
           done
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/mdns"
       - name: render-config
         image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: RUNTIMECFG_HOSTNAME_PATH
+            value: "/etc/mdns/hostname"
         command:
         - runtimecfg
         - render
