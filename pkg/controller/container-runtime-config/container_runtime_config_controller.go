@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -533,13 +532,13 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 			var storageTOML, crioTOML []byte
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
-			if ctrcfg.OverlaySize != (resource.Quantity{}) {
+			if ctrcfg.OverlaySize.Value() != 0 {
 				storageTOML, err = ctrl.mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
 				}
 			}
-			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != 0 || ctrcfg.LogSizeMax != (resource.Quantity{}) {
+			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != 0 || ctrcfg.LogSizeMax.Value() != 0 {
 				crioTOML, err = ctrl.mergeConfigChanges(originalCRIOIgn, cfg, updateCRIOConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to crio.conf: %v", err)
