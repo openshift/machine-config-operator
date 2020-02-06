@@ -1,0 +1,19 @@
+name: "kubelet-nodeip-configuration.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Writes an Environment file for Kubelet to choose a valide node IP address
+  # This only applies to VIP managing environments where the kubelet IP address picking
+  # logic is flawed and may end up selecting an address from a different subnet
+  Wants=network-online.target
+  After=network-online.target ignition-firstboot-complete.service
+  Before=kubelet.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/local/bin/kubelet-nodeip-finder {{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}
+
+  [Install]
+  WantedBy=multi-user.target
+
