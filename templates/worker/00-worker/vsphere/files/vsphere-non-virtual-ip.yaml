@@ -3,6 +3,8 @@ mode: 0755
 path: "/usr/local/bin/non_virtual_ip"
 contents:
   inline: |
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     #!/usr/libexec/platform-python
     import collections
     import socket
@@ -136,3 +138,5 @@ contents:
 
     if __name__ == '__main__':
         main()
+    {{ end -}}
+    {{ end -}}

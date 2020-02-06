@@ -3,6 +3,8 @@ mode: 0644
 path: "/etc/coredns/node-dns-db"
 contents:
   inline: |
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     $ORIGIN {{ .EtcdDiscoveryDomain }}.
     @    3600 IN SOA host.{{ .EtcdDiscoveryDomain }}. hostmaster (
                                     2017042752 ; serial
@@ -15,3 +17,5 @@ contents:
     api IN A {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
 
     *.apps  IN  A {{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}
+    {{ end -}}
+    {{ end -}}
