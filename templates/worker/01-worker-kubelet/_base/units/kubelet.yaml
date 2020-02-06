@@ -30,7 +30,7 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
-        --v="${KUBELET_LOG_LEVEL}"
+        --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
   RestartSec=10
