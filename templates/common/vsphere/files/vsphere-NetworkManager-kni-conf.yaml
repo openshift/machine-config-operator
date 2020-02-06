@@ -3,5 +3,9 @@ mode: 0644
 path: "/etc/NetworkManager/conf.d/99-kni.conf"
 contents:
   inline: |
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     [main]
     dhcp=dhclient
+    {{ end -}}
+    {{ end -}}
