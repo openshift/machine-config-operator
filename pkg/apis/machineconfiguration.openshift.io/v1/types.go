@@ -145,6 +145,31 @@ type ControllerConfigList struct {
 // +genclient
 // +genclient:noStatus
 // +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// RenderedMachineConfig defines the configuration for a machine
+// in a MachineConfigPool, rendered from the set of matching
+// MachineConfigs by the render controller in the MCC
+type RenderedMachineConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec MachineConfigSpec `json:"spec"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// RenderedMachineConfigList is a list of MachineConfig resources
+type RenderedMachineConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []RenderedMachineConfig `json:"items"`
+}
+
+// +genclient
+// +genclient:noStatus
+// +genclient:nonNamespaced
 // +k8s:deepcopy-gen=false
 
 // MachineConfig defines the configuration for a machine

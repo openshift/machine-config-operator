@@ -523,7 +523,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 }
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
-func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.RenderedMachineConfig, error) {
 	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid
 	for _, config := range configs {
 		if err := ctrlcommon.ValidateMachineConfig(config.Spec); err != nil {
@@ -550,10 +550,10 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.RenderedMachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
-		oconfigs []*mcfgv1.MachineConfig
+		oconfigs []*mcfgv1.RenderedMachineConfig
 	)
 	for _, pool := range pools {
 		pcs, err := getMachineConfigsForPool(pool, configs)
