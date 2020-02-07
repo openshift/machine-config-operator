@@ -53,6 +53,7 @@ func newRuntimeOCI(r *Runtime, handler *config.RuntimeHandler) RuntimeImpl {
 	if handler.RuntimeRoot != "" {
 		runRoot = handler.RuntimeRoot
 	}
+
 	return &runtimeOCI{
 		Runtime: r,
 		path:    handler.RuntimePath,
@@ -97,7 +98,9 @@ func (r *runtimeOCI) CreateContainer(c *Container, cgroupParent string) (err err
 		"-u", c.id,
 		"-r", r.path,
 		"-b", c.bundlePath,
+		"--persist-dir", c.dir,
 		"-p", filepath.Join(c.bundlePath, "pidfile"),
+		"-P", c.conmonPidFilePath(),
 		"-l", c.logPath,
 		"--exit-dir", r.config.ContainerExitsDir,
 		"--socket-dir-path", r.config.ContainerAttachSocketDir,
@@ -214,6 +217,7 @@ func (r *runtimeOCI) CreateContainer(c *Container, cgroupParent string) (err err
 		logrus.Errorf("Container creation timeout (%v)", ContainerCreateTimeout)
 		return fmt.Errorf("create container timeout")
 	}
+
 	return nil
 }
 
@@ -626,13 +630,41 @@ func (r *runtimeOCI) DeleteContainer(c *Container) error {
 	defer c.opLock.Unlock()
 
 	_, err := utils.ExecCmd(r.path, rootFlag, r.root, "delete", "--force", c.id)
+
 	return err
+}
+
+func updateContainerStatusFromExitFile(c *Container) error {
+	exitFilePath := filepath.Join(c.dir, "exit")
+	fi, err := os.Stat(exitFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to find container exit file for %v: %v", c.id, err)
+	}
+	c.state.Finished, err = getFinishedTime(fi)
+	if err != nil {
+		return fmt.Errorf("failed to get finished time: %v", err)
+	}
+	statusCodeStr, err := ioutil.ReadFile(exitFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read exit file: %v", err)
+	}
+	statusCode, err := strconv.Atoi(string(statusCodeStr))
+	if err != nil {
+		return fmt.Errorf("status code conversion failed: %v", err)
+	}
+	c.state.ExitCode = utils.Int32Ptr(int32(statusCode))
+	return nil
 }
 
 // UpdateContainerStatus refreshes the status of the container.
 func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
+
+	if c.state.ExitCode != nil && !c.state.Finished.IsZero() {
+		logrus.Debugf("Skipping status update for: %+v", c.state)
+		return nil
+	}
 
 	cmd := exec.Command(r.path, rootFlag, r.root, "state", c.id)
 	if v, found := os.LookupEnv("XDG_RUNTIME_DIR"); found {
@@ -647,8 +679,10 @@ func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 		// We always populate the fields below so kube can restart/reschedule
 		// containers failing.
 		c.state.Status = ContainerStateStopped
-		c.state.Finished = time.Now()
-		c.state.ExitCode = 255
+		if err := updateContainerStatusFromExitFile(c); err != nil {
+			c.state.Finished = time.Now()
+			c.state.ExitCode = utils.Int32Ptr(255)
+		}
 		return nil
 	}
 	if err := json.NewDecoder(bytes.NewBuffer(out)).Decode(&c.state); err != nil {
@@ -656,7 +690,7 @@ func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 	}
 
 	if c.state.Status == ContainerStateStopped {
-		exitFilePath := filepath.Join(r.config.ContainerExitsDir, c.id)
+		exitFilePath := filepath.Join(c.dir, "exit")
 		var fi os.FileInfo
 		err = kwait.ExponentialBackoff(
 			kwait.Backoff{
@@ -675,7 +709,6 @@ func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 			})
 		if err != nil {
 			logrus.Warnf("failed to find container exit file for %v: %v", c.id, err)
-			c.state.ExitCode = -1
 		} else {
 			c.state.Finished, err = getFinishedTime(fi)
 			if err != nil {
@@ -689,7 +722,7 @@ func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 			if err != nil {
 				return fmt.Errorf("status code conversion failed: %v", err)
 			}
-			c.state.ExitCode = int32(statusCode)
+			c.state.ExitCode = utils.Int32Ptr(int32(statusCode))
 		}
 
 		oomFilePath := filepath.Join(c.bundlePath, "oom")
@@ -946,4 +979,61 @@ func prepareProcessExec(c *Container, cmd []string, tty bool) (*os.File, error) 
 		return nil, err
 	}
 	return f, nil
+}
+
+// ReadConmonPidFile attempts to read conmon's pid from its pid file
+// This function makes no verification that this file should exist
+// it is up to the caller to verify that this container has a conmon
+func ReadConmonPidFile(c *Container) (int, error) {
+	contents, err := ioutil.ReadFile(c.conmonPidFilePath())
+	if err != nil {
+		return -1, err
+	}
+	// Convert it to an int
+	conmonPID, err := strconv.Atoi(string(contents))
+	if err != nil {
+		return -1, err
+	}
+	return conmonPID, nil
+}
+
+func (c *Container) conmonPidFilePath() string {
+	return filepath.Join(c.bundlePath, "conmon-pidfile")
+}
+
+// SpoofOOM is a function that sets a container state as though it OOM'd. It's used in situations
+// where another process in the container's cgroup (like conmon) OOM'd when it wasn't supposed to,
+// allowing us to report to the kubelet that the container OOM'd instead.
+func (r *Runtime) SpoofOOM(c *Container) {
+	ecBytes := []byte{'1', '3', '7'}
+
+	c.opLock.Lock()
+	defer c.opLock.Unlock()
+
+	c.state.Status = ContainerStateStopped
+	c.state.Finished = time.Now()
+	c.state.ExitCode = utils.Int32Ptr(137)
+	c.state.OOMKilled = true
+
+	oomFilePath := filepath.Join(c.bundlePath, "oom")
+	oomFile, err := os.Create(oomFilePath)
+	if err != nil {
+		logrus.Debugf("unable to write to oom file path %s: %v", oomFilePath, err)
+	}
+	oomFile.Close()
+
+	exitFilePath := filepath.Join(r.config.ContainerExitsDir, c.id)
+	exitFile, err := os.Create(exitFilePath)
+	if err != nil {
+		logrus.Debugf("unable to write exit file path %s: %v", exitFilePath, err)
+		return
+	}
+	if _, err := exitFile.Write(ecBytes); err != nil {
+		logrus.Debugf("failed to write exit code to file %s: %v", exitFilePath, err)
+	}
+	exitFile.Close()
+}
+
+func ConmonPath(r *Runtime) string {
+	return r.config.Conmon
 }

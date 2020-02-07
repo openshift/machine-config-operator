@@ -11,8 +11,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 	conmonconfig "github.com/containers/conmon/runner/config"
-	"github.com/containers/image/pkg/sysregistriesv2"
-	"github.com/containers/image/types"
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
+	"github.com/containers/image/v5/types"
+	"github.com/containers/libpod/pkg/hooks"
 	"github.com/containers/libpod/pkg/rootless"
 	createconfig "github.com/containers/libpod/pkg/spec"
 	"github.com/containers/storage"
@@ -137,6 +138,9 @@ type RootConfig struct {
 	// LogDir is the default log directory where all logs will go unless kubelet
 	// tells us to put them somewhere else.
 	LogDir string `toml:"log_dir"`
+
+	// VersionFile is the location CRI-O will lay down the version file
+	VersionFile string `toml:"version_file"`
 }
 
 // RuntimeHandler represents each item of the "crio.runtime.runtimes" TOML
@@ -145,6 +149,9 @@ type RuntimeHandler struct {
 	RuntimePath string `toml:"runtime_path"`
 	RuntimeType string `toml:"runtime_type"`
 	RuntimeRoot string `toml:"runtime_root"`
+	// PrivilegedWithoutHostDevices can be used to restrict passing host devices
+	// to a container running as privileged.
+	PrivilegedWithoutHostDevices bool `toml:"privileged_without_host_devices"`
 }
 
 // Multiple runtime Handlers in a map
@@ -454,6 +461,7 @@ func DefaultConfig() (*Config, error) {
 			Storage:        storeOpts.GraphDriverName,
 			StorageOptions: storeOpts.GraphDriverOptions,
 			LogDir:         "/var/log/crio/pods",
+			VersionFile:    CrioVersionPath,
 		},
 		APIConfig: APIConfig{
 			Listen:             CrioSocketPath,
@@ -475,7 +483,7 @@ func DefaultConfig() (*Config, error) {
 			ConmonEnv: []string{
 				"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			},
-			ConmonCgroup:             "pod",
+			ConmonCgroup:             "system.slice",
 			SELinux:                  selinuxEnabled(),
 			SeccompProfile:           "",
 			ApparmorProfile:          DefaultApparmorProfile,
@@ -490,6 +498,7 @@ func DefaultConfig() (*Config, error) {
 			LogLevel:                 "error",
 			DefaultSysctls:           []string{},
 			DefaultUlimits:           []string{},
+			HooksDir:                 []string{hooks.DefaultDir},
 			AdditionalDevices:        []string{},
 		},
 		ImageConfig: ImageConfig{
