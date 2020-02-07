@@ -3,13 +3,16 @@ package libpod
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/containers/libpod/libpod/config"
 	"github.com/containers/libpod/libpod/define"
+	"github.com/containers/libpod/utils"
 	"github.com/fsnotify/fsnotify"
 	spec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
@@ -17,9 +20,7 @@ import (
 
 // Runtime API constants
 const (
-	// DefaultTransport is a prefix that we apply to an image name
-	// to check docker hub first for the image
-	DefaultTransport = "docker://"
+	unknownPackage = "Unknown"
 )
 
 // FuncTimer helps measure the execution time of a function
@@ -69,7 +70,11 @@ func WaitForFile(path string, chWait chan error, timeout time.Duration) (bool, e
 		defer watcher.Close()
 	}
 
-	timeoutChan := time.After(timeout)
+	var timeoutChan <-chan time.Time
+
+	if timeout != 0 {
+		timeoutChan = time.After(timeout)
+	}
 
 	for {
 		select {
@@ -147,4 +152,54 @@ func JSONDeepCopy(from, to interface{}) error {
 		return err
 	}
 	return json.Unmarshal(tmp, to)
+}
+
+func dpkgVersion(path string) string {
+	output := unknownPackage
+	cmd := exec.Command("/usr/bin/dpkg", "-S", path)
+	if outp, err := cmd.Output(); err == nil {
+		output = string(outp)
+	}
+	return strings.Trim(output, "\n")
+}
+
+func rpmVersion(path string) string {
+	output := unknownPackage
+	cmd := exec.Command("/usr/bin/rpm", "-q", "-f", path)
+	if outp, err := cmd.Output(); err == nil {
+		output = string(outp)
+	}
+	return strings.Trim(output, "\n")
+}
+
+func packageVersion(program string) string {
+	if out := rpmVersion(program); out != unknownPackage {
+		return out
+	}
+	return dpkgVersion(program)
+}
+
+func programVersion(mountProgram string) (string, error) {
+	output, err := utils.ExecCmd(mountProgram, "--version")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(output, "\n"), nil
+}
+
+func DefaultSeccompPath() (string, error) {
+	_, err := os.Stat(config.SeccompOverridePath)
+	if err == nil {
+		return config.SeccompOverridePath, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", errors.Wrapf(err, "can't check if %q exists", config.SeccompOverridePath)
+	}
+	if _, err := os.Stat(config.SeccompDefaultPath); err != nil {
+		if !os.IsNotExist(err) {
+			return "", errors.Wrapf(err, "can't check if %q exists", config.SeccompDefaultPath)
+		}
+		return "", nil
+	}
+	return config.SeccompDefaultPath, nil
 }
