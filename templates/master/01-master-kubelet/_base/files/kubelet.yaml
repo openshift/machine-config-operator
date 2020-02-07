@@ -13,8 +13,9 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemReserved:
-      cpu: 500m
-      memory: 500Mi
+      cpu: 768m
+      memory: 1Gi
+      ephemeral-storage: 1Gi
     featureGates:
       RotateKubeletServerCertificate: true
       ExperimentalCriticalPodAnnotation: true
