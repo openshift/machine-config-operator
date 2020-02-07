@@ -45,6 +45,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	}()
 
 	// label one node from the pool to specify which worker to update
+	fmt.Println("labelling random node as pool", poolName)
 	cleanupFuncs = append(cleanupFuncs, labelRandomNodeFromPool(t, cs, "worker", mcpNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
@@ -58,6 +59,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 
 	// cache the old configuration value to check against later
 	node := getSingleNodeByRole(t, cs, poolName)
+	fmt.Println("using node", node.Name)
 	oldConfValue := getValueFromCrioConfig(t, cs, node, regexKey)
 	if oldConfValue == expectedConfValue {
 		t.Logf("default configuration value %s same as value being tested against. Consider updating the test", oldConfValue)
@@ -66,6 +68,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 
 	// create an MCP to match the node we tagged
 	cleanupFuncs = append(cleanupFuncs, createMCP(t, cs, poolName))
+	fmt.Println("created mcp", poolName)
 
 	// create old mc to have something to verify we successfully rolled back
 	oldMCConfig := createMC(mcName, poolName)
@@ -75,14 +78,18 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 		err := cs.MachineConfigs().Delete(oldMCConfig.Name, &metav1.DeleteOptions{})
 		require.Nil(t, err, "machine config deletion failed")
 	})
+	fmt.Println("created mc, waiting for it to update", oldMCConfig.Name)
 	waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
 
 	// create our ctrcfg and attach it to our created node pool
 	cleanupCtrcfgFunc := createCtrcfgWithConfig(t, cs, ctrcfgName, poolName, cfg)
+	fmt.Println("created ctrcfg", ctrcfgName)
 
 	// wait for the ctrcfg to show up
 	ctrcfgMCName, err := getMCFromCtrcfg(t, cs, ctrcfgName)
 	require.Nil(t, err, "failed to render machine config from container runtime config")
+
+	fmt.Println("found ctrcfg MC name, waiting for it to update", ctrcfgMCName)
 
 	// ensure ctrcfg update rolls out to the pool
 	waitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName)
@@ -90,12 +97,13 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	// verify value was changed
 	newConfValue := getValueFromCrioConfig(t, cs, node, regexKey)
 	require.Equal(t, newConfValue, expectedConfValue, "value in crio.conf not updated as expected")
+	fmt.Println("configuration variable successfully changed to", newConfValue)
 
 	// cleanup ctrcfg and make sure it doesn't error
 	err = cleanupCtrcfgFunc()
-	require.Nil(t, err)
+	require.Nil(t, err, "failed to cleanup ctrcfg", ctrcfgName)
+	fmt.Println("cleaned up ctrcfg, waiting for old config to return updated", ctrcfgName)
 
-	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName)
 	// there's a weird race where we observe the pool is updated when in reality
 	// that update is from before. Sleeping allows a new update cycle to start
 	time.Sleep(time.Second * 5)
