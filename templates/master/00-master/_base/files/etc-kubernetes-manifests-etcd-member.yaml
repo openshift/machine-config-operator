@@ -176,12 +176,21 @@ contents:
           mountPath: /var/lib/etcd/
         - name: conf
           mountPath: /etc/etcd/
+        lifecycle:
+          postStart:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - echo 'export ETCDCTL_CACERT=/etc/ssl/etcd/ca.crt ETCDCTL_CERT=$(find /etc/ssl/ -name *peer*crt) ETCDCTL_KEY=$(find /etc/ssl/ -name *peer*key)' >> /root/.profile
 
         env:
         - name: ETCDCTL_API
           value: "3"
         - name: ETCD_DATA_DIR
           value: "/var/lib/etcd"
+        - name: ENV
+          value: "/root/.profile"
         - name: ETCD_NAME
           valueFrom:
             fieldRef:
