@@ -23,6 +23,8 @@ contents:
         volumeMounts:
         - name: sa
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount/
+        - name: data-dir
+          mountPath: /var/lib/etcd/
     {{end}}
       - name: discovery
         image: "{{.Images.setupEtcdEnvKey}}"
@@ -102,6 +104,12 @@ contents:
 
             source /run/etcd/environment
 
+            # no validation required if member is existing
+            [ ! -e "/var/lib/etcd/member/snap/db" ] || {
+              echo "etcd has previously been initialized as a member"
+              exit 0
+            }
+
             export ETCDCTL_API=3 ETCDCTL_CACERT=/etc/ssl/etcd/ca.crt ETCDCTL_CERT=$(find /etc/ssl/ -name *peer*crt) ETCDCTL_KEY=$(find /etc/ssl/ -name *peer*key) \
               ETCDCTL_ENDPOINTS="$ETCD_ENDPOINTS"
 
@@ -118,6 +126,8 @@ contents:
             mountPath: /run/etcd/
           - name: certs
             mountPath: /etc/ssl/etcd/
+          - name: data-dir
+            mountPath: /var/lib/etcd/
    {{end}}
       containers:
       - name: etcd-member
