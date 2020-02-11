@@ -556,10 +556,13 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 		}
 		// One custom role, let's use its pool
 		pls := []*mcfgv1.MachineConfigPool{custom[0]}
+
 		if worker != nil {
 			pls = append(pls, worker)
+			return pls, nil
 		}
-		return pls, nil
+		// All nodes with custom pools must have 2 labels: the custom pool label and the worker label.
+		return nil, fmt.Errorf("node %s has custom role %s but is missing required worker role", node.Name, custom[0].Name)
 	} else if master != nil {
 		// In the case where a node is both master/worker, have it live under
 		// the master pool. This occurs in CodeReadyContainers and general
