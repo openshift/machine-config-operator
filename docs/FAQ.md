@@ -44,7 +44,11 @@ Usually, no.  Today, the MCO does not try to claim "exclusive" ownership over ev
 
 If for example you write a daemonset that writes a custom systemd unit into e.g. `/etc/systemd/system`, or do so manually via `ssh`/`oc debug node` - OS upgrades will preserve that change (via libostree), and the MCO will not revert it.  The MCO/MCD only changes files included in `MachineConfigs`, there is no code to look for "unknown" files.
 
-Another case today is that the SDN operator will extract some binaries from its container image and drop them in `/opt`.
+Another case today is that the SDN operator will extract some binaries from its container image and drop them in `/opt` (which is really `/var/opt`).
+
+Stated more generally, on an OSTree managed system, all content in `/etc` and `/var` is [preserved by default across upgrades](https://ostree.readthedocs.io/en/latest/manual/adapting-existing/).
+
+Further, rpm-ostree supports package layering and overrides - these will also be preserved by the MCO (currently).  Although note that there is no current mechanism to trigger a MCO-coordinated drain/reboot, which is particularly relevant for `rpm-ostree install/override` changes.
 
 If a file that *is* managed by MachineConfig is changed, the MCD will detect this and go degraded.  We go degraded rather than overwrite in order to avoid [reboot loops](https://github.com/openshift/machine-config-operator/pull/245).
 
