@@ -213,32 +213,44 @@ func (f *fixture) expectPatchNodeAction(node *corev1.Node, patch []byte) {
 
 func TestGetNodesForPool(t *testing.T) {
 	tests := []struct {
-		pool  *mcfgv1.MachineConfigPool
+		pool  []*mcfgv1.MachineConfigPool
 		nodes []*corev1.Node
 
 		expected int
 		err      bool
 	}{
 		{
-			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			pool:     []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")},
 			nodes:    newMixedNodeSet(3, map[string]string{"node-role": ""}, map[string]string{"node-role/worker": ""}),
 			expected: 0,
 			err:      false,
 		},
 		{
-			pool:     helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			pool:     []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")},
 			nodes:    newMixedNodeSet(2, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": ""}),
 			expected: 2,
 			err:      false,
 		},
 		{
-			pool:     helpers.NewMachineConfigPool("ïnfra", nil, helpers.InfraSelector, "v0"),
+			pool:     []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"), helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")},
 			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expected: 3,
 			err:      false,
 		},
 		{
-			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			pool:     []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0")},
+			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			expected: 0,
+			err:      false,
+		},
+		{
+			pool:     []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"), helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")},
+			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/infra": ""}),
+			expected: 0,
+			err:      false,
+		},
+		{
+			pool:     []*mcfgv1.MachineConfigPool{helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")},
 			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expected: 3,
 			err:      false,
@@ -250,11 +262,13 @@ func TestGetNodesForPool(t *testing.T) {
 			f := newFixture(t)
 
 			f.nodeLister = append(f.nodeLister, test.nodes...)
-			f.mcpLister = append(f.mcpLister, test.pool)
+			for _, p := range test.pool {
+				f.mcpLister = append(f.mcpLister, p)
+			}
 
 			c := f.newController()
 
-			got, err := c.getNodesForPool(test.pool)
+			got, err := c.getNodesForPool(test.pool[0])
 			if err != nil && !test.err {
 				t.Fatal("expected non-nil error")
 			}
@@ -307,6 +321,16 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 
 		expected: helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
 		err:      false,
+	}, {
+		pools: []*mcfgv1.MachineConfigPool{
+			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			helpers.NewMachineConfigPool("infra", nil, helpers.InfraSelector, "v0"),
+		},
+		nodeLabel: map[string]string{"node-role/infra": ""},
+
+		expected: nil,
+		err:      true,
 	}, {
 		pools: []*mcfgv1.MachineConfigPool{
 			helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
