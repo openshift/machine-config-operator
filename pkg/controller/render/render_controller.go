@@ -59,9 +59,11 @@ type Controller struct {
 
 	mcpLister mcfglistersv1.MachineConfigPoolLister
 	mcLister  mcfglistersv1.MachineConfigLister
+	rmcLister mcfglistersv1.RenderedMachineConfigLister
 
 	mcpListerSynced cache.InformerSynced
 	mcListerSynced  cache.InformerSynced
+	rmcListerSynced cache.InformerSynced
 
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
@@ -73,6 +75,7 @@ type Controller struct {
 func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	rmcInformer mcfginformersv1.RenderedMachineConfigInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
@@ -103,8 +106,10 @@ func New(
 
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.mcLister = mcInformer.Lister()
+	ctrl.rmcLister = rmcInformer.Lister()
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
+	ctrl.rmcListerSynced = rmcInformer.Informer().HasSynced
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 

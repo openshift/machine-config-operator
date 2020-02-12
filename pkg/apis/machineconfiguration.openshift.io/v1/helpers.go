@@ -14,7 +14,7 @@ import (
 // It uses the Ignition config from first object as base and appends all the rest.
 // Kernel arguments are concatenated.
 // It uses only the OSImageURL provided by the CVO and ignores any MC provided OSImageURL.
-func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineConfig {
+func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *RenderedMachineConfig {
 	if len(configs) == 0 {
 		return nil
 	}
@@ -52,7 +52,7 @@ func MergeMachineConfigs(configs []*MachineConfig, osImageURL string) *MachineCo
 		kargs = append(kargs, cfg.Spec.KernelArguments...)
 	}
 
-	return &MachineConfig{
+	return &RenderedMachineConfig{
 		Spec: MachineConfigSpec{
 			OSImageURL:      osImageURL,
 			KernelArguments: kargs,
