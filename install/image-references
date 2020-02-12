@@ -35,10 +35,6 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:cluster-etcd-operator
-  - name: cli
-    from:
-      kind: DockerImage
-      name: quay.io/openshift/origin-cli:latest
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
