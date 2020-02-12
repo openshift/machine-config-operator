@@ -49,6 +49,20 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 
 // NewMachineConfigPool returns a MCP with supplied mcSelector, nodeSelector and machineconfig
 func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSelector, currentMachineConfig string) *mcfgv1.MachineConfigPool {
+	// custom MCPs (here infra nodes) require a matchexpressions as per
+	// https://github.com/openshift/machine-config-operator/blob/master/docs/custom-pools.md#creating-a-custom-pool
+	if nodeSelector == InfraSelector && mcSelector == nil {
+		temp := metav1.LabelSelector{}
+		tempSelector := &temp
+		tempSelector.MatchExpressions = []metav1.LabelSelectorRequirement{
+			{
+				Key:      "machineconfiguration.openshift.io/role",
+				Operator: metav1.LabelSelectorOpIn,
+				Values:   []string{"infra", "worker"},
+			},
+		}
+		mcSelector = tempSelector
+	}
 	return &mcfgv1.MachineConfigPool{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: mcfgv1.SchemeGroupVersion.String(),
