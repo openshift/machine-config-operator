@@ -4,6 +4,8 @@ path: "/usr/local/bin/non_virtual_ip"
 contents:
   inline: |
     #!/usr/libexec/platform-python
+    # /* vim: set filetype=python : */
+    import collections
     import itertools
     import socket
     import struct
@@ -18,32 +20,51 @@ contents:
         """
 
 
+    class AddressNotFoundException(Exception):
+        """
+        Exception raised when no Address in the systems ifaces is on the VIP subnet
+        """
+
+
     TA = TypeVar('TA', bound='Address')
 
+
     class Address:
-        def __init__(self, cidr: str, name: str, family: str, index: int = -1, scope: str = '', deprecated: bool = False) -> None:
+        def __init__(self, cidr: str, name: str, family: str, index: int = -1, scope: str = '', flags: Iterable[str] = tuple(), label: Optional[str] = None) -> None:
             self.index = index
             self.name = name
             self.family = family
             self.cidr = cidr
             self.scope = scope
-            self.deprecated = deprecated
+            self.flags = flags
+            self.label = label
 
         @classmethod
         def from_line(cls: Type[TA], line: str) -> TA:
-            items = line.split()
-            return cls(index=int(items[0][:-1]),
-                       name=items[1],
-                       family=items[2],
-                       cidr=items[3],
-                       scope=items[5],
-                       deprecated='deprecated' in items)
+            tokens = collections.deque(line.split())
+            index = int(tokens.popleft()[:-1])
+            name = tokens.popleft()
+            family = tokens.popleft()
+            cidr = tokens.popleft()
+            _ = tokens.popleft()  # dump scope label
+            scope = tokens.popleft()
+            flags = []
+            label = None
+            while True:
+                token = tokens.popleft()
+                if token[-1] == '\\':
+                    if len(token) > 1:
+                        label = token[:-1]
+                    break
+                flags.append(token)
+            return cls(cidr, name, family, index, scope, flags, label)
 
         def __str__(self) -> str:
             return f'{self.__class__.__name__}({self.cidr}, dev={self.name})'
 
 
     TR = TypeVar('TR', bound='V6Route')
+
 
     class V6Route:
         def __init__(self, destination: str, dev: Optional[str] = None, proto: Optional[str] = None, metric: Optional[int] = None, pref: Optional[str] = None, via: Optional[str] = None) -> None:
@@ -127,16 +148,16 @@ contents:
             if subnet_ip_int_min < vip_int < subnet_ip_int_max:
                 subnet_ip = ntoa(addr.family, subnet_ip_int_min)
                 subnet = Address(name="subnet",
-                               cidr='%s/%s' % (subnet_ip, addr.cidr.split('/')[1]),
-                               family=addr.family,
-                               scope='')
+                                 cidr='%s/%s' % (subnet_ip, addr.cidr.split('/')[1]),
+                                 family=addr.family,
+                                 scope='')
                 candidates.append(addr)
         if subnet is None:
             raise SubnetNotFoundException()
         return subnet, candidates
 
 
-    def interface_cidrs(filters: Optional[Iterable[Callable[[Address], bool]]] = None) -> Iterator[Address]:
+    def interface_addrs(filters: Optional[Iterable[Callable[[Address], bool]]] = None) -> Iterator[Address]:
         out = subprocess.check_output(["ip", "-o", "addr", "show"], encoding=sys.stdout.encoding)
         for addr in (Address.from_line(line) for line in out.splitlines()):
             if not filters or all(f(addr) for f in filters):
@@ -161,10 +182,31 @@ contents:
 
 
     def non_host_scope(addr: Address) -> bool:
-        return addr.scope != 'host'
+        if addr.scope == 'host':
+            sys.stderr.write(f'Filtering out {addr} due to it having host scope\n')
+            res = False
+        else:
+            res = True
+        return res
+
 
     def non_deprecated(addr: Address) -> bool:
-        return not addr.deprecated
+        if 'deprecated' in addr.flags:
+            sys.stderr.write(f'Filtering out {addr} due to it being deprecated\n')
+            res = False
+        else:
+            res = True
+        return res
+
+
+    def non_secondary(addr: Address) -> bool:
+        if 'secondary' in addr.flags:
+            sys.stderr.write(f'Filtering out {addr} due to it being secondary\n')
+            res = False
+        else:
+            res = True
+        return res
+
 
     def in_subnet(subnet: Address) -> Callable[[Address], bool]:
         subnet_ip_int_min, subnet_ip_int_max = addr_subnet_int_min_max(subnet)
@@ -179,9 +221,10 @@ contents:
     def main() -> None:
         api_vip = sys.argv[1]
         vips = set(sys.argv[1:4])
-        iface_cidrs = list(interface_cidrs((non_host_scope, non_deprecated)))
+        filters = (non_host_scope, non_deprecated, non_secondary)
+        iface_addrs = list(interface_addrs(filters))
         try:
-            subnet, candidates = vip_subnet_and_addrs_in_it(api_vip, iface_cidrs)
+            subnet, candidates = vip_subnet_and_addrs_in_it(api_vip, iface_addrs)
             sys.stderr.write('VIP Subnet %s\n' % subnet.cidr)
 
             for addr in candidates:
@@ -191,6 +234,7 @@ contents:
                     sys.exit(0)
         except SubnetNotFoundException:
             sys.exit(1)
+
 
     if __name__ == '__main__':
         main()
