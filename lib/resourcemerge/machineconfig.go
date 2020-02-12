@@ -12,6 +12,13 @@ func EnsureMachineConfig(modified *bool, existing *mcfgv1.MachineConfig, require
 	ensureMachineConfigSpec(modified, &existing.Spec, required.Spec)
 }
 
+// EnsureRenderedMachineConfig ensures that the existing matches the required.
+// modified is set to true when existing had to be updated with required.
+func EnsureRenderedMachineConfig(modified *bool, existing *mcfgv1.RenderedMachineConfig, required mcfgv1.RenderedMachineConfig) {
+	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	ensureMachineConfigSpec(modified, &existing.Spec, required.Spec)
+}
+
 // EnsureControllerConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureControllerConfig(modified *bool, existing *mcfgv1.ControllerConfig, required mcfgv1.ControllerConfig) {
@@ -20,7 +27,7 @@ func EnsureControllerConfig(modified *bool, existing *mcfgv1.ControllerConfig, r
 }
 
 // EnsureMachineConfigPool ensures that the existing matches the required.
-// modified is set to true when existing had to be updated with required.
+// modified is set to true when existing had to be updated with requir1ed.
 func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool, required mcfgv1.MachineConfigPool) {
 	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 

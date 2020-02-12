@@ -29,6 +29,27 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 	return actual, true, err
 }
 
+// ApplyRenderedMachineConfig applies the required machineconfig to the cluster.
+func ApplyRenderedMachineConfig(client mcfgclientv1.RenderedMachineConfigsGetter, required *mcfgv1.RenderedMachineConfig) (*mcfgv1.RenderedMachineConfig, bool, error) {
+	existing, err := client.RenderedMachineConfigs().Get(required.GetName(), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		actual, err := client.RenderedMachineConfigs().Create(required)
+		return actual, true, err
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	modified := resourcemerge.BoolPtr(false)
+	resourcemerge.EnsureRenderedMachineConfig(modified, existing, *required)
+	if !*modified {
+		return existing, false, nil
+	}
+
+	actual, err := client.RenderedMachineConfigs().Update(existing)
+	return actual, true, err
+}
+
 // ApplyMachineConfigPool applies the required machineconfig to the cluster.
 func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, required *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfigPool, bool, error) {
 	existing, err := client.MachineConfigPools().Get(required.GetName(), metav1.GetOptions{})

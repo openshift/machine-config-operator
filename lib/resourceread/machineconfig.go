@@ -42,9 +42,40 @@ func ReadMachineConfigV1(objBytes []byte) (*mcfgv1.MachineConfig, error) {
 	return mc, nil
 }
 
+// ReadRenderedMachineConfigV1 reads raw RenderedMachineConfig object from bytes. Returns RenderedMachineConfig and error.
+func ReadRenderedMachineConfigV1(objBytes []byte) (*mcfgv1.RenderedMachineConfig, error) {
+	if objBytes == nil {
+		return nil, errors.New("invalid machine configuration")
+	}
+
+	m, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), objBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode raw bytes to mcfgv1.SchemeGroupVersion: %v", err)
+	}
+	if m == nil {
+		return nil, fmt.Errorf("expected mcfgv1.SchemeGroupVersion but got nil")
+	}
+
+	mc, ok := m.(*mcfgv1.RenderedMachineConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected *mcfvgv1.RenderedMachineConfig but found %T", m)
+	}
+
+	return mc, nil
+}
+
 // ReadMachineConfigV1OrDie reads raw  MachineConfig object from bytes. Panics on error.
 func ReadMachineConfigV1OrDie(objBytes []byte) *mcfgv1.MachineConfig {
 	mc, err := ReadMachineConfigV1(objBytes)
+	if err != nil {
+		panic(err)
+	}
+	return mc
+}
+
+// ReadRenderedMachineConfigV1OrDie reads raw  RenderedMachineConfig object from bytes. Panics on error.
+func ReadRenderedMachineConfigV1OrDie(objBytes []byte) *mcfgv1.RenderedMachineConfig {
+	mc, err := ReadRenderedMachineConfigV1(objBytes)
 	if err != nil {
 		panic(err)
 	}
