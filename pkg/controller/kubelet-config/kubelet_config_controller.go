@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -227,7 +228,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 		return err
 	}
 	for _, mc := range mcs.Items {
-		if string(mc.GetUID()) == finalizerName || mc.GetName() == finalizerName {
+		if string(mc.ObjectMeta.GetUID()) == finalizerName || mc.GetName() == finalizerName {
 			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mc.GetName(), &metav1.DeleteOptions{})
 			if err != nil && !macherrors.IsNotFound(err) {
 				return err
@@ -474,6 +475,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
+			mc.ObjectMeta.UID = uuid.NewUUID()
 		}
 		mc.Spec.Config = createNewKubeletIgnition(cfgJSON)
 
@@ -556,15 +558,17 @@ func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc
 			return err
 		}
 
+		uid := string(mc.ObjectMeta.GetUID())
+
 		// if the finalizer is already set then skip
 		for _, finalizerName := range newcfg.Finalizers {
-			if finalizerName == mc.Name || finalizerName == string(mc.GetUID()) {
+			if finalizerName == mc.Name || finalizerName == uid {
 				return nil
 			}
 		}
 
 		kcTmp := newcfg.DeepCopy()
-		kcTmp.Finalizers = append(kcTmp.Finalizers, string(mc.GetUID()))
+		kcTmp.ObjectMeta.Finalizers = append(kcTmp.ObjectMeta.Finalizers, uid)
 
 		modJSON, err := json.Marshal(kcTmp)
 		if err != nil {
