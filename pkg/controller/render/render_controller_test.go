@@ -41,6 +41,7 @@ type fixture struct {
 
 	mcpLister []*mcfgv1.MachineConfigPool
 	mcLister  []*mcfgv1.MachineConfig
+	rmcLister []*mcfgv1.RenderedMachineConfig
 	ccLister  []*mcfgv1.ControllerConfig
 
 	actions []core.Action
@@ -60,11 +61,16 @@ func (f *fixture) newController() *Controller {
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 
-	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
-		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), f.client)
+	c := New(
+		i.Machineconfiguration().V1().MachineConfigPools(),
+		i.Machineconfiguration().V1().MachineConfigs(),
+		i.Machineconfiguration().V1().RenderedMachineConfigs(),
+		i.Machineconfiguration().V1().ControllerConfigs(),
+		k8sfake.NewSimpleClientset(), f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
+	c.rmcListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -82,7 +88,9 @@ func (f *fixture) newController() *Controller {
 	for _, m := range f.mcLister {
 		i.Machineconfiguration().V1().MachineConfigs().Informer().GetIndexer().Add(m)
 	}
-
+	for _, r := range f.rmcLister {
+		i.Machineconfiguration().V1().RenderedMachineConfigs().Informer().GetIndexer().Add(r)
+	}
 	for _, m := range f.ccLister {
 		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(m)
 	}
@@ -180,7 +188,9 @@ func filterInformerActions(actions []core.Action) []core.Action {
 				action.Matches("list", "controllerconfigs") ||
 				action.Matches("watch", "controllerconfigs") ||
 				action.Matches("list", "machineconfigs") ||
-				action.Matches("watch", "machineconfigs")) {
+				action.Matches("watch", "machineconfigs") ||
+				action.Matches("list", "renderedmachineconfigs") ||
+				action.Matches("watch", "renderedmachineconfigs")) {
 			continue
 		}
 		ret = append(ret, action)
@@ -203,6 +213,22 @@ func (f *fixture) expectPatchMachineConfigAction(config *mcfgv1.MachineConfig, p
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+}
+
+func (f *fixture) expectGetRenderedMachineConfigAction(config *mcfgv1.RenderedMachineConfig) {
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "renderedmachineconfigs"}, config.Name))
+}
+
+func (f *fixture) expectCreateRenderedMachineConfigAction(config *mcfgv1.RenderedMachineConfig) {
+	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "renderedmachineconfigs"}, config))
+}
+
+func (f *fixture) expectPatchRenderedMachineConfigAction(config *mcfgv1.RenderedMachineConfig, patch []byte) {
+	f.actions = append(f.actions, core.NewRootPatchAction(schema.GroupVersionResource{Resource: "renderedmachineconfigs"}, config.Name, types.MergePatchType, patch))
+}
+
+func (f *fixture) expectUpdateRenderedMachineConfigAction(config *mcfgv1.RenderedMachineConfig) {
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "renderedmachineconfigs"}, config))
 }
 
 func (f *fixture) expectUpdateMachineConfigPoolSpec(pool *mcfgv1.MachineConfigPool) {
@@ -333,7 +359,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	for idx := range mcs {
 		f.objects = append(f.objects, mcs[idx])
 	}
-	f.mcLister = append(f.mcLister, gmc)
+	f.rmcLister = append(f.rmcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
 	expmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
@@ -341,8 +367,8 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f.expectGetMachineConfigAction(expmc)
-	f.expectUpdateMachineConfigAction(expmc)
+	f.expectGetRenderedMachineConfigAction(expmc)
+	f.expectUpdateRenderedMachineConfigAction(expmc)
 
 	f.run(getKey(mcp, t))
 }
@@ -398,10 +424,10 @@ func TestDoNothing(t *testing.T) {
 	for idx := range mcs {
 		f.objects = append(f.objects, mcs[idx])
 	}
-	f.mcLister = append(f.mcLister, gmc)
+	f.rmcLister = append(f.rmcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
-	f.expectGetMachineConfigAction(gmc)
+	f.expectGetRenderedMachineConfigAction(gmc)
 
 	f.run(getKey(mcp, t))
 }

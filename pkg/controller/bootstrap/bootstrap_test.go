@@ -145,7 +145,7 @@ func TestBootstrapRun(t *testing.T) {
 			require.Len(t, paths, 1)
 			mcBytes, err := ioutil.ReadFile(paths[0])
 			require.NoError(t, err)
-			mc, err := resourceread.ReadMachineConfigV1(mcBytes)
+			mc, err := resourceread.ReadRenderedMachineConfigV1(mcBytes)
 			require.NoError(t, err)
 
 			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy

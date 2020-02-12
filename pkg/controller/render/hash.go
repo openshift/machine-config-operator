@@ -23,7 +23,7 @@ var (
 
 // Given a config from a pool, generate a name for the config
 // of the form rendered-<poolname>-<hash>
-func getMachineConfigHashedName(pool *mcfgv1.MachineConfigPool, config *mcfgv1.MachineConfig) (string, error) {
+func getMachineConfigHashedName(pool *mcfgv1.MachineConfigPool, config *mcfgv1.RenderedMachineConfig) (string, error) {
 	if config == nil {
 		return "", fmt.Errorf("empty machineconfig object")
 	}

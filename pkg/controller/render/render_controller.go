@@ -496,9 +496,9 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		source = append(source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
 	}
 
-	_, err = ctrl.mcLister.Get(generated.Name)
+	_, err = ctrl.rmcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(generated)
+		_, err = ctrl.client.MachineconfigurationV1().RenderedMachineConfigs().Create(generated)
 		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
 	}
 	if err != nil {
@@ -506,7 +506,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	}
 
 	if pool.Spec.Configuration.Name == generated.Name {
-		_, _, err = resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
+		_, _, err = resourceapply.ApplyRenderedMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
 		return err
 	}
 
