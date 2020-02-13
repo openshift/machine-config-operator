@@ -4,4 +4,3 @@ path: "/etc/dhcp/dhclient.conf.template"
 contents:
   inline: |
     supersede domain-search "{{ .EtcdDiscoveryDomain }}";
-    prepend domain-name-servers {{`{{ .NonVirtualIP }}`}};
