@@ -18,7 +18,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -90,7 +90,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 		if cfg.Annotations == nil {
 			cfg.Annotations = map[string]string{}
 		}
-		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Hash
+		cfg.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
 	}
 
 	return cfgs, nil
