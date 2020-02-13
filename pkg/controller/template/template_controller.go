@@ -10,7 +10,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -115,7 +115,7 @@ func New(
 
 func (ctrl *Controller) filterSecret(secret *corev1.Secret) {
 	if secret.Name == "pull-secret" {
-		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
+		cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#v", err))
 			return
@@ -159,7 +159,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 	}
 
 	if secret.Name == "pull-secret" {
-		cfg, err := ctrl.ccLister.Get(common.ControllerConfigName)
+		cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
 			utilruntime.HandleError(fmt.Errorf("Couldn't get ControllerConfig on secret callback %#v", err))
 			return
