@@ -22,9 +22,8 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemReserved:
-      cpu: 768m
-      memory: 1Gi
-      ephemeral-storage: 1Gi
+      cpu: 500m
+      memory: 500Mi
     featureGates:
       IPv6DualStack: true
       LegacyNodeRoleBehavior: false
