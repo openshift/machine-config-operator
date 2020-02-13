@@ -27,7 +27,7 @@ import (
 	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -316,7 +316,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -344,7 +344,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -499,7 +499,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")

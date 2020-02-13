@@ -33,7 +33,7 @@ import (
 	fakeoperatorclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorinformer "github.com/openshift/client-go/operator/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -394,7 +394,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["custom-crio"] = "my-config"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -427,7 +427,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["custom-crio"] = "my-config"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
@@ -504,7 +504,7 @@ func TestImageConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
@@ -540,7 +540,7 @@ func TestImageConfigUpdate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
@@ -624,7 +624,7 @@ func TestICSPUpdate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
@@ -715,7 +715,7 @@ func TestRunImageBootstrap(t *testing.T) {
 
 	for _, platform := range []string{"aws", "none", "unrecognized"} {
 		t.Run(platform, func(t *testing.T) {
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 				helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
