@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -553,6 +554,15 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			if pool.Generation <= pool.Status.ObservedGeneration &&
 				isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) &&
 				!degraded {
+				continue
+			}
+			// TODO this should not be in any level we ship
+			//  this is only so that the etcd operator can land.  It skips setting the error when the machineconfigpool is degraded.
+			//  because the etcd operator intentionally makes it degraded until we can remove  the etcd-member from this repo.
+			if pool.Generation <= pool.Status.ObservedGeneration &&
+				isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) &&
+				degraded {
+				klog.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 				continue
 			}
 			lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
