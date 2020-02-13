@@ -1,0 +1,24 @@
+filesystem: "root"
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
+contents:
+  inline: |
+    #!/bin/bash
+    IFACE=$1
+    STATUS=$2
+    case "$STATUS" in
+        up|down|dhcp4-change|dhcp6-change)
+        logger -s "NM resolv-prepender triggered by ${1} ${2}."
+        NAMESERVER_IP="{{.Infra.Status.PlatformStatus.OpenStack.NodeDNSIP}}"
+        set +e
+        if [[ -n "$NAMESERVER_IP" ]]; then
+            logger -s "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
+            sed "/^search .*$/a nameserver $NAMESERVER_IP" /var/run/NetworkManager/resolv.conf > /etc/resolv.conf
+        else
+            logger -s "NM resolv-prepender: Couldn't find a Virtual IP, just updating resolv.conf"
+            cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
+        fi
+        ;;
+        *)
+        ;;
+    esac

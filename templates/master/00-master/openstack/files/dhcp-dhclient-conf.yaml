@@ -4,4 +4,3 @@ path: "/etc/dhcp/dhclient.conf"
 contents:
   inline: |
     supersede domain-search "{{ .EtcdDiscoveryDomain }}";
-    prepend domain-name-servers {{ .Infra.Status.PlatformStatus.OpenStack.NodeDNSIP }};
