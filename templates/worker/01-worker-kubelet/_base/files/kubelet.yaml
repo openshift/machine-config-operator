@@ -15,6 +15,8 @@ contents:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
     containerLogMaxSize: 50Mi
+    evictionHard:
+      memory.available: "10%"
     maxPods: 250
     kubeAPIQPS: 50
     kubeAPIBurst: 100
