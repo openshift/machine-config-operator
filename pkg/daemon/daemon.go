@@ -1333,6 +1333,10 @@ func checkFiles(files []igntypes.File) bool {
 // error in case of an error or mismatch and returns the status of the
 // evaluation.
 func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) bool {
+	if filePath == "/etc/kubernetes/manifests/etcd-member.yaml" {
+		glog.Warningf("skipping etcd-member.yaml")
+		return true
+	}
 	fi, err := os.Lstat(filePath)
 	if err != nil {
 		glog.Errorf("could not stat file: %q, error: %v", filePath, err)
