@@ -56,6 +56,7 @@ spec:
     storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   names:
@@ -217,8 +218,9 @@ spec:
               description: maxUnavailable specifies the percentage or constant number
                 of machines that can be updating at any given time. default is 1.
               anyOf:
-              - type: string
               - type: integer
+              - type: string
+              x-kubernetes-int-or-string: true
             nodeSelector:
               description: nodeSelector specifies a label selector for Machines
               type: object

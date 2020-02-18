@@ -12,6 +12,7 @@ spec:
     plural: kubeletconfigs
     singular: kubeletconfig
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   versions:
