@@ -30,6 +30,7 @@ spec:
     storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  preserveUnknownFields: false
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
     plural: machineconfigs
@@ -40,8 +41,8 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - mc
-  validation:
-    openAPIV3Schema:
+  "validation":
+    "openAPIV3Schema":
       description: MachineConfig defines the configuration for a machine
       type: object
       properties:
