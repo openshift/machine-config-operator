@@ -14,6 +14,7 @@ spec:
     shortNames:
     - ctrcfg
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   versions:

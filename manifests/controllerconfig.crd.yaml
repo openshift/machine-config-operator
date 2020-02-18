@@ -17,6 +17,7 @@ spec:
     storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   names:
