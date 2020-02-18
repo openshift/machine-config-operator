@@ -88,6 +88,8 @@ spec:
           requests:
             cpu: 10m
             memory: 5Mi
+        securityContext:
+          privileged: true
       volumes:
       - name: kubecerts
         hostPath:
