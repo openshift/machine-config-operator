@@ -37,6 +37,7 @@ require (
 	github.com/joho/godotenv v1.3.0
 	github.com/opencontainers/go-digest v1.0.0-rc1
 	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
+	github.com/openshift/build-machinery-go v0.0.0-20200211121458-5e3d6e570160
 	github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0
 	github.com/openshift/cluster-api v0.0.0-20190923092624-4024de4fa64d
 	github.com/openshift/cluster-etcd-operator v0.0.0-alpha.0.0.20191025163650-5854b5c48ce4
