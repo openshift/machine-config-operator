@@ -26,13 +26,13 @@ contents:
     RECOVERY_SERVER_IP=$1
     ETCD_NAME=$2
     
-    ASSET_DIR=./assets
+    ASSET_DIR=/home/core/assets
     CONFIG_FILE_DIR=/etc/kubernetes
     MANIFEST_DIR="${CONFIG_FILE_DIR}/manifests"
     RUN_ENV=/run/etcd/environment
     
     MANIFEST_STOPPED_DIR="$ASSET_DIR/manifests-stopped"
-    ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
+    ETCD_MANIFEST="${MANIFEST_DIR}/etcd-pod.yaml"
     ETCD_CONFIG=$RUN_ENV
     ETCDCTL=$ASSET_DIR/bin/etcdctl
     ETCD_DATA_DIR=/var/lib/etcd
@@ -44,9 +44,9 @@ contents:
       init
       dl_etcdctl
       backup_manifest
-      DISCOVERY_DOMAIN=$(grep -oP '(?<=discovery-srv=).*[^"]' $ASSET_DIR/backup/etcd-member.yaml )
+      DISCOVERY_DOMAIN=$(grep -oP '(?<=value: "etcd-0\.)[^"]*' $ASSET_DIR/backup/etcd-pod.yaml | head -1)
       if [ -z "$DISCOVERY_DOMAIN" ]; then
-        echo "Discovery domain can not be extracted from $ASSET_DIR/backup/etcd-member.yaml"
+        echo "Discovery domain can not be extracted from $ASSET_DIR/backup/etcd-pod.yaml"
         exit 1
       fi
       validate_environment
