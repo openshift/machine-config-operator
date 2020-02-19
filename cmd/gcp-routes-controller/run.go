@@ -89,7 +89,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		ErrCh:            errCh,
 		SuccessThreshold: 2,
 		FailureThreshold: 10,
-		OnFailure:        runDelRoutes,
+		OnFailure:        RunDelRoutes,
 		OnSuccess:        runSetRoutes,
 	}
 
@@ -111,7 +111,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	go func() {
 		for sig := range c {
 			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
-			if err := runDelRoutes(); err != nil {
+			if err := RunDelRoutes(); err != nil {
 				glog.Infof("Failed to terminate gcp routes service on signal: %s", err)
 			} else {
 				break
@@ -310,7 +310,8 @@ func runSetRoutes() error {
 	return nil
 }
 
-func runDelRoutes() error {
+// RunDelRoutes deletes all GCP routes. This function is also used by the delete-routes subcommand of gcp-routes-controller
+func RunDelRoutes() error {
 	routes, err := getRoutes()
 	if err != nil {
 		return fmt.Errorf("failed to get routes: %v", err)
