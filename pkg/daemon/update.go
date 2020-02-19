@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -22,6 +23,7 @@ import (
 	errors "github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -118,6 +120,36 @@ func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
 }
 
+// drainDaemonsetsForDeletion handles pods that should be explictily deleted
+// at shutdown time.
+func (dn *Daemon) drainDaemonsetsForDeletion(ctx context.Context) error {
+	pods, err := dn.kubeClient.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", dn.node.Name),
+	})
+	if err != nil {
+		return err
+	}
+	for _, pod := range pods.Items {
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if _, ok := pod.Annotations[corev1.MirrorPodAnnotationKey]; ok {
+			continue
+		}
+		if _, ok := pod.Annotations[constants.OpenShiftDeleteOnNodeShutdownAnnotationKey]; !ok {
+			continue
+		}
+
+		if err := dn.kubeClient.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{}); err != nil {
+			if kerrors.IsNotFound(err) {
+				continue
+			}
+			return errors.Wrapf(err, "Failed to delete pod")
+		}
+	}
+	return nil
+}
+
 func (dn *Daemon) drain() error {
 	// Skip draining of the node when we're not cluster driven
 	if dn.kubeClient == nil {
@@ -144,12 +176,16 @@ func (dn *Daemon) drain() error {
 			return false, nil
 		}
 		err = drain.RunNodeDrain(dn.drainer, dn.node.Name)
-		if err == nil {
-			return true, nil
+		if err != nil {
+			glog.Infof("Drain failed with: %v, retrying", err)
+			return false, nil
 		}
-		lastErr = err
-		glog.Infof("Draining failed with: %v, retrying", err)
-		return false, nil
+		err = dn.drainDaemonsetsForDeletion(context.Background())
+		if err != nil {
+			glog.Infof("Daemonset drain failed with: %v, retrying", err)
+			return false, nil
+		}
+		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
 			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
