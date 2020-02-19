@@ -9,7 +9,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
-	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	errors "github.com/pkg/errors"
@@ -140,7 +140,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// Start local metrics listener
 	go daemon.StartMetricsListener(startOpts.promMetricsURL, stopCh)
 
-	ctx := controllercommon.CreateControllerContext(cb, stopCh, componentName)
+	ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
 	dn.ClusterConnect(
@@ -160,6 +160,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	close(ctx.InformersStarted)
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
-		controllercommon.WriteTerminationError(err)
+		ctrlcommon.WriteTerminationError(err)
 	}
 }

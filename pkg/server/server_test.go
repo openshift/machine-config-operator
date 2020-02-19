@@ -11,10 +11,10 @@ import (
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
-	"github.com/stretchr/testify/assert"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -53,7 +53,7 @@ func TestMachineConfigToIgnition(t *testing.T) {
 	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
 	mcData, err := ioutil.ReadFile(mcPath)
 	assert.Nil(t, err)
-	mc := new(v1.MachineConfig)
+	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(mc.Spec.Config.Storage.Files))
@@ -93,7 +93,7 @@ func TestBootstrapServer(t *testing.T) {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
 	}
 
-	mc := new(v1.MachineConfig)
+	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
@@ -164,7 +164,7 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while reading machine-config: %s, err: %v", mcPath, err)
 	}
-	origMC := new(v1.MachineConfig)
+	origMC := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), origMC)
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
@@ -185,7 +185,7 @@ func TestClusterServer(t *testing.T) {
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
 
-	mc := new(v1.MachineConfig)
+	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
@@ -218,7 +218,7 @@ func TestClusterServer(t *testing.T) {
 			continue
 		}
 		foundEncapsulated = true
-		encapMc := new(v1.MachineConfig)
+		encapMc := new(mcfgv1.MachineConfig)
 		contents, err := getDecodedContent(f.Contents.Source)
 		assert.Nil(t, err)
 		err = yaml.Unmarshal([]byte(contents), encapMc)
@@ -286,13 +286,13 @@ func createFileMap(files []igntypes.File) map[string]igntypes.File {
 	return m
 }
 
-func getTestMachineConfigPool() (*v1.MachineConfigPool, error) {
+func getTestMachineConfigPool() (*mcfgv1.MachineConfigPool, error) {
 	mpPath := path.Join(testDir, "machine-pools", testPool+".yaml")
 	mpData, err := ioutil.ReadFile(mpPath)
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error while reading machine-pool: %s, err: %v", mpPath, err)
 	}
-	mp := new(v1.MachineConfigPool)
+	mp := new(mcfgv1.MachineConfigPool)
 	err = yaml.Unmarshal(mpData, mp)
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error while unmarshaling machine-pool: %s, err: %v", mpPath, err)
