@@ -4,11 +4,14 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -30,16 +33,13 @@ var (
 	}
 
 	runOpts struct {
-		gcpRoutesService string
-		rootMount        string
-
+		rootMount      string
 		healthCheckURL string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "gcp-routes.service", "The name for the service controlling gcp routes on host")
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
 }
@@ -89,8 +89,8 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		ErrCh:            errCh,
 		SuccessThreshold: 2,
 		FailureThreshold: 10,
-		OnFailure:        func() error { return exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run() },
-		OnSuccess:        func() error { return exec.Command("systemctl", "start", runOpts.gcpRoutesService).Run() },
+		OnFailure:        runDelRoutes,
+		OnSuccess:        runSetRoutes,
 	}
 
 	h := health.New()
@@ -111,7 +111,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	go func() {
 		for sig := range c {
 			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
-			if err := exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run(); err != nil {
+			if err := runDelRoutes(); err != nil {
 				glog.Infof("Failed to terminate gcp routes service on signal: %s", err)
 			} else {
 				break
@@ -195,4 +195,153 @@ func (sl *healthTracker) OnComplete(state *health.State) {
 			sl.state = failedTrackerState
 		}
 	}
+}
+
+func getRoutes() (map[string][]string, error) {
+	routes := make(map[string][]string)
+	const netPath = "network-interfaces/"
+	ifs, err := getInstances(netPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instances at %s: %v", netPath, err)
+	}
+	for _, vif := range ifs {
+		macs, err := getInstances(netPath + vif + "mac")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instances at %s: %v", netPath+vif+"mac", err)
+		}
+		hwAddr := macs[0]
+		fwipPath := netPath + vif + "forwarded-ips/"
+		devName, err := getIfname(hwAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get interface name for %s: %v", hwAddr, err)
+		}
+		levels, err := getInstances(fwipPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instances at %s: %v", fwipPath, err)
+		}
+		for _, level := range levels {
+			fwips, err := getInstances(fwipPath + level)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get instances at %s: %v", fwipPath+level, err)
+			}
+			glog.Info("Processing route for NIC " + vif + hwAddr + " as " + devName + " for IPs " + strings.Join(fwips, ", "))
+			routes[devName] = fwips
+		}
+	}
+
+	return routes, nil
+}
+
+func getIfname(hwAddr string) (string, error) {
+	devs, err := net.Interfaces()
+	if err != nil {
+		return "", fmt.Errorf("failed to list interfaces: %v", err)
+	}
+	for _, dev := range devs {
+		if dev.HardwareAddr.String() == hwAddr {
+			return dev.Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("interface not found")
+}
+
+func getInstances(instanceType string) ([]string, error) {
+	const baseURL = "http://metadata.google.internal/computeMetadata/v1/instance/"
+
+	uri, err := url.ParseRequestURI(baseURL + instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse request URI %s: %v", baseURL+instanceType, err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, uri.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+	req.Header.Set("Metadata-Flavor", "Google")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HTTP response: %v", err)
+	}
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read HTTP response: %v", err)
+	}
+
+	return strings.Fields(string(body)), nil
+}
+
+func runSetRoutes() error {
+	for true {
+		routes, err := getRoutes()
+		if err != nil {
+			return fmt.Errorf("failed to get routes: %v", err)
+		}
+		for devName, fwips := range routes {
+			cmd := fmt.Sprintf("ip route show dev %s table local proto 66 | awk '{print$2}'", devName)
+			ipOutput, err := exec.Command("bash", "-c", cmd).Output()
+			if err != nil {
+				return fmt.Errorf("failed to show routes with command '%s': %v", cmd, err)
+			}
+			ips := strings.Fields(string(ipOutput))
+			for _, currentRoute := range ips {
+
+				if !sliceContainsString(fwips, currentRoute) {
+					glog.Info("Removing stale forwarded IP " + currentRoute + "/32")
+					err := exec.Command("ip", "route", "del", currentRoute+"/32", "dev", devName, "table", "local", "proto", "66").Run()
+					if err != nil {
+						return fmt.Errorf("failed to remove stale forwarded IP %s for device %s: %v", currentRoute, devName, err)
+					}
+				}
+			}
+			for _, fwip := range fwips {
+				err := exec.Command("ip", "route", "replace", "to", "local", fwip, "dev", devName, "proto", "66").Run()
+				if err != nil {
+					return fmt.Errorf("failed to replace route to IP %s for device %s: %v", fwip, devName, err)
+				}
+			}
+		}
+		time.Sleep(30 * time.Second)
+	}
+
+	return nil
+}
+
+func runDelRoutes() error {
+	routes, err := getRoutes()
+	if err != nil {
+		return fmt.Errorf("failed to get routes: %v", err)
+	}
+	for devName, fwips := range routes {
+		cmd := fmt.Sprintf("ip route show dev %s table local proto 66 | awk '{print$2}'", devName)
+		ipOutput, err := exec.Command("bash", "-c", cmd).Output()
+		if err != nil {
+			return fmt.Errorf("failed to show routes with command '%s': %v", cmd, err)
+		}
+		ips := strings.Fields(string(ipOutput))
+		for _, currentRoute := range ips {
+			if sliceContainsString(fwips, currentRoute) {
+				glog.Info("Removing forwarded IP " + currentRoute + "/32")
+				err := exec.Command("ip", "route", "del", currentRoute+"/32", "dev", devName, "table", "local", "proto", "66").Run()
+				if err != nil {
+					return fmt.Errorf("failed to remove forwarded IP %s for device %s: %v", currentRoute, devName, err)
+				}
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func sliceContainsString(list []string, item string) bool {
+	for _, v := range list {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }

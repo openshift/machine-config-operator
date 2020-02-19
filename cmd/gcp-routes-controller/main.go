@@ -14,7 +14,7 @@ const (
 var (
 	rootCmd = &cobra.Command{
 		Use:           componentName,
-		Short:         "Controls the gcp-routes.service on RHCOS hosts based on health checks",
+		Short:         "Controls GCP routes on hosts based on health checks",
 		Long:          "",
 		SilenceErrors: true,
 		SilenceUsage:  true,
