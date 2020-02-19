@@ -22,7 +22,7 @@ contents:
         exit 1
     }
 
-    ASSET_DIR=./assets
+    ASSET_DIR=/home/core/assets
 
     if [ -z "$1" ] || [ -f "$1" ]; then
       usage
@@ -44,7 +44,7 @@ contents:
     MANIFEST_STOPPED_DIR="${ASSET_DIR}/manifests-stopped"
     ETCDCTL="${ASSET_DIR}/bin/etcdctl"
     ETCD_DATA_DIR=/var/lib/etcd
-    ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
+    ETCD_MANIFEST="${MANIFEST_DIR}/etcd-pod.yaml"
     ETCD_STATIC_RESOURCES="${CONFIG_FILE_DIR}/static-pod-resources/etcd-member"
     STOPPED_STATIC_PODS="${ASSET_DIR}/tmp/stopped-static-pods"
 
