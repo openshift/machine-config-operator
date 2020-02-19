@@ -4,7 +4,7 @@ import (
 	"flag"
 
 	"github.com/golang/glog"
-	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -43,7 +43,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	cs, err := server.NewClusterServer(startOpts.kubeconfig, startOpts.apiserverURL)
 	if err != nil {
-		controllercommon.WriteTerminationError(err)
+		ctrlcommon.WriteTerminationError(err)
 	}
 
 	apiHandler := server.NewServerAPIHandler(cs)

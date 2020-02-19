@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -421,7 +420,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	// TODO(runcom): add tests in render_controller_test.go for this condition
-	if err := mcfgv1.IsControllerConfigCompleted(common.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
 		return err
 	}
 
@@ -476,7 +475,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return nil
 	}
 
-	cc, err := ctrl.ccLister.Get(common.ControllerConfigName)
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return err
 	}
@@ -542,7 +541,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	if merged.Annotations == nil {
 		merged.Annotations = map[string]string{}
 	}
-	merged.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Hash
+	merged.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
 
 	return merged, nil
 }

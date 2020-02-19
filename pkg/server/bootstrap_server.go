@@ -11,7 +11,7 @@ import (
 	"github.com/golang/glog"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 // ensure bootstrapServer implements the
@@ -71,7 +71,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 		return nil, fmt.Errorf("server: could not read file %s, err: %v", fileName, err)
 	}
 
-	mp := new(v1.MachineConfigPool)
+	mp := new(mcfgv1.MachineConfigPool)
 	err = yaml.Unmarshal(data, mp)
 	if err != nil {
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
@@ -91,7 +91,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 		return nil, fmt.Errorf("server: could not read file %s, err: %v", fileName, err)
 	}
 
-	mc := new(v1.MachineConfig)
+	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal(data, mc)
 	if err != nil {
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
