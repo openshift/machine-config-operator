@@ -25,7 +25,7 @@ contents:
       monitor-uri /healthz
       option dontlognull
     listen stats
-      bind 127.0.0.1:{{`{{ .LBConfig.StatPort }}`}}
+      bind localhost:{{`{{ .LBConfig.StatPort }}`}}
       mode http
       stats enable
       stats hide-version
