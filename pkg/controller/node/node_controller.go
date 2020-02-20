@@ -215,7 +215,12 @@ func (ctrl *Controller) checkMasterNodesOnUpdate(old, cur interface{}) {
 func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) []error {
 	var errs []error
 	for _, node := range currentMasters {
-		if !CheckMasterIsAlreadySchedulable(node) {
+		if _, hasWorkerLabel := node.Labels[workerLabel]; !hasWorkerLabel {
+			sched = true
+		}
+		sched = CheckMasterIsAlreadySchedulable(node)
+		notshed = !sched
+		if notshed {
 			continue
 		}
 		if err := ctrl.makeMasterNodeUnSchedulable(node); err != nil {
@@ -228,37 +233,31 @@ func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) 
 
 // makeMasterNodeUnSchedulable makes master node unschedulable by removing worker label and adding `NoSchedule`
 // master taint to the master node
-func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
-	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
-		// Remove worker label
-		newLabels := node.Labels
-		if _, hasWorkerLabel := newLabels[workerLabel]; hasWorkerLabel {
-			delete(newLabels, workerLabel)
+func (ctrl *Controller) makeMasterNodeUnSchedulable(n *corev1.Node) error {
+	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, n.Name, func(node *corev1.Node) {
+		if node.Labels == nil {
+			node.Labels = map[string]string{}
 		}
-		node.Labels = newLabels
+		// Remove worker label
+		delete(node.Labels, workerLabel)
 		// Add master taint
 		newTaints := node.Spec.Taints
 		masterUnSchedulableTaint := corev1.Taint{Key: masterLabel, Effect: corev1.TaintEffectNoSchedule}
 		newTaints = append(newTaints, masterUnSchedulableTaint)
 		node.Spec.Taints = newTaints
 	})
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // CheckMasterIsAlreadySchedulable checks if the given node has a worker label and doesn't have NoSchedule master
 // taint
 func CheckMasterIsAlreadySchedulable(node *corev1.Node) bool {
-	_, hasWorkerLabel := node.Labels[workerLabel]
-	hasMasterTaint := false
 	for _, taint := range node.Spec.Taints {
-		if taint.Key == masterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
-			hasMasterTaint = true
+		if taint.MatchTaint(corev1.Taint{Key: masterLabel, Effect: corev1.TaintEffectNoSchedule}) {
+			return true
 		}
 	}
-	return hasWorkerLabel && !hasMasterTaint
+	return false
 }
 
 // makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master taint and
@@ -515,53 +514,52 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 	if err != nil {
 		return nil, err
 	}
-
-	var pools []*mcfgv1.MachineConfigPool
-	for _, p := range pl {
-		selector, err := metav1.LabelSelectorAsSelector(p.Spec.NodeSelector)
+	var master, worker *mcfgv1.MachineConfigPool
+	var custom []*mcfgv1.MachineConfigPool
+	for _, pool := range pl {
+		selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
 		if err != nil {
-			return nil, fmt.Errorf("invalid label selector: %v", err)
-		}
-
-		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
-		if selector.Empty() || !selector.Matches(labels.Set(node.Labels)) {
+			glog.V(4).Infof("cannot match machineconfigpool '%s' to node: invalid nodeselector: %s", pool.Name, err)
 			continue
 		}
 
-		pools = append(pools, p)
-	}
+		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
+		if selector.Empty() {
+			glog.V(4).Infof("empty node selector for machineconfigpool '%s': treating as matches nothing", pool.Name)
+			continue
+		}
+		if !selector.Matches(labels.Set(node.Labels)) {
+			continue
+		}
 
-	if len(pools) == 0 {
-		// This is not an error, as there might be nodes in cluster that are not managed by machineconfigpool.
-		return nil, nil
-	}
-
-	var master, worker *mcfgv1.MachineConfigPool
-	var custom []*mcfgv1.MachineConfigPool
-	for _, pool := range pools {
-		if pool.Name == "master" {
+		switch p.Name {
+		case "master":
 			master = pool
-		} else if pool.Name == "worker" {
+		case "worker":
 			worker = pool
-		} else {
+		default:
 			custom = append(custom, pool)
 		}
 	}
-
 	if len(custom) > 1 {
 		return nil, fmt.Errorf("node %s belongs to %d custom roles, cannot proceed with this Node", node.Name, len(custom))
-	} else if len(custom) == 1 {
+	}
+
+	if len(custom) == 1 {
 		// We don't support making custom pools for masters
 		if master != nil {
 			return nil, fmt.Errorf("node %s has both master role and custom role %s", node.Name, custom[0].Name)
 		}
-		// One custom role, let's use its pool
-		pls := []*mcfgv1.MachineConfigPool{custom[0]}
-		if worker != nil {
-			pls = append(pls, worker)
+		// All nodes within a custom pool must match exactly two machineconfigpools:
+		// 1. the custom pool
+		// 2. the worker pool, via the 'worker' label on the node
+		if worker == nil {
+			return nil, fmt.Errorf("node %s has custom role '%s' but is missing required worker role", node.Name, custom[0].Name)
 		}
-		return pls, nil
-	} else if master != nil {
+		// One custom role, let's use its pool
+		return []*mcfgv1.MachineConfigPool{custom[0], worker}, nil
+	}
+	if master != nil {
 		// In the case where a node is both master/worker, have it live under
 		// the master pool. This occurs in CodeReadyContainers and general
 		// "single node" deployments, which one may want to do for testing bare
