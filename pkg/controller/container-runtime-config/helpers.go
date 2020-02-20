@@ -55,6 +55,7 @@ type tomlConfigCRIO struct {
 		Runtime struct{ crioconfig.RuntimeConfig } `toml:"runtime"`
 		Image   struct{ crioconfig.ImageConfig }   `toml:"image"`
 		Network struct{ crioconfig.NetworkConfig } `toml:"network"`
+		Metrics struct{ crioconfig.MetricsConfig } `toml:"metrics"`
 	} `toml:"crio"`
 }
 
@@ -194,7 +195,7 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	if internal.PidsLimit > 0 {
 		tomlConf.Crio.Runtime.PidsLimit = internal.PidsLimit
 	}
-	if internal.LogSizeMax != (resource.Quantity{}) {
+	if internal.LogSizeMax.Value() != 0 {
 		tomlConf.Crio.Runtime.LogSizeMax = internal.LogSizeMax.Value()
 	}
 	if internal.LogLevel != "" {

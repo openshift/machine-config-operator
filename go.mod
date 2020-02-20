@@ -3,7 +3,6 @@ module github.com/openshift/machine-config-operator
 go 1.12
 
 require (
-	github.com/14rcole/gopopulate v0.0.0-20180821133914-b175b219e774 // indirect
 	github.com/BurntSushi/toml v0.3.1
 	github.com/InVisionApp/go-health v2.1.0+incompatible
 	github.com/Masterminds/goutils v1.1.0 // indirect
@@ -16,16 +15,13 @@ require (
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6 // indirect
 	github.com/containers/image v3.0.2+incompatible
-	github.com/containers/storage v1.13.4
+	github.com/containers/storage v1.13.5
 	github.com/coreos/container-linux-config-transpiler v0.9.0
 	github.com/coreos/ignition v0.33.0
 	github.com/creack/pty v1.1.9 // indirect
-	github.com/cri-o/cri-o v1.9.0-beta.2.0.20191003162030-4775e1c05c26
+	github.com/cri-o/cri-o v1.16.2
 	github.com/davecgh/go-spew v1.1.1
-	github.com/docker/docker-credential-helpers v0.6.3 // indirect
-	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
-	github.com/elazarl/goproxy/ext v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-bindata/go-bindata v3.1.1+incompatible
@@ -34,15 +30,12 @@ require (
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc // indirect
 	github.com/golangci/golangci-lint v1.18.0
-	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/google/renameio v0.1.0
 	github.com/googleapis/gnostic v0.3.1 // indirect
-	github.com/gorilla/mux v1.7.3 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.7
 	github.com/joho/godotenv v1.3.0
-	github.com/onsi/ginkgo v1.10.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1
 	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
 	github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0
@@ -62,8 +55,7 @@ require (
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
 	golang.org/x/net v0.0.0-20191109021931-daa7c04131f5 // indirect
 	golang.org/x/sys v0.0.0-20191002091554-b397fe3ad8ed // indirect
-	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	golang.org/x/tools v0.0.0-20191002234911-9ade4c73f2af // indirect
+	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0
 	gonum.org/v1/gonum v0.0.0-20190929233944-b20cf7805fc4 // indirect
 	gonum.org/v1/netlib v0.0.0-20190926062253-2d6e29b73a19 // indirect
 	k8s.io/api v0.0.0
