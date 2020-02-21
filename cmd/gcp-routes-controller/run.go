@@ -283,6 +283,7 @@ func runSetRoutes() error {
 		for devName, fwips := range routes {
 			cmd := fmt.Sprintf("ip route show dev %s table local proto 66 | awk '{print$2}'", devName)
 			ipOutput, err := exec.Command("bash", "-c", cmd).Output()
+			glog.Info("RunSetRoutes CMD: " + cmd + "; Output: " + string(ipOutput))
 			if err != nil {
 				return fmt.Errorf("failed to show routes with command '%s': %v", cmd, err)
 			}
@@ -291,14 +292,16 @@ func runSetRoutes() error {
 
 				if !sliceContainsString(fwips, currentRoute) {
 					glog.Info("Removing stale forwarded IP " + currentRoute + "/32")
-					err := exec.Command("ip", "route", "del", currentRoute+"/32", "dev", devName, "table", "local", "proto", "66").Run()
+					op, err := exec.Command("ip", "route", "del", currentRoute+"/32", "dev", devName, "table", "local", "proto", "66").Output()
+					glog.Info("RunSetRoutes route del Output: " + string(op))
 					if err != nil {
 						return fmt.Errorf("failed to remove stale forwarded IP %s for device %s: %v", currentRoute, devName, err)
 					}
 				}
 			}
 			for _, fwip := range fwips {
-				err := exec.Command("ip", "route", "replace", "to", "local", fwip, "dev", devName, "proto", "66").Run()
+				op, err := exec.Command("ip", "route", "replace", "to", "local", fwip, "dev", devName, "proto", "66").Output()
+				glog.Info("RunSetRoutes route replace Output: " + string(op))
 				if err != nil {
 					return fmt.Errorf("failed to replace route to IP %s for device %s: %v", fwip, devName, err)
 				}
@@ -319,6 +322,7 @@ func RunDelRoutes() error {
 	for devName, fwips := range routes {
 		cmd := fmt.Sprintf("ip route show dev %s table local proto 66 | awk '{print$2}'", devName)
 		ipOutput, err := exec.Command("bash", "-c", cmd).Output()
+		glog.Info("RunDelRoutes CMD: " + cmd + "; Output: " + string(ipOutput))
 		if err != nil {
 			return fmt.Errorf("failed to show routes with command '%s': %v", cmd, err)
 		}
@@ -326,7 +330,8 @@ func RunDelRoutes() error {
 		for _, currentRoute := range ips {
 			if sliceContainsString(fwips, currentRoute) {
 				glog.Info("Removing forwarded IP " + currentRoute + "/32")
-				err := exec.Command("ip", "route", "del", currentRoute+"/32", "dev", devName, "table", "local", "proto", "66").Run()
+				op, err := exec.Command("ip", "route", "del", currentRoute+"/32", "dev", devName, "table", "local", "proto", "66").Output()
+				glog.Info("RunDelRoutes route del Output: " + string(op))
 				if err != nil {
 					return fmt.Errorf("failed to remove forwarded IP %s for device %s: %v", currentRoute, devName, err)
 				}
