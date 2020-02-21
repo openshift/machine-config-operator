@@ -224,8 +224,8 @@ func getRoutes() (map[string][]string, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to get instances at %s: %v", fwipPath+level, err)
 			}
-			glog.Info("Processing route for NIC " + vif + hwAddr + " as " + devName + " for IPs " + strings.Join(fwips, ", "))
-			routes[devName] = fwips
+			glog.Info("Processing route for NIC " + vif + hwAddr + " as " + devName + " for " + strings.Join(fwips, ", "))
+			routes[devName] = append(routes[devName], fwips...)
 		}
 	}
 
