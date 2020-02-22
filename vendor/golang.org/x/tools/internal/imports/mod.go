@@ -59,7 +59,7 @@ func newModuleResolver(e *ProcessEnv) *ModuleResolver {
 }
 
 func (r *ModuleResolver) init() error {
-	if r.initialized {
+	if r.Initialized {
 		return nil
 	}
 	mainMod, vendorEnabled, err := vendorEnabled(r.env)
@@ -162,10 +162,10 @@ func (r *ModuleResolver) initAllMods() error {
 			// Can't do anything with a module that's not downloaded.
 			continue
 		}
-		r.modsByModPath = append(r.modsByModPath, mod)
-		r.modsByDir = append(r.modsByDir, mod)
+		r.ModsByModPath = append(r.ModsByModPath, mod)
+		r.ModsByDir = append(r.ModsByDir, mod)
 		if mod.Main {
-			r.main = mod
+			r.Main = mod
 		}
 	}
 	return nil
@@ -198,7 +198,7 @@ func (r *ModuleResolver) ClearForNewMod() {
 func (r *ModuleResolver) findPackage(importPath string) (*ModuleJSON, string) {
 	// This can't find packages in the stdlib, but that's harmless for all
 	// the existing code paths.
-	for _, m := range r.modsByModPath {
+	for _, m := range r.ModsByModPath {
 		if !strings.HasPrefix(importPath, m.Path) {
 			continue
 		}
@@ -292,7 +292,7 @@ func (r *ModuleResolver) findModuleByDir(dir string) *ModuleJSON {
 	// - in /vendor/ in -mod=vendor mode.
 	//    - nested module? Dunno.
 	// Rumor has it that replace targets cannot contain other replace targets.
-	for _, m := range r.modsByDir {
+	for _, m := range r.ModsByDir {
 		if !strings.HasPrefix(dir, m.Dir) {
 			continue
 		}
@@ -554,7 +554,7 @@ func (r *ModuleResolver) scanDirForPackage(root gopathwalk.Root, dir string) dir
 	}
 	switch root.Type {
 	case gopathwalk.RootCurrentModule:
-		importPath = path.Join(r.main.Path, filepath.ToSlash(subdir))
+		importPath = path.Join(r.Main.Path, filepath.ToSlash(subdir))
 	case gopathwalk.RootModuleCache:
 		matches := modCacheRegexp.FindStringSubmatch(subdir)
 		if len(matches) == 0 {

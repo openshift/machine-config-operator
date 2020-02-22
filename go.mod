@@ -13,7 +13,6 @@ require (
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6 // indirect
 	github.com/containers/image v3.0.2+incompatible
 	github.com/containers/storage v1.13.5
-	github.com/coreos/container-linux-config-transpiler v0.9.0
 	github.com/coreos/fcct v0.4.0
 	github.com/coreos/ignition v0.33.0
 	github.com/coreos/ignition/v2 v2.1.1
@@ -52,7 +51,6 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	golang.org/x/exp v0.0.0-20191002040644-a1355ae1e2c3 // indirect
 	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0
-	golang.org/x/tools v0.0.0-20200115044656-831fdb1e1868
 	gonum.org/v1/gonum v0.0.0-20190929233944-b20cf7805fc4 // indirect
 	gonum.org/v1/netlib v0.0.0-20190926062253-2d6e29b73a19 // indirect
 	k8s.io/api v0.17.1

@@ -737,13 +737,6 @@ type ProcessEnv struct {
 	resolver Resolver
 }
 
-// CopyConfig copies the env's configuration into a new env.
-func (e *ProcessEnv) CopyConfig() *ProcessEnv {
-	copy := *e
-	copy.resolver = nil
-	return &copy
-}
-
 func (e *ProcessEnv) env() []string {
 	env := os.Environ()
 	add := func(k, v string) {
