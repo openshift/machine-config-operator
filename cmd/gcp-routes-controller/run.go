@@ -33,13 +33,15 @@ var (
 	}
 
 	runOpts struct {
-		rootMount      string
-		healthCheckURL string
+		gcpRoutesService string
+		rootMount        string
+		healthCheckURL   string
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(runCmd)
+	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "gcp-routes.service", "The name for the service controlling gcp routes on host")
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
 	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
 }
@@ -89,7 +91,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		ErrCh:            errCh,
 		SuccessThreshold: 2,
 		FailureThreshold: 10,
-		OnFailure:        func() error { _ = exec.Command("systemctl", "stop", "gcp-routes.service"); return RunDelRoutes() },
+		OnFailure:        func() error { _ = exec.Command("systemctl", "stop", runOpts.gcpRoutesService); return RunDelRoutes() },
 		OnSuccess:        runSetRoutes,
 	}
 
@@ -111,7 +113,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	go func() {
 		for sig := range c {
 			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
-			_ = exec.Command("systemctl", "stop", "gcp-routes.service").Run()
+			_ = exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run()
 			if err := RunDelRoutes(); err != nil {
 				glog.Infof("Failed to terminate gcp routes service on signal: %s", err)
 			} else {
