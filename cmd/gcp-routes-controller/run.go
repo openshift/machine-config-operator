@@ -89,7 +89,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		ErrCh:            errCh,
 		SuccessThreshold: 2,
 		FailureThreshold: 10,
-		OnFailure:        RunDelRoutes,
+		OnFailure:        func() error { _ = exec.Command("systemctl", "stop", "gcp-routes.service"); return RunDelRoutes() },
 		OnSuccess:        runSetRoutes,
 	}
 
@@ -111,6 +111,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	go func() {
 		for sig := range c {
 			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
+			_ = exec.Command("systemctl", "stop", "gcp-routes.service").Run()
 			if err := RunDelRoutes(); err != nil {
 				glog.Infof("Failed to terminate gcp routes service on signal: %s", err)
 			} else {
