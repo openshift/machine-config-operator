@@ -700,10 +700,12 @@ spec:
                 be added to the nodes trusted certificate store.
               type: string
               format: byte
+              nullable: true
             cloudProviderCAData:
               description: cloudProvider specifies the cloud provider CA data
               type: string
               format: byte
+              nullable: true
             cloudProviderConfig:
               description: cloudProviderConfig is the configuration for the given
                 cloud provider
@@ -1011,6 +1013,7 @@ spec:
                   description: noProxy is a comma-separated list of hostnames and/or
                     CIDRs for which the proxy should not be used.
                   type: string
+              nullable: true
             pullSecret:
               description: pullSecret is the default pull secret that needs to be
                 installed on all machines.
@@ -1567,6 +1570,7 @@ spec:
               type: array
               items:
                 type: string
+              nullable: true
             kernelType:
               description: Contains which kernel we want to be running like default (traditional), realtime
               type: string
