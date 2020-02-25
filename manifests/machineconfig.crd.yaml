@@ -312,6 +312,7 @@ spec:
               type: array
               items:
                 type: string
+              nullable: true
             kernelType:
               description: Contains which kernel we want to be running like default (traditional), realtime
               type: string
