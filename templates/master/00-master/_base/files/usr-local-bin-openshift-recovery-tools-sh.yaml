@@ -303,7 +303,7 @@ contents:
         exit 1
       fi
 
-      ID=$($ETCDCTL_WITH_TLS member list | awk -F "," "/\s${NAME}\,/"'{print $1}') || true
+      ID=$($ETCDCTL_WITH_TLS member list | grep "$NAME" | cut -d "," -f 1) || true
       if [ "$?" -ne 0 ] || [ -z "$ID" ]; then
         echo "could not find etcd member $NAME to remove."
         exit 1
