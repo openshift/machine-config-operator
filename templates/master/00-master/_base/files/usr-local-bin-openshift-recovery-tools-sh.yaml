@@ -5,7 +5,6 @@ contents:
   inline: |
     #!/usr/bin/env bash
     export ETCDCTL_API=3
-    export ETCD_VERSION=v3.3.17
 
     ETCDCTL_WITH_TLS="$ETCDCTL --cert $ASSET_DIR/backup/etcd-client.crt --key $ASSET_DIR/backup/etcd-client.key --cacert $ASSET_DIR/backup/etcd-ca-bundle.crt"
 
@@ -22,22 +21,13 @@ contents:
     # download and test etcdctl from upstream release assets
     dl_etcdctl() {
       ETCDCTL_BIN="${ASSET_DIR}/bin/etcdctl"
-      if [ -f "$ETCDCTL_BIN" ]; then
-        echo "etcdctl binary found.."
-        LOCAL_ETCD_VERSION=$($ETCDCTL_BIN version | grep 'etcdctl' | awk '{print "v" $3}') || true
-        if [ "$LOCAL_ETCD_VERSION" != "$ETCD_VERSION" ]; then
-           echo "${ETCDCTL_BIN}: Version mismatch. Expected ${ETCD_VERSION} but found ${LOCAL_ETCD_VERSION}. Please remove or replace."
-           exit 1
-        fi
-      else
-        local etcdimg="{{.Images.etcdKey}}"
-        local etcdctr=$(podman create ${etcdimg})
-        local etcdmnt=$(podman mount "${etcdctr}")
-        cp ${etcdmnt}/bin/etcdctl $ASSET_DIR/bin
-        umount "${etcdmnt}"
-        podman rm "${etcdctr}"
-        $ETCDCTL_BIN version
-      fi
+      local etcdimg="{{.Images.etcdKey}}"
+      local etcdctr=$(podman create ${etcdimg})
+      local etcdmnt=$(podman mount "${etcdctr}")
+      cp ${etcdmnt}/bin/etcdctl $ASSET_DIR/bin
+      umount "${etcdmnt}"
+      podman rm "${etcdctr}"
+      $ETCDCTL_BIN version
     }
 
     #backup etcd client certs
@@ -78,8 +68,14 @@ contents:
           exit 1
       fi
 
+      LATEST_ETCD_STATIC_POD_DIR=$(ls -vd "${CONFIG_FILE_DIR}"/static-pod-resources/etcd-pod-[0-9]* | tail -1) || true
+      if [ -z "$LATEST_ETCD_STATIC_POD_DIR" ]; then
+          echo "error finding static-pod-resources"
+          exit 1
+      fi
+
       # tar up the static kube resources, with the path relative to CONFIG_FILE_DIR
-      tar -cpzf $BACKUP_TAR_FILE -C ${CONFIG_FILE_DIR} ${LATEST_STATIC_POD_DIR#$CONFIG_FILE_DIR/}
+      tar -cpzf $BACKUP_TAR_FILE -C ${CONFIG_FILE_DIR} ${LATEST_STATIC_POD_DIR#$CONFIG_FILE_DIR/} ${LATEST_ETCD_STATIC_POD_DIR#$CONFIG_FILE_DIR/}
     }
 
     append_snapshot_to_tar_and_gzip() {
@@ -90,8 +86,8 @@ contents:
 
     # backup current etcd-member pod manifest
     backup_manifest() {
-      if [ -e "${ASSET_DIR}/backup/etcd-member.yaml" ]; then
-        echo "etcd-member.yaml found in ${ASSET_DIR}/backup/"
+      if [ -e "${ASSET_DIR}/backup/etcd-pod.yaml" ]; then
+        echo "etcd-pod.yaml found in ${ASSET_DIR}/backup/"
       else
         echo "Backing up ${ETCD_MANIFEST} to ${ASSET_DIR}/backup/"
         cp ${ETCD_MANIFEST} ${ASSET_DIR}/backup/
@@ -151,9 +147,9 @@ contents:
         mv $ETCD_MANIFEST $MANIFEST_STOPPED_DIR
       fi
 
-      for name in {etcd-member,etcd-metric}
+      for name in {etcd,etcd-metric}
       do
-        while [ ! -z "$(crictl pods -name $name --state Ready -q)" ]; do
+        while false && [ ! -z "$(crictl pods -name $name --state Ready -q)" ]; do
           echo "Waiting for $name to stop"
           sleep 10
         done
@@ -177,14 +173,47 @@ contents:
 
     remove_kube_static_resources() {
       # Only remove those directories that are greater or equal to the backed up revision.
-      REVISION=$(tar tf $BACKUP_FILE | grep -oP "(?<=static-pod-resources/kube-apiserver-)pod-[0-9]*" | head -1) || true
-      KUBE_DIRS=$(ls -vd ${CONFIG_FILE_DIR}/static-pod-resources/kube-apiserver-pod-[0-9]* | awk -v REV="${REVISION}$" '$0 ~ REV {seen=1} seen { print}') || true
-      if [ ! -z "${KUBE_DIRS}" ]; then
-         echo "Removing newer static pod resources..."
-         rm -rf ${KUBE_DIRS}
-      else
-         echo "remove_kube_static_resources: newer revisions of kube-apiserver-pod static resources are not found."
+      REVISION=$(tar tf $BACKUP_FILE | grep -oP "(?<=static-pod-resources/kube-apiserver-pod-)[0-9]*" | head -1) || true
+      if [ ! -z "${REVISION}" ]; then
+         KUBE_DIRS=$(ls -vd ${CONFIG_FILE_DIR}/static-pod-resources/kube-apiserver-pod-[0-9]* | awk -F"-" -v REV="${REVISION}" '{ if ($NF >= REV) print }') || true
+         if [ ! -z "${KUBE_DIRS}" ]; then
+            echo "Removing newer static pod resources..."
+            rm -rf ${KUBE_DIRS}
+         else
+            echo "remove_kube_static_resources: newer revisions of kube-apiserver-pod static resources are not found."
+         fi
       fi
+
+      # remove newer etcd static pod resources only if the backup contains etcd-pod resources
+      ETCD_REVISION=$(tar tf $BACKUP_FILE | grep -oP "(?<=static-pod-resources/etcd-pod-)[0-9]*" | head -1) || true
+      if [ ! -z "${ETCD_REVISION}" ]; then
+         ETCD_DIRS=$(ls -vd ${CONFIG_FILE_DIR}/static-pod-resources/etcd-pod-[0-9]* | awk -F"-" -v REV="${ETCD_REVISION}" '{ if ($NF >= REV) print }') || true
+         if [ ! -z "${ETCD_DIRS}" ]; then
+            echo "Removing newer etcd pod resources..."
+            rm -rf ${ETCD_DIRS}
+         else
+            echo "remove_kube_static_resources: newer revisions of etcd-pod static resources are not found."
+         fi
+      fi
+    }
+
+    copy_etcd_restore_pod_yaml() {
+      if [ ! -f "${RESTORE_ETCD_POD_YAML}" ]; then
+        echo "File not found, restore failed: ${RESTORE_ETCD_POD_YAML}."
+        exit 1
+      fi
+      echo "Copying ${RESTORE_ETCD_POD} to ${MANIFEST_DIR}"
+      cp -p $RESTORE_ETCD_POD_YAML ${MANIFEST_DIR}/etcd-pod.yaml
+    }
+
+    copy_snapshot_to_backupdir() {
+      if [ ! -f "$SNAPSHOT_FILE" ]; then
+        echo "Snapshot file not found, restore failed: $SNAPSHOT_FILE."
+        exit 1
+      fi
+      echo "Copying $SNAPSHOT_FILE to ${ETCD_DATA_DIR_BACKUP}"
+      [ ! -d ${ETCD_DATA_DIR_BACKUP} ] && mkdir -p ${ETCD_DATA_DIR_BACKUP}
+      cp -p $SNAPSHOT_FILE ${ETCD_DATA_DIR_BACKUP}/snapshot.db
     }
 
     restore_snapshot() {
@@ -209,9 +238,9 @@ contents:
 
     patch_manifest() {
       echo "Patching etcd-member manifest.."
-      cp $ASSET_DIR/backup/etcd-member.yaml $ASSET_DIR/tmp/etcd-member.yaml.template
-      sed -i /' '--discovery-srv/d $ASSET_DIR/tmp/etcd-member.yaml.template
-      mv $ASSET_DIR/tmp/etcd-member.yaml.template $MANIFEST_STOPPED_DIR/etcd-member.yaml
+      cp $ASSET_DIR/backup/etcd-pod.yaml $ASSET_DIR/tmp/etcd-pod.yaml.template
+      sed -i /' '--discovery-srv/d $ASSET_DIR/tmp/etcd-pod.yaml.template
+      mv $ASSET_DIR/tmp/etcd-pod.yaml.template $MANIFEST_STOPPED_DIR/etcd-pod.yaml
     }
 
     # generate a kubeconf like file for the cert agent to consume and contact signer.
@@ -262,7 +291,7 @@ contents:
 
     start_etcd() {
       echo "Starting etcd.."
-      mv ${MANIFEST_STOPPED_DIR}/etcd-member.yaml $MANIFEST_DIR
+      mv ${MANIFEST_STOPPED_DIR}/etcd-pod.yaml $MANIFEST_DIR
     }
 
     # remove member from cluster by name
@@ -422,6 +451,7 @@ contents:
             continue
           elif [ "$DIG_IP" == "$i" ]; then
             echo "dns name is $a"
+            [ ! -d $(dirname "${RUN_ENV}") ] && mkdir -p $(dirname "${RUN_ENV}")
             cat > $RUN_ENV << EOF
     ETCD_IPV4_ADDRESS=$DIG_IP
     ETCD_DNS_NAME=$a
