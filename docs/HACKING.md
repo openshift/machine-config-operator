@@ -192,9 +192,9 @@ registry as long as those images are pullable.
 Now that your have your custom image, to build a custom release payload, run:
 
 ```
-oc adm release new -n origin --server https://api.ci.openshift.org \
+oc adm release new -n ocp --server https://api.ci.openshift.org \
                                 --from-image-stream "{version number}" \
-                                --to-image quay.io/user/origin-release:v{version number} \
+                                --to-image quay.io/user/ocp-release:v{version number} \
                                 machine-config-operator=quay.io/user/machine-config-operator:latest
 ```
 
@@ -209,7 +209,7 @@ When the command above finishes, your custom release payload is going to be avai
 at the location you specified via the `--to-image` flag for the installer to be consumed. E.g.:
 
 ```
-oc adm upgrade --force --to-image quay.io/user/origin-release:v{version number}
+oc adm upgrade --force --to-image quay.io/user/ocp-release:v{version number}
 ```
 
 To watch the upgrade you can do:
@@ -228,7 +228,7 @@ In order to use your new custom release payload to install a new cluster, simply
 the `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` environment variable like so:
 
 ```
-OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/origin-release:v{version number} bin/openshift-install create cluster --log-level=debug
+OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=quay.io/user/ocp-release:v{version number} bin/openshift-install create cluster --log-level=debug
 ```
 
 ## Quickly deploying changes without upgrading
