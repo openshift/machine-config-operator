@@ -61,10 +61,12 @@ type ControllerConfigSpec struct {
 	RootCAData []byte `json:"rootCAData"`
 
 	// cloudProvider specifies the cloud provider CA data
+	// +nullable
 	CloudProviderCAData []byte `json:"cloudProviderCAData"`
 
 	// additionalTrustBundle is a certificate bundle that will be added to the nodes
 	// trusted certificate store.
+	// +nullable
 	AdditionalTrustBundle []byte `json:"additionalTrustBundle"`
 
 	// TODO: Investigate using a ConfigMapNameReference for the PullSecret and OSImageURL
@@ -81,6 +83,7 @@ type ControllerConfigSpec struct {
 	OSImageURL string `json:"osImageURL"`
 
 	// proxy holds the current proxy configuration for the nodes
+	// +nullable
 	Proxy *configv1.ProxyStatus `json:"proxy"`
 
 	// infra holds the infrastructure details
@@ -167,6 +170,7 @@ type MachineConfigSpec struct {
 	// Config is a Ignition Config object.
 	Config igntypes.Config `json:"config"`
 
+	// +nullable
 	KernelArguments []string `json:"kernelArguments"`
 
 	FIPS       bool   `json:"fips"`
