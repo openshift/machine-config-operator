@@ -25,9 +25,11 @@ const (
 
 // CreateResourceLock returns an interface for the resource lock.
 func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName string) resourcelock.Interface {
+	scheme := runtime.NewScheme()
+	corev1.AddToScheme(scheme)
 	recorder := record.
 		NewBroadcaster().
-		NewRecorder(runtime.NewScheme(), corev1.EventSource{Component: componentName})
+		NewRecorder(scheme, corev1.EventSource{Component: componentName})
 
 	id, err := os.Hostname()
 	if err != nil {
