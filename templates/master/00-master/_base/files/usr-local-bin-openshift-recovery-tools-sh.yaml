@@ -74,8 +74,15 @@ contents:
           exit 1
       fi
 
+      ETCD_RESTORE_POD=$(ls /etc/kubernetes/static-pod-resources/etcd-certs/configmaps/restore-etcd-pod/pod.yaml) || true
+      if [ -z "$ETCD_RESTORE_POD" ]; then
+          echo "error finding restore pod yaml"
+          exit 1
+      fi
+
+
       # tar up the static kube resources, with the path relative to CONFIG_FILE_DIR
-      tar -cpzf $BACKUP_TAR_FILE -C ${CONFIG_FILE_DIR} ${LATEST_STATIC_POD_DIR#$CONFIG_FILE_DIR/} ${LATEST_ETCD_STATIC_POD_DIR#$CONFIG_FILE_DIR/}
+      tar -cpzf $BACKUP_TAR_FILE -C ${CONFIG_FILE_DIR} ${LATEST_STATIC_POD_DIR#$CONFIG_FILE_DIR/} ${LATEST_ETCD_STATIC_POD_DIR#$CONFIG_FILE_DIR/} ${ETCD_RESTORE_POD#$CONFIG_FILE_DIR/}
     }
 
     append_snapshot_to_tar_and_gzip() {
