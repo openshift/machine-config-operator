@@ -66,6 +66,7 @@ spec:
             config:
               description: Config is a Ignition Config object.
               type: object
+              x-kubernetes-preserve-unknown-fields: true
               required:
               - ignition
               properties:
