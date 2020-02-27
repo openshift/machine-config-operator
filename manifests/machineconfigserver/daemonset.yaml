@@ -3,6 +3,8 @@ kind: DaemonSet
 metadata:
   name: machine-config-server
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-server
 spec:
   selector:
     matchLabels:
@@ -30,6 +32,9 @@ spec:
           mountPath: /etc/ssl/mcs
         - name: node-bootstrap-token
           mountPath: /etc/mcs/bootstrap-token
+        - name: trusted-ca
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
       hostNetwork: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
@@ -49,3 +54,9 @@ spec:
       - name: certs
         secret:
           secretName: machine-config-server-tls
+      - name: trusted-ca
+        configMap:
+          name: trusted-ca
+          items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem

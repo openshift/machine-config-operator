@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
@@ -50,16 +51,16 @@ func init() {
 }
 
 // bindPodMounts ensures that the daemon can still see e.g. /run/secrets/kubernetes.io
-// service account tokens after chrooting.  This function must be called before chroot.
-func bindPodMounts(rootMount string) error {
-	targetSecrets := filepath.Join(rootMount, "/run/secrets")
-	if err := os.MkdirAll(targetSecrets, 0755); err != nil {
+// service account tokens after chrooting and trusted CA.  This function must be called before chroot.
+func bindPodMounts(rootMount, path string) error {
+	target := filepath.Join(rootMount, path)
+	if err := os.MkdirAll(target, 0755); err != nil {
 		return err
 	}
 	// This will only affect our mount namespace, not the host
-	output, err := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets).CombinedOutput()
+	output, err := exec.Command("mount", "--rbind", path, target).CombinedOutput()
 	if err != nil {
-		return errors.Wrapf(err, "failed to mount /run/secrets to %s: %s", targetSecrets, string(output))
+		return errors.Wrapf(err, "failed to mount %s to %s: %s", path, target, string(output))
 	}
 	return nil
 }
@@ -76,8 +77,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	onceFromMode := startOpts.onceFrom != ""
 	if !onceFromMode {
 		// in the daemon case
-		if err := bindPodMounts(startOpts.rootMount); err != nil {
-			glog.Fatalf("Binding pod mounts: %+v", err)
+		for _, m := range []string{
+			"/run/secrets",
+			"/etc/pki/ca-trust/extracted/pem",
+		} {
+			if err := bindPodMounts(startOpts.rootMount, m); err != nil {
+				glog.Fatalf("Binding pod mounts: %+v", err)
+			}
 		}
 	}
 
@@ -158,6 +164,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx.KubeInformerFactory.Start(stopCh)
 	ctx.InformerFactory.Start(stopCh)
 	close(ctx.InformersStarted)
+
+	trustedCAWatcher, err := common.NewTrustedCAWatcher(stopCh)
+	if err != nil {
+		glog.Errorf("Failed to watch trusted CA: %#v", err)
+		ctrlcommon.WriteTerminationError(err)
+	}
+	defer trustedCAWatcher.Close()
+	go trustedCAWatcher.Run()
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)

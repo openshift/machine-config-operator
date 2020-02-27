@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: machine-config-controller
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-controller
 spec:
   selector:
     matchLabels:
@@ -25,6 +27,10 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: trusted-ca
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
@@ -42,3 +48,10 @@ spec:
         operator: "Exists"
         effect: "NoExecute"
         tolerationSeconds: 120
+      volumes:
+      - name: trusted-ca
+        configMap:
+          name: trusted-ca
+          items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem

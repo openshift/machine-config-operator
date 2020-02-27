@@ -7,6 +7,7 @@ metadata:
     k8s-app: machine-config-operator
   annotations:
     exclude.release.openshift.io/internal-openshift-hosted: "true"
+    config.openshift.io/inject-proxy: machine-config-operator
 spec:
   replicas: 1
   selector:
@@ -38,6 +39,9 @@ spec:
           mountPath: /etc/ssl/etcd/ca.crt
         - name: images
           mountPath: /etc/mco/images
+        - name: trusted-ca
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
@@ -67,3 +71,9 @@ spec:
       - name: root-ca
         hostPath:
           path: /etc/kubernetes/ca.crt
+      - name: trusted-ca
+        configMap:
+          name: trusted-ca
+          items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem

@@ -584,6 +584,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	for {
 		select {
 		case <-stopCh:
+			// if update active, keep looping
 			return nil
 		case <-signaled:
 			return nil

@@ -1022,6 +1022,8 @@ kind: Deployment
 metadata:
   name: machine-config-controller
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-controller
 spec:
   selector:
     matchLabels:
@@ -1044,6 +1046,10 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - name: trusted-ca
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
@@ -1061,7 +1067,13 @@ spec:
         operator: "Exists"
         effect: "NoExecute"
         tolerationSeconds: 120
-`)
+      volumes:
+      - name: trusted-ca
+        configMap:
+          name: trusted-ca
+          items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem`)
 
 func manifestsMachineconfigcontrollerDeploymentYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigcontrollerDeploymentYaml, nil
@@ -1228,6 +1240,8 @@ kind: DaemonSet
 metadata:
   name: machine-config-daemon
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-daemon
 spec:
   selector:
     matchLabels:
@@ -1254,6 +1268,9 @@ spec:
         volumeMounts:
           - mountPath: /rootfs
             name: rootfs
+          - name: trusted-ca
+            mountPath: /etc/pki/ca-trust/extracted/pem
+            readOnly: true
         env:
           - name: NODE_NAME
             valueFrom:
@@ -1308,6 +1325,12 @@ spec:
         - name: cookie-secret
           secret:
             secretName: cookie-secret
+        - name: trusted-ca
+          configMap:
+            name: trusted-ca
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
 `)
 
 func manifestsMachineconfigdaemonDaemonsetYamlBytes() ([]byte, error) {
@@ -1555,6 +1578,8 @@ kind: DaemonSet
 metadata:
   name: machine-config-server
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-server
 spec:
   selector:
     matchLabels:
@@ -1582,6 +1607,9 @@ spec:
           mountPath: /etc/ssl/mcs
         - name: node-bootstrap-token
           mountPath: /etc/mcs/bootstrap-token
+        - name: trusted-ca
+          mountPath: /etc/pki/ca-trust/extracted/pem
+          readOnly: true
       hostNetwork: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
@@ -1601,6 +1629,12 @@ spec:
       - name: certs
         secret:
           secretName: machine-config-server-tls
+      - name: trusted-ca
+        configMap:
+          name: trusted-ca
+          items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem
 `)
 
 func manifestsMachineconfigserverDaemonsetYamlBytes() ([]byte, error) {

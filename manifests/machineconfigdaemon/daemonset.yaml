@@ -3,6 +3,8 @@ kind: DaemonSet
 metadata:
   name: machine-config-daemon
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-daemon
 spec:
   selector:
     matchLabels:
@@ -29,6 +31,9 @@ spec:
         volumeMounts:
           - mountPath: /rootfs
             name: rootfs
+          - name: trusted-ca
+            mountPath: /etc/pki/ca-trust/extracted/pem
+            readOnly: true
         env:
           - name: NODE_NAME
             valueFrom:
@@ -83,3 +88,9 @@ spec:
         - name: cookie-secret
           secret:
             secretName: cookie-secret
+        - name: trusted-ca
+          configMap:
+            name: trusted-ca
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem

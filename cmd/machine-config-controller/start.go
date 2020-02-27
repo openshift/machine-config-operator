@@ -49,6 +49,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
+	stop := make(chan struct{})
+
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
 		ctrlcommon.WriteTerminationError(errors.Wrapf(err, "Creating clients"))
@@ -67,11 +69,22 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 		close(ctrlctx.InformersStarted)
 
+		trustedCAWatcher, err := common.NewTrustedCAWatcher(stop)
+		if err != nil {
+			glog.Errorf("Failed to watch trusted CA: %#v", err)
+			ctrlcommon.WriteTerminationError(err)
+		}
+		defer trustedCAWatcher.Close()
+		go trustedCAWatcher.Run()
+
 		for _, c := range controllers {
 			go c.Run(2, ctrlctx.Stop)
 		}
 
-		select {}
+		select {
+		case <-ctrlctx.Stop:
+		case <-stop:
+		}
 	}
 
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
@@ -82,11 +95,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Fatalf("leaderelection lost")
+				glog.Warningf("Stop leading")
 			},
 		},
 	})
-	panic("unreachable")
+	glog.Infof("Shutting down MCC")
 }
 
 func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {

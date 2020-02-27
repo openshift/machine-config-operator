@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/cmd/common"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -51,6 +52,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
 
 	stopCh := make(chan struct{})
+	trustedCAWatcher, err := common.NewTrustedCAWatcher(stopCh)
+	if err != nil {
+		glog.Errorf("Failed to watch trusted CA: %#v", err)
+		ctrlcommon.WriteTerminationError(err)
+	}
+	defer trustedCAWatcher.Close()
+	go trustedCAWatcher.Run()
 	go secureServer.Serve()
 	go insecureServer.Serve()
 	<-stopCh

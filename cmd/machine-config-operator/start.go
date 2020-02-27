@@ -49,9 +49,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatal("--images-json cannot be empty")
 	}
 
+	stop := make(chan struct{})
+
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
-		glog.Fatalf("error creating clients: %v", err)
+		glog.Fatalf("Error creating clients: %v", err)
 	}
 	run := func(ctx context.Context) {
 		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentNamespace)
@@ -98,9 +100,20 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
+		trustedCAWatcher, err := common.NewTrustedCAWatcher(stop)
+		if err != nil {
+			glog.Errorf("Failed to watch trusted CA: %#v", err)
+			ctrlcommon.WriteTerminationError(err)
+		}
+		defer trustedCAWatcher.Close()
+		go trustedCAWatcher.Run()
+
 		go controller.Run(2, ctrlctx.Stop)
 
-		select {}
+		select {
+		case <-ctrlctx.Stop:
+		case <-stop:
+		}
 	}
 
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
@@ -111,11 +124,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Fatalf("leaderelection lost")
+				glog.Warningf("Stop leading")
 			},
 		},
 	})
-	panic("unreachable")
+	glog.Infof("Shutting down MCO")
 }
 
 func getEtcdInformer(operatorClient operatorclientset.Interface, operatorSharedInformer operatorinformers.SharedInformerFactory) (operatorv1.EtcdInformer, error) {
