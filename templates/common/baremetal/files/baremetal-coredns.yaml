@@ -23,6 +23,9 @@ contents:
       - name: conf-dir
         hostPath:
           path: "/etc/coredns"
+      - name: nm-resolv
+        hostPath:
+          path: "/var/run/NetworkManager"
       initContainers:
       - name: render-config
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -84,6 +87,35 @@ contents:
           failureThreshold: 5
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
+      - name: coredns-monitor
+        securityContext:
+          privileged: true
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - corednsmonitor
+        - "/etc/kubernetes/kubeconfig"
+        - "/config/Corefile.tmpl"
+        - "/etc/coredns/Corefile"
+        - "--api-vip"
+        - "{{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        - "--dns-vip"
+        - "{{ .Infra.Status.PlatformStatus.BareMetal.NodeDNSIP }}"
+        - "--ingress-vip"
+        - "{{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi          
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
+        imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:
       - operator: Exists
