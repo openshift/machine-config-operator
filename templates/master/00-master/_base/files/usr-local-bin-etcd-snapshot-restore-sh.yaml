@@ -9,7 +9,7 @@ contents:
     set -o pipefail
 
     # example
-    # ./etcd-snapshot-restore.sh $path-to-backup $inital_cluster
+    # ./etcd-snapshot-restore.sh $path-to-backup 
 
     if [[ $EUID -ne 0 ]]; then
       echo "This script must be run as root"
@@ -17,17 +17,15 @@ contents:
     fi
 
     usage () {
-        echo 'Path to backup file and initial cluster are required: ./etcd-snapshot-restore.sh <path-to-backup> $INITIAL_CLUSTER'
-        echo 'path-to-backup can be a directory containing kube static resources and snapshot db, or a single file containing snapshot db'
+        echo 'Path to the directory containing backup files is required: ./etcd-snapshot-restore.sh <path-to-backup>'
         exit 1
     }
 
-    if [ "$1" == "" ] || [ "$2" == "" ]; then
+    if [ "$1" == "" ]; then
         usage
     fi
 
-    INITIAL_CLUSTER="$2"
-    ASSET_DIR=./assets
+    ASSET_DIR=/home/core/assets
 
     RESTORE_STATIC_RESOURCES="true"
     if [ -f "$1" ]; then
@@ -59,14 +57,15 @@ contents:
 
     ETCDCTL="${ASSET_DIR}/bin/etcdctl"
     ETCD_DATA_DIR=/var/lib/etcd
-    ETCD_MANIFEST="${MANIFEST_DIR}/etcd-member.yaml"
+    ETCD_DATA_DIR_BACKUP=/var/lib/etcd-backup
+    RESTORE_ETCD_POD_YAML="${CONFIG_FILE_DIR}/static-pod-resources/etcd-certs/configmaps/restore-etcd-pod/pod.yaml"
+    ETCD_MANIFEST="${MANIFEST_DIR}/etcd-pod.yaml"
     ETCD_STATIC_RESOURCES="${CONFIG_FILE_DIR}/static-pod-resources/etcd-member"
     STOPPED_STATIC_PODS="${ASSET_DIR}/tmp/stopped-static-pods"
 
     source "/usr/local/bin/openshift-recovery-tools"
 
     function run {
-      ETCD_INITIAL_CLUSTER="${INITIAL_CLUSTER}"
       init
       if [ ! -f "${SNAPSHOT_FILE}" ]; then
         echo "etcd snapshot ${SNAPSHOT_FILE} does not exist."
@@ -75,15 +74,6 @@ contents:
 
       dl_etcdctl
       backup_manifest
-      DISCOVERY_DOMAIN=$(grep -oP '(?<=discovery-srv=).*[^"]' $ASSET_DIR/backup/etcd-member.yaml )
-      if [ -z "$DISCOVERY_DOMAIN" ]; then
-        echo "Discovery domain can not be extracted from $ASSET_DIR/backup/etcd-member.yaml"
-        exit 1
-      fi
-      validate_environment
-      source /run/etcd/environment
-      ETCD_INITIAL_CLUSTER="${INITIAL_CLUSTER}"
-      ETCD_NAME=$(validate_etcd_name)
       stop_static_pods
       stop_etcd
       stop_kubelet
@@ -91,9 +81,10 @@ contents:
       backup_data_dir
       remove_data_dir
       [ "${RESTORE_STATIC_RESOURCES}" = "true" ] && remove_kube_static_resources
-      restore_snapshot
+      copy_snapshot_to_backupdir
       [ "${RESTORE_STATIC_RESOURCES}" = "true" ] && restore_kube_static_resources
       start_static_pods
+      copy_etcd_restore_pod_yaml
       start_kubelet
     }
 
