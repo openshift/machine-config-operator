@@ -116,7 +116,8 @@ func appendInitialMachineConfig(mc *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return err
 	}
-	appendFileToIgnition(&mc.Spec.Config, machineConfigContentPath, string(mcJSON))
+	mcJSONstring := string(mcJSON)
+	appendFileToIgnition(&mc.Spec.Config, machineConfigContentPath, &mcJSONstring)
 	return nil
 }
 
