@@ -7,12 +7,14 @@ import (
 )
 
 const (
-	// machineConfigDaemonOSRHCOS denotes RHCOS
+	// machineConfigDaemonOSRHCOS denotes RHEL CoreOS
 	machineConfigDaemonOSRHCOS = "RHCOS"
 	// machineConfigDaemonOSRHEL denotes RHEL
 	machineConfigDaemonOSRHEL = "RHEL"
-	// machineConfigDaemonOSCENTOS denotes CENTOS
+	// machineConfigDaemonOSCENTOS denotes CentOS
 	machineConfigDaemonOSCENTOS = "CENTOS"
+	// machineConfigDaemonOSFCOS denotes Fedora CoreOS
+	machineConfigDaemonOSFCOS = "FCOS"
 )
 
 // getHostRunningOS reads os-release from the rootFs prefix to return what
@@ -27,6 +29,11 @@ func getHostRunningOS() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	if or.ID == "fedora" && or.VARIANT_ID == "coreos" {
+		return machineConfigDaemonOSFCOS, nil
+	}
+
 	// See https://github.com/openshift/redhat-release-coreos/blob/master/redhat-release-coreos.spec
 	switch or.ID {
 	case "rhcos":
