@@ -178,6 +178,7 @@ contents:
           protocol: TCP
         securityContext:
           privileged: true
+      terminationGracePeriodSeconds: 60
       hostNetwork: true
       priorityClassName: system-node-critical
       tolerations:
