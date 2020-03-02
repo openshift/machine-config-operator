@@ -607,8 +607,8 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	if len(diff) == 0 {
 		return nil
 	}
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
-		return fmt.Errorf("Updating kargs on non-RHCOS nodes is not supported: %v", diff)
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+		return fmt.Errorf("Updating kargs on non-CoreOS nodes is not supported: %v", diff)
 	}
 
 	args := append([]string{"kargs"}, diff...)
@@ -1098,8 +1098,8 @@ func (dn *Daemon) updateSSHKeys(newUsers []igntypes.PasswdUser) error {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
-		glog.V(2).Info("Updating of non RHCOS nodes are not supported")
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+		glog.V(2).Info("Updating of non-CoreOS nodes are not supported")
 		return nil
 	}
 

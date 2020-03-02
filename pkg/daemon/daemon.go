@@ -200,8 +200,8 @@ func New(
 		}
 	}
 
-	// Only pull the osImageURL from OSTree when we are on RHCOS
-	if operatingSystem == machineConfigDaemonOSRHCOS {
+	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
+	if operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -229,7 +229,7 @@ func New(
 		}
 	}
 
-	// report OS & version (if RHCOS) to prometheus
+	// report OS & version (if RHCOS or FCOS) to prometheus
 	HostOS.WithLabelValues(operatingSystem, osVersion).Set(1)
 
 	return &Daemon{
@@ -770,7 +770,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 // dynamically after a reboot.
 func (dn *Daemon) LogSystemData() {
 	// Print status if available
-	if dn.OperatingSystem == machineConfigDaemonOSRHCOS {
+	if dn.OperatingSystem == machineConfigDaemonOSRHCOS || dn.OperatingSystem == machineConfigDaemonOSFCOS {
 		status, err := dn.NodeUpdaterClient.GetStatus()
 		if err != nil {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
@@ -1252,13 +1252,13 @@ func compareOSImageURL(current, desired string) (bool, error) {
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
-// not running RHCOS, or if the target osImageURL is "" (unspecified),
+// not running RHCOS or FCOS, or if the target osImageURL is "" (unspecified),
 // or if the digests match.
 // Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
-	// Nothing to do if we're not on RHCOS
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
-		glog.Infof(`Not booted into Red Hat CoreOS, ignoring target OSImageURL %s`, osImageURL)
+	// Nothing to do if we're not on RHCOS or FCOS
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true, nil
 	}
 
