@@ -2856,7 +2856,9 @@ var _manifestsOpenstackCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
     mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
-    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
+    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
+        policy sequential
+    }
     cache 30
     reload
     hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
