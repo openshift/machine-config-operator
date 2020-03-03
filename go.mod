@@ -36,7 +36,7 @@ require (
 	github.com/imdario/mergo v0.3.7
 	github.com/joho/godotenv v1.3.0
 	github.com/opencontainers/go-digest v1.0.0-rc1
-	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
+	github.com/openshift/api v3.9.1-0.20191002160657-d92789481b05+incompatible
 	github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0
 	github.com/openshift/cluster-api v0.0.0-20190923092624-4024de4fa64d
 	github.com/openshift/cluster-etcd-operator v0.0.0-alpha.0.0.20191025163650-5854b5c48ce4
@@ -69,7 +69,7 @@ replace (
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20200116145750-0e2ff1e215dd
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20200302180901-b4f75e525601
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191004085540-83f32d3e7070
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.17.1
