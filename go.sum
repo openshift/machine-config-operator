@@ -715,6 +715,9 @@ github.com/opencontainers/selinux v1.3.1-0.20190929122143-5215b1806f52 h1:B8hYj3
 github.com/opencontainers/selinux v1.3.1-0.20190929122143-5215b1806f52/go.mod h1:+BLncwf63G4dgOzykXAxcmnFlUaOlkDdmw/CqsW6pjs=
 github.com/openshift/api v0.0.0-20200116145750-0e2ff1e215dd h1:WIrzR6PXOptxWGafidO/zMixrHDITEBHdz9k9AkAL1U=
 github.com/openshift/api v0.0.0-20200116145750-0e2ff1e215dd/go.mod h1:fT6U/JfG8uZzemTRwZA2kBDJP5nWz7v05UHnty/D+pk=
+github.com/openshift/api v0.0.0-20200302180901-b4f75e525601 h1:w+BZAqw/cIQe03ilt0Za/4wnERpbtTukVjCITh1vsO4=
+github.com/openshift/api v0.0.0-20200302180901-b4f75e525601/go.mod h1:frTMT4l3rOMlXj3ClYgKxgkq24D7IKXb3Bl4vJEewJw=
+github.com/openshift/build-machinery-go v0.0.0-20200211121458-5e3d6e570160/go.mod h1:1CkcsT3aVebzRBzVTSbiKSkJMsC/CASqxesfqEMfJEc=
 github.com/openshift/client-go v0.0.0-20190617165122-8892c0adc000/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0 h1:U0rtkdPj1lTC5iQwN3Ev+FgyZUTsJFg60rc0ExTGLpc=
 github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
