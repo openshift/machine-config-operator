@@ -61,24 +61,9 @@ KubeletConfig
   [KubeletConfigurationSpec](https://github.com/kubernetes/kubernetes/blob/release-1.11/pkg/kubelet/apis/kubeletconfig/v1beta1/types.go#L45)
 ```
 
-Example:
+## How-To
 
-```
-apiVersion: machineconfiguration.openshift.io/v1
-kind: KubeletConfig
-metadata:
-  name: set-max-pods
-spec:
-  machineConfigPoolSelector:
-    matchLabels:
-      custom-kubelet: small-pods
-  kubeletConfig:
-    maxPods: 100
-```
-
-Make sure to add a label under `matchLabels` in the KubeletConfig CR and use that label in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-kubelet: small-pods`.
-
-To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add `custom-kubelet: small-pods` under labels in the machineConfigPool config.  
+To roll out a pod limit kubelet change to all the worker nodes (can switch this to master for the master nodes), add `custom-kubelet: small-pods` under labels in the machineConfigPool config.  
 
 ```
 oc edit machineconfigpool worker
@@ -96,6 +81,55 @@ metadata:
     custom-kubelet: small-pods
   name: worker
   ...
+```
+
+Add a label under `matchLabels` in the `KubeletConfig` CR and use that `custom-kubelet: small-pods` label in the `MachineConfigPool` config that you want the changes rolled out to.
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: set-max-pods
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      custom-kubelet: small-pods
+  kubeletConfig:
+    maxPods: 100
+```
+
+Apply the `KubeletConfig` object:
+
+```
+oc apply -f set-max-pods.yaml
+```
+
+Verify the `KubeletConfig` was successfully applied to the `MachineConfigPool`:
+
+```
+oc get kubeletconfig -o yaml
+```
+
+```
+...
+  status:
+    conditions:
+    ...
+    - lastTransitionTime: "2020-03-04T19:07:03Z"
+      message: Success
+      status: "True"
+      type: Success
+```
+
+Verify that a new `MachineConfig` now exists:
+
+```
+oc get machineconfig
+```
+
+```
+...
+rendered-worker-d021c0fc23c57357b5e0e1181552c34c            ac44c3f441eb1b717f18a8328f1542fc83b8a374   2.2.0             30s
 ```
 
 ## Implementation Details
