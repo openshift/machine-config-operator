@@ -7,7 +7,9 @@ contents:
         errors
         health :18080
         mdns {{ .EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}}
-        forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
+        forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
+            policy sequential
+        }
         cache 30
         reload
         file /etc/coredns/node-dns-db {{ .EtcdDiscoveryDomain }}
