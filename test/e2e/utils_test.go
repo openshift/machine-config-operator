@@ -9,6 +9,7 @@ import (
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -153,13 +154,7 @@ func mcpNameToRole(mcpName string) string {
 
 // createMC creates a machine config object with name and role
 func createMC(name, role string) *mcfgv1.MachineConfig {
-	// create a dummy MC
-	mcadd := &mcfgv1.MachineConfig{}
-	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name:   name,
-		Labels: mcLabelForRole(role),
-	}
-	return mcadd
+	return helpers.NewMachineConfig(name, mcLabelForRole(role), "", nil)
 }
 
 // execCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
