@@ -11,6 +11,7 @@ contents:
       anonymous:
         enabled: false
     cgroupDriver: systemd
+    cgroupRoot: /
     clusterDNS:
       - {{.ClusterDNSIP}}
     clusterDomain: cluster.local
@@ -19,8 +20,10 @@ contents:
     kubeAPIQPS: 50
     kubeAPIBurst: 100
     rotateCertificates: true
+    runtimeCgroups: /system.slice/crio.service
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
+    systemCgroups: /system.slice
     systemReserved:
       cpu: 500m
       memory: 500Mi
