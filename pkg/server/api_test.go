@@ -56,8 +56,8 @@ func TestAPIHandler(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, 125)
+				checkBodyLength(t, response, 125)
 			},
 		},
 		{
@@ -71,7 +71,7 @@ func TestAPIHandler(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, 125)
 				checkBodyLength(t, response, 0)
 			},
 		},
@@ -250,8 +250,8 @@ func TestAPIServer(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, 125)
+				checkBodyLength(t, response, 125)
 			},
 		},
 		{
@@ -265,7 +265,7 @@ func TestAPIServer(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, 125)
 				checkBodyLength(t, response, 0)
 			},
 		},
