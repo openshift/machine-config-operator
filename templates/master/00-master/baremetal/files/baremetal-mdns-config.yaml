@@ -8,7 +8,7 @@ contents:
 
     service {
         name = "{{`{{ .Cluster.Name }}`}} Etcd"
-        host_name = "{{`{{ .EtcdShortHostname }}`}}.local."
+        host_name = "{{`{{ .ShortHostname }}`}}.local."
         type = "_etcd-server-ssl._tcp"
         domain = "local."
         port = 2380
@@ -22,13 +22,4 @@ contents:
         domain = "local."
         port = 42424
         ttl = 3200
-    }
-
-    service {
-        name = "{{`{{ .Cluster.Name }}`}} EtcdWorkstation"
-        host_name = "{{`{{ .EtcdShortHostname }}`}}.local."
-        type = "_workstation._tcp"
-        domain = "local."
-        port = 42424
-        ttl = 300
     }
