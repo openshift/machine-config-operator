@@ -15,6 +15,7 @@ import (
 	"github.com/Masterminds/sprig"
 	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
 	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
+	ign "github.com/coreos/ignition/config/v2_4"
 	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
@@ -326,9 +327,19 @@ func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
 	}
 
-	ignCfg, rep := ctconfig.Convert(ctCfg, "", nil)
+	ignCfgV2_2, rep := ctconfig.Convert(ctCfg, "", nil)
 	if rep.IsFatal() {
 		return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
+	}
+
+	// Hack to convert spec 2.2 config to spec 2.4
+	rawIgnCfg, err := json.Marshal(ignCfgV2_2)
+	if err != nil {
+		return nil, fmt.Errorf("SHOULD NEVER HAPPEN: failed to marshal Ignition spec v2.2 config %s", err)
+	}
+	ignCfg, rep, err := ign.Parse(rawIgnCfg)
+	if rep.IsFatal() || err != nil {
+		return nil, fmt.Errorf("SHOULD NEVER HAPPEN: failed to parse Ignition spec v2.4 config: %s\nreport: %v", err, rep)
 	}
 
 	return &ignCfg, nil
