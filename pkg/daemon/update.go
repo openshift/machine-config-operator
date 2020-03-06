@@ -50,10 +50,11 @@ func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 // writeFileAtomically uses the renameio package to provide atomic file writing, we can't use renameio.WriteFile
 // directly since we need to 1) Chown 2) go through a buffer since files provided can be big
 func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, uid, gid int) error {
-	if err := os.MkdirAll(filepath.Dir(fpath), dirMode); err != nil {
+	dir := filepath.Dir(fpath)
+	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(fpath), err)
 	}
-	t, err := renameio.TempFile("", fpath)
+	t, err := renameio.TempFile(dir, fpath)
 	if err != nil {
 		return err
 	}
