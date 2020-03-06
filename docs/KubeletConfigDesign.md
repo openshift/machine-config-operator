@@ -61,7 +61,8 @@ KubeletConfig
   [KubeletConfigurationSpec](https://github.com/kubernetes/kubernetes/blob/release-1.11/pkg/kubelet/apis/kubeletconfig/v1beta1/types.go#L45)
 ```
 
-Example:
+## Example
+This is what an example `kubelet config` CR looks like. Note: you must make sure to add a label under `matchLabels` in the KubeletConfig CR:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
@@ -76,9 +77,9 @@ spec:
     maxPods: 100
 ```
 
-Make sure to add a label under `matchLabels` in the KubeletConfig CR and use that label in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-kubelet: small-pods`.
+Save your `kubeletconfig` locally, for example as maxpods.yaml
 
-To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add `custom-kubelet: small-pods` under labels in the machineConfigPool config.  
+To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-kubelet: small-pods` under labels in the machineConfigPool config: 
 
 ```
 oc edit machineconfigpool worker
@@ -96,6 +97,43 @@ metadata:
     custom-kubelet: small-pods
   name: worker
   ...
+```
+Now apply the `kubeletconfig` that you created:
+
+```
+$ oc apply -f maxpods.yaml
+kubeletconfig.machineconfiguration.openshift.io/set-max-pods created
+```
+
+Double check that it was created:
+
+```
+$ oc get kubeletconfig
+NAME           AGE
+set-max-pods   6s
+```
+
+Check to ensure that a new 99-worker-XXX-kubelet is created and that a new rendered worker is created:
+
+```
+$ oc get machineconfigs
+NAME                                 GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
+...
+99-worker-123-abc-kubelet            fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             7s
+...
+rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             2s
+...
+```
+
+The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking 
+that the latest rendered-worker machine-config has been rolled out to the pools successfully:
+
+```
+$ oc get mcp
+NAME     CONFIG                     UPDATED   UPDATING   DEGRADED   MACHINECOUNT   READYMACHINECOUNT   UPDATEDMACHINECOUNT   DEGRADEDMACHINECOUNT   AGE
+...
+worker   rendered-worker-45678XYZ   True      False      False      3              3                   3                     0                      5m
+...
 ```
 
 ## Implementation Details

@@ -56,9 +56,9 @@ ContainerRuntimeConfig
  [ContainerRuntimeConfigurationSpec](Will have to add this in this repo)
 ```
 
-## Example
+## Example 
 
-This is what an example `ctrcfg` CR would look like:
+This is what an example `ctrcfg` CR looks like. Note: you must make sure to add a label under `matchLabels` in the ContainerRuntimeConfig CR:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
@@ -72,8 +72,21 @@ spec:
  containerRuntimeConfig:
    pidsLimit: 2048
 ```
+Save your `ctrcfg` locally, for example as highpids.yaml and create the ctrcfg:
 
-Make sure to add a label under `matchLabels` in the ContainerRuntimeConfig CR and use that label in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-crio: high-pid-limit`.
+```
+oc create -f highpids.yaml
+```
+
+Check that it was created:
+
+```
+$ oc get ctrcfg
+NAME             AGE
+set-pids-limit   50s
+```
+
+Use the label you created in `matchLabels` in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-crio: high-pid-limit`
 
 To roll out the pids limit changes to all the worker nodes (can switch this to master for the master nodes), add `custom-crio: high-pid-limit` under labels in the machineConfigPool config.  
 
@@ -93,6 +106,26 @@ metadata:
     custom-crio: high-pid-limit
   name: worker
   ...
+```
+
+Check to ensure that a new 99-worker-XXX-containerruntime is created and that a new rendered worker is created:
+```
+$ oc get machineconfigs
+NAME                                 GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
+...
+99-worker-123-abc-containerruntime   fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             7s
+...
+rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             2s
+...
+```
+The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking 
+that the latest rendered-worker machine-config has been rolled out to the pools successfully:
+```
+$ oc get mcp
+NAME     CONFIG                     UPDATED   UPDATING   DEGRADED   MACHINECOUNT   READYMACHINECOUNT   UPDATEDMACHINECOUNT   DEGRADEDMACHINECOUNT   AGE
+...
+worker   rendered-worker-45678XYZ   True      False      False      3              3                   3                     0                      5m
+...
 ```
 
 ## Implementation Details
