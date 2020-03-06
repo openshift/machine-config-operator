@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign "github.com/coreos/ignition/config/v2_4"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"

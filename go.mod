@@ -16,7 +16,7 @@ require (
 	github.com/containers/image v3.0.2+incompatible
 	github.com/containers/storage v1.13.5
 	github.com/coreos/container-linux-config-transpiler v0.9.0
-	github.com/coreos/ignition v0.33.0
+	github.com/coreos/ignition v0.35.0
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/cri-o/cri-o v1.16.2
 	github.com/davecgh/go-spew v1.1.1

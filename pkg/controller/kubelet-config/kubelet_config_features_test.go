@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/vincent-petithory/dataurl"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"

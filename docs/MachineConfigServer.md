@@ -58,7 +58,7 @@ It is recommended that the MachineConfigServer is run as a DaemonSet on all `mas
             "tls": {}
         },
         "timeouts": {},
-        "version": "2.2.0"
+        "version": "2.4.0"
     },
     "networkd": {},
     "passwd": {},
@@ -166,7 +166,7 @@ It is recommended that the MachineConfigServer is run as a DaemonSet on all `mas
             "tls": {}
         },
         "timeouts": {},
-        "version": "2.2.0"
+        "version": "2.4.0"
     },
     "networkd": {},
     "passwd": {},

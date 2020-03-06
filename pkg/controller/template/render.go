@@ -15,7 +15,7 @@ import (
 	"github.com/Masterminds/sprig"
 	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
 	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"

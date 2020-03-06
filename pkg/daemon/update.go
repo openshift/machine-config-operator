@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign "github.com/coreos/ignition/config/v2_4"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"

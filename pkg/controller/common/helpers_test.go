@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/stretchr/testify/require"
 )
 

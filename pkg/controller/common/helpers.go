@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"sort"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign "github.com/coreos/ignition/config/v2_4"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	validate "github.com/coreos/ignition/config/validate"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/config/v2_4/types"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/runtime"
 )

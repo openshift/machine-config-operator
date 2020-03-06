@@ -83,7 +83,7 @@ metadata:
 spec:
   config:
     ignition:
-      version: 2.2.0
+      version: 2.4.0
     storage:
       files:
       - contents:
@@ -109,7 +109,7 @@ metadata:
 spec:
   config:
     ignition:
-      version: 2.2.0
+      version: 2.4.0
     storage:
       files:
       - contents:
