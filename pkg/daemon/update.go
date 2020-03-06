@@ -44,10 +44,6 @@ const (
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
 	fipsFile = "/proc/sys/crypto/fips_enabled"
-	// Traditional kernel
-	defaultKernelType = "default"
-	// Realtime kernel
-	realtimeKernelType = "realtime"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -364,10 +360,10 @@ type MachineConfigDiff struct {
 
 // canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
 func canonicalizeKernelType(kernelType string) string {
-	if kernelType == realtimeKernelType {
-		return realtimeKernelType
+	if kernelType == ctrlcommon.KernelTypeRealtime {
+		return ctrlcommon.KernelTypeRealtime
 	}
-	return defaultKernelType
+	return ctrlcommon.KernelTypeDefault
 }
 
 // NewMachineConfigDiff compares two MachineConfig objects.
@@ -641,7 +637,7 @@ func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string,
 // Right now it supports default (traditional) and realtime kernel
 func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// Do nothing if both old and new KernelType are of type default
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
 	// We support Kernel update only on RHCOS nodes
@@ -655,7 +651,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		args = []string{"override", "reset"}
 		args = append(args, defaultKernel...)
 		rtKernelUninstall := []string{"--uninstall", "kernel-rt-core", "--uninstall", "kernel-rt-modules", "--uninstall", "kernel-rt-modules-extra"}
@@ -699,7 +695,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		return fmt.Errorf("No kernel-rt package available in the OSContainer with URL %s", newConfig.Spec.OSImageURL)
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == defaultKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args = []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -713,7 +709,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		}
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			args = []string{"uninstall"}
 			args = append(args, rtKernel...)

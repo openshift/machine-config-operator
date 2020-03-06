@@ -38,17 +38,17 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) *mc
 	// sets the KernelType if specified in any of the MachineConfig
 	// Setting kerneType to realtime in any of MachineConfig takes priority
 	for _, cfg := range configs {
-		if cfg.Spec.KernelType == "realtime" {
+		if cfg.Spec.KernelType == KernelTypeRealtime {
 			kernelType = cfg.Spec.KernelType
 			break
-		} else if kernelType == "default" {
+		} else if kernelType == KernelTypeDefault {
 			kernelType = cfg.Spec.KernelType
 		}
 	}
 
 	// If no MC sets kerneType, then set it to 'default' since that's what it is using
 	if kernelType == "" {
-		kernelType = "default"
+		kernelType = KernelTypeDefault
 	}
 
 	kargs := []string{}
@@ -101,7 +101,7 @@ func ValidateIgnition(cfg igntypes.Config) error {
 
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
-	if !(cfg.KernelType == "" || cfg.KernelType == "default" || cfg.KernelType == "realtime") {
+	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime) {
 		return errors.Errorf("kernelType=%s is invalid", cfg.KernelType)
 	}
 	if err := ValidateIgnition(cfg.Config); err != nil {
