@@ -103,8 +103,8 @@ contents:
         - "{{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         resources:
           requests:
-            cpu: 150m
-            memory: 1Gi
+            cpu: 100m
+            memory: 200Mi
         volumeMounts:
         - name: resource-dir
           mountPath: "/config"
