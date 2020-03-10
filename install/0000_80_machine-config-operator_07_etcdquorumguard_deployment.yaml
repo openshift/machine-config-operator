@@ -21,7 +21,6 @@ spec:
         name: etcd-quorum-guard
         k8s-app: etcd-quorum-guard
     spec:
-      hostNetwork: true
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -86,8 +85,7 @@ spec:
           declare -r cacert="$croot/ca.crt"
           export NSS_SDB_USE_CACHE=no
           [[ -z $cert || -z $key ]] && exit 1
-          echo "curl --silent --max-time 2 --cert \"${cert//:/\:}\" --key \"$key\" --cacert \"$cacert\" \"$health_endpoint\"" >
-              /usr/local/bin/etcd-quorum-guard.sh
+          echo "curl --silent --max-time 2 --cert \"${cert//:/\:}\" --key \"$key\" --cacert \"$cacert\" \"$health_endpoint\"" > /usr/local/bin/etcd-quorum-guard.sh
 
           chmod +x /usr/local/bin/etcd-quorum-guard.sh
           sleep infinity & wait
