@@ -42,7 +42,6 @@ spec:
           properties:
             kubeletConfig:
               type: object
-              x-kubernetes-embedded-resource: true
               x-kubernetes-preserve-unknown-fields: true
             machineConfigPoolSelector:
               description: A label selector is a label query over a set of resources.
