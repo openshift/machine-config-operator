@@ -987,6 +987,7 @@ spec:
                                 as a static pod to serve those hostnames to the nodes
                                 in the cluster.
                               type: string
+              nullable: true
             kubeAPIServerServingCAData:
               description: kubeAPIServerServingCAData managed Kubelet to API Server
                 Cert... Rotated automatically
