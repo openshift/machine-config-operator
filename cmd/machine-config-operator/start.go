@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"os"
 
 	"github.com/golang/glog"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
@@ -42,7 +43,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	glog.Infof("Version: %s (Raw: %s, Hash: %s)", os.Getenv("RELEASE_VERSION"), version.Raw, version.Hash)
 
 	if startOpts.imagesFile == "" {
 		glog.Fatal("--images-json cannot be empty")
