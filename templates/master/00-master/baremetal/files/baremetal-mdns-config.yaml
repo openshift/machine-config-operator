@@ -7,15 +7,6 @@ contents:
     collision_avoidance = "hostname"
 
     service {
-        name = "{{`{{ .Cluster.Name }}`}} Etcd"
-        host_name = "{{`{{ .ShortHostname }}`}}.local."
-        type = "_etcd-server-ssl._tcp"
-        domain = "local."
-        port = 2380
-        ttl = 3200
-    }
-
-    service {
         name = "{{`{{ .Cluster.Name }}`}} Workstation"
         host_name = "{{`{{ .ShortHostname }}`}}.local."
         type = "_workstation._tcp"
