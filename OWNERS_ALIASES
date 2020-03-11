@@ -3,7 +3,10 @@
 aliases:
   openstack-approvers:
     - Fedosin
-    - mandre
-    - tomassedovic
+    - adduarte
     - hardys
+    - iamemilio
+    - mandre
+    - pierreprinetti
     - russellb
+    - tomassedovic
