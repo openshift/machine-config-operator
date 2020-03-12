@@ -275,6 +275,16 @@ func TestKernelAguments(t *testing.T) {
 			additions: []string{"hello=world"},
 		},
 		{
+			args:      []string{"foo", "bar=1 hello=world"},
+			deletions: []string{"nosmt", "baz=test"},
+			additions: []string{"bar=1", "hello=world"},
+		},
+		{
+			args:      []string{"foo", " baz=test bar=\"hello world\""},
+			deletions: []string{"nosmt"},
+			additions: []string{"bar=\"hello world\""},
+		},
+		{
 			args:      append([]string{"baz=othertest"}, oldMcfg.Spec.KernelArguments...),
 			deletions: []string{},
 			additions: []string{"baz=othertest"},
