@@ -9,7 +9,7 @@ contents:
     case "$STATUS" in
         pre-up)
         logger -s "NM non-virtual-ip-prepender triggered by pre-upping ${1}."
-        NON_VIRTUAL_IP=$(/usr/local/bin/non_virtual_ip \
+        NON_VIRTUAL_IP=$(/usr/local/bin/machine-config-daemon node-ip show \
             "{{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.OpenStack.NodeDNSIP}}" \
             "{{.Infra.Status.PlatformStatus.OpenStack.IngressIP}}")
