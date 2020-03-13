@@ -81,6 +81,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing version: %v", err)
 	}
 
+	if err := optr.syncRelatedObjects(); err != nil {
+		return fmt.Errorf("error syncing relatedObjects: %v", err)
+	}
+
 	if optr.inClusterBringup && syncErr.err == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
