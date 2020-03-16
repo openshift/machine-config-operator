@@ -95,6 +95,9 @@ contents:
         securityContext:
           privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: ENABLE_UNICAST
+            value: "yes"
         command:
         - dynkeepalived
         - "/var/lib/kubelet/kubeconfig"

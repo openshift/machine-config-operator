@@ -250,6 +250,7 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
     virtual_router_id {{.Cluster.APIVirtualRouterID }}
     priority 50
     advert_int 1
+    {{ if .EnableUnicast }}
     unicast_src_ip {{.NonVirtualIP}}
     unicast_peer {
         {{range .LBConfig.Backends}}
@@ -258,6 +259,7 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
         {{.NonVirtualIP}}
         {{end}}
     }
+    {{end}}
     authentication {
         auth_type PASS
         auth_pass {{.Cluster.Name}}_api_vip
@@ -273,6 +275,7 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
     virtual_router_id {{.Cluster.DNSVirtualRouterID }}
     priority 140
     advert_int 1
+    {{if .EnableUnicast }}
     unicast_src_ip {{.NonVirtualIP}}
     unicast_peer {
         {{range .LBConfig.Backends}}
@@ -281,6 +284,7 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
         {{.NonVirtualIP}}
         {{end}}
     }
+    {{end}}
     authentication {
         auth_type PASS
         auth_pass {{.Cluster.Name}}_dns_vip
@@ -403,6 +407,9 @@ spec:
     imagePullPolicy: IfNotPresent
   - name: keepalived-monitor
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    env:
+      - name: ENABLE_UNICAST
+        value: "yes"
     command:
     - dynkeepalived
     - "/etc/kubernetes/kubeconfig"

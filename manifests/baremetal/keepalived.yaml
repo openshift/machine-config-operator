@@ -95,6 +95,9 @@ spec:
     imagePullPolicy: IfNotPresent
   - name: keepalived-monitor
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    env:
+      - name: ENABLE_UNICAST
+        value: "yes"
     command:
     - dynkeepalived
     - "/etc/kubernetes/kubeconfig"
