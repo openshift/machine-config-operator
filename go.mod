@@ -24,7 +24,6 @@ require (
 	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-bindata/go-bindata v3.1.1+incompatible
-	github.com/go-log/log v0.0.0-00010101000000-000000000000 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc // indirect
@@ -39,7 +38,6 @@ require (
 	github.com/opencontainers/go-digest v1.0.0-rc1
 	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
 	github.com/openshift/client-go v0.0.0-20191001081553-3b0e988f8cb0
-	github.com/openshift/cluster-api v0.0.0-20190923092624-4024de4fa64d
 	github.com/openshift/cluster-etcd-operator v0.0.0-alpha.0.0.20191025163650-5854b5c48ce4
 	github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901
 	github.com/openshift/runtime-utils v0.0.0-20191011150825-9169de69ebf6
@@ -56,12 +54,13 @@ require (
 	golang.org/x/time v0.0.0-20190921001708-c4c64cad1fd0
 	gonum.org/v1/gonum v0.0.0-20190929233944-b20cf7805fc4 // indirect
 	gonum.org/v1/netlib v0.0.0-20190926062253-2d6e29b73a19 // indirect
-	k8s.io/api v0.17.1
+	k8s.io/api v0.17.4
 	k8s.io/apiextensions-apiserver v0.17.1
-	k8s.io/apimachinery v0.17.1
-	k8s.io/client-go v0.17.1
+	k8s.io/apimachinery v0.17.4
+	k8s.io/client-go v0.17.4
 	k8s.io/code-generator v0.17.1
 	k8s.io/gengo v0.0.0-20190907103519-ebc107f98eab // indirect
+	k8s.io/kubectl v0.0.0
 	k8s.io/kubelet v0.17.1
 )
 
@@ -89,7 +88,7 @@ replace (
 	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.17.1
 	k8s.io/kube-proxy => k8s.io/kube-proxy v0.17.1
 	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.17.1
-	k8s.io/kubectl => k8s.io/kubectl v0.17.1
+	k8s.io/kubectl => k8s.io/kubectl v0.17.4
 	k8s.io/kubelet => k8s.io/kubelet v0.17.1
 	k8s.io/kubernetes => k8s.io/kubernetes v1.17.1
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.17.1

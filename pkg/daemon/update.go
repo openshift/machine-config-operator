@@ -20,7 +20,6 @@ import (
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
-	drain "github.com/openshift/cluster-api/pkg/drain"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -31,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/kubectl/pkg/drain"
 )
 
 const (
@@ -93,16 +93,6 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
-type drainLogger struct{}
-
-func (dl *drainLogger) Logf(format string, v ...interface{}) {
-	glog.Infof(format, v...)
-}
-
-func (dl *drainLogger) Log(v ...interface{}) {
-	glog.Info(v...)
-}
-
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -153,13 +143,13 @@ func (dn *Daemon) drain() error {
 	}
 	var lastErr error
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		err := drain.Drain(dn.kubeClient, []*corev1.Node{dn.node}, &drain.DrainOptions{
-			DeleteLocalData:    true,
-			Force:              true,
-			GracePeriodSeconds: -1,
-			IgnoreDaemonsets:   true,
-			Logger:             &drainLogger{},
-		})
+		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, true)
+		if err != nil {
+			lastErr = err
+			glog.Infof("Cordon failed with: %v, retrying", err)
+			return false, nil
+		}
+		err = drain.RunNodeDrain(dn.drainer, dn.node.Name)
 		if err == nil {
 			return true, nil
 		}
