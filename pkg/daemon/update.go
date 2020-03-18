@@ -279,6 +279,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
+	defer func() {
+		if retErr != nil {
+			if err := drain.RunCordonOrUncordon(dn.drainer, dn.node, false); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back cordon on the node: %v", err)
+				return
+			}
+		}
+	}()
+
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
 		return err
