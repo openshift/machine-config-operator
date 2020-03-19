@@ -22,7 +22,6 @@ import (
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
-	drain "github.com/openshift/cluster-api/pkg/drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -44,6 +43,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/kubectl/pkg/drain"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -110,6 +110,8 @@ type Daemon struct {
 	currentConfigPath string
 
 	loggerSupportsJournal bool
+
+	drainer *drain.Helper
 }
 
 const (
@@ -288,6 +290,37 @@ func (dn *Daemon) ClusterConnect(
 
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
+
+	dn.drainer = &drain.Helper{
+		Client:              dn.kubeClient,
+		Force:               true,
+		IgnoreAllDaemonSets: true,
+		DeleteLocalData:     true,
+		GracePeriodSeconds:  -1,
+		Timeout:             20 * time.Second,
+		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
+			verbStr := "Deleted"
+			if usingEviction {
+				verbStr = "Evicted"
+			}
+			glog.Info(fmt.Sprintf("%s pod from Node", verbStr),
+				"pod", fmt.Sprintf("%s/%s", pod.Name, pod.Namespace))
+		},
+		Out:    writer{glog.Info},
+		ErrOut: writer{glog.Error},
+		DryRun: false,
+	}
+}
+
+// writer implements io.Writer interface as a pass-through for klog.
+type writer struct {
+	logFunc func(args ...interface{})
+}
+
+// Write passes string(p) into writer's logFunc and always returns len(p)
+func (w writer) Write(p []byte) (n int, err error) {
+	w.logFunc(string(p))
+	return len(p), nil
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -1133,7 +1166,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
 func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
-	if err := drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil); err != nil {
+	if err := drain.RunCordonOrUncordon(dn.drainer, node, false); err != nil {
 		return err
 	}
 
