@@ -97,8 +97,6 @@ contents:
         - "/etc/keepalived/keepalived.conf"
         - "--api-vip"
         - "{{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
-        - "--dns-vip"
-        - "{{ .Infra.Status.PlatformStatus.BareMetal.NodeDNSIP }}"
         - "--ingress-vip"
         - "{{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         resources:
