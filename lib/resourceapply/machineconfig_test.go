@@ -8,6 +8,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -175,12 +176,14 @@ func TestApplyMachineConfig(t *testing.T) {
 		input: &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
-				Config: igntypes.Config{
-					Passwd: igntypes.Passwd{
-						Users: []igntypes.PasswdUser{{
-							HomeDir: "/home/dummy",
-						}},
-					},
+				Config: runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(&igntypes.Config{
+						Passwd: igntypes.Passwd{
+							Users: []igntypes.PasswdUser{{
+								HomeDir: "/home/dummy",
+							}},
+						},
+					}),
 				},
 			},
 		},
@@ -199,12 +202,14 @@ func TestApplyMachineConfig(t *testing.T) {
 			expected := &mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: igntypes.Config{
-						Passwd: igntypes.Passwd{
-							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy",
-							}},
-						},
+					Config: runtime.RawExtension{
+						Raw: helpers.MarshalOrDie(&igntypes.Config{
+							Passwd: igntypes.Passwd{
+								Users: []igntypes.PasswdUser{{
+									HomeDir: "/home/dummy",
+								}},
+							},
+						}),
 					},
 				},
 			}
@@ -218,12 +223,14 @@ func TestApplyMachineConfig(t *testing.T) {
 			&mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: igntypes.Config{
-						Passwd: igntypes.Passwd{
-							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy-prev",
-							}},
-						},
+					Config: runtime.RawExtension{
+						Raw: helpers.MarshalOrDie(&igntypes.Config{
+							Passwd: igntypes.Passwd{
+								Users: []igntypes.PasswdUser{{
+									HomeDir: "/home/dummy-prev",
+								}},
+							},
+						}),
 					},
 				},
 			},
@@ -231,12 +238,14 @@ func TestApplyMachineConfig(t *testing.T) {
 		input: &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
-				Config: igntypes.Config{
-					Passwd: igntypes.Passwd{
-						Users: []igntypes.PasswdUser{{
-							HomeDir: "/home/dummy",
-						}},
-					},
+				Config: runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(&igntypes.Config{
+						Passwd: igntypes.Passwd{
+							Users: []igntypes.PasswdUser{{
+								HomeDir: "/home/dummy",
+							}},
+						},
+					}),
 				},
 			},
 		},
@@ -255,12 +264,14 @@ func TestApplyMachineConfig(t *testing.T) {
 			expected := &mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: igntypes.Config{
-						Passwd: igntypes.Passwd{
-							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy",
-							}},
-						},
+					Config: runtime.RawExtension{
+						Raw: helpers.MarshalOrDie(&igntypes.Config{
+							Passwd: igntypes.Passwd{
+								Users: []igntypes.PasswdUser{{
+									HomeDir: "/home/dummy",
+								}},
+							},
+						}),
 					},
 				},
 			}

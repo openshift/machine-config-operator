@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -49,7 +50,11 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 }
 
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == "/etc/kubernetes/kubelet.conf" {
 			return &c, nil
 		}

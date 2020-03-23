@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -350,15 +351,18 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 		imgcfg.Spec.RegistrySources.BlockedRegistries, icsps)
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
+
+	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	require.NoError(t, err)
 	if verifyPolicyJSON {
 		// If there is a change to the policy.json file then there will be 2 files
-		require.Len(t, mc.Spec.Config.Storage.Files, 2)
+		require.Len(t, ignCfg.Storage.Files, 2)
 	} else {
-		require.Len(t, mc.Spec.Config.Storage.Files, 1)
+		require.Len(t, ignCfg.Storage.Files, 1)
 	}
-	regfile := mc.Spec.Config.Storage.Files[0]
+	regfile := ignCfg.Storage.Files[0]
 	if regfile.Node.Path != registriesConfigPath {
-		regfile = mc.Spec.Config.Storage.Files[1]
+		regfile = ignCfg.Storage.Files[1]
 	}
 	assert.Equal(t, registriesConfigPath, regfile.Node.Path)
 	registriesConf, err := dataurl.DecodeString(regfile.Contents.Source)
@@ -371,9 +375,9 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			imgcfg.Spec.RegistrySources.BlockedRegistries,
 			imgcfg.Spec.RegistrySources.AllowedRegistries)
 		require.NoError(t, err)
-		policyfile := mc.Spec.Config.Storage.Files[1]
+		policyfile := ignCfg.Storage.Files[1]
 		if policyfile.Node.Path != policyConfigPath {
-			policyfile = mc.Spec.Config.Storage.Files[0]
+			policyfile = ignCfg.Storage.Files[0]
 		}
 		assert.Equal(t, policyConfigPath, policyfile.Node.Path)
 		policyJSON, err := dataurl.DecodeString(policyfile.Contents.Source)

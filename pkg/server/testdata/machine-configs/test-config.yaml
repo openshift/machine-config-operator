@@ -9,6 +9,7 @@ spec:
     - nosmt
   config:
     ignition:
+      version: "2.2.0"
     storage:
       files:
         -
