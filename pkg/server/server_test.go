@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -49,23 +50,42 @@ func TestStringEncode(t *testing.T) {
 	}
 }
 
-func TestMachineConfigToIgnition(t *testing.T) {
+func TestMachineConfigToRawIgnition(t *testing.T) {
 	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
 	mcData, err := ioutil.ReadFile(mcPath)
 	assert.Nil(t, err)
 	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	assert.Nil(t, err)
-	assert.Equal(t, 1, len(mc.Spec.Config.Storage.Files))
-	assert.Equal(t, mc.Spec.Config.Storage.Files[0].Path, "/etc/coreos/update.conf")
+	mcIgnCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		t.Errorf("decoding Ignition Config failed: %s", err)
+	}
+	assert.Equal(t, 1, len(mcIgnCfg.Storage.Files))
+	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 
 	origMc := mc.DeepCopy()
-	ign := machineConfigToIgnition(mc)
-	assert.Equal(t, 1, len(origMc.Spec.Config.Storage.Files))
-	assert.Equal(t, 2, len(mc.Spec.Config.Storage.Files))
-	assert.Equal(t, 2, len(ign.Storage.Files))
-	assert.Equal(t, ign.Storage.Files[0].Path, "/etc/coreos/update.conf")
-	assert.Equal(t, ign.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
+	origIgnCfg, _, err := ign.Parse(origMc.Spec.Config.Raw)
+	if err != nil {
+		t.Errorf("decoding Ignition Config failed: %s", err)
+	}
+	rawIgn, err := machineConfigToRawIgnition(mc)
+	if err != nil {
+		t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
+	}
+	ignCfg, _, err := ign.Parse(rawIgn.Raw)
+	if err != nil {
+		t.Errorf("decoding Ignition Config failed: %s", err)
+	}
+	mcIgnCfg, _, err = ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		t.Errorf("decoding Ignition Config failed: %s", err)
+	}
+	assert.Equal(t, 1, len(origIgnCfg.Storage.Files))
+	assert.Equal(t, 2, len(mcIgnCfg.Storage.Files))
+	assert.Equal(t, 2, len(ignCfg.Storage.Files))
+	assert.Equal(t, ignCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
+	assert.Equal(t, ignCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 }
 
 // TestBootstrapServer tests the behavior of the machine config server
@@ -104,12 +124,18 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	err = appendFileToRawIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	if err != nil {
+		t.Fatalf("unexpected error while appending file to ignition: %v", err)
+	}
 	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	err = appendFileToRawIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	if err != nil {
+		t.Fatalf("unexpected error while appending file to ignition: %v", err)
+	}
 
 	// initialize bootstrap server and get config.
 	bs := &bootstrapServer{
@@ -127,8 +153,16 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// assert on the output.
-	validateIgnitionFiles(t, mc.Spec.Config.Storage.Files, res.Storage.Files)
-	validateIgnitionSystemd(t, mc.Spec.Config.Systemd.Units, res.Systemd.Units)
+	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resCfg, _, err := ign.Parse(res.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
+	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
 
 	// verify bootstrap cannot serve ignition to other pool than master
 	res, err = bs.GetConfig(poolRequest{
@@ -195,12 +229,18 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	err = appendFileToRawIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	if err != nil {
+		t.Fatalf("unexpected error while appending file to ignition: %v", err)
+	}
 	anno, err := getNodeAnnotation(mp.Status.Configuration.Name)
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	appendFileToIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	err = appendFileToRawIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	if err != nil {
+		t.Fatalf("unexpected error while appending file to ignition: %v", err)
+	}
 
 	res, err := csc.GetConfig(poolRequest{
 		machineConfigPool: testPool,
@@ -209,11 +249,19 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
 
-	validateIgnitionFiles(t, mc.Spec.Config.Storage.Files, res.Storage.Files)
-	validateIgnitionSystemd(t, mc.Spec.Config.Systemd.Units, res.Systemd.Units)
+	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resCfg, _, err := ign.Parse(res.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
+	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
 
 	foundEncapsulated := false
-	for _, f := range res.Storage.Files {
+	for _, f := range resCfg.Storage.Files {
 		if f.Path != daemonconsts.MachineConfigEncapsulatedPath {
 			continue
 		}
