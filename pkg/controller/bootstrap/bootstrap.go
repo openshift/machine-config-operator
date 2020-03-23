@@ -18,7 +18,7 @@ import (
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -62,14 +62,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	scheme := runtime.NewScheme()
-	v1.Install(scheme)
+	mcfgv1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(v1.GroupVersion, apioperatorsv1alpha1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion)
 
-	var cconfig *v1.ControllerConfig
-	var pools []*v1.MachineConfigPool
-	var configs []*v1.MachineConfig
+	var cconfig *mcfgv1.ControllerConfig
+	var pools []*mcfgv1.MachineConfigPool
+	var configs []*mcfgv1.MachineConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	for _, info := range infos {
 		if info.IsDir() {
@@ -99,11 +99,11 @@ func (b *Bootstrap) Run(destDir string) error {
 			}
 
 			switch obj := obji.(type) {
-			case *v1.MachineConfigPool:
+			case *mcfgv1.MachineConfigPool:
 				pools = append(pools, obj)
-			case *v1.MachineConfig:
+			case *mcfgv1.MachineConfig:
 				configs = append(configs, obj)
-			case *v1.ControllerConfig:
+			case *mcfgv1.ControllerConfig:
 				cconfig = obj
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 				icspRules = append(icspRules, obj)
@@ -128,13 +128,13 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, rconfigs...)
 
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
+	fpools, gconfigs, err := render.RunBootstrapV3(pools, configs, cconfig)
 	if err != nil {
 		return err
 	}
 
 	serializer := json.NewYAMLSerializer(json.DefaultMetaFactory, scheme, scheme)
-	encoder := codecFactory.EncoderForVersion(serializer, v1.GroupVersion)
+	encoder := codecFactory.EncoderForVersion(serializer, mcfgv1.GroupVersion)
 
 	poolsdir := filepath.Join(destDir, "machine-pools")
 	if err := os.MkdirAll(poolsdir, 0764); err != nil {

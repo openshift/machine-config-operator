@@ -5,3 +5,6 @@ contents:
   inline: |
     [main]
     dhcp=dhclient
+    rc-manager=unmanaged
+    [connection]
+    ipv6.dhcp-duid=ll

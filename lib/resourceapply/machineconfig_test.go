@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	"github.com/clarketm/json"
+	ignTypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/davecgh/go-spew/spew"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -175,12 +178,14 @@ func TestApplyMachineConfig(t *testing.T) {
 		input: &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
-				Config: igntypes.Config{
-					Passwd: igntypes.Passwd{
-						Users: []igntypes.PasswdUser{{
-							Name: "dummy",
-						}},
-					},
+				Config: runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(&ignTypes.Config{
+						Passwd: ignTypes.Passwd{
+							Users: []ignTypes.PasswdUser{{
+								HomeDir: "/home/dummy",
+							}},
+						},
+					}),
 				},
 			},
 		},
@@ -199,12 +204,14 @@ func TestApplyMachineConfig(t *testing.T) {
 			expected := &mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: igntypes.Config{
-						Passwd: igntypes.Passwd{
-							Users: []igntypes.PasswdUser{{
-								Name: "dummy",
-							}},
-						},
+					Config: runtime.RawExtension{
+						Raw: helpers.MarshalOrDie(&ignTypes.Config{
+							Passwd: ignTypes.Passwd{
+								Users: []ignTypes.PasswdUser{{
+									HomeDir: "/home/dummy",
+								}},
+							},
+						}),
 					},
 				},
 			}
@@ -218,12 +225,14 @@ func TestApplyMachineConfig(t *testing.T) {
 			&mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: igntypes.Config{
-						Passwd: igntypes.Passwd{
-							Users: []igntypes.PasswdUser{{
-								Name: "dummy-prev",
-							}},
-						},
+					Config: runtime.RawExtension{
+						Raw: helpers.MarshalOrDie(&ignTypes.Config{
+							Passwd: ignTypes.Passwd{
+								Users: []ignTypes.PasswdUser{{
+									HomeDir: "/home/dummy-prev",
+								}},
+							},
+						}),
 					},
 				},
 			},
@@ -231,12 +240,14 @@ func TestApplyMachineConfig(t *testing.T) {
 		input: &mcfgv1.MachineConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
 			Spec: mcfgv1.MachineConfigSpec{
-				Config: igntypes.Config{
-					Passwd: igntypes.Passwd{
-						Users: []igntypes.PasswdUser{{
-							Name: "dummy",
-						}},
-					},
+				Config: runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(&ignTypes.Config{
+						Passwd: ignTypes.Passwd{
+							Users: []ignTypes.PasswdUser{{
+								HomeDir: "/home/dummy",
+							}},
+						},
+					}),
 				},
 			},
 		},
@@ -255,12 +266,127 @@ func TestApplyMachineConfig(t *testing.T) {
 			expected := &mcfgv1.MachineConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
 				Spec: mcfgv1.MachineConfigSpec{
-					Config: igntypes.Config{
-						Passwd: igntypes.Passwd{
-							Users: []igntypes.PasswdUser{{
+					Config: runtime.RawExtension{
+						Raw: helpers.MarshalOrDie(&ignTypes.Config{
+							Passwd: ignTypes.Passwd{
+								Users: []ignTypes.PasswdUser{{
+									HomeDir: "/home/dummy",
+								}},
+							},
+						}),
+					},
+				},
+			}
+			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
+			if !equality.Semantic.DeepEqual(expected, actual) {
+				t.Error(diff.ObjectDiff(expected, actual))
+			}
+		},
+	}, {
+		existing: []runtime.Object{
+			&mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+			},
+		},
+		input: &mcfgv1.MachineConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
+			Spec: mcfgv1.MachineConfigSpec{
+				Config: runtime.RawExtension{
+					Raw: marshalOrDie(&ignTypesV3.Config{
+						Passwd: ignTypesV3.Passwd{
+							Users: []ignTypesV3.PasswdUser{{
 								Name: "dummy",
 							}},
 						},
+					}),
+				},
+			},
+		},
+
+		expectedModified: true,
+		verifyActions: func(actions []clienttesting.Action, t *testing.T) {
+			if len(actions) != 2 {
+				t.Fatal(spew.Sdump(actions))
+			}
+			if !actions[0].Matches("get", "machineconfigs") || actions[0].(clienttesting.GetAction).GetName() != "foo" {
+				t.Error(spew.Sdump(actions))
+			}
+			if !actions[1].Matches("update", "machineconfigs") {
+				t.Error(spew.Sdump(actions))
+			}
+			expected := &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{
+						Raw: marshalOrDie(&ignTypesV3.Config{
+							Passwd: ignTypesV3.Passwd{
+								Users: []ignTypesV3.PasswdUser{{
+									Name: "dummy",
+								}},
+							},
+						}),
+					},
+				},
+			}
+			actual := actions[1].(clienttesting.UpdateAction).GetObject().(*mcfgv1.MachineConfig)
+			if !equality.Semantic.DeepEqual(expected, actual) {
+				t.Error(diff.ObjectDiff(expected, actual))
+			}
+		},
+	}, {
+		existing: []runtime.Object{
+			&mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{
+						Raw: marshalOrDie(&ignTypesV3.Config{
+							Passwd: ignTypesV3.Passwd{
+								Users: []ignTypesV3.PasswdUser{{
+									Name: "dummy-prev",
+								}},
+							},
+						}),
+					},
+				},
+			},
+		},
+		input: &mcfgv1.MachineConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "foo"},
+			Spec: mcfgv1.MachineConfigSpec{
+				Config: runtime.RawExtension{
+					Raw: marshalOrDie(&ignTypesV3.Config{
+						Passwd: ignTypesV3.Passwd{
+							Users: []ignTypesV3.PasswdUser{{
+								Name: "dummy",
+							}},
+						},
+					}),
+				},
+			},
+		},
+
+		expectedModified: true,
+		verifyActions: func(actions []clienttesting.Action, t *testing.T) {
+			if len(actions) != 2 {
+				t.Fatal(spew.Sdump(actions))
+			}
+			if !actions[0].Matches("get", "machineconfigs") || actions[0].(clienttesting.GetAction).GetName() != "foo" {
+				t.Error(spew.Sdump(actions))
+			}
+			if !actions[1].Matches("update", "machineconfigs") {
+				t.Error(spew.Sdump(actions))
+			}
+			expected := &mcfgv1.MachineConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"extra": "leave-alone"}},
+				Spec: mcfgv1.MachineConfigSpec{
+					Config: runtime.RawExtension{
+						Raw: marshalOrDie(&ignTypesV3.Config{
+							Passwd: ignTypesV3.Passwd{
+								Users: []ignTypesV3.PasswdUser{{
+									Name: "dummy",
+								}},
+							},
+						}),
 					},
 				},
 			}
@@ -284,4 +410,12 @@ func TestApplyMachineConfig(t *testing.T) {
 			test.verifyActions(client.Actions(), t)
 		})
 	}
+}
+
+func marshalOrDie(input interface{}) []byte {
+	bytes, err := json.Marshal(input)
+	if err != nil {
+		panic(err)
+	}
+	return bytes
 }

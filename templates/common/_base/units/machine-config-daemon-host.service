@@ -1,5 +1,5 @@
 name: "machine-config-daemon-host.service"
-enabled: true
+enabled: false
 contents: |
   [Unit]
   Description=Machine Config Daemon Initial
@@ -9,7 +9,6 @@ contents: |
   ConditionPathExists=/etc/pivot/image-pullspec
   # If pivot exists, defer to it.  Note similar code in update.go
   ConditionPathExists=!/usr/lib/systemd/system/pivot.service
-  After=machine-config-daemon-pull.service
   Before=kubelet.service
 
   [Service]

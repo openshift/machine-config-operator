@@ -1,0 +1,12 @@
+filesystem: "root"
+mode: 0755
+path: "/usr/local/bin/nodeip-finder"
+contents:
+  inline: |
+    #!/usr/bin/bash
+    podman run --rm \
+      --authfile /var/lib/kubelet/config.json \
+      --net=host \
+      --entrypoint=/usr/bin/nodeip-finder \
+      {{ .Images.baremetalRuntimeCfgImage }} \
+      ${@}

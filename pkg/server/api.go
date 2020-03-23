@@ -1,11 +1,11 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
 
+	"github.com/clarketm/json"
 	"github.com/golang/glog"
 )
 

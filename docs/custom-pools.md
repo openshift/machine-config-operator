@@ -4,6 +4,8 @@ Custom pools are pools that inherit from the `worker` pool. They use any Machine
 but add the ability to deploy changes only targeted at the custom pool.
 Since a custom pool inherits from the `worker` pool, any change to the `worker` pool is going to roll out to the custom pool as well (like an OS update during an upgrade).
 
+**Note:** Custom pools on master nodes are not supported by MCO. For more detail, see [Custom pool on master node](#Custom-pool-on-master-node)
+
 ## Creating a custom pool
 
 The first thing to do to create a custom pool is labeling the node with a custom role - in our example it will be `infra`:
@@ -152,3 +154,6 @@ machineconfig.machineconfiguration.openshift.io "51-infra" deleted
 $ oc delete mcp infra
 machineconfigpool.machineconfiguration.openshift.io "infra" deleted
 ```
+
+## Custom pool on master node
+Custom pool on a node having master role is not supported. `oc label node` will apply the new custom role to the target master node but MCO will not apply changes specific to the custom pool. Error can be seen in the Machine Config Controller pod logs. This behaviour is to make sure that control plane nodes remain stable.

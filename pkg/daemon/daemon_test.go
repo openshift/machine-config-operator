@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
@@ -60,13 +60,13 @@ func TestOverwrittenFile(t *testing.T) {
 	fileMode := int(fi.Mode().Perm())
 	source := dataurl.EncodeBytes([]byte("hello world\n"))
 	// validate single file
-	files := []igntypes.File{
+	files := []ignTypes.File{
 		{
-			Node: igntypes.Node{
+			Node: ignTypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
+			FileEmbedded1: ignTypes.FileEmbedded1{
+				Contents: ignTypes.FileContents{
 					Source: &source,
 				},
 				Mode: &fileMode,
@@ -80,24 +80,24 @@ func TestOverwrittenFile(t *testing.T) {
 
 	sourceOverwritten := dataurl.EncodeBytes([]byte("hello world\n"))
 	// validate overwritten file
-	files = []igntypes.File{
+	files = []ignTypes.File{
 		{
-			Node: igntypes.Node{
+			Node: ignTypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
+			FileEmbedded1: ignTypes.FileEmbedded1{
+				Contents: ignTypes.FileContents{
 					Source: &sourceOverwritten,
 				},
 				Mode: &fileMode,
 			},
 		},
 		{
-			Node: igntypes.Node{
+			Node: ignTypes.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
+			FileEmbedded1: ignTypes.FileEmbedded1{
+				Contents: ignTypes.FileContents{
 					Source: &source,
 				},
 				Mode: &fileMode,
@@ -354,15 +354,15 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 
 	// 1: onDisk matches what on the node, so we now have currentFromNode == currentOnDisk, desiredFromNode
 	f := newFixture(t)
-	onDiskMC := helpers.NewMachineConfig("test1", nil, "", nil)
+	onDiskMC := helpers.NewMachineConfigV3("test1", nil, "", nil)
 	annotations := map[string]string{
 		constants.CurrentMachineConfigAnnotationKey:     "test1",
 		constants.DesiredMachineConfigAnnotationKey:     "test2",
 		constants.MachineConfigDaemonStateAnnotationKey: "",
 	}
 	node := newNode(annotations)
-	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfigV3("test1", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfigV3("test2", nil, "", nil))
 	tmpCurrentConfig.Truncate(0)
 	tmpCurrentConfig.Seek(0, 0)
 	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
@@ -379,15 +379,15 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	//    so we now have currentFromNode == currentOnDisk == desiredFromNode
 	//    so no update required
 	f = newFixture(t)
-	onDiskMC = helpers.NewMachineConfig("test1", nil, "", nil)
+	onDiskMC = helpers.NewMachineConfigV3("test1", nil, "", nil)
 	annotations = map[string]string{
 		constants.CurrentMachineConfigAnnotationKey:     "test1",
 		constants.DesiredMachineConfigAnnotationKey:     "test1",
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
 	}
 	node = newNode(annotations)
-	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfigV3("test1", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfigV3("test2", nil, "", nil))
 	tmpCurrentConfig.Truncate(0)
 	tmpCurrentConfig.Seek(0, 0)
 	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))
@@ -402,15 +402,15 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	// 3: onDisk doesn't what on the node and current == desired,
 	//    so we now have currentFromNode != currentOnDisk, desiredFromNode
 	f = newFixture(t)
-	onDiskMC = helpers.NewMachineConfig("test3", nil, "", nil)
+	onDiskMC = helpers.NewMachineConfigV3("test3", nil, "", nil)
 	annotations = map[string]string{
 		constants.CurrentMachineConfigAnnotationKey:     "test1",
 		constants.DesiredMachineConfigAnnotationKey:     "test2",
 		constants.MachineConfigDaemonStateAnnotationKey: "",
 	}
 	node = newNode(annotations)
-	f.objects = append(f.objects, helpers.NewMachineConfig("test1", nil, "", nil))
-	f.objects = append(f.objects, helpers.NewMachineConfig("test2", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfigV3("test1", nil, "", nil))
+	f.objects = append(f.objects, helpers.NewMachineConfigV3("test2", nil, "", nil))
 	tmpCurrentConfig.Truncate(0)
 	tmpCurrentConfig.Seek(0, 0)
 	require.Nil(t, json.NewEncoder(tmpCurrentConfig).Encode(onDiskMC))

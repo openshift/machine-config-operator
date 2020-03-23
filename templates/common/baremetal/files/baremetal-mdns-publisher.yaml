@@ -24,8 +24,38 @@ contents:
         hostPath:
           path: "/etc/mdns"
       initContainers:
+      - name: verify-hostname
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: RUNTIMECFG_HOSTNAME_PATH
+            value: "/etc/mdns/hostname"
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #!/bin/bash
+          set -xv
+          function get_hostname()
+          {
+            if [[ -s $RUNTIMECFG_HOSTNAME_PATH ]]; then
+              cat $RUNTIMECFG_HOSTNAME_PATH
+            else
+              # if hostname wasn't updated by NM script, read hostname
+              hostname
+            fi
+          }
+          while [[ "$(get_hostname)" =~ ^localhost(.localdomain)?$ ]]; do
+            echo "hostname is still set to a default value"
+            sleep 1
+          done
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/mdns"
       - name: render-config
         image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: RUNTIMECFG_HOSTNAME_PATH
+            value: "/etc/mdns/hostname"
         command:
         - runtimecfg
         - render
@@ -39,6 +69,7 @@ contents:
         - "/config"
         - "--out-dir"
         - "/etc/mdns"
+        - "--verbose"
         resources: {}
         volumeMounts:
         - name: kubeconfig

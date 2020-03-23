@@ -9,13 +9,13 @@ spec:
     - nosmt
   config:
     ignition:
+      version: 3.1.0-experimental
     storage:
       files:
         -
           contents:
             source: "data:,GROUP%3Dstable%0ASERVER%3Dhttp%3A%2F%2Flocalhost%3A32003%2Fv1%2Fupdate%0A"
             verification: {}
-          filesystem: root
           mode: 420
           path: /etc/coreos/update.conf
     systemd:

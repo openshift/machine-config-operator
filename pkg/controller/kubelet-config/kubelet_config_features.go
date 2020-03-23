@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/clarketm/json"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
@@ -92,8 +93,11 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		isNotFound := errors.IsNotFound(err)
 		if isNotFound {
-			ignConfig := ctrlcommon.NewIgnConfig()
-			mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &ignConfig)
+			ignConfig := ctrlcommon.NewIgnConfigSpecV3()
+			mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+			if err != nil {
+				return err
+			}
 		}
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
@@ -122,7 +126,12 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
-		mc.Spec.Config = createNewKubeletIgnition(cfgJSON)
+		cfgIgn := createNewKubeletIgnition(cfgJSON)
+		rawCfgIgn, err := json.Marshal(cfgIgn)
+		if err != nil {
+			return err
+		}
+		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		}

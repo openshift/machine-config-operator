@@ -6,12 +6,12 @@ import (
 	"os"
 	"path"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/runtime"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 // ensure bootstrapServer implements the
@@ -55,7 +55,7 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 // 3. Load the machine config.
 // 4. Append the machine annotations file.
 // 5. Append the KubeConfig file.
-func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
+func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
 	if cr.machineConfigPool != "master" {
 		return nil, fmt.Errorf("refusing to serve bootstrap configuration to pool %q", cr.machineConfigPool)
 	}
@@ -71,7 +71,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 		return nil, fmt.Errorf("server: could not read file %s, err: %v", fileName, err)
 	}
 
-	mp := new(v1.MachineConfigPool)
+	mp := new(mcfgv1.MachineConfigPool)
 	err = yaml.Unmarshal(data, mp)
 	if err != nil {
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
@@ -91,7 +91,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 		return nil, fmt.Errorf("server: could not read file %s, err: %v", fileName, err)
 	}
 
-	mc := new(v1.MachineConfig)
+	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal(data, mc)
 	if err != nil {
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
@@ -99,12 +99,17 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 
 	appenders := getAppenders(currConf, bsc.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
-		if err := a(&mc.Spec.Config); err != nil {
+		if err := a(mc); err != nil {
 			return nil, err
 		}
 	}
 
-	return machineConfigToIgnition(mc), nil
+	rawIgn, err := machineConfigToRawIgnition(mc)
+	if err != nil {
+		return nil, fmt.Errorf("server: could not convert MachineConfig to raw Ignition: %v", err)
+	}
+
+	return rawIgn, nil
 }
 
 func kubeconfigFromFile(path string) ([]byte, []byte, error) {

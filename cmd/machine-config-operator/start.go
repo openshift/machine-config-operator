@@ -10,7 +10,7 @@ import (
 	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
-	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
@@ -53,14 +53,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("error creating clients: %v", err)
 	}
 	run := func(ctx context.Context) {
-		ctrlctx := controllercommon.CreateControllerContext(cb, ctx.Done(), componentNamespace)
+		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentNamespace)
 		operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
 
 		etcdInformer, err := getEtcdInformer(operatorClient, ctrlctx.OperatorInformerFactory)
 		if err != nil {
 			// MCO pod needs to restart for transient apiserver errors
 			glog.Errorf("unable to query discovery API %#v", err)
-			controllercommon.WriteTerminationError(err)
+			ctrlcommon.WriteTerminationError(err)
 		}
 
 		controller := operator.New(

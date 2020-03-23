@@ -6,9 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-
+	"github.com/clarketm/json"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -22,6 +20,8 @@ import (
 	coreinformersv1 "k8s.io/client-go/informers"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 )
 
 var (
@@ -371,7 +371,12 @@ func TestUpdateMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	//update machineconfig
-	mcs[len(mcs)-1].Spec.Config = ctrlcommon.NewIgnConfig()
+	newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
+	newRawIgnCfg, err := json.Marshal(newIgnCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcs[len(mcs)-1].Spec.Config.Raw = newRawIgnCfg
 
 	f.ccLister = append(f.ccLister, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
