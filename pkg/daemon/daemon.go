@@ -501,7 +501,11 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.
-	if !dn.compareMachineConfig(oldConfig, &mc) {
+	mcDiffNotEmpty, err := dn.compareMachineConfig(oldConfig, &mc)
+	if err != nil {
+		return errors.Wrapf(err, "failed to compare MachineConfig")
+	}
+	if !mcDiffNotEmpty {
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
 			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
@@ -1220,10 +1224,15 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 		return false
 	}
 	// And the rest of the disk state
-	if !checkFiles(currentConfig.Spec.Config.Storage.Files) {
+	currentIgnConfig, report, err := ign.Parse(currentConfig.Spec.Config.Raw)
+	if err != nil {
+		glog.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
 		return false
 	}
-	if !checkUnits(currentConfig.Spec.Config.Systemd.Units) {
+	if !checkFiles(currentIgnConfig.Storage.Files) {
+		return false
+	}
+	if !checkUnits(currentIgnConfig.Systemd.Units) {
 		return false
 	}
 	return true
@@ -1438,13 +1447,13 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	}
 
 	// Try each supported parser
-	ignConfig, _, err := ign.Parse(content)
+	ignConfig, report, err := ign.Parse(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
 		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil
 	}
 
-	glog.V(2).Infof("%s is not an Ignition config: %v. Trying MachineConfig.", onceFrom, err)
+	glog.V(2).Infof("%s is not an Ignition config: %v\nReport: %v\n Trying MachineConfig.", onceFrom, err, report)
 
 	// Try to parse as a machine config
 	mc, err := resourceread.ReadMachineConfigV1(content)

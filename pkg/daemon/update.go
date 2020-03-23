@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
@@ -28,6 +29,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
@@ -178,10 +180,18 @@ func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	if config != nil {
 		return config
 	}
+	newIgnCfg := ctrlcommon.NewIgnConfig()
+	rawNewIgnCfg, err := json.Marshal(newIgnCfg)
+	if err != nil {
+		// This should never happen
+		panic(err)
+	}
 	return &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "mco-empty-mc"},
 		Spec: mcfgv1.MachineConfigSpec{
-			Config: ctrlcommon.NewIgnConfig(),
+			Config: runtime.RawExtension{
+				Raw: rawNewIgnCfg,
+			},
 		},
 	}
 }
@@ -212,17 +222,20 @@ func rtKernelUpdateAvailable(rpms []os.FileInfo, rtKernelPkg []string) (bool, er
 	return false, nil
 }
 
-func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) bool {
-	var diff *MachineConfigDiff
+// return true if the MachineConfigDiff is not empty
+func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
-	diff = NewMachineConfigDiff(oldConfig, newConfig)
-	if diff.IsEmpty() {
-		glog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
-		return false
+	mcDiff, err := NewMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return true, errors.Wrapf(err, "error creating MachineConfigDiff for comparison")
 	}
-	return true
+	if mcDiff.IsEmpty() {
+		glog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
+		return false, nil
+	}
+	return true, nil
 }
 
 // update the node to the provided node configuration.
@@ -289,13 +302,22 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.updateSSHKeys(newConfig.Spec.Config.Passwd.Users); err != nil {
+	oldIgnConfig, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	newIgnConfig, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateSSHKeys(oldConfig.Spec.Config.Passwd.Users); err != nil {
+			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back SSH keys updates %v", err)
 				return
 			}
@@ -367,9 +389,15 @@ func canonicalizeKernelType(kernelType string) string {
 }
 
 // NewMachineConfigDiff compares two MachineConfig objects.
-func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) *MachineConfigDiff {
-	oldIgn := oldConfig.Spec.Config
-	newIgn := newConfig.Spec.Config
+func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
+	oldIgn, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	newIgn, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+	}
 
 	// Both nil and empty slices are of zero length,
 	// consider them as equal while comparing KernelArguments in both MachineConfigs
@@ -383,7 +411,7 @@ func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) *MachineCo
 		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
-	}
+	}, nil
 }
 
 // IsEmpty returns true if the MachineConfigDiff has no changes, or
@@ -405,25 +433,21 @@ func (d *MachineConfigDiff) IsEmpty() bool {
 // directories, links, and systemd units sections of the included ignition
 // config currently.
 func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
-	oldIgn := oldConfig.Spec.Config
-	newIgn := newConfig.Spec.Config
+	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
+	// The ignition output in case of success will always have maxVersion
+	oldIgn, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	newIgn, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+	}
 
-	// Ignition section
-	// First check if this is a generally valid Ignition Config
+	// Check if this is a generally valid Ignition Config
 	if err := ctrlcommon.ValidateIgnition(newIgn); err != nil {
 		return nil, err
 	}
-
-	// if the config versions are different, all bets are off. this probably
-	// shouldn't happen, but if it does, we can't deal with it.
-	if oldIgn.Ignition.Version != newIgn.Ignition.Version {
-		return nil, fmt.Errorf("ignition version mismatch between old and new config: old: %s new: %s",
-			oldIgn.Ignition.Version, newIgn.Ignition.Version)
-	}
-	// everything else in the ignition section doesn't matter to us, since the
-	// rest of the stuff in this section has to do with fetching remote
-	// resources, and the mcc should've fully rendered those out before the
-	// config gets here.
 
 	// Networkd section
 
@@ -507,7 +531,11 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	return NewMachineConfigDiff(oldConfig, newConfig), nil
+	mcDiff, err := NewMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error creating MachineConfigDiff")
+	}
+	return mcDiff, nil
 }
 
 // verifyUserFields returns nil if the user Name = "core", if 1 or more SSHKeys exist for
@@ -752,31 +780,38 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 // touched.
 func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Updating files")
-
-	if err := dn.writeFiles(newConfig.Spec.Config.Storage.Files); err != nil {
+	oldIgnConfig, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("failed to update files. Parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	newIgnConfig, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("failed to update files. Parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	if err := dn.writeFiles(newIgnConfig.Storage.Files); err != nil {
 		return err
 	}
-	if err := dn.writeUnits(newConfig.Spec.Config.Systemd.Units); err != nil {
+	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
-	if err := dn.deleteStaleData(oldConfig, newConfig); err != nil {
+	if err := dn.deleteStaleData(&oldIgnConfig, &newIgnConfig); err != nil {
 		return err
 	}
 	return nil
 }
 
-// deleteStaleData performs a diff of the new and the old config. It then deletes
+// deleteStaleData performs a diff of the new and the old Ignition config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
-func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
-	for _, f := range newConfig.Spec.Config.Storage.Files {
+	for _, f := range newIgnConfig.Storage.Files {
 		newFileSet[f.Path] = struct{}{}
 	}
 
-	for _, f := range oldConfig.Spec.Config.Storage.Files {
+	for _, f := range oldIgnConfig.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
 			if _, err := os.Stat(origFileName(f.Path)); err == nil {
 				if err := os.Rename(origFileName(f.Path), f.Path); err != nil {
@@ -800,7 +835,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 
 	newUnitSet := make(map[string]struct{})
 	newDropinSet := make(map[string]struct{})
-	for _, u := range newConfig.Spec.Config.Systemd.Units {
+	for _, u := range newIgnConfig.Systemd.Units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			newDropinSet[path] = struct{}{}
@@ -809,7 +844,7 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		newUnitSet[path] = struct{}{}
 	}
 
-	for _, u := range oldConfig.Spec.Config.Systemd.Units {
+	for _, u := range oldIgnConfig.Systemd.Units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {

@@ -1,9 +1,12 @@
 package helpers
 
 import (
+	"encoding/json"
+
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
@@ -24,6 +27,17 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 	if labels == nil {
 		labels = map[string]string{}
 	}
+	rawIgnition := MarshalOrDie(
+		&igntypes.Config{
+			Ignition: igntypes.Ignition{
+				Version: igntypes.MaxVersion.String(),
+			},
+			Storage: igntypes.Storage{
+				Files: files,
+			},
+		},
+	)
+
 	return &mcfgv1.MachineConfig{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: mcfgv1.SchemeGroupVersion.String(),
@@ -35,13 +49,8 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: osurl,
-			Config: igntypes.Config{
-				Ignition: igntypes.Ignition{
-					Version: igntypes.MaxVersion.String(),
-				},
-				Storage: igntypes.Storage{
-					Files: files,
-				},
+			Config: runtime.RawExtension{
+				Raw: rawIgnition,
 			},
 		},
 	}
@@ -86,4 +95,24 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 			},
 		},
 	}
+}
+
+// CreateMachineConfigFromIgnition returns a MachineConfig object from an Ignition config passed to it
+func CreateMachineConfigFromIgnition(ignCfg interface{}) *mcfgv1.MachineConfig {
+	return &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: MarshalOrDie(ignCfg),
+			},
+		},
+	}
+}
+
+// MarshalOrDie returns a marshalled interface or panics
+func MarshalOrDie(input interface{}) []byte {
+	bytes, err := json.Marshal(input)
+	if err != nil {
+		panic(err)
+	}
+	return bytes
 }
