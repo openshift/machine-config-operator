@@ -1,0 +1,8 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem"
+contents:
+  inline: |
+{{if .CloudProviderCAData -}}
+{{.CloudProviderCAData | toString | indent 4}}
+{{end -}}

@@ -16,10 +16,10 @@ type RouteFilter func(netlink.Route) bool
 
 func getAddrs() (addrMap map[netlink.Link][]netlink.Addr, err error) {
 	nlHandle, err := netlink.NewHandle()
-	defer nlHandle.Delete()
 	if err != nil {
 		return nil, err
 	}
+	defer nlHandle.Delete()
 
 	links, err := nlHandle.LinkList()
 	if err != nil {
@@ -40,16 +40,16 @@ func getAddrs() (addrMap map[netlink.Link][]netlink.Addr, err error) {
 			}
 		}
 	}
-	glog.V(2).Infof("retrieved Address map %+v", addrMap)
+	glog.V(7).Infof("retrieved Address map %+v", addrMap)
 	return addrMap, nil
 }
 
 func getRouteMap() (routeMap map[int][]netlink.Route, err error) {
 	nlHandle, err := netlink.NewHandle()
-	defer nlHandle.Delete()
 	if err != nil {
 		return nil, err
 	}
+	defer nlHandle.Delete()
 
 	routes, err := nlHandle.RouteList(nil, netlink.FAMILY_V6)
 	if err != nil {
@@ -69,7 +69,7 @@ func getRouteMap() (routeMap map[int][]netlink.Route, err error) {
 		}
 	}
 
-	glog.V(2).Infof("Retrieved IPv6 route map %+v", routeMap)
+	glog.V(7).Infof("Retrieved IPv6 route map %+v", routeMap)
 
 	return routeMap, nil
 }

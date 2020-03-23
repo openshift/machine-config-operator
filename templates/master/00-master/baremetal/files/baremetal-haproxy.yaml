@@ -89,6 +89,10 @@ contents:
               /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid &
           fi
           socat UNIX-LISTEN:${haproxy_sock},fork system:'bash -c msg_handler'
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/haproxy"
@@ -112,6 +116,10 @@ contents:
         - "/etc/haproxy/haproxy.cfg"
         - "--api-vip"
         - "{{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi          
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/haproxy"

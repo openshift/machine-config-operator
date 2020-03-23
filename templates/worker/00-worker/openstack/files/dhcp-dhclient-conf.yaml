@@ -1,7 +1,6 @@
 filesystem: "root"
 mode: 0644
-path: "/etc/dhcp/dhclient.conf.template"
+path: "/etc/dhcp/dhclient.conf"
 contents:
   inline: |
     supersede domain-search "{{ .EtcdDiscoveryDomain }}";
-    prepend domain-name-servers {{`{{ .NonVirtualIP }}`}};

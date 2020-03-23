@@ -12,7 +12,6 @@ rules:
       - controllerconfigs
       - kubeletconfigs
       - machineconfigpools
-      - mcoconfigs
     verbs:
       - get
       - list

@@ -68,18 +68,23 @@ var (
 	ErrZeroesWithShouldNotExist  = errors.New("shouldExist is false for a partition and other partition(s) has start or size 0")
 	ErrNeedLabelOrNumber         = errors.New("a partition number >= 1 or a label must be specified")
 	ErrDuplicateLabels           = errors.New("cannot use the same partition label twice")
+	ErrInvalidProxy              = errors.New("proxies must be http(s)")
+	ErrInsecureProxy             = errors.New("insecure plaintext HTTP proxy specified for HTTPS resources")
 
 	// Systemd section errors
 	ErrInvalidSystemdExt       = errors.New("invalid systemd unit extension")
 	ErrInvalidSystemdDropinExt = errors.New("invalid systemd drop-in extension")
 
 	// Misc errors
-	ErrInvalidScheme       = errors.New("invalid url scheme")
-	ErrInvalidUrl          = errors.New("unable to parse url")
-	ErrHashMalformed       = errors.New("malformed hash specifier")
-	ErrHashWrongSize       = errors.New("incorrect size for hash sum")
-	ErrHashUnrecognized    = errors.New("unrecognized hash function")
-	ErrEngineConfiguration = errors.New("engine incorrectly configured")
+	ErrInvalidScheme                   = errors.New("invalid url scheme")
+	ErrInvalidUrl                      = errors.New("unable to parse url")
+	ErrInvalidHTTPHeader               = errors.New("unable to parse HTTP header")
+	ErrEmptyHTTPHeaderName             = errors.New("HTTP header name can't be empty")
+	ErrUnsupportedSchemeForHTTPHeaders = errors.New("cannot use HTTP headers with this source scheme")
+	ErrHashMalformed                   = errors.New("malformed hash specifier")
+	ErrHashWrongSize                   = errors.New("incorrect size for hash sum")
+	ErrHashUnrecognized                = errors.New("unrecognized hash function")
+	ErrEngineConfiguration             = errors.New("engine incorrectly configured")
 
 	// AWS S3 specific errors
 	ErrInvalidS3ObjectVersionId = errors.New("invalid S3 object VersionId")

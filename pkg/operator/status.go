@@ -8,6 +8,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	cov1helpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +49,33 @@ func (optr *Operator) syncVersion() error {
 	optr.setOperatorStatusExtension(&co.Status, nil)
 	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
 	return err
+}
+
+// syncRelatedObjects handles reporting the relatedObjects to the clusteroperator
+func (optr *Operator) syncRelatedObjects() error {
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
+	}
+	if co == nil {
+		return nil
+	}
+
+	coCopy := co.DeepCopy()
+	// RelatedObjects are consumed by https://github.com/openshift/must-gather
+	co.Status.RelatedObjects = []configv1.ObjectReference{
+		{Resource: "namespaces", Name: optr.namespace},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "master"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
+		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "machine-config-controller"},
+	}
+
+	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
+		_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+		return err
+	}
+
+	return nil
 }
 
 // syncAvailableStatus applies the new condition to the mco's ClusterOperator object.
@@ -217,7 +245,8 @@ func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) 
 	if err != nil {
 		return nil, err
 	}
-	return co, nil
+	coCopy := co.DeepCopy()
+	return coCopy, nil
 }
 
 func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, error) {

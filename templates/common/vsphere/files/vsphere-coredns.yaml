@@ -1,0 +1,95 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/kubernetes/manifests/coredns.yaml"
+contents:
+  inline: |
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: coredns
+      namespace: openshift-vsphere-infra
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: vsphere-infra-mdns
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/coredns"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes/kubeconfig"
+      - name: conf-dir
+        hostPath:
+          path: "/etc/coredns"
+      initContainers:
+      - name: render-config
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - runtimecfg
+        - render
+        - "/etc/kubernetes/kubeconfig"
+        - "--api-vip"
+        - "{{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+        - "--dns-vip"
+        - "{{ .Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
+        - "--ingress-vip"
+        - "{{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+        - "/config"
+        - "--out-dir"
+        - "/etc/coredns"
+        resources: {}
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        imagePullPolicy: IfNotPresent
+      containers:
+      - name: coredns
+        securityContext:
+          privileged: true
+        image: {{.Images.corednsImage}}
+        args:
+        - "--conf"
+        - "/etc/coredns/Corefile"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 18080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 18080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}
+    {{ end -}}
+    {{ end -}}

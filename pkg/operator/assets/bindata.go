@@ -41,6 +41,10 @@
 // manifests/ovirt/coredns.yaml
 // manifests/ovirt/keepalived.conf.tmpl
 // manifests/ovirt/keepalived.yaml
+// manifests/vsphere/coredns-corefile.tmpl
+// manifests/vsphere/coredns.yaml
+// manifests/vsphere/keepalived.conf.tmpl
+// manifests/vsphere/keepalived.yaml
 // manifests/worker.machineconfigpool.yaml
 package assets
 
@@ -103,6 +107,12 @@ var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     reload
     hosts {
         {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+    template IN A {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+        match .*.apps.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         fallthrough
     }
 }
@@ -481,12 +491,147 @@ spec:
     shortNames:
     - ctrcfg
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   versions:
-    - name: v1
-      served: true
-      storage: true
+  - name: v1
+    served: true
+    storage: true
+  "validation":
+    "openAPIV3Schema":
+      description: ContainerRuntimeConfig describes a customized Container Runtime
+        configuration.
+      type: object
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: ContainerRuntimeConfigSpec defines the desired state of ContainerRuntimeConfig
+          type: object
+          properties:
+            containerRuntimeConfig:
+              description: ContainerRuntimeConfiguration defines the tuneables of
+                the container runtime
+              type: object
+              properties:
+                logLevel:
+                  description: logLevel specifies the verbosity of the logs based
+                    on the level it is set to. Options are fatal, panic, error, warn,
+                    info, and debug.
+                  type: string
+                logSizeMax:
+                  description: logSizeMax specifies the Maximum size allowed for the
+                    container log file. Negative numbers indicate that no size limit
+                    is imposed. If it is positive, it must be >= 8192 to match/exceed
+                    conmon's read buffer.
+                  type: string
+                overlaySize:
+                  description: 'overlaySize specifies the maximum size of a container
+                    image. This flag can be used to set quota on the size of container
+                    images. (default: 10GB)'
+                  type: string
+                pidsLimit:
+                  description: pidsLimit specifies the maximum number of processes
+                    allowed in a container
+                  type: integer
+                  format: int64
+            machineConfigPoolSelector:
+              description: A label selector is a label query over a set of resources.
+                The result of matchLabels and matchExpressions are ANDed. An empty
+                label selector matches all objects. A null label selector matches
+                no objects.
+              type: object
+              properties:
+                matchExpressions:
+                  description: matchExpressions is a list of label selector requirements.
+                    The requirements are ANDed.
+                  type: array
+                  items:
+                    description: A label selector requirement is a selector that contains
+                      values, a key, and an operator that relates the key and values.
+                    type: object
+                    required:
+                    - key
+                    - operator
+                    properties:
+                      key:
+                        description: key is the label key that the selector applies
+                          to.
+                        type: string
+                      operator:
+                        description: operator represents a key's relationship to a
+                          set of values. Valid operators are In, NotIn, Exists and
+                          DoesNotExist.
+                        type: string
+                      values:
+                        description: values is an array of string values. If the operator
+                          is In or NotIn, the values array must be non-empty. If the
+                          operator is Exists or DoesNotExist, the values array must
+                          be empty. This array is replaced during a strategic merge
+                          patch.
+                        type: array
+                        items:
+                          type: string
+                matchLabels:
+                  description: matchLabels is a map of {key,value} pairs. A single
+                    {key,value} in the matchLabels map is equivalent to an element
+                    of matchExpressions, whose key field is "key", the operator is
+                    "In", and the values array contains only "value". The requirements
+                    are ANDed.
+                  type: object
+                  additionalProperties:
+                    type: string
+        status:
+          description: ContainerRuntimeConfigStatus defines the observed state of
+            a ContainerRuntimeConfig
+          type: object
+          properties:
+            conditions:
+              description: conditions represents the latest available observations
+                of current state.
+              type: array
+              items:
+                description: ContainerRuntimeConfigCondition defines the state of
+                  the ContainerRuntimeConfig
+                type: object
+                properties:
+                  lastTransitionTime:
+                    description: lastTransitionTime is the time of the last update
+                      to the current status object.
+                    type: string
+                    format: date-time
+                    nullable: true
+                  message:
+                    description: message provides additional information about the
+                      current condition. This is only to be consumed by humans.
+                    type: string
+                  reason:
+                    description: reason is the reason for the condition's last transition.  Reasons
+                      are PascalCase
+                    type: string
+                  status:
+                    description: status of the condition, one of True, False, Unknown.
+                    type: string
+                  type:
+                    description: type specifies the state of the operator's reconciliation
+                      functionality.
+                    type: string
+            observedGeneration:
+              description: observedGeneration represents the generation observed by
+                the controller.
+              type: integer
+              format: int64
 `)
 
 func manifestsContainerruntimeconfigCrdYamlBytes() ([]byte, error) {
@@ -516,13 +661,14 @@ spec:
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
   versions:
-    - name: v1
-      # Each version can be enabled/disabled by Served flag.
-      served: true
-      # One and only one version must be marked as the storage version.
-      storage: true
+  - name: v1
+    # Each version can be enabled/disabled by Served flag.
+    served: true
+    # One and only one version must be marked as the storage version.
+    storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   names:
@@ -532,6 +678,429 @@ spec:
     singular: controllerconfig
     # kind is normally the PascalCased singular type. Your resource manifests use this.
     kind: ControllerConfig
+  "validation":
+    "openAPIV3Schema":
+      description: ControllerConfig describes configuration for MachineConfigController.
+        This is currently only used to drive the MachineConfig objects generated by
+        the TemplateController.
+      type: object
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: ControllerConfigSpec is the spec for ControllerConfig resource.
+          type: object
+          properties:
+            additionalTrustBundle:
+              description: additionalTrustBundle is a certificate bundle that will
+                be added to the nodes trusted certificate store.
+              type: string
+              format: byte
+              nullable: true
+            cloudProviderCAData:
+              description: cloudProvider specifies the cloud provider CA data
+              type: string
+              format: byte
+              nullable: true
+            cloudProviderConfig:
+              description: cloudProviderConfig is the configuration for the given
+                cloud provider
+              type: string
+            clusterDNSIP:
+              description: clusterDNSIP is the cluster DNS IP address
+              type: string
+            etcdCAData:
+              description: etcdCAData specifies the etcd CA data
+              type: string
+              format: byte
+            etcdDiscoveryDomain:
+              description: etcdDiscoveryDomain specifies the etcd discovery domain
+              type: string
+            etcdMetricCAData:
+              description: etcdMetricData specifies the etcd metric CA data
+              type: string
+              format: byte
+            images:
+              description: images is map of images that are used by the controller
+                to render templates under ./templates/
+              type: object
+              additionalProperties:
+                type: string
+            infra:
+              description: infra holds the infrastructure details TODO this makes
+                platform redundant as everything is contained inside Infra.Status
+              type: object
+              required:
+              - spec
+              properties:
+                apiVersion:
+                  description: 'APIVersion defines the versioned schema of this representation
+                    of an object. Servers should convert recognized schemas to the
+                    latest internal value, and may reject unrecognized values. More
+                    info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+                  type: string
+                kind:
+                  description: 'Kind is a string value representing the REST resource
+                    this object represents. Servers may infer this from the endpoint
+                    the client submits requests to. Cannot be updated. In CamelCase.
+                    More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                  type: string
+                metadata:
+                  type: object
+                spec:
+                  description: spec holds user settable values for configuration
+                  type: object
+                  properties:
+                    cloudConfig:
+                      description: cloudConfig is a reference to a ConfigMap containing
+                        the cloud provider configuration file. This configuration
+                        file is used to configure the Kubernetes cloud provider integration
+                        when using the built-in cloud provider integration or the
+                        external cloud controller manager. The namespace for this
+                        config map is openshift-config.
+                      type: object
+                      properties:
+                        key:
+                          description: Key allows pointing to a specific key/value
+                            inside of the configmap.  This is useful for logical file
+                            references.
+                          type: string
+                        name:
+                          type: string
+                status:
+                  description: status holds observed values from the cluster. They
+                    may not be overridden.
+                  type: object
+                  properties:
+                    apiServerInternalURI:
+                      description: apiServerInternalURL is a valid URI with scheme(http/https),
+                        address and port.  apiServerInternalURL can be used by components
+                        like kubelets, to contact the Kubernetes API server using
+                        the infrastructure provider rather than Kubernetes networking.
+                      type: string
+                    apiServerURL:
+                      description: apiServerURL is a valid URI with scheme(http/https),
+                        address and port.  apiServerURL can be used by components
+                        like the web console to tell users where to find the Kubernetes
+                        API.
+                      type: string
+                    etcdDiscoveryDomain:
+                      description: 'etcdDiscoveryDomain is the domain used to fetch
+                        the SRV records for discovering etcd servers and clients.
+                        For more info: https://github.com/etcd-io/etcd/blob/329be66e8b3f9e2e6af83c123ff89297e49ebd15/Documentation/op-guide/clustering.md#dns-discovery'
+                      type: string
+                    infrastructureName:
+                      description: infrastructureName uniquely identifies a cluster
+                        with a human friendly name. Once set it should not be changed.
+                        Must be of max length 27 and must have only alphanumeric or
+                        hyphen characters.
+                      type: string
+                    platform:
+                      description: "platform is the underlying infrastructure provider
+                        for the cluster. \n Deprecated: Use platformStatus.type instead."
+                      type: string
+                    platformStatus:
+                      description: platformStatus holds status information specific
+                        to the underlying infrastructure provider.
+                      type: object
+                      properties:
+                        aws:
+                          description: AWS contains settings specific to the Amazon
+                            Web Services infrastructure provider.
+                          type: object
+                          properties:
+                            region:
+                              description: region holds the default AWS region for
+                                new AWS resources created by the cluster.
+                              type: string
+                        azure:
+                          description: Azure contains settings specific to the Azure
+                            infrastructure provider.
+                          type: object
+                          properties:
+                            networkResourceGroupName:
+                              description: networkResourceGroupName is the Resource
+                                Group for network resources like the Virtual Network
+                                and Subnets used by the cluster. If empty, the value
+                                is same as ResourceGroupName.
+                              type: string
+                            resourceGroupName:
+                              description: resourceGroupName is the Resource Group
+                                for new Azure resources created for the cluster.
+                              type: string
+                        baremetal:
+                          description: BareMetal contains settings specific to the
+                            BareMetal platform.
+                          type: object
+                          properties:
+                            apiServerInternalIP:
+                              description: apiServerInternalIP is an IP address to
+                                contact the Kubernetes API server that can be used
+                                by components inside the cluster, like kubelets using
+                                the infrastructure rather than Kubernetes networking.
+                                It is the IP that the Infrastructure.status.apiServerInternalURI
+                                points to. It is the IP for a self-hosted load balancer
+                                in front of the API servers.
+                              type: string
+                            ingressIP:
+                              description: ingressIP is an external IP which routes
+                                to the default ingress controller. The IP is a suitable
+                                target of a wildcard DNS record used to resolve default
+                                route host names.
+                              type: string
+                            nodeDNSIP:
+                              description: nodeDNSIP is the IP address for the internal
+                                DNS used by the nodes. Unlike the one managed by the
+                                DNS operator, `+"`"+`NodeDNSIP`+"`"+` provides name resolution
+                                for the nodes themselves. There is no DNS-as-a-service
+                                for BareMetal deployments. In order to minimize necessary
+                                changes to the datacenter DNS, a DNS service is hosted
+                                as a static pod to serve those hostnames to the nodes
+                                in the cluster.
+                              type: string
+                        gcp:
+                          description: GCP contains settings specific to the Google
+                            Cloud Platform infrastructure provider.
+                          type: object
+                          properties:
+                            projectID:
+                              description: resourceGroupName is the Project ID for
+                                new GCP resources created for the cluster.
+                              type: string
+                            region:
+                              description: region holds the region for new GCP resources
+                                created for the cluster.
+                              type: string
+                        openstack:
+                          description: OpenStack contains settings specific to the
+                            OpenStack infrastructure provider.
+                          type: object
+                          properties:
+                            apiServerInternalIP:
+                              description: apiServerInternalIP is an IP address to
+                                contact the Kubernetes API server that can be used
+                                by components inside the cluster, like kubelets using
+                                the infrastructure rather than Kubernetes networking.
+                                It is the IP that the Infrastructure.status.apiServerInternalURI
+                                points to. It is the IP for a self-hosted load balancer
+                                in front of the API servers.
+                              type: string
+                            cloudName:
+                              description: cloudName is the name of the desired OpenStack
+                                cloud in the client configuration file (`+"`"+`clouds.yaml`+"`"+`).
+                              type: string
+                            ingressIP:
+                              description: ingressIP is an external IP which routes
+                                to the default ingress controller. The IP is a suitable
+                                target of a wildcard DNS record used to resolve default
+                                route host names.
+                              type: string
+                            nodeDNSIP:
+                              description: nodeDNSIP is the IP address for the internal
+                                DNS used by the nodes. Unlike the one managed by the
+                                DNS operator, `+"`"+`NodeDNSIP`+"`"+` provides name resolution
+                                for the nodes themselves. There is no DNS-as-a-service
+                                for OpenStack deployments. In order to minimize necessary
+                                changes to the datacenter DNS, a DNS service is hosted
+                                as a static pod to serve those hostnames to the nodes
+                                in the cluster.
+                              type: string
+                        ovirt:
+                          description: Ovirt contains settings specific to the oVirt
+                            infrastructure provider.
+                          type: object
+                          properties:
+                            apiServerInternalIP:
+                              description: apiServerInternalIP is an IP address to
+                                contact the Kubernetes API server that can be used
+                                by components inside the cluster, like kubelets using
+                                the infrastructure rather than Kubernetes networking.
+                                It is the IP that the Infrastructure.status.apiServerInternalURI
+                                points to. It is the IP for a self-hosted load balancer
+                                in front of the API servers.
+                              type: string
+                            ingressIP:
+                              description: ingressIP is an external IP which routes
+                                to the default ingress controller. The IP is a suitable
+                                target of a wildcard DNS record used to resolve default
+                                route host names.
+                              type: string
+                            nodeDNSIP:
+                              description: nodeDNSIP is the IP address for the internal
+                                DNS used by the nodes. Unlike the one managed by the
+                                DNS operator, `+"`"+`NodeDNSIP`+"`"+` provides name resolution
+                                for the nodes themselves. There is no DNS-as-a-service
+                                for oVirt deployments. In order to minimize necessary
+                                changes to the datacenter DNS, a DNS service is hosted
+                                as a static pod to serve those hostnames to the nodes
+                                in the cluster.
+                              type: string
+                        type:
+                          description: type is the underlying infrastructure provider
+                            for the cluster. This value controls whether infrastructure
+                            automation such as service load balancers, dynamic volume
+                            provisioning, machine creation and deletion, and other
+                            integrations are enabled. If None, no infrastructure automation
+                            is enabled. Allowed values are "AWS", "Azure", "BareMetal",
+                            "GCP", "Libvirt", "OpenStack", "VSphere", "oVirt", and
+                            "None". Individual components may not support all platforms,
+                            and must handle unrecognized platforms as None if they
+                            do not support that platform.
+                          type: string
+                        vsphere:
+                          description: VSphere contains settings specific to the VSphere
+                            infrastructure provider.
+                          type: object
+                          properties:
+                            apiServerInternalIP:
+                              description: apiServerInternalIP is an IP address to
+                                contact the Kubernetes API server that can be used
+                                by components inside the cluster, like kubelets using
+                                the infrastructure rather than Kubernetes networking.
+                                It is the IP that the Infrastructure.status.apiServerInternalURI
+                                points to. It is the IP for a self-hosted load balancer
+                                in front of the API servers.
+                              type: string
+                            ingressIP:
+                              description: ingressIP is an external IP which routes
+                                to the default ingress controller. The IP is a suitable
+                                target of a wildcard DNS record used to resolve default
+                                route host names.
+                              type: string
+                            nodeDNSIP:
+                              description: nodeDNSIP is the IP address for the internal
+                                DNS used by the nodes. Unlike the one managed by the
+                                DNS operator, `+"`"+`NodeDNSIP`+"`"+` provides name resolution
+                                for the nodes themselves. There is no DNS-as-a-service
+                                for vSphere deployments. In order to minimize necessary
+                                changes to the datacenter DNS, a DNS service is hosted
+                                as a static pod to serve those hostnames to the nodes
+                                in the cluster.
+                              type: string
+              nullable: true
+            kubeAPIServerServingCAData:
+              description: kubeAPIServerServingCAData managed Kubelet to API Server
+                Cert... Rotated automatically
+              type: string
+              format: byte
+            kubeletIPv6:
+              description: kubeletIPv6 is true to force a single-stack IPv6 kubelet
+                config
+              type: boolean
+            osImageURL:
+              description: osImageURL is the location of the container image that
+                contains the OS update payload. Its value is taken from the data.osImageURL
+                field on the machine-config-osimageurl ConfigMap.
+              type: string
+            platform:
+              description: The openshift platform, e.g. "libvirt", "openstack", "gcp",
+                "baremetal", "aws", or "none"
+              type: string
+            proxy:
+              description: proxy holds the current proxy configuration for the nodes
+              type: object
+              properties:
+                httpProxy:
+                  description: httpProxy is the URL of the proxy for HTTP requests.
+                  type: string
+                httpsProxy:
+                  description: httpsProxy is the URL of the proxy for HTTPS requests.
+                  type: string
+                noProxy:
+                  description: noProxy is a comma-separated list of hostnames and/or
+                    CIDRs for which the proxy should not be used.
+                  type: string
+              nullable: true
+            pullSecret:
+              description: pullSecret is the default pull secret that needs to be
+                installed on all machines.
+              type: object
+              properties:
+                apiVersion:
+                  description: API version of the referent.
+                  type: string
+                fieldPath:
+                  description: 'If referring to a piece of an object instead of an
+                    entire object, this string should contain a valid JSON/Go field
+                    access statement, such as desiredState.manifest.containers[2].
+                    For example, if the object reference is to a container within
+                    a pod, this would take on a value like: "spec.containers{name}"
+                    (where "name" refers to the name of the container that triggered
+                    the event) or if no container name is specified "spec.containers[2]"
+                    (container with index 2 in this pod). This syntax is chosen only
+                    to have some well-defined way of referencing a part of an object.
+                    TODO: this design is not final and this field is subject to change
+                    in the future.'
+                  type: string
+                kind:
+                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                  type: string
+                name:
+                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                  type: string
+                namespace:
+                  description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                  type: string
+                resourceVersion:
+                  description: 'Specific resourceVersion to which this reference is
+                    made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                  type: string
+                uid:
+                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                  type: string
+            rootCAData:
+              description: rootCAData specifies the root CA data
+              type: string
+              format: byte
+        status:
+          description: ControllerConfigStatus is the status for ControllerConfig
+          type: object
+          properties:
+            conditions:
+              description: conditions represents the latest available observations
+                of current state.
+              type: array
+              items:
+                description: ControllerConfigStatusCondition contains condition information
+                  for ControllerConfigStatus
+                type: object
+                properties:
+                  lastTransitionTime:
+                    description: lastTransitionTime is the time of the last update
+                      to the current status object.
+                    type: string
+                    format: date-time
+                    nullable: true
+                  message:
+                    description: message provides additional information about the
+                      current condition. This is only to be consumed by humans.
+                    type: string
+                  reason:
+                    description: reason is the reason for the condition's last transition.  Reasons
+                      are PascalCase
+                    type: string
+                  status:
+                    description: status of the condition, one of True, False, Unknown.
+                    type: string
+                  type:
+                    description: type specifies the state of the operator's reconciliation
+                      functionality.
+                    type: string
+            observedGeneration:
+              description: observedGeneration represents the generation observed by
+                the controller.
+              type: integer
+              format: int64
 `)
 
 func manifestsControllerconfigCrdYamlBytes() ([]byte, error) {
@@ -563,12 +1132,121 @@ spec:
     plural: kubeletconfigs
     singular: kubeletconfig
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   versions:
-    - name: v1
-      served: true
-      storage: true
+  - name: v1
+    served: true
+    storage: true
+  "validation":
+    "openAPIV3Schema":
+      description: KubeletConfig describes a customized Kubelet configuration.
+      type: object
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: KubeletConfigSpec defines the desired state of KubeletConfig
+          type: object
+          properties:
+            kubeletConfig:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            machineConfigPoolSelector:
+              description: A label selector is a label query over a set of resources.
+                The result of matchLabels and matchExpressions are ANDed. An empty
+                label selector matches all objects. A null label selector matches
+                no objects.
+              type: object
+              properties:
+                matchExpressions:
+                  description: matchExpressions is a list of label selector requirements.
+                    The requirements are ANDed.
+                  type: array
+                  items:
+                    description: A label selector requirement is a selector that contains
+                      values, a key, and an operator that relates the key and values.
+                    type: object
+                    required:
+                    - key
+                    - operator
+                    properties:
+                      key:
+                        description: key is the label key that the selector applies
+                          to.
+                        type: string
+                      operator:
+                        description: operator represents a key's relationship to a
+                          set of values. Valid operators are In, NotIn, Exists and
+                          DoesNotExist.
+                        type: string
+                      values:
+                        description: values is an array of string values. If the operator
+                          is In or NotIn, the values array must be non-empty. If the
+                          operator is Exists or DoesNotExist, the values array must
+                          be empty. This array is replaced during a strategic merge
+                          patch.
+                        type: array
+                        items:
+                          type: string
+                matchLabels:
+                  description: matchLabels is a map of {key,value} pairs. A single
+                    {key,value} in the matchLabels map is equivalent to an element
+                    of matchExpressions, whose key field is "key", the operator is
+                    "In", and the values array contains only "value". The requirements
+                    are ANDed.
+                  type: object
+                  additionalProperties:
+                    type: string
+        status:
+          description: KubeletConfigStatus defines the observed state of a KubeletConfig
+          type: object
+          properties:
+            conditions:
+              description: conditions represents the latest available observations
+                of current state.
+              type: array
+              items:
+                description: KubeletConfigCondition defines the state of the KubeletConfig
+                type: object
+                properties:
+                  lastTransitionTime:
+                    description: lastTransitionTime is the time of the last update
+                      to the current status object.
+                    type: string
+                    format: date-time
+                    nullable: true
+                  message:
+                    description: message provides additional information about the
+                      current condition. This is only to be consumed by humans.
+                    type: string
+                  reason:
+                    description: reason is the reason for the condition's last transition.  Reasons
+                      are PascalCase
+                    type: string
+                  status:
+                    description: status of the condition, one of True, False, Unknown.
+                    type: string
+                  type:
+                    description: type specifies the state of the operator's reconciliation
+                      functionality.
+                    type: string
+            observedGeneration:
+              description: observedGeneration represents the generation observed by
+                the controller.
+              type: integer
+              format: int64
 `)
 
 func manifestsKubeletconfigCrdYamlBytes() ([]byte, error) {
@@ -596,7 +1274,8 @@ metadata:
 spec:
   additionalPrinterColumns:
   - JSONPath: .metadata.annotations.machineconfiguration\.openshift\.io/generated-by-controller-version
-    description: Version of the controller that generated the machineconfig. This will be empty if the machineconfig is not managed by a controller.
+    description: Version of the controller that generated the machineconfig. This
+      will be empty if the machineconfig is not managed by a controller.
     name: GeneratedByController
     type: string
   - JSONPath: .spec.config.ignition.version
@@ -610,13 +1289,14 @@ spec:
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
   versions:
-    - name: v1
-      # Each version can be enabled/disabled by Served flag.
-      served: true
-      # One and only one version must be marked as the storage version.
-      storage: true
+  - name: v1
+    # Each version can be enabled/disabled by Served flag.
+    served: true
+    # One and only one version must be marked as the storage version.
+    storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  preserveUnknownFields: false
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
     plural: machineconfigs
@@ -627,36 +1307,92 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - mc
-  validation:
-    openAPIV3Schema:
+  # openAPIV3Schema has been hand modified. Do not overwrite directly with generated crd fields as we do not allow all config fields.
+  "validation":
+    "openAPIV3Schema":
+      description: MachineConfig defines the configuration for a machine
       type: object
       properties:
         apiVersion:
-          description: "APIVersion defines the versioned schema of this representation
+          description: 'APIVersion defines the versioned schema of this representation
             of an object. Servers should convert recognized schemas to the latest
-            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources"
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
           type: string
         kind:
-          description: "Kind is a string value representing the REST resource this
+          description: 'Kind is a string value representing the REST resource this
             object represents. Servers may infer this from the endpoint the client
-            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds"
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
           type: string
         metadata:
           type: object
         spec:
-          description: "spec hold the intent of how this operator should behave"
+          description: MachineConfigSpec is the spec for MachineConfig
           type: object
           properties:
             config:
-              description: "config contains options related to the configuration"
+              description: Config is a Ignition Config object.
               type: object
+              x-kubernetes-preserve-unknown-fields: true
+              required:
+              - ignition
               properties:
                 ignition:
-                  description: "ignition section contains metadata about the configuration itself"
+                  description: Ignition section contains metadata about the configuration
+                    itself. We only permit a subsection of ignition fields for MachineConfigs.
                   type: object
                   properties:
+                    config:
+                      type: object
+                      properties:
+                        append:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              source:
+                                type: string
+                              verification:
+                                type: object
+                                properties:
+                                  hash:
+                                    type: string
+                        replace:
+                          type: object
+                          properties:
+                            source:
+                              type: string
+                            verification:
+                              type: object
+                              properties:
+                                hash:
+                                  type: string
+                    security:
+                      type: object
+                      properties:
+                        tls:
+                          type: object
+                          properties:
+                            certificateAuthorities:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  source:
+                                    type: string
+                                  verification:
+                                    type: object
+                                    properties:
+                                      hash:
+                                        type: string
+                    timeouts:
+                      type: object
+                      properties:
+                        httpResponseHeaders:
+                          type: integer
+                        httpTotal:
+                          type: integer
                     version:
-                      description: "version string is the semantic version number of the spec"
+                      description: Version string is the semantic version number of the spec
                       type: string
                 passwd:
                   type: object
@@ -667,165 +1403,190 @@ spec:
                         type: object
                         properties:
                           name:
-                            description: "name of user. Must be \"core\" user."
+                            description: Name of user. Must be \"core\" user.
                             type: string
                           sshAuthorizedKeys:
-                            description: "public keys to be assigned to user core"
+                            description: Public keys to be assigned to user core.
                             type: array
                             items:
                               type: string
                 storage:
-                  description: "storage describes the desired state of the system's storage devices"
+                  description: Storage describes the desired state of the system's storage devices.
                   type: object
                   properties:
                     directories:
-                      description: "directories is the list of directories to be created"
+                      description: Directories is the list of directories to be created
                       type: array
                       items:
-                        description: "items is list of directories to be written"
+                        description: Items is list of directories to be written
                         type: object
                         properties:
                           filesystem:
-                            description: "filesystem is the internal identifier of the filesystem in which to write the file. This matches the last filesystem with the given identifier"
+                            description: Filesystem is the internal identifier of the filesystem
+                              in which to write the file. This matches the last filesystem with
+                              the given identifier.
                             type: string
+                          group:
+                            description: Group object specifies group of the owner
+                            type: object
+                            properties:
+                              id:
+                                description: ID is the user ID of the owner
+                                type: integer
+                              name:
+                                description: Name is the user name of the owner
+                                type: string
                           mode:
-                            description: "mode is the file's permission mode. Note that the mode must be properly specified as a decimal value (i.e. 0644 -> 420)"
+                            description: Mode is the file's permission mode. Note that the mode
+                              must be properly specified as a decimal value (i.e. 0644 -> 420)
                             type: integer
+                          overwrite:
+                            description: Overwrite specifies whether to delete preexisting nodes
+                              at the path
+                            type: boolean
                           path:
-                            description: "path is the absolute path to the file"
+                            description: Path is the absolute path to the file
                             type: string
                           user:
-                            description: "user object specifies the file's owner"
+                            description: User object specifies the file's owner
                             type: object
                             properties:
                               id:
-                                description: "id is the user ID of the owner"
+                                description: ID is the user ID of the owner
                                 type: integer
                               name:
-                                description: "name is the user name of the owner"
+                                description: Name is the user name of the owner
                                 type: string
-                          group:
-                            description: "group object specifies group of the owner"
-                            type: object
-                            properties:
-                              id:
-                                description: "id specifies group ID of the owner"
-                                type: integer
-                              name:
-                                description: "name is the group name of the owner"
-                                type: string
-                          overwrite:
-                            description: "overwrite specifies whether to delete preexisting nodes at the path"
-                            type: boolean
                     files:
-                      description: "files is the list of files to be created"
+                      description: Files is the list of files to be created/modified
                       type: array
                       items:
-                        description: "items is list of files to be written"
+                        description: Items is list of files to be written
                         type: object
                         properties:
+                          append:
+                            description: Append specifies whether to append to the specified file.
+                              Creates a new file if nothing exists at the path. Cannot be set if
+                              overwrite is set to true.
+                            type: boolean
                           contents:
-                            description: "contents specifies options related to the contents of the file"
+                            description: Contents specifies options related to the contents of
+                              the file
                             type: object
                             properties:
                               compression:
-                                description: "the type of compression used on the contents (null or gzip). Compression cannot be used with S3."
+                                description: The type of compression used on the contents (null
+                                  or gzip). Compression cannot be used with S3.
                                 type: string
                               source:
-                                description: "source is the URL of the file contents. Supported schemes are http, https, tftp, s3, and data. When using http, it is advisable to use the verification option to ensure the contents haven't been modified."
+                                description: Source is the URL of the file contents. Supported
+                                  schemes are http, https, tftp, s3, and data. When using http,
+                                  it is advisable to use the verification option to ensure the
+                                  contents haven't been modified.
                                 type: string
                               verification:
-                                description: "verification specifies options related to the verification of the file contents"
+                                description: Verification specifies options related to the
+                                  verification of the file contents
                                 type: object
                                 properties:
                                   hash:
-                                    description: "hash is the hash of the config, in the form <type>-<value> where type is sha512"
+                                    description: Hash is the hash of the config, in the form
+                                      <type>-<value> where type is sha512
                                     type: string
                           filesystem:
-                            description: "filesystem is the internal identifier of the filesystem in which to write the file. This matches the last filesystem with the given identifier"
+                            description: Filesystem is the internal identifier of the filesystem
+                              in which to write the file. This matches the last filesystem with
+                              the given identifier
                             type: string
+                          group:
+                            description: Group object specifies group of the owner
+                            type: object
+                            properties:
+                              id:
+                                description: ID specifies group ID of the owner
+                                type: integer
+                              name:
+                                description: Name is the group name of the owner
+                                type: string
                           mode:
-                            description: "mode specifies the file's permission mode. Note that the mode must be properly specified as a decimal value (i.e. 0644 -> 420)"
+                            description: Mode specifies the file's permission mode. Note that the
+                              mode must be properly specified as a decimal value (i.e. 0644 -> 420)
                             type: integer
+                          overwrite:
+                            description: Overwrite specifies whether to delete preexisting nodes
+                              at the path
+                            type: boolean
                           path:
-                            description: "path is the absolute path to the file"
+                            description: Path is the absolute path to the file
                             type: string
                           user:
-                            description: "user object specifies the file's owner"
+                            description: User object specifies the file's owner
                             type: object
                             properties:
                               id:
-                                description: "id is the user ID of the owner"
+                                description: ID is the user ID of the owner
                                 type: integer
                               name:
-                                description: "name is the user name of the owner"
+                                description: Name is the user name of the owner
                                 type: string
-                          group:
-                            description: "group object specifies group of the owner"
-                            type: object
-                            properties:
-                              id:
-                                description: "id specifies group ID of the owner"
-                                type: integer
-                              name:
-                                description: "name is the group name of the owner"
-                                type: string
-                          overwrite:
-                            description: "overwrite specifies whether to delete preexisting nodes at the path"
-                            type: boolean
-                          append:
-                            description: "append specifies whether to append to the specified file. Creates a new file if nothing exists at the path. Cannot be set if overwrite is set to true."
-                            type: boolean
                 systemd:
-                  description: "systemd describes the desired state of the systemd units"
+                  description: systemd describes the desired state of the systemd units
                   type: object
                   properties:
                     units:
-                      description: "units is a list of units to be configured"
+                      description: Units is a list of units to be configured
                       type: array
                       items:
-                        description: "items describes unit configuration"
+                        description: Items describes unit configuration
                         type: object
                         properties:
-                          name:
-                            description: "name is the name of the unit. This must be suffixed with a valid unit type (e.g. 'thing.service')"
-                            type: string
-                          enabled:
-                            description: "enabled describes whether or not the service shall be enabled. When true, the service is enabled. When false, the service is disabled. When omitted, the service is unmodified. In order for this to have any effect, the unit must have an install section"
-                            type: boolean
-                          mask:
-                            description: "mask describes whether or not the service shall be masked. When true, the service is masked by symlinking it to /dev/null"
-                            type: boolean
                           contents:
-                            description: "contents is the contents of the unit"
+                            description: Contents is the contents of the unit
                             type: string
                           dropins:
-                            description: "dropins is the list of drop-ins for the unit"
+                            description: Dropins is the list of drop-ins for the unit
                             type: array
                             items:
-                              description: "items describes unit dropin"
+                              description: Items describes unit dropin
                               type: object
                               properties:
                                 contents:
-                                  description: "contents is the contents of the drop-in"
+                                  description: Contents is the contents of the drop-in
                                   type: string
                                 name:
-                                  description: "name is the name of the drop-in. This must be suffixed with '.conf'."
+                                  description: Name is the name of the drop-in. This must be suffixed
+                                    with '.conf'
                                   type: string
-          kargs:
-            description: "kargs contains a list of kernel arguments to be added"
-            type: array
-            items:
-              description: "kernel argument"
+                          enabled:
+                            description: Enabled describes whether or not the service shall be enabled.
+                              When true, the service is enabled. When false, the service is disabled.
+                              When omitted, the service is unmodified. In order for this to have any
+                              effect, the unit must have an install section
+                            type: boolean
+                          mask:
+                            description: Mask describes whether or not the service shall be masked.
+                              When true, the service is masked by symlinking it to /dev/null"
+                            type: boolean
+                          name:
+                            description: Name is the name of the unit. This must be suffixed with a
+                              valid unit type (e.g. 'thing.service')
+                            type: string
+            fips:
+              description: FIPS controls FIPS mode
+              type: boolean
+            kernelArguments:
+              description: KernelArguments contains a list of kernel arguments to be added
+              type: array
+              items:
+                type: string
+              nullable: true
+            kernelType:
+              description: Contains which kernel we want to be running like default (traditional), realtime
               type: string
-          fips:
-            description: "fips controls FIPS mode"
-            type: boolean
-          osImageURL:
-            description: "osImageURL specifies the remote location that will be used to fetch the OS"
-            type: string
-      required:
-      - spec
+            osImageURL:
+              description: OSImageURL specifies the remote location that will be used to fetch the OS
+                to fetch the OS.
+              type: string
 `)
 
 func manifestsMachineconfigCrdYamlBytes() ([]byte, error) {
@@ -1366,15 +2127,18 @@ spec:
     name: Config
     type: string
   - JSONPath: .status.conditions[?(@.type=="Updated")].status
-    description: When all the machines in the pool are updated to the correct machine config.
+    description: When all the machines in the pool are updated to the correct machine
+      config.
     name: Updated
     type: string
   - JSONPath: .status.conditions[?(@.type=="Updating")].status
-    description: When at least one of machine is not either not updated or is in the process of updating to the desired machine config.
+    description: When at least one of machine is not either not updated or is in the
+      process of updating to the desired machine config.
     name: Updating
     type: string
   - JSONPath: .status.conditions[?(@.type=="Degraded")].status
-    description: When progress is blocked on updating one or more nodes, or the pool configuration is failing.
+    description: When progress is blocked on updating one or more nodes, or the pool
+      configuration is failing.
     name: Degraded
     type: string
   - JSONPath: .status.machineCount
@@ -1386,7 +2150,8 @@ spec:
     name: ReadyMachineCount
     type: number
   - JSONPath: .status.updatedMachineCount
-    description: Total number of machines targeted by the pool that have the CurrentMachineConfig as their config
+    description: Total number of machines targeted by the pool that have the CurrentMachineConfig
+      as their config
     name: UpdatedMachineCount
     type: number
   - JSONPath: .status.degradedMachineCount
@@ -1400,13 +2165,14 @@ spec:
   group: machineconfiguration.openshift.io
   # list of versions supported by this CustomResourceDefinition
   versions:
-    - name: v1
-      # Each version can be enabled/disabled by Served flag.
-      served: true
-      # One and only one version must be marked as the storage version.
-      storage: true
+  - name: v1
+    # Each version can be enabled/disabled by Served flag.
+    served: true
+    # One and only one version must be marked as the storage version.
+    storage: true
   # either Namespaced or Cluster
   scope: Cluster
+  preserveUnknownFields: false
   subresources:
     status: {}
   names:
@@ -1419,6 +2185,353 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - mcp
+  "validation":
+    "openAPIV3Schema":
+      description: MachineConfigPool describes a pool of MachineConfigs.
+      type: object
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: MachineConfigPoolSpec is the spec for MachineConfigPool resource.
+          type: object
+          properties:
+            configuration:
+              description: The targeted MachineConfig object for the machine config
+                pool.
+              type: object
+              properties:
+                apiVersion:
+                  description: API version of the referent.
+                  type: string
+                fieldPath:
+                  description: 'If referring to a piece of an object instead of an
+                    entire object, this string should contain a valid JSON/Go field
+                    access statement, such as desiredState.manifest.containers[2].
+                    For example, if the object reference is to a container within
+                    a pod, this would take on a value like: "spec.containers{name}"
+                    (where "name" refers to the name of the container that triggered
+                    the event) or if no container name is specified "spec.containers[2]"
+                    (container with index 2 in this pod). This syntax is chosen only
+                    to have some well-defined way of referencing a part of an object.
+                    TODO: this design is not final and this field is subject to change
+                    in the future.'
+                  type: string
+                kind:
+                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                  type: string
+                name:
+                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                  type: string
+                namespace:
+                  description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                  type: string
+                resourceVersion:
+                  description: 'Specific resourceVersion to which this reference is
+                    made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                  type: string
+                source:
+                  description: source is the list of MachineConfig objects that were
+                    used to generate the single MachineConfig object specified in
+                    `+"`"+`content`+"`"+`.
+                  type: array
+                  items:
+                    description: ObjectReference contains enough information to let
+                      you inspect or modify the referred object.
+                    type: object
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: 'If referring to a piece of an object instead
+                          of an entire object, this string should contain a valid
+                          JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within
+                          a pod, this would take on a value like: "spec.containers{name}"
+                          (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]"
+                          (container with index 2 in this pod). This syntax is chosen
+                          only to have some well-defined way of referencing a part
+                          of an object. TODO: this design is not final and this field
+                          is subject to change in the future.'
+                        type: string
+                      kind:
+                        description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                        type: string
+                      name:
+                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                        type: string
+                      namespace:
+                        description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                        type: string
+                      resourceVersion:
+                        description: 'Specific resourceVersion to which this reference
+                          is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                        type: string
+                      uid:
+                        description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                        type: string
+                uid:
+                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                  type: string
+            machineConfigSelector:
+              description: machineConfigSelector specifies a label selector for MachineConfigs.
+                Refer https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+                on how label and selectors work.
+              type: object
+              properties:
+                matchExpressions:
+                  description: matchExpressions is a list of label selector requirements.
+                    The requirements are ANDed.
+                  type: array
+                  items:
+                    description: A label selector requirement is a selector that contains
+                      values, a key, and an operator that relates the key and values.
+                    type: object
+                    required:
+                    - key
+                    - operator
+                    properties:
+                      key:
+                        description: key is the label key that the selector applies
+                          to.
+                        type: string
+                      operator:
+                        description: operator represents a key's relationship to a
+                          set of values. Valid operators are In, NotIn, Exists and
+                          DoesNotExist.
+                        type: string
+                      values:
+                        description: values is an array of string values. If the operator
+                          is In or NotIn, the values array must be non-empty. If the
+                          operator is Exists or DoesNotExist, the values array must
+                          be empty. This array is replaced during a strategic merge
+                          patch.
+                        type: array
+                        items:
+                          type: string
+                matchLabels:
+                  description: matchLabels is a map of {key,value} pairs. A single
+                    {key,value} in the matchLabels map is equivalent to an element
+                    of matchExpressions, whose key field is "key", the operator is
+                    "In", and the values array contains only "value". The requirements
+                    are ANDed.
+                  type: object
+                  additionalProperties:
+                    type: string
+            maxUnavailable:
+              description: maxUnavailable specifies the percentage or constant number
+                of machines that can be updating at any given time. default is 1.
+              anyOf:
+              - type: integer
+              - type: string
+              x-kubernetes-int-or-string: true
+            nodeSelector:
+              description: nodeSelector specifies a label selector for Machines
+              type: object
+              properties:
+                matchExpressions:
+                  description: matchExpressions is a list of label selector requirements.
+                    The requirements are ANDed.
+                  type: array
+                  items:
+                    description: A label selector requirement is a selector that contains
+                      values, a key, and an operator that relates the key and values.
+                    type: object
+                    required:
+                    - key
+                    - operator
+                    properties:
+                      key:
+                        description: key is the label key that the selector applies
+                          to.
+                        type: string
+                      operator:
+                        description: operator represents a key's relationship to a
+                          set of values. Valid operators are In, NotIn, Exists and
+                          DoesNotExist.
+                        type: string
+                      values:
+                        description: values is an array of string values. If the operator
+                          is In or NotIn, the values array must be non-empty. If the
+                          operator is Exists or DoesNotExist, the values array must
+                          be empty. This array is replaced during a strategic merge
+                          patch.
+                        type: array
+                        items:
+                          type: string
+                matchLabels:
+                  description: matchLabels is a map of {key,value} pairs. A single
+                    {key,value} in the matchLabels map is equivalent to an element
+                    of matchExpressions, whose key field is "key", the operator is
+                    "In", and the values array contains only "value". The requirements
+                    are ANDed.
+                  type: object
+                  additionalProperties:
+                    type: string
+            paused:
+              description: paused specifies whether or not changes to this machine
+                config pool should be stopped. This includes generating new desiredMachineConfig
+                and update of machines.
+              type: boolean
+        status:
+          description: MachineConfigPoolStatus is the status for MachineConfigPool
+            resource.
+          type: object
+          properties:
+            conditions:
+              description: conditions represents the latest available observations
+                of current state.
+              type: array
+              items:
+                description: MachineConfigPoolCondition contains condition information
+                  for an MachineConfigPool.
+                type: object
+                properties:
+                  lastTransitionTime:
+                    description: lastTransitionTime is the timestamp corresponding
+                      to the last status change of this condition.
+                    type: string
+                    format: date-time
+                    nullable: true
+                  message:
+                    description: message is a human readable description of the details
+                      of the last transition, complementing reason.
+                    type: string
+                  reason:
+                    description: reason is a brief machine readable explanation for
+                      the condition's last transition.
+                    type: string
+                  status:
+                    description: status of the condition, one of ('True', 'False',
+                      'Unknown').
+                    type: string
+                  type:
+                    description: type of the condition, currently ('Done', 'Updating',
+                      'Failed').
+                    type: string
+            configuration:
+              description: configuration represents the current MachineConfig object
+                for the machine config pool.
+              type: object
+              properties:
+                apiVersion:
+                  description: API version of the referent.
+                  type: string
+                fieldPath:
+                  description: 'If referring to a piece of an object instead of an
+                    entire object, this string should contain a valid JSON/Go field
+                    access statement, such as desiredState.manifest.containers[2].
+                    For example, if the object reference is to a container within
+                    a pod, this would take on a value like: "spec.containers{name}"
+                    (where "name" refers to the name of the container that triggered
+                    the event) or if no container name is specified "spec.containers[2]"
+                    (container with index 2 in this pod). This syntax is chosen only
+                    to have some well-defined way of referencing a part of an object.
+                    TODO: this design is not final and this field is subject to change
+                    in the future.'
+                  type: string
+                kind:
+                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                  type: string
+                name:
+                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                  type: string
+                namespace:
+                  description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                  type: string
+                resourceVersion:
+                  description: 'Specific resourceVersion to which this reference is
+                    made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                  type: string
+                source:
+                  description: source is the list of MachineConfig objects that were
+                    used to generate the single MachineConfig object specified in
+                    `+"`"+`content`+"`"+`.
+                  type: array
+                  items:
+                    description: ObjectReference contains enough information to let
+                      you inspect or modify the referred object.
+                    type: object
+                    properties:
+                      apiVersion:
+                        description: API version of the referent.
+                        type: string
+                      fieldPath:
+                        description: 'If referring to a piece of an object instead
+                          of an entire object, this string should contain a valid
+                          JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                          For example, if the object reference is to a container within
+                          a pod, this would take on a value like: "spec.containers{name}"
+                          (where "name" refers to the name of the container that triggered
+                          the event) or if no container name is specified "spec.containers[2]"
+                          (container with index 2 in this pod). This syntax is chosen
+                          only to have some well-defined way of referencing a part
+                          of an object. TODO: this design is not final and this field
+                          is subject to change in the future.'
+                        type: string
+                      kind:
+                        description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                        type: string
+                      name:
+                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                        type: string
+                      namespace:
+                        description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                        type: string
+                      resourceVersion:
+                        description: 'Specific resourceVersion to which this reference
+                          is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                        type: string
+                      uid:
+                        description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                        type: string
+                uid:
+                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                  type: string
+            degradedMachineCount:
+              description: degradedMachineCount represents the total number of machines
+                marked degraded (or unreconcilable). A node is marked degraded if
+                applying a configuration failed..
+              type: integer
+              format: int32
+            machineCount:
+              description: machineCount represents the total number of machines in
+                the machine config pool.
+              type: integer
+              format: int32
+            observedGeneration:
+              description: observedGeneration represents the generation observed by
+                the controller.
+              type: integer
+              format: int64
+            readyMachineCount:
+              description: readyMachineCount represents the total number of ready
+                machines targeted by the pool.
+              type: integer
+              format: int32
+            unavailableMachineCount:
+              description: unavailableMachineCount represents the total number of
+                unavailable (non-ready) machines targeted by the pool. A node is marked
+                unavailable if it is in updating state or NodeReady condition is false.
+              type: integer
+              format: int32
+            updatedMachineCount:
+              description: updatedMachineCount represents the total number of machines
+                targeted by the pool that have the CurrentMachineConfig as their config.
+              type: integer
+              format: int32
 `)
 
 func manifestsMachineconfigpoolCrdYamlBytes() ([]byte, error) {
@@ -1751,7 +2864,9 @@ var _manifestsOpenstackCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
     mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
-    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
+    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
+        policy sequential
+    }
     cache 30
     reload
     hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
@@ -2327,6 +3442,296 @@ func manifestsOvirtKeepalivedYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
+    errors
+    health :18080
+    mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
+    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
+    cache 30
+    reload
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+}
+`)
+
+func manifestsVsphereCorednsCorefileTmplBytes() ([]byte, error) {
+	return _manifestsVsphereCorednsCorefileTmpl, nil
+}
+
+func manifestsVsphereCorednsCorefileTmpl() (*asset, error) {
+	bytes, err := manifestsVsphereCorednsCorefileTmplBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsVsphereCorednsYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: coredns
+  namespace: openshift-vsphere-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: vsphere-infra-mdns
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/coredns"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  initContainers:
+  - name: render-config
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - runtimecfg
+    - render
+    - "/etc/kubernetes/kubeconfig"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+    - "--dns-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+    - "/config"
+    - "--out-dir"
+    - "/etc/coredns"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    resources: {}
+    volumeMounts:
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: resource-dir
+      mountPath: "/config"
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    imagePullPolicy: IfNotPresent
+  containers:
+  - name: coredns
+    securityContext:
+      privileged: true
+    image: {{ .Images.CorednsBootstrap }}
+    args:
+    - "--conf"
+    - "/etc/coredns/Corefile"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 18080
+        scheme: HTTP
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
+      timeoutSeconds: 10
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 18080
+        scheme: HTTP
+      initialDelaySeconds: 60
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 5
+    terminationMessagePolicy: FallbackToLogsOnError
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsVsphereCorednsYamlBytes() ([]byte, error) {
+	return _manifestsVsphereCorednsYaml, nil
+}
+
+func manifestsVsphereCorednsYaml() (*asset, error) {
+	bytes, err := manifestsVsphereCorednsYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsVsphereKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
+# API VIPs.
+#
+# For more information, see installer/data/data/bootstrap/baremetal/README.md
+# in the installer repo.
+
+vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
+    state BACKUP
+    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
+    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
+    priority 50
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
+    }
+    virtual_ipaddress {
+        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+    }
+}
+
+vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_DNS {
+    state MASTER
+    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
+    virtual_router_id {{`+"`"+`{{.Cluster.DNSVirtualRouterID }}`+"`"+`}}
+    priority 140
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_dns_vip
+    }
+    virtual_ipaddress {
+        {{`+"`"+`{{ .Cluster.DNSVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+    }
+}
+`)
+
+func manifestsVsphereKeepalivedConfTmplBytes() ([]byte, error) {
+	return _manifestsVsphereKeepalivedConfTmpl, nil
+}
+
+func manifestsVsphereKeepalivedConfTmpl() (*asset, error) {
+	bytes, err := manifestsVsphereKeepalivedConfTmplBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsVsphereKeepalivedYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: keepalived
+  namespace: openshift-vsphere-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: vsphere-infra-vrrp
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/keepalived"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  initContainers:
+  - name: render-config
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - runtimecfg
+    - render
+    - "/etc/kubernetes/kubeconfig"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+    - "--dns-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+    - "/config"
+    - "--out-dir"
+    - "/etc/keepalived"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    resources: {}
+    volumeMounts:
+    - name: resource-dir
+      mountPath: "/config"
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    imagePullPolicy: IfNotPresent
+  containers:
+  - name: keepalived
+    securityContext:
+      privileged: true
+    image: {{ .Images.KeepalivedBootstrap }}
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
+    command:
+    - /usr/sbin/keepalived
+    args:
+    - "-f"
+    - "/etc/keepalived/keepalived.conf"
+    - "--dont-fork"
+    - "--vrrp"
+    - "--log-detail"
+    - "--log-console"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsVsphereKeepalivedYamlBytes() ([]byte, error) {
+	return _manifestsVsphereKeepalivedYaml, nil
+}
+
+func manifestsVsphereKeepalivedYaml() (*asset, error) {
+	bytes, err := manifestsVsphereKeepalivedYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/vsphere/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsWorkerMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -2449,6 +3854,10 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/ovirt/coredns.yaml":                                           manifestsOvirtCorednsYaml,
 	"manifests/ovirt/keepalived.conf.tmpl":                                   manifestsOvirtKeepalivedConfTmpl,
 	"manifests/ovirt/keepalived.yaml":                                        manifestsOvirtKeepalivedYaml,
+	"manifests/vsphere/coredns-corefile.tmpl":                                manifestsVsphereCorednsCorefileTmpl,
+	"manifests/vsphere/coredns.yaml":                                         manifestsVsphereCorednsYaml,
+	"manifests/vsphere/keepalived.conf.tmpl":                                 manifestsVsphereKeepalivedConfTmpl,
+	"manifests/vsphere/keepalived.yaml":                                      manifestsVsphereKeepalivedYaml,
 	"manifests/worker.machineconfigpool.yaml":                                manifestsWorkerMachineconfigpoolYaml,
 }
 
@@ -2546,6 +3955,12 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"coredns.yaml":          &bintree{manifestsOvirtCorednsYaml, map[string]*bintree{}},
 			"keepalived.conf.tmpl":  &bintree{manifestsOvirtKeepalivedConfTmpl, map[string]*bintree{}},
 			"keepalived.yaml":       &bintree{manifestsOvirtKeepalivedYaml, map[string]*bintree{}},
+		}},
+		"vsphere": &bintree{nil, map[string]*bintree{
+			"coredns-corefile.tmpl": &bintree{manifestsVsphereCorednsCorefileTmpl, map[string]*bintree{}},
+			"coredns.yaml":          &bintree{manifestsVsphereCorednsYaml, map[string]*bintree{}},
+			"keepalived.conf.tmpl":  &bintree{manifestsVsphereKeepalivedConfTmpl, map[string]*bintree{}},
+			"keepalived.yaml":       &bintree{manifestsVsphereKeepalivedYaml, map[string]*bintree{}},
 		}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},

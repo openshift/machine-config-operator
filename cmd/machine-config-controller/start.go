@@ -7,7 +7,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
-	controllercommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
@@ -51,10 +51,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
-		controllercommon.WriteTerminationError(errors.Wrapf(err, "Creating clients"))
+		ctrlcommon.WriteTerminationError(errors.Wrapf(err, "Creating clients"))
 	}
 	run := func(ctx context.Context) {
-		ctrlctx := controllercommon.CreateControllerContext(cb, ctx.Done(), componentName)
+		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentName)
 
 		controllers := createControllers(ctrlctx)
 
@@ -89,8 +89,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	panic("unreachable")
 }
 
-func createControllers(ctx *controllercommon.ControllerContext) []controllercommon.Controller {
-	var controllers []controllercommon.Controller
+func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controller {
+	var controllers []ctrlcommon.Controller
 
 	controllers = append(controllers,
 		// Our primary MCs come from here

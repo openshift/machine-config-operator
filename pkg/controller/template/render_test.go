@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -296,12 +297,15 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Fatal("non-nil labels expected")
 			}
 
-			role, ok := cfg.Labels[machineConfigRoleLabelKey]
+			role, ok := cfg.Labels[mcfgv1.MachineConfigRoleLabelKey]
 			if !ok || role == "" {
 				t.Fatal("role label missing")
 			}
 
-			ign := cfg.Spec.Config
+			ign, _, err := ignConfigV3.Parse(cfg.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("Failed to parse Ignition config")
+			}
 			if role == "master" {
 				if !foundPullSecretMaster {
 					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
@@ -352,7 +356,7 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	return cc, nil
 }
 
-func findIgnFile(files []igntypes.File, path string, t *testing.T) bool {
+func findIgnFile(files []ignTypes.File, path string, t *testing.T) bool {
 	for _, f := range files {
 		if f.Path == path {
 			return true
@@ -361,7 +365,7 @@ func findIgnFile(files []igntypes.File, path string, t *testing.T) bool {
 	return false
 }
 
-func findIgnUnit(units []igntypes.Unit, name string, t *testing.T) bool {
+func findIgnUnit(units []ignTypes.Unit, name string, t *testing.T) bool {
 	for _, u := range units {
 		if u.Name == name {
 			return true

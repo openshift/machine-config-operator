@@ -12,7 +12,8 @@ import (
 	"github.com/containers/image/pkg/sysregistriesv2"
 	signature "github.com/containers/image/signature"
 	storageconfig "github.com/containers/storage/pkg/config"
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	crioconfig "github.com/cri-o/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -55,6 +56,7 @@ type tomlConfigCRIO struct {
 		Runtime struct{ crioconfig.RuntimeConfig } `toml:"runtime"`
 		Image   struct{ crioconfig.ImageConfig }   `toml:"image"`
 		Network struct{ crioconfig.NetworkConfig } `toml:"network"`
+		Metrics struct{ crioconfig.MetricsConfig } `toml:"metrics"`
 	} `toml:"crio"`
 }
 
@@ -63,8 +65,8 @@ type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfigu
 // createNewIgnition takes a map where the key is the path of the file, and the value is the
 // new data in the form of a byte array. The function returns the ignition config with the
 // updated data.
-func createNewIgnition(configs map[string][]byte) igntypes.Config {
-	tempIgnConfig := ctrlcommon.NewIgnConfig()
+func createNewIgnition(configs map[string][]byte) ignTypes.Config {
+	tempIgnConfig := ctrlcommon.NewIgnConfigSpecV3()
 	mode := 0644
 	overwrite := true
 	// Create ignitions
@@ -76,14 +78,14 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 		configdu := dataurl.New(data, "text/plain")
 		configdu.Encoding = dataurl.EncodingASCII
 		strConfigdu := configdu.String()
-		configTempFile := igntypes.File{
-			Node: igntypes.Node{
+		configTempFile := ignTypes.File{
+			Node: ignTypes.Node{
 				Path:      filePath,
 				Overwrite: &overwrite,
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
+			FileEmbedded1: ignTypes.FileEmbedded1{
 				Mode: &mode,
-				Contents: igntypes.FileContents{
+				Contents: ignTypes.FileContents{
 					Source: &strConfigdu,
 				},
 			},
@@ -94,8 +96,12 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 	return tempIgnConfig
 }
 
-func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+func findStorageConfig(mc *mcfgv1.MachineConfig) (*ignTypes.File, error) {
+	ignCfg, report, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == storageConfigPath {
 			c := c
 			return &c, nil
@@ -104,8 +110,12 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("could not find Storage Config")
 }
 
-func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+func findCRIOConfig(mc *mcfgv1.MachineConfig) (*ignTypes.File, error) {
+	ignCfg, report, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CRI-O Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == crioConfigPath {
 			c := c
 			return &c, nil
@@ -114,8 +124,12 @@ func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("could not find CRI-O Config")
 }
 
-func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*ignTypes.File, error) {
+	ignCfg, report, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == registriesConfigPath {
 			return &c, nil
 		}
@@ -123,8 +137,12 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("could not find Registries Config")
 }
 
-func findPolicyJSON(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+func findPolicyJSON(mc *mcfgv1.MachineConfig) (*ignTypes.File, error) {
+	ignCfg, report, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("findPolicyJSON: parsing Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == policyConfigPath {
 			return &c, nil
 		}
@@ -196,7 +214,7 @@ func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguratio
 	if internal.PidsLimit > 0 {
 		tomlConf.Crio.Runtime.PidsLimit = internal.PidsLimit
 	}
-	if internal.LogSizeMax != (resource.Quantity{}) {
+	if internal.LogSizeMax.Value() != 0 {
 		tomlConf.Crio.Runtime.LogSizeMax = internal.LogSizeMax.Value()
 	}
 	if internal.LogLevel != "" {
