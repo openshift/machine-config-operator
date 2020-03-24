@@ -1,9 +1,10 @@
 package resourceread
 
 import (
-	"encoding/json"
 	"fmt"
 	"testing"
+
+	"github.com/clarketm/json"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

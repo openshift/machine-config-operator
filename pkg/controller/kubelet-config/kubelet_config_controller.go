@@ -1,11 +1,12 @@
 package kubeletconfig
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"time"
+
+	"github.com/clarketm/json"
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/golang/glog"

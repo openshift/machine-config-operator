@@ -2,9 +2,9 @@ package containerruntimeconfig
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/clarketm/json"
 	"reflect"
 
 	"github.com/BurntSushi/toml"

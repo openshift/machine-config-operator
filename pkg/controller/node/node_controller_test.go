@@ -1,11 +1,12 @@
 package node
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/clarketm/json"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

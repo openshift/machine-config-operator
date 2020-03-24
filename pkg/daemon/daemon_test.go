@@ -1,13 +1,14 @@
 package daemon
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/clarketm/json"
 
 	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/stretchr/testify/assert"

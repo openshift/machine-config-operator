@@ -1,8 +1,8 @@
 package node
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/clarketm/json"
 	"reflect"
 	"time"
 

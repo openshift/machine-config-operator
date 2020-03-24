@@ -1,8 +1,9 @@
 package operator
 
 import (
-	"encoding/json"
 	"fmt"
+
+	"github.com/clarketm/json"
 
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"

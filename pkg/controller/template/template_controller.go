@@ -2,10 +2,11 @@ package template
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/clarketm/json"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"

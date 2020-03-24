@@ -2,11 +2,12 @@ package containerruntimeconfig
 
 import (
 	"bytes"
-	"encoding/json"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/clarketm/json"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/pkg/sysregistriesv2"

@@ -1,10 +1,11 @@
 package daemon
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
+
+	"github.com/clarketm/json"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"

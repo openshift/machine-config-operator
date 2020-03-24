@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -17,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/clarketm/json"
 
 	imgref "github.com/containers/image/docker/reference"
 	ignConfigV3 "github.com/coreos/ignition/v2/config"

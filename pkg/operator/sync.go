@@ -3,12 +3,13 @@ package operator
 import (
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"strings"
 	"time"
+
+	"github.com/clarketm/json"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
