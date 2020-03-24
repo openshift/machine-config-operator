@@ -67,7 +67,7 @@ contents:
 
 
     class V6Route:
-        def __init__(self, destination: str, dev: Optional[str] = None, proto: Optional[str] = None, metric: Optional[int] = None, pref: Optional[str] = None, via: Optional[str] = None) -> None:
+        def __init__(self, destination: str, dev: Optional[str] = None, proto: Optional[str] = None, metric: Optional[int] = None, pref: Optional[str] = None, via: Optional[str] = None, **kwargs) -> None:
              self.destination: str = destination
              self.via: Optional[str] = via
              self.dev: Optional[str] = dev
@@ -77,7 +77,7 @@ contents:
 
         @classmethod
         def from_line(cls: Type[TR], line: str) -> TR:
-            items = line.split()
+            items = [i for i in line.split() if i != '\\']
             dest = items[0]
             if dest == 'default':
                 dest = '::/0'
