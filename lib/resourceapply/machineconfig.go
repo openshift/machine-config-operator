@@ -1,6 +1,8 @@
 package resourceapply
 
 import (
+	"fmt"
+
 	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
@@ -13,10 +15,10 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 	existing, err := client.MachineConfigs().Get(required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		actual, err := client.MachineConfigs().Create(required)
-		return actual, true, err
+		return actual, true, fmt.Errorf("ApplyMachineConfig create1: %s", err)
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("ApplyMachineConfig create2: %s", err)
 	}
 
 	modified := resourcemerge.BoolPtr(false)
@@ -26,7 +28,7 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 	}
 
 	actual, err := client.MachineConfigs().Update(existing)
-	return actual, true, err
+	return actual, true, fmt.Errorf("ApplyMachineConfig update: %s", err)
 }
 
 // ApplyMachineConfigPool applies the required machineconfig to the cluster.
