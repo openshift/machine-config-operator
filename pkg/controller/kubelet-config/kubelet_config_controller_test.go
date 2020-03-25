@@ -24,10 +24,10 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -288,19 +288,19 @@ func checkAction(expected, actual core.Action, t *testing.T) {
 }
 
 func (f *fixture) expectGetKubeletConfigAction(config *mcfgv1.KubeletConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "kubeletconfigs"}, config.Name))
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name))
 }
 
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config.Name))
+	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"}, config.Name))
 }
 
 func (f *fixture) expectCreateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) {
-	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"}, config))
 }
 
 func (f *fixture) expectPatchKubeletConfig(config *mcfgv1.KubeletConfig, patch []byte) {
@@ -316,12 +316,12 @@ func TestKubeletConfigCreate(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfigV3(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -344,12 +344,12 @@ func TestKubeletConfigUpdates(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfigV3(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -499,12 +499,12 @@ func TestKubeletFeatureExists(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := newFixture(t)
 
-			cc := newControllerConfig(common.ControllerConfigName, platform)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfigV3(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)

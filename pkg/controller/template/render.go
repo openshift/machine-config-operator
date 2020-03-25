@@ -12,14 +12,17 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
+	"github.com/clarketm/json"
 	fcct_base_0_1 "github.com/coreos/fcct/base/v0_1"
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/controller/common"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 // RenderConfig is wrapper around ControllerConfigSpec.
@@ -89,7 +92,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 		if cfg.Annotations == nil {
 			cfg.Annotations = map[string]string{}
 		}
-		cfg.Annotations[common.GeneratedByControllerVersionAnnotationKey] = version.Hash
+		cfg.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
 	}
 
 	return cfgs, nil
@@ -266,22 +269,24 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
 	}
-
-	mcfg := MachineConfigFromIgnConfig(role, name, ignCfg)
+	mcfg, err := MachineConfigFromIgnConfig(role, name, ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %v", err)
+	}
 	// And inject the osimageurl here
 	mcfg.Spec.OSImageURL = config.OSImageURL
 
 	return mcfg, nil
 }
 
-const (
-	machineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
-)
-
 // MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
-func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
+func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.MachineConfig, error) {
+	rawIgnCfg, err := json.Marshal(ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
+	}
 	labels := map[string]string{
-		machineConfigRoleLabelKey: role,
+		mcfgv1.MachineConfigRoleLabelKey: role,
 	}
 	return &mcfgv1.MachineConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -290,12 +295,14 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcf
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: "",
-			Config:     *ignCfg,
+			Config: runtime.RawExtension{
+				Raw: rawIgnCfg,
+			},
 		},
-	}
+	}, nil
 }
 
-func transpileToIgn(files, units []string) (*igntypes.Config, error) {
+func transpileToIgn(files, units []string) (*ignTypes.Config, error) {
 	var ctCfg fcct_base_0_1.Config
 	overwrite := true
 	// Convert data to Ignition resources
@@ -320,9 +327,20 @@ func transpileToIgn(files, units []string) (*igntypes.Config, error) {
 		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
 	}
 
-	ignCfg, err := ctCfg.ToIgn3_0()
+	ignCfgV3_0, tset, err := ctCfg.ToIgn3_0()
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert config to Ignition config %s", err)
+		return nil, fmt.Errorf("failed to convert config to Ignition config %s\nTranslation set: %v", err, tset)
+	}
+
+	// Hack to convert spec 3.0 config to spec 3.1
+	ignCfgV3_0.Ignition.Version = "3.1.0-experimental"
+	rawIgnCfg, err := json.Marshal(ignCfgV3_0)
+	if err != nil {
+		return nil, fmt.Errorf("SHOULD NEVER HAPPEN: failed to marshal Ignition spec v3 config %s", err)
+	}
+	ignCfg, rep, err := ignConfigV3.Parse(rawIgnCfg)
+	if rep.IsFatal() || err != nil {
+		return nil, fmt.Errorf("SHOULD NEVER HAPPEN: failed to parse Ignition spec v3 config: %s\nreport: %v", err, rep)
 	}
 
 	return &ignCfg, nil

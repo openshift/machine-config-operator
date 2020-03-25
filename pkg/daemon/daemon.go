@@ -19,10 +19,10 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ign "github.com/coreos/ignition/v2/config/v3_0"
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config"
+	ign "github.com/coreos/ignition/v2/config/v3_1_experimental"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/golang/glog"
-	drain "github.com/openshift/cluster-api/pkg/drain"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -44,6 +44,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/kubectl/pkg/drain"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -110,6 +111,8 @@ type Daemon struct {
 	currentConfigPath string
 
 	loggerSupportsJournal bool
+
+	drainer *drain.Helper
 }
 
 const (
@@ -200,9 +203,8 @@ func New(
 		}
 	}
 
-	// Only pull the osImageURL from OSTree when we are on RHCOS
-	if isOSTreeBased(operatingSystem) {
-		var osVersion string
+	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
+	if operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -230,7 +232,7 @@ func New(
 		}
 	}
 
-	// report OS & version (if RHCOS) to prometheus
+	// report OS & version (if RHCOS or FCOS) to prometheus
 	HostOS.WithLabelValues(operatingSystem, osVersion).Set(1)
 
 	return &Daemon{
@@ -289,6 +291,37 @@ func (dn *Daemon) ClusterConnect(
 
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
+
+	dn.drainer = &drain.Helper{
+		Client:              dn.kubeClient,
+		Force:               true,
+		IgnoreAllDaemonSets: true,
+		DeleteLocalData:     true,
+		GracePeriodSeconds:  -1,
+		Timeout:             20 * time.Second,
+		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
+			verbStr := "Deleted"
+			if usingEviction {
+				verbStr = "Evicted"
+			}
+			glog.Info(fmt.Sprintf("%s pod from Node", verbStr),
+				"pod", fmt.Sprintf("%s/%s", pod.Name, pod.Namespace))
+		},
+		Out:    writer{glog.Info},
+		ErrOut: writer{glog.Error},
+		DryRun: false,
+	}
+}
+
+// writer implements io.Writer interface as a pass-through for klog.
+type writer struct {
+	logFunc func(args ...interface{})
+}
+
+// Write passes string(p) into writer's logFunc and always returns len(p)
+func (w writer) Write(p []byte) (n int, err error) {
+	w.logFunc(string(p))
+	return len(p), nil
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -439,7 +472,7 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 		return err
 	}
 	switch c := configi.(type) {
-	case igntypes.Config:
+	case ignTypes.Config:
 		glog.V(2).Info("Daemon running directly from Ignition")
 		return dn.runOnceFromIgnition(c)
 	case mcfgv1.MachineConfig:
@@ -469,7 +502,11 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.
-	if !dn.compareMachineConfig(oldConfig, &mc) {
+	mcDiffNotEmpty, err := dn.compareMachineConfig(oldConfig, &mc)
+	if err != nil {
+		return errors.Wrapf(err, "failed to compare MachineConfig")
+	}
+	if !mcDiffNotEmpty {
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
 			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
@@ -771,7 +808,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 // dynamically after a reboot.
 func (dn *Daemon) LogSystemData() {
 	// Print status if available
-	if isOSTreeBased(dn.OperatingSystem) {
+	if dn.OperatingSystem == machineConfigDaemonOSRHCOS || dn.OperatingSystem == machineConfigDaemonOSFCOS {
 		status, err := dn.NodeUpdaterClient.GetStatus()
 		if err != nil {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
@@ -1066,7 +1103,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
-func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
+func (dn *Daemon) runOnceFromIgnition(ignConfig ignTypes.Config) error {
 	// Execute update without hitting the cluster
 	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
 		return err
@@ -1134,7 +1171,7 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
 func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
-	if err := drain.Uncordon(dn.kubeClient.CoreV1().Nodes(), node, nil); err != nil {
+	if err := drain.RunCordonOrUncordon(dn.drainer, node, false); err != nil {
 		return err
 	}
 
@@ -1188,10 +1225,15 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 		return false
 	}
 	// And the rest of the disk state
-	if !checkFiles(currentConfig.Spec.Config.Storage.Files) {
+	currentIgnConfig, report, err := ignConfigV3.Parse(currentConfig.Spec.Config.Raw)
+	if err != nil {
+		glog.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
 		return false
 	}
-	if !checkUnits(currentConfig.Spec.Config.Systemd.Units) {
+	if !checkFiles(currentIgnConfig.Storage.Files) {
+		return false
+	}
+	if !checkUnits(currentIgnConfig.Systemd.Units) {
 		return false
 	}
 	return true
@@ -1253,13 +1295,13 @@ func compareOSImageURL(current, desired string) (bool, error) {
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
-// not running RHCOS, or if the target osImageURL is "" (unspecified),
+// not running RHCOS or FCOS, or if the target osImageURL is "" (unspecified),
 // or if the digests match.
 // Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
-	// Nothing to do if we're not on RHCOS
-	if !isOSTreeBased(dn.OperatingSystem) {
-		glog.Infof(`Not booted into Red Hat CoreOS, ignoring target OSImageURL %s`, osImageURL)
+	// Nothing to do if we're not on RHCOS or FCOS
+	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true, nil
 	}
 
@@ -1268,7 +1310,7 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 
 // checkUnits validates the contents of all the units in the
 // target config and returns true if they match.
-func checkUnits(units []igntypes.Unit) bool {
+func checkUnits(units []ignTypes.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
@@ -1303,7 +1345,7 @@ func checkUnits(units []igntypes.Unit) bool {
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func checkFiles(files []igntypes.File) bool {
+func checkFiles(files []ignTypes.File) bool {
 	checkedFiles := make(map[string]bool)
 	for i := len(files) - 1; i >= 0; i-- {
 		f := files[i]
@@ -1406,13 +1448,13 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	}
 
 	// Try each supported parser
-	ignConfig, _, err := ign.Parse(content)
+	ignConfig, report, err := ign.Parse(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
 		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil
 	}
 
-	glog.V(2).Infof("%s is not an Ignition config: %v. Trying MachineConfig.", onceFrom, err)
+	glog.V(2).Infof("%s is not an Ignition config: %v\nReport: %v\n Trying MachineConfig.", onceFrom, err, report)
 
 	// Try to parse as a machine config
 	mc, err := resourceread.ReadMachineConfigV1(content)

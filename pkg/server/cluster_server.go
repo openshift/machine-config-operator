@@ -5,10 +5,10 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	yaml "github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	rest "k8s.io/client-go/rest"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
@@ -58,7 +58,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
-func (cs *clusterServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
+func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
 	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
@@ -73,11 +73,17 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
 
 	appenders := getAppenders(currConf, cs.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
-		if err := a(&mc.Spec.Config); err != nil {
+		if err := a(mc); err != nil {
 			return nil, err
 		}
 	}
-	return machineConfigToIgnition(mc), nil
+
+	rawIgn, err := machineConfigToRawIgnition(mc)
+	if err != nil {
+		return nil, fmt.Errorf("server: could not convert MachineConfig to raw Ignition: %v", err)
+	}
+
+	return rawIgn, nil
 }
 
 // getClientConfig returns a Kubernetes client Config.

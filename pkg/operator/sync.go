@@ -81,6 +81,10 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing version: %v", err)
 	}
 
+	if err := optr.syncRelatedObjects(); err != nil {
+		return fmt.Errorf("error syncing relatedObjects: %v", err)
+	}
+
 	if optr.inClusterBringup && syncErr.err == nil {
 		glog.Infof("Initialization complete")
 		optr.inClusterBringup = false
@@ -205,6 +209,11 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 			return err
 		}
 		spec.CloudProviderConfig = cc
+
+		caCert, err := optr.getCAsFromConfigMap("openshift-config", infra.Spec.CloudConfig.Name, "ca-bundle.pem")
+		if err == nil {
+			spec.CloudProviderCAData = caCert
+		}
 	}
 
 	//TODO: alaypatel07 remove after cluster-etcd-operator deployed via CVO as Managed

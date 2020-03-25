@@ -1,12 +1,12 @@
 package containerruntimeconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	"github.com/clarketm/json"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +34,6 @@ import (
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	v1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -378,7 +377,7 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, *igntypes.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ignTypes.File, *ignTypes.File, *ignTypes.File, *ignTypes.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
@@ -387,7 +386,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	}
 	// Find generated storage.config, and crio.config
 	var (
-		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON *igntypes.File
+		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON *ignTypes.File
 		errStorage, errCRIO, errRegistries, errPolicy                               error
 	)
 	// Find storage config
@@ -546,13 +545,22 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				}
 			}
 			if isNotFound {
-				tempIgnCfg := ctrlcommon.NewIgnConfig()
-				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
+				tempIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
+				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
+				if err != nil {
+					return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
+				}
 			}
-			mc.Spec.Config = createNewIgnition(map[string][]byte{
+
+			ctrRuntimeConfigIgn := createNewIgnition(map[string][]byte{
 				storageConfigPath: storageTOML,
 				crioConfigPath:    crioTOML,
 			})
+			rawCtrRuntimeConfigIgn, err := json.Marshal(ctrRuntimeConfigIgn)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "error marshalling container runtime config Ignition: %v", err)
+			}
+			mc.Spec.Config.Raw = rawCtrRuntimeConfigIgn
 
 			mc.SetAnnotations(map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
@@ -583,7 +591,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
-func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
+func (ctrl *Controller) mergeConfigChanges(origFile *ignTypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
 	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
@@ -668,12 +676,16 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			if err != nil {
 				return err
 			}
+			rawRegistriesIgn, err := json.Marshal(registriesIgn)
+			if err != nil {
+				return fmt.Errorf("could not encode registries Ignition config: %v", err)
+			}
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("could not find MachineConfig: %v", err)
 			}
 			isNotFound := errors.IsNotFound(err)
-			if !isNotFound && equality.Semantic.DeepEqual(registriesIgn, mc.Spec.Config) {
+			if !isNotFound && equality.Semantic.DeepEqual(rawRegistriesIgn, mc.Spec.Config.Raw) {
 				// if the configuration for the registries is equal, we still need to compare
 				// the generated controller version because during an upgrade we need a new one
 				mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
@@ -683,10 +695,13 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				}
 			}
 			if isNotFound {
-				tempIgnCfg := ctrlcommon.NewIgnConfig()
-				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
+				tempIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
+				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
+				if err != nil {
+					return fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
+				}
 			}
-			mc.Spec.Config = *registriesIgn
+			mc.Spec.Config.Raw = rawRegistriesIgn
 			mc.ObjectMeta.Annotations = map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 			}
@@ -718,7 +733,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*igntypes.Config, error) {
+	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ignTypes.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -760,13 +775,13 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
-func RunImageBootstrap(templateDir string, controllerConfig *v1.ControllerConfig, mcpPools []*v1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]*v1.MachineConfig, error) {
+func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]*mcfgv1.MachineConfig, error) {
 	// ImageConfig is not available.
 	insecureRegs := []string(nil)
 	blockedRegs := []string(nil)
 	allowedRegs := []string(nil)
 
-	var res []*v1.MachineConfig
+	var res []*mcfgv1.MachineConfig
 	for _, pool := range mcpPools {
 		role := pool.Name
 		managedKey := getManagedKeyReg(pool)
@@ -776,10 +791,10 @@ func RunImageBootstrap(templateDir string, controllerConfig *v1.ControllerConfig
 		if err != nil {
 			return nil, err
 		}
-
-		tempIgnCfg := ctrlcommon.NewIgnConfig()
-		mc := mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
-		mc.Spec.Config = *registriesIgn
+		mc, err := mtmpl.MachineConfigFromIgnConfig(role, managedKey, registriesIgn)
+		if err != nil {
+			return nil, err
+		}
 		// Explicitly do NOT set GeneratedByControllerVersionAnnotationKey so that the first run of the non-bootstrap controller
 		// always rebuilds registries.conf (with the insecureRegs/blockedRegs values actually available).
 		mc.ObjectMeta.OwnerReferences = []metav1.OwnerReference{

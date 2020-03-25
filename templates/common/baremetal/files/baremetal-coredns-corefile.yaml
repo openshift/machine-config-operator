@@ -12,6 +12,12 @@ contents:
         reload
         hosts {
             {{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api-int.{{ .EtcdDiscoveryDomain }}
+            {{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api.{{ .EtcdDiscoveryDomain }}
+            fallthrough
+        }
+        template IN A {{ .EtcdDiscoveryDomain }} {
+            match .*.apps.{{ .EtcdDiscoveryDomain }}
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in a {{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
             fallthrough
         }
     }

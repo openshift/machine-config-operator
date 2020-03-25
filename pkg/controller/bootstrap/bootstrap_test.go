@@ -15,7 +15,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_0/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 )
 
@@ -149,9 +150,11 @@ func TestBootstrapRun(t *testing.T) {
 			require.NoError(t, err)
 
 			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy
-			var registriesConfig *igntypes.File
-			for i := range mc.Spec.Config.Storage.Files {
-				f := &mc.Spec.Config.Storage.Files[i]
+			var registriesConfig *ignTypesV3.File
+			ignCfg, _, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
+			require.NoError(t, err)
+			for i := range ignCfg.Storage.Files {
+				f := &ignCfg.Storage.Files[i]
 				if f.Path == "/etc/containers/registries.conf" {
 					registriesConfig = f
 				}

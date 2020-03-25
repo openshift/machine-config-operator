@@ -38,6 +38,43 @@ func TestClusterDNSIP(t *testing.T) {
 	}
 }
 
+func TestIsSingleStackIPv6(t *testing.T) {
+	tests := []struct {
+		Ranges []string
+		Output bool
+		Error  bool
+	}{{
+		Ranges: []string{"192.168.2.0/20"},
+		Output: false,
+	}, {
+		Ranges: []string{"2001:db8::/32"},
+		Output: true,
+	}, {
+		Ranges: []string{"192.168.2.0/20", "2001:db8::/32"},
+		Output: false,
+	}, {
+		Ranges: []string{"2001:db8::/32", "192.168.2.0/20"},
+		Output: false,
+	}, {
+		Ranges: []string{"192.168.1.254/32"},
+		Error:  true,
+	}}
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			desc := fmt.Sprintf("isSingleStackIPv6(%#v)", test.Ranges)
+			ipv6, err := isSingleStackIPv6(test.Ranges)
+			if err != nil {
+				if !test.Error {
+					t.Fatalf("%s failed: %s", desc, err.Error())
+				}
+			}
+			if ipv6 != test.Output {
+				t.Fatalf("%s failed: got = %t want = %t", desc, ipv6, test.Output)
+			}
+		})
+	}
+}
+
 func TestRenderAsset(t *testing.T) {
 	tests := []struct {
 		Path         string

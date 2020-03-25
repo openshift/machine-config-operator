@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	// machineConfigDaemonOSRHCOS denotes RHCOS
+	// machineConfigDaemonOSRHCOS denotes RHEL CoreOS
 	machineConfigDaemonOSRHCOS = "RHCOS"
 	// machineConfigDaemonOSRHEL denotes RHEL
 	machineConfigDaemonOSRHEL = "RHEL"
-	// machineConfigDaemonOSCENTOS denotes CENTOS
+	// machineConfigDaemonOSCENTOS denotes CentOS
 	machineConfigDaemonOSCENTOS = "CENTOS"
-	// machineConfigDaemonOSFCOS denotes FCOS
+	// machineConfigDaemonOSFCOS denotes Fedora CoreOS
 	machineConfigDaemonOSFCOS = "FCOS"
 )
 
