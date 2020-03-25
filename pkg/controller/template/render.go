@@ -332,7 +332,8 @@ func transpileToIgn(files, units []string) (*ignTypes.Config, error) {
 		return nil, fmt.Errorf("failed to convert config to Ignition config %s\nTranslation set: %v", err, tset)
 	}
 
-	// Hack to convert spec 3.0 config to spec 3.1
+	// Hack to convert spec 3.0 config to spec 3.1.0-experimental for internal consumption
+	// TODO lorbus: Remove this once a stable spec 3.1 transpiler is available
 	ignCfgV3_0.Ignition.Version = "3.1.0-experimental"
 	rawIgnCfg, err := json.Marshal(ignCfgV3_0)
 	if err != nil {
