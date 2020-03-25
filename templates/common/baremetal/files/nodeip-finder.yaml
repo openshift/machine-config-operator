@@ -3,76 +3,10 @@ mode: 0755
 path: "/usr/local/bin/nodeip-finder"
 contents:
   inline: |
-    #!/usr/libexec/platform-python
-    # /* vim: set filetype=python : */
-    """Writes Kubelet and CRI-O configuration to choose the right IP address
-
-    For kubelet, a systemd environment file with a KUBELET_NODE_IP setting
-    For CRI-O it drops a config file in /etc/crio/crio.conf.d"""
-    from importlib import util as iutil
-    from importlib import machinery as imachinery
-    from types import ModuleType
-    import os
-    import pathlib
-    import socket
-    import sys
-
-    loader = imachinery.SourceFileLoader(
-        'non_virtual_ip',
-        os.path.join(os.path.dirname(os.path.realpath(__file__)), 'non_virtual_ip'))
-    spec = iutil.spec_from_loader('non_virtual_ip', loader)
-    non_virtual_ip = iutil.module_from_spec(spec)
-    loader.exec_module(non_virtual_ip)
-
-
-    KUBELET_WORKAROUND_PATH = '/etc/systemd/system/kubelet.service.d/20-nodenet.conf'
-    CRIO_WORKAROUND_PATH = '/etc/systemd/system/crio.service.d/20-nodenet.conf'
-
-
-    def first_candidate_addr(api_vip: str) -> non_virtual_ip.Address:
-        filters = (non_virtual_ip.non_host_scope,
-                   non_virtual_ip.non_deprecated,
-                   non_virtual_ip.non_secondary)
-        iface_addrs = list(non_virtual_ip.interface_addrs(filters))
-        subnet, candidates = non_virtual_ip.vip_subnet_and_addrs_in_it(api_vip, iface_addrs)
-        sys.stderr.write('VIP Subnet %s\n' % subnet.cidr)
-
-        for addr in candidates:
-            return addr
-        raise non_virtual_ip.AddressNotFoundException()
-
-
-    def main() -> None:
-        if len(sys.argv) > 1:
-            api_vip = sys.argv[1]
-        else:
-            api_int_name = os.getenv('API_INT')
-            try:
-                sstream_tuple = socket.getaddrinfo(api_int_name, None)[0]
-                _, _, _, _, sockaddr = sstream_tuple
-                api_vip = sockaddr[0]
-                sys.stderr.write(f'Found {api_int_name} to resolve to {api_vip}\n')
-            except socket.gaierror:
-                sys.stderr.write(f'api-int VIP not provided and failed to resolve {api_int_name}\n')
-                sys.exit(1)
-        try:
-            first: non_virtual_ip.Address = first_candidate_addr(api_vip)
-            prefixless = first.cidr.split('/')[0]
-
-            # Kubelet
-            with open(KUBELET_WORKAROUND_PATH, 'w') as kwf:
-                print(f'[Service]\nEnvironment="KUBELET_NODE_IP={prefixless}"', file=kwf)
-
-            # CRI-O
-            crio_confd = pathlib.Path(CRIO_WORKAROUND_PATH).parent
-            crio_confd.mkdir(parents=True, exist_ok=True)
-            with open(CRIO_WORKAROUND_PATH, 'w') as cwf:
-                print(f'[Service]\nEnvironment="CONTAINER_STREAM_ADDRESS={prefixless}"', file=cwf)
-
-        except (non_virtual_ip.AddressNotFoundException, non_virtual_ip.SubnetNotFoundException):
-            sys.stderr.write('Failed to find suitable node ip')
-            sys.exit(1)
-
-
-    if __name__ == '__main__':
-        main()
+    #!/usr/bin/bash
+    podman run --rm \
+      --authfile /var/lib/kubelet/config.json \
+      --net=host \
+      --entrypoint=/usr/bin/nodeip-finder \
+      {{ .Images.baremetalRuntimeCfgImage }} \
+      ${@}
