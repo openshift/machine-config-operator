@@ -68,7 +68,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	cleanupFuncs = append(cleanupFuncs, createMCP(t, cs, poolName))
 
 	// create old mc to have something to verify we successfully rolled back
-	oldMCConfig := createMC(mcName, poolName)
+	oldMCConfig := createMCV3(mcName, poolName)
 	_, err := cs.MachineConfigs().Create(oldMCConfig)
 	require.Nil(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {

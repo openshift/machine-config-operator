@@ -480,7 +480,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	generated, err := generateRenderedMachineConfig(pool, configs, cc)
+	generated, err := generateRenderedMachineConfigV3(pool, configs, cc)
 	if err != nil {
 		return err
 	}
@@ -521,15 +521,15 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	return nil
 }
 
-// generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
-func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+// generateRenderedMachineConfigV2 takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
+func generateRenderedMachineConfigV2(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid
 	for _, config := range configs {
-		if err := ctrlcommon.ValidateMachineConfig(config.Spec); err != nil {
+		if err := ctrlcommon.ValidateMachineConfigV2(config.Spec); err != nil {
 			return nil, err
 		}
 	}
-	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig.Spec.OSImageURL)
+	merged, err := ctrlcommon.MergeMachineConfigsV2(configs, cconfig.Spec.OSImageURL)
 	if err != nil {
 		return nil, err
 	}
@@ -549,10 +549,38 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	return merged, nil
 }
 
-// RunBootstrap runs the render controller in bootstrap mode.
+// generateRenderedMachineConfigV3 takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
+func generateRenderedMachineConfigV3(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid
+	for _, config := range configs {
+		if err := ctrlcommon.ValidateMachineConfigV3(config.Spec); err != nil {
+			return nil, err
+		}
+	}
+	merged, err := ctrlcommon.MergeMachineConfigsV3(configs, cconfig.Spec.OSImageURL)
+	if err != nil {
+		return nil, err
+	}
+	hashedName, err := getMachineConfigHashedName(pool, merged)
+	if err != nil {
+		return nil, err
+	}
+	oref := metav1.NewControllerRef(pool, controllerKind)
+
+	merged.SetName(hashedName)
+	merged.SetOwnerReferences([]metav1.OwnerReference{*oref})
+	if merged.Annotations == nil {
+		merged.Annotations = map[string]string{}
+	}
+	merged.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
+
+	return merged, nil
+}
+
+// RunBootstrapV2 runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrapV2(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
@@ -563,7 +591,34 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		generated, err := generateRenderedMachineConfig(pool, pcs, cconfig)
+		generated, err := generateRenderedMachineConfigV2(pool, pcs, cconfig)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pool.Spec.Configuration.Name = generated.Name
+		pool.Status.Configuration.Name = generated.Name
+		opools = append(opools, pool)
+		oconfigs = append(oconfigs, generated)
+	}
+	return opools, oconfigs, nil
+}
+
+// RunBootstrapV3 runs the render controller in bootstrap mode.
+// For each pool, it matches the machineconfigs based on label selector and
+// returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
+func RunBootstrapV3(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+	var (
+		opools   []*mcfgv1.MachineConfigPool
+		oconfigs []*mcfgv1.MachineConfig
+	)
+	for _, pool := range pools {
+		pcs, err := getMachineConfigsForPool(pool, configs)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		generated, err := generateRenderedMachineConfigV3(pool, pcs, cconfig)
 		if err != nil {
 			return nil, nil, err
 		}

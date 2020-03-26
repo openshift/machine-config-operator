@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/vincent-petithory/dataurl"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -23,7 +23,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
-			dataURL, _ := dataurl.DecodeString(kubeletConfig.Contents.Source)
+			dataURL, _ := dataurl.DecodeString(*kubeletConfig.Contents.Source)
 			originalKubeConfig, _ := decodeKubeletConfig(dataURL.Data)
 			defaultFeatureGates, err := ctrl.generateFeatureMap(createNewDefaultFeatureGate())
 			if err != nil {
@@ -44,8 +44,8 @@ func TestFeaturesDefault(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfigV3(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []ignTypes.File{{}})
+			mcs2 := helpers.NewMachineConfigV3(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role/worker": ""}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)

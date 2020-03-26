@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -65,13 +65,13 @@ func TestUpdateOS(t *testing.T) {
 // TestReconcilable attempts to verify the conditions in which configs would and would not be
 // reconcilable. Welcome to the longest unittest you've ever read.
 func TestReconcilable(t *testing.T) {
-	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	oldIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	// oldConfig is the current config of the fake system
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	newIgnCfg := ctrlcommon.NewIgnConfig()
+	newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 
 	// Set improper version
-	newIgnCfg.Ignition.Version = "3.0.0"
+	newIgnCfg.Ignition.Version = "4.0.0"
 
 	// newConfig is the config that is being requested to apply to the system
 	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
@@ -79,34 +79,14 @@ func TestReconcilable(t *testing.T) {
 	_, isReconcilable := Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Ignition", isReconcilable)
 	//reset to proper Ignition version
-	newIgnCfg.Ignition.Version = igntypes.MaxVersion.String()
+	newIgnCfg.Ignition.Version = ignTypes.MaxVersion.String()
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Ignition", isReconcilable)
 
-	// Verify Networkd unit changes react as expected
-	oldIgnCfg.Networkd = igntypes.Networkd{}
-	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	newIgnCfg.Networkd = igntypes.Networkd{
-		Units: []igntypes.Networkdunit{
-			igntypes.Networkdunit{
-				Name: "test.network",
-			},
-		},
-	}
-	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "Networkd", isReconcilable)
-
-	// Match Networkd
-	oldIgnCfg.Networkd = newIgnCfg.Networkd
-	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "Networkd", isReconcilable)
-
 	// Verify Disk changes react as expected
-	oldIgnCfg.Storage.Disks = []igntypes.Disk{
-		igntypes.Disk{
+	oldIgnCfg.Storage.Disks = []ignTypes.Disk{
+		ignTypes.Disk{
 			Device: "/one",
 		},
 	}
@@ -122,10 +102,12 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Filesystems changes react as expected
 	oldFSPath := "/foo/bar"
-	oldIgnCfg.Storage.Filesystems = []igntypes.Filesystem{
-		igntypes.Filesystem{
-			Name: "user",
-			Path: &oldFSPath,
+	oldFSFormat := "ext4"
+	oldIgnCfg.Storage.Filesystems = []ignTypes.Filesystem{
+		ignTypes.Filesystem{
+			Device: "/dev/sda1",
+			Format: &oldFSFormat,
+			Path:   &oldFSPath,
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
@@ -139,8 +121,8 @@ func TestReconcilable(t *testing.T) {
 	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
-	oldIgnCfg.Storage.Raid = []igntypes.Raid{
-		igntypes.Raid{
+	oldIgnCfg.Storage.Raid = []ignTypes.Raid{
+		ignTypes.Raid{
 			Name:  "data",
 			Level: "stripe",
 		},
@@ -156,27 +138,27 @@ func TestReconcilable(t *testing.T) {
 	checkReconcilableResults(t, "Raid", isReconcilable)
 
 	// Verify Passwd Groups changes unsupported
-	oldIgnCfg = ctrlcommon.NewIgnConfig()
+	oldIgnCfg = ctrlcommon.NewIgnConfigSpecV3()
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	newIgnCfg = ctrlcommon.NewIgnConfig()
+	newIgnCfg = ctrlcommon.NewIgnConfigSpecV3()
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 
 	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "PasswdGroups", isReconcilable)
 
-	tempGroup := igntypes.PasswdGroup{}
+	tempGroup := ignTypes.PasswdGroup{}
 	tempGroup.Name = "testGroup"
-	newIgnCfg.Passwd.Groups = []igntypes.PasswdGroup{tempGroup}
+	newIgnCfg.Passwd.Groups = []ignTypes.PasswdGroup{tempGroup}
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
 }
 
 func TestMachineConfigDiff(t *testing.T) {
-	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	oldIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	oldConfig.ObjectMeta = metav1.ObjectMeta{Name: "oldconfig"}
-	newIgnCfg := ctrlcommon.NewIgnConfig()
+	newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	newConfig.ObjectMeta = metav1.ObjectMeta{Name: "newconfig"}
 	diff, err := NewMachineConfigDiff(oldConfig, newConfig)
@@ -198,21 +180,22 @@ func TestMachineConfigDiff(t *testing.T) {
 	assert.True(t, diff.IsEmpty())
 }
 
-func newTestIgnitionFile(i uint) igntypes.File {
+func newTestIgnitionFile(i uint) ignTypes.File {
 	mode := 0644
-	return igntypes.File{Node: igntypes.Node{Path: fmt.Sprintf("/etc/config%d", i), Filesystem: "root"},
-		FileEmbedded1: igntypes.FileEmbedded1{Contents: igntypes.FileContents{Source: fmt.Sprintf("data:,config%d", i)}, Mode: &mode}}
+	source := fmt.Sprintf("data:,config%d", i)
+	return ignTypes.File{Node: ignTypes.Node{Path: fmt.Sprintf("/etc/config%d", i)},
+		FileEmbedded1: ignTypes.FileEmbedded1{Contents: ignTypes.FileContents{Source: &source}, Mode: &mode}}
 }
 
-func newMachineConfigFromFiles(files []igntypes.File) *mcfgv1.MachineConfig {
-	newIgnCfg := ctrlcommon.NewIgnConfig()
+func newMachineConfigFromFiles(files []ignTypes.File) *mcfgv1.MachineConfig {
+	newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	newIgnCfg.Storage.Files = files
 	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	return newConfig
 }
 
 func TestReconcilableDiff(t *testing.T) {
-	var oldFiles []igntypes.File
+	var oldFiles []ignTypes.File
 	nOldFiles := uint(10)
 	for i := uint(0); i < nOldFiles; i++ {
 		oldFiles = append(oldFiles, newTestIgnitionFile(uint(i)))
@@ -246,7 +229,7 @@ func TestReconcilableDiff(t *testing.T) {
 }
 
 func TestKernelAguments(t *testing.T) {
-	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	oldIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	oldMcfg.Spec.KernelArguments = []string{"nosmt", "foo", "baz=test"}
 	tests := []struct {
@@ -283,7 +266,7 @@ func TestKernelAguments(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			newIgnCfg := ctrlcommon.NewIgnConfig()
+			newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 			newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 			newMcfg.Spec.KernelArguments = test.args
 			// Randomize the order of both old/new to sort out ordering issues.
@@ -327,41 +310,46 @@ func TestKernelAguments(t *testing.T) {
 
 func TestReconcilableSSH(t *testing.T) {
 	// Check that updating SSH Key of user core supported
-	oldIgnCfg := ctrlcommon.NewIgnConfig()
+	oldIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	tempUser1 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678", "abc"}}
-	newIgnCfg := ctrlcommon.NewIgnConfig()
-	newIgnCfg.Passwd.Users = []igntypes.PasswdUser{tempUser1}
+	tempUser1 := ignTypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{"5678", "abc"}}
+	newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
+	newIgnCfg.Passwd.Users = []ignTypes.PasswdUser{tempUser1}
 	newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg := Reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 
 	// 	Check that updating User with User that is not core is not supported
-	tempUser2 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"1234"}}
+	tempUser2 := ignTypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{"1234"}}
 	oldIgnCfg.Passwd.Users = append(oldIgnCfg.Passwd.Users, tempUser2)
 	oldMcfg = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	tempUser3 := igntypes.PasswdUser{Name: "another user", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}}
+	tempUser3 := ignTypes.PasswdUser{Name: "another user", SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{"5678"}}
 	newIgnCfg.Passwd.Users[0] = tempUser3
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
-	tempUser4 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
+	homeDirString := "somedir"
+	tempUser4 := ignTypes.PasswdUser{
+		Name:              "core",
+		SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{"5678"},
+		HomeDir:           &homeDirString,
+	}
 	newIgnCfg.Passwd.Users[0] = tempUser4
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot add a user or have len(Passwd.Users)> 1
-	tempUser5 := igntypes.PasswdUser{Name: "some user", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}}
+	tempUser5 := ignTypes.PasswdUser{Name: "some user", SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{"5678"}}
 	newIgnCfg.Passwd.Users = append(newIgnCfg.Passwd.Users, tempUser5)
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = Reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that user is not attempting to remove the only sshkey from core user
-	tempUser6 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{}}
+	tempUser6 := ignTypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{}}
 	newIgnCfg.Passwd.Users[0] = tempUser6
 	newIgnCfg.Passwd.Users = newIgnCfg.Passwd.Users[:len(newIgnCfg.Passwd.Users)-1]
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
@@ -398,9 +386,9 @@ func TestUpdateSSHKeys(t *testing.T) {
 		bootedOSImageURL:  "test",
 	}
 	// Set up machineconfigs that are identical except for SSH keys
-	tempUser := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"1234", "4567"}}
-	newIgnCfg := ctrlcommon.NewIgnConfig()
-	newIgnCfg.Passwd.Users = []igntypes.PasswdUser{tempUser}
+	tempUser := ignTypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{"1234", "4567"}}
+	newIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
+	newIgnCfg.Passwd.Users = []ignTypes.PasswdUser{tempUser}
 	err := d.updateSSHKeys(newIgnCfg.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
@@ -408,8 +396,8 @@ func TestUpdateSSHKeys(t *testing.T) {
 	}
 
 	// if Users is empty, nothing should happen and no error should ever be generated
-	newIgnCfg2 := ctrlcommon.NewIgnConfig()
-	newIgnCfg2.Passwd.Users = []igntypes.PasswdUser{}
+	newIgnCfg2 := ctrlcommon.NewIgnConfigSpecV3()
+	newIgnCfg2.Passwd.Users = []ignTypes.PasswdUser{}
 	err = d.updateSSHKeys(newIgnCfg2.Passwd.Users)
 	if err != nil {
 		t.Errorf("Expected no error. Got: %s", err)
@@ -419,16 +407,17 @@ func TestUpdateSSHKeys(t *testing.T) {
 // This test should fail until Ignition validation enabled.
 // Ignition validation does not permit writing files to relative paths.
 func TestInvalidIgnConfig(t *testing.T) {
-	oldIgnConfig := ctrlcommon.NewIgnConfig()
+	oldIgnConfig := ctrlcommon.NewIgnConfigSpecV3()
 	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnConfig)
 
 	// create file to write that contains an impermissable relative path
-	tempFileContents := igntypes.FileContents{Source: "data:,hello%20world%0A"}
+	source := "data:,hello%20world%0A"
+	tempFileContents := ignTypes.FileContents{Source: &source}
 	tempMode := 420
-	newIgnConfig := ctrlcommon.NewIgnConfig()
-	newIgnFile := igntypes.File{
-		Node:          igntypes.Node{Path: "home/core/test", Filesystem: "root"},
-		FileEmbedded1: igntypes.FileEmbedded1{Contents: tempFileContents, Mode: &tempMode},
+	newIgnConfig := ctrlcommon.NewIgnConfigSpecV3()
+	newIgnFile := ignTypes.File{
+		Node:          ignTypes.Node{Path: "home/core/test"},
+		FileEmbedded1: ignTypes.FileEmbedded1{Contents: tempFileContents, Mode: &tempMode},
 	}
 	newIgnConfig.Storage.Files = append(newIgnConfig.Storage.Files, newIgnFile)
 	newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnConfig)

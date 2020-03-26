@@ -1,12 +1,12 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/clarketm/json"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -27,11 +27,6 @@ const (
 	// need this is that on bootstrap + first install we don't have the MCD
 	// running and writing that file.
 	machineConfigContentPath = "/etc/mcs-machine-config-content.json"
-
-	// defaultFileSystem defines the default file system to be
-	// used for writing the ignition files created by the
-	// server.
-	defaultFileSystem = "root"
 )
 
 // kubeconfigFunc fetches the kubeconfig that needs to be served.
@@ -64,17 +59,18 @@ func getAppenders(currMachineConfig string, f kubeconfigFunc, osimageurl string)
 // machineConfigToRawIgnition converts a MachineConfig object into raw Ignition.
 func machineConfigToRawIgnition(mccfg *mcfgv1.MachineConfig) (*runtime.RawExtension, error) {
 	tmpcfg := mccfg.DeepCopy()
-	tmpIgnCfg := ctrlcommon.NewIgnConfig()
+	tmpIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 	rawTmpIgnCfg, err := json.Marshal(tmpIgnCfg)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
 	}
 	tmpcfg.Spec.Config.Raw = rawTmpIgnCfg
 	serialized, err := json.Marshal(tmpcfg)
+	serializedString := string(serialized)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling MachineConfig: %v", err)
 	}
-	err = appendFileToRawIgnition(&mccfg.Spec.Config, daemonconsts.MachineConfigEncapsulatedPath, string(serialized))
+	err = appendFileToRawIgnition(&mccfg.Spec.Config, daemonconsts.MachineConfigEncapsulatedPath, serializedString)
 	if err != nil {
 		return nil, fmt.Errorf("error appending file to raw Ignition config: %v", err)
 	}
@@ -96,7 +92,7 @@ func appendInitialPivot(rawExt *runtime.RawExtension, osimageurl string) error {
 	if err != nil {
 		return err
 	}
-	conf, report, err := ign.Parse(rawExt.Raw)
+	conf, report, err := ignConfigV3.Parse(rawExt.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to append initial pivot. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
 	}
@@ -104,19 +100,20 @@ func appendInitialPivot(rawExt *runtime.RawExtension, osimageurl string) error {
 	// https://github.com/openshift/machine-config-operator/pull/363#issuecomment-463397373
 	// "So one gotcha here is that Ignition will actually write `/run/pivot/image-pullspec` to the filesystem rather than the `/run` tmpfs"
 	if len(conf.Systemd.Units) == 0 {
-		conf.Systemd.Units = make([]igntypes.Unit, 0)
+		conf.Systemd.Units = make([]ignTypes.Unit, 0)
 	}
-	unit := igntypes.Unit{
-		Name:    "mcd-write-pivot-reboot.service",
-		Enabled: boolToPtr(true),
-		Contents: `[Unit]
+	pivotUnit := `[Unit]
 Before=pivot.service
 ConditionFirstBoot=true
 [Service]
 ExecStart=/bin/sh -c 'mkdir /run/pivot && touch /run/pivot/reboot-needed'
 [Install]
 WantedBy=multi-user.target
-`}
+`
+	unit := ignTypes.Unit{
+		Name:     "mcd-write-pivot-reboot.service",
+		Enabled:  boolToPtr(true),
+		Contents: &pivotUnit}
 	conf.Systemd.Units = append(conf.Systemd.Units, unit)
 	rawExt.Raw, err = json.Marshal(conf)
 	if err != nil {
@@ -177,25 +174,27 @@ func getNodeAnnotation(conf string) (string, error) {
 }
 
 func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents string) error {
-	conf, report, err := ign.Parse(rawExt.Raw)
+	conf, report, err := ignConfigV3.Parse(rawExt.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to append file. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
 	}
 	fileMode := int(420)
-	file := igntypes.File{
-		Node: igntypes.Node{
-			Filesystem: defaultFileSystem,
-			Path:       outPath,
+	overwrite := true
+	source := getEncodedContent(&contents)
+	file := ignTypes.File{
+		Node: ignTypes.Node{
+			Path:      outPath,
+			Overwrite: &overwrite,
 		},
-		FileEmbedded1: igntypes.FileEmbedded1{
-			Contents: igntypes.FileContents{
-				Source: getEncodedContent(contents),
+		FileEmbedded1: ignTypes.FileEmbedded1{
+			Contents: ignTypes.FileContents{
+				Source: &source,
 			},
 			Mode: &fileMode,
 		},
 	}
 	if len(conf.Storage.Files) == 0 {
-		conf.Storage.Files = make([]igntypes.File, 0)
+		conf.Storage.Files = make([]ignTypes.File, 0)
 	}
 	conf.Storage.Files = append(conf.Storage.Files, file)
 	rawExt.Raw, err = json.Marshal(conf)
@@ -205,8 +204,8 @@ func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents str
 	return nil
 }
 
-func getDecodedContent(inp string) (string, error) {
-	d, err := dataurl.DecodeString(inp)
+func getDecodedContent(inp *string) (string, error) {
+	d, err := dataurl.DecodeString(*inp)
 	if err != nil {
 		return "", err
 	}
@@ -214,9 +213,9 @@ func getDecodedContent(inp string) (string, error) {
 	return string(d.Data), nil
 }
 
-func getEncodedContent(inp string) string {
+func getEncodedContent(inp *string) string {
 	return (&url.URL{
 		Scheme: "data",
-		Opaque: "," + dataurl.Escape([]byte(inp)),
+		Opaque: "," + dataurl.Escape([]byte(*inp)),
 	}).String()
 }

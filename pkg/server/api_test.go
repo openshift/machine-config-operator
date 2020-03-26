@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -36,7 +36,7 @@ func TestAPIHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -50,14 +50,14 @@ func TestAPIHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, 15)
+				checkBodyLength(t, response, 15)
 			},
 		},
 		{
@@ -65,13 +65,13 @@ func TestAPIHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, 15)
 				checkBodyLength(t, response, 0)
 			},
 		},
@@ -80,7 +80,7 @@ func TestAPIHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -114,7 +114,7 @@ func TestHealthzHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -128,7 +128,7 @@ func TestHealthzHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -142,7 +142,7 @@ func TestHealthzHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -172,7 +172,7 @@ func TestDefaultHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -186,7 +186,7 @@ func TestDefaultHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -200,7 +200,7 @@ func TestDefaultHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -230,7 +230,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -244,14 +244,14 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, 15)
+				checkBodyLength(t, response, 15)
 			},
 		},
 		{
@@ -259,13 +259,13 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, 15)
 				checkBodyLength(t, response, 0)
 			},
 		},
@@ -274,7 +274,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -288,7 +288,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -302,7 +302,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -316,7 +316,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -330,7 +330,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -344,7 +344,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -358,7 +358,7 @@ func TestAPIServer(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(new(ignTypes.Config)),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {

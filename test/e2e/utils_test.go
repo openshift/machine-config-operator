@@ -152,9 +152,14 @@ func mcpNameToRole(mcpName string) string {
 	return fmt.Sprintf("node-role.kubernetes.io/%s", mcpName)
 }
 
-// createMC creates a machine config object with name and role
-func createMC(name, role string) *mcfgv1.MachineConfig {
-	return helpers.NewMachineConfig(name, mcLabelForRole(role), "", nil)
+// createMCV2 creates a machine config object with name and role
+func createMCV2(name, role string) *mcfgv1.MachineConfig {
+	return helpers.NewMachineConfigV2(name, mcLabelForRole(role), "", nil)
+}
+
+// createMCV3 creates a machine config object with name and role
+func createMCV3(name, role string) *mcfgv1.MachineConfig {
+	return helpers.NewMachineConfigV3(name, mcLabelForRole(role), "", nil)
 }
 
 // execCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node

@@ -1,9 +1,9 @@
 package helpers
 
 import (
-	"encoding/json"
-
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/clarketm/json"
+	ignTypes "github.com/coreos/ignition/config/v2_2/types"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_0/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,17 +22,51 @@ var (
 	InfraSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", "")
 )
 
-// NewMachineConfig returns a basic machine config with supplied labels, osurl & files added
-func NewMachineConfig(name string, labels map[string]string, osurl string, files []igntypes.File) *mcfgv1.MachineConfig {
+// NewMachineConfigV2 returns a basic machine config with supplied labels, osurl & files added
+func NewMachineConfigV2(name string, labels map[string]string, osurl string, files []ignTypes.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
 	}
 	rawIgnition := MarshalOrDie(
-		&igntypes.Config{
-			Ignition: igntypes.Ignition{
-				Version: igntypes.MaxVersion.String(),
+		&ignTypes.Config{
+			Ignition: ignTypes.Ignition{
+				Version: ignTypes.MaxVersion.String(),
 			},
-			Storage: igntypes.Storage{
+			Storage: ignTypes.Storage{
+				Files: files,
+			},
+		},
+	)
+
+	return &mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: mcfgv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: labels,
+			UID:    types.UID(utilrand.String(5)),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL: osurl,
+			Config: runtime.RawExtension{
+				Raw: rawIgnition,
+			},
+		},
+	}
+}
+
+// NewMachineConfigV3 returns a basic machine config with supplied labels, osurl & files added
+func NewMachineConfigV3(name string, labels map[string]string, osurl string, files []ignTypesV3.File) *mcfgv1.MachineConfig {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	rawIgnition, _ := json.Marshal(
+		&ignTypesV3.Config{
+			Ignition: ignTypesV3.Ignition{
+				Version: ignTypesV3.MaxVersion.String(),
+			},
+			Storage: ignTypesV3.Storage{
 				Files: files,
 			},
 		},

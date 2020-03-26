@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	yaml "github.com/ghodss/yaml"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -32,7 +32,7 @@ var (
 func TestStringDecode(t *testing.T) {
 	inp := "data:,Hello%2C%20world!"
 	exp := "Hello, world!"
-	dec, err := getDecodedContent(inp)
+	dec, err := getDecodedContent(&inp)
 	if err != nil {
 		t.Errorf("expected error to be nil, received: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestStringDecode(t *testing.T) {
 func TestStringEncode(t *testing.T) {
 	inp := "Hello, world!"
 	exp := "data:,Hello%2C%20world!"
-	enc := getEncodedContent(inp)
+	enc := getEncodedContent(&inp)
 	if exp != enc {
 		t.Errorf("string encode failed. exp: %s, got: %s", exp, enc)
 	}
@@ -57,7 +57,7 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	assert.Nil(t, err)
-	mcIgnCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	mcIgnCfg, _, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -65,7 +65,7 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 
 	origMc := mc.DeepCopy()
-	origIgnCfg, _, err := ign.Parse(origMc.Spec.Config.Raw)
+	origIgnCfg, _, err := ignConfigV3.Parse(origMc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -73,11 +73,11 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	if err != nil {
 		t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
 	}
-	ignCfg, _, err := ign.Parse(rawIgn.Raw)
+	ignCfg, _, err := ignConfigV3.Parse(rawIgn.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
-	mcIgnCfg, _, err = ign.Parse(mc.Spec.Config.Raw)
+	mcIgnCfg, _, err = ignConfigV3.Parse(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -153,11 +153,11 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// assert on the output.
-	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, _, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resCfg, _, err := ign.Parse(res.Raw)
+	resCfg, _, err := ignConfigV3.Parse(res.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,11 +249,11 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
 
-	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, _, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resCfg, _, err := ign.Parse(res.Raw)
+	resCfg, _, err := ignConfigV3.Parse(res.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {
 	return []byte("dummy-kubeconfig"), []byte("dummy-root-ca"), nil
 }
 
-func validateIgnitionFiles(t *testing.T, exp, got []igntypes.File) {
+func validateIgnitionFiles(t *testing.T, exp, got []ignTypes.File) {
 	expMap := createFileMap(exp)
 	gotMap := createFileMap(got)
 
@@ -303,7 +303,7 @@ func validateIgnitionFiles(t *testing.T, exp, got []igntypes.File) {
 
 }
 
-func validateIgnitionSystemd(t *testing.T, exp, got []igntypes.Unit) {
+func validateIgnitionSystemd(t *testing.T, exp, got []ignTypes.Unit) {
 	expMap := createUnitMap(exp)
 	gotMap := createUnitMap(got)
 
@@ -317,19 +317,18 @@ func validateIgnitionSystemd(t *testing.T, exp, got []igntypes.Unit) {
 	}
 }
 
-func createUnitMap(units []igntypes.Unit) map[string]igntypes.Unit {
-	m := make(map[string]igntypes.Unit)
+func createUnitMap(units []ignTypes.Unit) map[string]ignTypes.Unit {
+	m := make(map[string]ignTypes.Unit)
 	for i := range units {
 		m[units[i].Name] = units[i]
 	}
 	return m
 }
 
-func createFileMap(files []igntypes.File) map[string]igntypes.File {
-	m := make(map[string]igntypes.File)
+func createFileMap(files []ignTypes.File) map[string]ignTypes.File {
+	m := make(map[string]ignTypes.File)
 	for i := range files {
-		file := path.Join(files[i].Filesystem, files[i].Path)
-		m[file] = files[i]
+		m[files[i].Path] = files[i]
 	}
 	return m
 }

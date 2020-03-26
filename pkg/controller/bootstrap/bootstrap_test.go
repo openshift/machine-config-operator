@@ -15,8 +15,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 )
 
@@ -150,8 +150,8 @@ func TestBootstrapRun(t *testing.T) {
 			require.NoError(t, err)
 
 			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy
-			var registriesConfig *igntypes.File
-			ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+			var registriesConfig *ignTypesV3.File
+			ignCfg, _, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
 			require.NoError(t, err)
 			for i := range ignCfg.Storage.Files {
 				f := &ignCfg.Storage.Files[i]
@@ -160,7 +160,7 @@ func TestBootstrapRun(t *testing.T) {
 				}
 			}
 			require.NotNil(t, registriesConfig)
-			dataURL, err := dataurl.DecodeString(registriesConfig.Contents.Source)
+			dataURL, err := dataurl.DecodeString(*registriesConfig.Contents.Source)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
 			// maintained in pkg/controller/continer-runtime-config.

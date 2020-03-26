@@ -1,11 +1,11 @@
 package kubeletconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
+	"github.com/clarketm/json"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
@@ -93,7 +93,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		isNotFound := errors.IsNotFound(err)
 		if isNotFound {
-			ignConfig := ctrlcommon.NewIgnConfig()
+			ignConfig := ctrlcommon.NewIgnConfigSpecV3()
 			mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
 				return err
@@ -104,7 +104,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
-		dataURL, err := dataurl.DecodeString(originalKubeletIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
 		if err != nil {
 			return err
 		}

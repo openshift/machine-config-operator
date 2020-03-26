@@ -19,8 +19,9 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign "github.com/coreos/ignition/v2/config/v3_0"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -471,7 +472,7 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 		return err
 	}
 	switch c := configi.(type) {
-	case igntypes.Config:
+	case ignTypes.Config:
 		glog.V(2).Info("Daemon running directly from Ignition")
 		return dn.runOnceFromIgnition(c)
 	case mcfgv1.MachineConfig:
@@ -1102,7 +1103,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
-func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
+func (dn *Daemon) runOnceFromIgnition(ignConfig ignTypes.Config) error {
 	// Execute update without hitting the cluster
 	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
 		return err
@@ -1224,7 +1225,7 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 		return false
 	}
 	// And the rest of the disk state
-	currentIgnConfig, report, err := ign.Parse(currentConfig.Spec.Config.Raw)
+	currentIgnConfig, report, err := ignConfigV3.Parse(currentConfig.Spec.Config.Raw)
 	if err != nil {
 		glog.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
 		return false
@@ -1309,21 +1310,21 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 
 // checkUnits validates the contents of all the units in the
 // target config and returns true if they match.
-func checkUnits(units []igntypes.Unit) bool {
+func checkUnits(units []ignTypes.Unit) bool {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if status := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); !status {
+			if status := checkFileContentsAndMode(path, []byte(*u.Dropins[j].Contents), defaultFilePermissions); !status {
 				return false
 			}
 		}
 
-		if u.Contents == "" {
+		if *u.Contents == "" {
 			continue
 		}
 
 		path := filepath.Join(pathSystemd, u.Name)
-		if u.Mask {
+		if u.Mask != nil && *u.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
 				glog.Errorf("state validation: error while evaluation symlink for path: %q, err: %v", path, err)
@@ -1334,7 +1335,7 @@ func checkUnits(units []igntypes.Unit) bool {
 				return false
 			}
 		}
-		if status := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); !status {
+		if status := checkFileContentsAndMode(path, []byte(*u.Contents), defaultFilePermissions); !status {
 			return false
 		}
 
@@ -1344,7 +1345,7 @@ func checkUnits(units []igntypes.Unit) bool {
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func checkFiles(files []igntypes.File) bool {
+func checkFiles(files []ignTypes.File) bool {
 	checkedFiles := make(map[string]bool)
 	for i := len(files) - 1; i >= 0; i-- {
 		f := files[i]
@@ -1356,7 +1357,7 @@ func checkFiles(files []igntypes.File) bool {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := dataurl.DecodeString(f.Contents.Source)
+		contents, err := dataurl.DecodeString(*f.Contents.Source)
 		if err != nil {
 			glog.Errorf("couldn't parse file: %v", err)
 			return false

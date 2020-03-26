@@ -25,8 +25,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -352,7 +352,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 
-	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, _, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
 	require.NoError(t, err)
 	if verifyPolicyJSON {
 		// If there is a change to the policy.json file then there will be 2 files
@@ -365,7 +365,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 		regfile = ignCfg.Storage.Files[1]
 	}
 	assert.Equal(t, registriesConfigPath, regfile.Node.Path)
-	registriesConf, err := dataurl.DecodeString(regfile.Contents.Source)
+	registriesConf, err := dataurl.DecodeString(*regfile.Contents.Source)
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf.Data))
 
@@ -380,7 +380,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			policyfile = ignCfg.Storage.Files[0]
 		}
 		assert.Equal(t, policyConfigPath, policyfile.Node.Path)
-		policyJSON, err := dataurl.DecodeString(policyfile.Contents.Source)
+		policyJSON, err := dataurl.DecodeString(*policyfile.Contents.Source)
 		require.NoError(t, err)
 		assert.Equal(t, string(expectedPolicyJSON), string(policyJSON.Data))
 	}
@@ -402,7 +402,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfigV3(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -435,7 +435,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfigV3(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -511,8 +511,8 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfigV3(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignTypes.File{{}})
+			mcs2 := helpers.NewMachineConfigV3(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -547,8 +547,8 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfigV3(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignTypes.File{{}})
+			mcs2 := helpers.NewMachineConfigV3(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ignTypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -631,8 +631,8 @@ func TestICSPUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfigV3(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []ignTypes.File{{}})
+			mcs2 := helpers.NewMachineConfigV3(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ignTypes.File{{}})
 			icsp := newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{Source: "built-in-source.example.com", Mirrors: []string{"built-in-mirror.example.com"}},
 			})

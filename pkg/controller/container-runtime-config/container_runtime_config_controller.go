@@ -1,12 +1,12 @@
 package containerruntimeconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/clarketm/json"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -377,7 +377,7 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, *igntypes.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ignTypes.File, *ignTypes.File, *ignTypes.File, *ignTypes.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
@@ -386,7 +386,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	}
 	// Find generated storage.config, and crio.config
 	var (
-		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON *igntypes.File
+		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON *ignTypes.File
 		errStorage, errCRIO, errRegistries, errPolicy                               error
 	)
 	// Find storage config
@@ -545,7 +545,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				}
 			}
 			if isNotFound {
-				tempIgnCfg := ctrlcommon.NewIgnConfig()
+				tempIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 				if err != nil {
 					return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
@@ -591,8 +591,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
-func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
-	dataURL, err := dataurl.DecodeString(origFile.Contents.Source)
+func (ctrl *Controller) mergeConfigChanges(origFile *ignTypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
+	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
 	}
@@ -695,7 +695,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				}
 			}
 			if isNotFound {
-				tempIgnCfg := ctrlcommon.NewIgnConfig()
+				tempIgnCfg := ctrlcommon.NewIgnConfigSpecV3()
 				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 				if err != nil {
 					return fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
@@ -733,7 +733,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*igntypes.Config, error) {
+	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ignTypes.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -747,7 +747,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	}
 
 	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
-		dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalRegistriesIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
 		}
@@ -757,7 +757,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		}
 	}
 	if blockedRegs != nil || allowedRegs != nil {
-		dataURL, err := dataurl.DecodeString(originalPolicyIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalPolicyIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original policy json: %v", err)
 		}

@@ -128,7 +128,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, rconfigs...)
 
-	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
+	fpools, gconfigs, err := render.RunBootstrapV3(pools, configs, cconfig)
 	if err != nil {
 		return err
 	}

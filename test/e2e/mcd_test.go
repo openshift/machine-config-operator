@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -58,28 +58,28 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabelForRole("worker")
 }
 
-func createIgnFile(path, content, fs string, mode int) igntypes.File {
-	return igntypes.File{
-		FileEmbedded1: igntypes.FileEmbedded1{
-			Contents: igntypes.FileContents{
-				Source: content,
+func createIgnFile(path, content, fs string, mode int) ignTypes.File {
+	rootStr := "root"
+	return ignTypes.File{
+		FileEmbedded1: ignTypes.FileEmbedded1{
+			Contents: ignTypes.FileContents{
+				Source: &content,
 			},
 			Mode: &mode,
 		},
-		Node: igntypes.Node{
-			Filesystem: fs,
-			Path:       path,
-			User: &igntypes.NodeUser{
-				Name: "root",
+		Node: ignTypes.Node{
+			Path: path,
+			User: ignTypes.NodeUser{
+				Name: &rootStr,
 			},
 		},
 	}
 }
 
 func createMCToAddFileForRole(name, role, filename, data, fs string) *mcfgv1.MachineConfig {
-	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
+	mcadd := createMCV3(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
-	ignConfig := ctrlcommon.NewIgnConfig()
+	ignConfig := ctrlcommon.NewIgnConfigSpecV3()
 	ignFile := createIgnFile(filename, "data:,"+data, fs, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
@@ -151,14 +151,14 @@ func TestUpdateSSH(t *testing.T) {
 		Labels: mcLabelForWorkers(),
 	}
 	// create a new MC that adds a valid user & ssh keys
-	tempUser := igntypes.PasswdUser{
+	tempUser := ignTypes.PasswdUser{
 		Name: "core",
-		SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{
+		SSHAuthorizedKeys: []ignTypes.SSHAuthorizedKey{
 			"1234_test",
 			"abc_test",
 		},
 	}
-	ignConfig := ctrlcommon.NewIgnConfig()
+	ignConfig := ctrlcommon.NewIgnConfigSpecV3()
 	ignConfig.Passwd.Users = append(ignConfig.Passwd.Users, tempUser)
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig
@@ -197,7 +197,7 @@ func TestKernelArguments(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfigSpecV3()),
 			},
 			KernelArguments: []string{"nosmt", "foo=bar"},
 		},
@@ -240,7 +240,7 @@ func TestKernelType(t *testing.T) {
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfigSpecV3()),
 			},
 			KernelType: "realtime",
 		},
@@ -298,7 +298,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, _, err := ign.Parse(mcadd.Spec.Config.Raw)
+	ignCfg, _, err := ignConfigV3.Parse(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
@@ -347,23 +347,11 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, _, err := ign.Parse(mcadd.Spec.Config.Raw)
-	require.Nil(t, err, "failed to parse ignition config")
-	ignCfg.Networkd = igntypes.Networkd{
-		Units: []igntypes.Networkdunit{
-			{
-				Name:     "test.network",
-				Contents: "test contents",
-			},
-		},
-	}
-	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
-	mcadd.Spec.Config.Raw = rawIgnCfg
 
 	workerOldMc := getMcName(t, cs, "worker")
 
 	// create the dummy MC now
-	_, err = cs.MachineConfigs().Create(mcadd)
+	_, err := cs.MachineConfigs().Create(mcadd)
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}

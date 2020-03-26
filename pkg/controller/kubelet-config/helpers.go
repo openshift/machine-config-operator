@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -18,23 +18,25 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 )
 
-func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
+func createNewKubeletIgnition(jsonConfig []byte) ignTypes.Config {
 	mode := 0644
+	overwrite := true
 	du := dataurl.New(jsonConfig, "text/plain")
 	du.Encoding = dataurl.EncodingASCII
-	tempFile := igntypes.File{
-		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/etc/kubernetes/kubelet.conf",
+	duString := du.String()
+	tempFile := ignTypes.File{
+		Node: ignTypes.Node{
+			Path:      "/etc/kubernetes/kubelet.conf",
+			Overwrite: &overwrite,
 		},
-		FileEmbedded1: igntypes.FileEmbedded1{
+		FileEmbedded1: ignTypes.FileEmbedded1{
 			Mode: &mode,
-			Contents: igntypes.FileContents{
-				Source: du.String(),
+			Contents: ignTypes.FileContents{
+				Source: &duString,
 			},
 		},
 	}
-	tempIgnConfig := ctrlcommon.NewIgnConfig()
+	tempIgnConfig := ctrlcommon.NewIgnConfigSpecV3()
 	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, tempFile)
 	return tempIgnConfig
 }
@@ -49,10 +51,10 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	}
 }
 
-func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ignTypes.File, error) {
+	ignCfg, report, err := ignConfigV3.Parse(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("findKubeletConfig: parsing Ignition config failed with error: %v\nReport: %v", err, report)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == "/etc/kubernetes/kubelet.conf" {
