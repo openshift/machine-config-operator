@@ -107,4 +107,4 @@ Dockerfile.rhel7: Dockerfile Makefile
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operato
 test-e2e:
-	go test -mod=vendor -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+	go test -mod=vendor -timeout 150m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/

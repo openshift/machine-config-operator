@@ -425,6 +425,45 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	}
 }
 
+func TestFullyDeleteMCShippedFiles(t *testing.T) {
+	cs := framework.NewClientSet("")
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		// this fails if the file is on the node, just a pre-req sanity check to run this test
+		_, err := execCmdOnNodeWithErr(t, cs, node, "test", "!", "-e", "/rootfs/etc/something")
+		require.Nil(t, err)
+	}
+	workerOldMcFirst := getMcName(t, cs, "worker")
+	mcHostFileFirst := createMCToAddFile("modify-host-file-first", "/etc/something", "mco-test", "root")
+	_, err = cs.MachineConfigs().Create(mcHostFileFirst)
+	require.Nil(t, err)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcHostFileFirst.Name)
+	require.Nil(t, err)
+	require.Nil(t, waitForPoolComplete(t, cs, "worker", renderedConfig))
+	workerOldMcSecond := getMcName(t, cs, "worker")
+	mcHostFileSecond := createMCToAddFile("modify-host-file-second", "/etc/something", "mco-test-2", "root")
+	_, err = cs.MachineConfigs().Create(mcHostFileSecond)
+	require.Nil(t, err)
+	renderedConfig, err = waitForRenderedConfig(t, cs, "worker", mcHostFileSecond.Name)
+	require.Nil(t, err)
+	require.Nil(t, waitForPoolComplete(t, cs, "worker", renderedConfig))
+	// now delete the MCs file, which must result in the file disappearing from the system
+	require.Nil(t, cs.MachineConfigs().Delete(mcHostFileSecond.Name, &metav1.DeleteOptions{}))
+	require.Nil(t, waitForPoolComplete(t, cs, "worker", workerOldMcSecond))
+	require.Nil(t, cs.MachineConfigs().Delete(mcHostFileFirst.Name, &metav1.DeleteOptions{}))
+	require.Nil(t, waitForPoolComplete(t, cs, "worker", workerOldMcFirst))
+	nodes, err = getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMcFirst)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		// this fails if the file is on the node
+		_, err := execCmdOnNodeWithErr(t, cs, node, "test", "!", "-e", "/rootfs/etc/something")
+		require.Nil(t, err)
+	}
+}
+
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
 

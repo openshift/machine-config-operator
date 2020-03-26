@@ -165,6 +165,12 @@ func createMC(name, role string) *mcfgv1.MachineConfig {
 // execCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, args ...string) string {
+	out, err := execCmdOnNodeWithErr(t, cs, node, args...)
+	require.Nil(t, err, "failed to exec cmd %v on node %s", args, node.Name)
+	return string(out)
+}
+
+func execCmdOnNodeWithErr(t *testing.T, cs *framework.ClientSet, node corev1.Node, args ...string) (string, error) {
 	mcd, err := mcdForNode(cs, &node)
 	require.Nil(t, err)
 	mcdName := mcd.ObjectMeta.Name
@@ -177,6 +183,6 @@ func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, args
 	cmd = append(cmd, args...)
 
 	b, err := exec.Command(entryPoint, cmd...).CombinedOutput()
-	require.Nil(t, err, "failed to exec cmd %v on node %s", args, node.Name)
-	return string(b)
+	return string(b), err
 }
+
