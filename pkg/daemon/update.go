@@ -434,7 +434,7 @@ func (d *MachineConfigDiff) IsEmpty() bool {
 // config currently.
 func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
 	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
-	// First check if this is a generally valid Ignition Config with version 3.1.0-experimental
+	// First check if this is a generally valid Ignition config with a supported version
 	oldIgn, report, err := ignConfigV3.Parse(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing old Ignition config failed: %v\nReport: %v", err, report)
