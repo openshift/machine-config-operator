@@ -10,9 +10,8 @@ import (
 	ign "github.com/coreos/ignition/config/v2_2"
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
 	validate "github.com/coreos/ignition/config/validate"
-	ignConfigV3 "github.com/coreos/ignition/v2/config"
-	ignV3 "github.com/coreos/ignition/v2/config/v3_1_experimental"
-	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	errors "github.com/pkg/errors"
@@ -116,7 +115,7 @@ func MergeMachineConfigsV3(configs []*mcfgv1.MachineConfig, osImageURL string) (
 		if err != nil {
 			return nil, errors.Errorf("MergeMachineConfigsV3: parsing Ignition config %d failed with error: %v\nReport: %v", idx, err, report)
 		}
-		internalIgn = ignV3.Merge(internalIgn, updateIgn)
+		internalIgn = ignConfigV3.Merge(internalIgn, updateIgn)
 	}
 	outIgnRaw, err := json.Marshal(&internalIgn)
 	if err != nil {

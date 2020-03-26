@@ -14,8 +14,7 @@ import (
 	"github.com/Masterminds/sprig"
 	"github.com/clarketm/json"
 	fcct_base_0_1 "github.com/coreos/fcct/base/v0_1"
-	ignConfigV3 "github.com/coreos/ignition/v2/config"
-	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -327,21 +326,9 @@ func transpileToIgn(files, units []string) (*ignTypes.Config, error) {
 		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
 	}
 
-	ignCfgV3_0, tset, err := ctCfg.ToIgn3_0()
+	ignCfg, tSet, err := ctCfg.ToIgn3_0()
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert config to Ignition config %s\nTranslation set: %v", err, tset)
-	}
-
-	// Hack to convert spec 3.0 config to spec 3.1.0-experimental for internal consumption
-	// TODO lorbus: Remove this once a stable spec 3.1 transpiler is available
-	ignCfgV3_0.Ignition.Version = "3.1.0-experimental"
-	rawIgnCfg, err := json.Marshal(ignCfgV3_0)
-	if err != nil {
-		return nil, fmt.Errorf("SHOULD NEVER HAPPEN: failed to marshal Ignition spec v3 config %s", err)
-	}
-	ignCfg, rep, err := ignConfigV3.Parse(rawIgnCfg)
-	if rep.IsFatal() || err != nil {
-		return nil, fmt.Errorf("SHOULD NEVER HAPPEN: failed to parse Ignition spec v3 config: %s\nreport: %v", err, rep)
+		return nil, fmt.Errorf("failed to convert config to Ignition config %s\nTranslation set: %v", err, tSet)
 	}
 
 	return &ignCfg, nil

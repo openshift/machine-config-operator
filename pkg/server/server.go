@@ -5,8 +5,8 @@ import (
 	"net/url"
 
 	"github.com/clarketm/json"
-	ignConfigV3 "github.com/coreos/ignition/v2/config"
-	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"

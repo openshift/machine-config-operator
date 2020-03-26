@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
