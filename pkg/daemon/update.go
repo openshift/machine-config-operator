@@ -602,9 +602,17 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
-			if _, err := os.Stat(origFileName(f.Path)); err == nil {
-				if err := os.Rename(origFileName(f.Path), f.Path); err != nil {
-					return err
+			if _, err := os.Stat(noOrigFileName(f.Path)); err == nil {
+				if err := os.Remove(noOrigFileName(f.Path)); err != nil {
+					return errors.Wrapf(err, "deleting no orig file %q: %v", noOrigFileName(f.Path), err)
+				}
+				glog.V(2).Infof("Removing file %q completely", f.Path)
+			} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
+				if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(f.Path), f.Path).CombinedOutput(); err != nil {
+					return errors.Wrapf(err, "restoring %q from orig file %q: %s", f.Path, origFileName(f.Path), string(out))
+				}
+				if err := os.Remove(origFileName(f.Path)); err != nil {
+					return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 				}
 				glog.V(2).Infof("Restored file %q", f.Path)
 				continue
@@ -817,15 +825,31 @@ func origParentDir() string {
 	return filepath.Join("/etc", "machine-config-daemon", "orig")
 }
 
+func noOrigParentDir() string {
+	return filepath.Join("/etc", "machine-config-daemon", "noorig")
+}
+
 func origFileName(fpath string) string {
 	return filepath.Join(origParentDir(), fpath+".mcdorig")
 }
 
+func noOrigFileName(fpath string) string {
+	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
+}
+
 func createOrigFile(fpath string) error {
-	if _, err := os.Stat(fpath); err != nil {
-		// the file isn't there, no need to back it up
-		// we could check ENOENT only maybe?
+	if _, err := os.Stat(noOrigFileName(fpath)); err == nil {
+		// we already created the no orig file for this default file
 		return nil
+	}
+	if _, err := os.Stat(fpath); err != nil {
+		// create a noorig file that tells the MCD that the file wasn't present on disk in RHCOS
+		// so it can just remove it when deleting stale data, as opposed as restoring a file
+		// that was shipped _with_ RHCOS (e.g. a default chrony config).
+		if err := os.MkdirAll(filepath.Dir(noOrigFileName(fpath)), 0755); err != nil {
+			return errors.Wrapf(err, "creating no orig parent dir: %v", err)
+		}
+		return writeFileAtomicallyWithDefaults(noOrigFileName(fpath), nil)
 	}
 	if _, err := os.Stat(origFileName(fpath)); err == nil {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
