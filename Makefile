@@ -47,7 +47,7 @@ test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
 test-unit:
-	CGO_ENABLED=0 go test -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
+	CGO_ENABLED=0 go test -mod=vendor -tags=$(GOTAGS) -count=1 -v ./cmd/... ./pkg/... ./lib/...
 
 # Run the code generation tasks.
 # Example:
@@ -107,4 +107,4 @@ Dockerfile.rhel7: Dockerfile Makefile
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operato
 test-e2e:
-	go test -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+	go test -mod=vendor -timeout 120m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
