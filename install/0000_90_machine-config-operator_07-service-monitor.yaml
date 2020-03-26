@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/name: kube-rbac-proxy
+    app.kubernetes.io/version: v0.4.1
+  name: crio
+  namespace: openshift-node
+spec:
+  endpoints:
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    interval: 30s
+    port: https
+    scheme: https
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/ca-bundle.crt
+      insecureSkipVerify: false
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+    - openshift-node
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-rbac-proxy
+      app.kubernetes.io/version: v0.4.1

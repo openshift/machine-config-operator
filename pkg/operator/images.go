@@ -37,4 +37,5 @@ type ControllerConfigImages struct {
 	MdnsPublisher       string `json:"mdnsPublisherImage"`
 	Haproxy             string `json:"haproxyImage"`
 	BaremetalRuntimeCfg string `json:"baremetalRuntimeCfgImage"`
+	KubeRBACProxy       string `json:"kubeRBACProxy"`
 }

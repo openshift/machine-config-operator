@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app.kubernetes.io/name: kube-rbac-proxy
+    app.kubernetes.io/version: v0.4.1
+  name: crio
+  namespace: openshift-node
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-rbac-proxy
+      app.kubernetes.io/version: v0.4.1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-rbac-proxy
+        app.kubernetes.io/version: v0.4.1
+    spec:
+      containers:
+      - args:
+        - --logtostderr
+        - --secure-listen-address=[$(IP)]:9999
+        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+        - --upstream=http://127.0.0.1:9537/
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
+        env:
+        - name: IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        image: quay.io/openshift/origin-kube-rbac-proxy:4.0.0
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 9999
+          hostPort: 9999
+          name: https
+        resources:
+          requests:
+            cpu: 1m
+            memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: crio-tls
+          readOnly: false
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      priorityClassName: system-cluster-critical
+      securityContext: {}
+      serviceAccountName: crio
+      tolerations:
+      - operator: Exists
+      volumes:
+      - name: crio-tls
+        secret:
+          secretName: crio-tls
