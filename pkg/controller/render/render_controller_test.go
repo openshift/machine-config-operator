@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ignConfigV3 "github.com/coreos/ignition/v2/config"
-	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"

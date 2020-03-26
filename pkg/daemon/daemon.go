@@ -19,9 +19,9 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ignConfigV3 "github.com/coreos/ignition/v2/config"
-	ign "github.com/coreos/ignition/v2/config/v3_1_experimental"
-	ignTypes "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ign "github.com/coreos/ignition/v2/config/v3_0"
+	ignConfigV3 "github.com/coreos/ignition/v2/config/v3_0"
+	ignTypes "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"

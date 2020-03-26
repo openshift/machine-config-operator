@@ -5,7 +5,7 @@ import (
 
 	"github.com/clarketm/json"
 	ignTypes "github.com/coreos/ignition/config/v2_2/types"
-	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_1_experimental/types"
+	ignTypesV3 "github.com/coreos/ignition/v2/config/v3_0/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
