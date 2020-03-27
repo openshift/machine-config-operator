@@ -13,7 +13,7 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/local/bin/nodeip-finder {{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
+  ExecStart=/usr/local/bin/machine-config-daemon node-ip set {{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
 
   [Install]
   WantedBy=multi-user.target
