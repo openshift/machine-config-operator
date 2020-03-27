@@ -1,0 +1,14 @@
+filesystem: "root"
+mode: 0755
+path: "/usr/local/bin/vsphere-hostname.sh"
+contents:
+  inline: |
+    #!/usr/bin/env bash
+    set -e
+
+    if [ $(hostname -s) = "localhost" ]; then
+      if hostname=$(/bin/vmtoolsd --cmd 'info-get guestinfo.hostname'); then
+          /usr/bin/hostnamectl --transient --static set-hostname ${hostname}
+      fi
+    fi
+

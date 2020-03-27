@@ -1,0 +1,16 @@
+name: "vsphere-hostname.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=vSphere hostname
+  After=vmtoolsd.service
+  Before=kubelet.service
+
+  [Service]
+  ExecStart=/usr/local/bin/vsphere-hostname.sh
+  Restart=on-failure
+  RestartSec=15
+
+  [Install]
+  WantedBy=multi-user.target
+
