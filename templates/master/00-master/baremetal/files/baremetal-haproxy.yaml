@@ -17,9 +17,9 @@ contents:
       - name: resource-dir
         hostPath:
           path: "/etc/kubernetes/static-pod-resources/haproxy"
-      - name: kubeconfig
+      - name: kubeconfigvarlib
         hostPath:
-          path: "/etc/kubernetes/kubeconfig"
+          path: "/var/lib/kubelet"
       - name: run-dir
         empty-dir: {}
       - name: conf-dir
@@ -111,7 +111,7 @@ contents:
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - monitor
-        - "/etc/kubernetes/kubeconfig"
+        - "/var/lib/kubelet/kubeconfig"
         - "/config/haproxy.cfg.tmpl"
         - "/etc/haproxy/haproxy.cfg"
         - "--api-vip"
@@ -129,8 +129,8 @@ contents:
           mountPath: "/config"
         - name: chroot-host
           mountPath: "/host"
-        - name: kubeconfig
-          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       hostNetwork: true
