@@ -9,7 +9,7 @@ contents:
     case "$STATUS" in
         up|down|dhcp4-change|dhcp6-change)
         logger -s "NM resolv-prepender triggered by ${1} ${2}."
-        NAMESERVER_IP=$(/usr/local/bin/non_virtual_ip \
+        NAMESERVER_IP=$(/usr/local/bin/machine-config-daemon node-ip show \
             "{{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.OpenStack.NodeDNSIP}}" \
             "{{.Infra.Status.PlatformStatus.OpenStack.IngressIP}}")
