@@ -80,12 +80,11 @@ contents:
         livenessProbe:
           exec:
             command:
-            - /bin/sh
+            - /bin/bash
             - -c
             - |
-              [[ -s /etc/keepalived/keepalived.conf ]] || \
               kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
-          initialDelaySeconds: 10
+          initialDelaySeconds: 20
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: keepalived-monitor
