@@ -790,6 +790,11 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		newFileSet[f.Path] = struct{}{}
 	}
 
+	operatingSystem, err := getHostRunningOS()
+	if err != nil {
+		return errors.Wrapf(err, "checking operating system")
+	}
+
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
 			if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
@@ -798,14 +803,15 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 				}
 				glog.V(2).Infof("Removing file %q completely", f.Path)
 			} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
-				// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc
-				// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a
-				// MachineConfig file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
+				// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
+				// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
+				// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
 				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err != nil {
 					if err := os.Remove(origFileName(f.Path)); err != nil {
 						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 					}
-				} else if _, err := os.Stat("/usr" + f.Path); strings.HasPrefix(f.Path, "/etc") && os.IsNotExist(err) {
+				} else if _, err := os.Stat("/usr" + f.Path); strings.HasPrefix(f.Path, "/etc") && os.IsNotExist(err) &&
+					(operatingSystem == machineConfigDaemonOSRHCOS) {
 					if err := os.Remove(origFileName(f.Path)); err != nil {
 						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 					}
