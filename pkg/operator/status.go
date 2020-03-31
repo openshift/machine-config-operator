@@ -163,6 +163,27 @@ const (
 	asExpectedReason = "AsExpected"
 )
 
+func (optr *Operator) clearDegradedStatus(task string) error {
+	co, err := optr.fetchClusterOperator()
+	if err != nil {
+		return err
+	}
+	if co == nil {
+		return nil
+	}
+	if cov1helpers.IsStatusConditionFalse(co.Status.Conditions, configv1.OperatorDegraded) {
+		return nil
+	}
+	degradedStatusCondition := cov1helpers.FindStatusCondition(co.Status.Conditions, configv1.OperatorDegraded)
+	if degradedStatusCondition == nil {
+		return nil
+	}
+	if degradedStatusCondition.Reason != task+"Failed" {
+		return nil
+	}
+	return optr.syncDegradedStatus(syncError{})
+}
+
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
 func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 	co, err := optr.fetchClusterOperator()
