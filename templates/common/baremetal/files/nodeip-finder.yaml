@@ -9,6 +9,8 @@ contents:
 
     For kubelet, a systemd environment file with a KUBELET_NODE_IP setting
     For CRI-O it drops a config file in /etc/crio/crio.conf.d"""
+    import argparse
+    import ipaddress
     from importlib import util as iutil
     from importlib import machinery as imachinery
     from types import ModuleType
@@ -16,6 +18,7 @@ contents:
     import pathlib
     import socket
     import sys
+    import time
 
     loader = imachinery.SourceFileLoader(
         'non_virtual_ip',
@@ -42,36 +45,65 @@ contents:
         raise non_virtual_ip.AddressNotFoundException()
 
 
-    def main() -> None:
-        if len(sys.argv) > 1:
-            api_vip = sys.argv[1]
-        else:
-            api_int_name = os.getenv('API_INT')
+    class IPAction(argparse.Action):
+        def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace, values, option_string: str=None):
+            print('Processing CustomAction for {}'.format(self.dest))
+            print('  parser = {}'.format(id(parser)))
+            print('  values = {!r}'.format(values))
+            print('  option_string = {!r}'.format(option_string))
+
+            # Do some arbitrary processing of the input values
+            if values is None:
+                raise argparse.ArgumentError(self, 'Not provided nor found from Environment')
+            if isinstance(values, list):
+                target = values[0]
+            else:
+                target = values
+
             try:
-                sstream_tuple = socket.getaddrinfo(api_int_name, None)[0]
-                _, _, _, _, sockaddr = sstream_tuple
-                api_vip = sockaddr[0]
-                sys.stderr.write(f'Found {api_int_name} to resolve to {api_vip}\n')
-            except socket.gaierror:
-                sys.stderr.write(f'api-int VIP not provided and failed to resolve {api_int_name}\n')
-                sys.exit(1)
-        try:
-            first: non_virtual_ip.Address = first_candidate_addr(api_vip)
-            prefixless = first.cidr.split('/')[0]
+                ipaddress.ip_address(target)
+                setattr(namespace, self.dest, values)
+            except ValueError:  # Possibly got the name, try to resolve
+                try:
+                    sstream_tuple = socket.getaddrinfo(target, None)[0]
+                    _, _, _, _, sockaddr = sstream_tuple
+                    resolved = sockaddr[0]
+                    setattr(namespace, self.dest, resolved)
+                    sys.stderr.write(f'Found {target} resolves to {resolved}\n')
+                except socket.gaierror:
+                    raise argparse.ArgumentError(
+                        self, f'IP not provided and failed to resolve {target}')
 
-            # Kubelet
-            with open(KUBELET_WORKAROUND_PATH, 'w') as kwf:
-                print(f'[Service]\nEnvironment="KUBELET_NODE_IP={prefixless}"', file=kwf)
+    def main() -> None:
+        parser = argparse.ArgumentParser()
+        parser.add_argument('target', nargs='?', action=IPAction, default=os.getenv('API_INT'), help='Target IP address to find a local address that directly routes to it. If not provided checks API_INT Environment variable')
+        parser.add_argument('-r', '--retry-on-failure', action='store_true', dest='retry')
+        args = parser.parse_args()
+        while True:
+            try:
+                first: non_virtual_ip.Address = first_candidate_addr(args.target)
+                prefixless = first.cidr.split('/')[0]
+                break
+            except (non_virtual_ip.AddressNotFoundException, non_virtual_ip.SubnetNotFoundException):
+                sys.stderr.write('Failed to find suitable node ip. ')
+                if args.retry:
+                    sys.stderr.write('Retrying...\n')
+                    time.sleep(1)
+                    continue
+                else:
+                    sys.stderr.write('Exiting\n')
+                    sys.exit(1)
 
-            # CRI-O
-            crio_confd = pathlib.Path(CRIO_WORKAROUND_PATH).parent
-            crio_confd.mkdir(parents=True, exist_ok=True)
-            with open(CRIO_WORKAROUND_PATH, 'w') as cwf:
-                print(f'[Service]\nEnvironment="CONTAINER_STREAM_ADDRESS={prefixless}"', file=cwf)
+        # Kubelet
+        with open(KUBELET_WORKAROUND_PATH, 'w') as kwf:
+            print(f'[Service]\nEnvironment="KUBELET_NODE_IP={prefixless}"', file=kwf)
 
-        except (non_virtual_ip.AddressNotFoundException, non_virtual_ip.SubnetNotFoundException):
-            sys.stderr.write('Failed to find suitable node ip')
-            sys.exit(1)
+        # CRI-O
+        crio_confd = pathlib.Path(CRIO_WORKAROUND_PATH).parent
+        crio_confd.mkdir(parents=True, exist_ok=True)
+        with open(CRIO_WORKAROUND_PATH, 'w') as cwf:
+            print(f'[Service]\nEnvironment="CONTAINER_STREAM_ADDRESS={prefixless}"', file=cwf)
+
 
 
     if __name__ == '__main__':
