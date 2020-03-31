@@ -61,13 +61,11 @@ version_file = "{{ .VersionFile }}"
 # Path to AF_LOCAL socket on which CRI-O will listen.
 listen = "{{ .Listen }}"
 
-# Host IP considered as the primary IP to use by CRI-O for things such as host network IP.
-host_ip = "{{ .HostIP }}"
-
 # IP address on which the stream server will listen.
 stream_address = "{{ .StreamAddress }}"
 
-# The port on which the stream server will listen.
+# The port on which the stream server will listen. If the port is set to "0", then
+# CRI-O will allocate a random free port number.
 stream_port = "{{ .StreamPort }}"
 
 # Enable encrypted TLS transport of the stream server.
@@ -111,6 +109,10 @@ default_runtime = "{{ .DefaultRuntime }}"
 # If true, the runtime will not use pivot_root, but instead use MS_MOVE.
 no_pivot = {{ .NoPivot }}
 
+# decryption_keys_path is the path where the keys required for
+# image decryption are stored. This option supports live configuration reload.
+decryption_keys_path = "{{ .DecryptionKeysPath }}"
+
 # Path to the conmon binary, used for monitoring the OCI runtime.
 # Will be searched for using $PATH if empty.
 conmon = "{{ .Conmon }}"
@@ -128,11 +130,14 @@ selinux = {{ .SELinux }}
 
 # Path to the seccomp.json profile which is used as the default seccomp profile
 # for the runtime. If not specified, then the internal default seccomp profile
-# will be used.
+# will be used. This option supports live configuration reload.
 seccomp_profile = "{{ .SeccompProfile }}"
 
 # Used to change the name of the default AppArmor profile of CRI-O. The default
-# profile name is "crio-default-" followed by the version string of CRI-O.
+# profile name is "crio-default". This profile only takes effect if the user
+# does not specify a profile via the Kubernetes Pod's metadata annotation. If
+# the profile is set to "unconfined", then this equals to disabling AppArmor.
+# This option supports live configuration reload.
 apparmor_profile = "{{ .ApparmorProfile }}"
 
 # Cgroup management implementation used for the runtime.
@@ -142,28 +147,29 @@ cgroup_manager = "{{ .CgroupManager }}"
 # only the capabilities defined in the containers json file by the user/kube
 # will be added.
 default_capabilities = [
-{{ range $capability := .DefaultCapabilities}}{{ printf "\t%q, \n" $capability}}{{ end }}]
+{{ range $capability := .DefaultCapabilities}}{{ printf "\t%q,\n" $capability}}{{ end }}]
 
 # List of default sysctls. If it is empty or commented out, only the sysctls
 # defined in the container json file by the user/kube will be added.
 default_sysctls = [
-{{ range $sysctl := .DefaultSysctls}}{{ printf "\t%q, \n" $sysctl}}{{ end }}]
+{{ range $sysctl := .DefaultSysctls}}{{ printf "\t%q,\n" $sysctl}}{{ end }}]
 
 # List of additional devices. specified as
 # "<device-on-host>:<device-on-container>:<permissions>", for example: "--device=/dev/sdc:/dev/xvdc:rwm".
 #If it is empty or commented out, only the devices
 # defined in the container json file by the user/kube will be added.
 additional_devices = [
-{{ range $device := .AdditionalDevices}}{{ printf "\t%q, \n" $device}}{{ end }}]
+{{ range $device := .AdditionalDevices}}{{ printf "\t%q,\n" $device}}{{ end }}]
 
-# Path to OCI hooks directories for automatically executed hooks.
+# Path to OCI hooks directories for automatically executed hooks. If one of the
+# directories does not exist, then CRI-O will automatically skip them.
 hooks_dir = [
-{{ range $hooksDir := .HooksDir }}{{ printf "\t%q, \n" $hooksDir}}{{ end }}]
+{{ range $hooksDir := .HooksDir }}{{ printf "\t%q,\n" $hooksDir}}{{ end }}]
 
 # List of default mounts for each container. **Deprecated:** this option will
 # be removed in future versions in favor of default_mounts_file.
 default_mounts = [
-{{ range $mount := .DefaultMounts }}{{ printf "\t%q, \n" $mount }}{{ end }}]
+{{ range $mount := .DefaultMounts }}{{ printf "\t%q,\n" $mount }}{{ end }}]
 
 # Path to the file specifying the defaults mounts for each container. The
 # format of the config is /SRC:/DST, one mount per line. Notice that CRI-O reads
@@ -205,9 +211,13 @@ bind_mount_prefix = ""
 read_only = {{ .ReadOnly }}
 
 # Changes the verbosity of the logs based on the level it is set to. Options
-# are fatal, panic, error, warn, info, and debug. This option supports live
-# configuration reload.
+# are fatal, panic, error, warn, info, debug and trace. This option supports
+# live configuration reload.
 log_level = "{{ .LogLevel }}"
+
+# Filter the log messages by the provided regular expression.
+# This option supports live configuration reload.
+log_filter = "{{ .LogFilter }}"
 
 # The UID mappings for the user namespace of each container. A range is
 # specified in the form containerUID:HostUID:Size. Multiple ranges must be
@@ -220,12 +230,23 @@ uid_mappings = "{{ .UIDMappings }}"
 gid_mappings = "{{ .GIDMappings }}"
 
 # The minimal amount of time in seconds to wait before issuing a timeout
-# regarding the proper termination of the container.
+# regarding the proper termination of the container. The lowest possible
+# value is 30s, whereas lower values are not considered by CRI-O.
 ctr_stop_timeout = {{ .CtrStopTimeout }}
 
-# ManageNetworkNSLifecycle determines whether we pin and remove network namespace
-# and manage its lifecycle.
-manage_network_ns_lifecycle = {{ .ManageNetworkNSLifecycle }}
+# **DEPRECATED** this option is being replaced by manage_ns_lifecycle, which is described below.
+# manage_network_ns_lifecycle = {{ .ManageNSLifecycle }}
+
+# manage_ns_lifecycle determines whether we pin and remove namespaces
+# and manage their lifecycle
+manage_ns_lifecycle = {{ .ManageNSLifecycle }}
+
+# The directory where the state of the managed namespaces gets tracked.
+# Only used when manage_ns_lifecycle is true.
+namespaces_dir = "{{ .NamespacesDir }}"
+
+# pinns_path is the path to find the pinns binary, which is needed to manage namespace lifecycle
+pinns_path = "{{ .PinnsPath }}"
 
 # The "crio.runtime.runtimes" table defines a list of OCI compatible runtimes.
 # The runtime to use is picked based on the runtime_handler provided by the CRI.
@@ -327,6 +348,10 @@ image_volumes = "{{ .ImageVolumes }}"
 # The crio.network table containers settings pertaining to the management of
 # CNI plugins.
 [crio.network]
+
+# The default CNI network name to be selected. If not set or "", then
+# CRI-O will pick-up the first one found in network_dir.
+# cni_default_network = "{{ .CNIDefaultNetwork }}"
 
 # Path to the directory where CNI configuration files are located.
 network_dir = "{{ .NetworkDir }}"

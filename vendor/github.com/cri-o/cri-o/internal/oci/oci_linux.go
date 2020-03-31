@@ -3,17 +3,20 @@
 package oci
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/containers/libpod/pkg/cgroups"
 	"github.com/cri-o/cri-o/utils"
-	"github.com/opencontainers/runc/libcontainer"
+	"github.com/opencontainers/runc/libcontainer/cgroups/systemd"
 	rspec "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
@@ -83,45 +86,53 @@ func newPipe() (parent, child *os.File, err error) {
 	return os.NewFile(uintptr(fds[1]), "parent"), os.NewFile(uintptr(fds[0]), "child"), nil
 }
 
-func loadFactory(root string) (libcontainer.Factory, error) {
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return nil, err
+func (r *runtimeOCI) containerStats(ctr *Container, cgroup string) (stats *ContainerStats, err error) {
+	// this correction has to be made because the libpod cgroups package can't find a
+	// systemd cgroup that isn't converted to a fully qualified cgroup path
+	if r.config.CgroupManager == SystemdCgroupsManager {
+		cgroup, err = systemd.ExpandSlice(cgroup)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error expanding systemd slice to get container %s stats", ctr.ID())
+		}
 	}
-	cgroupManager := libcontainer.Cgroupfs
-	return libcontainer.New(abs, cgroupManager, libcontainer.CriuPath(""))
-}
 
-// libcontainerStats gets the stats for the container with the given id from runc/libcontainer
-func (r *runtimeOCI) libcontainerStats(ctr *Container) (*libcontainer.Stats, error) {
-	factory, err := loadFactory(r.root)
+	cg, err := cgroups.Load(cgroup)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "unable to load cgroup at %s", cgroup)
 	}
-	container, err := factory.Load(ctr.ID())
-	if err != nil {
-		return nil, err
-	}
-	return container.Stats()
-}
 
-func (r *runtimeOCI) containerStats(ctr *Container) (*ContainerStats, error) {
-	libcontainerStats, err := r.libcontainerStats(ctr)
+	cgroupStats, err := cg.Stat()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to obtain cgroup stats")
 	}
-	cgroupStats := libcontainerStats.CgroupStats
-	stats := new(ContainerStats)
+
+	stats = &ContainerStats{}
 	stats.Container = ctr.ID()
-	stats.CPUNano = cgroupStats.CpuStats.CpuUsage.TotalUsage
+	stats.CPUNano = cgroupStats.CPU.Usage.Total
 	stats.SystemNano = time.Now().UnixNano()
-	stats.CPU = calculateCPUPercent(libcontainerStats)
-	stats.MemUsage = cgroupStats.MemoryStats.Usage.Usage
-	stats.MemLimit = getMemLimit(cgroupStats.MemoryStats.Usage.Limit)
+	stats.CPU = calculateCPUPercent(cgroupStats)
+	stats.MemUsage = cgroupStats.Memory.Usage.Usage
+	stats.MemLimit = getMemLimit(cgroupStats.Memory.Usage.Limit)
 	stats.MemPerc = float64(stats.MemUsage) / float64(stats.MemLimit)
-	stats.PIDs = cgroupStats.PidsStats.Current
-	stats.BlockInput, stats.BlockOutput = calculateBlockIO(libcontainerStats)
-	stats.NetInput, stats.NetOutput = getContainerNetIO(libcontainerStats)
+	stats.PIDs = cgroupStats.Pids.Current
+	stats.BlockInput, stats.BlockOutput = calculateBlockIO(cgroupStats)
+
+	if ctr.state != nil {
+		netNsPath := fmt.Sprintf("/proc/%d/ns/net", ctr.state.Pid)
+		stats.NetInput, stats.NetOutput = getContainerNetIO(netNsPath)
+	}
+
+	totalInactiveFile, err := getTotalInactiveFile()
+	if err != nil { // nolint: gocritic
+		logrus.Warnf("error in memory working set stats retrieval: %v", err)
+	} else if stats.MemUsage > totalInactiveFile {
+		stats.WorkingSetBytes = stats.MemUsage - totalInactiveFile
+	} else {
+		logrus.Debugf(
+			"unable to account working set stats: total_inactive_file (%d) > memory usage (%d)",
+			totalInactiveFile, stats.MemUsage,
+		)
+	}
 
 	return stats, nil
 }
@@ -174,4 +185,41 @@ func metricsToCtrStats(c *Container, m *cgroups.Metrics) *ContainerStats {
 		BlockOutput: blockOutput,
 		PIDs:        pids,
 	}
+}
+
+// getTotalInactiveFile returns the value if `total_inactive_file` as integer
+// from `/sys/fs/cgroup/memory/memory.stat`. It returns an error if the file is
+// not parsable.
+func getTotalInactiveFile() (uint64, error) {
+	// no cgroupv2 support right now
+	if isV2, err := cgroups.IsCgroup2UnifiedMode(); err == nil || isV2 {
+		return 0, nil
+	}
+
+	const memoryStat = "/sys/fs/cgroup/memory/memory.stat"
+	const totalInactiveFilePrefix = "total_inactive_file "
+	f, err := os.Open(memoryStat)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if strings.Contains(scanner.Text(), totalInactiveFilePrefix) {
+			val, err := strconv.Atoi(
+				strings.TrimPrefix(scanner.Text(), totalInactiveFilePrefix),
+			)
+			if err != nil {
+				return 0, errors.Wrap(err, "unable to parse total inactive file value")
+			}
+			return uint64(val), nil
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return 0, errors.Errorf("%q not found in %v", totalInactiveFilePrefix, memoryStat)
 }

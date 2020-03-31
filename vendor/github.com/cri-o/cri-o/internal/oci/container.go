@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -12,18 +13,17 @@ import (
 
 	"github.com/containers/libpod/pkg/cgroups"
 	"github.com/containers/storage/pkg/idtools"
-	"github.com/docker/docker/pkg/signal"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/fields"
 	pb "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"k8s.io/kubernetes/pkg/kubelet/types"
 )
 
-const (
-	defaultStopSignal    = "TERM"
-	defaultStopSignalInt = 15
-)
+const defaultStopSignalInt = 15
+
+var defaultStopSignal = strconv.Itoa(defaultStopSignalInt)
 
 // Container represents a runtime container.
 type Container struct {
@@ -33,7 +33,6 @@ type Container struct {
 	logPath        string
 	image          string
 	sandbox        string
-	netns          string
 	runtimeHandler string
 	// this is the /var/run/storage/... directory, erased on reboot
 	bundlePath string
@@ -79,7 +78,7 @@ type ContainerState struct {
 }
 
 // NewContainer creates a container object.
-func NewContainer(id, name, bundlePath, logPath, netns string, labels, crioAnnotations, annotations map[string]string, image, imageName, imageRef string, metadata *pb.ContainerMetadata, sandbox string, terminal, stdin, stdinOnce, privileged bool, runtimeHandler, dir string, created time.Time, stopSignal string) (*Container, error) {
+func NewContainer(id, name, bundlePath, logPath string, labels, crioAnnotations, annotations map[string]string, image, imageName, imageRef string, metadata *pb.ContainerMetadata, sandbox string, terminal, stdin, stdinOnce, privileged bool, runtimeHandler, dir string, created time.Time, stopSignal string) (*Container, error) {
 	state := &ContainerState{}
 	state.Created = created
 	c := &Container{
@@ -89,7 +88,6 @@ func NewContainer(id, name, bundlePath, logPath, netns string, labels, crioAnnot
 		logPath:         logPath,
 		labels:          labels,
 		sandbox:         sandbox,
-		netns:           netns,
 		terminal:        terminal,
 		stdin:           stdin,
 		stdinOnce:       stdinOnce,
@@ -130,12 +128,13 @@ func (c *Container) GetStopSignal() string {
 	if c.stopSignal == "" {
 		return defaultStopSignal
 	}
-	cleanSignal := strings.TrimPrefix(strings.ToUpper(c.stopSignal), "SIG")
-	_, ok := signal.SignalMap[cleanSignal]
-	if !ok {
+	signal := unix.SignalNum(strings.ToUpper(c.stopSignal))
+	if signal == 0 {
 		return defaultStopSignal
 	}
-	return cleanSignal
+	// return the stop signal in the form of its int converted to a string
+	// i.e stop signal 34 is returned as "34" to avoid back and forth conversion
+	return strconv.Itoa(int(signal))
 }
 
 // StopSignal returns the container's own stop signal configured from
@@ -144,12 +143,12 @@ func (c *Container) StopSignal() syscall.Signal {
 	if c.stopSignal == "" {
 		return defaultStopSignalInt
 	}
-	cleanSignal := strings.TrimPrefix(strings.ToUpper(c.stopSignal), "SIG")
-	sig, ok := signal.SignalMap[cleanSignal]
-	if !ok {
+
+	signal := unix.SignalNum(strings.ToUpper(c.stopSignal))
+	if signal == 0 {
 		return defaultStopSignalInt
 	}
-	return sig
+	return signal
 }
 
 // FromDisk restores container's state from disk
@@ -181,6 +180,9 @@ func (c *Container) Name() string {
 
 // ID returns the id of the container.
 func (c *Container) ID() string {
+	if c == nil {
+		return ""
+	}
 	return c.id
 }
 
@@ -260,19 +262,6 @@ func (c *Container) Dir() string {
 	return c.dir
 }
 
-// NetNsPath returns the path to the network namespace of the container.
-func (c *Container) NetNsPath() (string, error) {
-	if c.state == nil {
-		return "", fmt.Errorf("container state is not populated")
-	}
-
-	if c.netns == "" {
-		return fmt.Sprintf("/proc/%d/ns/net", c.state.Pid), nil
-	}
-
-	return c.netns, nil
-}
-
 // Metadata returns the metadata of the container.
 func (c *Container) Metadata() *pb.ContainerMetadata {
 	return c.metadata
@@ -298,7 +287,6 @@ func (c *Container) AddVolume(v ContainerVolume) {
 // Volumes returns the list of container volumes.
 func (c *Container) Volumes() []ContainerVolume {
 	return c.volumes
-
 }
 
 // SetMountPoint sets the container mount point
@@ -350,4 +338,8 @@ func (c *Container) Description() string {
 // StdinOnce returns whether stdin once is set for the container.
 func (c *Container) StdinOnce() bool {
 	return c.stdinOnce
+}
+
+func (c *Container) exitFilePath() string {
+	return filepath.Join(c.dir, "exit")
 }

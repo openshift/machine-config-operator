@@ -167,7 +167,7 @@ func (r *runtimeVM) startRuntimeDaemon(c *Container) error {
 	args = append(args, "start")
 
 	// Modify the runtime path so that it complies with v2 shim API
-	newRuntimePath := strings.Replace(r.path, "-", ".", -1) // nolint: gocritic
+	newRuntimePath := strings.ReplaceAll(r.path, "-", ".")
 
 	// Setup default namespace
 	r.ctx = namespaces.WithNamespace(r.ctx, namespaces.Default)
@@ -206,7 +206,7 @@ func (r *runtimeVM) startRuntimeDaemon(c *Container) error {
 	// Start the server
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errors.Wrapf(err, "%s", out)
+		return errors.Wrap(err, string(out))
 	}
 
 	// Retrieve the address from the output
@@ -245,13 +245,13 @@ func (r *runtimeVM) StartContainer(c *Container) error {
 	// happens, the container status is retrieved to be updated.
 	var err error
 	go func() {
-		_, _, err = r.wait(r.ctx, c.ID(), "")
+		_, err = r.wait(r.ctx, c.ID(), "")
 		if err == nil {
 			err = r.UpdateContainerStatus(c)
 		}
 	}()
 
-	return errors.Wrapf(err, "start container")
+	return errors.Wrap(err, "start container")
 }
 
 // ExecContainer prepares a streaming endpoint to execute a command in the container.
@@ -286,7 +286,7 @@ func (r *runtimeVM) ExecSyncContainer(c *Container, command []string, timeout in
 	if err != nil {
 		return nil, &ExecSyncError{
 			ExitCode: -1,
-			Err:      errors.Wrapf(err, "ExecSyncContainer failed"),
+			Err:      errors.Wrap(err, "ExecSyncContainer failed"),
 		}
 	}
 
@@ -298,7 +298,6 @@ func (r *runtimeVM) ExecSyncContainer(c *Container, command []string, timeout in
 }
 
 func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int64, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) (exitCode int32, err error) {
-
 	logrus.Debug("runtimeVM.execContainer() start")
 	defer logrus.Debug("runtimeVM.execContainer() end")
 
@@ -309,7 +308,7 @@ func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int6
 	// Generate a unique execID
 	execID, err := utils.GenerateID()
 	if err != nil {
-		return -1, errors.Wrapf(err, "exec container")
+		return -1, errors.Wrap(err, "exec container")
 	}
 
 	// Create IO fifos
@@ -390,7 +389,7 @@ func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int6
 	execCh := make(chan error)
 	go func() {
 		// Wait for the process to terminate
-		exitCode, _, err = r.wait(ctx, c.ID(), execID)
+		exitCode, err = r.wait(ctx, c.ID(), execID)
 		if err != nil {
 			execCh <- err
 		}
@@ -462,7 +461,7 @@ func (r *runtimeVM) StopContainer(ctx context.Context, c *Container, timeout int
 
 	stopCh := make(chan error)
 	go func() {
-		if _, _, err := r.wait(ctx, c.ID(), ""); err != nil {
+		if _, err := r.wait(ctx, c.ID(), ""); err != nil {
 			stopCh <- errdefs.FromGRPC(err)
 		}
 
@@ -623,7 +622,7 @@ func (r *runtimeVM) UnpauseContainer(c *Container) error {
 }
 
 // ContainerStats provides statistics of a container.
-func (r *runtimeVM) ContainerStats(c *Container) (*ContainerStats, error) {
+func (r *runtimeVM) ContainerStats(c *Container, _ string) (*ContainerStats, error) {
 	logrus.Debug("runtimeVM.ContainerStats() start")
 	defer logrus.Debug("runtimeVM.ContainerStats() end")
 
@@ -730,16 +729,16 @@ func (r *runtimeVM) start(ctx context.Context, ctrID, execID string) error {
 	return nil
 }
 
-func (r *runtimeVM) wait(ctx context.Context, ctrID, execID string) (int32, time.Time, error) {
+func (r *runtimeVM) wait(ctx context.Context, ctrID, execID string) (int32, error) {
 	resp, err := r.task.Wait(ctx, &task.WaitRequest{
 		ID:     ctrID,
 		ExecID: execID,
 	})
 	if err != nil {
-		return -1, time.Time{}, errdefs.FromGRPC(err)
+		return -1, errdefs.FromGRPC(err)
 	}
 
-	return int32(resp.ExitStatus), resp.ExitedAt, nil
+	return int32(resp.ExitStatus), nil
 }
 
 func (r *runtimeVM) kill(ctx context.Context, ctrID, execID string, signal syscall.Signal, all bool) error {

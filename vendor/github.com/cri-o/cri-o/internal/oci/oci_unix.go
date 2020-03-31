@@ -8,10 +8,9 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/docker/docker/pkg/pools"
-	"github.com/docker/docker/pkg/term"
+	"github.com/containers/libpod/pkg/cgroups"
+	"github.com/containers/storage/pkg/pools"
 	"github.com/kr/pty"
-	"github.com/opencontainers/runc/libcontainer"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"k8s.io/client-go/tools/remotecommand"
@@ -35,9 +34,8 @@ func getExitCode(err error) int32 {
 	return -1
 }
 
-func calculateCPUPercent(stats *libcontainer.Stats) float64 {
-	return genericCalculateCPUPercent(stats.CgroupStats.CpuStats.CpuUsage.TotalUsage,
-		stats.CgroupStats.CpuStats.CpuUsage.PercpuUsage)
+func calculateCPUPercent(stats *cgroups.Metrics) float64 {
+	return genericCalculateCPUPercent(stats.CPU.Usage.Total, stats.CPU.Usage.PerCPU)
 }
 
 func genericCalculateCPUPercent(cpuTotal uint64, perCPU []uint64) float64 {
@@ -55,7 +53,8 @@ func genericCalculateCPUPercent(cpuTotal uint64, perCPU []uint64) float64 {
 }
 
 func setSize(fd uintptr, size remotecommand.TerminalSize) error {
-	return term.SetWinsize(fd, &term.Winsize{Height: size.Height, Width: size.Width})
+	winsize := &unix.Winsize{Row: size.Height, Col: size.Width}
+	return unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, winsize)
 }
 
 func ttyCmd(execCmd *exec.Cmd, stdin io.Reader, stdout io.WriteCloser, resize <-chan remotecommand.TerminalSize) error {

@@ -2,18 +2,41 @@ package version
 
 import (
 	"bufio"
+	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/blang/semver"
 	"github.com/google/renameio"
 	"github.com/pkg/errors"
+
+	"github.com/cri-o/cri-o/utils"
 )
 
-// Version is the version of the build.
-const Version = "1.16.2"
+// Variables injected during build-time
+var (
+	version      string // Version is the version of the build.
+	gitCommit    string // sha1 from git, output of $(git rev-parse HEAD)
+	gitTreeState string // state of git tree, either "clean" or "dirty"
+	buildDate    string // build date in ISO8601 format, output of $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+)
+
+type Info struct {
+	Version      string `json:"version,omitempty"`
+	GitCommit    string `json:"gitCommit,omitempty"`
+	GitTreeState string `json:"gitTreeState,omitempty"`
+	BuildDate    string `json:"buildDate,omitempty"`
+	GoVersion    string `json:"goVersion,omitempty"`
+	Compiler     string `json:"compiler,omitempty"`
+	Platform     string `json:"platform,omitempty"`
+	Linkmode     string `json:"linkmode,omitempty"`
+}
 
 // ShouldCrioWipe opens the version file, and parses it and the version string
 // If there is a parsing error, then crio should wipe, and the error is returned.
@@ -21,7 +44,7 @@ const Version = "1.16.2"
 // and returns whether the major and minor versions are the same.
 // If they differ, then crio should wipe.
 func ShouldCrioWipe(versionFileName string) (bool, error) {
-	return shouldCrioWipe(versionFileName, Version)
+	return shouldCrioWipe(versionFileName, version)
 }
 
 // shouldCrioWipe is an internal function for testing purposes
@@ -58,8 +81,8 @@ func shouldCrioWipe(versionFileName, versionString string) (bool, error) {
 // file is the location of the old version file
 // gitCommit is the current git commit version. It will be added to the file
 // to aid in debugging, but will not be used to compare versions
-func WriteVersionFile(file, gitCommit string) error {
-	return writeVersionFile(file, gitCommit, Version)
+func WriteVersionFile(file string) error {
+	return writeVersionFile(file, gitCommit, version)
 }
 
 // writeVersionFile is an internal function for testing purposes
@@ -69,7 +92,7 @@ func writeVersionFile(file, gitCommit, version string) error {
 	if err != nil {
 		return err
 	}
-	json, err := current.MarshalJSON()
+	j, err := current.MarshalJSON()
 	// Sanity check-this should never happen
 	if err != nil {
 		return err
@@ -80,7 +103,7 @@ func writeVersionFile(file, gitCommit, version string) error {
 		return err
 	}
 
-	return renameio.WriteFile(file, json, 0644)
+	return renameio.WriteFile(file, j, 0644)
 }
 
 // parseVersionConstant parses the Version variable above
@@ -102,4 +125,59 @@ func parseVersionConstant(versionString, gitCommit string) (*semver.Version, err
 		}
 	}
 	return &v, nil
+}
+
+func Get() *Info {
+	return &Info{
+		Version:      version,
+		GitCommit:    gitCommit,
+		GitTreeState: gitTreeState,
+		BuildDate:    buildDate,
+		GoVersion:    runtime.Version(),
+		Compiler:     runtime.Compiler,
+		Platform:     fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+		Linkmode:     getLinkmode(),
+	}
+}
+
+// String returns the string representation of the version info
+func (i *Info) String() string {
+	b := strings.Builder{}
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+
+	v := reflect.ValueOf(*i)
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		value := v.FieldByName(field.Name).String()
+		fmt.Fprintf(w, "%s:\t%s", field.Name, value)
+		if i+1 < t.NumField() {
+			fmt.Fprintf(w, "\n")
+		}
+	}
+
+	w.Flush()
+	return b.String()
+}
+
+func getLinkmode() string {
+	output, err := utils.ExecCmd("ldd", os.Args[0])
+	if err != nil {
+		return fmt.Sprintf("unknown: %v", err)
+	}
+
+	if strings.Contains(output, "not a dynamic executable") {
+		return "static"
+	}
+
+	return "dynamic"
+}
+
+// JSONString returns the JSON representation of the version info
+func (i *Info) JSONString() (string, error) {
+	b, err := json.MarshalIndent(i, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
