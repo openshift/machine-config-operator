@@ -1,0 +1,10 @@
+filesystem: "root"
+mode: 0744
+path: "/etc/NetworkManager/dispatcher.d/pre-up.d/disable-tx-checksum-offload.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # This is a workaround for BZ#1794714
+    if [[ -e /var/lib/cni/bin/openshift-sdn ]]; then
+      nmcli con modify ${CONNECTION_UUID} ethtool.feature-tx-checksum-ip-generic off;
+    fi
