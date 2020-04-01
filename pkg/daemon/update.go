@@ -159,9 +159,11 @@ func (dn *Daemon) drain() error {
 		if err == wait.ErrWaitTimeout {
 			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
 			MCDDrainErr.WithLabelValues(failTime, failMsg).SetToCurrentTime()
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
 			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
 		}
 		MCDDrainErr.WithLabelValues(failTime, err.Error()).SetToCurrentTime()
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", err.Error())
 		return errors.Wrap(err, "failed to drain node")
 	}
 
