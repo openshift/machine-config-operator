@@ -21,7 +21,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type LegacyManager struct {
+type Manager struct {
 	mu      sync.Mutex
 	Cgroups *configs.Cgroup
 	Paths   map[string]string
@@ -49,7 +49,7 @@ func (s subsystemSet) Get(name string) (subsystem, error) {
 	return nil, errSubsystemDoesNotExist
 }
 
-var legacySubsystems = subsystemSet{
+var subsystems = subsystemSet{
 	&fs.CpusetGroup{},
 	&fs.DevicesGroup{},
 	&fs.MemoryGroup{},
@@ -119,23 +119,15 @@ func NewSystemdCgroupsManager() (func(config *configs.Cgroup, paths map[string]s
 	if !isRunningSystemd() {
 		return nil, fmt.Errorf("systemd not running on this host, can't use systemd as a cgroups.Manager")
 	}
-	if cgroups.IsCgroup2UnifiedMode() {
-		return func(config *configs.Cgroup, paths map[string]string) cgroups.Manager {
-			return &UnifiedManager{
-				Cgroups: config,
-				Paths:   paths,
-			}
-		}, nil
-	}
 	return func(config *configs.Cgroup, paths map[string]string) cgroups.Manager {
-		return &LegacyManager{
+		return &Manager{
 			Cgroups: config,
 			Paths:   paths,
 		}
 	}, nil
 }
 
-func (m *LegacyManager) Apply(pid int) error {
+func (m *Manager) Apply(pid int) error {
 	var (
 		c          = m.Cgroups
 		unitName   = getUnitName(c)
@@ -261,7 +253,7 @@ func (m *LegacyManager) Apply(pid int) error {
 	}
 
 	paths := make(map[string]string)
-	for _, s := range legacySubsystems {
+	for _, s := range subsystems {
 		subsystemPath, err := getSubsystemPath(m.Cgroups, s.Name())
 		if err != nil {
 			// Don't fail if a cgroup hierarchy was not found, just skip this subsystem
@@ -276,7 +268,7 @@ func (m *LegacyManager) Apply(pid int) error {
 	return nil
 }
 
-func (m *LegacyManager) Destroy() error {
+func (m *Manager) Destroy() error {
 	if m.Cgroups.Paths != nil {
 		return nil
 	}
@@ -290,7 +282,7 @@ func (m *LegacyManager) Destroy() error {
 	return nil
 }
 
-func (m *LegacyManager) GetPaths() map[string]string {
+func (m *Manager) GetPaths() map[string]string {
 	m.mu.Lock()
 	paths := m.Paths
 	m.mu.Unlock()
@@ -302,7 +294,6 @@ func join(c *configs.Cgroup, subsystem string, pid int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return "", err
 	}
@@ -313,7 +304,7 @@ func join(c *configs.Cgroup, subsystem string, pid int) (string, error) {
 }
 
 func joinCgroups(c *configs.Cgroup, pid int) error {
-	for _, sys := range legacySubsystems {
+	for _, sys := range subsystems {
 		name := sys.Name()
 		switch name {
 		case "name=systemd":
@@ -408,14 +399,14 @@ func getSubsystemPath(c *configs.Cgroup, subsystem string) (string, error) {
 	return filepath.Join(mountpoint, initPath, slice, getUnitName(c)), nil
 }
 
-func (m *LegacyManager) Freeze(state configs.FreezerState) error {
+func (m *Manager) Freeze(state configs.FreezerState) error {
 	path, err := getSubsystemPath(m.Cgroups, "freezer")
 	if err != nil {
 		return err
 	}
 	prevState := m.Cgroups.Resources.Freezer
 	m.Cgroups.Resources.Freezer = state
-	freezer, err := legacySubsystems.Get("freezer")
+	freezer, err := subsystems.Get("freezer")
 	if err != nil {
 		return err
 	}
@@ -427,7 +418,7 @@ func (m *LegacyManager) Freeze(state configs.FreezerState) error {
 	return nil
 }
 
-func (m *LegacyManager) GetPids() ([]int, error) {
+func (m *Manager) GetPids() ([]int, error) {
 	path, err := getSubsystemPath(m.Cgroups, "devices")
 	if err != nil {
 		return nil, err
@@ -435,7 +426,7 @@ func (m *LegacyManager) GetPids() ([]int, error) {
 	return cgroups.GetPids(path)
 }
 
-func (m *LegacyManager) GetAllPids() ([]int, error) {
+func (m *Manager) GetAllPids() ([]int, error) {
 	path, err := getSubsystemPath(m.Cgroups, "devices")
 	if err != nil {
 		return nil, err
@@ -443,12 +434,12 @@ func (m *LegacyManager) GetAllPids() ([]int, error) {
 	return cgroups.GetAllPids(path)
 }
 
-func (m *LegacyManager) GetStats() (*cgroups.Stats, error) {
+func (m *Manager) GetStats() (*cgroups.Stats, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	stats := cgroups.NewStats()
 	for name, path := range m.Paths {
-		sys, err := legacySubsystems.Get(name)
+		sys, err := subsystems.Get(name)
 		if err == errSubsystemDoesNotExist || !cgroups.PathExists(path) {
 			continue
 		}
@@ -460,13 +451,13 @@ func (m *LegacyManager) GetStats() (*cgroups.Stats, error) {
 	return stats, nil
 }
 
-func (m *LegacyManager) Set(container *configs.Config) error {
+func (m *Manager) Set(container *configs.Config) error {
 	// If Paths are set, then we are just joining cgroups paths
 	// and there is no need to set any values.
 	if m.Cgroups.Paths != nil {
 		return nil
 	}
-	for _, sys := range legacySubsystems {
+	for _, sys := range subsystems {
 		// Get the subsystem path, but don't error out for not found cgroups.
 		path, err := getSubsystemPath(container.Cgroups, sys.Name())
 		if err != nil && !cgroups.IsNotFound(err) {
