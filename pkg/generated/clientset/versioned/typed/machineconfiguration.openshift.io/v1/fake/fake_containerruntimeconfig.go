@@ -3,6 +3,8 @@
 package fake
 
 import (
+	"context"
+
 	machineconfigurationopenshiftiov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
@@ -22,7 +24,7 @@ var containerruntimeconfigsResource = schema.GroupVersionResource{Group: "machin
 var containerruntimeconfigsKind = schema.GroupVersionKind{Group: "machineconfiguration.openshift.io", Version: "v1", Kind: "ContainerRuntimeConfig"}
 
 // Get takes name of the containerRuntimeConfig, and returns the corresponding containerRuntimeConfig object, and an error if there is any.
-func (c *FakeContainerRuntimeConfigs) Get(name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
+func (c *FakeContainerRuntimeConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootGetAction(containerruntimeconfigsResource, name), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	if obj == nil {
@@ -32,7 +34,7 @@ func (c *FakeContainerRuntimeConfigs) Get(name string, options v1.GetOptions) (r
 }
 
 // List takes label and field selectors, and returns the list of ContainerRuntimeConfigs that match those selectors.
-func (c *FakeContainerRuntimeConfigs) List(opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfigList, err error) {
+func (c *FakeContainerRuntimeConfigs) List(ctx context.Context, opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfigList, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootListAction(containerruntimeconfigsResource, containerruntimeconfigsKind, opts), &machineconfigurationopenshiftiov1.ContainerRuntimeConfigList{})
 	if obj == nil {
@@ -53,13 +55,13 @@ func (c *FakeContainerRuntimeConfigs) List(opts v1.ListOptions) (result *machine
 }
 
 // Watch returns a watch.Interface that watches the requested containerRuntimeConfigs.
-func (c *FakeContainerRuntimeConfigs) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeContainerRuntimeConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewRootWatchAction(containerruntimeconfigsResource, opts))
 }
 
 // Create takes the representation of a containerRuntimeConfig and creates it.  Returns the server's representation of the containerRuntimeConfig, and an error, if there is any.
-func (c *FakeContainerRuntimeConfigs) Create(containerRuntimeConfig *machineconfigurationopenshiftiov1.ContainerRuntimeConfig) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
+func (c *FakeContainerRuntimeConfigs) Create(ctx context.Context, containerRuntimeConfig *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, opts v1.CreateOptions) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootCreateAction(containerruntimeconfigsResource, containerRuntimeConfig), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	if obj == nil {
@@ -69,7 +71,7 @@ func (c *FakeContainerRuntimeConfigs) Create(containerRuntimeConfig *machineconf
 }
 
 // Update takes the representation of a containerRuntimeConfig and updates it. Returns the server's representation of the containerRuntimeConfig, and an error, if there is any.
-func (c *FakeContainerRuntimeConfigs) Update(containerRuntimeConfig *machineconfigurationopenshiftiov1.ContainerRuntimeConfig) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
+func (c *FakeContainerRuntimeConfigs) Update(ctx context.Context, containerRuntimeConfig *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, opts v1.UpdateOptions) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateAction(containerruntimeconfigsResource, containerRuntimeConfig), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	if obj == nil {
@@ -80,7 +82,7 @@ func (c *FakeContainerRuntimeConfigs) Update(containerRuntimeConfig *machineconf
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeContainerRuntimeConfigs) UpdateStatus(containerRuntimeConfig *machineconfigurationopenshiftiov1.ContainerRuntimeConfig) (*machineconfigurationopenshiftiov1.ContainerRuntimeConfig, error) {
+func (c *FakeContainerRuntimeConfigs) UpdateStatus(ctx context.Context, containerRuntimeConfig *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, opts v1.UpdateOptions) (*machineconfigurationopenshiftiov1.ContainerRuntimeConfig, error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateSubresourceAction(containerruntimeconfigsResource, "status", containerRuntimeConfig), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	if obj == nil {
@@ -90,22 +92,22 @@ func (c *FakeContainerRuntimeConfigs) UpdateStatus(containerRuntimeConfig *machi
 }
 
 // Delete takes name of the containerRuntimeConfig and deletes it. Returns an error if one occurs.
-func (c *FakeContainerRuntimeConfigs) Delete(name string, options *v1.DeleteOptions) error {
+func (c *FakeContainerRuntimeConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewRootDeleteAction(containerruntimeconfigsResource, name), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeContainerRuntimeConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(containerruntimeconfigsResource, listOptions)
+func (c *FakeContainerRuntimeConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewRootDeleteCollectionAction(containerruntimeconfigsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &machineconfigurationopenshiftiov1.ContainerRuntimeConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched containerRuntimeConfig.
-func (c *FakeContainerRuntimeConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
+func (c *FakeContainerRuntimeConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *machineconfigurationopenshiftiov1.ContainerRuntimeConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(containerruntimeconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	if obj == nil {

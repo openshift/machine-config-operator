@@ -3,6 +3,8 @@
 package fake
 
 import (
+	"context"
+
 	machineconfigurationopenshiftiov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
@@ -22,7 +24,7 @@ var kubeletconfigsResource = schema.GroupVersionResource{Group: "machineconfigur
 var kubeletconfigsKind = schema.GroupVersionKind{Group: "machineconfiguration.openshift.io", Version: "v1", Kind: "KubeletConfig"}
 
 // Get takes name of the kubeletConfig, and returns the corresponding kubeletConfig object, and an error if there is any.
-func (c *FakeKubeletConfigs) Get(name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
+func (c *FakeKubeletConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootGetAction(kubeletconfigsResource, name), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	if obj == nil {
@@ -32,7 +34,7 @@ func (c *FakeKubeletConfigs) Get(name string, options v1.GetOptions) (result *ma
 }
 
 // List takes label and field selectors, and returns the list of KubeletConfigs that match those selectors.
-func (c *FakeKubeletConfigs) List(opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.KubeletConfigList, err error) {
+func (c *FakeKubeletConfigs) List(ctx context.Context, opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.KubeletConfigList, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootListAction(kubeletconfigsResource, kubeletconfigsKind, opts), &machineconfigurationopenshiftiov1.KubeletConfigList{})
 	if obj == nil {
@@ -53,13 +55,13 @@ func (c *FakeKubeletConfigs) List(opts v1.ListOptions) (result *machineconfigura
 }
 
 // Watch returns a watch.Interface that watches the requested kubeletConfigs.
-func (c *FakeKubeletConfigs) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeKubeletConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewRootWatchAction(kubeletconfigsResource, opts))
 }
 
 // Create takes the representation of a kubeletConfig and creates it.  Returns the server's representation of the kubeletConfig, and an error, if there is any.
-func (c *FakeKubeletConfigs) Create(kubeletConfig *machineconfigurationopenshiftiov1.KubeletConfig) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
+func (c *FakeKubeletConfigs) Create(ctx context.Context, kubeletConfig *machineconfigurationopenshiftiov1.KubeletConfig, opts v1.CreateOptions) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootCreateAction(kubeletconfigsResource, kubeletConfig), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	if obj == nil {
@@ -69,7 +71,7 @@ func (c *FakeKubeletConfigs) Create(kubeletConfig *machineconfigurationopenshift
 }
 
 // Update takes the representation of a kubeletConfig and updates it. Returns the server's representation of the kubeletConfig, and an error, if there is any.
-func (c *FakeKubeletConfigs) Update(kubeletConfig *machineconfigurationopenshiftiov1.KubeletConfig) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
+func (c *FakeKubeletConfigs) Update(ctx context.Context, kubeletConfig *machineconfigurationopenshiftiov1.KubeletConfig, opts v1.UpdateOptions) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateAction(kubeletconfigsResource, kubeletConfig), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	if obj == nil {
@@ -80,7 +82,7 @@ func (c *FakeKubeletConfigs) Update(kubeletConfig *machineconfigurationopenshift
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeKubeletConfigs) UpdateStatus(kubeletConfig *machineconfigurationopenshiftiov1.KubeletConfig) (*machineconfigurationopenshiftiov1.KubeletConfig, error) {
+func (c *FakeKubeletConfigs) UpdateStatus(ctx context.Context, kubeletConfig *machineconfigurationopenshiftiov1.KubeletConfig, opts v1.UpdateOptions) (*machineconfigurationopenshiftiov1.KubeletConfig, error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateSubresourceAction(kubeletconfigsResource, "status", kubeletConfig), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	if obj == nil {
@@ -90,22 +92,22 @@ func (c *FakeKubeletConfigs) UpdateStatus(kubeletConfig *machineconfigurationope
 }
 
 // Delete takes name of the kubeletConfig and deletes it. Returns an error if one occurs.
-func (c *FakeKubeletConfigs) Delete(name string, options *v1.DeleteOptions) error {
+func (c *FakeKubeletConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewRootDeleteAction(kubeletconfigsResource, name), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeKubeletConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(kubeletconfigsResource, listOptions)
+func (c *FakeKubeletConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewRootDeleteCollectionAction(kubeletconfigsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &machineconfigurationopenshiftiov1.KubeletConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched kubeletConfig.
-func (c *FakeKubeletConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
+func (c *FakeKubeletConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *machineconfigurationopenshiftiov1.KubeletConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(kubeletconfigsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	if obj == nil {
