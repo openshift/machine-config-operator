@@ -50,6 +50,38 @@ const (
 	realtimeKernelType = "realtime"
 )
 
+// HostInfo contains information of an OSTree based system
+type HostInfo struct {
+	Deployments []Deployment `json:"deployments"`
+}
+
+// Deployment contains information about a particular OSTree deployment
+type Deployment struct {
+	RequestedLocalPkgs []string `json:"requested-local-packages"`
+}
+
+func installedRTKernelRpmsOnHost() ([]string, error) {
+	var out []byte
+	var err error
+	var rtKernelRpms = []string{}
+	if out, err = exec.Command("rpm-ostree", "status", "--json").Output(); err != nil {
+		return rtKernelRpms, fmt.Errorf("Failed to execute rpm-ostre status --json %v", err)
+	}
+
+	var rpms HostInfo
+	if err := json.Unmarshal(out, &rpms); err != nil {
+		return rtKernelRpms, err
+	}
+
+	rtRegex := regexp.MustCompile("kernel-rt-.*")
+	for _, localPkg := range rpms.Deployments[0].RequestedLocalPkgs {
+		if rtRegex.MatchString(localPkg) {
+			rtKernelRpms = append(rtKernelRpms, localPkg)
+		}
+	}
+	return rtKernelRpms, nil
+}
+
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
 }
@@ -650,16 +682,24 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	}
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
-	rtKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra"}
 	var args []string
 
 	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == defaultKernelType {
+		var installedRTKernelRpms []string
+		var err error
 		args = []string{"override", "reset"}
 		args = append(args, defaultKernel...)
-		rtKernelUninstall := []string{"--uninstall", "kernel-rt-core", "--uninstall", "kernel-rt-modules", "--uninstall", "kernel-rt-modules-extra"}
-		args = append(args, rtKernelUninstall...)
+		if installedRTKernelRpms, err = installedRTKernelRpmsOnHost(); err != nil {
+			return fmt.Errorf("Error while fetching installed RT kernel on host %v", err)
+		}
+		if len(installedRTKernelRpms) == 0 {
+			return fmt.Errorf("No kernel-rt package installed on host")
+		}
+		for _, installedRTKernelRpm := range installedRTKernelRpms {
+			args = append(args, "--uninstall", installedRTKernelRpm)
+		}
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
 			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
@@ -715,11 +755,21 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == realtimeKernelType && canonicalizeKernelType(newConfig.Spec.KernelType) == realtimeKernelType {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
+			var installedRTKernelRpms []string
+			var err error
 			args = []string{"uninstall"}
-			args = append(args, rtKernel...)
+			if installedRTKernelRpms, err = installedRTKernelRpmsOnHost(); err != nil {
+				return fmt.Errorf("Error while fetching installed RT kernel on host %v", err)
+			}
+			if len(installedRTKernelRpms) == 0 {
+				return fmt.Errorf("No kernel-rt package installed on host")
+			}
+			for _, installedRTKernelRpm := range installedRTKernelRpms {
+				args = append(args, installedRTKernelRpm)
+			}
 			// Perform kernel-rt package update only if updated packages are available
 			var updateAvailable bool
-			if updateAvailable, err = rtKernelUpdateAvailable(rtKernelRpms, rtKernel); err != nil {
+			if updateAvailable, err = rtKernelUpdateAvailable(rtKernelRpms, installedRTKernelRpms); err != nil {
 				return err
 			} else if !updateAvailable {
 				return nil
