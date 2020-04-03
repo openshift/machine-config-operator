@@ -63,6 +63,9 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		if syncErr.err != nil {
 			break
 		}
+		if err := optr.clearDegradedStatus(sf.name); err != nil {
+			return fmt.Errorf("error clearing degraded status: %v", err)
+		}
 	}
 
 	if err := optr.syncDegradedStatus(syncErr); err != nil {
