@@ -8,3 +8,5 @@ approvers:
   - runcom
   - sinnykumari
   - yuqi-zhang
+
+component: "Machine Config Operator"
