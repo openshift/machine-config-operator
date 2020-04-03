@@ -790,14 +790,41 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		newFileSet[f.Path] = struct{}{}
 	}
 
+	operatingSystem, err := getHostRunningOS()
+	if err != nil {
+		return errors.Wrapf(err, "checking operating system")
+	}
+
 	for _, f := range oldConfig.Spec.Config.Storage.Files {
 		if _, ok := newFileSet[f.Path]; !ok {
-			if _, err := os.Stat(origFileName(f.Path)); err == nil {
-				if err := os.Rename(origFileName(f.Path), f.Path); err != nil {
-					return err
+			if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
+				if err := os.Remove(noOrigFileStampName(f.Path)); err != nil {
+					return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(f.Path), err)
 				}
-				glog.V(2).Infof("Restored file %q", f.Path)
-				continue
+				glog.V(2).Infof("Removing file %q completely", f.Path)
+			} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
+				// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
+				// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
+				// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
+				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err != nil {
+					if err := os.Remove(origFileName(f.Path)); err != nil {
+						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+					}
+				} else if _, err := os.Stat("/usr" + f.Path); strings.HasPrefix(f.Path, "/etc") && os.IsNotExist(err) &&
+					(operatingSystem == machineConfigDaemonOSRHCOS) {
+					if err := os.Remove(origFileName(f.Path)); err != nil {
+						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+					}
+				} else {
+					if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(f.Path), f.Path).CombinedOutput(); err != nil {
+						return errors.Wrapf(err, "restoring %q from orig file %q: %s", f.Path, origFileName(f.Path), string(out))
+					}
+					if err := os.Remove(origFileName(f.Path)); err != nil {
+						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+					}
+					glog.V(2).Infof("Restored file %q", f.Path)
+					continue
+				}
 			}
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			if err := os.Remove(f.Path); err != nil {
@@ -1007,15 +1034,38 @@ func origParentDir() string {
 	return filepath.Join("/etc", "machine-config-daemon", "orig")
 }
 
+func noOrigParentDir() string {
+	return filepath.Join("/etc", "machine-config-daemon", "noorig")
+}
+
 func origFileName(fpath string) string {
 	return filepath.Join(origParentDir(), fpath+".mcdorig")
 }
 
+// We use this to create a file that indicates that no original file existed on disk
+// when we write a file via a MachineConfig. Otherwise the MCD does not differentiate
+// between "a file existed due to a previous machineconfig" vs "a file existed on disk
+// before the MCD took over". Also see deleteStaleData() above.
+//
+// The "stamp" part of the name indicates it is not an actual backup file, just an
+// empty file to indicate lack of previous existence.
+func noOrigFileStampName(fpath string) string {
+	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
+}
+
 func createOrigFile(fpath string) error {
-	if _, err := os.Stat(fpath); err != nil {
-		// the file isn't there, no need to back it up
-		// we could check ENOENT only maybe?
+	if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
+		// we already created the no orig file for this default file
 		return nil
+	}
+	if _, err := os.Stat(fpath); os.IsNotExist(err) {
+		// create a noorig file that tells the MCD that the file wasn't present on disk before MCD
+		// took over so it can just remove it when deleting stale data, as opposed as restoring a file
+		// that was shipped _with_ the underlying OS (e.g. a default chrony config).
+		if err := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0755); err != nil {
+			return errors.Wrapf(err, "creating no orig parent dir: %v", err)
+		}
+		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
 	}
 	if _, err := os.Stat(origFileName(fpath)); err == nil {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
