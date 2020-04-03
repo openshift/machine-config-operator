@@ -10,3 +10,5 @@ approvers:
   - sinnykumari
   - yuqi-zhang
   - vrutkovs
+
+component: "Machine Config Operator"
