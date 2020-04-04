@@ -5,5 +5,5 @@ contents:
   inline: |
     # ignore known SDN-managed devices
     [device]
-    match-device=interface-name:br-int;interface-name:br-local;interface-name:br-nexthop,interface-name:k8s-*;interface-name:tun0;interface-name:br0;driver:veth
+    match-device=interface-name:br-int;interface-name:br-local;interface-name:br-nexthop,interface-name:ovn-k8s-*,interface-name:k8s-*;interface-name:tun0;interface-name:br0;driver:veth
     managed=0
