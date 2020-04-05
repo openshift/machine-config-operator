@@ -12,6 +12,7 @@ import (
 	"github.com/containers/image/pkg/sysregistriesv2"
 	signature "github.com/containers/image/signature"
 	storageconfig "github.com/containers/storage/pkg/config"
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	crioconfig "github.com/cri-o/cri-o/pkg/config"
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -94,7 +95,11 @@ func createNewIgnition(configs map[string][]byte) igntypes.Config {
 }
 
 func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == storageConfigPath {
 			c := c
 			return &c, nil
@@ -104,7 +109,11 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 }
 
 func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CRI-O Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == crioConfigPath {
 			c := c
 			return &c, nil
@@ -114,7 +123,11 @@ func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 }
 
 func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == registriesConfigPath {
 			return &c, nil
 		}
@@ -123,7 +136,11 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 }
 
 func findPolicyJSON(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	for _, c := range mc.Spec.Config.Storage.Files {
+	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	for _, c := range ignCfg.Storage.Files {
 		if c.Path == policyConfigPath {
 			return &c, nil
 		}

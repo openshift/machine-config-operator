@@ -6,4 +6,10 @@ const (
 
 	// ControllerConfigName is the name of the ControllerConfig object that controllers use
 	ControllerConfigName = "machine-config-controller"
+
+	// KernelTypeDefault denominates the default kernel type
+	KernelTypeDefault = "default"
+
+	// KernelTypeRealtime denominates the realtime kernel type
+	KernelTypeRealtime = "realtime"
 )

@@ -1,7 +1,6 @@
 package v1
 
 import (
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -153,7 +152,7 @@ type ControllerConfigList struct {
 // +genclient
 // +genclient:noStatus
 // +genclient:nonNamespaced
-// +k8s:deepcopy-gen=false
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // MachineConfig defines the configuration for a machine
 type MachineConfig struct {
@@ -169,7 +168,7 @@ type MachineConfigSpec struct {
 	// fetch the OS.
 	OSImageURL string `json:"osImageURL"`
 	// Config is a Ignition Config object.
-	Config igntypes.Config `json:"config"`
+	Config runtime.RawExtension `json:"config"`
 
 	// +nullable
 	KernelArguments []string `json:"kernelArguments"`

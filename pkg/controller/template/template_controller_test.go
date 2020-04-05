@@ -1,6 +1,7 @@
 package template
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
@@ -371,7 +372,12 @@ func TestUpdateMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	//update machineconfig
-	mcs[len(mcs)-1].Spec.Config = ctrlcommon.NewIgnConfig()
+	newIgnCfg := ctrlcommon.NewIgnConfig()
+	newRawIgnCfg, err := json.Marshal(newIgnCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcs[len(mcs)-1].Spec.Config.Raw = newRawIgnCfg
 
 	f.ccLister = append(f.ccLister, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)

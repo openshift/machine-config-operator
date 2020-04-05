@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -301,7 +302,10 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Fatal("role label missing")
 			}
 
-			ign := cfg.Spec.Config
+			ign, _, err := ign.Parse(cfg.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("Failed to parse Ignition config")
+			}
 			if role == "master" {
 				if !foundPullSecretMaster {
 					foundPullSecretMaster = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
