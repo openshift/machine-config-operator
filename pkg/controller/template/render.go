@@ -2,6 +2,7 @@ package template
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -21,6 +22,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 // RenderConfig is wrapper around ControllerConfigSpec.
@@ -267,8 +269,10 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
 	}
-
-	mcfg := MachineConfigFromIgnConfig(role, name, ignCfg)
+	mcfg, err := MachineConfigFromIgnConfig(role, name, ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %v", err)
+	}
 	// And inject the osimageurl here
 	mcfg.Spec.OSImageURL = config.OSImageURL
 
@@ -276,7 +280,11 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 }
 
 // MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
-func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcfgv1.MachineConfig {
+func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.MachineConfig, error) {
+	rawIgnCfg, err := json.Marshal(ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
+	}
 	labels := map[string]string{
 		mcfgv1.MachineConfigRoleLabelKey: role,
 	}
@@ -287,9 +295,11 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg *igntypes.Config) *mcf
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: "",
-			Config:     *ignCfg,
+			Config: runtime.RawExtension{
+				Raw: rawIgnCfg,
+			},
 		},
-	}
+	}, nil
 }
 
 func transpileToIgn(files, units []string) (*igntypes.Config, error) {

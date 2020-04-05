@@ -1,11 +1,13 @@
 package render
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -285,12 +287,21 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 
 	// verify that an invalid igntion config (here a config with content and an empty version,
 	// will fail validation
-	mcs[1].Spec.Config.Ignition.Version = ""
+	ignCfg, _, err := ign.Parse(mcs[1].Spec.Config.Raw)
+	require.Nil(t, err)
+	ignCfg.Ignition.Version = ""
+	rawIgnCfg, err := json.Marshal(ignCfg)
+	require.Nil(t, err)
+	mcs[1].Spec.Config.Raw = rawIgnCfg
+
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
 	require.NotNil(t, err)
 
 	// verify that a machine config with no ignition content will not fail validation
-	mcs[1].Spec.Config = igntypes.Config{}
+	emptyIgnCfg := ctrlcommon.NewIgnConfig()
+	rawEmptyIgnCfg, err := json.Marshal(emptyIgnCfg)
+	require.Nil(t, err)
+	mcs[1].Spec.Config.Raw = rawEmptyIgnCfg
 	mcs[1].Spec.KernelArguments = append(mcs[1].Spec.KernelArguments, "test1")
 	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
 	require.Nil(t, err)

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/runtime"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -55,7 +55,7 @@ func NewBootstrapServer(dir, kubeconfig string) (Server, error) {
 // 3. Load the machine config.
 // 4. Append the machine annotations file.
 // 5. Append the KubeConfig file.
-func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) {
+func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
 	if cr.machineConfigPool != "master" {
 		return nil, fmt.Errorf("refusing to serve bootstrap configuration to pool %q", cr.machineConfigPool)
 	}
@@ -104,7 +104,12 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*igntypes.Config, error) 
 		}
 	}
 
-	return machineConfigToIgnition(mc), nil
+	rawIgn, err := machineConfigToRawIgnition(mc)
+	if err != nil {
+		return nil, fmt.Errorf("server: could not convert MachineConfig to raw Ignition: %v", err)
+	}
+
+	return rawIgn, nil
 }
 
 func kubeconfigFromFile(path string) ([]byte, []byte, error) {
