@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	systemdDbus "github.com/coreos/go-systemd/dbus"
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
@@ -121,6 +122,13 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 		Name: node.GetName(),
 		UID:  node.GetUID(),
 	}
+}
+
+func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) error {
+	if err := dn.drain(); err != nil {
+		return err
+	}
+	return dn.finalizeAndReboot(newConfig)
 }
 
 // updateOSAndReboot is the last step in an update(), and it can also
@@ -316,10 +324,47 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
 	}
 
-	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+	oldIgnConfig, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+	}
+	newIgnConfig, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+	}
 
-	if err := dn.drain(); err != nil {
-		return err
+	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+	rebootRequired := diff.osUpdate || diff.kargs || diff.fips || diff.kernelType
+
+	systemdConnection, dbusConnErr := systemdDbus.NewSystemConnection()
+	if dbusConnErr == nil {
+		defer systemdConnection.Close()
+	} else {
+		glog.Warningf("Unable to establish systemd dbus connection: %s", dbusConnErr)
+		// No more actions needed here as a systemd connection is not always
+		// required (only if there is systemd related post update action
+		// present). If a connection should be required, getPostUpdateActions
+		// function will return error if nil connection is provided and then
+		// rebootRequired will be se to true
+	}
+
+	postUpdateActions, err := getPostUpdateActions(
+		getFilesChanges(oldIgnConfig.Storage.Files, newIgnConfig.Storage.Files),
+		getUnitsChanges(oldIgnConfig.Systemd.Units, newIgnConfig.Systemd.Units),
+		systemdConnection,
+	)
+	if err != nil {
+		rebootRequired = true
+	}
+
+	drainRequired := rebootRequired || isDrainRequired(postUpdateActions)
+
+	if drainRequired {
+		if err := dn.drain(); err != nil {
+			return err
+		}
+	} else {
+		glog.Info("Draining node skipped as it is not required")
 	}
 
 	// update files on disk that need updating
@@ -335,15 +380,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 		}
 	}()
-
-	oldIgnConfig, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
-	}
-	newIgnConfig, report, err := ign.Parse(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
-	}
 
 	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
@@ -397,7 +433,32 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	return dn.updateOSAndReboot(newConfig)
+	if err := dn.updateOS(newConfig); err != nil {
+		return err
+	}
+	if rebootRequired || runPostUpdateActions(postUpdateActions) {
+		return dn.drainAndReboot(newConfig)
+	}
+	glog.Info("Reboot skipped as it is not required")
+	if err := dn.nodeWriter.SetDone(
+		dn.kubeClient.CoreV1().Nodes(),
+		dn.nodeLister,
+		dn.name,
+		newConfigName,
+	); err != nil {
+		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
+		return dn.drainAndReboot(newConfig)
+	}
+	if drainRequired {
+		glog.Infof("Starting uncordoning node %v", dn.node.GetName())
+		if err := drain.RunCordonOrUncordon(dn.drainer, dn.node, false); err != nil {
+			glog.Errorf("Uncordoning node failed, node will reboot: %v", err)
+			return dn.finalizeAndReboot(newConfig)
+		}
+	}
+	glog.Infof("In desired config %s", newConfigName)
+	MCDUpdateState.WithLabelValues(newConfigName, "").SetToCurrentTime()
+	return nil
 }
 
 // MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
