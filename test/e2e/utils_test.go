@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os/exec"
@@ -111,7 +112,7 @@ func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error)
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
 	}
-	nodes, err := cs.Nodes().List(listOptions)
+	nodes, err := cs.Nodes().List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, err
 	}

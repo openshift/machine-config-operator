@@ -1,6 +1,7 @@
 package containerruntimeconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -274,7 +275,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.ContainerRuntimeConfig) error 
 		return nil
 	}
 	mcName := cfg.GetFinalizers()[0]
-	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mcName, &metav1.DeleteOptions{})
+	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -440,7 +441,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 			// to success and clear the previous failure status
 			cfg.Status.Conditions = []mcfgv1.ContainerRuntimeConfigCondition{wrapErrorWithCondition(err, args...)}
 		}
-		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(cfg)
+		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), cfg, metav1.UpdateOptions{})
 		return updateErr
 	})
 	// If an error occurred in updating the status just log it
@@ -519,7 +520,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// Get MachineConfig
 		managedKey := getManagedKeyCtrCfg(pool)
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 			}
@@ -570,9 +571,9 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 			// Create or Update, on conflict retry
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 
 			// Add Finalizers to the ContainerRuntimeConfigs
@@ -680,7 +681,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			if err != nil {
 				return fmt.Errorf("could not encode registries Ignition config: %v", err)
 			}
-			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("could not find MachineConfig: %v", err)
 			}
@@ -715,9 +716,9 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 			// Create or Update, on conflict retry
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 
 			return err
@@ -841,7 +842,7 @@ func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.Co
 }
 
 func (ctrl *Controller) patchContainerRuntimeConfigs(name string, patch []byte) error {
-	_, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Patch(name, types.MergePatchType, patch)
+	_, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Patch(context.TODO(), name, types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
 }
 

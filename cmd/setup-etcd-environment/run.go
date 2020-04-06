@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -220,11 +221,11 @@ func (s *SetupEnv) getOperatorEnv() (map[string]string, error) {
 }
 
 func (s *SetupEnv) getEtcdEndpoints() ([]string, error) {
-	ep, err := s.Client.CoreV1().Endpoints("openshift-etcd").Get("etcd", metav1.GetOptions{})
+	ep, err := s.Client.CoreV1().Endpoints("openshift-etcd").Get(context.TODO(), "etcd", metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
-	hostEtcdEndpoint, err := s.Client.CoreV1().Endpoints("openshift-etcd").Get("host-etcd", metav1.GetOptions{})
+	hostEtcdEndpoint, err := s.Client.CoreV1().Endpoints("openshift-etcd").Get(context.TODO(), "host-etcd", metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +259,7 @@ func (s *SetupEnv) getEtcdMemberList() []string {
 	// wait forever for success and retry every duration interval
 	wait.PollInfinite(retryDuration, func() (bool, error) {
 		var e ceoapi.EtcdScaling
-		result, err := s.Client.CoreV1().ConfigMaps("openshift-etcd").Get("member-config", metav1.GetOptions{})
+		result, err := s.Client.CoreV1().ConfigMaps("openshift-etcd").Get(context.TODO(), "member-config", metav1.GetOptions{})
 		if err != nil {
 			glog.Errorf("error creating client %v", err)
 			return false, nil

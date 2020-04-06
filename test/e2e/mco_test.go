@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -62,7 +63,7 @@ func TestMastersSchedulable(t *testing.T) {
 }
 
 func checkMasterNodesSchedulability(cs *framework.ClientSet, masterSchedulable bool) bool {
-	masterNodes, err := cs.CoreV1Interface.Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+	masterNodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil {
 		glog.Errorf("error while listing master nodes with %v", err)
 	}

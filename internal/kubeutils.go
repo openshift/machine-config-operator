@@ -1,10 +1,12 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -42,7 +44,7 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
 		}
 
-		node, err = client.Patch(nodeName, types.StrategicMergePatchType, patchBytes)
+		node, err = client.Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit

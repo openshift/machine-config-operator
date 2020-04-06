@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -552,7 +553,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 			} else {
 				assert.Nil(t, err, "test case %d, expected no error", idx, j)
 			}
-			o, err := optr.configClient.ConfigV1().ClusterOperators().Get(coName, metav1.GetOptions{})
+			o, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), coName, metav1.GetOptions{})
 			assert.Nil(t, err)
 			for _, cond := range sync.cond {
 				var condition configv1.ClusterOperatorStatusCondition

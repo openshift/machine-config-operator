@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
@@ -11,7 +12,7 @@ import (
 func TestOperatorLabel(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	d, err := cs.DaemonSets("openshift-machine-config-operator").Get("machine-config-daemon", metav1.GetOptions{})
+	d, err := cs.DaemonSets("openshift-machine-config-operator").Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("%#v", err)
 	}
