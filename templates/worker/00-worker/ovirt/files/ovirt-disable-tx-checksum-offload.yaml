@@ -5,6 +5,6 @@ contents:
   inline: |
     #!/bin/bash
     # This is a workaround for BZ#1794714
-    if [[ -e /var/lib/cni/bin/openshift-sdn ]]; then
+    if [[ ! -e /var/lib/cni/bin/ovn-k8s-cni-overlay ]]; then
       nmcli con modify ${CONNECTION_UUID} ethtool.feature-tx-checksum-ip-generic off;
     fi
