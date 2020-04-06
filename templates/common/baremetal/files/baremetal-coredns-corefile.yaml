@@ -15,9 +15,9 @@ contents:
             {{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api.{{ .EtcdDiscoveryDomain }}
             fallthrough
         }
-        template IN A {{ .EtcdDiscoveryDomain }} {
+        template IN ANY {{ .EtcdDiscoveryDomain }} {
             match .*.apps.{{ .EtcdDiscoveryDomain }}
-            answer "{{`{{"{{ .Name }}"}}`}} 60 in a {{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
             fallthrough
         }
     }

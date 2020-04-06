@@ -110,9 +110,9 @@ var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
         {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
         fallthrough
     }
-    template IN A {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+    template IN ANY {{ .ControllerConfig.EtcdDiscoveryDomain }} {
         match .*.apps.{{ .ControllerConfig.EtcdDiscoveryDomain }}
-        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         fallthrough
     }
 }
