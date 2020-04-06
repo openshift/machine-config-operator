@@ -7,7 +7,7 @@ contents:
     IFACE=$1
     STATUS=$2
     # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
-    [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" ]] && hostname $DHCP6_FQDN_FQDN
+    [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] && hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
     case "$STATUS" in
         up|down|dhcp4-change|dhcp6-change)
         logger -s "NM resolv-prepender triggered by ${1} ${2}."
