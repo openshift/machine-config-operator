@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -221,7 +222,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer optr.queue.ShutDown()
 
 	apiClient := optr.apiExtClient.ApiextensionsV1beta1()
-	_, err := apiClient.CustomResourceDefinitions().Get("machineconfigpools.machineconfiguration.openshift.io", metav1.GetOptions{})
+	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "machineconfigpools.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			glog.Infof("Couldn't find machineconfigpool CRD, in cluster bringup mode")

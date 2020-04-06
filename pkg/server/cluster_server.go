@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -59,14 +60,14 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
 func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
-	mp, err := cs.machineClient.MachineConfigPools().Get(cr.machineConfigPool, metav1.GetOptions{})
+	mp, err := cs.machineClient.MachineConfigPools().Get(context.TODO(), cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}
 
 	currConf := mp.Status.Configuration.Name
 
-	mc, err := cs.machineClient.MachineConfigs().Get(currConf, metav1.GetOptions{})
+	mc, err := cs.machineClient.MachineConfigs().Get(context.TODO(), currConf, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}

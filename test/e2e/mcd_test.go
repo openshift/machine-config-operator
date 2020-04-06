@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -32,13 +33,13 @@ func TestMCDToken(t *testing.T) {
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
 	}
 
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
 	require.Nil(t, err)
 
 	for _, pod := range mcdList.Items {
 		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
-		}).DoRaw()
+		}).DoRaw(context.TODO())
 		require.Nil(t, err)
 		for _, line := range strings.Split(string(res), "\n") {
 			if strings.Contains(line, "Unable to rotate token") {
@@ -127,7 +128,7 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 	}
 	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
 
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +521,7 @@ func TestCustomPool(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(infraNode.Name, metav1.GetOptions{})
+		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil

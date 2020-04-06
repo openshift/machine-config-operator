@@ -1,6 +1,7 @@
 package containerruntimeconfig
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -338,7 +339,7 @@ func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcNa
 	if icsp != nil {
 		icsps = append(icsps, icsp)
 	}
-	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(mcName, metav1.GetOptions{})
+	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
 	require.NoError(t, err)
 	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, verifyPolicyJSON)
 }

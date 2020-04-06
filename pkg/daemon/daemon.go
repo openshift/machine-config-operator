@@ -308,7 +308,6 @@ func (dn *Daemon) ClusterConnect(
 		},
 		Out:    writer{glog.Info},
 		ErrOut: writer{glog.Error},
-		DryRun: false,
 	}
 }
 

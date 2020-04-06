@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -47,7 +48,7 @@ func (optr *Operator) syncVersion() error {
 	co.Status.Versions = optr.vStore.GetAll()
 	// TODO(runcom): abstract below with updateStatus
 	optr.setOperatorStatusExtension(&co.Status, nil)
-	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
 	return err
 }
 
@@ -71,7 +72,7 @@ func (optr *Operator) syncRelatedObjects() error {
 	}
 
 	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
-		_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+		_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
 		return err
 	}
 
@@ -155,7 +156,7 @@ func (optr *Operator) syncProgressingStatus() error {
 func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1.ClusterOperatorStatusCondition) error {
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, status)
 	optr.setOperatorStatusExtension(&co.Status, nil)
-	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
 	return err
 }
 
@@ -256,7 +257,7 @@ func (optr *Operator) syncUpgradeableStatus() error {
 }
 
 func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(optr.name, metav1.GetOptions{})
+	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), optr.name, metav1.GetOptions{})
 	if meta.IsNoMatchError(err) {
 		return nil, nil
 	}
@@ -271,11 +272,12 @@ func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) 
 }
 
 func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Create(&configv1.ClusterOperator{
+	co, err := optr.configClient.ConfigV1().ClusterOperators().Create(context.TODO(), &configv1.ClusterOperator{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: optr.name,
 		},
-	})
+	},
+		metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +301,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	// For both normal runs and upgrades, this code isn't hit and we get the right version every
 	// time. This also only contains the operator RELEASE_VERSION when we're here.
 	co.Status.Versions = optr.vStore.GetAll()
-	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
 }
 
 // setOperatorStatusExtension sets the raw extension field of the clusteroperator. Today, we set

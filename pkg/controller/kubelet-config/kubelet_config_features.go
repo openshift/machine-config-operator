@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -87,7 +88,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 
 		// Get MachineConfig
 		managedKey := getManagedFeaturesKey(pool)
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
@@ -139,9 +140,9 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
 		}); err != nil {

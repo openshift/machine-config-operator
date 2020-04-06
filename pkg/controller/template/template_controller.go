@@ -2,6 +2,7 @@ package template
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -407,7 +408,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 
 	var pullSecretRaw []byte
 	if cfg.Spec.PullSecret != nil {
-		secret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(cfg.Spec.PullSecret.Name, metav1.GetOptions{})
+		secret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(context.TODO(), cfg.Spec.PullSecret.Name, metav1.GetOptions{})
 		if err != nil {
 			return ctrl.syncFailingStatus(cfg, err)
 		}
