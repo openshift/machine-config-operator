@@ -16,10 +16,12 @@ require (
 	github.com/containers/image v3.0.2+incompatible
 	github.com/containers/storage v1.13.5
 	github.com/coreos/container-linux-config-transpiler v0.9.0
+	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 	github.com/coreos/ignition v0.33.0
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/cri-o/cri-o v1.16.2
 	github.com/davecgh/go-spew v1.1.1
+	github.com/deckarep/golang-set v1.7.1
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
 	github.com/ghodss/yaml v1.0.0
