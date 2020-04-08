@@ -28,10 +28,16 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 
 	var fips bool
 	var kernelType string
+	var outIgn igntypes.Config
 
-	outIgn, report, err := ign.Parse(configs[0].Spec.Config.Raw)
-	if err != nil {
-		return nil, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+	if configs[0].Spec.Config.Raw == nil {
+		outIgn = igntypes.Config{}
+	} else {
+		parsedIgn, report, err := ign.Parse(configs[0].Spec.Config.Raw)
+		if err != nil {
+			return nil, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+		}
+		outIgn = parsedIgn
 	}
 
 	for idx := 1; idx < len(configs); idx++ {
@@ -39,9 +45,16 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 		if configs[idx].Spec.FIPS {
 			fips = true
 		}
-		appendIgn, report, err := ign.Parse(configs[idx].Spec.Config.Raw)
-		if err != nil {
-			return nil, errors.Errorf("parsing appendix Ignition config failed with error: %v\nReport: %v", err, report)
+
+		var appendIgn igntypes.Config
+		if configs[idx].Spec.Config.Raw == nil {
+			appendIgn = igntypes.Config{}
+		} else {
+			parsedIgn, report, err := ign.Parse(configs[idx].Spec.Config.Raw)
+			if err != nil {
+				return nil, errors.Errorf("parsing appendix Ignition config failed with error: %v\nReport: %v", err, report)
+			}
+			appendIgn = parsedIgn
 		}
 		outIgn = ign.Append(outIgn, appendIgn)
 	}
@@ -121,12 +134,16 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime) {
 		return errors.Errorf("kernelType=%s is invalid", cfg.KernelType)
 	}
-	ignCfg, report, err := ign.Parse(cfg.Config.Raw)
-	if err != nil {
-		return errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+
+	if cfg.Config.Raw != nil {
+		ignCfg, report, err := ign.Parse(cfg.Config.Raw)
+		if err != nil {
+			return errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+		}
+		if err := ValidateIgnition(ignCfg); err != nil {
+			return err
+		}
 	}
-	if err := ValidateIgnition(ignCfg); err != nil {
-		return err
-	}
+
 	return nil
 }
