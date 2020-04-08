@@ -23,7 +23,7 @@ import (
 func getMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the previous MC is deleted
-	mcp, err := cs.MachineConfigPools().Get(poolName, metav1.GetOptions{})
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
 	require.Nil(t, err)
 	return mcp.Status.Configuration.Name
 }
@@ -43,7 +43,7 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 	var renderedConfig string
 	startTime := time.Now()
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -65,7 +65,7 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
 	startTime := time.Now()
 	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get(pool, metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -140,10 +140,10 @@ func createMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	}
 	infraMCP.ObjectMeta.Labels = make(map[string]string)
 	infraMCP.ObjectMeta.Labels[mcpName] = ""
-	_, err := cs.MachineConfigPools().Create(infraMCP)
+	_, err := cs.MachineConfigPools().Create(context.TODO(), infraMCP, metav1.CreateOptions{})
 	require.Nil(t, err)
 	return func() {
-		err := cs.MachineConfigPools().Delete(mcpName, &metav1.DeleteOptions{})
+		err := cs.MachineConfigPools().Delete(context.TODO(), mcpName, metav1.DeleteOptions{})
 		require.Nil(t, err)
 	}
 }

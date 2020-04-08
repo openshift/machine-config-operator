@@ -15,7 +15,7 @@ import (
 func TestClusterOperatorRelatedObjects(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	co, err := cs.ClusterOperators().Get("machine-config", metav1.GetOptions{})
+	co, err := cs.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("couldn't get clusteroperator %v", err)
 	}
@@ -35,12 +35,12 @@ func TestClusterOperatorRelatedObjects(t *testing.T) {
 
 func TestMastersSchedulable(t *testing.T) {
 	cs := framework.NewClientSet("")
-	schedulerCR, err := cs.ConfigV1Interface.Schedulers().Get("cluster", metav1.GetOptions{})
+	schedulerCR, err := cs.ConfigV1Interface.Schedulers().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Error while listing scheduler CR with error %v", err)
 	}
 	schedulerCR.Spec.MastersSchedulable = true
-	if _, err = cs.ConfigV1Interface.Schedulers().Update(schedulerCR); err != nil {
+	if _, err = cs.ConfigV1Interface.Schedulers().Update(context.TODO(), schedulerCR, metav1.UpdateOptions{}); err != nil {
 		t.Fatalf("Error while updating scheduler CR with error %v", err)
 	}
 	err = waitForAllMastersUpdate(cs, true)
@@ -48,12 +48,12 @@ func TestMastersSchedulable(t *testing.T) {
 		t.Fatalf("Expected all master nodes to be schedulable but it's not the case with %v", err)
 	}
 	// Reset scheduler CR
-	schedulerCR, err = cs.ConfigV1Interface.Schedulers().Get("cluster", metav1.GetOptions{})
+	schedulerCR, err = cs.ConfigV1Interface.Schedulers().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Error while listing scheduler CR with error %v", err)
 	}
 	schedulerCR.Spec.MastersSchedulable = false
-	if _, err = cs.ConfigV1Interface.Schedulers().Update(schedulerCR); err != nil {
+	if _, err = cs.ConfigV1Interface.Schedulers().Update(context.TODO(), schedulerCR, metav1.UpdateOptions{}); err != nil {
 		t.Fatalf("Error while updating scheduler CR with error %v", err)
 	}
 	err = waitForAllMastersUpdate(cs, false)
