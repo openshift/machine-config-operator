@@ -92,6 +92,13 @@ type ControllerConfigSpec struct {
 
 	// kubeletIPv6 is true to force a single-stack IPv6 kubelet config
 	KubeletIPv6 bool `json:"kubeletIPv6,omitempty"`
+
+	// networkType holds the type of network the cluster is using
+	// XXX: this is temporary and will be dropped as soon as possible in favor of a better support
+	// to start network related services the proper way.
+	// Nobody is also changing this once the cluster is up and running the first time, so, disallow
+	// regeneration if this changes.
+	NetworkType string `json:"networkType,omitempty"`
 }
 
 // ControllerConfigStatus is the status for ControllerConfig
