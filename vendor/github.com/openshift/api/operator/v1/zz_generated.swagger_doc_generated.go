@@ -119,10 +119,19 @@ func (AuthenticationList) SwaggerDoc() map[string]string {
 
 var map_AuthenticationStatus = map[string]string{
 	"managingOAuthAPIServer": "ManagingOAuthAPIServer indicates whether this operator is managing OAuth related APIs. Setting this field to true will cause OAS-O to step down. Note that this field will be removed in the future releases, once https://github.com/openshift/enhancements/blob/master/enhancements/authentication/separate-oauth-resources.md is fully implemented",
+	"oauthAPIServer":         "OAuthAPIServer holds status specific only to oauth-apiserver",
 }
 
 func (AuthenticationStatus) SwaggerDoc() map[string]string {
 	return map_AuthenticationStatus
+}
+
+var map_OAuthAPIServerStatus = map[string]string{
+	"latestAvailableRevision": "LatestAvailableRevision is the latest revision used as suffix of revisioned secrets like encryption-config. A new revision causes a new deployment of pods.",
+}
+
+func (OAuthAPIServerStatus) SwaggerDoc() map[string]string {
+	return map_OAuthAPIServerStatus
 }
 
 var map_Console = map[string]string{

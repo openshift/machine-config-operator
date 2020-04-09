@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -17,6 +18,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -205,11 +207,11 @@ func TestClusterServer(t *testing.T) {
 	}
 
 	cs := fake.NewSimpleClientset()
-	_, err = cs.MachineconfigurationV1().MachineConfigPools().Create(mp)
+	_, err = cs.MachineconfigurationV1().MachineConfigPools().Create(context.TODO(), mp, metav1.CreateOptions{})
 	if err != nil {
 		t.Logf("err: %v", err)
 	}
-	_, err = cs.MachineconfigurationV1().MachineConfigs().Create(origMC)
+	_, err = cs.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), origMC, metav1.CreateOptions{})
 	if err != nil {
 		t.Logf("err: %v", err)
 	}

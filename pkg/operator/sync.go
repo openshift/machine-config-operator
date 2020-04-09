@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -409,7 +410,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 	}
 
 	// Only generate a new proxy cookie secret if the secret does not exist or if it has been deleted.
-	_, err = optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get("cookie-secret", metav1.GetOptions{})
+	_, err = optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get(context.TODO(), "cookie-secret", metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		cookieSecretBytes, err := renderAsset(config, "manifests/machineconfigdaemon/cookie-secret.yaml")
 		if err != nil {
@@ -540,7 +541,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				return false, nil
 			}
 			optr.setOperatorStatusExtension(&co.Status, lastErr)
-			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(co)
+			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
 			if err != nil {
 				lastErr = errors.Wrapf(lastErr, "failed to update clusteroperator: %v", err)
 				return false, nil

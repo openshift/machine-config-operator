@@ -1,6 +1,7 @@
 package template
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +11,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // - sets `running` condition to `true`.
@@ -93,7 +95,7 @@ func updateControllerConfigStatus(name string,
 		if equality.Semantic.DeepEqual(old, new) {
 			return nil
 		}
-		_, err = client.UpdateStatus(new)
+		_, err = client.UpdateStatus(context.TODO(), new, metav1.UpdateOptions{})
 		return err
 	})
 }
