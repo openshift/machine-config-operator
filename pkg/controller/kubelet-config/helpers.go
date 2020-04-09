@@ -52,7 +52,7 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %v\nReport: %v", err, report)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == "/etc/kubernetes/kubelet.conf" {
