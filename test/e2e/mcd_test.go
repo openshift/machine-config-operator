@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -32,13 +33,13 @@ func TestMCDToken(t *testing.T) {
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
 	}
 
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
 	require.Nil(t, err)
 
 	for _, pod := range mcdList.Items {
 		res, err := cs.Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
-		}).DoRaw()
+		}).DoRaw(context.TODO())
 		require.Nil(t, err)
 		for _, line := range strings.Split(string(res), "\n") {
 			if strings.Contains(line, "Unable to rotate token") {
@@ -100,7 +101,7 @@ func TestMCDeployed(t *testing.T) {
 		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
 
 		// create the dummy MC now
-		_, err := cs.MachineConfigs().Create(mcadd)
+		_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
 		if err != nil {
 			t.Errorf("failed to create machine config %v", err)
 		}
@@ -127,7 +128,7 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 	}
 	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
 
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(listOptions)
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +164,7 @@ func TestUpdateSSH(t *testing.T) {
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 
-	_, err := cs.MachineConfigs().Create(mcadd)
+	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
 	require.Nil(t, err, "failed to create MC")
 	t.Logf("Created %s", mcadd.Name)
 
@@ -203,7 +204,7 @@ func TestKernelArguments(t *testing.T) {
 		},
 	}
 
-	_, err := cs.MachineConfigs().Create(kargsMC)
+	_, err := cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", kargsMC.Name)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
@@ -229,7 +230,7 @@ func TestKernelArguments(t *testing.T) {
 func TestKernelType(t *testing.T) {
 	cs := framework.NewClientSet("")
 	// Get initial MachineConfig used by the worker pool so that we can rollback to it later on
-	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	workerOldMC := mcp.Status.Configuration.Name
 
@@ -246,7 +247,7 @@ func TestKernelType(t *testing.T) {
 		},
 	}
 
-	_, err = cs.MachineConfigs().Create(kernelType)
+	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kernelType.Name)
@@ -268,7 +269,7 @@ func TestKernelType(t *testing.T) {
 	}
 
 	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
-	if err := cs.MachineConfigs().Delete(kernelType.Name, &metav1.DeleteOptions{}); err != nil {
+	if err := cs.MachineConfigs().Delete(context.TODO(), kernelType.Name, metav1.DeleteOptions{}); err != nil {
 		t.Error(err)
 	}
 
@@ -305,12 +306,12 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	mcadd.Spec.Config.Raw = rawIgnCfg
 
 	// create the dummy MC now
-	_, err = cs.MachineConfigs().Create(mcadd)
+	_, err = cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
 	require.Nil(t, err, "failed to create machine config")
 
 	// verify the pool goes degraded
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -323,13 +324,13 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	}
 
 	// now delete the bad MC and watch pool flipping back to not degraded
-	if err := cs.MachineConfigs().Delete(mcadd.Name, &metav1.DeleteOptions{}); err != nil {
+	if err := cs.MachineConfigs().Delete(context.TODO(), mcadd.Name, metav1.DeleteOptions{}); err != nil {
 		t.Error(err)
 	}
 
 	// wait for the mcp to go back to previous config
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -363,7 +364,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	workerOldMc := getMcName(t, cs, "worker")
 
 	// create the dummy MC now
-	_, err = cs.MachineConfigs().Create(mcadd)
+	_, err = cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
@@ -393,7 +394,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// verify that we got indeed an unavailable machine in the pool
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -406,7 +407,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	}
 
 	// now delete the bad MC and watch the nodes reconciling as expected
-	if err := cs.MachineConfigs().Delete(mcadd.Name, &metav1.DeleteOptions{}); err != nil {
+	if err := cs.MachineConfigs().Delete(context.TODO(), mcadd.Name, metav1.DeleteOptions{}); err != nil {
 		t.Error(err)
 	}
 
@@ -421,7 +422,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -453,7 +454,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	workerOldMc := getMcName(t, cs, "worker")
 
 	// create the dummy MC now
-	_, err := cs.MachineConfigs().Create(mcHostFile)
+	_, err := cs.MachineConfigs().Create(context.TODO(), mcHostFile, metav1.CreateOptions{})
 	if err != nil {
 		t.Errorf("failed to create machine config %v", err)
 	}
@@ -467,7 +468,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	}
 
 	// now delete the bad MC and watch the nodes reconciling as expected
-	if err := cs.MachineConfigs().Delete(mcHostFile.Name, &metav1.DeleteOptions{}); err != nil {
+	if err := cs.MachineConfigs().Delete(context.TODO(), mcHostFile.Name, metav1.DeleteOptions{}); err != nil {
 		t.Error(err)
 	}
 
@@ -498,7 +499,7 @@ func TestCustomPool(t *testing.T) {
 	createMCP(t, cs, "infra")
 
 	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool", "root")
-	_, err := cs.MachineConfigs().Create(infraMC)
+	_, err := cs.MachineConfigs().Create(context.TODO(), infraMC, metav1.CreateOptions{})
 	require.Nil(t, err)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", infraMC.Name)
 	require.Nil(t, err)
@@ -517,10 +518,10 @@ func TestCustomPool(t *testing.T) {
 
 	unlabelFunc()
 
-	workerMCP, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(infraNode.Name, metav1.GetOptions{})
+		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil

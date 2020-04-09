@@ -1,6 +1,7 @@
 package render
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"time"
@@ -445,7 +446,7 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 	}
 	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool); err != nil {
+	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 	return nil
@@ -454,7 +455,7 @@ func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) erro
 func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
 	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(pool); updateErr != nil {
+	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
 		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
 	return err
@@ -492,7 +493,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(generated)
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), generated, metav1.CreateOptions{})
 		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
 	}
 	if err != nil {
@@ -508,7 +509,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	newPool.Spec.Configuration.Name = generated.Name
 	newPool.Spec.Configuration.Source = source
 	// TODO(walters) Use subresource or JSON patch, but the latter isn't supported by the unit test mocks
-	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(newPool)
+	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}

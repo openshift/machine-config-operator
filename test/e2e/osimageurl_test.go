@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
@@ -11,12 +12,12 @@ func TestOSImageURL(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	// grab the latest worker- MC
-	mcp, err := cs.MachineConfigPools().Get("worker", metav1.GetOptions{})
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
 
-	mc, err := cs.MachineConfigs().Get(mcp.Status.Configuration.Name, metav1.GetOptions{})
+	mc, err := cs.MachineConfigs().Get(context.TODO(), mcp.Status.Configuration.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
@@ -26,11 +27,11 @@ func TestOSImageURL(t *testing.T) {
 	}
 
 	// grab the latest master- MC
-	mcp, err = cs.MachineConfigPools().Get("master", metav1.GetOptions{})
+	mcp, err = cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}
-	mc, err = cs.MachineConfigs().Get(mcp.Status.Configuration.Name, metav1.GetOptions{})
+	mc, err = cs.MachineConfigs().Get(context.TODO(), mcp.Status.Configuration.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("%#v", err)
 	}

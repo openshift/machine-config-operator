@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"github.com/pkg/errors"
 	"strings"
@@ -103,7 +104,7 @@ func makeNodeUnSchedulableOrSchedulable(cs *framework.ClientSet, node string, un
 			return nil
 		}
 		n.Spec.Unschedulable = unschedulable
-		if _, err := cs.CoreV1Interface.Nodes().Update(n); err != nil {
+		if _, err := cs.CoreV1Interface.Nodes().Update(context.TODO(), n, metav1.UpdateOptions{}); err != nil {
 			if strings.Contains(err.Error(), "the object has been modified") {
 				fmt.Print("    Node object was modified and not up to date; retrying\n")
 				continue
@@ -155,7 +156,7 @@ func evictEtcdQuotaGuardPodsFromNode(cs *framework.ClientSet, node string) error
 	var podErrs []error
 	for _, pod := range pods {
 		fmt.Printf("  Evicting pod %s/%s/%s...\n", node, pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
-		err = cs.CoreV1Interface.Pods(pod.ObjectMeta.Namespace).Evict(&policyv1beta1.Eviction{metav1.TypeMeta{}, pod.ObjectMeta, &metav1.DeleteOptions{}})
+		err = cs.CoreV1Interface.Pods(pod.ObjectMeta.Namespace).Evict(context.TODO(), &policyv1beta1.Eviction{metav1.TypeMeta{}, pod.ObjectMeta, &metav1.DeleteOptions{}})
 		if err != nil {
 			podErrs = append(podErrs, errors.Wrapf(err, "Unable to evict pod %s/%s", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name))
 		}
@@ -191,12 +192,12 @@ func makeOneNodeUnschedulableAndEvict(cs *framework.ClientSet) error {
 }
 
 func getNode(cs *framework.ClientSet, node string) (*corev1.Node, error) {
-	return cs.CoreV1Interface.Nodes().Get(node, metav1.GetOptions{})
+	return cs.CoreV1Interface.Nodes().Get(context.TODO(), node, metav1.GetOptions{})
 }
 
 func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 	err := wait.PollImmediate(1*time.Second, 30*time.Second, func() (bool, error) {
-		_, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
+		_, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get(context.TODO(), "etcd-quorum-guard", metav1.GetOptions{})
 		if err == nil {
 			return true, nil
 		}
@@ -211,7 +212,7 @@ func waitForEtcdQuorumGuardDeployment(cs *framework.ClientSet) error {
 // specified bounds.
 func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 	err := wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
-		d, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get("etcd-quorum-guard", metav1.GetOptions{})
+		d, err := cs.AppsV1Interface.Deployments("openshift-machine-config-operator").Get(context.TODO(), "etcd-quorum-guard", metav1.GetOptions{})
 		if err != nil {
 			// By this point the deployment should exist.
 			fmt.Printf("  error waiting for etcd-quorum-guard deployment to exist: %v\n", err)
@@ -247,7 +248,7 @@ func waitForPods(cs *framework.ClientSet, expectedTotal, min, max int32) error {
 }
 
 func getMasterNodes(cs *framework.ClientSet) error {
-	n, err := cs.CoreV1Interface.Nodes().List(metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
+	n, err := cs.CoreV1Interface.Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: "node-role.kubernetes.io/master="})
 	if err != nil {
 		return err
 	}
@@ -263,7 +264,7 @@ func getEtcdQuotaGuardPodsOnNode(cs *framework.ClientSet, node string) ([]corev1
 	if err != nil {
 		return answer, fmt.Errorf("No such node %s", node)
 	}
-	p, err := cs.CoreV1Interface.Pods("openshift-machine-config-operator").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
+	p, err := cs.CoreV1Interface.Pods("openshift-machine-config-operator").List(context.TODO(), metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
 	for _, pod := range p.Items {
 		if pod.Spec.NodeName == node {
 			answer = append(answer, pod)
@@ -273,7 +274,7 @@ func getEtcdQuotaGuardPodsOnNode(cs *framework.ClientSet, node string) ([]corev1
 }
 
 func getEtcdQuotaGuardPods(cs *framework.ClientSet) error {
-	p, err := cs.CoreV1Interface.Pods("openshift-machine-config-operator").List(metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
+	p, err := cs.CoreV1Interface.Pods("openshift-machine-config-operator").List(context.TODO(), metav1.ListOptions{LabelSelector: "name=etcd-quorum-guard"})
 	if err != nil {
 		return err
 	}

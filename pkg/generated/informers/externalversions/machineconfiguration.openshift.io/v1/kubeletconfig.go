@@ -3,6 +3,7 @@
 package v1
 
 import (
+	"context"
 	time "time"
 
 	machineconfigurationopenshiftiov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -44,13 +45,13 @@ func NewFilteredKubeletConfigInformer(client versioned.Interface, resyncPeriod t
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1().KubeletConfigs().List(options)
+				return client.MachineconfigurationV1().KubeletConfigs().List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.MachineconfigurationV1().KubeletConfigs().Watch(options)
+				return client.MachineconfigurationV1().KubeletConfigs().Watch(context.TODO(), options)
 			},
 		},
 		&machineconfigurationopenshiftiov1.KubeletConfig{},

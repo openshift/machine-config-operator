@@ -1,6 +1,7 @@
 package resourceapply
 
 import (
+	"context"
 	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -10,9 +11,9 @@ import (
 
 // ApplyClusterRoleBinding applies the required clusterrolebinding to the cluster.
 func ApplyClusterRoleBinding(client rbacclientv1.ClusterRoleBindingsGetter, required *rbacv1.ClusterRoleBinding) (*rbacv1.ClusterRoleBinding, bool, error) {
-	existing, err := client.ClusterRoleBindings().Get(required.Name, metav1.GetOptions{})
+	existing, err := client.ClusterRoleBindings().Get(context.TODO(), required.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.ClusterRoleBindings().Create(required)
+		actual, err := client.ClusterRoleBindings().Create(context.TODO(), required, metav1.CreateOptions{})
 		return actual, true, err
 	}
 	if err != nil {
@@ -25,15 +26,15 @@ func ApplyClusterRoleBinding(client rbacclientv1.ClusterRoleBindingsGetter, requ
 		return existing, false, nil
 	}
 
-	actual, err := client.ClusterRoleBindings().Update(existing)
+	actual, err := client.ClusterRoleBindings().Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }
 
 // ApplyRoleBinding applies the required rolebinding to the cluster.
 func ApplyRoleBinding(client rbacclientv1.RoleBindingsGetter, required *rbacv1.RoleBinding) (*rbacv1.RoleBinding, bool, error) {
-	existing, err := client.RoleBindings(required.Namespace).Get(required.Name, metav1.GetOptions{})
+	existing, err := client.RoleBindings(required.Namespace).Get(context.TODO(), required.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.RoleBindings(required.Namespace).Create(required)
+		actual, err := client.RoleBindings(required.Namespace).Create(context.TODO(), required, metav1.CreateOptions{})
 		return actual, true, err
 	}
 	if err != nil {
@@ -46,15 +47,15 @@ func ApplyRoleBinding(client rbacclientv1.RoleBindingsGetter, required *rbacv1.R
 		return existing, false, nil
 	}
 
-	actual, err := client.RoleBindings(required.Namespace).Update(existing)
+	actual, err := client.RoleBindings(required.Namespace).Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }
 
 // ApplyClusterRole applies the required clusterrole to the cluster.
 func ApplyClusterRole(client rbacclientv1.ClusterRolesGetter, required *rbacv1.ClusterRole) (*rbacv1.ClusterRole, bool, error) {
-	existing, err := client.ClusterRoles().Get(required.Name, metav1.GetOptions{})
+	existing, err := client.ClusterRoles().Get(context.TODO(), required.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.ClusterRoles().Create(required)
+		actual, err := client.ClusterRoles().Create(context.TODO(), required, metav1.CreateOptions{})
 		return actual, true, err
 	}
 	if err != nil {
@@ -67,6 +68,6 @@ func ApplyClusterRole(client rbacclientv1.ClusterRolesGetter, required *rbacv1.C
 		return existing, false, nil
 	}
 
-	actual, err := client.ClusterRoles().Update(existing)
+	actual, err := client.ClusterRoles().Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }

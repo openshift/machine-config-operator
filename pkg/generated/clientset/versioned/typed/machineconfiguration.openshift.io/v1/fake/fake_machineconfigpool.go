@@ -3,6 +3,8 @@
 package fake
 
 import (
+	"context"
+
 	machineconfigurationopenshiftiov1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
@@ -22,7 +24,7 @@ var machineconfigpoolsResource = schema.GroupVersionResource{Group: "machineconf
 var machineconfigpoolsKind = schema.GroupVersionKind{Group: "machineconfiguration.openshift.io", Version: "v1", Kind: "MachineConfigPool"}
 
 // Get takes name of the machineConfigPool, and returns the corresponding machineConfigPool object, and an error if there is any.
-func (c *FakeMachineConfigPools) Get(name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
+func (c *FakeMachineConfigPools) Get(ctx context.Context, name string, options v1.GetOptions) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootGetAction(machineconfigpoolsResource, name), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	if obj == nil {
@@ -32,7 +34,7 @@ func (c *FakeMachineConfigPools) Get(name string, options v1.GetOptions) (result
 }
 
 // List takes label and field selectors, and returns the list of MachineConfigPools that match those selectors.
-func (c *FakeMachineConfigPools) List(opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.MachineConfigPoolList, err error) {
+func (c *FakeMachineConfigPools) List(ctx context.Context, opts v1.ListOptions) (result *machineconfigurationopenshiftiov1.MachineConfigPoolList, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootListAction(machineconfigpoolsResource, machineconfigpoolsKind, opts), &machineconfigurationopenshiftiov1.MachineConfigPoolList{})
 	if obj == nil {
@@ -53,13 +55,13 @@ func (c *FakeMachineConfigPools) List(opts v1.ListOptions) (result *machineconfi
 }
 
 // Watch returns a watch.Interface that watches the requested machineConfigPools.
-func (c *FakeMachineConfigPools) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeMachineConfigPools) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewRootWatchAction(machineconfigpoolsResource, opts))
 }
 
 // Create takes the representation of a machineConfigPool and creates it.  Returns the server's representation of the machineConfigPool, and an error, if there is any.
-func (c *FakeMachineConfigPools) Create(machineConfigPool *machineconfigurationopenshiftiov1.MachineConfigPool) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
+func (c *FakeMachineConfigPools) Create(ctx context.Context, machineConfigPool *machineconfigurationopenshiftiov1.MachineConfigPool, opts v1.CreateOptions) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootCreateAction(machineconfigpoolsResource, machineConfigPool), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	if obj == nil {
@@ -69,7 +71,7 @@ func (c *FakeMachineConfigPools) Create(machineConfigPool *machineconfigurationo
 }
 
 // Update takes the representation of a machineConfigPool and updates it. Returns the server's representation of the machineConfigPool, and an error, if there is any.
-func (c *FakeMachineConfigPools) Update(machineConfigPool *machineconfigurationopenshiftiov1.MachineConfigPool) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
+func (c *FakeMachineConfigPools) Update(ctx context.Context, machineConfigPool *machineconfigurationopenshiftiov1.MachineConfigPool, opts v1.UpdateOptions) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateAction(machineconfigpoolsResource, machineConfigPool), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	if obj == nil {
@@ -80,7 +82,7 @@ func (c *FakeMachineConfigPools) Update(machineConfigPool *machineconfigurationo
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeMachineConfigPools) UpdateStatus(machineConfigPool *machineconfigurationopenshiftiov1.MachineConfigPool) (*machineconfigurationopenshiftiov1.MachineConfigPool, error) {
+func (c *FakeMachineConfigPools) UpdateStatus(ctx context.Context, machineConfigPool *machineconfigurationopenshiftiov1.MachineConfigPool, opts v1.UpdateOptions) (*machineconfigurationopenshiftiov1.MachineConfigPool, error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootUpdateSubresourceAction(machineconfigpoolsResource, "status", machineConfigPool), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	if obj == nil {
@@ -90,22 +92,22 @@ func (c *FakeMachineConfigPools) UpdateStatus(machineConfigPool *machineconfigur
 }
 
 // Delete takes name of the machineConfigPool and deletes it. Returns an error if one occurs.
-func (c *FakeMachineConfigPools) Delete(name string, options *v1.DeleteOptions) error {
+func (c *FakeMachineConfigPools) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewRootDeleteAction(machineconfigpoolsResource, name), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeMachineConfigPools) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(machineconfigpoolsResource, listOptions)
+func (c *FakeMachineConfigPools) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewRootDeleteCollectionAction(machineconfigpoolsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &machineconfigurationopenshiftiov1.MachineConfigPoolList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched machineConfigPool.
-func (c *FakeMachineConfigPools) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
+func (c *FakeMachineConfigPools) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *machineconfigurationopenshiftiov1.MachineConfigPool, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(machineconfigpoolsResource, name, pt, data, subresources...), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	if obj == nil {

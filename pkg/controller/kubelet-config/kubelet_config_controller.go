@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -223,13 +224,13 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 		return nil
 	}
 	finalizerName := cfg.GetFinalizers()[0]
-	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(metav1.ListOptions{})
+	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	for _, mc := range mcs.Items {
 		if string(mc.ObjectMeta.GetUID()) == finalizerName || mc.GetName() == finalizerName {
-			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(mc.GetName(), &metav1.DeleteOptions{})
+			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.GetName(), metav1.DeleteOptions{})
 			if err != nil && !macherrors.IsNotFound(err) {
 				return err
 			}
@@ -350,7 +351,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 			return getErr
 		}
 		newcfg.Status.Conditions = append(newcfg.Status.Conditions, wrapErrorWithCondition(err, args...))
-		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(newcfg)
+		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return lerr
 	})
 	if statusUpdateError != nil {
@@ -435,7 +436,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		role := pool.Name
 		// Get MachineConfig
 		managedKey := getManagedKubeletConfigKey(pool)
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !macherrors.IsNotFound(err) {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
@@ -497,9 +498,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(mc)
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
 			}
 			return err
 		}); err != nil {
@@ -547,7 +548,7 @@ func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) 
 }
 
 func (ctrl *Controller) patchKubeletConfigs(name string, patch []byte) error {
-	_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(name, types.MergePatchType, patch)
+	_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(context.TODO(), name, types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
 }
 

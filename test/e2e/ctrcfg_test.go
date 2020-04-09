@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
@@ -69,10 +70,10 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 
 	// create old mc to have something to verify we successfully rolled back
 	oldMCConfig := createMC(mcName, poolName)
-	_, err := cs.MachineConfigs().Create(oldMCConfig)
+	_, err := cs.MachineConfigs().Create(context.TODO(), oldMCConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
-		err := cs.MachineConfigs().Delete(oldMCConfig.Name, &metav1.DeleteOptions{})
+		err := cs.MachineConfigs().Delete(context.TODO(), oldMCConfig.Name, metav1.DeleteOptions{})
 		require.Nil(t, err, "machine config deletion failed")
 	})
 	waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
@@ -124,10 +125,10 @@ func createCtrcfgWithConfig(t *testing.T, cs *framework.ClientSet, name, key str
 	spec.MachineConfigPoolSelector.MatchLabels[key] = ""
 	ctrcfg.Spec = spec
 
-	_, err := cs.ContainerRuntimeConfigs().Create(ctrcfg)
+	_, err := cs.ContainerRuntimeConfigs().Create(context.TODO(), ctrcfg, metav1.CreateOptions{})
 	require.Nil(t, err)
 	return func() error {
-		return cs.ContainerRuntimeConfigs().Delete(name, &metav1.DeleteOptions{})
+		return cs.ContainerRuntimeConfigs().Delete(context.TODO(), name, metav1.DeleteOptions{})
 	}
 }
 
@@ -137,7 +138,7 @@ func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (
 
 	// get the machine config created when we deploy the ctrcfg
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
-		mcs, err := cs.MachineConfigs().List(metav1.ListOptions{})
+		mcs, err := cs.MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			return false, err
 		}

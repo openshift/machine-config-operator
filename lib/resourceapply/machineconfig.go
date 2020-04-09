@@ -1,6 +1,8 @@
 package resourceapply
 
 import (
+	"context"
+
 	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
@@ -10,9 +12,9 @@ import (
 
 // ApplyMachineConfig applies the required machineconfig to the cluster.
 func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfgv1.MachineConfig) (*mcfgv1.MachineConfig, bool, error) {
-	existing, err := client.MachineConfigs().Get(required.GetName(), metav1.GetOptions{})
+	existing, err := client.MachineConfigs().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.MachineConfigs().Create(required)
+		actual, err := client.MachineConfigs().Create(context.TODO(), required, metav1.CreateOptions{})
 		return actual, true, err
 	}
 	if err != nil {
@@ -25,15 +27,15 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 		return existing, false, nil
 	}
 
-	actual, err := client.MachineConfigs().Update(existing)
+	actual, err := client.MachineConfigs().Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }
 
 // ApplyMachineConfigPool applies the required machineconfig to the cluster.
 func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, required *mcfgv1.MachineConfigPool) (*mcfgv1.MachineConfigPool, bool, error) {
-	existing, err := client.MachineConfigPools().Get(required.GetName(), metav1.GetOptions{})
+	existing, err := client.MachineConfigPools().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.MachineConfigPools().Create(required)
+		actual, err := client.MachineConfigPools().Create(context.TODO(), required, metav1.CreateOptions{})
 		return actual, true, err
 	}
 	if err != nil {
@@ -46,15 +48,15 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 		return existing, false, nil
 	}
 
-	actual, err := client.MachineConfigPools().Update(existing)
+	actual, err := client.MachineConfigPools().Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }
 
 // ApplyControllerConfig applies the required machineconfig to the cluster.
 func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required *mcfgv1.ControllerConfig) (*mcfgv1.ControllerConfig, bool, error) {
-	existing, err := client.ControllerConfigs().Get(required.GetName(), metav1.GetOptions{})
+	existing, err := client.ControllerConfigs().Get(context.TODO(), required.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		actual, err := client.ControllerConfigs().Create(required)
+		actual, err := client.ControllerConfigs().Create(context.TODO(), required, metav1.CreateOptions{})
 		return actual, true, err
 	}
 	if err != nil {
@@ -67,6 +69,6 @@ func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required
 		return existing, false, nil
 	}
 
-	actual, err := client.ControllerConfigs().Update(existing)
+	actual, err := client.ControllerConfigs().Update(context.TODO(), existing, metav1.UpdateOptions{})
 	return actual, true, err
 }
