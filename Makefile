@@ -71,12 +71,16 @@ verify: install-tools
 	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
 	# addressed
 	gosec -severity high --confidence medium -exclude G204 -quiet ./...
-	# Remove once code-generator plays nice with go modules, see
+	# Remove the vendor/k8s.io/code-generator vendor hack
+	# once code-generator plays nice with go modules, see
 	# https://github.com/kubernetes/kubernetes/issues/82531 and
 	# https://github.com/kubernetes/kubernetes/pull/85559
-	pushd vendor/k8s.io/code-generator && go mod vendor && popd
+	pushd vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
+	rm -f vendor/k8s.io/code-generator/go.mod
+	mv vendor/k8s.io/code-generator/go.mod.bak vendor/k8s.io/code-generator/go.mod
+	rm -rf vendor/k8s.io/code-generator/vendor
 
 # Template for defining build targets for binaries.
 define target_template =
