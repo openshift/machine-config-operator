@@ -249,6 +249,7 @@ contents:
     # Paths to directories where CNI plugin binaries are located.
     plugin_dirs = [
         "/var/lib/cni/bin",
+        "/usr/libexec/cni",
     ]
 
     # A necessary configuration for Prometheus based metrics retrieval
