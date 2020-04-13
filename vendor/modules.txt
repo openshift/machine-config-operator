@@ -84,13 +84,16 @@ github.com/coreos/ignition/config/v1
 github.com/coreos/ignition/config/v1/types
 # github.com/coreos/ignition/v2 v2.2.1
 github.com/coreos/ignition/v2/config/v3_0/types
+github.com/coreos/ignition/v2/config/validate
 github.com/coreos/ignition/v2/config/shared/errors
 github.com/coreos/ignition/v2/config/shared/validations
 github.com/coreos/ignition/v2/config/util
 # github.com/coreos/vcontext v0.0.0-20190529201340-22b159166068
 github.com/coreos/vcontext/path
 github.com/coreos/vcontext/report
+github.com/coreos/vcontext/json
 github.com/coreos/vcontext/tree
+github.com/coreos/vcontext/validate
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/docker/docker v1.4.2-0.20190927142053-ada3c14355ce
