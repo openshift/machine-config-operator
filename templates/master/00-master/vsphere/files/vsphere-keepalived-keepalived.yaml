@@ -6,7 +6,7 @@ contents:
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
     {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     vrrp_script chk_ocp {
-        script "/usr/bin/curl -o /dev/null -kLs https://0:6443/readyz"
+        script "/usr/bin/curl -o /dev/null -kLs https://localhost:6443/readyz"
         interval 1
         weight 50
     }
@@ -20,7 +20,7 @@ contents:
     # TODO: Improve this check. The port is assumed to be alive.
     # Need to assess what is the ramification if the port is not there.
     vrrp_script chk_ingress {
-        script "/usr/bin/curl -o /dev/null -kLs http://0:1936/healthz"
+        script "/usr/bin/curl -o /dev/null -kLs http://localhost:1936/healthz"
         interval 1
         weight 50
     }
@@ -69,7 +69,7 @@ contents:
         advert_int 1
         authentication {
             auth_type PASS
-            auth_pass cluster_uuid_ingress_vip
+            auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip
         }
         virtual_ipaddress {
             {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}

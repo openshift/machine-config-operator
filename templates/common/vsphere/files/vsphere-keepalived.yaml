@@ -103,6 +103,10 @@ contents:
         - "{{ .Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
         - "--ingress-vip"
         - "{{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
         volumeMounts:
         - name: resource-dir
           mountPath: "/config"
