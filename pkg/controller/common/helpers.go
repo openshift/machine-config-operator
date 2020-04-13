@@ -7,8 +7,9 @@ import (
 	"sort"
 
 	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate "github.com/coreos/ignition/config/validate"
+	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	errors "github.com/pkg/errors"
@@ -28,10 +29,10 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 
 	var fips bool
 	var kernelType string
-	var outIgn igntypes.Config
+	var outIgn ign2types.Config
 
 	if configs[0].Spec.Config.Raw == nil {
-		outIgn = igntypes.Config{}
+		outIgn = ign2types.Config{}
 	} else {
 		parsedIgn, report, err := ign.Parse(configs[0].Spec.Config.Raw)
 		if err != nil {
@@ -46,9 +47,9 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 			fips = true
 		}
 
-		var appendIgn igntypes.Config
+		var appendIgn ign2types.Config
 		if configs[idx].Spec.Config.Raw == nil {
-			appendIgn = igntypes.Config{}
+			appendIgn = ign2types.Config{}
 		} else {
 			parsedIgn, report, err := ign.Parse(configs[idx].Spec.Config.Raw)
 			if err != nil {
@@ -98,10 +99,10 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 }
 
 // NewIgnConfig returns an empty ignition config with version set as latest version
-func NewIgnConfig() igntypes.Config {
+func NewIgnConfig() ign2types.Config {
 	return igntypes.Config{
-		Ignition: igntypes.Ignition{
-			Version: igntypes.MaxVersion.String(),
+		Ignition: ign2types.Ignition{
+			Version: ign2types.MaxVersion.String(),
 		},
 	}
 }
@@ -113,14 +114,30 @@ func WriteTerminationError(err error) {
 	glog.Fatal(msg)
 }
 
-// ValidateIgnition wraps the underlying Ignition validation, but explicitly supports
+// ValidateIgnition2 wraps the underlying Ignition validation, but explicitly supports
 // a completely empty Ignition config as valid.  This is because we
 // want to allow MachineConfig objects which just have e.g. KernelArguments
 // set, but no Ignition config.
 // Returns nil if the config is valid (per above) or an error containing a Report otherwise.
-func ValidateIgnition(cfg igntypes.Config) error {
+func ValidateIgnition2(cfg ign2types.Config) error {
 	// only validate if Ignition Config is not empty
-	if reflect.DeepEqual(igntypes.Config{}, cfg) {
+	if reflect.DeepEqual(ign2types.Config{}, cfg) {
+		return nil
+	}
+	if report := validate.ValidateWithoutSource(reflect.ValueOf(cfg)); report.IsFatal() {
+		return errors.Errorf("invalid Ignition config found: %v", report)
+	}
+	return nil
+}
+
+// ValidateIgnition3 wraps the underlying Ignition validation, but explicitly supports
+// a completely empty Ignition config as valid.  This is because we
+// want to allow MachineConfig objects which just have e.g. KernelArguments
+// set, but no Ignition config.
+// Returns nil if the config is valid (per above) or an error containing a Report otherwise.
+func ValidateIgnition3(cfg ign3types.Config) error {
+	// only validate if Ignition Config is not empty
+	if reflect.DeepEqual(ign3types.Config{}, cfg) {
 		return nil
 	}
 	if report := validate.ValidateWithoutSource(reflect.ValueOf(cfg)); report.IsFatal() {
