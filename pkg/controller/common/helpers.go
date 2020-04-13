@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 
+	ignconverter "github.com/coreos/ign-converter"
 	ign "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate2 "github.com/coreos/ignition/config/validate"
@@ -113,6 +114,16 @@ func WriteTerminationError(err error) {
 	msg := err.Error()
 	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0644)
 	glog.Fatal(msg)
+}
+
+// convertIgnition3to2 takes an igntion v3 config and returns a v2 config
+func convertIgnition3to2(ignconfig ign3types.Config) (ign2types.Config, error) {
+	converted2, err := ignconverter.Translate3to2(ignconfig)
+	if err != nil {
+		return converted2, errors.Errorf("unable to convert Ignition V3 config to V2: %v", err)
+	}
+	glog.V(4).Infof("Successfully translated ignition V3 config to ignition V2 config: %v", converted2)
+	return converted2, nil
 }
 
 // ValidateIgnition wraps the underlying Ignition V2/V3 validation, but explicitly supports
