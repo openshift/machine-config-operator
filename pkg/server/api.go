@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,6 +47,9 @@ func (a *APIServer) Serve() {
 	mcs := &http.Server{
 		Addr:    fmt.Sprintf(":%v", a.port),
 		Handler: a.handler,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 
 	glog.Infof("Launching server on %s", mcs.Addr)
