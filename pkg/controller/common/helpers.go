@@ -7,9 +7,11 @@ import (
 	"sort"
 
 	ignconverter "github.com/coreos/ign-converter"
+	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate2 "github.com/coreos/ignition/config/validate"
+	ign3 "github.com/coreos/ignition/v2/config/v3_0"
 	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/golang/glog"
@@ -161,14 +163,33 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	}
 
 	if cfg.Config.Raw != nil {
-		ignCfg, report, err := ign.Parse(cfg.Config.Raw)
+		ignCfg, err := IgnParseWrapper(cfg.Config.Raw)
 		if err != nil {
-			return errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+			return err
 		}
 		if err := ValidateIgnition(ignCfg); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
+// a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
+func IgnParseWrapper(rawIgn []byte) (ignconfig interface{}, err error) {
+	ignCfg, rpt, err := ign.Parse(rawIgn)
+
+	// this is an ignv2cfg that was successfully parsed
+	if err == nil {
+		return ignCfg, nil
+	}
+	if err.Error() == ign2error.ErrUnknownVersion.Error() {
+		// check to see if this is an ignv3cfg
+		ignCfgV3, rptV3, errV3 := ign3.Parse(rawIgn)
+		if errV3 == nil {
+			return ignCfgV3, nil
+		}
+		return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
+	}
+	return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, rpt)
 }

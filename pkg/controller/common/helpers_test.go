@@ -5,6 +5,7 @@ import (
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,4 +69,32 @@ func TestConvertIgnition3to2(t *testing.T) {
 	assert.IsType(t, ign2types.Config{}, convertedIgn)
 	isValid2 := ValidateIgnition(convertedIgn)
 	require.Nil(t, isValid2)
+}
+
+func TestIgnParseWrapper(t *testing.T) {
+
+	// Make a new Ign3 config
+	testIgn3Config := ign3types.Config{}
+	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
+	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
+	testIgn3Config.Ignition.Version = "3.0.0"
+	// Make a Ign2 comp config
+	testIgn2Config := NewIgnConfig()
+	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
+	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser2}
+
+	// turn it into a raw []byte
+	rawIgn := helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully
+	convertedIgn, err := IgnParseWrapper(rawIgn)
+	require.Nil(t, err)
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
+	// Make a bad Ign3 cfg
+	testIgn3Config.Ignition.Version = "21.0.0"
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it failed since this is an invalid cfg
+	convertedIgn, err = IgnParseWrapper(rawIgn)
+	require.NotNil(t, err)
+	assert.Equal(t, ign2types.Config{}, convertedIgn)
 }

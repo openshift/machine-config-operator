@@ -68,11 +68,11 @@ github.com/coreos/go-systemd/unit
 # github.com/coreos/ign-converter v0.0.0-20200228175238-237c8512310a
 github.com/coreos/ign-converter
 # github.com/coreos/ignition v0.35.0
+github.com/coreos/ignition/config/shared/errors
 github.com/coreos/ignition/config/v2_2
 github.com/coreos/ignition/config/v2_2/types
 github.com/coreos/ignition/config/validate
 github.com/coreos/ignition/config/v2_3/types
-github.com/coreos/ignition/config/shared/errors
 github.com/coreos/ignition/config/util
 github.com/coreos/ignition/config/v2_1
 github.com/coreos/ignition/config/v2_1/types
@@ -86,14 +86,16 @@ github.com/coreos/ignition/config/v2_0/types
 github.com/coreos/ignition/config/v1
 github.com/coreos/ignition/config/v1/types
 # github.com/coreos/ignition/v2 v2.2.1
+github.com/coreos/ignition/v2/config/v3_0
 github.com/coreos/ignition/v2/config/v3_0/types
 github.com/coreos/ignition/v2/config/validate
+github.com/coreos/ignition/v2/config/merge
 github.com/coreos/ignition/v2/config/shared/errors
-github.com/coreos/ignition/v2/config/shared/validations
 github.com/coreos/ignition/v2/config/util
+github.com/coreos/ignition/v2/config/shared/validations
 # github.com/coreos/vcontext v0.0.0-20190529201340-22b159166068
-github.com/coreos/vcontext/path
 github.com/coreos/vcontext/report
+github.com/coreos/vcontext/path
 github.com/coreos/vcontext/json
 github.com/coreos/vcontext/tree
 github.com/coreos/vcontext/validate
