@@ -552,9 +552,9 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				}
 			}
 
-			ctrRuntimeConfigIgn := createNewIgnition(map[string][]byte{
-				storageConfigPath: storageTOML,
-				crioConfigPath:    crioTOML,
+			ctrRuntimeConfigIgn := createNewIgnition([]ignitionConfig{
+				{filePath: storageConfigPath, data: storageTOML},
+				{filePath: crioConfigPath, data: crioTOML},
 			})
 			rawCtrRuntimeConfigIgn, err := json.Marshal(ctrRuntimeConfigIgn)
 			if err != nil {
@@ -766,9 +766,9 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
 		}
 	}
-	registriesIgn := createNewIgnition(map[string][]byte{
-		registriesConfigPath: registriesTOML,
-		policyConfigPath:     policyJSON,
+	registriesIgn := createNewIgnition([]ignitionConfig{
+		{filePath: registriesConfigPath, data: registriesTOML},
+		{filePath: policyConfigPath, data: policyJSON},
 	})
 	return &registriesIgn, nil
 }

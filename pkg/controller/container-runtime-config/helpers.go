@@ -60,27 +60,35 @@ type tomlConfigCRIO struct {
 	} `toml:"crio"`
 }
 
+// ignitionConfig is a struct that holds the filepath and date of the various configs
+// Using a struct array ensures that the order of the ignition files always stay the same
+// ensuring that double MCs are not created due to a change in the order
+type ignitionConfig struct {
+	filePath string
+	data     []byte
+}
+
 type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error)
 
 // createNewIgnition takes a map where the key is the path of the file, and the value is the
 // new data in the form of a byte array. The function returns the ignition config with the
 // updated data.
-func createNewIgnition(configs map[string][]byte) ignTypes.Config {
+func createNewIgnition(configs []ignitionConfig) ignTypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfigSpecV3()
 	mode := 0644
 	overwrite := true
 	// Create ignitions
-	for filePath, data := range configs {
+	for _, ignConf := range configs {
 		// If the file is not included, the data will be nil so skip over
-		if data == nil {
+		if ignConf.data == nil {
 			continue
 		}
-		configdu := dataurl.New(data, "text/plain")
+		configdu := dataurl.New(ignConf.data, "text/plain")
 		configdu.Encoding = dataurl.EncodingASCII
 		strConfigdu := configdu.String()
 		configTempFile := ignTypes.File{
 			Node: ignTypes.Node{
-				Path:      filePath,
+				Path:      ignConf.filePath,
 				Overwrite: &overwrite,
 			},
 			FileEmbedded1: ignTypes.FileEmbedded1{
