@@ -83,9 +83,8 @@ spec:
           declare -r cert="${croot}/system:etcd-peer-${NODE_NAME}.crt"
           declare -r key="${croot}/system:etcd-peer-${NODE_NAME}.key"
           declare -r cacert="$croot/ca.crt"
-          export NSS_SDB_USE_CACHE=no
           [[ -z $cert || -z $key ]] && exit 1
-          echo "curl --silent --max-time 2 --cert \"${cert//:/\:}\" --key \"$key\" --cacert \"$cacert\" \"$health_endpoint\"" > /usr/local/bin/etcd-quorum-guard.sh
+          echo "env NSS_SDB_USE_CACHE=no curl --silent --max-time 2 --cert \"${cert//:/\:}\" --key \"$key\" --cacert \"$cacert\" \"$health_endpoint\"" > /usr/local/bin/etcd-quorum-guard.sh
 
           chmod +x /usr/local/bin/etcd-quorum-guard.sh
           sleep infinity & wait
