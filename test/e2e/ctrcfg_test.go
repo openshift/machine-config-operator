@@ -3,11 +3,14 @@ package e2e_test
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -17,9 +20,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-func TestContainerRuntimeConfigPidsLimit(t *testing.T) {
-	runTestWithCtrcfg(t, "pids-limit", `pids_limit = (\S+)`, "12345", &mcfgv1.ContainerRuntimeConfiguration{
-		PidsLimit: 12345,
+const (
+	defaultPath   = "/etc/crio/crio.conf.d/00-default"
+	crioDropinDir = "/etc/crio/crio.conf.d"
+)
+
+func TestContainerRuntimeConfigLogLevel(t *testing.T) {
+	runTestWithCtrcfg(t, "log-level", `log_level = (\S+)`, "\"debug\"", &mcfgv1.ContainerRuntimeConfiguration{
+		LogLevel: "debug",
 	})
 }
 
@@ -59,7 +67,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 
 	// cache the old configuration value to check against later
 	node := getSingleNodeByRole(t, cs, poolName)
-	oldConfValue := getValueFromCrioConfig(t, cs, node, regexKey)
+	oldConfValue := getValueFromCrioConfig(t, cs, node, regexKey, defaultPath)
 	if oldConfValue == expectedConfValue {
 		t.Logf("default configuration value %s same as value being tested against. Consider updating the test", oldConfValue)
 		return
@@ -89,8 +97,8 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	waitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName)
 
 	// verify value was changed
-	newConfValue := getValueFromCrioConfig(t, cs, node, regexKey)
-	require.Equal(t, newConfValue, expectedConfValue, "value in crio.conf not updated as expected")
+	newConfValue := getValueFromCrioConfig(t, cs, node, regexKey, ctrcfg.CRIODropInFilePathLogLevel)
+	require.Equal(t, newConfValue, expectedConfValue, "value in crio config not updated as expected")
 
 	// cleanup ctrcfg and make sure it doesn't error
 	err = cleanupCtrcfgFunc()
@@ -104,8 +112,15 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	// ensure config rolls back as expected
 	waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
 
-	restoredConfValue := getValueFromCrioConfig(t, cs, node, regexKey)
+	restoredConfValue := getValueFromCrioConfig(t, cs, node, regexKey, defaultPath)
 	require.Equal(t, restoredConfValue, oldConfValue, "ctrcfg deletion didn't cause node to roll back config")
+	// Verify that the override file doesn't exist in crio.conf.d anymore
+	arr := strings.Split(ctrcfg.CRIODropInFilePathLogLevel, "/")
+	overrideFileName := arr[len(arr)-1]
+	if fileExists(t, cs, node, overrideFileName) {
+		err := errors.New("override file still exists in crio.conf.d")
+		require.Nil(t, err)
+	}
 }
 
 // createCtrcfgWithConfig takes a config spec and creates a ContainerRuntimeConfig object
@@ -135,7 +150,6 @@ func createCtrcfgWithConfig(t *testing.T, cs *framework.ClientSet, name, key str
 // getMCFromCtrcfg returns a rendered machine config that was generated from the ctrcfg ctrcfgName
 func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (string, error) {
 	var mcName string
-
 	// get the machine config created when we deploy the ctrcfg
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
 		mcs, err := cs.MachineConfigs().List(context.TODO(), metav1.ListOptions{})
@@ -162,9 +176,9 @@ func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (
 // getValueFromCrioConfig jumps onto the node and gets the crio config. It then uses the regexKey to
 // find the value that is being searched for
 // regexKey is expected to be in the form `key = (\S+)` to search for the value of key
-func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey string) string {
+func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, confPath string) string {
 	// get the contents of the crio.conf on nodeName
-	out := execCmdOnNode(t, cs, node, "cat", "/rootfs/etc/crio/crio.conf")
+	out := execCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
 
 	// search based on the regex key. The output should have two members:
 	// one with the entire line `value = key` and one with just the key, in that order
@@ -172,6 +186,15 @@ func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.N
 	matches := re.FindStringSubmatch(string(out))
 	require.Len(t, matches, 2)
 
-	require.NotEmpty(t, matches[1], "regex %s attempted on crio.conf of node %s came back empty", node.Name, regexKey)
+	require.NotEmpty(t, matches[1], "regex %s attempted on crio config of node %s came back empty", node.Name, regexKey)
 	return matches[1]
+}
+
+// fileExists checks whether overrideFile exists in /etc/crio/crio.conf.d
+func fileExists(t *testing.T, cs *framework.ClientSet, node corev1.Node, overrideFile string) bool {
+	// get the contents of the crio drop in directory
+	out := execCmdOnNode(t, cs, node, "ls", filepath.Join("/rootfs", crioDropinDir))
+
+	// Check if the overrideFile name exists in the output
+	return strings.Contains(string(out), overrideFile)
 }
