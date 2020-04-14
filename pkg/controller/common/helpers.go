@@ -31,18 +31,30 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	}
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
-	var fips bool
+	var fips, ok bool
 	var kernelType string
 	var outIgn ign2types.Config
 
 	if configs[0].Spec.Config.Raw == nil {
 		outIgn = ign2types.Config{}
 	} else {
-		parsedIgn, report, err := ign.Parse(configs[0].Spec.Config.Raw)
+		parsedIgn, err := IgnParseWrapper(configs[0].Spec.Config.Raw)
 		if err != nil {
-			return nil, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+			return nil, err
 		}
-		outIgn = parsedIgn
+		switch parsedIgnValue := parsedIgn.(type) {
+		case ign3types.Config:
+			convertedIgn, err := convertIgnition3to2(parsedIgnValue)
+			if err != nil {
+				return nil, err
+			}
+			outIgn = convertedIgn
+		default:
+			outIgn, ok = parsedIgn.(ign2types.Config)
+			if !ok {
+				return nil, errors.Errorf("something unexpected happened when parsing: %v", ok)
+			}
+		}
 	}
 
 	for idx := 1; idx < len(configs); idx++ {
@@ -55,11 +67,23 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 		if configs[idx].Spec.Config.Raw == nil {
 			appendIgn = ign2types.Config{}
 		} else {
-			parsedIgn, report, err := ign.Parse(configs[idx].Spec.Config.Raw)
+			parsedIgn, err := IgnParseWrapper(configs[idx].Spec.Config.Raw)
 			if err != nil {
-				return nil, errors.Errorf("parsing appendix Ignition config failed with error: %v\nReport: %v", err, report)
+				return nil, err
 			}
-			appendIgn = parsedIgn
+			switch parsedIgnValue := parsedIgn.(type) {
+			case ign3types.Config:
+				convertedIgn, err := convertIgnition3to2(parsedIgnValue)
+				if err != nil {
+					return nil, err
+				}
+				appendIgn = convertedIgn
+			default:
+				appendIgn, ok = parsedIgn.(ign2types.Config)
+				if !ok {
+					return nil, errors.Errorf("something unexpected happened when parsing: %v", ok)
+				}
+			}
 		}
 		outIgn = ign.Append(outIgn, appendIgn)
 	}
