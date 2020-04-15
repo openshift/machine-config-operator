@@ -2,16 +2,15 @@
 
 # Hacking on the MCO
 
-These instructions have been tested inside a Fedora 30 toolbox (podman) container (on a FSB30 host).
-It should also work to run these commands directly on a host system if you haven't yet
-containerized your workflow.  You will need build dependencies such as a `go` compiler,
+These instructions have been tested inside a Fedora 31 toolbox (podman) container (on a Fedora Silverblue 31 host).
+It should also work to run these commands directly on a host system. You will need build dependencies such as a `go` compiler,
 and the image builds rely on `podman`.
 
 ## Prerequisites
 
-Most changes you'll want to test live against a real cluster.  Use [the installer](https://github.com/openshift/installer/), and in particular you'll want to use the "latest CI" release of the installer.  As of the time of this writing, that's 4.2.  More information on the [release page](https://openshift-release.svc.ci.openshift.org/).
+Most changes you'll want to test live against a real cluster.  Use [the installer](https://github.com/openshift/installer/), and in particular you'll want to use the "latest CI" release of the installer.  As of the time of this writing, that's 4.5.  More information on the [release page](https://openshift-release.svc.ci.openshift.org/).
 
-Go v1.12 is used for development of the MCO.
+Go v1.13 is used for development of the MCO.
 
 These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
 
@@ -66,7 +65,7 @@ All tests (unit and e2e) can be executed with:
 
 Dependencies are managed with [go modules](https://github.com/golang/go/wiki/Modules) but committed directly to the repository. 
 
-Please ensure that you are using Go v1.12.  Using a differnt version may result in unexpected behavior.
+Please ensure that you are using Go v1.13.  Using a different version may result in unexpected behavior.
 
 After updating the go code using `import` statements to reference the desired new packages, add the new dependencies by running:
 
@@ -198,7 +197,7 @@ oc adm release new -n origin --server https://api.ci.openshift.org \
                                 machine-config-operator=quay.io/user/machine-config-operator:latest
 ```
 
-`{version number}` is an openshift version, for example 4.1
+`{version number}` is an openshift version, for example 4.5
 
 Make sure you're using a relatively new `oc` binary from `openshift/origin`. The image must be pullable by
 remote resources (nodes), therefore using a local registry might not work.
