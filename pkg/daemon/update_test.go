@@ -28,7 +28,7 @@ func TestUpdateOS(t *testing.T) {
 		RunPivotReturns: []error{
 			// First run will return no error
 			nil,
-			// Second rrun will return our expected error
+			// Second run will return our expected error
 			expectedError},
 	}
 
