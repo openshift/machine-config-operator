@@ -13,7 +13,14 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/local/bin/nodeip-finder {{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
+  ExecStart=/usr/bin/podman run --rm \
+    --authfile /var/lib/kubelet/config.json \
+    --volume /etc/systemd/system:/etc/systemd/system:z \
+    --net=host \
+    {{ .Images.baremetalRuntimeCfgImage }} \
+    node-ip \
+    set --retry-on-failure \
+    {{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
 
   [Install]
   WantedBy=multi-user.target
