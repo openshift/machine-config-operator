@@ -99,8 +99,6 @@ contents:
         - "/etc/keepalived/keepalived.conf"
         - "--api-vip"
         - "{{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
-        - "--dns-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
         - "--ingress-vip"
         - "{{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
         resources:
