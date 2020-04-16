@@ -84,7 +84,18 @@ func TestCloudConfigFlag(t *testing.T) {
 		content:  "",
 		res:      "",
 	}, {
+		platform: "libvirt",
+		content:  "",
+		res:      "",
+	}, {
 		platform: "aws",
+		content: `
+[dummy-config]
+    option = a
+`,
+		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: "libvirt",
 		content: `
 [dummy-config]
     option = a
