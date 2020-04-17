@@ -1,0 +1,16 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/systemd/system/crio.service.d/20-stream-address.conf"
+contents:
+  inline: |
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+    [Service]
+    ExecStart=
+    ExecStart=/usr/bin/crio \
+          --stream-address="${CONTAINER_STREAM_ADDRESS}" \
+          $CRIO_STORAGE_OPTIONS \
+          $CRIO_NETWORK_OPTIONS \
+          $CRIO_METRICS_OPTIONS
+    {{ end -}}
+    {{ end -}}
