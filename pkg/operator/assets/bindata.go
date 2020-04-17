@@ -3449,8 +3449,14 @@ var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+    hosts {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+    template IN A {{ .ControllerConfig.EtcdDiscoveryDomain }} {
+        match .*.apps.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
         fallthrough
     }
 }

@@ -7,5 +7,8 @@ contents:
     {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     [main]
     dhcp=dhclient
+    rc-manager=unmanaged
+    [connection]
+    ipv6.dhcp-duid=ll
     {{ end -}}
     {{ end -}}

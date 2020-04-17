@@ -21,7 +21,7 @@ contents:
         advert_int 1
         authentication {
             auth_type PASS
-            auth_pass cluster_uuid_ingress_vip
+            auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip
         }
         virtual_ipaddress {
             {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
