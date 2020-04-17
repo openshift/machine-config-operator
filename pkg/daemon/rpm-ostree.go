@@ -30,20 +30,21 @@ const (
 // Subset of `rpm-ostree status --json`
 // https://github.com/projectatomic/rpm-ostree/blob/bce966a9812df141d38e3290f845171ec745aa4e/src/daemon/rpmostreed-deployment-utils.c#L227
 type rpmOstreeState struct {
-	Deployments []rpmOstreeDeployment
+	Deployments []RpmOstreeDeployment
 }
 
-// rpmOstreeDeployment represents a single deployment on a node
-type rpmOstreeDeployment struct {
-	ID           string   `json:"id"`
-	OSName       string   `json:"osname"`
-	Serial       int32    `json:"serial"`
-	Checksum     string   `json:"checksum"`
-	Version      string   `json:"version"`
-	Timestamp    uint64   `json:"timestamp"`
-	Booted       bool     `json:"booted"`
-	Origin       string   `json:"origin"`
-	CustomOrigin []string `json:"custom-origin"`
+// RpmOstreeDeployment represents a single deployment on a node
+type RpmOstreeDeployment struct {
+	ID                 string   `json:"id"`
+	OSName             string   `json:"osname"`
+	Serial             int32    `json:"serial"`
+	Checksum           string   `json:"checksum"`
+	Version            string   `json:"version"`
+	Timestamp          uint64   `json:"timestamp"`
+	Booted             bool     `json:"booted"`
+	Origin             string   `json:"origin"`
+	CustomOrigin       []string `json:"custom-origin"`
+	RequestedLocalPkgs []string `json:"requested-local-packages"`
 }
 
 // imageInspection is a public implementation of
@@ -68,6 +69,7 @@ type NodeUpdaterClient interface {
 	GetBootedOSImageURL() (string, string, error)
 	PullAndRebase(string, bool) (string, bool, error)
 	RunPivot(string) error
+	GetBootedDeployment() (*RpmOstreeDeployment, error)
 }
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
@@ -81,8 +83,8 @@ func NewNodeUpdaterClient() NodeUpdaterClient {
 	return &RpmOstreeClient{}
 }
 
-// getBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) getBootedDeployment() (*rpmOstreeDeployment, error) {
+// GetBootedDeployment returns the current deployment found
+func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	var rosState rpmOstreeState
 	output, err := runGetOut("rpm-ostree", "status", "--json")
 	if err != nil {
@@ -117,7 +119,7 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 // Returns the empty string if the host doesn't have a custom origin that matches pivot://
 // (This could be the case for e.g. FCOS, or a future RHCOS which comes not-pivoted by default)
 func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
-	bootedDeployment, err := r.getBootedDeployment()
+	bootedDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return "", "", err
 	}
@@ -142,7 +144,7 @@ func podmanRemove(cid string) {
 
 // PullAndRebase potentially rebases system if not already rebased.
 func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid string, changed bool, err error) {
-	defaultDeployment, err := r.getBootedDeployment()
+	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
 	}
