@@ -1340,8 +1340,8 @@ spec:
                         replace:
                           type: object
                           properties:
-                            source:
-                              type: string
+                            # source:
+                            #   type: string
                             verification:
                               type: object
                               properties:
