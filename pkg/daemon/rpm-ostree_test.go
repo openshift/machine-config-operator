@@ -49,3 +49,7 @@ func (r RpmOstreeClientMock) PullAndRebase(string, bool) (string, bool, error) {
 func (r RpmOstreeClientMock) GetStatus() (string, error) {
 	return "rpm-ostree mock: blah blah some status here", nil
 }
+
+func (r RpmOstreeClientMock) GetBootedDeployment() (*RpmOstreeDeployment, error) {
+	return &RpmOstreeDeployment{}, nil
+}

@@ -48,32 +48,17 @@ const (
 	fipsFile = "/proc/sys/crypto/fips_enabled"
 )
 
-// HostInfo contains information of an OSTree based system
-type HostInfo struct {
-	Deployments []Deployment `json:"deployments"`
-}
-
-// Deployment contains information about a particular OSTree deployment
-type Deployment struct {
-	RequestedLocalPkgs []string `json:"requested-local-packages"`
-}
-
 func installedRTKernelRpmsOnHost() ([]string, error) {
-	var out []byte
 	var err error
 	var rtKernelRpms = []string{}
-	if out, err = exec.Command("rpm-ostree", "status", "--json").Output(); err != nil {
-		return rtKernelRpms, fmt.Errorf("Failed to execute rpm-ostre status --json %v", err)
-	}
-
-	var rpms HostInfo
-	if err := json.Unmarshal(out, &rpms); err != nil {
+	var bootedDeployment *RpmOstreeDeployment
+	client := NewNodeUpdaterClient()
+	if bootedDeployment, err = client.GetBootedDeployment(); err != nil {
 		return rtKernelRpms, err
 	}
 
-	rtRegex := regexp.MustCompile("kernel-rt-.*")
-	for _, localPkg := range rpms.Deployments[0].RequestedLocalPkgs {
-		if rtRegex.MatchString(localPkg) {
+	for _, localPkg := range bootedDeployment.RequestedLocalPkgs {
+		if strings.HasPrefix(localPkg, "kernel-rt-") {
 			rtKernelRpms = append(rtKernelRpms, localPkg)
 		}
 	}
