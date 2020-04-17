@@ -5,7 +5,6 @@ contents:
   inline: |
     #!/usr/bin/env bash
     export ETCDCTL_API=3
-    export ETCD_VERSION=v3.3.17
 
     ETCDCTL_WITH_TLS="$ETCDCTL --cert $ASSET_DIR/backup/etcd-client.crt --key $ASSET_DIR/backup/etcd-client.key --cacert $ASSET_DIR/backup/etcd-ca-bundle.crt"
 
@@ -19,12 +18,12 @@ contents:
       fi
     }
 
-    # download and test etcdctl from upstream release assets
+    # extract etcdctl binary from container image
     dl_etcdctl() {
       local etcdimg="{{.Images.etcdKey}}"
-      local etcdctr=$(podman create "${etcdimg}")
+      local etcdctr=$(podman create "${etcdimg}" --authfile=/var/lib/kubelet/config.json)
       local etcdmnt=$(podman mount "${etcdctr}")
-      cp ${etcdmnt}/bin/etcdctl $ASSET_DIR/bin
+      cp ${etcdmnt}/bin/etcdctl $ASSET_DIR/bin/
       umount "${etcdmnt}"
       podman rm "${etcdctr}"
       $ASSET_DIR/bin/etcdctl version
