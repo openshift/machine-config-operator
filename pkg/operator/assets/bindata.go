@@ -3509,8 +3509,6 @@ spec:
     - "/etc/kubernetes/kubeconfig"
     - "--api-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
-    - "--dns-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
     - "--ingress-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
     - "/config"
@@ -3607,20 +3605,6 @@ vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
     }
 }
 
-vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_DNS {
-    state MASTER
-    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
-    virtual_router_id {{`+"`"+`{{.Cluster.DNSVirtualRouterID }}`+"`"+`}}
-    priority 140
-    advert_int 1
-    authentication {
-        auth_type PASS
-        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_dns_vip
-    }
-    virtual_ipaddress {
-        {{`+"`"+`{{ .Cluster.DNSVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
-    }
-}
 `)
 
 func manifestsVsphereKeepalivedConfTmplBytes() ([]byte, error) {
@@ -3670,8 +3654,6 @@ spec:
     - "/etc/kubernetes/kubeconfig"
     - "--api-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
-    - "--dns-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.NodeDNSIP }}"
     - "--ingress-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
     - "/config"
