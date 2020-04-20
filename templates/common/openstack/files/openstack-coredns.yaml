@@ -32,8 +32,6 @@ contents:
         - "/etc/kubernetes/kubeconfig"
         - "--api-vip"
         - "{{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}"
-        - "--dns-vip"
-        - "{{ .Infra.Status.PlatformStatus.OpenStack.NodeDNSIP }}"
         - "--ingress-vip"
         - "{{ .Infra.Status.PlatformStatus.OpenStack.IngressIP }}"
         - "/config"
