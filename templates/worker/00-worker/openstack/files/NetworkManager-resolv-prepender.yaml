@@ -16,7 +16,6 @@ contents:
             node-ip \
             show \
             "{{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP}}" \
-            "{{.Infra.Status.PlatformStatus.OpenStack.NodeDNSIP}}" \
             "{{.Infra.Status.PlatformStatus.OpenStack.IngressIP}}")
         DOMAIN="{{.EtcdDiscoveryDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
