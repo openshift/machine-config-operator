@@ -74,6 +74,10 @@ contents:
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     ]
 
+    default_env = [
+        "NSS_SDB_USE_CACHE=no",
+    ]
+
     # If true, SELinux will be used for pod separation on the host.
     selinux = true
 
