@@ -29,6 +29,8 @@ type scenario struct {
 	checkResponse checkResponse
 }
 
+const expectedContentLength int = 15
+
 func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
@@ -56,8 +58,8 @@ func TestAPIHandler(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
 			},
 		},
 		{
@@ -71,7 +73,7 @@ func TestAPIHandler(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, expectedContentLength)
 				checkBodyLength(t, response, 0)
 			},
 		},
@@ -250,8 +252,8 @@ func TestAPIServer(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
-				checkBodyLength(t, response, 114)
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
 			},
 		},
 		{
@@ -265,7 +267,7 @@ func TestAPIServer(t *testing.T) {
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusOK)
 				checkContentType(t, response, "application/json")
-				checkContentLength(t, response, 114)
+				checkContentLength(t, response, expectedContentLength)
 				checkBodyLength(t, response, 0)
 			},
 		},

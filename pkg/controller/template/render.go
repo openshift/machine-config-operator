@@ -2,7 +2,6 @@ package template
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -13,16 +12,18 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
+	"github.com/clarketm/json"
 	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
 	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
+
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 // RenderConfig is wrapper around ControllerConfigSpec.

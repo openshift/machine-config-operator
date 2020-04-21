@@ -2,15 +2,15 @@ package kubeletconfig
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
+	"github.com/clarketm/json"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
+	osev1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -19,7 +19,6 @@ import (
 	"k8s.io/client-go/util/retry"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
-	osev1 "github.com/openshift/api/config/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
