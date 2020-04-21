@@ -15,7 +15,7 @@ contents:
         command: ["gcp-routes-controller"]
         args:
         - "run"
-        - "--health-check-url=https://127.0.0.1:6443/readyz"
+        - "--health-check-url={{.Infra.Status.APIServerInternalURL}}/readyz"
         resources:
           requests:
             cpu: 20m
