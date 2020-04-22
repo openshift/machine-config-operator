@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"time"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/vincent-petithory/dataurl"
@@ -377,32 +378,24 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 	ctrl.imgQueue.AddAfter(key, 1*time.Minute)
 }
 
-// generateOriginalContainerRuntimeConfigs returns rendered default storage, and crio config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, *igntypes.File, error) {
+// generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
+		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
 	}
-	// Find generated storage.config, and crio.config
+	// Find generated storage.conf, registries.conf, and policy.json
 	var (
-		config, gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON *igntypes.File
-		errStorage, errCRIO, errRegistries, errPolicy                               error
+		config, gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON *igntypes.File
+		errStorage, errRegistries, errPolicy                         error
 	)
 	// Find storage config
 	for _, gmc := range generatedConfigs {
 		config, errStorage = findStorageConfig(gmc)
 		if errStorage == nil {
 			gmcStorageConfig = config
-			break
-		}
-	}
-	// Find CRIO config
-	for _, gmc := range generatedConfigs {
-		config, errCRIO = findCRIOConfig(gmc)
-		if errCRIO == nil {
-			gmcCRIOConfig = config
 			break
 		}
 	}
@@ -422,11 +415,11 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 			break
 		}
 	}
-	if errStorage != nil || errCRIO != nil || errRegistries != nil || errPolicy != nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v, %v, %v", errStorage, errCRIO, errRegistries, errPolicy)
+	if errStorage != nil || errRegistries != nil || errPolicy != nil {
+		return nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v, %v", errStorage, errRegistries, errPolicy)
 	}
 
-	return gmcStorageConfig, gmcCRIOConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
+	return gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
@@ -489,7 +482,16 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 	// If we have seen this generation and the sync didn't fail, then skip
 	if cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
-		return nil
+		// This is the scenario for upgrades where we are moving from crio.conf to crio.conf.d
+		// this can be removed in the next release
+		fromOldCrio, err := ctrl.isUpdatingFromOldCRIOConf(cfg)
+		if err != nil {
+			return fmt.Errorf("error checking if we are updating from crio.conf: %v", err)
+		}
+		// We want to trigger a resync if we are updating from a version where crio.conf.d didn't exist
+		if !fromOldCrio {
+			return nil
+		}
 	}
 
 	// Validate the ContainerRuntimeConfig CR
@@ -526,25 +528,28 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			}
 			isNotFound := errors.IsNotFound(err)
 			// Generate the original ContainerRuntimeConfig
-			originalStorageIgn, originalCRIOIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
+			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 			}
 
-			var storageTOML, crioTOML []byte
+			var configFileList []generatedConfigFile
 			ctrcfg := cfg.Spec.ContainerRuntimeConfig
 			if ctrcfg.OverlaySize != (resource.Quantity{}) {
-				storageTOML, err = ctrl.mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
+				storageTOML, err := ctrl.mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 				if err != nil {
 					glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
+				} else {
+					configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
 				}
 			}
+
+			// Create the cri-o drop-in files
 			if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != 0 || ctrcfg.LogSizeMax != (resource.Quantity{}) {
-				crioTOML, err = ctrl.mergeConfigChanges(originalCRIOIgn, cfg, updateCRIOConfig)
-				if err != nil {
-					glog.V(2).Infoln(cfg, err, "error merging user changes to crio.conf: %v", err)
-				}
+				crioFileConfigs := createCRIODropinFiles(cfg)
+				configFileList = append(configFileList, crioFileConfigs...)
 			}
+
 			if isNotFound {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
 				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
@@ -553,10 +558,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				}
 			}
 
-			ctrRuntimeConfigIgn := createNewIgnition([]ignitionConfig{
-				{filePath: storageConfigPath, data: storageTOML},
-				{filePath: crioConfigPath, data: crioTOML},
-			})
+			ctrRuntimeConfigIgn := createNewIgnition(configFileList)
 			rawCtrRuntimeConfigIgn, err := json.Marshal(ctrRuntimeConfigIgn)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "error marshalling container runtime config Ignition: %v", err)
@@ -742,7 +744,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	)
 
 	// Generate the original registries config
-	_, _, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
+	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
 	}
@@ -767,7 +769,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
 		}
 	}
-	registriesIgn := createNewIgnition([]ignitionConfig{
+	registriesIgn := createNewIgnition([]generatedConfigFile{
 		{filePath: registriesConfigPath, data: registriesTOML},
 		{filePath: policyConfigPath, data: policyJSON},
 	})
@@ -902,4 +904,37 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 	}
 
 	return pools, nil
+}
+
+// isUpdatingFromOldCRIOConf returns true if the mc associated with cfg has /etc/crio/crio.conf as
+// its file path.
+func (ctrl *Controller) isUpdatingFromOldCRIOConf(cfg *mcfgv1.ContainerRuntimeConfig) (bool, error) {
+	mcpPools, err := ctrl.getPoolsForContainerRuntimeConfig(cfg)
+	if err != nil {
+		return false, fmt.Errorf("could not get list of machine config pools: %v", err)
+	}
+	if len(mcpPools) == 0 {
+		return false, nil
+	}
+
+	for _, pool := range mcpPools {
+		managedKey := getManagedKeyCtrCfg(pool)
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		if err != nil && !errors.IsNotFound(err) {
+			return false, fmt.Errorf("could not get mc with name %q: %v", managedKey, err)
+		}
+		if mc.Spec.Config.Raw != nil {
+			conf, _, err := ign.Parse(mc.Spec.Config.Raw)
+			if err != nil {
+				return false, fmt.Errorf("error parsing ignition: %v", err)
+			}
+			// If the filepath matches /etc/crio/crio.conf return true
+			for _, file := range conf.Storage.Files {
+				if file.Path == "/etc/crio/crio.conf" {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
 }

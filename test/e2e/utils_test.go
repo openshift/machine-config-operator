@@ -173,6 +173,6 @@ func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, args
 	cmd = append(cmd, args...)
 
 	b, err := exec.Command(entryPoint, cmd...).CombinedOutput()
-	require.Nil(t, err, "failed to exec cmd %v on node %s", args, node.Name)
+	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", args, node.Name, string(b))
 	return string(b)
 }
