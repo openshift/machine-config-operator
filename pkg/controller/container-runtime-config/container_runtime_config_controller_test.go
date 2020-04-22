@@ -413,7 +413,6 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
-			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
@@ -445,7 +444,6 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.objects = append(f.objects, ctrcfg1)
 
 			f.expectGetMachineConfigAction(mcs)
-			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
@@ -487,7 +485,6 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			}
 
 			f.expectGetMachineConfigAction(mcs)
-			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 			f.expectUpdateMachineConfigAction(mcs)
 			f.expectPatchContainerRuntimeConfig(ctrcfgUpdate, ctrcfgPatchBytes)

@@ -14,7 +14,7 @@ import (
 	storageconfig "github.com/containers/storage/pkg/config"
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	crioconfig "github.com/cri-o/cri-o/pkg/config"
+	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -22,16 +22,19 @@ import (
 	"github.com/openshift/runtime-utils/pkg/registries"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
 	minLogSize           = 8192
 	minPidsLimit         = 20
-	crioConfigPath       = "/etc/crio/crio.conf"
 	storageConfigPath    = "/etc/containers/storage.conf"
 	registriesConfigPath = "/etc/containers/registries.conf"
 	policyConfigPath     = "/etc/containers/policy.json"
+	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
+	// will be dropped in this is exported so that we can use it in the e2e-tests
+	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
 )
 
 var errParsingReference = errors.New("error parsing reference of desired image from cluster version config")
@@ -46,24 +49,47 @@ type tomlConfigStorage struct {
 	} `toml:"storage"`
 }
 
-// tomlConfig is another way of looking at a Config, which is
+// tomlConfigCRIOLogLevel is used for conversions when log-level is changed
 // TOML-friendly (it has all of the explicit tables). It's just used for
 // conversions.
-type tomlConfigCRIO struct {
+// This is only for when the log-level field is changed. We have separated it out into 3 different toml structs
+// and 3 different functions because the toml encoder does not ignore a value that was not set - it will set it as
+// empty. So if we just change field A and not B, it sets B to empty which is usually different from the default it
+// was set to.
+type tomlConfigCRIOLogLevel struct {
 	Crio struct {
-		crioconfig.RootConfig
-		API     struct{ crioconfig.APIConfig }     `toml:"api"`
-		Runtime struct{ crioconfig.RuntimeConfig } `toml:"runtime"`
-		Image   struct{ crioconfig.ImageConfig }   `toml:"image"`
-		Network struct{ crioconfig.NetworkConfig } `toml:"network"`
-		Metrics struct{ crioconfig.MetricsConfig } `toml:"metrics"`
+		Runtime struct {
+			LogLevel string `toml:"log_level,omitempty"`
+		} `toml:"runtime"`
 	} `toml:"crio"`
 }
 
-// ignitionConfig is a struct that holds the filepath and date of the various configs
+// tomlConfigCRIOPidsLimit is used for conversions when pids-limit is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOPidsLimit struct {
+	Crio struct {
+		Runtime struct {
+			PidsLimit int64 `toml:"pids_limit,omitemtpy"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOLogSizeMax is used for conversions when log-size-max is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOLogSizeMax struct {
+	Crio struct {
+		Runtime struct {
+			LogSizeMax int64 `toml:"log_size_max,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// generatedConfigFile is a struct that holds the filepath and data of the various configs
 // Using a struct array ensures that the order of the ignition files always stay the same
 // ensuring that double MCs are not created due to a change in the order
-type ignitionConfig struct {
+type generatedConfigFile struct {
 	filePath string
 	data     []byte
 }
@@ -73,7 +99,7 @@ type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfigu
 // createNewIgnition takes a map where the key is the path of the file, and the value is the
 // new data in the form of a byte array. The function returns the ignition config with the
 // updated data.
-func createNewIgnition(configs []ignitionConfig) igntypes.Config {
+func createNewIgnition(configs []generatedConfigFile) igntypes.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
 	mode := 0644
 	// Create ignitions
@@ -114,20 +140,6 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 		}
 	}
 	return nil, fmt.Errorf("could not find Storage Config")
-}
-
-func findCRIOConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
-	if err != nil {
-		return nil, fmt.Errorf("parsing CRI-O Ignition config failed with error: %v\nReport: %v", err, report)
-	}
-	for _, c := range ignCfg.Storage.Files {
-		if c.Path == crioConfigPath {
-			c := c
-			return &c, nil
-		}
-	}
-	return nil, fmt.Errorf("could not find CRI-O Config")
 }
 
 func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
@@ -196,7 +208,7 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 		return nil, fmt.Errorf("error decoding crio config: %v", err)
 	}
 
-	if internal.OverlaySize != (resource.Quantity{}) {
+	if internal.OverlaySize.Value() != 0 {
 		tomlConf.Storage.Options.Size = internal.OverlaySize.String()
 	}
 
@@ -209,37 +221,51 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 	return newData.Bytes(), nil
 }
 
-// updateCRIOConfig decodes the data rendered from the template, merges the changes in and encodes it
-// back into a TOML format. It returns the bytes of the encoded data
-func updateCRIOConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
-	tomlConf := new(tomlConfigCRIO)
-	if _, err := toml.DecodeReader(bytes.NewBuffer(data), tomlConf); err != nil {
-		return nil, fmt.Errorf("error decoding crio config: %v", err)
-	}
-
-	if internal.PidsLimit > 0 {
-		tomlConf.Crio.Runtime.PidsLimit = internal.PidsLimit
-	}
-	if internal.LogSizeMax.Value() != 0 {
-		tomlConf.Crio.Runtime.LogSizeMax = internal.LogSizeMax.Value()
-	}
-	if internal.LogLevel != "" {
-		tomlConf.Crio.Runtime.LogLevel = internal.LogLevel
-	}
-	// For some reason, when the crio.conf file is created storage_option is not included
-	// in the file. Noticed the same thing for all fields in the struct that are of type []string
-	// and are empty. This is a dumb hack for now to ensure that cri-o doesn't blow up when
-	// overlaySize in storage.conf is set. This field being empty tells cri-o that it should take
-	// all its storage configurations from storage.conf instead of crio.conf
-	tomlConf.Crio.StorageOptions = []string{}
-
+func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path string, tomlConf interface{}) ([]generatedConfigFile, error) {
 	var newData bytes.Buffer
 	encoder := toml.NewEncoder(&newData)
-	if err := encoder.Encode(*tomlConf); err != nil {
-		return nil, err
+	if err := encoder.Encode(tomlConf); err != nil {
+		return nil, fmt.Errorf("error encoding toml for CRIO drop-in files: %v", err)
 	}
+	configFileList = append(configFileList, generatedConfigFile{filePath: path, data: newData.Bytes()})
+	return configFileList, nil
+}
 
-	return newData.Bytes(), nil
+// createCRIODropinFiles gets the data from the CRD and creates the respective drio in file in /etc/crio/crio.conf.d
+// We create different drop-in files for each CRI-O field that can be changed by the ctrcfg CR
+// this ensures that we don't have to rely on hard coded defaults that might cause problems
+// in future if something in cri-o or the templates used by the MCO changes
+func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfigFile {
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	ctrcfg := cfg.Spec.ContainerRuntimeConfig
+	if ctrcfg.LogLevel != "" {
+		tomlConf := tomlConfigCRIOLogLevel{}
+		tomlConf.Crio.Runtime.LogLevel = ctrcfg.LogLevel
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathLogLevel, tomlConf)
+		if err != nil {
+			glog.V(2).Infoln(cfg, err, "error updating user changes for log-level to crio.conf.d: %v", err)
+		}
+	}
+	if ctrcfg.PidsLimit != 0 {
+		tomlConf := tomlConfigCRIOPidsLimit{}
+		tomlConf.Crio.Runtime.PidsLimit = ctrcfg.PidsLimit
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathPidsLimit, tomlConf)
+		if err != nil {
+			glog.V(2).Infoln(cfg, err, "error updating user changes for pids-limit to crio.conf.d: %v", err)
+		}
+	}
+	if ctrcfg.LogSizeMax.Value() != 0 {
+		tomlConf := tomlConfigCRIOLogSizeMax{}
+		tomlConf.Crio.Runtime.LogSizeMax = ctrcfg.LogSizeMax.Value()
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathLogSizeMax, tomlConf)
+		if err != nil {
+			glog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
+		}
+	}
+	return generatedConfigFileList
 }
 
 func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
