@@ -20,7 +20,13 @@ spec:
     infraImage: image/infraImage:1
     kubeClientAgentImage: image/kubeClientAgentImage:1
   infra:
+    apiVersion: config.openshift.io/v1
+    kind: Infrastructure
     status:
+      apiServerInternalURI: https://api-int.my-test-cluster.installer.team.coreos.systems:6443
+      apiServerURL: https://api.my-test-cluster.installer.team.coreos.systems:6443
+      etcdDiscoveryDomain: my-test-cluster.installer.team.coreos.systems
+      infrastructureName: my-test-cluster
       platformStatus:
         openstack:
           apiServerInternalIP: 10.0.0.1
