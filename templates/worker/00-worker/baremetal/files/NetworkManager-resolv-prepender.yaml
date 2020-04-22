@@ -11,7 +11,12 @@ contents:
     case "$STATUS" in
         up|down|dhcp4-change|dhcp6-change)
         logger -s "NM resolv-prepender triggered by ${1} ${2}."
-        NAMESERVER_IP=$(/usr/local/bin/non_virtual_ip \
+        NAMESERVER_IP=$(/usr/bin/podman run --rm \
+            --authfile /var/lib/kubelet/config.json \
+            --net=host \
+            {{ .Images.baremetalRuntimeCfgImage }} \
+            node-ip \
+            show \
             "{{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.BareMetal.IngressIP}}")
         DOMAIN="{{.EtcdDiscoveryDomain}}"
