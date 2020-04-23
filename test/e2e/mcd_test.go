@@ -190,6 +190,58 @@ func TestUpdateSSH(t *testing.T) {
 	}
 }
 
+func TestIgn3Cfg(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// create a dummy MC with an sshKey for user Core
+	mcName := fmt.Sprintf("ign3cfg-worker-%s", uuid.NewUUID())
+	mcadd := &mcfgv1.MachineConfig{}
+	mcadd.ObjectMeta = metav1.ObjectMeta{
+		Name:   mcName,
+		Labels: mcLabelForWorkers(),
+	}
+	// create a new MC that adds a valid user & ssh key
+	testIgn3Config := ign3types.Config{}
+	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234_test_ign3"}}
+	testIgn3Config.Passwd.Users = append(testIgn3Config.Passwd.Users, tempUser)
+	testIgn3Config.Ignition.Version = "3.0.0"
+	mode := 420
+	testfiledata := "data:,test-ign3-stuff"
+	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.FileContents{Source: &testfiledata}, Mode: &mode}}
+	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
+	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
+	mcadd.Spec.Config.Raw = rawIgnConfig
+
+	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
+	require.Nil(t, err, "failed to create MC")
+	t.Logf("Created %s", mcadd.Name)
+
+	// grab the latest worker- MC
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
+	require.Nil(t, err)
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+		foundSSH := execCmdOnNode(t, cs, node, "grep", "1234_test_ign3", "/rootfs/home/core/.ssh/authorized_keys")
+		if !strings.Contains(foundSSH, "1234_test_ign3") {
+			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
+		}
+		t.Logf("Node %s has SSH key", node.Name)
+
+		foundFile := execCmdOnNode(t, cs, node, "cat", "/rootfs/etc/testfileconfig")
+		if !strings.Contains(foundFile, "test-ign3-stuff") {
+			t.Fatalf("updated file doesn't contain expected data, got %s", foundFile)
+		}
+		t.Logf("Node %s has file", node.Name)
+	}
+}
+
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 	kargsMC := &mcfgv1.MachineConfig{
@@ -533,56 +585,4 @@ func TestCustomPool(t *testing.T) {
 	}
 	err = waitForPoolComplete(t, cs, "infra", renderedConfig)
 	require.Nil(t, err)
-}
-
-func TestIgn3Cfg(t *testing.T) {
-	cs := framework.NewClientSet("")
-
-	// create a dummy MC with an sshKey for user Core
-	mcName := fmt.Sprintf("ign3cfg-worker-%s", uuid.NewUUID())
-	mcadd := &mcfgv1.MachineConfig{}
-	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name:   mcName,
-		Labels: mcLabelForWorkers(),
-	}
-	// create a new MC that adds a valid user & ssh key
-	testIgn3Config := ign3types.Config{}
-	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234_test_ign3"}}
-	testIgn3Config.Passwd.Users = append(testIgn3Config.Passwd.Users, tempUser)
-	testIgn3Config.Ignition.Version = "3.0.0"
-	mode := 420
-	testfiledata := "data:,test-ign3-stuff"
-	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.FileContents{Source: &testfiledata}, Mode: &mode}}
-	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
-	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
-	mcadd.Spec.Config.Raw = rawIgnConfig
-
-	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create MC")
-	t.Logf("Created %s", mcadd.Name)
-
-	// grab the latest worker- MC
-	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
-	require.Nil(t, err)
-	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
-	require.Nil(t, err)
-	nodes, err := getNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-
-		foundSSH := execCmdOnNode(t, cs, node, "grep", "1234_test_ign3", "/rootfs/home/core/.ssh/authorized_keys")
-		if !strings.Contains(foundSSH, "1234_test_ign3") {
-			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
-		}
-		t.Logf("Node %s has SSH key", node.Name)
-
-		foundFile := execCmdOnNode(t, cs, node, "cat", "/rootfs/etc/testfileconfig")
-		if !strings.Contains(foundFile, "test-ign3-stuff") {
-			t.Fatalf("updated file doesn't contain expected data, got %s", foundFile)
-		}
-		t.Logf("Node %s has file", node.Name)
-	}
 }
