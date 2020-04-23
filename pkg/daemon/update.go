@@ -1192,9 +1192,12 @@ func (dn *Daemon) updateSSHKeys(newUsers []igntypes.PasswdUser) error {
 
 	// we're also appending all keys for any user to core, so for now
 	// we pass this to atomicallyWriteSSHKeys to write.
+	// we know these users are "core" ones also cause this slice went through Reconcilable
 	var concatSSHKeys string
-	for _, k := range newUsers[len(newUsers)-1].SSHAuthorizedKeys {
-		concatSSHKeys = concatSSHKeys + string(k) + "\n"
+	for _, u := range newUsers {
+		for _, k := range u.SSHAuthorizedKeys {
+			concatSSHKeys = concatSSHKeys + string(k) + "\n"
+		}
 	}
 	if !dn.mock {
 		// Note we write keys only for the core user and so this ignores the user list

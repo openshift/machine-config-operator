@@ -6,9 +6,14 @@ import (
 	"reflect"
 	"sort"
 
+	ignconverter "github.com/coreos/ign-converter"
+	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	validate "github.com/coreos/ignition/config/validate"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	validate2 "github.com/coreos/ignition/config/validate"
+	ign3 "github.com/coreos/ignition/v2/config/v3_0"
+	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
+	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	errors "github.com/pkg/errors"
@@ -26,18 +31,30 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	}
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
-	var fips bool
+	var fips, ok bool
 	var kernelType string
-	var outIgn igntypes.Config
+	var outIgn ign2types.Config
 
 	if configs[0].Spec.Config.Raw == nil {
-		outIgn = igntypes.Config{}
+		outIgn = ign2types.Config{}
 	} else {
-		parsedIgn, report, err := ign.Parse(configs[0].Spec.Config.Raw)
+		parsedIgn, err := IgnParseWrapper(configs[0].Spec.Config.Raw)
 		if err != nil {
-			return nil, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+			return nil, err
 		}
-		outIgn = parsedIgn
+		switch parsedIgnValue := parsedIgn.(type) {
+		case ign3types.Config:
+			convertedIgn, err := convertIgnition3to2(parsedIgnValue)
+			if err != nil {
+				return nil, err
+			}
+			outIgn = convertedIgn
+		default:
+			outIgn, ok = parsedIgn.(ign2types.Config)
+			if !ok {
+				return nil, errors.Errorf("something unexpected happened when parsing: %v", ok)
+			}
+		}
 	}
 
 	for idx := 1; idx < len(configs); idx++ {
@@ -46,15 +63,27 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 			fips = true
 		}
 
-		var appendIgn igntypes.Config
+		var appendIgn ign2types.Config
 		if configs[idx].Spec.Config.Raw == nil {
-			appendIgn = igntypes.Config{}
+			appendIgn = ign2types.Config{}
 		} else {
-			parsedIgn, report, err := ign.Parse(configs[idx].Spec.Config.Raw)
+			parsedIgn, err := IgnParseWrapper(configs[idx].Spec.Config.Raw)
 			if err != nil {
-				return nil, errors.Errorf("parsing appendix Ignition config failed with error: %v\nReport: %v", err, report)
+				return nil, err
 			}
-			appendIgn = parsedIgn
+			switch parsedIgnValue := parsedIgn.(type) {
+			case ign3types.Config:
+				convertedIgn, err := convertIgnition3to2(parsedIgnValue)
+				if err != nil {
+					return nil, err
+				}
+				appendIgn = convertedIgn
+			default:
+				appendIgn, ok = parsedIgn.(ign2types.Config)
+				if !ok {
+					return nil, errors.Errorf("something unexpected happened when parsing: %v", ok)
+				}
+			}
 		}
 		outIgn = ign.Append(outIgn, appendIgn)
 	}
@@ -98,10 +127,10 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 }
 
 // NewIgnConfig returns an empty ignition config with version set as latest version
-func NewIgnConfig() igntypes.Config {
-	return igntypes.Config{
-		Ignition: igntypes.Ignition{
-			Version: igntypes.MaxVersion.String(),
+func NewIgnConfig() ign2types.Config {
+	return ign2types.Config{
+		Ignition: ign2types.Ignition{
+			Version: ign2types.MaxVersion.String(),
 		},
 	}
 }
@@ -113,20 +142,42 @@ func WriteTerminationError(err error) {
 	glog.Fatal(msg)
 }
 
-// ValidateIgnition wraps the underlying Ignition validation, but explicitly supports
+// convertIgnition3to2 takes an igntion v3 config and returns a v2 config
+func convertIgnition3to2(ignconfig ign3types.Config) (ign2types.Config, error) {
+	converted2, err := ignconverter.Translate3to2(ignconfig)
+	if err != nil {
+		return converted2, errors.Errorf("unable to convert Ignition V3 config to V2: %v", err)
+	}
+	glog.V(4).Infof("Successfully translated ignition V3 config to ignition V2 config: %v", converted2)
+	return converted2, nil
+}
+
+// ValidateIgnition wraps the underlying Ignition V2/V3 validation, but explicitly supports
 // a completely empty Ignition config as valid.  This is because we
 // want to allow MachineConfig objects which just have e.g. KernelArguments
 // set, but no Ignition config.
 // Returns nil if the config is valid (per above) or an error containing a Report otherwise.
-func ValidateIgnition(cfg igntypes.Config) error {
-	// only validate if Ignition Config is not empty
-	if reflect.DeepEqual(igntypes.Config{}, cfg) {
+func ValidateIgnition(ignconfig interface{}) error {
+	switch cfg := ignconfig.(type) {
+	case ign2types.Config:
+		if reflect.DeepEqual(ign2types.Config{}, cfg) {
+			return nil
+		}
+		if report := validate2.ValidateWithoutSource(reflect.ValueOf(cfg)); report.IsFatal() {
+			return errors.Errorf("invalid ignition V2 config found: %v", report)
+		}
 		return nil
+	case ign3types.Config:
+		if reflect.DeepEqual(ign3types.Config{}, cfg) {
+			return nil
+		}
+		if report := validate3.ValidateWithContext(cfg, nil); report.IsFatal() {
+			return errors.Errorf("invalid ignition V3 config found: %v", report)
+		}
+		return nil
+	default:
+		return errors.Errorf("unrecognized ignition type")
 	}
-	if report := validate.ValidateWithoutSource(reflect.ValueOf(cfg)); report.IsFatal() {
-		return errors.Errorf("invalid Ignition config found: %v", report)
-	}
-	return nil
 }
 
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
@@ -136,14 +187,33 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	}
 
 	if cfg.Config.Raw != nil {
-		ignCfg, report, err := ign.Parse(cfg.Config.Raw)
+		ignCfg, err := IgnParseWrapper(cfg.Config.Raw)
 		if err != nil {
-			return errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+			return err
 		}
 		if err := ValidateIgnition(ignCfg); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
+// a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
+func IgnParseWrapper(rawIgn []byte) (ignconfig interface{}, err error) {
+	ignCfg, rpt, err := ign.Parse(rawIgn)
+
+	// this is an ignv2cfg that was successfully parsed
+	if err == nil {
+		return ignCfg, nil
+	}
+	if err.Error() == ign2error.ErrUnknownVersion.Error() {
+		// check to see if this is an ignv3cfg
+		ignCfgV3, rptV3, errV3 := ign3.Parse(rawIgn)
+		if errV3 == nil {
+			return ignCfgV3, nil
+		}
+		return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
+	}
+	return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, rpt)
 }
