@@ -539,7 +539,7 @@ func TestIgn3Cfg(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	// create a dummy MC with an sshKey for user Core
-	mcName := fmt.Sprintf("ign3cfg-worker-%s", uuid.NewUUID())
+	mcName := fmt.Sprintf("99-ign3cfg-worker-%s", uuid.NewUUID())
 	mcadd := &mcfgv1.MachineConfig{}
 	mcadd.ObjectMeta = metav1.ObjectMeta{
 		Name:   mcName,
