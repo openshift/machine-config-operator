@@ -548,9 +548,10 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
 				mc = mtmpl.MachineConfigFromIgnConfig(role, managedKey, &tempIgnCfg)
 			}
-			mc.Spec.Config = createNewIgnition(map[string][]byte{
-				storageConfigPath: storageTOML,
-				crioConfigPath:    crioTOML,
+
+			mc.Spec.Config = createNewIgnition([]ignitionConfig{
+				{filePath: storageConfigPath, data: storageTOML},
+				{filePath: crioConfigPath, data: crioTOML},
 			})
 
 			mc.SetAnnotations(map[string]string{
@@ -750,9 +751,9 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
 		}
 	}
-	registriesIgn := createNewIgnition(map[string][]byte{
-		registriesConfigPath: registriesTOML,
-		policyConfigPath:     policyJSON,
+	registriesIgn := createNewIgnition([]ignitionConfig{
+		{filePath: registriesConfigPath, data: registriesTOML},
+		{filePath: policyConfigPath, data: policyJSON},
 	})
 	return &registriesIgn, nil
 }
