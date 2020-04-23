@@ -9,8 +9,11 @@ contents:
     # the kubelet. The log directory specified must be an absolute directory.
     log_dir = "/var/log/crio/pods"
 
-    # Location for CRI-O to lay down the version file
-    version_file = "/var/lib/crio/version"
+    # Location for CRI-O to lay down the temporary version file
+    version_file = "/var/run/crio/version"
+
+    # Location for CRI-O to lay down the persistent version file
+    version_file_persist = "/var/lib/crio/version"
 
     # The crio.api table contains settings for the kubelet/gRPC interface.
     [crio.api]
