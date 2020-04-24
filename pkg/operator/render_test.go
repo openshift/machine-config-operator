@@ -220,7 +220,7 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			} else if controllerConfigSpec.Platform == "" {
 				t.Fatalf("Error setting controller config platform")
 			}
-			etcdDomain := controllerConfigSpec.EtcdDiscoveryDomain
+			etcdDomain := controllerConfigSpec.Infra.Status.EtcdDiscoveryDomain
 			testDomain := test.Infra.Status.EtcdDiscoveryDomain
 			if etcdDomain != testDomain {
 				t.Fatalf("%s failed: got = %s want = %s", desc, etcdDomain, testDomain)

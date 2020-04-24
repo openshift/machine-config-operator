@@ -2,8 +2,8 @@ mode: 0644
 path: "/etc/coredns/node-dns-db"
 contents:
   inline: |
-    $ORIGIN {{ .EtcdDiscoveryDomain }}.
-    @    3600 IN SOA host.{{ .EtcdDiscoveryDomain }}. hostmaster (
+    $ORIGIN {{ .Infra.Status.EtcdDiscoveryDomain }}.
+    @    3600 IN SOA host.{{ .Infra.Status.EtcdDiscoveryDomain }}. hostmaster (
                                     2017042752 ; serial
                                     7200       ; refresh (2 hours)
                                     3600       ; retry (1 hour)
