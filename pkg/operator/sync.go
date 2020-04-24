@@ -97,6 +97,50 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	return syncErr.err
 }
 
+// Return true if cloud config is required on a platform.
+func isCloudConfigRequired(infra *configv1.Infrastructure) bool {
+	if infra.Spec.CloudConfig.Name != "" {
+		return true
+	}
+	for _, platform := range []configv1.PlatformType{configv1.AzurePlatformType, configv1.BareMetalPlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType,
+		configv1.OvirtPlatformType, configv1.VSpherePlatformType} {
+		if platform == infra.Status.PlatformStatus.Type {
+			return true
+		}
+	}
+	return false
+}
+
+// Sync cloud config on supported platform from cloud.conf available in openshift-config-managed/kube-cloud-config ConfigMap.
+func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
+	if _, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config"); err != nil {
+		if apierrors.IsNotFound(err) {
+			if isCloudConfigRequired(infra) {
+				// Return error only if cloud config is required, otherwise prceeds further.
+				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %v",
+					"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
+			}
+		} else {
+			return err
+		}
+
+	} else {
+		// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
+		cc, err := optr.getCloudConfigFromConfigMap("openshift-config-managed", "kube-cloud-config", "cloud.conf")
+		if err != nil {
+			return err
+		}
+
+		spec.CloudProviderConfig = cc
+
+		caCert, err := optr.getCAsFromConfigMap("openshift-config-managed", "kube-cloud-config", "ca-bundle.pem")
+		if err == nil {
+			spec.CloudProviderCAData = caCert
+		}
+	}
+	return nil
+}
+
 func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if err := optr.syncCustomResourceDefinitions(); err != nil {
 		return err
@@ -206,18 +250,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 	spec.AdditionalTrustBundle = trustBundle
 
-	// if the cloudConfig is set in infra read the cloud config reference
-	if infra.Spec.CloudConfig.Name != "" {
-		cc, err := optr.getCloudConfigFromConfigMap("openshift-config", infra.Spec.CloudConfig.Name, infra.Spec.CloudConfig.Key)
-		if err != nil {
-			return err
-		}
-		spec.CloudProviderConfig = cc
-
-		caCert, err := optr.getCAsFromConfigMap("openshift-config", infra.Spec.CloudConfig.Name, "ca-bundle.pem")
-		if err == nil {
-			spec.CloudProviderCAData = caCert
-		}
+	if err := optr.syncCloudConfig(spec, infra); err != nil {
+		return err
 	}
 
 	//TODO: alaypatel07 remove after cluster-etcd-operator deployed via CVO as Managed
