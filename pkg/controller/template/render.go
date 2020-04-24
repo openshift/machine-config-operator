@@ -349,13 +349,13 @@ func etcdServerCertDNSNames(cfg RenderConfig) (interface{}, error) {
 }
 
 func etcdPeerCertDNSNames(cfg RenderConfig) (interface{}, error) {
-	if cfg.EtcdDiscoveryDomain == "" {
+	if cfg.Infra.Status.EtcdDiscoveryDomain == "" {
 		return nil, fmt.Errorf("invalid configuration")
 	}
 
 	var dnsNames = []string{
 		"${ETCD_DNS_NAME}",
-		cfg.EtcdDiscoveryDomain, // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
+		cfg.Infra.Status.EtcdDiscoveryDomain, // https://github.com/etcd-io/etcd/blob/583763261f1c843e07c1bf7fea5fb4cfb684fe87/Documentation/op-guide/clustering.md#dns-discovery
 	}
 	return strings.Join(dnsNames, ","), nil
 }
