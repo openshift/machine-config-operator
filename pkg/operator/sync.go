@@ -102,7 +102,7 @@ func isCloudConfigRequired(infra *configv1.Infrastructure) bool {
 	if infra.Spec.CloudConfig.Name != "" {
 		return true
 	}
-	for _, platform := range []configv1.PlatformType{configv1.AzurePlatformType, configv1.BareMetalPlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType,
+	for _, platform := range []configv1.PlatformType{configv1.AzurePlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType,
 		configv1.OvirtPlatformType, configv1.VSpherePlatformType} {
 		if platform == infra.Status.PlatformStatus.Type {
 			return true
