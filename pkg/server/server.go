@@ -1,17 +1,18 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 
+	"github.com/clarketm/json"
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	"github.com/vincent-petithory/dataurl"
+	"k8s.io/apimachinery/pkg/runtime"
+
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/vincent-petithory/dataurl"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
