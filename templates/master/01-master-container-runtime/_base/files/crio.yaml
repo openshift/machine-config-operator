@@ -28,6 +28,7 @@ contents:
         "SYS_CHROOT",
         "KILL",
     ]
+    manage_ns_lifecycle = true
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"
