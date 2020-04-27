@@ -1,12 +1,12 @@
 package render
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/clarketm/json"
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/stretchr/testify/assert"

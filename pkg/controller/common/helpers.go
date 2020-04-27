@@ -1,11 +1,11 @@
 package common
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"reflect"
 	"sort"
 
+	"github.com/clarketm/json"
 	ignconverter "github.com/coreos/ign-converter"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign "github.com/coreos/ignition/config/v2_2"
@@ -15,9 +15,10 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/golang/glog"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	errors "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 // MergeMachineConfigs combines multiple machineconfig objects into one object.
