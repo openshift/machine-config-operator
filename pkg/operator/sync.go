@@ -149,7 +149,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if optr.inClusterBringup {
 		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
-		if !cache.WaitForCacheSync(optr.stopCh, optr.mcpListerSynced, optr.mcListerSynced, optr.ccListerSynced) {
+		if !cache.WaitForCacheSync(optr.stopCh, optr.ccListerSynced) {
 			return errors.New("failed to sync caches for informers")
 		}
 		glog.V(4).Info("Finished inClusterBringup informers cache sync")
@@ -286,11 +286,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 func (optr *Operator) syncCustomResourceDefinitions() error {
 	crds := []string{
-		"manifests/machineconfig.crd.yaml",
 		"manifests/controllerconfig.crd.yaml",
-		"manifests/machineconfigpool.crd.yaml",
-		"manifests/kubeletconfig.crd.yaml",
-		"manifests/containerruntimeconfig.crd.yaml",
 	}
 
 	for _, crd := range crds {
