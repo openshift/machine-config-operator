@@ -216,30 +216,27 @@ func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	}
 }
 
-// Returns true if updated packages are available
-func rtKernelUpdateAvailable(rpms []os.FileInfo, rtKernelPkg []string) (bool, error) {
-	for _, pkg := range rtKernelPkg {
-		var out []byte
-		var err error
+// Returns true if updated packages or new RT kernel related packages are available
+func rtKernelUpdateAvailable(updateRpms []os.FileInfo, installedRTKernelRpms []string) bool {
+	// if list of RT kernel packages in update is more than installed list, then we have additional packages to install
+	if len(updateRpms) > len(installedRTKernelRpms) {
+		return true
+	}
+	for _, pkg := range installedRTKernelRpms {
 		found := false
-
-		if out, err = exec.Command("rpm", "-q", pkg).Output(); err != nil {
-			wrappedErr := fmt.Errorf("Failed to run rpm -q : %v", err)
-			return false, wrappedErr
-		}
-		searchRpm := strings.TrimSpace(string(out)) + ".rpm"
-		for _, rpm := range rpms {
+		searchRpm := pkg + ".rpm"
+		for _, rpm := range updateRpms {
 			if rpm.Name() == searchRpm {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return true, nil
+			return true
 		}
 	}
 
-	return false, nil
+	return false
 }
 
 // return true if the MachineConfigDiff is not empty
@@ -780,18 +777,14 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 				args = append(args, installedRTKernelRpm)
 			}
 			// Perform kernel-rt package update only if updated packages are available
-			var updateAvailable bool
-			if updateAvailable, err = rtKernelUpdateAvailable(rtKernelRpms, installedRTKernelRpms); err != nil {
-				return err
-			} else if !updateAvailable {
-				return nil
-			}
-			for _, rpm := range rtKernelRpms {
-				args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
-			}
-			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-			if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-				return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+			if rtKernelUpdateAvailable(rtKernelRpms, installedRTKernelRpms) {
+				for _, rpm := range rtKernelRpms {
+					args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
+				}
+				dn.logSystem("Updating rt-kernel packages on host: %+q", args)
+				if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+					return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+				}
 			}
 		}
 	}
