@@ -222,10 +222,10 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer optr.queue.ShutDown()
 
 	apiClient := optr.apiExtClient.ApiextensionsV1beta1()
-	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "machineconfigpools.machineconfiguration.openshift.io", metav1.GetOptions{})
+	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			glog.Infof("Couldn't find machineconfigpool CRD, in cluster bringup mode")
+			glog.Infof("Couldn't find controllerconfig CRD, in cluster bringup mode")
 			optr.inClusterBringup = true
 		} else {
 			glog.Errorf("While checking for cluster bringup: %v", err)
@@ -245,6 +245,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.networkListerSynced,
 		optr.proxyListerSynced,
 		optr.oseKubeAPIListerSynced,
+		optr.mcpListerSynced,
+		optr.mcListerSynced,
 		optr.etcdSynced) {
 		glog.Error("failed to sync caches")
 		return
@@ -253,9 +255,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	// these can only be synced after CRDs are installed
 	if !optr.inClusterBringup {
 		if !cache.WaitForCacheSync(stopCh,
-			optr.mcpListerSynced,
 			optr.ccListerSynced,
-			optr.mcListerSynced,
 		) {
 			glog.Error("failed to sync caches")
 			return
