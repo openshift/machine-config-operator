@@ -19,32 +19,33 @@ var (
 	}
 
 	bootstrapOpts struct {
-		baremetalRuntimeCfgImage  string
 		cloudConfigFile           string
 		configFile                string
 		cloudProviderCAFile       string
-		corednsImage              string
 		destinationDir            string
 		etcdCAFile                string
-		etcdImage                 string
 		etcdMetricCAFile          string
-		haproxyImage              string
 		imagesConfigMapFile       string
 		infraConfigFile           string
-		infraImage                string
-		keepalivedImage           string
 		kubeCAFile                string
-		kubeClientAgentImage      string
-		clusterEtcdOperatorImage  string
-		mcoImage                  string
-		mdnsPublisherImage        string
-		oauthProxyImage           string
 		networkConfigFile         string
-		oscontentImage            string
 		pullSecretFile            string
 		rootCAFile                string
 		proxyConfigFile           string
 		additionalTrustBundleFile string
+		// TODO: drop
+		baremetalRuntimeCfgImage string
+		corednsImage             string
+		etcdImage                string
+		haproxyImage             string
+		infraImage               string
+		keepalivedImage          string
+		kubeClientAgentImage     string
+		clusterEtcdOperatorImage string
+		mcoImage                 string
+		mdnsPublisherImage       string
+		oauthProxyImage          string
+		oscontentImage           string
 	}
 )
 
@@ -57,17 +58,20 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.destinationDir, "dest-dir", "", "The destination directory where MCO writes the manifests.")
 	bootstrapCmd.MarkFlagRequired("dest-dir")
+	// TODO: drop
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mcoImage, "machine-config-operator-image", "", "Image for Machine Config Operator.")
-	bootstrapCmd.MarkFlagRequired("machine-config-operator-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
-	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
-	bootstrapCmd.MarkFlagRequired("etcd-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
-	bootstrapCmd.MarkFlagRequired("kube-client-agent-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.clusterEtcdOperatorImage, "cluster-etcd-operator-image", "", "Image for Cluster Etcd Operator. An empty string here means the cluster boots without CEO.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
-	bootstrapCmd.MarkFlagRequired("infra-image")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.keepalivedImage, "keepalived-image", "", "Image for Keepalived.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.corednsImage, "coredns-image", "", "Image for CoreDNS.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mdnsPublisherImage, "mdns-publisher-image", "", "Image for mdns-publisher.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
+	// TODO: end drop
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
@@ -75,12 +79,6 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudConfigFile, "cloud-config-file", "", "File containing the config map that contains the cloud config for cloudprovider.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.proxyConfigFile, "proxy-config-file", "/assets/manifests/cluster-proxy-01-config.yaml", "File containing proxy.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.additionalTrustBundleFile, "additional-trust-bundle-config-file", "/assets/manifests/user-ca-bundle-config.yaml", "File containing the additional user provided CA bundle manifest.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.keepalivedImage, "keepalived-image", "", "Image for Keepalived.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.corednsImage, "coredns-image", "", "Image for CoreDNS.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.mdnsPublisherImage, "mdns-publisher-image", "", "Image for mdns-publisher.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudProviderCAFile, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
 
 }
@@ -92,37 +90,19 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	imgs := operator.Images{
-		RenderConfigImages: operator.RenderConfigImages{
-			MachineConfigOperator:        bootstrapOpts.mcoImage,
-			MachineOSContent:             bootstrapOpts.oscontentImage,
-			KeepalivedBootstrap:          bootstrapOpts.keepalivedImage,
-			CorednsBootstrap:             bootstrapOpts.corednsImage,
-			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
-			OauthProxy:                   bootstrapOpts.oauthProxyImage,
-		},
-		ControllerConfigImages: operator.ControllerConfigImages{
-			Etcd:                bootstrapOpts.etcdImage,
-			InfraImage:          bootstrapOpts.infraImage,
-			KubeClientAgent:     bootstrapOpts.kubeClientAgentImage,
-			ClusterEtcdOperator: bootstrapOpts.clusterEtcdOperatorImage,
-			Keepalived:          bootstrapOpts.keepalivedImage,
-			Coredns:             bootstrapOpts.corednsImage,
-			MdnsPublisher:       bootstrapOpts.mdnsPublisherImage,
-			Haproxy:             bootstrapOpts.haproxyImage,
-			BaremetalRuntimeCfg: bootstrapOpts.baremetalRuntimeCfgImage,
-		},
-	}
-
 	if err := operator.RenderBootstrap(
 		bootstrapOpts.additionalTrustBundleFile,
 		bootstrapOpts.proxyConfigFile,
 		bootstrapOpts.configFile,
-		bootstrapOpts.infraConfigFile, bootstrapOpts.networkConfigFile,
+		bootstrapOpts.infraConfigFile,
+		bootstrapOpts.networkConfigFile,
 		bootstrapOpts.cloudConfigFile,
 		bootstrapOpts.cloudProviderCAFile,
-		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
-		&imgs,
+		bootstrapOpts.etcdCAFile,
+		bootstrapOpts.etcdMetricCAFile,
+		bootstrapOpts.rootCAFile,
+		bootstrapOpts.kubeCAFile,
+		bootstrapOpts.pullSecretFile,
 		bootstrapOpts.destinationDir,
 	); err != nil {
 		glog.Fatalf("error rendering bootstrap manifests: %v", err)

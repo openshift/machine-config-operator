@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -17,6 +18,11 @@ import (
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 )
 
+const (
+	imagesFile    = "/manifests/0000_80_machine-config-operator_02_images.configmap.yaml"
+	oscontentFile = "/manifests/0000_80_machine-config-operator_05_osimageurl.yaml"
+)
+
 type manifest struct {
 	name     string
 	data     []byte
@@ -24,14 +30,20 @@ type manifest struct {
 }
 
 // RenderBootstrap writes to destinationDir static Pods.
+//nolint:gocyclo
 func RenderBootstrap(
 	additionalTrustBundleFile,
 	proxyFile,
 	clusterConfigConfigMapFile,
-	infraFile, networkFile,
-	cloudConfigFile, cloudProviderCAFile,
-	etcdCAFile, etcdMetricCAFile, rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
-	imgs *Images,
+	infraFile,
+	networkFile,
+	cloudConfigFile,
+	cloudProviderCAFile,
+	etcdCAFile,
+	etcdMetricCAFile,
+	rootCAFile,
+	kubeAPIServerServingCA,
+	pullSecretFile,
 	destinationDir string,
 ) error {
 	filesData := map[string][]byte{}
@@ -44,6 +56,8 @@ func RenderBootstrap(
 		etcdCAFile,
 		etcdMetricCAFile,
 		pullSecretFile,
+		imagesFile,
+		oscontentFile,
 	}
 	if kubeAPIServerServingCA != "" {
 		files = append(files, kubeAPIServerServingCA)
@@ -59,8 +73,30 @@ func RenderBootstrap(
 		filesData[file] = data
 	}
 
+	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[imagesFile])
+	if err != nil {
+		return err
+	}
+	imagesConfigMap, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+	imgs := Images{}
+	if err := json.Unmarshal([]byte(imagesConfigMap.Data["images.json"]), &imgs); err != nil {
+		return err
+	}
+	obji, err = runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), filesData[oscontentFile])
+	if err != nil {
+		return err
+	}
+	oscontentConfigMap, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+	imgs.MachineOSContent = oscontentConfigMap.Data["osImageURL"]
+
 	// create ControllerConfigSpec
-	obji, err := runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[infraFile])
+	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[infraFile])
 	if err != nil {
 		return err
 	}
