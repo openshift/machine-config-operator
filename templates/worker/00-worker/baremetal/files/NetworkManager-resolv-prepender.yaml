@@ -30,6 +30,8 @@ contents:
             logger -s "Couldn't find a non-virtual IP, just updating resolv.conf"
             cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
         fi
+        # Only leave the first 3 nameservers in /etc/resolv.conf
+        sed -i ':a $!{N; ba}; s/\(^\|\n\)nameserver/\n# nameserver/4g' /etc/resolv.conf
         ;;
         *)
         ;;
