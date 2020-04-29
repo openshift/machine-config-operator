@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"text/template"
@@ -19,7 +20,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -35,6 +36,7 @@ type RenderConfig struct {
 const (
 	filesDir = "files"
 	unitsDir = "units"
+	archDir  = runtime.GOARCH
 
 	// TODO: these constants are wrong, they should match what is reported by the infrastructure provider
 	platformAWS       = "aws"
@@ -62,6 +64,11 @@ const (
 //                       /01-worker-kubelet/_base/files/random.conf.tmpl
 //                /master/00-master/_base/units/kubelet.tmpl
 //                                    /files/hostname.tmpl
+//
+// Architecture specific files and units can also be optionally specified. These will be applied only for the specific architecture.
+//
+// ex:
+// 	 templates/common/_base/ppc64le/files/disable-nic-tso.yaml
 //
 func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ioutil.ReadDir(templateDir)
@@ -237,12 +244,30 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 			}
 		}
 
+		// check architecture specific files - ignore if not present as they are optional
+		p = filepath.Join(platformDir, archDir, filesDir)
+		exists, err = existsDir(p)
+		if err == nil && exists {
+			if err := filterTemplates(files, p, config); err != nil {
+				return nil, err
+			}
+		}
+
 		p = filepath.Join(platformDir, unitsDir)
 		exists, err = existsDir(p)
 		if err != nil {
 			return nil, err
 		}
 		if exists {
+			if err := filterTemplates(units, p, config); err != nil {
+				return nil, err
+			}
+		}
+
+		// check architecture specific units - ignore if not present as they are optional
+		p = filepath.Join(platformDir, archDir, unitsDir)
+		exists, err = existsDir(p)
+		if err == nil && exists {
 			if err := filterTemplates(units, p, config); err != nil {
 				return nil, err
 			}
@@ -296,7 +321,7 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.
 		},
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL: "",
-			Config: runtime.RawExtension{
+			Config: k8sruntime.RawExtension{
 				Raw: rawIgnCfg,
 			},
 		},

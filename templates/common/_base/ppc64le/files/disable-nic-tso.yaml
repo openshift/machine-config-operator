@@ -1,0 +1,10 @@
+filesystem: "root"
+mode: 0744
+path: "/etc/NetworkManager/dispatcher.d/pre-up.d/disable-nic-tso.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # This is a workaround for BZ#1816254.If the ibmveth driver is used, disable TSO
+    if lsmod|grep -q 'ibmveth'; then
+      UUID=$(nmcli -t c show --active | cut -d ":" -f 2) ; nmcli conn modify $UUID ethtool.feature-tso off;
+    fi
