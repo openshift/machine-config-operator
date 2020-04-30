@@ -1334,6 +1334,7 @@ spec:
                   description: Ignition section contains metadata about the configuration
                     itself. We only permit a subsection of ignition fields for MachineConfigs.
                   type: object
+                  x-kubernetes-preserve-unknown-fields: true
                   properties:
                     config:
                       type: object
@@ -1407,6 +1408,7 @@ spec:
                 storage:
                   description: Storage describes the desired state of the system's storage devices.
                   type: object
+                  x-kubernetes-preserve-unknown-fields: true
                   properties:
                     directories:
                       description: Directories is the list of directories to be created
