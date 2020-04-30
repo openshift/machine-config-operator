@@ -86,6 +86,8 @@ metadata:
   name: 99-worker-ssh
 spec:
   config:
+    ignition:
+      version: 2.2.0
     passwd:
       users:
       - name: core
@@ -113,6 +115,8 @@ metadata:
   name: 99-worker-ssh
 spec:
   config:
+    ignition:
+      version: 2.2.0
     passwd:
       users:
       - name: core
