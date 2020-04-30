@@ -80,7 +80,7 @@ contents:
     # Path to the seccomp.json profile which is used as the default seccomp profile
     # for the runtime. If not specified, then the internal default seccomp profile
     # will be used.
-    seccomp_profile = ""
+    seccomp_profile = "/etc/crio/seccomp.json"
 
     # Used to change the name of the default AppArmor profile of CRI-O. The default
     # profile name is "crio-default-" followed by the version string of CRI-O.
@@ -196,7 +196,7 @@ contents:
     # - runtime_root (optional, string): root directory for storage of containers
     #   state.
     [crio.runtime.runtimes.runc]
-    runtime_path = ""
+    runtime_path = "/usr/bin/runc"
     runtime_type = "oci"
     runtime_root = "/run/runc"
 
