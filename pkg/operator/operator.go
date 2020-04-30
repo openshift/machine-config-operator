@@ -263,6 +263,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	}
 
 	glog.Info("Starting MachineConfigOperator")
+	glog.Infof("mcc: Logging to this file")
 	defer glog.Info("Shutting down MachineConfigOperator")
 
 	optr.stopCh = stopCh

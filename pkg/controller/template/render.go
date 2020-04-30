@@ -188,6 +188,9 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 }
 
 func generateMachineConfigForName(config *RenderConfig, role, name, templateDir, path string, commonAdded *bool) (*mcfgv1.MachineConfig, error) {
+	glog.Info("mcc: generateMachineConfigForName Called")
+	glog.Infof("mcc: * * generateMachineConfigForName config.ControllerConfigSpec (%+v)", config.ControllerConfigSpec)
+	glog.Infof("mcc: * * generateMachineConfigForName config.ControllerConfigSpec.NetworkType (%+v)", config.ControllerConfigSpec.NetworkType)
 	platform, err := platformFromControllerConfigSpec(config.ControllerConfigSpec)
 	if err != nil {
 		return nil, err
@@ -237,15 +240,19 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 			}
 		}
 
+		glog.Infof("mcc: unitsDir (%v)", unitsDir)
 		p = filepath.Join(platformDir, unitsDir)
 		exists, err = existsDir(p)
 		if err != nil {
 			return nil, err
 		}
 		if exists {
+			glog.Infof("mcc: p is: (%v)", p)
+			glog.Infof("mcc: units is: (%v)", units)
 			if err := filterTemplates(units, p, config); err != nil {
 				return nil, err
 			}
+			glog.Infof("mcc: units is now: (%v)", units)
 		}
 	}
 

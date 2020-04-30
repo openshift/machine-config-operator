@@ -777,6 +777,7 @@ func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (
 // getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
 // Each type of global configuration is named `cluster` for easy discovery in the cluster.
 func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, *configv1.Proxy, error) {
+	glog.Info("mcc: getGlobalConfig Called")
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
 		return nil, nil, nil, err
@@ -789,6 +790,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, err
 	}
+	glog.Infof("mcc: getGlobalConfig returns network: (%+v)", network)
 	return infra, network, proxy, nil
 }
 
@@ -819,6 +821,12 @@ func (optr *Operator) setEtcdOperatorImage(imgs *Images) error {
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
+	glog.Infof("mcc: getRenderConfig TargetNamesapce: (%+v)", tnamespace)
+	glog.Infof("mcc: getRenderConfig Version: (%+v)", version.Raw)
+	glog.Infof("mcc: getRenderConfig ControllerConfig: (%+v)", *ccSpec)
+	glog.Infof("mcc: getRenderConfig Images: (%+v)", imgs)
+	glog.Infof("mcc: getRenderConfig APIServerURL: (%+v)", apiServerURL)
+	glog.Infof("mcc: getRenderConfig KubeAPIServerServingCA: (%+v)", kubeAPIServerServingCA)
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,

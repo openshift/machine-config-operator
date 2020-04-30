@@ -78,19 +78,27 @@ func RenderBootstrap(
 		return fmt.Errorf("expected *configv1.Proxy found %T", obji)
 	}
 
+	glog.Info("mcc: RenderBootstrap is Logging to this file")
+	glog.Infof("mcc: networkFile is (%v)", networkFile)
+	glog.Infof("mcc: filesData[networkFile] is (%v)", filesData[networkFile])
 	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[networkFile])
 	if err != nil {
+		glog.Infof("mcc: runtime.Decode err is (%v)", err)
 		return err
 	}
 	network, ok := obji.(*configv1.Network)
 	if !ok {
+		glog.Infof("mcc: network cast not ok (%v)", ok)
 		return fmt.Errorf("expected *configv1.Network found %T", obji)
 	}
+	glog.Infof("mcc: network is (%v)", network)
 
 	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
 	if err != nil {
 		return err
+		glog.Infof("mcc: spec hit err (%v)", err)
 	}
+	glog.Infof("mcc: spec is (%v)", spec)
 
 	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)
 	if err != nil && !os.IsNotExist(err) {
