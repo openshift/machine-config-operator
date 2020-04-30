@@ -779,6 +779,20 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 	return nil
 }
 
+func (dn *Daemon) deleteStaleConfigFile(path string) error {
+	glog.V(2).Infof("Deleting stale config file: %s", path)
+	if err := os.Remove(path); err != nil {
+		newErr := fmt.Errorf("unable to delete %s: %s", path, err)
+		if !os.IsNotExist(err) {
+			return newErr
+		}
+		// otherwise, just warn
+		glog.Warningf("%v", newErr)
+	}
+	glog.Infof("Removed stale file %q", path)
+	return nil
+}
+
 // deleteStaleData performs a diff of the new and the old config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
@@ -816,8 +830,18 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 					}
 				} else {
+					// we get here for cases like /usr/local/bin/etcd-member-add.sh.mcdorig
+					// which has a wrong backup it's not in rpm -qf nor /usr/etc...there are more files
+					// from upgrading from 4.2->4.3->4.4 and 4.3->4.4
+					// we still need to find a way to catch user defined or relax this
 					if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(f.Path), f.Path).CombinedOutput(); err != nil {
-						return errors.Wrapf(err, "restoring %q from orig file %q: %s", f.Path, origFileName(f.Path), string(out))
+						glog.Warningf("couldn't restore %q from orig file %q: %s: %v", f.Path, origFileName(f.Path), string(out), err)
+						if err := dn.deleteStaleConfigFile(f.Path); err != nil {
+							return err
+						}
+						// we leave the orig file on disk at the risk of getting some more logs
+						// but we know what happened and can act accordingly by manually fixing
+						continue
 					}
 					if err := os.Remove(origFileName(f.Path)); err != nil {
 						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
@@ -826,16 +850,9 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 					continue
 				}
 			}
-			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
-			if err := os.Remove(f.Path); err != nil {
-				newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
-				if !os.IsNotExist(err) {
-					return newErr
-				}
-				// otherwise, just warn
-				glog.Warningf("%v", newErr)
+			if err := dn.deleteStaleConfigFile(f.Path); err != nil {
+				return err
 			}
-			glog.Infof("Removed stale file %q", f.Path)
 		}
 	}
 
