@@ -180,7 +180,7 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 		if err != nil {
 			return err
 		}
-		glog.Warningf("###### render %q => %s", info.name(), string(renderedData))
+		glog.Warningf("###### render %q => %s", info.Name(), string(renderedData))
 		toFilter[info.Name()] = string(renderedData)
 		return nil
 	}
