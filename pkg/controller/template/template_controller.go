@@ -394,6 +394,8 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	if err != nil {
 		return err
 	}
+	glog.Warningf("##### syncControllerConfig(): controllerConfig %+v", controllerconfig)
+	glog.Warningf("##### syncControllerConfig(): controllerConfig NetworkType %s", controllerconfig.Spec.NetworkType)
 
 	// Deep-copy otherwise we are mutating our cache.
 	// TODO: Deep-copy only when needed.
@@ -417,6 +419,8 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 		}
 		pullSecretRaw = secret.Data[corev1.DockerConfigJsonKey]
 	}
+	glog.Warningf("##### syncControllerConfig(): cfg %+v", cfg)
+	glog.Warningf("##### syncControllerConfig(): cfg NetworkType %s", cfg.Spec.NetworkType)
 	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw)
 	if err != nil {
 		return ctrl.syncFailingStatus(cfg, err)
@@ -440,10 +444,13 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 	if err := json.Compact(buf, pullSecretRaw); err != nil {
 		return nil, fmt.Errorf("couldn't compact pullsecret %q: %v", string(pullSecretRaw), err)
 	}
+	glog.Warningf("##### getMachineConfigsForControllerConfig(): mcfgv1.ControllerConfig %+v", config)
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 	}
+	glog.Warningf("##### getMachineConfigsForControllerConfig(): RenderConfig %+v", rc)
+	glog.Warningf("##### getMachineConfigsForControllerConfig(): RenderConfig NetworkType %s", rc.ControllerConfigSpec.NetworkType)
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
 		return nil, err

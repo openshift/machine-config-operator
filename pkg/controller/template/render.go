@@ -175,10 +175,12 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 		}
 
 		// Render the template file
+		glog.Warningf("###### render %q with rc %+v", info.Name(), *config)
 		renderedData, err := renderTemplate(*config, path, filedata)
 		if err != nil {
 			return err
 		}
+		glog.Warningf("###### render %q => %s", info.name(), string(renderedData))
 		toFilter[info.Name()] = string(renderedData)
 		return nil
 	}
@@ -242,6 +244,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 			return nil, err
 		}
 		if exists {
+			glog.Warningf("##### generateMachineConfigForName(): filter templates with config %+v", config)
 			if err := filterTemplates(units, p, config); err != nil {
 				return nil, err
 			}
