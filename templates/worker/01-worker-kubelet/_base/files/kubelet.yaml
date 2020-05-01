@@ -25,7 +25,8 @@ contents:
     systemCgroups: /system.slice
     systemReserved:
       cpu: 500m
-      memory: 500Mi
+      memory: 1Gi
+      ephemeral-storage: 1Gi
     featureGates:
       RotateKubeletServerCertificate: true
       NodeDisruptionExclusion: true
