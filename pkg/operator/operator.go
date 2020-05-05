@@ -165,6 +165,7 @@ func New(
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
 		oseKubeAPIInformer.Informer(),
+		clusterCmLister.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}

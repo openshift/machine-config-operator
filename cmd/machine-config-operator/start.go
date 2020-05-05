@@ -98,7 +98,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
-		go controller.Run(2, ctrlctx.Stop)
+		go controller.Run(1, ctrlctx.Stop)
 
 		select {}
 	}

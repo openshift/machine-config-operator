@@ -225,6 +225,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	certPool := x509.NewCertPool()
 	// this is the generic trusted bundle for things like self-signed registries.
 	additionalTrustBundle, err := optr.getCAsFromConfigMap("openshift-config", "user-ca-bundle", "ca-bundle.crt")
+	glog.Warningf("runcom get bundle err %v", err)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -234,6 +235,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		}
 		trustBundle = append(trustBundle, additionalTrustBundle...)
 	}
+	glog.Warningf("runcom %v", string(trustBundle))
 
 	// this is the trusted bundle specific for proxy things and can differ from the generic one above.
 	if proxy != nil && proxy.Spec.TrustedCA.Name != "" && proxy.Spec.TrustedCA.Name != "user-ca-bundle" {
@@ -249,6 +251,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		}
 	}
 	spec.AdditionalTrustBundle = trustBundle
+
+	glog.Warningf("runcom 2 %v", string(spec.AdditionalTrustBundle))
 
 	if err := optr.syncCloudConfig(spec, infra); err != nil {
 		return err

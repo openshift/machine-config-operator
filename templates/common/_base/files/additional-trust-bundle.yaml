@@ -3,6 +3,4 @@ mode: 0600
 path: "/etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt"
 contents:
   inline: |
-{{if .AdditionalTrustBundle -}}
 {{.AdditionalTrustBundle | toString | indent 4}}
-{{end -}}
