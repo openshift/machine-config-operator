@@ -1,0 +1,6 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/sysctl.d/00-icmp.conf"
+contents:
+  inline: |
+    net.ipv4.icmp_ratemask = 6160
