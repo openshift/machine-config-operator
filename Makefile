@@ -60,8 +60,8 @@ go-deps:
 	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 install-tools:
-	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
-	GO111MODULE=on go build -o $(GOPATH)/bin/gosec ./vendor/github.com/securego/gosec/cmd/gosec
+	GO111MODULE=on go build -mod=vendor -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
+	GO111MODULE=on go build -mod=vendor -o $(GOPATH)/bin/gosec ./vendor/github.com/securego/gosec/cmd/gosec
 
 # Run verification steps
 # Example:
@@ -75,12 +75,12 @@ verify: install-tools
 	# once code-generator plays nice with go modules, see
 	# https://github.com/kubernetes/kubernetes/issues/82531 and
 	# https://github.com/kubernetes/kubernetes/pull/85559
-	pushd vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
+	pushd ./vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
-	rm -f vendor/k8s.io/code-generator/go.mod
-	mv vendor/k8s.io/code-generator/go.mod.bak vendor/k8s.io/code-generator/go.mod
-	rm -rf vendor/k8s.io/code-generator/vendor
+	rm -f ./vendor/k8s.io/code-generator/go.mod
+	mv ./vendor/k8s.io/code-generator/go.mod.bak ./vendor/k8s.io/code-generator/go.mod
+	rm -rf ./vendor/k8s.io/code-generator/vendor
 
 # Template for defining build targets for binaries.
 define target_template =
