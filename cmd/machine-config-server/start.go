@@ -52,15 +52,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
 
 	stopCh := make(chan struct{})
-	trustedCAWatcher, err := common.NewTrustedCAWatcher(stopCh)
+	trustedCAWatcher, err := common.NewTrustedCAWatcher()
 	if err != nil {
 		glog.Errorf("Failed to watch trusted CA: %#v", err)
 		ctrlcommon.WriteTerminationError(err)
 	}
 	defer trustedCAWatcher.Close()
-	go trustedCAWatcher.Run()
+	go trustedCAWatcher.Run(stopCh)
 	go secureServer.Serve()
 	go insecureServer.Serve()
 	<-stopCh
-	panic("not possible")
+	glog.Infof("Shutting down MCS")
 }

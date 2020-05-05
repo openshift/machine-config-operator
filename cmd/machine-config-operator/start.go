@@ -50,6 +50,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	stop := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
@@ -100,23 +101,24 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
-		trustedCAWatcher, err := common.NewTrustedCAWatcher(stop)
+		trustedCAWatcher, err := common.NewTrustedCAWatcher()
 		if err != nil {
 			glog.Errorf("Failed to watch trusted CA: %#v", err)
 			ctrlcommon.WriteTerminationError(err)
 		}
 		defer trustedCAWatcher.Close()
-		go trustedCAWatcher.Run()
+		go trustedCAWatcher.Run(stop)
 
 		go controller.Run(2, ctrlctx.Stop)
 
 		select {
 		case <-ctrlctx.Stop:
 		case <-stop:
+			cancel()
 		}
 	}
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:          common.CreateResourceLock(cb, componentNamespace, componentName),
 		LeaseDuration: common.LeaseDuration,
 		RenewDeadline: common.RenewDeadline,

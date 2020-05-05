@@ -165,13 +165,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx.InformerFactory.Start(stopCh)
 	close(ctx.InformersStarted)
 
-	trustedCAWatcher, err := common.NewTrustedCAWatcher(stopCh)
+	trustedCAWatcher, err := common.NewTrustedCAWatcher()
 	if err != nil {
 		glog.Errorf("Failed to watch trusted CA: %#v", err)
 		ctrlcommon.WriteTerminationError(err)
 	}
 	defer trustedCAWatcher.Close()
-	go trustedCAWatcher.Run()
+	go trustedCAWatcher.Run(stopCh)
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)

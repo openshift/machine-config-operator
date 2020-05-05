@@ -62,11 +62,10 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 type TrustedCAWatcher struct {
 	watcher  *fsnotify.Watcher
 	original []byte
-	stopCh   chan struct{}
 }
 
 // NewTrustedCAWatcher creates a new instance of the trusted CA watcher
-func NewTrustedCAWatcher(stopCh chan struct{}) (trustedCAWatcher *TrustedCAWatcher, retErr error) {
+func NewTrustedCAWatcher() (trustedCAWatcher *TrustedCAWatcher, retErr error) {
 	// Set up and start the file watcher.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -87,7 +86,6 @@ func NewTrustedCAWatcher(stopCh chan struct{}) (trustedCAWatcher *TrustedCAWatch
 	trustedCAWatcher = &TrustedCAWatcher{}
 	trustedCAWatcher.watcher = watcher
 	trustedCAWatcher.original = orig
-	trustedCAWatcher.stopCh = stopCh
 	return
 }
 
@@ -97,7 +95,7 @@ func (trustedCAWatcher *TrustedCAWatcher) Close() {
 }
 
 // Run loops listening to file events. Most of the time you'd want this to be run in a goroutine
-func (trustedCAWatcher *TrustedCAWatcher) Run() {
+func (trustedCAWatcher *TrustedCAWatcher) Run(stopCh chan struct{}) {
 	for {
 		select {
 		case event := <-trustedCAWatcher.watcher.Events:
@@ -108,12 +106,12 @@ func (trustedCAWatcher *TrustedCAWatcher) Run() {
 			latest, err := ioutil.ReadFile(defaultTrustedCABundle)
 			if err != nil {
 				glog.Errorf("failed to read watched file %q: %v", defaultTrustedCABundle, err)
-				close(trustedCAWatcher.stopCh)
+				close(stopCh)
 				return
 			}
 			if !bytes.Equal(trustedCAWatcher.original, latest) {
 				glog.Infof("watched file %q changed, stopping operator", defaultTrustedCABundle)
-				close(trustedCAWatcher.stopCh)
+				close(stopCh)
 				return
 			}
 		case err := <-trustedCAWatcher.watcher.Errors:
