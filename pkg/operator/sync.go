@@ -102,13 +102,15 @@ func isCloudConfigRequired(infra *configv1.Infrastructure) bool {
 	if infra.Spec.CloudConfig.Name != "" {
 		return true
 	}
-	for _, platform := range []configv1.PlatformType{configv1.AzurePlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType,
-		configv1.OvirtPlatformType, configv1.VSpherePlatformType} {
-		if platform == infra.Status.PlatformStatus.Type {
-			return true
-		}
+	switch infra.Status.PlatformStatus.Type {
+	case configv1.AzurePlatformType,
+		configv1.GCPPlatformType,
+		configv1.OpenStackPlatformType,
+		configv1.VSpherePlatformType:
+		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // Sync cloud config on supported platform from cloud.conf available in openshift-config-managed/kube-cloud-config ConfigMap.

@@ -505,7 +505,7 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 	}
 	flag := "--cloud-config=/etc/kubernetes/cloud.conf"
 	switch cfg.Platform {
-	case platformAWS, platformAzure, platformGCP, platformOpenStack, platformOvirt, platformVSphere:
+	case platformAWS, platformAzure, platformGCP, platformOpenStack, platformVSphere:
 		return flag
 	default:
 		return ""
