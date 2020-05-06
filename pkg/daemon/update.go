@@ -831,10 +831,21 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 	return nil
 }
 
+func restorePath(path string) error {
+	if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(path), path).CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "restoring %q from orig file %q: %s", path, origFileName(path), string(out))
+	}
+	if err := os.Remove(origFileName(path)); err != nil {
+		return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(path), err)
+	}
+	return nil
+}
+
 // deleteStaleData performs a diff of the new and the old Ignition config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
+//nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
@@ -868,11 +879,8 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 					}
 				} else {
-					if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(f.Path), f.Path).CombinedOutput(); err != nil {
-						return errors.Wrapf(err, "restoring %q from orig file %q: %s", f.Path, origFileName(f.Path), string(out))
-					}
-					if err := os.Remove(origFileName(f.Path)); err != nil {
-						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+					if err := restorePath(f.Path); err != nil {
+						return err
 					}
 					glog.V(2).Infof("Restored file %q", f.Path)
 					continue
@@ -906,6 +914,18 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
+				if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
+					if err := os.Remove(noOrigFileStampName(path)); err != nil {
+						return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(path), err)
+					}
+					glog.V(2).Infof("Removing file %q completely", path)
+				} else if _, err := os.Stat(origFileName(path)); err == nil {
+					if err := restorePath(path); err != nil {
+						return err
+					}
+					glog.V(2).Infof("Restored file %q", path)
+					continue
+				}
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := os.Remove(path); err != nil {
 					newErr := fmt.Errorf("unable to delete %s: %s", path, err)
@@ -922,6 +942,18 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 		if _, ok := newUnitSet[path]; !ok {
 			if err := dn.disableUnit(u); err != nil {
 				glog.Warningf("Unable to disable %s: %s", u.Name, err)
+			}
+			if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
+				if err := os.Remove(noOrigFileStampName(path)); err != nil {
+					return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(path), err)
+				}
+				glog.V(2).Infof("Removing file %q completely", path)
+			} else if _, err := os.Stat(origFileName(path)); err == nil {
+				if err := restorePath(path); err != nil {
+					return err
+				}
+				glog.V(2).Infof("Restored file %q", path)
+				continue
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			if err := os.Remove(path); err != nil {
@@ -975,11 +1007,21 @@ func (dn *Daemon) disableUnit(unit igntypes.Unit) error {
 
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
+	operatingSystem, err := getHostRunningOS()
+	if err != nil {
+		return errors.Wrapf(err, "checking operating system")
+	}
 	for _, u := range units {
 		// write the dropin to disk
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+			if _, err := os.Stat("/usr" + dpath); err == nil &&
+				(operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
+				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
+					return err
+				}
+			}
 			if err := writeFileAtomicallyWithDefaults(dpath, []byte(u.Dropins[i].Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
 			}
@@ -1008,7 +1050,12 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 
 		if u.Contents != "" {
 			glog.Infof("Writing systemd unit %q", u.Name)
-
+			if _, err := os.Stat("/usr" + fpath); err == nil &&
+				(operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
+				if err := createOrigFile("/usr"+fpath, fpath); err != nil {
+					return err
+				}
+			}
 			// write the unit to disk
 			if err := writeFileAtomicallyWithDefaults(fpath, []byte(u.Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
@@ -1072,7 +1119,7 @@ func (dn *Daemon) writeFiles(files []igntypes.File) error {
 				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
 			}
 		}
-		if err := createOrigFile(file.Path); err != nil {
+		if err := createOrigFile(file.Path, file.Path); err != nil {
 			return err
 		}
 		if err := writeFileAtomically(file.Path, contents.Data, defaultDirectoryPermissions, mode, uid, gid); err != nil {
@@ -1105,7 +1152,7 @@ func noOrigFileStampName(fpath string) string {
 	return filepath.Join(noOrigParentDir(), fpath+".mcdnoorig")
 }
 
-func createOrigFile(fpath string) error {
+func createOrigFile(fromPath, fpath string) error {
 	if _, err := os.Stat(noOrigFileStampName(fpath)); err == nil {
 		// we already created the no orig file for this default file
 		return nil
@@ -1126,7 +1173,7 @@ func createOrigFile(fpath string) error {
 	if err := os.MkdirAll(filepath.Dir(origFileName(fpath)), 0755); err != nil {
 		return errors.Wrapf(err, "creating orig parent dir: %v", err)
 	}
-	if out, err := exec.Command("cp", "-a", "--reflink=auto", fpath, origFileName(fpath)).CombinedOutput(); err != nil {
+	if out, err := exec.Command("cp", "-a", "--reflink=auto", fromPath, origFileName(fpath)).CombinedOutput(); err != nil {
 		return errors.Wrapf(err, "creating orig file for %q: %s", fpath, string(out))
 	}
 	return nil
