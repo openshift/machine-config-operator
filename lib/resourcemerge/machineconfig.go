@@ -68,6 +68,7 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setStringIfSet(modified, &existing.EtcdDiscoveryDomain, required.EtcdDiscoveryDomain)
 	setStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
 
+	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)
 	setBytesIfSet(modified, &existing.EtcdCAData, required.EtcdCAData)
 	setBytesIfSet(modified, &existing.EtcdMetricCAData, required.EtcdMetricCAData)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
