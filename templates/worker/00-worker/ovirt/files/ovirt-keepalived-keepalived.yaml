@@ -9,6 +9,8 @@ contents:
         script "/usr/bin/curl -o /dev/null -kLs http://0:1936/healthz"
         interval 1
         weight 50
+        rise 3
+        fall 2
     }
 
     vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {

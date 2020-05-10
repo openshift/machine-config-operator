@@ -7,11 +7,15 @@ contents:
         script "/usr/bin/curl -o /dev/null -kLs https://localhost:6443/readyz"
         interval 1
         weight 50
+        rise 3
+        fall 2
     }
     vrrp_script chk_dns {
         script "/usr/bin/host -t SRV _etcd-server-ssl._tcp.{{ .EtcdDiscoveryDomain }} localhost"
         interval 1
         weight 50
+        rise 3
+        fall 2
     }
     # TODO: Improve this check. The port is assumed to be alive.
     # Need to assess what is the ramification if the port is not there.
