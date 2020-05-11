@@ -64,7 +64,7 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 // waitForPoolComplete polls a pool until it has completed an update to target
 func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
 	startTime := time.Now()
-	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+	if err := wait.Poll(2*time.Second, 30*time.Minute, func() (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
