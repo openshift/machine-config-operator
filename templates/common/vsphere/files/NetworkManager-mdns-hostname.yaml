@@ -3,6 +3,8 @@ mode: 0755
 path: "/etc/NetworkManager/dispatcher.d/40-mdns-hostname"
 contents:
   inline: |
+    {{ if .Infra.Status -}}
+    {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
     {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     #!/bin/bash
@@ -22,5 +24,7 @@ contents:
         *)
         ;;
     esac
+    {{ end -}}
+    {{ end -}}
     {{ end -}}
     {{ end -}}

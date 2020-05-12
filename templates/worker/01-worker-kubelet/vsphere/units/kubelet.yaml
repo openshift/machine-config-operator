@@ -24,10 +24,14 @@ contents: |
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
         --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+   {{ if .Infra.Status -}}
+   {{ if .Infra.Status.PlatformStatus -}}
    {{ if .Infra.Status.PlatformStatus.VSphere -}}
    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
         --node-ip="${KUBELET_NODE_IP}" \
         --address="${KUBELET_NODE_IP}" \
+   {{ end -}}
+   {{ end -}}
    {{ end -}}
    {{ end -}}
         --minimum-container-ttl-duration=6m0s \
