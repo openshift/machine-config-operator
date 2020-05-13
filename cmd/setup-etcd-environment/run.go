@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -17,7 +16,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/joho/godotenv"
 	ceoapi "github.com/openshift/cluster-etcd-operator/pkg/operator/api"
-	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/openshift/machine-config-operator/internal"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -102,11 +101,7 @@ func newSetupEnv(runOpts *opts, etcdName, etcdDataDir string, ips []string) (*Se
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	internal.InitLogging()
 
 	if runOpts.discoverySRV == "" {
 		return errors.New("--discovery-srv cannot be empty")

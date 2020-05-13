@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -22,9 +21,6 @@ func init() {
 }
 
 func runVersionCmd(cmd *cobra.Command, args []string) {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
 	program := "MachineConfigDaemon"
 	version := version.Raw + "-" + version.Hash
 

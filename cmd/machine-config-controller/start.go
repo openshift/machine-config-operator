@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"flag"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
+	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,11 +42,7 @@ func init() {
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	internal.InitLogging()
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {

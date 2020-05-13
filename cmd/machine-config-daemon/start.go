@@ -1,17 +1,16 @@
 package main
 
 import (
-	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -65,13 +64,8 @@ func bindPodMounts(rootMount string) error {
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
+	internal.InitLogging()
 	glog.V(2).Infof("Options parsed: %+v", startOpts)
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	onceFromMode := startOpts.onceFrom != ""
 	if !onceFromMode {

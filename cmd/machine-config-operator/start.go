@@ -2,18 +2,16 @@ package main
 
 import (
 	"context"
-	"flag"
-	"os"
 
 	"github.com/golang/glog"
 	operatorclientset "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/machine-config-operator/cmd/common"
+	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/operator"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/leaderelection"
 )
@@ -39,11 +37,7 @@ func init() {
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %s (Raw: %s, Hash: %s)", os.Getenv("RELEASE_VERSION"), version.Raw, version.Hash)
+	internal.InitLogging()
 
 	if startOpts.imagesFile == "" {
 		glog.Fatal("--images-json cannot be empty")

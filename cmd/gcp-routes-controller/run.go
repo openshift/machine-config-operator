@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,7 +17,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
-	"github.com/openshift/machine-config-operator/pkg/version"
+	"github.com/openshift/machine-config-operator/internal"
 )
 
 var (
@@ -45,11 +44,7 @@ func init() {
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	internal.InitLogging()
 
 	if runOpts.rootMount != "" {
 		glog.Infof(`Calling chroot("%s")`, runOpts.rootMount)

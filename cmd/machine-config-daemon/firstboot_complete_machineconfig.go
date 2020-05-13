@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/machine-config-operator/internal"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -25,8 +26,7 @@ func init() {
 }
 
 func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
+	internal.InitLogging()
 
 	exitCh := make(chan error)
 	defer close(exitCh)

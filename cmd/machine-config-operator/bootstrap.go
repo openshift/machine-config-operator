@@ -1,13 +1,11 @@
 package main
 
 import (
-	"flag"
-
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
+	"github.com/openshift/machine-config-operator/internal"
 	"github.com/openshift/machine-config-operator/pkg/operator"
-	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 var (
@@ -86,11 +84,7 @@ func init() {
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	internal.InitLogging()
 
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{

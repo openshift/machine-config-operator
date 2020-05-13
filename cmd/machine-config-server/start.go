@@ -1,12 +1,10 @@
 package main
 
 import (
-	"flag"
-
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/internal"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/server"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 )
 
@@ -31,11 +29,7 @@ func init() {
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
-
-	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	internal.InitLogging()
 
 	if startOpts.apiserverURL == "" {
 		glog.Exitf("--apiserver-url cannot be empty")

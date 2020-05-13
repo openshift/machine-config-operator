@@ -13,6 +13,7 @@ import (
 	_ "crypto/sha256"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/internal"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	errors "github.com/pkg/errors"
@@ -185,8 +186,7 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 }
 
 func run(_ *cobra.Command, args []string) error {
-	flag.Set("logtostderr", "true")
-	flag.Parse()
+	internal.InitLogging()
 
 	var container string
 	if fromEtcPullSpec || len(args) == 0 {
