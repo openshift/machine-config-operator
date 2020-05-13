@@ -45,7 +45,7 @@ const downFileDir = "/run/gcp-routes"
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "gcp-routes.service", "The name for the service controlling gcp routes on host")
+	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "openshift-gcp-routes.service", "The name for the service controlling gcp routes on host")
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for writing down files or chrooting.")
 	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
 	runCmd.PersistentFlags().StringVar(&runOpts.vip, "vip", "", "The VIP to remove if the health check fails. Determined from URL if not provided")
