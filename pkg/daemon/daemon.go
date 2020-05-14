@@ -97,7 +97,7 @@ type Daemon struct {
 	// channel used to ensure all spawned goroutines exit when we exit.
 	stopCh <-chan struct{}
 
-	// node is the current instance of the node being processed through handleNodeUpdate
+	// node is the current instance of the node being processed through handleNodeEvent
 	// or the very first instance grabbed when the daemon starts
 	node *corev1.Node
 
@@ -278,7 +278,8 @@ func (dn *Daemon) ClusterConnect(
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: dn.handleNodeUpdate,
+		AddFunc:    dn.handleNodeEvent,
+		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleNodeEvent(newObj) },
 	})
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
@@ -1112,12 +1113,11 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
 	return dn.reboot("runOnceFromIgnition complete")
 }
 
-func (dn *Daemon) handleNodeUpdate(old, cur interface{}) {
-	oldNode := old.(*corev1.Node)
-	curNode := cur.(*corev1.Node)
+func (dn *Daemon) handleNodeEvent(node interface{}) {
+	n := node.(*corev1.Node)
 
-	glog.V(4).Infof("Updating Node %s", oldNode.Name)
-	dn.enqueueNode(curNode)
+	glog.V(4).Infof("Updating Node %s", n.Name)
+	dn.enqueueNode(n)
 }
 
 // prepUpdateFromCluster handles the shared update prepping functionality for
