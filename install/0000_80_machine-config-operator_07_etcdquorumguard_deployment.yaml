@@ -61,41 +61,27 @@ spec:
           name: kubecerts
         command:
         - /bin/bash
-        env:
-          - name: NODE_IP
-            valueFrom:
-              fieldRef:
-                apiVersion: v1
-                fieldPath: status.hostIP
-          - name: NODE_NAME
-            valueFrom:
-              fieldRef:
-                apiVersion: v1
-                fieldPath: spec.nodeName
         args:
         - -c
         - |
           # properly handle TERM and exit as soon as it is signaled
           set -euo pipefail
           trap 'jobs -p | xargs -r kill; exit 0' TERM
-          # prepare readiness script
-          declare -r croot=/mnt/kube
-          declare -r health_endpoint="https://${NODE_IP}:2379/health"
-          declare -r cert="${croot}/system:etcd-peer-${NODE_NAME}.crt"
-          declare -r key="${croot}/system:etcd-peer-${NODE_NAME}.key"
-          declare -r cacert="$croot/ca.crt"
-          export NSS_SDB_USE_CACHE=no
-          [[ -z $cert || -z $key ]] && exit 1
-          echo "curl --silent --max-time 2 --cert \"${cert//:/\:}\" --key \"$key\" --cacert \"$cacert\" \"$health_endpoint\"" >
-              /usr/local/bin/etcd-quorum-guard.sh
-
-          chmod +x /usr/local/bin/etcd-quorum-guard.sh
           sleep infinity & wait
         readinessProbe:
           exec:
             command:
             - /bin/sh
-            - /usr/local/bin/etcd-quorum-guard.sh
+            - -c
+            - |
+                declare -r croot=/mnt/kube
+                declare -r health_endpoint="https://127.0.0.1:2379/health"
+                declare -r cert="$(find $croot -name 'system:etcd-peer*.crt' -print -quit)"
+                declare -r key="${cert%.crt}.key"
+                declare -r cacert="$croot/ca.crt"
+                export NSS_SDB_USE_CACHE=no
+                [[ -z $cert || -z $key ]] && exit 1
+                curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
             initialDelaySecond: 5
             periodSecond: 5
         resources:
