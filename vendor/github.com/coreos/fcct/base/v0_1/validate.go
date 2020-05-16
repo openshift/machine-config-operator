@@ -1,4 +1,4 @@
-// Copyright 2016 CoreOS, Inc.
+// Copyright 2019 Red Hat, Inc
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -10,18 +10,24 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
+// limitations under the License.)
 
-package util
+package v0_1
 
-func IntToPtr(i int) *int {
-	return &i
-}
+import (
+	"errors"
 
-func BoolToPtr(b bool) *bool {
-	return &b
-}
+	"github.com/coreos/vcontext/path"
+	"github.com/coreos/vcontext/report"
+)
 
-func StringToPtr(s string) *string {
-	return &s
+var (
+	ErrInlineAndSource = errors.New("inline cannot be specified if source is specified")
+)
+
+func (f FileContents) Validate(c path.ContextPath) (r report.Report) {
+	if f.Inline != nil && f.Source != nil {
+		r.AddOnError(c.Append("inline"), ErrInlineAndSource)
+	}
+	return
 }

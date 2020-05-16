@@ -1,11 +1,13 @@
 package common
 
 import (
+	"fmt"
 	"io/ioutil"
 	"reflect"
 	"sort"
 
 	"github.com/clarketm/json"
+	fcctbase "github.com/coreos/fcct/base/v0_1"
 	ignconverter "github.com/coreos/ign-converter"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign "github.com/coreos/ignition/config/v2_2"
@@ -14,6 +16,7 @@ import (
 	ign3 "github.com/coreos/ignition/v2/config/v3_0"
 	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
+	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -217,4 +220,44 @@ func IgnParseWrapper(rawIgn []byte) (ignconfig interface{}, err error) {
 		return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
 	}
 	return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, rpt)
+}
+
+// TranspileCoreOSConfigToIgn transpiles Fedora CoreOS config to ignition
+// internally it transpiles to Ign spec v3 config and translates to spec v2
+func TranspileCoreOSConfigToIgn(files, units []string) (*ign2types.Config, error) {
+	var ctCfg fcctbase.Config
+	overwrite := true
+	// Convert data to Ignition resources
+	for _, d := range files {
+		f := new(fcctbase.File)
+		if err := yaml.Unmarshal([]byte(d), f); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
+		}
+		f.Overwrite = &overwrite
+
+		// Add the file to the config
+		ctCfg.Storage.Files = append(ctCfg.Storage.Files, *f)
+	}
+
+	for _, d := range units {
+		u := new(fcctbase.Unit)
+		if err := yaml.Unmarshal([]byte(d), u); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
+		}
+
+		// Add the unit to the config
+		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
+	}
+
+	ign3Cfg, tSet, err := ctCfg.ToIgn3_0()
+	if err != nil {
+		return nil, fmt.Errorf("failed to transpile config to Ignition config %s\nTranslation set: %v", err, tSet)
+	}
+
+	convertedIgnCfgV2, errV3 := convertIgnition3to2(ign3Cfg)
+	if errV3 != nil {
+		return nil, errors.Errorf("converting Ignition spec v3 config to v2 failed with error: %v", errV3)
+	}
+
+	return &convertedIgnCfgV2, nil
 }
