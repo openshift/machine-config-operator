@@ -240,10 +240,7 @@ func TestSkipMissing(t *testing.T) {
 	}
 }
 
-const (
-	templateDir = "../../../templates"
-	resultDir   = "./test_data/templates"
-)
+const templateDir = "../../../templates"
 
 var (
 	configs = map[string]string{
@@ -340,13 +337,13 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Errorf("Failed to find pull secret for master")
 		}
 		if !foundKubeletUnitMaster {
-			t.Errorf("Failed to find kubelet unit")
+			t.Errorf("Failed to find kubelet unit for master")
 		}
 		if !foundPullSecretWorker {
-			t.Errorf("Failed to find pull secret")
+			t.Errorf("Failed to find pull secret for worker")
 		}
 		if !foundKubeletUnitWorker {
-			t.Errorf("Failed to find kubelet unit")
+			t.Errorf("Failed to find kubelet unit for worker")
 		}
 	}
 }

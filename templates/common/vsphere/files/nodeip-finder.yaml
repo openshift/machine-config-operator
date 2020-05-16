@@ -1,4 +1,3 @@
-filesystem: "root"
 mode: 0755
 path: "/usr/local/bin/nodeip-finder"
 contents:

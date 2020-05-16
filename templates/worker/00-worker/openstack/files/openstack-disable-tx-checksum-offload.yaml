@@ -1,4 +1,3 @@
-filesystem: "root"
 mode: 0744
 path: "/etc/NetworkManager/dispatcher.d/pre-up.d/disable-tx-checksum-offload.sh"
 contents:
