@@ -10,7 +10,7 @@ import (
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	ignconverter "github.com/coreos/ign-converter"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
-	ign "github.com/coreos/ignition/config/v2_2"
+	ign2 "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3 "github.com/coreos/ignition/v2/config/v3_0"
@@ -35,29 +35,17 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	}
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
-	var fips, ok bool
+	var fips bool
 	var kernelType string
 	var outIgn ign2types.Config
+	var err error
 
 	if configs[0].Spec.Config.Raw == nil {
 		outIgn = ign2types.Config{}
 	} else {
-		parsedIgn, err := IgnParseWrapper(configs[0].Spec.Config.Raw)
+		outIgn, err = ParseAndConvertConfig(configs[0].Spec.Config.Raw)
 		if err != nil {
 			return nil, err
-		}
-		switch parsedIgnValue := parsedIgn.(type) {
-		case ign3types.Config:
-			convertedIgn, err := convertIgnition3to2(parsedIgnValue)
-			if err != nil {
-				return nil, err
-			}
-			outIgn = convertedIgn
-		default:
-			outIgn, ok = parsedIgn.(ign2types.Config)
-			if !ok {
-				return nil, errors.Errorf("something unexpected happened when parsing: %v", ok)
-			}
 		}
 	}
 
@@ -71,25 +59,12 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 		if configs[idx].Spec.Config.Raw == nil {
 			appendIgn = ign2types.Config{}
 		} else {
-			parsedIgn, err := IgnParseWrapper(configs[idx].Spec.Config.Raw)
+			appendIgn, err = ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
 			if err != nil {
 				return nil, err
 			}
-			switch parsedIgnValue := parsedIgn.(type) {
-			case ign3types.Config:
-				convertedIgn, err := convertIgnition3to2(parsedIgnValue)
-				if err != nil {
-					return nil, err
-				}
-				appendIgn = convertedIgn
-			default:
-				appendIgn, ok = parsedIgn.(ign2types.Config)
-				if !ok {
-					return nil, errors.Errorf("something unexpected happened when parsing: %v", ok)
-				}
-			}
 		}
-		outIgn = ign.Append(outIgn, appendIgn)
+		outIgn = ign2.Append(outIgn, appendIgn)
 	}
 	rawOutIgn, err := json.Marshal(outIgn)
 	if err != nil {
@@ -205,7 +180,7 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (ignconfig interface{}, err error) {
-	ignCfg, rpt, err := ign.Parse(rawIgn)
+	ignCfg, rpt, err := ign2.Parse(rawIgn)
 
 	// this is an ignv2cfg that was successfully parsed
 	if err == nil {
@@ -220,6 +195,28 @@ func IgnParseWrapper(rawIgn []byte) (ignconfig interface{}, err error) {
 		return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
 	}
 	return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, rpt)
+}
+
+// ParseAndConvertConfig parses rawIgn for both V2 and V3 ignition configs and returns
+// a V2 or an error.
+func ParseAndConvertConfig(rawIgn []byte) (ign2types.Config, error) {
+	ignconfigi, err := IgnParseWrapper(rawIgn)
+	if err != nil {
+		return ign2types.Config{}, err
+	}
+
+	switch typedConfig := ignconfigi.(type) {
+	case ign2types.Config:
+		return ignconfigi.(ign2types.Config), nil
+	case ign3types.Config:
+		convertedIgnV2, err := convertIgnition3to2(ignconfigi.(ign3types.Config))
+		if err != nil {
+			return ign2types.Config{}, errors.Errorf("failed to convert Ignition config spec v3 to v2: %v", err)
+		}
+		return convertedIgnV2, nil
+	default:
+		return ign2types.Config{}, errors.Errorf("unexpected type for ignition config: %v", typedConfig)
+	}
 }
 
 // TranspileCoreOSConfigToIgn transpiles Fedora CoreOS config to ignition

@@ -19,14 +19,8 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/time/rate"
@@ -44,6 +38,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
+
+	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -1223,9 +1224,9 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool 
 		return false
 	}
 	// And the rest of the disk state
-	currentIgnConfig, report, err := ign.Parse(currentConfig.Spec.Config.Raw)
+	currentIgnConfig, err := ctrlcommon.ParseAndConvertConfig(currentConfig.Spec.Config.Raw)
 	if err != nil {
-		glog.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
+		glog.Errorf("Failed to parse Ignition for validation: %s", err)
 		return false
 	}
 	if !checkFiles(currentIgnConfig.Storage.Files) {
@@ -1446,13 +1447,13 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	}
 
 	// Try each supported parser
-	ignConfig, report, err := ign.Parse(content)
-	if err == nil && ignConfig.Ignition.Version != "" {
+	ignConfig, err := ctrlcommon.ParseAndConvertConfig(content)
+	if err == nil {
 		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil
 	}
 
-	glog.V(2).Infof("%s is not an Ignition config: %v\nReport: %v\n Trying MachineConfig.", onceFrom, err, report)
+	glog.V(2).Infof("%s is not an Ignition config: %v\nTrying MachineConfig.", onceFrom, err)
 
 	// Try to parse as a machine config
 	mc, err := resourceread.ReadMachineConfigV1(content)

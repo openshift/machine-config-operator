@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
@@ -319,13 +318,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	oldIgnConfig, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+		return fmt.Errorf("parsing old Ignition config failed with error: %v", err)
 	}
-	newIgnConfig, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+		return fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
 
 	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
@@ -407,13 +406,13 @@ func canonicalizeKernelType(kernelType string) string {
 
 // NewMachineConfigDiff compares two MachineConfig objects.
 func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
-	oldIgn, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
 	}
-	newIgn, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
 
 	// Both nil and empty slices are of zero length,
@@ -452,13 +451,13 @@ func (d *MachineConfigDiff) IsEmpty() bool {
 func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
 	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
 	// The ignition output in case of success will always have maxVersion
-	oldIgn, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
 	}
-	newIgn, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
 
 	// Check if this is a generally valid Ignition Config
@@ -811,13 +810,13 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 // touched.
 func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Updating files")
-	oldIgnConfig, report, err := ign.Parse(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return fmt.Errorf("failed to update files. Parsing old Ignition config failed with error: %v\nReport: %v", err, report)
+		return fmt.Errorf("failed to update files. Parsing old Ignition config failed with error: %v", err)
 	}
-	newIgnConfig, report, err := ign.Parse(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return fmt.Errorf("failed to update files. Parsing new Ignition config failed with error: %v\nReport: %v", err, report)
+		return fmt.Errorf("failed to update files. Parsing new Ignition config failed with error: %v", err)
 	}
 	if err := dn.writeFiles(newIgnConfig.Storage.Files); err != nil {
 		return err

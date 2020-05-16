@@ -5,7 +5,6 @@ import (
 	"net/url"
 
 	"github.com/clarketm/json"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -97,9 +96,9 @@ func appendInitialPivot(rawExt *runtime.RawExtension, osimageurl string) error {
 	if err != nil {
 		return err
 	}
-	conf, report, err := ign.Parse(rawExt.Raw)
+	conf, err := ctrlcommon.ParseAndConvertConfig(rawExt.Raw)
 	if err != nil {
-		return fmt.Errorf("failed to append initial pivot. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
+		return fmt.Errorf("failed to append initial pivot. Parsing Ignition config failed with error: %v", err)
 	}
 	// Awful hack to create a file in /run
 	// https://github.com/openshift/machine-config-operator/pull/363#issuecomment-463397373
@@ -178,9 +177,9 @@ func getNodeAnnotation(conf string) (string, error) {
 }
 
 func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents string) error {
-	conf, report, err := ign.Parse(rawExt.Raw)
+	conf, err := ctrlcommon.ParseAndConvertConfig(rawExt.Raw)
 	if err != nil {
-		return fmt.Errorf("failed to append file. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
+		return fmt.Errorf("failed to append file. Parsing Ignition config failed with error: %v", err)
 	}
 	fileMode := int(420)
 	file := igntypes.File{

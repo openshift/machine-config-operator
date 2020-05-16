@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func TestMain(m *testing.M) {
@@ -310,7 +311,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Fatal("role label missing")
 			}
 
-			ign, _, err := ign.Parse(cfg.Spec.Config.Raw)
+			ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
 			if err != nil {
 				t.Errorf("Failed to parse Ignition config")
 			}

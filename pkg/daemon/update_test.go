@@ -71,7 +71,7 @@ func TestReconcilable(t *testing.T) {
 	newIgnCfg := ctrlcommon.NewIgnConfig()
 
 	// Set improper version
-	newIgnCfg.Ignition.Version = "3.0.0"
+	newIgnCfg.Ignition.Version = "4.0.0"
 
 	// newConfig is the config that is being requested to apply to the system
 	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)

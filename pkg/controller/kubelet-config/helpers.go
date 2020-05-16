@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	osev1 "github.com/openshift/api/config/v1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,6 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
@@ -55,9 +55,9 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 }
 
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %v", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == "/etc/kubernetes/kubelet.conf" {
