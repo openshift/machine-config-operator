@@ -13,10 +13,6 @@ import (
 
 	"github.com/Masterminds/sprig"
 	"github.com/clarketm/json"
-	ctconfig "github.com/coreos/container-linux-config-transpiler/config"
-	cttypes "github.com/coreos/container-linux-config-transpiler/config/types"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -266,9 +262,9 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 		return vs
 	}
 
-	ignCfg, err := transpileToIgn(keySortVals(files), keySortVals(units))
+	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(keySortVals(files), keySortVals(units))
 	if err != nil {
-		return nil, fmt.Errorf("error transpiling ct config to Ignition config: %v", err)
+		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %v", err)
 	}
 	mcfg, err := MachineConfigFromIgnConfig(role, name, ignCfg)
 	if err != nil {
@@ -301,38 +297,6 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.
 			},
 		},
 	}, nil
-}
-
-func transpileToIgn(files, units []string) (*igntypes.Config, error) {
-	var ctCfg cttypes.Config
-
-	// Convert data to Ignition resources
-	for _, d := range files {
-		f := new(cttypes.File)
-		if err := yaml.Unmarshal([]byte(d), f); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
-		}
-
-		// Add the file to the config
-		ctCfg.Storage.Files = append(ctCfg.Storage.Files, *f)
-	}
-
-	for _, d := range units {
-		u := new(cttypes.SystemdUnit)
-		if err := yaml.Unmarshal([]byte(d), u); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
-		}
-
-		// Add the unit to the config
-		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
-	}
-
-	ignCfg, rep := ctconfig.Convert(ctCfg, "", nil)
-	if rep.IsFatal() {
-		return nil, fmt.Errorf("failed to convert config to Ignition config %s", rep)
-	}
-
-	return &ignCfg, nil
 }
 
 // renderTemplate renders a template file with values from a RenderConfig

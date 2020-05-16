@@ -1,4 +1,3 @@
-filesystem: "root"
 mode: 0755
 path: "/usr/local/bin/non_virtual_ip"
 contents:
