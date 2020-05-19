@@ -28,8 +28,8 @@ contents: |
         {{ if .Infra.Status.PlatformStatus -}}
         {{ if .Infra.Status.PlatformStatus.VSphere -}}
         {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
-        --node-ip="${KUBELET_NODE_IP}" \
-        --address="${KUBELET_NODE_IP}" \
+        --node-ip=${KUBELET_NODE_IP} \
+        --address=${KUBELET_NODE_IP} \
         {{ end -}}
         {{ end -}}
         {{ end -}}
