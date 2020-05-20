@@ -41,6 +41,11 @@ contents:
     source "/usr/local/bin/openshift-recovery-tools"
     
     function run {
+      if [ ! -z "$(crictl ps -name etcd-member --state running -q)" ]; then
+        echo "etcd-member container is already running and active on this master."
+        echo "Please make sure you run this script on the new master host to be added to the etcd cluster. Exiting!"
+        exit 1
+      fi
       init
       dl_etcdctl
       backup_manifest
