@@ -4,11 +4,13 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"sync"
 	"syscall"
 	"time"
@@ -32,16 +34,33 @@ var (
 	runOpts struct {
 		gcpRoutesService string
 		rootMount        string
-
-		healthCheckURL string
+		healthCheckURL   string
+		vip              string
 	}
 )
 
+// downFileDir is the directory in which gcp-routes will look for a flag-file that
+// indicates the route to the VIP should be withdrawn.
+const downFileDir = "/run/gcp-routes"
+
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "gcp-routes.service", "The name for the service controlling gcp routes on host")
-	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
+	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "openshift-gcp-routes.service", "The name for the service controlling gcp routes on host")
+	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for writing down files or chrooting.")
 	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
+	runCmd.PersistentFlags().StringVar(&runOpts.vip, "vip", "", "The VIP to remove if the health check fails. Determined from URL if not provided")
+}
+
+type downMode int
+
+const (
+	modeStopService = iota
+	modeDownFile
+)
+
+type handler struct {
+	mode downMode
+	vip  string
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -51,18 +70,6 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
-	if runOpts.rootMount != "" {
-		glog.Infof(`Calling chroot("%s")`, runOpts.rootMount)
-		if err := syscall.Chroot(runOpts.rootMount); err != nil {
-			return fmt.Errorf("Unable to chroot to %s: %s", runOpts.rootMount, err)
-		}
-
-		glog.V(2).Infof("Moving to / inside the chroot")
-		if err := os.Chdir("/"); err != nil {
-			return fmt.Errorf("Unable to change directory to /: %s", err)
-		}
-	}
-
 	uri, err := url.Parse(runOpts.healthCheckURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse health-check-url: %v", err)
@@ -70,6 +77,14 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	if !uri.IsAbs() {
 		return fmt.Errorf("invalid URI %q (no scheme)", uri)
 	}
+
+	handler, err := newHandler(uri)
+	if err != nil {
+		return err
+	}
+
+	// The health check should always connect to localhost, not be load-balanced
+	uri.Host = net.JoinHostPort("localhost", uri.Port())
 
 	httpCheck, err := checkers.NewHTTP(&checkers.HTTPConfig{
 		URL: uri,
@@ -82,22 +97,27 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create httpCheck: %v", err)
 	}
-
 	errCh := make(chan error)
+
+	// careful: the timing here needs to correspond to the load balancer's
+	// parameters. We need to remove routes just after we've been removed
+	// as a backend in the load-balancer, and add routes before we've been
+	// re-added.
+	// see openshift/installer/data/data/gcp/network/lb-private.tf
 	tracker := &healthTracker{
 		state:            unknownTrackerState,
 		ErrCh:            errCh,
-		SuccessThreshold: 2,
-		FailureThreshold: 10,
-		OnFailure:        func() error { return exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run() },
-		OnSuccess:        func() error { return exec.Command("systemctl", "start", runOpts.gcpRoutesService).Run() },
+		SuccessThreshold: 1,
+		FailureThreshold: 8, // LB = 6 seconds, plus 10 seconds for propagation
+		OnFailure:        handler.onFailure,
+		OnSuccess:        handler.onSuccess,
 	}
 
 	h := health.New()
 	h.AddChecks([]*health.Config{{
 		Name:       "dependency-check",
 		Checker:    httpCheck,
-		Interval:   time.Duration(5) * time.Second,
+		Interval:   time.Duration(2) * time.Second,
 		Fatal:      true,
 		OnComplete: tracker.OnComplete,
 	}})
@@ -111,11 +131,10 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	go func() {
 		for sig := range c {
 			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
-			if err := exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run(); err != nil {
-				glog.Infof("Failed to terminate gcp routes service on signal: %s", err)
-			} else {
-				break
+			if err := handler.onFailure(); err != nil {
+				glog.Infof("Failed to mark service down on signal: %s", err)
 			}
+			os.Exit(0)
 		}
 	}()
 
@@ -127,6 +146,90 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+}
+
+func newHandler(uri *url.URL) (*handler, error) {
+	h := handler{}
+
+	// determine mode: if /run/gcp-routes exists, we can us the downfile mode
+	realPath := path.Join(runOpts.rootMount, downFileDir)
+	fi, err := os.Stat(realPath)
+	if err == nil && fi.IsDir() {
+		glog.Infof("%s exists, starting in downfile mode", realPath)
+		h.mode = modeDownFile
+	} else {
+		glog.Infof("%s not accessible, will stop gcp-routes.service on health failure", realPath)
+		h.mode = modeStopService
+	}
+
+	// if StopService mode and rootfs specified, chroot
+	if h.mode == modeStopService && runOpts.rootMount != "" {
+		glog.Infof(`Calling chroot("%s")`, runOpts.rootMount)
+		if err := syscall.Chroot(runOpts.rootMount); err != nil {
+			return nil, fmt.Errorf("unable to chroot to %s: %s", runOpts.rootMount, err)
+		}
+
+		glog.V(2).Infof("Moving to / inside the chroot")
+		if err := os.Chdir("/"); err != nil {
+			return nil, fmt.Errorf("unable to change directory to /: %s", err)
+		}
+	}
+
+	// otherwise, resolve vip
+	if h.mode == modeDownFile {
+		if runOpts.vip != "" {
+			h.vip = runOpts.vip
+		} else {
+			addrs, err := net.LookupHost(uri.Hostname())
+			if err != nil {
+				return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
+			}
+			if len(addrs) != 1 {
+				return nil, fmt.Errorf("hostname %s has %d addresses, expected 1 - aborting", uri.Hostname(), len(addrs))
+			}
+			h.vip = addrs[0]
+			glog.Infof("Using VIP %s", h.vip)
+		}
+	}
+
+	return &h, nil
+}
+
+// onFailure: either stop the routes service, or write downfile
+func (h *handler) onFailure() error {
+	if h.mode == modeDownFile {
+		downFile := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.down", h.vip))
+		fp, err := os.OpenFile(downFile, os.O_CREATE, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to create downfile (%s): %v", downFile, err)
+		}
+		_ = fp.Close()
+		glog.Infof("healthcheck failed, created downfile %s", downFile)
+	} else {
+		if err := exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run(); err != nil {
+			return fmt.Errorf("Failed to terminate gcp routes service %v", err)
+		}
+		glog.Infof("healthcheck failed, stopped %s", runOpts.gcpRoutesService)
+	}
+	return nil
+}
+
+// onSuccess: either start routes service, or remove down file
+func (h *handler) onSuccess() error {
+	if h.mode == modeDownFile {
+		downFile := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.down", h.vip))
+		err := os.Remove(downFile)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove downfile (%s): %v", downFile, err)
+		}
+		glog.Infof("healthcheck succeeded, removed downfile %s", downFile)
+	} else {
+		if err := exec.Command("systemctl", "start", runOpts.gcpRoutesService).Run(); err != nil {
+			return fmt.Errorf("Failed to terminate gcp routes service %v", err)
+		}
+		glog.Infof("healthcheck succeeded, started %s", runOpts.gcpRoutesService)
+	}
+	return nil
 }
 
 type trackerState int
