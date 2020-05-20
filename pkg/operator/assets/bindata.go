@@ -7,6 +7,7 @@
 // manifests/bootstrap-pod-v2.yaml
 // manifests/containerruntimeconfig.crd.yaml
 // manifests/controllerconfig.crd.yaml
+// manifests/etcdquorumguard_deployment.yaml
 // manifests/kubeletconfig.crd.yaml
 // manifests/machineconfig.crd.yaml
 // manifests/machineconfigcontroller/clusterrole.yaml
@@ -1114,6 +1115,130 @@ func manifestsControllerconfigCrdYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "manifests/controllerconfig.crd.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsEtcdquorumguard_deploymentYaml = []byte(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd-quorum-guard
+  namespace: openshift-machine-config-operator
+  annotations:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
+spec:
+  replicas: {{.ControllerConfig.EtcdQuorumGuardReplicas}}
+  selector:
+    matchLabels:
+      k8s-app: etcd-quorum-guard
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: etcd-quorum-guard
+        k8s-app: etcd-quorum-guard
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: k8s-app
+                operator: In
+                values:
+                - "etcd-quorum-guard"
+            topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
+      terminationGracePeriodSeconds: 3
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+        operator: Exists
+      - key: node.kubernetes.io/not-ready
+        effect: NoExecute
+        operator: Exists
+        tolerationSeconds: 120
+      - key: node.kubernetes.io/unreachable
+        effect: NoExecute
+        operator: Exists
+        tolerationSeconds: 120
+      - key: node-role.kubernetes.io/etcd
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - image: {{.Images.EtcdQuorumGuard}}
+        imagePullPolicy: IfNotPresent
+        name: guard
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /mnt/kube
+          name: kubecerts
+        command:
+        - /bin/bash
+        env:
+          - name: NODE_IP
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: status.hostIP
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: spec.nodeName
+        args:
+        - -c
+        - |
+          # properly handle TERM and exit as soon as it is signaled
+          set -euo pipefail
+          trap 'jobs -p | xargs -r kill; exit 0' TERM
+          # prepare readiness script
+          declare -r croot=/mnt/kube
+          declare -r health_endpoint="https://${NODE_IP}:2379/health"
+          declare -r cert="${croot}/system:etcd-peer-${NODE_NAME}.crt"
+          declare -r key="${croot}/system:etcd-peer-${NODE_NAME}.key"
+          declare -r cacert="$croot/ca.crt"
+          [[ -z $cert || -z $key ]] && exit 1
+          echo "env NSS_SDB_USE_CACHE=no curl --silent --max-time 2 --cert \"${cert//:/\:}\" --key \"$key\" --cacert \"$cacert\" \"$health_endpoint\"" > /usr/local/bin/etcd-quorum-guard.sh
+
+          chmod +x /usr/local/bin/etcd-quorum-guard.sh
+          sleep infinity & wait
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - /usr/local/bin/etcd-quorum-guard.sh
+            initialDelaySecond: 5
+            periodSecond: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 5Mi
+        securityContext:
+          privileged: true
+      volumes:
+      - name: kubecerts
+        hostPath:
+          path: /etc/kubernetes/static-pod-resources/etcd-member
+`)
+
+func manifestsEtcdquorumguard_deploymentYamlBytes() ([]byte, error) {
+	return _manifestsEtcdquorumguard_deploymentYaml, nil
+}
+
+func manifestsEtcdquorumguard_deploymentYaml() (*asset, error) {
+	bytes, err := manifestsEtcdquorumguard_deploymentYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/etcdquorumguard_deployment.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -3820,6 +3945,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/bootstrap-pod-v2.yaml":                                        manifestsBootstrapPodV2Yaml,
 	"manifests/containerruntimeconfig.crd.yaml":                              manifestsContainerruntimeconfigCrdYaml,
 	"manifests/controllerconfig.crd.yaml":                                    manifestsControllerconfigCrdYaml,
+	"manifests/etcdquorumguard_deployment.yaml":                              manifestsEtcdquorumguard_deploymentYaml,
 	"manifests/kubeletconfig.crd.yaml":                                       manifestsKubeletconfigCrdYaml,
 	"manifests/machineconfig.crd.yaml":                                       manifestsMachineconfigCrdYaml,
 	"manifests/machineconfigcontroller/clusterrole.yaml":                     manifestsMachineconfigcontrollerClusterroleYaml,
@@ -3912,6 +4038,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"bootstrap-pod-v2.yaml":           &bintree{manifestsBootstrapPodV2Yaml, map[string]*bintree{}},
 		"containerruntimeconfig.crd.yaml": &bintree{manifestsContainerruntimeconfigCrdYaml, map[string]*bintree{}},
 		"controllerconfig.crd.yaml":       &bintree{manifestsControllerconfigCrdYaml, map[string]*bintree{}},
+		"etcdquorumguard_deployment.yaml": &bintree{manifestsEtcdquorumguard_deploymentYaml, map[string]*bintree{}},
 		"kubeletconfig.crd.yaml":          &bintree{manifestsKubeletconfigCrdYaml, map[string]*bintree{}},
 		"machineconfig.crd.yaml":          &bintree{manifestsMachineconfigCrdYaml, map[string]*bintree{}},
 		"machineconfigcontroller": &bintree{nil, map[string]*bintree{

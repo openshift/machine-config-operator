@@ -100,6 +100,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			CorednsBootstrap:             bootstrapOpts.corednsImage,
 			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
 			OauthProxy:                   bootstrapOpts.oauthProxyImage,
+			EtcdQuorumGuard:              bootstrapOpts.infraImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
 			Etcd:                bootstrapOpts.etcdImage,

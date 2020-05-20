@@ -6,7 +6,7 @@ metadata:
   annotations:
     exclude.release.openshift.io/internal-openshift-hosted: "true"
 spec:
-  replicas: 3
+  replicas: {{.ControllerConfig.EtcdQuorumGuardReplicas}}
   selector:
     matchLabels:
       k8s-app: etcd-quorum-guard
@@ -51,7 +51,7 @@ spec:
         operator: Exists
         effect: NoSchedule
       containers:
-      - image: quay.io/openshift/origin-cli:latest
+      - image: {{.Images.EtcdQuorumGuard}}
         imagePullPolicy: IfNotPresent
         name: guard
         terminationMessagePolicy: FallbackToLogsOnError
