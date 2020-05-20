@@ -8,7 +8,7 @@ contents:
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
     {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     vrrp_script chk_ocp {
-        script "/usr/bin/curl -o /dev/null -kLs https://localhost:6443/readyz"
+        script "/usr/bin/curl -o /dev/null -kLs https://localhost:6443/readyz && /usr/bin/curl -o /dev/null -kLs http://localhost:50936/readyz"
         interval 1
         weight 50
     }
