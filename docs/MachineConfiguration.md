@@ -113,6 +113,47 @@ spec:
 
 Note that for 4.2 clusters this is only supported as a "day 2" operation.
 
+#### Known Issue Affecting 4.2 Clusters
+On a 4.2 based OCP cluster if we already have kernel arguments applied using MachineConfig and then we try to create a new node using openshift-machine-api, existing kargs won't get applied. This behaviour is because 4.2 doesn't know how to process kernel arguments during firstboot on a newly spun node. See [bug#1766346](https://bugzilla.redhat.com/show_bug.cgi?id=1766346) for more information.
+
+The best way to fix this issue is by getting the bootimage updated to 4.3 or later version which can be tracked at [enhancement proposal](https://github.com/openshift/enhancements/pull/201/) .
+
+Until we have the enhancement implemented it can be done manually by updating the bootimage in machineset.
+
+**Example:**
+
+Suppose we have a 4.2 cluster created on AWS and have applied karg `foo` to the cluster with the following MachineConfig:
+```
+$ cat worker-karg.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: worker-kargs
+spec:
+  kernelArguments:
+    - foo
+```
+The first step is to upgrade the cluster to OCP 4.3 or later version. Once the cluster has been successfully upgraded, list the available machinesets:
+```
+$ oc get machineset -n openshift-machine-api
+NAME                                          DESIRED   CURRENT   READY   AVAILABLE   AGE
+ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1b   2         2         2       2           79m
+ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c   1         1         1       1           79m
+```
+
+In our example, let's edit the bootimage in machineset ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c with corresponding 4.3 bootimage. For 4.4, a list of bootimages for different platforms and regions are available [here](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json), checkout the respective OCP release branch in the repo for the corresponding release. Since the cluster was created in AWS in the us-east-1 region, we will update the ami id to [ami-0543fbfb4749f3c3b](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json#L43) with the following command:
+
+```
+$ oc edit machineset ci-ln-bx6fgqt-d5d6b-89fn7-worker-us-east-1c -n openshift-machine-api
+ ```
+Similarly, we can update the bootimage for the rest of the machinesets too.
+Once the bootimage has been updated, create a node by scaling up machineset replicas.
+```
+$ oc scale --replicas=2 machineset ci-ln-9jk9j3b-d5d6b-kw7lr-worker-us-east-1c -n openshift-machine-api
+```
+
 #### nosmt
 When a machine boots with `nosmt` Kernel Argument, it disables multi-threading on that host and the system will only utilize physical CPU cores. While applying `nosmt` on any node in the cluster, ensure that enough CPU resources are available to schedule all pods, otherwise it can lead to a degraded cluster. For example: a basic 3 master and 3 worker node cluster having 2 physical CPU cores on each node should be fine.
 
