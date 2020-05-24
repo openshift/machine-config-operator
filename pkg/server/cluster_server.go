@@ -72,7 +72,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}
 
-	appenders := getAppenders(currConf, cs.kubeconfigFunc, mc.Spec.OSImageURL)
+	appenders := getAppenders(currConf, cs.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(mc); err != nil {
 			return nil, err

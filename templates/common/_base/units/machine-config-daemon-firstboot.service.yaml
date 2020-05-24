@@ -7,17 +7,14 @@ contents: |
   ConditionPathExists=/run/ostree-booted
   # Removal of this file signals firstboot completion
   ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
-  # We only want to run on 4.3 clusters and above; this came from
-  # https://github.com/coreos/coreos-assembler/pull/768
-  ConditionPathExists=/sysroot/.coreos-aleph-version.json
-  After=ignition-firstboot-complete.service
+  After=machine-config-daemon-pull.service
   Before=crio.service crio-wipe.service
   Before=kubelet.service
 
   [Service]
-  # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/libexec/machine-config-daemon firstboot-complete-machineconfig
+  RemainAfterExit=yes
+  ExecStart=/run/bin/machine-config-daemon firstboot-complete-machineconfig
 
   [Install]
   WantedBy=multi-user.target
