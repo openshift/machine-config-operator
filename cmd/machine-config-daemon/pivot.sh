@@ -1,2 +1,2 @@
 #!/usr/bin/sh
-exec /usr/libexec/machine-config-daemon pivot "$@"
+exec /usr/local/machine-config-daemon pivot "$@"

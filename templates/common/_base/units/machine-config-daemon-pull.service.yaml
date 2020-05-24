@@ -1,0 +1,44 @@
+name: "machine-config-daemon-pull.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Pull
+  # Make sure it runs only on OSTree booted system
+  ConditionPathExists=/run/ostree-booted
+  ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+  # We only want to run on 4.3 clusters and above; this came from
+  # https://github.com/coreos/coreos-assembler/pull/768
+  ConditionPathExists=/sysroot/.coreos-aleph-version.json
+  # Skip this unit if MCD binary already exists at libexec
+  ConditionPathExists=!/usr/libexec/bin/machine-config-daemon
+  After=ignition-firstboot-complete.service
+  Before=machine-config-daemon-host.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  # Extract machine-config-daemon binary from MCD container
+  ExecStart=/usr/bin/sh -c "while ! /usr/bin/podman pull --authfile=/var/lib/kubelet/config.json '{{ .Images.setupEtcdEnvKey }}'; do sleep 5; done"
+  ExecStart=/usr/bin/sh -c "/usr/bin/podman run --authfile=/var/lib/kubelet/config.json --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /usr/local/bin/machine-config-daemon"
+  ExecStart=/usr/bin/chmod +x /usr/local/bin/machine-config-daemon
+  ExecStart=/usr/sbin/restorecon /usr/local/bin/machine-config-daemon
+
+  [Install]
+  RequiredBy=machine-config-daemon-firstboot.service
+dropins:
+  - name: 10-mco-default-env.conf
+    contents: |
+      [Unit]
+      Description=MCO environment configuration
+      {{if .Proxy -}}
+      [Service]
+      {{if .Proxy.HTTPProxy -}}
+      Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+      {{end -}}
+      {{if .Proxy.HTTPSProxy -}}
+      Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+      {{end -}}
+      {{if .Proxy.NoProxy -}}
+      Environment=NO_PROXY={{.Proxy.NoProxy}}
+      {{end -}}
+      {{end -}}

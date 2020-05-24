@@ -16,7 +16,7 @@ contents: |
   # Need oneshot to delay kubelet
   Type=oneshot
   # TODO add --from-etc-pullspec after ratcheting
-  ExecStart=/usr/libexec/machine-config-daemon pivot
+  ExecStart=/usr/local/bin/machine-config-daemon pivot
 
   [Install]
   WantedBy=multi-user.target
