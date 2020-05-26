@@ -17,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -211,32 +210,38 @@ func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
 			return
 		}
 	}
-	if err := ctrl.cascadeDelete(cfg); err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %v", cfg, err))
-	} else {
-		glog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
-	}
+	glog.V(4).Infof("Deleting KubeletConfig %s", cfg.Name)
+	ctrl.enqueueKubeletConfig(cfg)
 }
 
-func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
-	if len(cfg.GetFinalizers()) == 0 {
-		return nil
-	}
-	finalizerName := cfg.GetFinalizers()[0]
-	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-	for _, mc := range mcs.Items {
-		if string(mc.ObjectMeta.GetUID()) == finalizerName || mc.GetName() == finalizerName {
-			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.GetName(), metav1.DeleteOptions{})
-			if err != nil && !macherrors.IsNotFound(err) {
-				return err
-			}
-			break
-		}
-	}
-	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
+// func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
+// 	if len(cfg.GetFinalizers()) == 0 {
+// 		return nil
+// 	}
+// 	finalizerName := cfg.GetFinalizers()[0]
+// 	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+// 	if err != nil {
+// 		return err
+// 	}
+// 	for _, mc := range mcs.Items {
+// 		if string(mc.ObjectMeta.GetUID()) == finalizerName || mc.GetName() == finalizerName {
+// 			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.GetName(), metav1.DeleteOptions{})
+// 			if err != nil && !macherrors.IsNotFound(err) {
+// 				return err
+// 			}
+// 			break
+// 		}
+// 	}
+// 	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
+
+func (ctrl *Controller) deleteKubeletConfigMCFromPool(pool *mcfgv1.MachineConfigPool) error {
+	managedKey := getManagedKubeletConfigKey(pool)
+	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), managedKey, metav1.DeleteOptions{})
+	if err != nil && !macherrors.IsNotFound(err) {
 		return err
 	}
 	return nil
@@ -375,45 +380,17 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	// Fetch the KubeletConfig
 	cfg, err := ctrl.mckLister.Get(name)
-	if macherrors.IsNotFound(err) {
-		glog.V(2).Infof("KubeletConfig %v has been deleted", key)
-		return nil
-	}
-	if err != nil {
+	if err != nil && !macherrors.IsNotFound(err) {
 		return err
 	}
 
 	// Deep-copy otherwise we are mutating our cache.
 	cfg = cfg.DeepCopy()
 
-	// Check for Deleted KubeletConfig and optionally delete finalizers
-	if cfg.DeletionTimestamp != nil {
-		if len(cfg.GetFinalizers()) > 0 {
-			return ctrl.cascadeDelete(cfg)
-		}
-		return nil
-	}
-
-	// If we have seen this generation then skip
-	if cfg.Status.ObservedGeneration >= cfg.Generation {
-		return nil
-	}
-
-	// Validate the KubeletConfig CR
-	if err := validateUserKubeletConfig(cfg); err != nil {
+	// Validate the KubeletConfig CR. Only validate if we're not attempting to delete a kubeletconfig.
+	if err := validateUserKubeletConfig(cfg); cfg.DeletionTimestamp == nil && err != nil {
+		glog.Errorf("Ignoring KubeletConfig %v due to error %v", name, err)
 		return ctrl.syncStatusOnly(cfg, newForgetError(err))
-	}
-
-	// Find all MachineConfigPools
-	mcpPools, err := ctrl.getPoolsForKubeletConfig(cfg)
-	if err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
-	}
-
-	if len(mcpPools) == 0 {
-		err := fmt.Errorf("KubeletConfig %v does not match any MachineConfigPools", key)
-		glog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
 	}
 
 	features, err := ctrl.featLister.Get(clusterFeatureInstanceName)
@@ -431,7 +408,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
-	for _, pool := range mcpPools {
+	// Now loop over all MCPs to sync them
+	mcpList, err := ctrl.mcpLister.List(labels.Everything())
+	if err != nil {
+		return ctrl.syncStatusOnly(cfg, err, "could not list MCPs during KubeletConfig sync: %v", err)
+	}
+	for _, pool := range mcpList {
+		glog.Infof("Now modifying pool %v", pool.Name)
 		role := pool.Name
 		// Get MachineConfig
 		managedKey := getManagedKubeletConfigKey(pool)
@@ -453,15 +436,42 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
 		}
-		specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+
+		poolHasUserKC := false
+		mckList, err := ctrl.mckLister.List(labels.Everything())
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
+			return ctrl.syncStatusOnly(cfg, err, "could not list KubeletConfigs during KubeletConfig sync: %v", err)
 		}
-		// Merge the Old and New
-		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
+		for _, kc := range mckList {
+			mcPools, err := ctrl.getPoolsForKubeletConfig(kc)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "error attempting to get pools for kubeletconfig %v: %v", kc, err)
+			}
+			for _, kcpool := range mcPools {
+				if kcpool.Name != pool.Name {
+					continue
+				}
+				poolHasUserKC = true
+				kc = kc.DeepCopy() // Not sure if this is needed, probably not given that I'm just merging it into the other?
+				// we want this to be rendered into this config
+				specKubeletConfig, err := decodeKubeletConfig(kc.Spec.KubeletConfig.Raw)
+				if err != nil {
+					return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
+				}
+				err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
+				if err != nil {
+					return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
+				}
+
+			}
 		}
+
+		if !poolHasUserKC {
+			// Nothing in pool, ensure deletion
+			ctrl.deleteKubeletConfigMCFromPool(pool)
+			continue
+		}
+
 		// Merge in Feature Gates
 		err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
 		if err != nil {
@@ -490,13 +500,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		mc.SetAnnotations(map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
 		})
-		oref := metav1.NewControllerRef(cfg, controllerKind)
-		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
 
 		// Create or Update, on conflict retry
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
+				oref := metav1.NewControllerRef(cfg, controllerKind)
+				mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
 			} else {
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
@@ -506,89 +516,89 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not Create/Update MachineConfig: %v", err)
 		}
 		// Add Finalizers to the KubletConfig
-		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
-		}
+		// if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil && cfg.DeletionTimestamp == nil {
+		// 	return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
+		// }
 		glog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
 
 	return ctrl.syncStatusOnly(cfg, nil)
 }
 
-func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
-	return retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, err := ctrl.mckLister.Get(kc.Name)
-		if macherrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
+// func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
+// 	return retry.RetryOnConflict(updateBackoff, func() error {
+// 		newcfg, err := ctrl.mckLister.Get(kc.Name)
+// 		if macherrors.IsNotFound(err) {
+// 			return nil
+// 		}
+// 		if err != nil {
+// 			return err
+// 		}
 
-		curJSON, err := json.Marshal(newcfg)
-		if err != nil {
-			return err
-		}
+// 		curJSON, err := json.Marshal(newcfg)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		kcTmp := newcfg.DeepCopy()
-		kcTmp.Finalizers = append(kc.Finalizers[:0], kc.Finalizers[1:]...)
+// 		kcTmp := newcfg.DeepCopy()
+// 		kcTmp.Finalizers = append(kc.Finalizers[:0], kc.Finalizers[1:]...)
 
-		modJSON, err := json.Marshal(kcTmp)
-		if err != nil {
-			return err
-		}
+// 		modJSON, err := json.Marshal(kcTmp)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-		if err != nil {
-			return err
-		}
-		return ctrl.patchKubeletConfigsFunc(newcfg.Name, patch)
-	})
-}
+// 		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		return ctrl.patchKubeletConfigsFunc(newcfg.Name, patch)
+// 	})
+// }
 
 func (ctrl *Controller) patchKubeletConfigs(name string, patch []byte) error {
 	_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(context.TODO(), name, types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
 }
 
-func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
-	return retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, err := ctrl.mckLister.Get(kc.Name)
-		if macherrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
+// func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
+// 	return retry.RetryOnConflict(updateBackoff, func() error {
+// 		newcfg, err := ctrl.mckLister.Get(kc.Name)
+// 		if macherrors.IsNotFound(err) {
+// 			return nil
+// 		}
+// 		if err != nil {
+// 			return err
+// 		}
 
-		curJSON, err := json.Marshal(newcfg)
-		if err != nil {
-			return err
-		}
+// 		curJSON, err := json.Marshal(newcfg)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		uid := string(mc.ObjectMeta.GetUID())
+// 		uid := string(mc.ObjectMeta.GetUID())
 
-		// if the finalizer is already set then skip
-		for _, finalizerName := range newcfg.Finalizers {
-			if finalizerName == mc.Name || finalizerName == uid {
-				return nil
-			}
-		}
+// 		// if the finalizer is already set then skip
+// 		for _, finalizerName := range newcfg.Finalizers {
+// 			if finalizerName == mc.Name || finalizerName == uid {
+// 				return nil
+// 			}
+// 		}
 
-		kcTmp := newcfg.DeepCopy()
-		kcTmp.ObjectMeta.Finalizers = append(kcTmp.ObjectMeta.Finalizers, uid)
+// 		kcTmp := newcfg.DeepCopy()
+// 		kcTmp.ObjectMeta.Finalizers = append(kcTmp.ObjectMeta.Finalizers, uid)
 
-		modJSON, err := json.Marshal(kcTmp)
-		if err != nil {
-			return err
-		}
-		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-		if err != nil {
-			return err
-		}
-		return ctrl.patchKubeletConfigsFunc(newcfg.Name, patch)
-	})
-}
+// 		modJSON, err := json.Marshal(kcTmp)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		return ctrl.patchKubeletConfigsFunc(newcfg.Name, patch)
+// 	})
+// }
 
 func (ctrl *Controller) getPoolsForKubeletConfig(config *mcfgv1.KubeletConfig) ([]*mcfgv1.MachineConfigPool, error) {
 	pList, err := ctrl.mcpLister.List(labels.Everything())
