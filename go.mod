@@ -19,7 +19,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/coreos/ign-converter v0.0.0-20200228175238-237c8512310a
 	github.com/coreos/ignition v0.35.0
-	github.com/coreos/ignition/v2 v2.2.1
+	github.com/coreos/ignition/v2 v2.3.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/docker/docker v1.4.2-0.20190927142053-ada3c14355ce // indirect
 	github.com/docker/docker-credential-helpers v0.6.3 // indirect

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -553,7 +553,7 @@ func TestIgn3Cfg(t *testing.T) {
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.FileContents{Source: &testfiledata}, Mode: &mode}}
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
 	mcadd.Spec.Config.Raw = rawIgnConfig
