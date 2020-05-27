@@ -1,4 +1,4 @@
-name: "machine-config-daemon-host.service"
+name: machine-config-daemon-host.service
 enabled: false
 contents: |
   [Unit]

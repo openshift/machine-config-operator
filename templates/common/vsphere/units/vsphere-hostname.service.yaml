@@ -1,4 +1,4 @@
-name: "vsphere-hostname.service"
+name: vsphere-hostname.service
 enabled: true
 contents: |
   {{ if .Infra -}}

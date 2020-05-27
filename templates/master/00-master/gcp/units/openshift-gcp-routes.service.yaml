@@ -1,4 +1,4 @@
-name: "openshift-gcp-routes.service"
+name: openshift-gcp-routes.service
 enabled: true
 contents: |
   [Unit]

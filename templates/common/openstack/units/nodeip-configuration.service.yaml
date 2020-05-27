@@ -1,11 +1,6 @@
-name: "nodeip-configuration.service"
+name: nodeip-configuration.service
 enabled: true
 contents: |
-  {{ if .Infra -}}
-  {{ if .Infra.Status -}}
-  {{ if .Infra.Status.PlatformStatus -}}
-  {{ if .Infra.Status.PlatformStatus.VSphere -}}
-  {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
   # This only applies to VIP managing environments where the kubelet and crio IP
@@ -18,13 +13,15 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/local/bin/nodeip-finder --retry-on-failure {{.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
+  ExecStart=/usr/bin/podman run --rm \
+    --authfile /var/lib/kubelet/config.json \
+    --volume /etc/systemd/system:/etc/systemd/system:z \
+    --net=host \
+    {{ .Images.baremetalRuntimeCfgImage }} \
+    node-ip \
+    set --retry-on-failure \
+    {{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
 
   [Install]
   WantedBy=multi-user.target
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
 

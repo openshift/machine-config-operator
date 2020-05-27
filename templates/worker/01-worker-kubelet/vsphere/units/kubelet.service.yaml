@@ -1,4 +1,4 @@
-name: "kubelet.service"
+name: kubelet.service
 enabled: true
 contents: |
   [Unit]
@@ -10,6 +10,7 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+  Environment="KUBELET_LOG_LEVEL=3"
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
@@ -21,14 +22,25 @@ contents: |
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
-        --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
+        --runtime-cgroups=/system.slice/crio.service \
+        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+   {{ if .Infra -}}
+   {{ if .Infra.Status -}}
+   {{ if .Infra.Status.PlatformStatus -}}
+   {{ if .Infra.Status.PlatformStatus.VSphere -}}
+   {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
         --node-ip=${KUBELET_NODE_IP} \
         --address=${KUBELET_NODE_IP} \
+   {{ end -}}
+   {{ end -}}
+   {{ end -}}
+   {{ end -}}
+   {{ end -}}
         --minimum-container-ttl-duration=6m0s \
-        --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
-        --v=3
+        --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
   RestartSec=10
