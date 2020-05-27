@@ -1,4 +1,4 @@
-name: "kubelet.service"
+name: kubelet.service
 enabled: true
 contents: |
   [Unit]

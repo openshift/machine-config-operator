@@ -1,4 +1,4 @@
-name: "afterburn-hostname.service"
+name: afterburn-hostname.service
 enabled: true
 contents: |
   [Unit]

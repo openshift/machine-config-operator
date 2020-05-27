@@ -1,4 +1,4 @@
-name: "machine-config-daemon-firstboot.service"
+name: machine-config-daemon-firstboot.service
 enabled: true
 contents: |
   [Unit]

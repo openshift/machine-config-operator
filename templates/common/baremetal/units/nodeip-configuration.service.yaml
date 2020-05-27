@@ -1,4 +1,4 @@
-name: "nodeip-configuration.service"
+name: nodeip-configuration.service
 enabled: true
 contents: |
   [Unit]
@@ -15,12 +15,12 @@ contents: |
   Type=oneshot
   ExecStart=/usr/bin/podman run --rm \
     --authfile /var/lib/kubelet/config.json \
-    --volume /etc/systemd/system:/etc/systemd/system:z \
     --net=host \
+    --volume /etc/systemd/system:/etc/systemd/system:z \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
-    {{.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
+    {{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}
 
   [Install]
   WantedBy=multi-user.target
