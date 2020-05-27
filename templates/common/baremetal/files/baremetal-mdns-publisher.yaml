@@ -23,6 +23,9 @@ contents:
       - name: conf-dir
         hostPath:
           path: "/etc/mdns"
+      - name: nm-resolv
+        hostPath:
+          path: "/var/run/NetworkManager"
       initContainers:
       - name: verify-hostname
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -76,6 +79,8 @@ contents:
           mountPath: "/config"
         - name: conf-dir
           mountPath: "/etc/mdns"
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
         imagePullPolicy: IfNotPresent
       containers:
       - name: mdns-publisher

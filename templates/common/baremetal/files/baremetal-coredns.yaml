@@ -48,6 +48,8 @@ contents:
           mountPath: "/config"
         - name: conf-dir
           mountPath: "/etc/coredns"
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
         imagePullPolicy: IfNotPresent
       containers:
       - name: coredns
