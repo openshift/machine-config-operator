@@ -520,7 +520,10 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey := getManagedKeyCtrCfg(pool)
+		managedKey, err := getManagedKeyCtrCfg(pool, ctrl.client)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err)
+		}
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
@@ -672,7 +675,10 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		applied := true
 		role := pool.Name
 		// Get MachineConfig
-		managedKey := getManagedKeyReg(pool)
+		managedKey, err := getManagedKeyReg(pool, ctrl.client)
+		if err != nil {
+			return err
+		}
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries, icspRules)
@@ -787,8 +793,10 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	var res []*mcfgv1.MachineConfig
 	for _, pool := range mcpPools {
 		role := pool.Name
-		managedKey := getManagedKeyReg(pool)
-
+		managedKey, err := getManagedKeyReg(pool, nil)
+		if err != nil {
+			return nil, err
+		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role,
 			insecureRegs, blockedRegs, allowedRegs, icspRules)
 		if err != nil {
@@ -918,7 +926,10 @@ func (ctrl *Controller) isUpdatingFromOldCRIOConf(cfg *mcfgv1.ContainerRuntimeCo
 	}
 
 	for _, pool := range mcpPools {
-		managedKey := getManagedKeyCtrCfg(pool)
+		managedKey, err := getManagedKeyCtrCfg(pool, ctrl.client)
+		if err != nil {
+			return false, err
+		}
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
 			return false, fmt.Errorf("could not get mc with name %q: %v", managedKey, err)
