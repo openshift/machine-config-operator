@@ -53,7 +53,7 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/mdns"
-      - name: render-config
+      - name: render-config-mdns-publisher
         image: {{ .Images.baremetalRuntimeCfgImage }}
         env:
           - name: RUNTIMECFG_HOSTNAME_PATH
