@@ -2,6 +2,7 @@ package containerruntimeconfig
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,9 +20,13 @@ import (
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	kerr "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -168,12 +173,52 @@ func findPolicyJSON(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("could not find Policy JSON")
 }
 
-func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool) string {
+func getManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, suffix, deprecatedKey string) (string, error) {
+	managedKey := fmt.Sprintf("99-%s-%s", pool.Name, suffix)
+	// if we don't have a client, we're installing brand new, and we don't need to adjust for backward compatibility
+	if client == nil {
+		return managedKey, nil
+	}
+	if _, err := client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{}); err == nil {
+		return managedKey, nil
+	}
+	old, err := client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), deprecatedKey, metav1.GetOptions{})
+	if err != nil && !kerr.IsNotFound(err) {
+		return "", fmt.Errorf("could not get MachineConfig %q: %v", deprecatedKey, err)
+	}
+	// this means no previous CR config were here, so we can start fresh
+	if kerr.IsNotFound(err) {
+		return managedKey, nil
+	}
+	// if we're here, we'll grab the old CR config, dupe it and patch its name
+	mc, err := mtmpl.MachineConfigFromRawIgnConfig(pool.Name, managedKey, old.Spec.Config.Raw)
+	if err != nil {
+		return "", err
+	}
+	_, err = client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+	if err != nil {
+		return "", err
+	}
+	err = client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), deprecatedKey, metav1.DeleteOptions{})
+	return managedKey, err
+}
+
+// Deprecated: use getManagedKeyCtrCfg
+func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedKeyReg(pool *mcfgv1.MachineConfigPool) string {
+func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return getManagedKey(pool, client, "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+}
+
+// Deprecated: use getManagedKeyReg
+func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
+}
+
+func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return getManagedKey(pool, client, "registries", getManagedKeyRegDeprecated(pool))
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {

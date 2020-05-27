@@ -282,6 +282,11 @@ func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
 	}
+	return MachineConfigFromRawIgnConfig(role, name, rawIgnCfg)
+}
+
+// MachineConfigFromRawIgnConfig creates a MachineConfig with the provided raw Ignition config
+func MachineConfigFromRawIgnConfig(role, name string, rawIgnCfg []byte) (*mcfgv1.MachineConfig, error) {
 	labels := map[string]string{
 		mcfgv1.MachineConfigRoleLabelKey: role,
 	}
