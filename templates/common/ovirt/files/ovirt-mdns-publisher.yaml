@@ -24,7 +24,7 @@ contents:
         hostPath:
           path: "/etc/mdns"
       initContainers:
-      - name: render-config
+      - name: render-config-mdns-publisher
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - runtimecfg

@@ -31,7 +31,7 @@ contents:
         hostPath:
           path: "/var/run/NetworkManager"
       initContainers:
-      - name: render-config
+      - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - runtimecfg
