@@ -33,7 +33,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	if len(configs) == 0 {
 		return nil, nil
 	}
-	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
+	sort.SliceStable(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
 	var fips, ok bool
 	var kernelType string
