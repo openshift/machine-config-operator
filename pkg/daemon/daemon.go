@@ -298,7 +298,7 @@ func (dn *Daemon) ClusterConnect(
 		IgnoreAllDaemonSets: true,
 		DeleteLocalData:     true,
 		GracePeriodSeconds:  -1,
-		Timeout:             20 * time.Second,
+		Timeout:             90 * time.Second,
 		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
 			verbStr := "Deleted"
 			if usingEviction {
