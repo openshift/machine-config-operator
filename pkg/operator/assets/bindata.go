@@ -1207,13 +1207,6 @@ spec:
       hostPID: true
       serviceAccountName: machine-config-daemon
       terminationGracePeriodSeconds: 600
-      tolerations:
-      - key: node-role.kubernetes.io/master
-        operator: Exists
-        effect: NoSchedule
-      - key: node-role.kubernetes.io/etcd
-        operator: Exists
-        effect: NoSchedule
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: "system-node-critical"
@@ -1227,7 +1220,9 @@ spec:
         - name: cookie-secret
           secret:
             secretName: cookie-secret
-`)
+      tolerations:
+      # MCD needs to run everywhere. Tolerate all taints.
+      - operator: Exists`)
 
 func manifestsMachineconfigdaemonDaemonsetYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigdaemonDaemonsetYaml, nil
