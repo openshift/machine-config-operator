@@ -5,12 +5,13 @@ contents: |
   Description=Machine Config Daemon Firstboot
   # Make sure it runs only on OSTree booted system
   ConditionPathExists=/run/ostree-booted
-  BindsTo=ignition-firstboot-complete.service
+  # Removal of this file signals firstboot completion
   ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
   # We only want to run on 4.3 clusters and above; this came from
   # https://github.com/coreos/coreos-assembler/pull/768
   ConditionPathExists=/sysroot/.coreos-aleph-version.json
   After=ignition-firstboot-complete.service
+  Before=crio.service crio-wipe.service
   Before=kubelet.service
 
   [Service]
@@ -20,3 +21,4 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
+  RequiredBy=crio.service kubelet.service
