@@ -10,6 +10,7 @@ contents: |
   # If pivot exists, defer to it.  Note similar code in update.go
   ConditionPathExists=!/usr/lib/systemd/system/pivot.service
   After=ignition-firstboot-complete.service
+  Before=crio.service crio-wipe.service
   Before=kubelet.service
 
   [Service]
