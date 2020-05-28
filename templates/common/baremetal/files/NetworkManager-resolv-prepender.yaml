@@ -4,6 +4,7 @@ path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
 contents:
   inline: |
     #!/bin/bash
+    set -eo pipefail
     IFACE=$1
     STATUS=$2
     # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
@@ -20,7 +21,6 @@ contents:
             "{{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.BareMetal.IngressIP}}")
         DOMAIN="{{.EtcdDiscoveryDomain}}"
-        set +e
         if [[ -n "$NAMESERVER_IP" ]]; then
             logger -s "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
             sed -e "/^search/d" \
