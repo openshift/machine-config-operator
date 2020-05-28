@@ -55,6 +55,22 @@ func TestValidateIgnition(t *testing.T) {
 	require.NotNil(t, isValid3)
 }
 
+func TestConvertIgnition2to3(t *testing.T) {
+	// Make a new Ign spec v2 config
+	testIgnCfgV2 := ign2types.Config{}
+	tempUser := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
+	testIgnCfgV2.Passwd.Users = []ign2types.PasswdUser{tempUser}
+	testIgnCfgV2.Ignition.Version = "2.2.0"
+	isValid := ValidateIgnition(testIgnCfgV2)
+	require.Nil(t, isValid)
+
+	convertedIgn, err := ConvertIgnition2to3(testIgnCfgV2)
+	require.Nil(t, err)
+	assert.IsType(t, ign3types.Config{}, convertedIgn)
+	isValid3 := ValidateIgnition(convertedIgn)
+	require.Nil(t, isValid3)
+}
+
 func TestConvertIgnition3to2(t *testing.T) {
 
 	// Make a new Ign3 config
@@ -65,7 +81,7 @@ func TestConvertIgnition3to2(t *testing.T) {
 	isValid := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition3to2(testIgn3Config)
+	convertedIgn, err := ConvertIgnition3to2(testIgn3Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign2types.Config{}, convertedIgn)
 	isValid2 := ValidateIgnition(convertedIgn)

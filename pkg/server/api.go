@@ -6,8 +6,16 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"strings"
 
+	"github.com/coreos/go-semver/semver"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 type poolRequest struct {
@@ -115,11 +123,15 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := json.Marshal(conf)
+	data, translated, err := translateConfigForIgnitionMiddleware(conf, useragent)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("failed to marshal %v config: %v", cr, err)
+		if translated {
+			glog.Errorf("failed to translate %v config: %v", cr, err)
+		} else {
+			glog.Errorf("failed to prepare %v config: %v", cr, err)
+		}
 		return
 	}
 
@@ -134,6 +146,72 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Errorf("failed to write %v response: %v", cr, err)
 	}
+}
+
+// translateConfigForIgnitionMiddleware outputs the Ignition config in a spec version
+// understandable for the useragent and indicates whether or not the config has been
+// translated
+func translateConfigForIgnitionMiddleware(rawConf *runtime.RawExtension, useragent string) ([]byte, bool, error) {
+	translated := false
+	ignVersionString := strings.SplitAfter(useragent, "/")[1]
+	ignSemver, err := semver.NewVersion(ignVersionString)
+	if err != nil {
+		return nil, translated, errors.Errorf("invalid version in useragent: %s", useragent)
+	}
+
+	v1 := semver.New("1.0.0")
+	v2 := semver.New("2.0.0")
+	v3 := semver.New("3.0.0")
+	var reqCfgVersion semver.Version
+	if ignSemver.LessThan(*v1) {
+		// Ignition v0.x supprts config spec v2.x
+		reqCfgVersion = *v2
+	} else if !ignSemver.LessThan(*v2) && ignSemver.LessThan(*v3) {
+		// Ignition v2.x supports config spec v3.x
+		reqCfgVersion = *v3
+	} else {
+		return nil, translated, errors.Errorf("config version not supported: %s", ignVersionString)
+	}
+
+	confi, err := ctrlcommon.IgnParseWrapper(rawConf.Raw)
+	if err != nil {
+		return nil, translated, errors.Errorf("couldn't parse rendered config: %v", err)
+	}
+
+	var serveIgn interface{}
+	switch typedConfig := confi.(type) {
+	case ign3types.Config:
+		if reqCfgVersion == *v2 {
+			translated = true
+			converted2, err := ctrlcommon.ConvertIgnition3to2(typedConfig)
+			if err != nil {
+				return nil, translated, errors.Errorf("failed to convert Ignition config spec v3 to v2: %v", err)
+			}
+			serveIgn = converted2
+		} else if reqCfgVersion == *v3 {
+			serveIgn = typedConfig
+		}
+	case ign2types.Config:
+		if reqCfgVersion == *v3 {
+			translated = true
+			converted3, err := ctrlcommon.ConvertIgnition2to3(typedConfig)
+			if err != nil {
+				return nil, translated, errors.Errorf("failed to convert Ignition config spec v2 to v3: %v", err)
+			}
+			serveIgn = converted3
+		} else if reqCfgVersion == *v2 {
+			serveIgn = typedConfig
+		}
+	default:
+		return nil, translated, errors.Errorf("unexpected type for ignition config: %v", typedConfig)
+	}
+
+	serveData, err := json.Marshal(serveIgn)
+	if err != nil {
+		return nil, translated, errors.Errorf("failed to marshal Ignition config: %v", err)
+	}
+
+	return serveData, translated, nil
 }
 
 type healthHandler struct{}

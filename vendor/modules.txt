@@ -74,6 +74,7 @@ github.com/coreos/ignition/config/v2_1
 github.com/coreos/ignition/config/v2_1/types
 github.com/coreos/ignition/config/v2_2
 github.com/coreos/ignition/config/v2_2/types
+github.com/coreos/ignition/config/v2_3
 github.com/coreos/ignition/config/v2_3/types
 github.com/coreos/ignition/config/v2_5_experimental/types
 github.com/coreos/ignition/config/validate
