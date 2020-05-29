@@ -97,7 +97,7 @@ func (fi bindataFileInfo) Sys() interface{} {
 var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
