@@ -1,7 +1,7 @@
 . {
     errors
     health :18080
-    mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}}
+    mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
     forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
     cache 30
     reload
