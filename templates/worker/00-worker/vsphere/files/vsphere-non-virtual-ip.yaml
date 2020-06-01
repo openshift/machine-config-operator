@@ -3,6 +3,7 @@ mode: 0755
 path: "/usr/local/bin/non_virtual_ip"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -140,6 +141,7 @@ contents:
 
     if __name__ == '__main__':
         main()
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}
