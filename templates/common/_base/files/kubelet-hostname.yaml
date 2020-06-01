@@ -1,0 +1,21 @@
+filesystem: "root"
+mode: 0744
+path: "/usr/local/bin/kubelet-hostname-check"
+contents:
+  inline: |
+    #!/bin/bash
+    # This is a workaround for BZ#1829453
+    name=$(hostname -f)
+    if [[ "$name" =~ ^localhost.* ]] ; then
+      cat << EOF
+    The machine's fully qualified domain name ($name) is set to localhost.
+    Openshift is not supported with a localhost FQDN, but this should
+    automatically resolve within a short period of time with a proper network
+    configuration.
+
+    https://bugzilla.redhat.com/show_bug.cgi?id=1829453
+    https://docs.openshift.com/container-platform/4.4/installing/installing_bare_metal/installing-bare-metal-network-customizations.html
+    EOF
+      exit 1
+    fi
+    exit 0
