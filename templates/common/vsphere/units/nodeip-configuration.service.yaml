@@ -1,6 +1,9 @@
 name: nodeip-configuration.service
 enabled: true
 contents: |
+  {{ if .Infra -}}
+  {{ if .Infra.Status -}}
+  {{ if .Infra.Status.PlatformStatus -}}
   {{ if .Infra.Status.PlatformStatus.VSphere -}}
   {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
   [Unit]
@@ -19,6 +22,9 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
+  {{ end -}}
+  {{ end -}}
+  {{ end -}}
   {{ end -}}
   {{ end -}}
 
