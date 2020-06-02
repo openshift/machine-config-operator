@@ -2,6 +2,7 @@ mode: 0644
 path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -55,6 +56,7 @@ contents:
             chk_ingress
         }
     }
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}
