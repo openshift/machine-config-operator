@@ -28,6 +28,7 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
+        --pod-infra-container-image={{.Images.infraImageKey}} \
         --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
