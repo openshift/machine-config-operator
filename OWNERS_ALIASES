@@ -4,9 +4,12 @@ aliases:
   openstack-approvers:
     - Fedosin
     - adduarte
-    - hardys
     - iamemilio
     - mandre
     - pierreprinetti
-    - russellb
-    - tomassedovic
+  openstack-reviewers:
+    - Fedosin
+    - adduarte
+    - iamemilio
+    - mandre
+    - pierreprinetti
