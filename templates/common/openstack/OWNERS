@@ -3,4 +3,5 @@
 
 approvers:
   - openstack-approvers
-
+reviewers:
+  - openstack-reviewers
