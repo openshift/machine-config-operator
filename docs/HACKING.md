@@ -293,7 +293,10 @@ The method that best matches the way true upgrades work though is to build
 a custom release image that includes your custom `machine-os-content` as an
 override.  To do this, follow the instructions above for creating a custom
 release image, but instead of overriding `machine-config-operator`, override
-`machine-os-content`.
+`machine-os-content`.  Note that today the MCO code requires that the OS
+come from a "digested" pull spec, e.g.
+`oc adm release new ... machine-os-content=quay.io/user/machine-os@sha256:49aefeabe1459e4091859b89ac1bc43d4161296cf80113fb633d59a56018ffa6`.
+It will fail if you use e.g. `:latest`.
 
 At the time of this writing, the [kubelet](https://github.com/smarterclayton/origin/blob/4de957b019aee56931b1a29af148cf64865a969b/images/os/Dockerfile)
 has code to do this in CI, and work is in progress to [replicate that for cri-o](https://github.com/openshift/release/pull/4030).
