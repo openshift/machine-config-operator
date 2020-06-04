@@ -868,21 +868,32 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 				// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
 				// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
 				// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
-				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err != nil {
-					if err := os.Remove(origFileName(f.Path)); err != nil {
-						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+				var restore bool
+				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
+					// File is owned by an rpm
+					restore = true
+				} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
+					if _, err := os.Stat("/usr" + f.Path); err != nil {
+						if !os.IsNotExist(err) {
+							return err
+						}
+
+						// If the error is ErrNotExist then we don't restore the file
+					} else {
+						restore = true
 					}
-				} else if _, err := os.Stat("/usr" + f.Path); strings.HasPrefix(f.Path, "/etc") && os.IsNotExist(err) &&
-					(operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
-					if err := os.Remove(origFileName(f.Path)); err != nil {
-						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
-					}
-				} else {
+				}
+
+				if restore {
 					if err := restorePath(f.Path); err != nil {
 						return err
 					}
 					glog.V(2).Infof("Restored file %q", f.Path)
 					continue
+				}
+
+				if err := os.Remove(origFileName(f.Path)); err != nil {
+					return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 				}
 			}
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
