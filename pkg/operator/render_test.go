@@ -2,9 +2,10 @@ package operator
 
 import (
 	"fmt"
-	configv1 "github.com/openshift/api/config/v1"
 	"strings"
 	"testing"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 func TestClusterDNSIP(t *testing.T) {
@@ -192,7 +193,7 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			Spec: configv1.NetworkSpec{ServiceNetwork: []string{}}},
 		Error: true,
 	}, {
-		// Test old Platform field instead of PlatformStatus
+		// Test old Infra.Status.Platform field instead of Infra.Status.PlatformStatus
 		Infra: &configv1.Infrastructure{
 			Status: configv1.InfrastructureStatus{
 				Platform:            configv1.AWSPlatformType,
@@ -217,7 +218,7 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			}
 			if controllerConfigSpec == nil {
 				t.Fatalf("Controller config spec did not get initialized")
-			} else if controllerConfigSpec.Platform == "" {
+			} else if controllerConfigSpec.Infra.Status.PlatformStatus.Type == "" {
 				t.Fatalf("Error setting controller config platform")
 			}
 			etcdDomain := controllerConfigSpec.Infra.Status.EtcdDiscoveryDomain
