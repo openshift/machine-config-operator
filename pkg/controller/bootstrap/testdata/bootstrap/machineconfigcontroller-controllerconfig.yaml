@@ -7,7 +7,6 @@ spec:
   cloudProviderConfig: ""
   clusterDNSIP: 172.30.0.10
   etcdCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCkVUQ0QgQ0EgREFUQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
-  etcdDiscoveryDomain: domain.example.com
   etcdMetricCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCkVUQ0QgTUVUUklDIENBIERBVEEKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
   images:
     baremetalRuntimeCfgImage: ""

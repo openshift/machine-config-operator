@@ -95,6 +95,8 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		ClusterDNSIP:        dnsIP,
 		KubeletIPv6:         ipv6,
 		CloudProviderConfig: "",
+		// EtcdDiscoveryDomain is unused and deprecated in favour of using Infra.Status.EtcdDiscoveryDomain directly
+		// Still populating it here for now until it will be removed eventually
 		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
 		Platform:            platform,
 		Infra:               infra,

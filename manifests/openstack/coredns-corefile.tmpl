@@ -1,14 +1,14 @@
 . {
     errors
     health :18080
-    mdns {{ .ControllerConfig.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}}
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}}
     forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
         policy sequential
     }
     cache 30
     reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.EtcdDiscoveryDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
         fallthrough
     }
 }

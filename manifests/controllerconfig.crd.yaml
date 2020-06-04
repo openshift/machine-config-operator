@@ -73,7 +73,7 @@ spec:
               type: string
               format: byte
             etcdDiscoveryDomain:
-              description: etcdDiscoveryDomain specifies the etcd discovery domain
+              description: etcdDiscoveryDomain is deprecated, use infra.status.etcdDiscoveryDomain instead
               type: string
             etcdMetricCAData:
               description: etcdMetricData specifies the etcd metric CA data

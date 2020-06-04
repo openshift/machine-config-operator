@@ -9,6 +9,7 @@ import (
 	"github.com/clarketm/json"
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -220,8 +221,12 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
-			EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
-			OSImageURL:          "dummy",
+			Infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+				},
+			},
+			OSImageURL: "dummy",
 		},
 		Status: mcfgv1.ControllerConfigStatus{
 			Conditions: []mcfgv1.ControllerConfigStatusCondition{
