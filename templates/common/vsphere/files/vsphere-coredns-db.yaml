@@ -3,6 +3,7 @@ mode: 0644
 path: "/etc/coredns/node-dns-db"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -19,6 +20,7 @@ contents:
     api IN A {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
 
     *.apps  IN  A {{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}
