@@ -99,7 +99,8 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		machineConfigPool: path.Base(r.URL.Path),
 	}
 
-	glog.Infof("Pool %s requested by %s", cr.machineConfigPool, r.RemoteAddr)
+	useragent := r.Header.Get("User-Agent")
+	glog.Infof("Pool %s requested by address:%q User-Agent:%q", cr.machineConfigPool, r.RemoteAddr, useragent)
 
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
