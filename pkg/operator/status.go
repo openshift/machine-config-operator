@@ -66,9 +66,11 @@ func (optr *Operator) syncRelatedObjects() error {
 	// RelatedObjects are consumed by https://github.com/openshift/must-gather
 	co.Status.RelatedObjects = []configv1.ObjectReference{
 		{Resource: "namespaces", Name: optr.namespace},
-		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "master"},
-		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools", Name: "worker"},
-		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs", Name: "machine-config-controller"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigpools"},
+		{Group: "machineconfiguration.openshift.io", Resource: "controllerconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"},
+		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"},
 	}
 
 	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
