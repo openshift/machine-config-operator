@@ -3,7 +3,6 @@ kind: "ControllerConfig"
 spec:
   clusterDNSIP: "10.3.0.10"
   cloudProviderConfig: ""
-  etcdDiscoveryDomain: "my-test-cluster.installer.team.coreos.systems"
   etcdInitialCount: 3
   platform: "baremetal"
   etcdCAData: ZHVtbXkgZXRjZC1jYQo=

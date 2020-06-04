@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,9 +60,13 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, Generation: 1},
 		Spec: mcfgv1.ControllerConfigSpec{
-			ClusterDNSIP:        "10.3.0.1/16",
-			EtcdDiscoveryDomain: fmt.Sprintf("%s.openshift.testing", name),
-			Platform:            "libvirt",
+			ClusterDNSIP: "10.3.0.1/16",
+			Infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					EtcdDiscoveryDomain: fmt.Sprintf("%s.openshift.testing", name),
+				},
+			},
+			Platform: "libvirt",
 			PullSecret: &corev1.ObjectReference{
 				Namespace: "default",
 				Name:      "coreos-pull-secret",

@@ -7,7 +7,6 @@ spec:
     multi-line cloud config
     [test]
       option = dummy
-  etcdDiscoveryDomain: "my-test-cluster.example.org"
   etcdInitialCount: 3
   platform: "ovirt"
   etcdCAData: OHVtbXkgZXRjZC1jYQo=

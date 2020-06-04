@@ -42,8 +42,8 @@ type ControllerConfigSpec struct {
 	// The openshift platform, e.g. "libvirt", "openstack", "gcp", "baremetal", "aws", or "none"
 	Platform string `json:"platform"`
 
-	// etcdDiscoveryDomain specifies the etcd discovery domain
-	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain"`
+	// etcdDiscoveryDomain is deprecated, use Infra.Status.EtcdDiscoveryDomain instead
+	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain,omitempty"`
 
 	// TODO: Use string for CA data
 

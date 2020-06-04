@@ -23,7 +23,7 @@ contents:
             show \
             "{{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.BareMetal.IngressIP}}")
-        DOMAIN="{{.EtcdDiscoveryDomain}}"
+        DOMAIN="{{.Infra.Status.EtcdDiscoveryDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
             logger -s "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
             sed -e "/^search/d" \

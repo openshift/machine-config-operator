@@ -11,6 +11,7 @@ import (
 
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -152,7 +153,11 @@ func TestEtcdPeerCertDNSNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
-					EtcdDiscoveryDomain: c.etcdDiscoveryDomain,
+					Infra: &configv1.Infrastructure{
+						Status: configv1.InfrastructureStatus{
+							EtcdDiscoveryDomain: c.etcdDiscoveryDomain,
+						},
+					},
 				},
 			}
 			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
