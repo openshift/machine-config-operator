@@ -1,0 +1,21 @@
+name: machine-config-daemon-firstboot-v42.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Firstboot (4.2 bootimage)
+  # Make sure it runs only on OSTree booted system
+  ConditionPathExists=/run/ostree-booted
+  BindsTo=ignition-firstboot-complete.service
+  ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+  # Note the opposite of this in machine-config-daemon-firstboot
+  ConditionPathExists=!/sysroot/.coreos-aleph-version.json
+  After=ignition-firstboot-complete.service
+  Before=kubelet.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/libexec/machine-config-daemon pivot
+
+  [Install]
+  WantedBy=multi-user.target
