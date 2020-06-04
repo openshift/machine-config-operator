@@ -12,6 +12,8 @@ contents:
     # want to modify just crio, you can change the storage configuration in this
     # file.
 
+    log_dir = "/var/log/crio/pods"
+
     # root is a path to the "root directory". CRIO stores all of its data,
     # including container images, in this directory.
     #root = "/var/lib/containers/storage"
