@@ -96,7 +96,7 @@ func newFeatures(name string, enabled, disabled []string, labels map[string]stri
 	}
 }
 
-func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
+func newControllerConfig(name string, platform osev1.PlatformType) *mcfgv1.ControllerConfig {
 	cc := &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
@@ -104,9 +104,11 @@ func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
 			Infra: &osev1.Infrastructure{
 				Status: osev1.InfrastructureStatus{
 					EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+					PlatformStatus: &osev1.PlatformStatus{
+						Type: platform,
+					},
 				},
 			},
-			Platform: platform,
 		},
 	}
 	return cc
@@ -316,8 +318,8 @@ func (f *fixture) expectUpdateKubeletConfig(config *mcfgv1.KubeletConfig) {
 }
 
 func TestKubeletConfigCreate(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -349,8 +351,8 @@ func TestKubeletConfigCreate(t *testing.T) {
 }
 
 func TestKubeletConfigUpdates(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -510,8 +512,8 @@ func TestKubeletConfigBlacklistedOptions(t *testing.T) {
 }
 
 func TestKubeletFeatureExists(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)

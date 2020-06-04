@@ -4,7 +4,6 @@ spec:
   clusterDNSIP: "10.3.0.10"
   cloudProviderConfig: ""
   etcdInitialCount: 3
-  platform: "libvirt"
   etcdCAData: ZHVtbXkgZXRjZC1jYQo=
   rootCAData: ZHVtbXkgcm9vdC1jYQo=
   pullSecret:
@@ -22,3 +21,5 @@ spec:
       apiServerURL: https://api.my-test-cluster.installer.team.coreos.systems:6443
       etcdDiscoveryDomain: my-test-cluster.installer.team.coreos.systems
       infrastructureName: my-test-cluster
+      platformStatus:
+        type: "Libvirt"

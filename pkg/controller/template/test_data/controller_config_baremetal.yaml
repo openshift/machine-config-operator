@@ -4,7 +4,6 @@ spec:
   clusterDNSIP: "10.3.0.10"
   cloudProviderConfig: ""
   etcdInitialCount: 3
-  platform: "baremetal"
   etcdCAData: ZHVtbXkgZXRjZC1jYQo=
   rootCAData: ZHVtbXkgcm9vdC1jYQo=
   pullSecret:
@@ -27,6 +26,7 @@ spec:
       etcdDiscoveryDomain: my-test-cluster.installer.team.coreos.systems
       infrastructureName: my-test-cluster
       platformStatus:
+        type: "BareMetal"
         baremetal:
           apiServerInternalIP: 10.0.0.1
           ingressIP: 10.0.0.2

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -12,8 +13,8 @@ import (
 )
 
 func TestFeatureGateDrift(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
@@ -37,8 +38,8 @@ func TestFeatureGateDrift(t *testing.T) {
 }
 
 func TestFeaturesDefault(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)

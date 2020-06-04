@@ -6,6 +6,9 @@ metadata:
 spec:
   clusterDNSIP: "10.3.0.10"
   clusterName: "adahiya-0"
-  platform: "libvirt"
+  infra:
+    status:
+      platformStatus: 
+        type: "Libvirt"
   baseDomain: "tt.testing"
   etcdInitialCount: 1
