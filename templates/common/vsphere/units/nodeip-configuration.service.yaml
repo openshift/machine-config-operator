@@ -1,0 +1,24 @@
+name: nodeip-configuration.service
+enabled: true
+contents: |
+  {{ if .Infra.Status.PlatformStatus.VSphere -}}
+  {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+  [Unit]
+  Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
+  # This only applies to VIP managing environments where the kubelet and crio IP
+  # address picking logic is flawed and may end up selecting an address from a
+  # different subnet or a deprecated address
+  Wants=network-online.target
+  After=network-online.target ignition-firstboot-complete.service
+  Before=kubelet.service crio.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  ExecStart=/usr/local/bin/nodeip-finder --retry-on-failure {{.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
+
+  [Install]
+  WantedBy=multi-user.target
+  {{ end -}}
+  {{ end -}}
+

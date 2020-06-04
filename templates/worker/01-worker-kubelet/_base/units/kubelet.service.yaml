@@ -1,0 +1,40 @@
+name: kubelet.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Kubernetes Kubelet
+  Wants=rpc-statd.service network-online.target crio.service
+  After=network-online.target crio.service
+
+  [Service]
+  Type=notify
+  ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+  ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+  Environment="KUBELET_LOG_LEVEL=4"
+  EnvironmentFile=/etc/os-release
+  EnvironmentFile=-/etc/kubernetes/kubelet-workaround
+  EnvironmentFile=-/etc/kubernetes/kubelet-env
+
+  ExecStart=/usr/bin/hyperkube \
+      kubelet \
+        --config=/etc/kubernetes/kubelet.conf \
+        --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
+        --kubeconfig=/var/lib/kubelet/kubeconfig \
+        --container-runtime=remote \
+        --container-runtime-endpoint=/var/run/crio/crio.sock \
+        --runtime-cgroups=/system.slice/crio.service \
+        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+{{- if .KubeletIPv6}}
+        --node-ip :: \
+{{- end}}
+        --minimum-container-ttl-duration=6m0s \
+        --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        --cloud-provider={{cloudProvider .}} \
+        {{cloudConfigFlag . }} \
+        --v=${KUBELET_LOG_LEVEL}
+
+  Restart=always
+  RestartSec=10
+
+  [Install]
+  WantedBy=multi-user.target
