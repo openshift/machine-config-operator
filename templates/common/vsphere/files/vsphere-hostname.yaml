@@ -2,6 +2,7 @@ mode: 0755
 path: "/usr/local/bin/vsphere-hostname.sh"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -14,6 +15,7 @@ contents:
           /usr/bin/hostnamectl --transient --static set-hostname ${hostname}
       fi
     fi
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}
