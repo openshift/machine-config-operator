@@ -11,7 +11,7 @@ contents:
     # TODO: Improve this check. The port is assumed to be alive.
     # Need to assess what is the ramification if the port is not there.
     vrrp_script chk_ingress {
-        script "/usr/bin/curl -o /dev/null -kLfs http://localhost:1936/healthz"
+        script "/usr/bin/curl -o /dev/null -kLfs http://localhost:1936/healthz/ready"
         interval 1
         weight 50
     }
