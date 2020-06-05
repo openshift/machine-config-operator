@@ -10,6 +10,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -67,11 +68,21 @@ func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("Could not find Kubelet Config")
 }
 
-func getManagedFeaturesKey(pool *mcfgv1.MachineConfigPool) string {
+func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+}
+
+func getManagedFeaturesKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, client, "98", "kubelet", getManagedFeaturesKeyDeprecated(pool))
+}
+
+// Deprecated: use getManagedFeaturesKey
+func getManagedFeaturesKeyDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("98-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool) string {
+// Deprecated: use getManagedKubeletConfigKey
+func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
 }
 

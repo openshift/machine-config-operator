@@ -295,8 +295,8 @@ func MachineConfigFromRawIgnConfig(role, name string, rawIgnCfg []byte) (*mcfgv1
 }
 
 // GetManagedKey returns the managed key for sub-controllers, handling any migration needed
-func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, suffix, deprecatedKey string) (string, error) {
-	managedKey := fmt.Sprintf("99-%s-%s", pool.Name, suffix)
+func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, prefix, suffix, deprecatedKey string) (string, error) {
+	managedKey := fmt.Sprintf("%s-%s-%s", prefix, pool.Name, suffix)
 	// if we don't have a client, we're installing brand new, and we don't need to adjust for backward compatibility
 	if client == nil {
 		return managedKey, nil

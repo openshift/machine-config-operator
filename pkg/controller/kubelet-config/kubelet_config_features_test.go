@@ -44,8 +44,14 @@ func TestFeaturesDefault(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp2), map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
+			kubeletConfigKey1, _ := getManagedKubeletConfigKey(mcp, nil)
+			kubeletConfigKey2, _ := getManagedKubeletConfigKey(mcp2, nil)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedFeaturesKeyDeprecated(mcp)
+			mcs2Deprecated := mcs2.DeepCopy()
+			mcs2Deprecated.Name = getManagedFeaturesKeyDeprecated(mcp2)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -55,6 +61,10 @@ func TestFeaturesDefault(t *testing.T) {
 			f.featLister = append(f.featLister, features)
 
 			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2Deprecated)
 			f.expectGetMachineConfigAction(mcs2)
 
 			f.runFeature(getKeyFromFeatureGate(features, t))

@@ -325,7 +325,10 @@ func TestKubeletConfigCreate(t *testing.T) {
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -333,6 +336,8 @@ func TestKubeletConfigCreate(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
@@ -353,7 +358,10 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -361,6 +369,8 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
@@ -410,6 +420,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
+			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kcUpdate, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x6d, 0x77, 0x77, 0x74, 0x67, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})
@@ -508,7 +519,10 @@ func TestKubeletFeatureExists(t *testing.T) {
 			mcp.ObjectMeta.Labels["kubeletType"] = "small-pods"
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
-			mcs := helpers.NewMachineConfig(getManagedKubeletConfigKey(mcp), map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -519,6 +533,8 @@ func TestKubeletFeatureExists(t *testing.T) {
 			features := newFeatures("cluster", []string{"DynamicAuditing"}, []string{"ExpandPersistentVolumes"}, nil)
 			f.featLister = append(f.featLister, features)
 
+			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchKubeletConfig(kc1, []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x68, 0x35, 0x35, 0x32, 0x6d, 0x2d, 0x73, 0x6d, 0x61, 0x6c, 0x6c, 0x65, 0x72, 0x2d, 0x6d, 0x61, 0x78, 0x2d, 0x70, 0x6f, 0x64, 0x73, 0x2d, 0x6b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x22, 0x5d, 0x7d, 0x7d})

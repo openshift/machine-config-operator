@@ -175,7 +175,7 @@ func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 }
 
 func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+	return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 }
 
 // Deprecated: use getManagedKeyReg
@@ -184,7 +184,7 @@ func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 }
 
 func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "registries", getManagedKeyRegDeprecated(pool))
+	return ctrlcommon.GetManagedKey(pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
