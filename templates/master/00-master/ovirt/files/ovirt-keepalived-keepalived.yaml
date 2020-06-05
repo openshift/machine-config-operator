@@ -4,7 +4,7 @@ path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
 contents:
   inline: |
     vrrp_script chk_ocp {
-        script "/usr/bin/curl -o /dev/null -kLs https://0:6443/readyz && /usr/bin/curl -o /dev/null -kLs http://localhost:50936/readyz"
+        script "/usr/bin/curl -o /dev/null -kLfs https://0:6443/readyz && /usr/bin/curl -o /dev/null -kLfs http://localhost:50936/readyz"
         interval 1
         weight 50
     }
@@ -18,7 +18,7 @@ contents:
     # TODO: Improve this check. The port is assumed to be alive.
     # Need to assess what is the ramification if the port is not there.
     vrrp_script chk_ingress {
-        script "/usr/bin/curl -o /dev/null -kLs http://0:1936/healthz"
+        script "/usr/bin/curl -o /dev/null -kLfs http://0:1936/healthz"
         interval 1
         weight 50
     }
