@@ -92,6 +92,7 @@ func RenderBootstrap(
 		return err
 	}
 
+	glog.Infof("BOOTSTRAP: TEST NETWORK TYPE %s", spec.NetworkType)
 	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)
 	if err != nil && !os.IsNotExist(err) {
 		return err

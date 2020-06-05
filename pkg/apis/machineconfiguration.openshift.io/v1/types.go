@@ -91,7 +91,8 @@ type ControllerConfigSpec struct {
 	Infra *configv1.Infrastructure `json:"infra"`
 
 	// kubeletIPv6 is true to force a single-stack IPv6 kubelet config
-	KubeletIPv6 bool `json:"kubeletIPv6,omitempty"`
+	KubeletIPv6 bool   `json:"kubeletIPv6,omitempty"`
+	NetworkType string `json:"networkType,omitempty"`
 }
 
 // ControllerConfigStatus is the status for ControllerConfig

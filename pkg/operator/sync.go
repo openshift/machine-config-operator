@@ -223,6 +223,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
+	glog.Infof("SYNC: TEST NETWORK TYPE %s", spec.NetworkType)
 	var trustBundle []byte
 	certPool := x509.NewCertPool()
 	// this is the generic trusted bundle for things like self-signed registries.
