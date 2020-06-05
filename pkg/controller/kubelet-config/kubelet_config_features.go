@@ -85,7 +85,10 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		role := pool.Name
 
 		// Get MachineConfig
-		managedKey := getManagedFeaturesKey(pool)
+		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
+		if err != nil {
+			return err
+		}
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
 			return err
