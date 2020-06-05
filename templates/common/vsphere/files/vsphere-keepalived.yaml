@@ -3,6 +3,7 @@ mode: 0644
 path: "/etc/kubernetes/manifests/keepalived.yaml"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -122,6 +123,7 @@ contents:
       - operator: Exists
       priorityClassName: system-node-critical
     status: {}
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}

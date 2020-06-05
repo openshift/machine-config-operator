@@ -3,6 +3,7 @@ mode: 0755
 path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -35,6 +36,7 @@ contents:
         *)
         ;;
     esac
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}

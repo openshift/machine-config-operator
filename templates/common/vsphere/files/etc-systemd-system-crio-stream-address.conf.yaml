@@ -3,6 +3,7 @@ mode: 0644
 path: "/etc/systemd/system/crio.service.d/20-stream-address.conf"
 contents:
   inline: |
+    {{ if .Infra -}}
     {{ if .Infra.Status -}}
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
@@ -14,6 +15,7 @@ contents:
           $CRIO_STORAGE_OPTIONS \
           $CRIO_NETWORK_OPTIONS \
           $CRIO_METRICS_OPTIONS
+    {{ end -}}
     {{ end -}}
     {{ end -}}
     {{ end -}}
