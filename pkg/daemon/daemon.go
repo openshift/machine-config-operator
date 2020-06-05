@@ -835,6 +835,22 @@ func (dn *Daemon) LogSystemData() {
 		glog.Errorf("Listing boots: %v", err)
 	}
 	glog.Infof("journalctl --list-boots:\n" + string(boots))
+
+	// Since nothing in the cluster today watches systemd units, let's
+	// at least capture them in our logs to start.  See also
+	// https://github.com/openshift/machine-config-operator/issues/1365
+	// This only captures units that started *before* the MCD, we need
+	// to also watch dynamically of course.
+	//
+	// also xref https://github.com/coreos/console-login-helper-messages/blob/e8a849f4c23910e7c556c10719911cc59873fc23/usr/share/console-login-helper-messages/profile.sh
+	failedServices, err := runGetOut("systemctl", "list-units", "--state=failed", "--no-legend")
+	if err != nil {
+		glog.Errorf("Listing failed systemd services: %v", err)
+	} else if len(failedServices) > 0 {
+		glog.Infof("systemctl --failed:\n" + string(failedServices))
+	} else {
+		glog.Info("systemd service state: OK")
+	}
 }
 
 const (
