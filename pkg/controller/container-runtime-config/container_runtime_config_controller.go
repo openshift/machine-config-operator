@@ -555,7 +555,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 			if isNotFound {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
-				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
+				mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 				if err != nil {
 					return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 				}
@@ -705,7 +705,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 			if isNotFound {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
-				mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
+				mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 				if err != nil {
 					return fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
 				}
@@ -802,7 +802,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		if err != nil {
 			return nil, err
 		}
-		mc, err := mtmpl.MachineConfigFromIgnConfig(role, managedKey, registriesIgn)
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, registriesIgn)
 		if err != nil {
 			return nil, err
 		}

@@ -474,7 +474,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
-			mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 			}
