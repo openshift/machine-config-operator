@@ -12,10 +12,7 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
-	"github.com/clarketm/json"
 	"github.com/golang/glog"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -266,7 +263,7 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %v", err)
 	}
-	mcfg, err := MachineConfigFromIgnConfig(role, name, ignCfg)
+	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(role, name, ignCfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %v", err)
 	}
@@ -274,34 +271,6 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	mcfg.Spec.OSImageURL = config.OSImageURL
 
 	return mcfg, nil
-}
-
-// MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
-func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.MachineConfig, error) {
-	rawIgnCfg, err := json.Marshal(ignCfg)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
-	}
-	return MachineConfigFromRawIgnConfig(role, name, rawIgnCfg)
-}
-
-// MachineConfigFromRawIgnConfig creates a MachineConfig with the provided raw Ignition config
-func MachineConfigFromRawIgnConfig(role, name string, rawIgnCfg []byte) (*mcfgv1.MachineConfig, error) {
-	labels := map[string]string{
-		mcfgv1.MachineConfigRoleLabelKey: role,
-	}
-	return &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: labels,
-			Name:   name,
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: "",
-			Config: runtime.RawExtension{
-				Raw: rawIgnCfg,
-			},
-		},
-	}, nil
 }
 
 // renderTemplate renders a template file with values from a RenderConfig
