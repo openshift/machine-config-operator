@@ -2095,8 +2095,6 @@ spec:
     - "/etc/kubernetes/kubeconfig"
     - "--api-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }}"
-    - "--dns-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.NodeDNSIP }}"
     - "--ingress-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.IngressIP }}"
     - "/config"
@@ -2192,21 +2190,6 @@ vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
         {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
     }
 }
-
-vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_DNS {
-    state MASTER
-    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
-    virtual_router_id {{`+"`"+`{{.Cluster.DNSVirtualRouterID }}`+"`"+`}}
-    priority 140
-    advert_int 1
-    authentication {
-        auth_type PASS
-        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_dns_vip
-    }
-    virtual_ipaddress {
-        {{`+"`"+`{{ .Cluster.DNSVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
-    }
-}
 `)
 
 func manifestsOvirtKeepalivedConfTmplBytes() ([]byte, error) {
@@ -2256,8 +2239,6 @@ spec:
     - "/etc/kubernetes/kubeconfig"
     - "--api-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }}"
-    - "--dns-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.NodeDNSIP }}"
     - "--ingress-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.IngressIP }}"
     - "/config"
