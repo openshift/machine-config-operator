@@ -3,9 +3,17 @@ path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
 contents:
   inline: |
     vrrp_script chk_ocp {
-        script "/usr/bin/curl -o /dev/null -kLfs https://localhost:9443/readyz && /usr/bin/curl -o /dev/null -kLfs http://localhost:50936/haproxyready"
+        script "/usr/bin/curl -o /dev/null -kLfs https://localhost:9443/readyz"
         interval 1
-        weight 50
+        weight 6
+        rise 3
+        fall 2
+    }
+
+    vrrp_script chk_haproxy {
+        script "/usr/bin/curl -o /dev/null -kLfs http://localhost:50936/haproxyready"
+        interval 1
+        weight 6
         rise 3
         fall 2
     }
@@ -33,6 +41,7 @@ contents:
         }
         track_script {
             chk_ocp
+            chk_haproxy
         }
     }
 
