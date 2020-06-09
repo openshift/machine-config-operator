@@ -49,7 +49,7 @@ func (a *APIServer) Serve() {
 		Handler: a.handler,
 		// We don't want to allow 1.1 as that's old.  This was flagged in a security audit.
 		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
+			MinVersion: tls.VersionTLS13,
 		},
 	}
 
