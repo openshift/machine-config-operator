@@ -8,6 +8,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,8 +32,10 @@ import (
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -274,9 +279,46 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
 	}
 
+	ignitionHost, err := getIgnitionHost(&infra.Status)
+	if err != nil {
+		return err
+	}
+
+	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, rootCA)
+	if err != nil {
+		return err
+	}
+	pointerConfigData, err := json.Marshal(pointerConfig)
+	if err != nil {
+		return err
+	}
+
 	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData)
 	return nil
+}
+
+func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {
+	internalURL := infraStatus.APIServerInternalURL
+	internalURLParsed, err := url.Parse(internalURL)
+	if err != nil {
+		return "", err
+	}
+	securePortStr := strconv.Itoa(server.SecurePort)
+	ignitionHost := fmt.Sprintf("%s:%s", internalURLParsed.Hostname(), securePortStr)
+	switch infraStatus.PlatformStatus.Type {
+	case configv1.BareMetalPlatformType:
+		ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIP, securePortStr)
+	case configv1.OpenStackPlatformType:
+		ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIP, securePortStr)
+	case configv1.OvirtPlatformType:
+		ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIP, securePortStr)
+	case configv1.VSpherePlatformType:
+		if infraStatus.PlatformStatus.VSphere.APIServerInternalIP != "" {
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIP, securePortStr)
+		}
+	}
+	return ignitionHost, nil
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {
@@ -317,6 +359,39 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		}
 		p := resourceread.ReadMachineConfigPoolV1OrDie(mcpBytes)
 		_, _, err = resourceapply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
+		if err != nil {
+			return err
+		}
+	}
+
+	userDataTemplatePath := "manifests/userdata_secret.yaml"
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	// base64.StdEncoding.EncodeToString
+	for _, pool := range pools {
+		pointerConfigAsset := newAssetRenderer("pointer-config")
+		pointerConfigAsset.templateData = config.PointerConfig
+		pointerConfigData, err := pointerConfigAsset.render(struct{ Role string }{pool.Name})
+		if err != nil {
+			return err
+		}
+
+		userDataAsset := newAssetRenderer(userDataTemplatePath)
+		if err := userDataAsset.read(); err != nil {
+			return err
+		}
+		userDataAsset.addTemplateFuncs()
+		userdataBytes, err := userDataAsset.render(struct{ Role, PointerConfig string }{
+			pool.Name,
+			base64.StdEncoding.EncodeToString(pointerConfigData),
+		})
+		if err != nil {
+			return err
+		}
+		p := resourceread.ReadSecretV1OrDie(userdataBytes)
+		_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), p)
 		if err != nil {
 			return err
 		}
@@ -840,7 +915,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	return infra, network, proxy, dns, nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte) *renderConfig {
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,
@@ -848,6 +923,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Images:                 imgs,
 		APIServerURL:           apiServerURL,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
+		PointerConfig:          string(pointerConfigData),
 	}
 }
 
