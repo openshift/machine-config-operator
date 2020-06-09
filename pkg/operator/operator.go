@@ -101,6 +101,7 @@ type Operator struct {
 	proxyListerSynced                cache.InformerSynced
 	oseKubeAPIListerSynced           cache.InformerSynced
 	etcdSynced                       cache.InformerSynced
+	maoSecretInformerSynced          cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -133,6 +134,7 @@ func New(
 	configClient configclientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
 	etcdInformer operatorv1.EtcdInformer,
+	maoSecretInformer coreinformersv1.SecretInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -165,6 +167,7 @@ func New(
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
 		oseKubeAPIInformer.Informer(),
+		maoSecretInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -184,6 +187,7 @@ func New(
 	optr.oseKubeAPILister = oseKubeAPIInformer.Lister()
 	optr.oseKubeAPIListerSynced = oseKubeAPIInformer.Informer().HasSynced
 
+	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
 	optr.clusterRoleBindingInformerSynced = clusterRoleBindingInformer.Informer().HasSynced
@@ -241,6 +245,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.clusterCmListerSynced,
 		optr.serviceAccountInformerSynced,
 		optr.clusterRoleInformerSynced,
+		optr.maoSecretInformerSynced,
 		optr.clusterRoleBindingInformerSynced,
 		optr.networkListerSynced,
 		optr.proxyListerSynced,

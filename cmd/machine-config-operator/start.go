@@ -87,6 +87,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.ClientBuilder.ConfigClientOrDie(componentName),
 			ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			etcdInformer,
+			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
@@ -96,6 +97,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
 		go controller.Run(2, ctrlctx.Stop)
