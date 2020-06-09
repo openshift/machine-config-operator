@@ -783,6 +783,7 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
+//nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
@@ -806,16 +807,23 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 				// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
 				// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
 				// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
-				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err != nil {
-					if err := os.Remove(origFileName(f.Path)); err != nil {
-						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+				var restore bool
+				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
+					// File is owned by an rpm
+					restore = true
+				} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == machineConfigDaemonOSRHCOS) {
+					if _, err := os.Stat("/usr" + f.Path); err != nil {
+						if !os.IsNotExist(err) {
+							return err
+						}
+
+						// If the error is ErrNotExist then we don't restore the file
+					} else {
+						restore = true
 					}
-				} else if _, err := os.Stat("/usr" + f.Path); strings.HasPrefix(f.Path, "/etc") && os.IsNotExist(err) &&
-					(operatingSystem == machineConfigDaemonOSRHCOS) {
-					if err := os.Remove(origFileName(f.Path)); err != nil {
-						return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
-					}
-				} else {
+				}
+
+				if restore {
 					if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(f.Path), f.Path).CombinedOutput(); err != nil {
 						return errors.Wrapf(err, "restoring %q from orig file %q: %s", f.Path, origFileName(f.Path), string(out))
 					}
@@ -824,6 +832,10 @@ func (dn *Daemon) deleteStaleData(oldConfig, newConfig *mcfgv1.MachineConfig) er
 					}
 					glog.V(2).Infof("Restored file %q", f.Path)
 					continue
+				}
+
+				if err := os.Remove(origFileName(f.Path)); err != nil {
+					return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 				}
 			}
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
