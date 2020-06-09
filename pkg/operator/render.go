@@ -31,6 +31,7 @@ type renderConfig struct {
 	KubeAPIServerServingCA string
 	Infra                  configv1.Infrastructure
 	Constants              map[string]string
+	PointerConfig          string
 }
 
 type assetRenderer struct {
