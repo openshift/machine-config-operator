@@ -322,23 +322,16 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 		return errors.Wrap(err, "deleting pivot reboot-needed file")
 	}
 
-	service := "machine-config-daemon-host.service"
-	// We need to use pivot if it's there, because machine-config-daemon-host.service
-	// currently has a ConditionPathExists=!/usr/lib/systemd/system/pivot.service to
-	// avoid having *both* pivot and MCD try to update.  This code can be dropped
-	// once we don't need to care about compat with older RHCOS.
-	var err error
-	_, err = os.Stat("/usr/lib/systemd/system/pivot.service")
+	// We used to start machine-config-daemon-host here, but now we make a dynamic
+	// unit because that service was started in too many ways, and the systemd-run
+	// model of creating a unit dynamically is much clearer for what we want here;
+	// conceptually the service is just a dynamic child of this pod (if we could we'd
+	// tie the lifecycle together).  Further, let's shorten our systemd unit names
+	// by using the mco- prefix, and we also inject the RPMOSTREE_CLIENT_ID now.
+	err := exec.Command("systemd-run", "--wait", "--collect", "--unit=mco-pivot",
+		"-E", "RPMOSTREE_CLIENT_ID=mco", "/usr/libexec/machine-config-daemon", "pivot", osImageURL).Run()
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return errors.Wrapf(err, "checking pivot service")
-		}
-	} else {
-		service = "pivot.service"
-	}
-	err = exec.Command("systemctl", "start", service).Run()
-	if err != nil {
-		return errors.Wrapf(err, "failed to start %s", service)
+		return errors.Wrapf(err, "failed to run pivot")
 	}
 	return nil
 }
@@ -349,6 +342,7 @@ func followPivotJournalLogs(stopCh <-chan time.Time) {
 	cmd := exec.Command("journalctl", "-f", "-b", "-o", "cat",
 		"-u", "rpm-ostreed",
 		"-u", "pivot",
+		"-u", "mco-pivot",
 		"-u", "machine-config-daemon-host")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
