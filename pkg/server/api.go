@@ -10,6 +10,13 @@ import (
 	"github.com/golang/glog"
 )
 
+const (
+	// SecurePort is the tls secured port to serve ignition configs
+	SecurePort = 22623
+	// InsecurePort is the port to serve ignition configs w/o tls
+	InsecurePort = 22624
+)
+
 type poolRequest struct {
 	machineConfigPool string
 }

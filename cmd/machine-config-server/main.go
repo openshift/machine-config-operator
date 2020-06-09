@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/golang/glog"
+	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/spf13/cobra"
 )
 
@@ -28,10 +29,10 @@ var (
 
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
-	rootCmd.PersistentFlags().IntVar(&rootOpts.sport, "secure-port", 22623, "secure port to serve ignition configs")
+	rootCmd.PersistentFlags().IntVar(&rootOpts.sport, "secure-port", server.SecurePort, "secure port to serve ignition configs")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "/etc/ssl/mcs/tls.crt", "cert file for TLS")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
-	rootCmd.PersistentFlags().IntVar(&rootOpts.isport, "insecure-port", 22624, "insecure port to serve ignition configs")
+	rootCmd.PersistentFlags().IntVar(&rootOpts.isport, "insecure-port", server.InsecurePort, "insecure port to serve ignition configs")
 }
 
 func main() {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"reflect"
 	"sort"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"github.com/vincent-petithory/dataurl"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -130,6 +132,39 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 			},
 			FIPS:       fips,
 			KernelType: kernelType,
+		},
+	}, nil
+}
+
+// PointerConfig generates the stub ignition for the machine to boot properly
+// NOTE: If you change this, you also need to change the pointer configuration in openshift/installer, see
+// https://github.com/openshift/installer/blob/master/pkg/asset/ignition/machine/node.go#L20
+func PointerConfig(ignitionHost string, rootCA []byte) (ign2types.Config, error) {
+	configSourceURL := &url.URL{
+		Scheme: "https",
+		Host:   ignitionHost,
+		Path:   "/config/{{.Role}}",
+	}
+	// we do decoding here as curly brackets are escaped to %7B and breaks golang's templates
+	ignitionHostTmpl, err := url.QueryUnescape(configSourceURL.String())
+	if err != nil {
+		return ign2types.Config{}, err
+	}
+	return ign2types.Config{
+		Ignition: ign2types.Ignition{
+			Version: ign2types.MaxVersion.String(),
+			Config: ign2types.IgnitionConfig{
+				Append: []ign2types.ConfigReference{{
+					Source: ignitionHostTmpl,
+				}},
+			},
+			Security: ign2types.Security{
+				TLS: ign2types.TLS{
+					CertificateAuthorities: []ign2types.CaReference{{
+						Source: dataurl.EncodeBytes(rootCA),
+					}},
+				},
+			},
 		},
 	}, nil
 }
