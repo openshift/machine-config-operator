@@ -18,8 +18,6 @@ contents: |
   # TODO add --from-etc-pullspec after ratcheting
   ExecStart=/usr/libexec/machine-config-daemon pivot
 
-  [Install]
-  WantedBy=multi-user.target
 dropins:
   - name: 10-mco-default-env.conf
     contents: |
