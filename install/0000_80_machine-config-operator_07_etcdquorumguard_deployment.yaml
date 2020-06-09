@@ -84,6 +84,8 @@ spec:
                 curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
             initialDelaySecond: 5
             periodSecond: 5
+            failureThreshold: 3
+            timeoutSeconds: 3
         resources:
           requests:
             cpu: 10m
