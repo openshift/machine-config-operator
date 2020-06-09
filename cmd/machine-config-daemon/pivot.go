@@ -188,6 +188,8 @@ func run(_ *cobra.Command, args []string) error {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
+	glog.Info("pivot starting")
+
 	var container string
 	if fromEtcPullSpec || len(args) == 0 {
 		fromEtcPullSpec = true
@@ -235,8 +237,9 @@ func run(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
+	rebootRequest := ""
 	if reboot {
-		glog.Infof("Rebooting as requested by cmdline flag")
+		rebootRequest = "Rebooting as requested by cmdline flag"
 	} else {
 		// Otherwise see if it's specified by the file
 		_, err = os.Stat(runPivotRebootFile)
@@ -244,16 +247,23 @@ func run(_ *cobra.Command, args []string) error {
 			return errors.Wrapf(err, "Checking %s", runPivotRebootFile)
 		}
 		if err == nil {
-			glog.Infof("Rebooting due to %s", runPivotRebootFile)
-			reboot = true
+			rebootRequest = fmt.Sprintf("Rebooting due to %s", runPivotRebootFile)
 		}
 	}
-	if reboot {
+	if rebootRequest != "" {
+		glog.Infof("%s", rebootRequest)
+		logger := exec.Command("logger")
+		logger.Stdin = strings.NewReader(rebootRequest)
+		if err := logger.Run(); err != nil {
+			glog.Errorf("failed to invoke logger: %v", err)
+		}
 		// Reboot the machine if asked to do so
 		err := exec.Command("systemctl", "reboot").Run()
 		if err != nil {
 			return errors.Wrapf(err, "rebooting")
 		}
+	} else {
+		glog.Info("Operation complete; no reboot requested")
 	}
 	return nil
 }
