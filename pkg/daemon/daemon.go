@@ -883,6 +883,24 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 	return writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON)
 }
 
+// https://bugzilla.redhat.com/show_bug.cgi?id=1842906
+// If we didn't successfully complete -firstboot.service, because
+// 4.5 and newer removed the BindsTo=, the service may start downgrading
+// things.  At this point we should have already applied all target
+// changes, so just rename the file to .bak the same as the -firstboot
+// path does.
+func upgradeHackFor44AndBelow() error {
+	_, err := os.Stat(constants.MachineConfigEncapsulatedPath)
+	if err == nil {
+		glog.Warningf("Failed to complete machine-config-daemon-firstboot before joining cluster!")
+		// Removing this file signals completion of the initial MC processing.
+		if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
+			return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
+		}
+	}
+	return nil
+}
+
 // checkStateOnFirstRun is a core entrypoint for our state machine.
 // It determines whether we're in our desired state, or if we're
 // transitioning between states, and whether or not we need to update
@@ -940,7 +958,13 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
 	}
 
+	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
+		// Be sure only the MCD is running now, disable -firstboot.service
+		if err := upgradeHackFor44AndBelow(); err != nil {
+			return err
+		}
+
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch, err := dn.checkOS(targetOSImageURL)
 		if err != nil {
