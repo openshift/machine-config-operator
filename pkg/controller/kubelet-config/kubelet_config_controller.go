@@ -434,7 +434,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey := getManagedKubeletConfigKey(pool)
+		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client)
+		if err != nil {
+			return err
+		}
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !macherrors.IsNotFound(err) {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
@@ -474,7 +477,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
-			mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 			}

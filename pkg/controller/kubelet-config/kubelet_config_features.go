@@ -20,7 +20,6 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -86,7 +85,10 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		role := pool.Name
 
 		// Get MachineConfig
-		managedKey := getManagedFeaturesKey(pool)
+		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
+		if err != nil {
+			return err
+		}
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
 			return err
@@ -94,7 +96,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		isNotFound := errors.IsNotFound(err)
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
-			mc, err = mtmpl.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
 				return err
 			}
