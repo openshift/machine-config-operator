@@ -19,6 +19,7 @@ import (
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -168,12 +169,22 @@ func findPolicyJSON(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 	return nil, fmt.Errorf("could not find Policy JSON")
 }
 
-func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool) string {
+// Deprecated: use getManagedKeyCtrCfg
+func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedKeyReg(pool *mcfgv1.MachineConfigPool) string {
+func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+}
+
+// Deprecated: use getManagedKeyReg
+func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
+}
+
+func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {

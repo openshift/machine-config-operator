@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"reflect"
@@ -19,9 +20,12 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	kerr "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
 // MergeMachineConfigs combines multiple machineconfig objects into one object.
@@ -33,7 +37,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	if len(configs) == 0 {
 		return nil, nil
 	}
-	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
+	sort.SliceStable(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
 
 	var fips, ok bool
 	var kernelType string
@@ -260,4 +264,63 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign2types.Config, error
 	}
 
 	return &convertedIgnCfgV2, nil
+}
+
+// MachineConfigFromIgnConfig creates a MachineConfig with the provided Ignition config
+func MachineConfigFromIgnConfig(role, name string, ignCfg interface{}) (*mcfgv1.MachineConfig, error) {
+	rawIgnCfg, err := json.Marshal(ignCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
+	}
+	return MachineConfigFromRawIgnConfig(role, name, rawIgnCfg)
+}
+
+// MachineConfigFromRawIgnConfig creates a MachineConfig with the provided raw Ignition config
+func MachineConfigFromRawIgnConfig(role, name string, rawIgnCfg []byte) (*mcfgv1.MachineConfig, error) {
+	labels := map[string]string{
+		mcfgv1.MachineConfigRoleLabelKey: role,
+	}
+	return &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+			Name:   name,
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL: "",
+			Config: runtime.RawExtension{
+				Raw: rawIgnCfg,
+			},
+		},
+	}, nil
+}
+
+// GetManagedKey returns the managed key for sub-controllers, handling any migration needed
+func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, prefix, suffix, deprecatedKey string) (string, error) {
+	managedKey := fmt.Sprintf("%s-%s-generated-%s", prefix, pool.Name, suffix)
+	// if we don't have a client, we're installing brand new, and we don't need to adjust for backward compatibility
+	if client == nil {
+		return managedKey, nil
+	}
+	if _, err := client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{}); err == nil {
+		return managedKey, nil
+	}
+	old, err := client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), deprecatedKey, metav1.GetOptions{})
+	if err != nil && !kerr.IsNotFound(err) {
+		return "", fmt.Errorf("could not get MachineConfig %q: %v", deprecatedKey, err)
+	}
+	// this means no previous CR config were here, so we can start fresh
+	if kerr.IsNotFound(err) {
+		return managedKey, nil
+	}
+	// if we're here, we'll grab the old CR config, dupe it and patch its name
+	mc, err := MachineConfigFromRawIgnConfig(pool.Name, managedKey, old.Spec.Config.Raw)
+	if err != nil {
+		return "", err
+	}
+	_, err = client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+	if err != nil {
+		return "", err
+	}
+	err = client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), deprecatedKey, metav1.DeleteOptions{})
+	return managedKey, err
 }

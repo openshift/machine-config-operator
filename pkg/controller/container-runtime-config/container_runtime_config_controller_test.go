@@ -407,7 +407,10 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, nil)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := mcs1.DeepCopy()
+			mcs2.Name = ctrCfgKey
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -415,6 +418,8 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
 
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
@@ -439,7 +444,10 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
-			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			keyCtrCfg, _ := getManagedKeyCtrCfg(mcp, nil)
+			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcsUpdate := mcs.DeepCopy()
+			mcsUpdate.Name = keyCtrCfg
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -447,6 +455,8 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
 
+			f.expectGetMachineConfigAction(mcsUpdate)
+			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs)
@@ -475,7 +485,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfgUpdate)
-			f.objects = append(f.objects, mcs, ctrcfgUpdate)
+			f.objects = append(f.objects, mcsUpdate, ctrcfgUpdate)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -488,9 +498,10 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
-			f.expectGetMachineConfigAction(mcs)
+			f.expectGetMachineConfigAction(mcsUpdate)
+			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
-			f.expectUpdateMachineConfigAction(mcs)
+			f.expectUpdateMachineConfigAction(mcsUpdate)
 			f.expectPatchContainerRuntimeConfig(ctrcfgUpdate, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfgUpdate)
 
@@ -513,8 +524,10 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			keyReg1, _ := getManagedKeyReg(mcp, nil)
+			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -524,7 +537,11 @@ func TestImageConfigCreate(t *testing.T) {
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 
 			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
 			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
 
@@ -549,8 +566,14 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			keyReg1, _ := getManagedKeyReg(mcp, nil)
+			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1Update := mcs1.DeepCopy()
+			mcs2Update := mcs2.DeepCopy()
+			mcs1Update.Name = keyReg1
+			mcs2Update.Name = keyReg2
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -559,8 +582,12 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
 
@@ -575,7 +602,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.validateActions()
 			close(stopCh)
 
-			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, true)
 			}
 
@@ -592,7 +619,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfgUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
 			f.imgObjects = append(f.imgObjects, imgcfgUpdate)
-			f.objects = append(f.objects, mcs1, mcs2)
+			f.objects = append(f.objects, mcs1Update, mcs2Update)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -605,16 +632,18 @@ func TestImageConfigUpdate(t *testing.T) {
 				t.Errorf("syncImgHandler returned: %v", err)
 			}
 
-			f.expectGetMachineConfigAction(mcs1)
-			f.expectUpdateMachineConfigAction(mcs1)
-			f.expectGetMachineConfigAction(mcs2)
-			f.expectUpdateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectUpdateMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectUpdateMachineConfigAction(mcs2Update)
 
 			f.validateActions()
 
 			close(stopCh)
 
-			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfgUpdate, nil, true)
 			}
 		})
@@ -633,11 +662,17 @@ func TestICSPUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			mcs1 := helpers.NewMachineConfig(getManagedKeyReg(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyReg(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			keyReg1, _ := getManagedKeyReg(mcp, nil)
+			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
 			icsp := newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{Source: "built-in-source.example.com", Mirrors: []string{"built-in-mirror.example.com"}},
 			})
+			mcs1Update := mcs1.DeepCopy()
+			mcs2Update := mcs2.DeepCopy()
+			mcs1Update.Name = keyReg1
+			mcs2Update.Name = keyReg2
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -648,8 +683,12 @@ func TestICSPUpdate(t *testing.T) {
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, icsp)
 
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
 
@@ -664,7 +703,7 @@ func TestICSPUpdate(t *testing.T) {
 			f.validateActions()
 			close(stopCh)
 
-			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icsp, false)
 			}
 
@@ -683,7 +722,7 @@ func TestICSPUpdate(t *testing.T) {
 			f.imgLister = append(f.imgLister, imgcfg1)
 			f.icspLister = append(f.icspLister, icspUpdate)
 			f.cvLister = append(f.cvLister, cvcfg1)
-			f.objects = append(f.objects, mcs1, mcs2)
+			f.objects = append(f.objects, mcs1Update, mcs2Update)
 			f.imgObjects = append(f.imgObjects, imgcfg1)
 			f.operatorObjects = append(f.operatorObjects, icspUpdate)
 
@@ -698,16 +737,18 @@ func TestICSPUpdate(t *testing.T) {
 				t.Errorf("syncImgHandler returned: %v", err)
 			}
 
-			f.expectGetMachineConfigAction(mcs1)
-			f.expectUpdateMachineConfigAction(mcs1)
-			f.expectGetMachineConfigAction(mcs2)
-			f.expectUpdateMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectUpdateMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectUpdateMachineConfigAction(mcs2Update)
 
 			f.validateActions()
 
 			close(stopCh)
 
-			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icspUpdate, false)
 			}
 		})
@@ -734,8 +775,10 @@ func TestRunImageBootstrap(t *testing.T) {
 			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(pools))
+
 			for i := range pools {
-				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], getManagedKeyReg(pools[i]), emptyImgCfg, icspRules, false)
+				keyReg, _ := getManagedKeyReg(pools[i], nil)
+				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], keyReg, emptyImgCfg, icspRules, false)
 			}
 		})
 	}

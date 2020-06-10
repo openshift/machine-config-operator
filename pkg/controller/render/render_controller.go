@@ -569,8 +569,15 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
+		source := []corev1.ObjectReference{}
+		for _, cfg := range configs {
+			source = append(source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
+		}
+
 		pool.Spec.Configuration.Name = generated.Name
+		pool.Spec.Configuration.Source = source
 		pool.Status.Configuration.Name = generated.Name
+		pool.Status.Configuration.Source = source
 		opools = append(opools, pool)
 		oconfigs = append(oconfigs, generated)
 	}
