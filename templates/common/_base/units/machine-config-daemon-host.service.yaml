@@ -24,7 +24,6 @@ dropins:
   - name: 10-mco-default-env.conf
     contents: |
       [Unit]
-      Description=MCO environment configuration
       {{if .Proxy -}}
       [Service]
       {{if .Proxy.HTTPProxy -}}
