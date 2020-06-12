@@ -976,9 +976,9 @@ spec:
         operator: Exists
         effect: NoSchedule
       containers:
-      - image: {{.Images.EtcdQuorumGuard}}
+      - name: guard
+        image: {{.Images.EtcdQuorumGuard}}
         imagePullPolicy: IfNotPresent
-        name: guard
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /mnt/kube
@@ -1006,8 +1006,10 @@ spec:
                 export NSS_SDB_USE_CACHE=no
                 [[ -z $cert || -z $key ]] && exit 1
                 curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
-            initialDelaySecond: 5
-            periodSecond: 5
+          initialDelaySecond: 5
+          periodSecond: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
         resources:
           requests:
             cpu: 10m
