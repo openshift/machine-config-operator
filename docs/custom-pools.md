@@ -25,6 +25,14 @@ ip-10-0-151-146.us-west-1.compute.internal   Ready     master         43m   v1.1
 ip-10-0-152-59.us-west-1.compute.internal    Ready     worker         37m   v1.14.0+e020ea5b3
 ```
 
+When we create infra nodes, we apply them to existing worker nodes first. If you want to use the node as a purely infra node, you can remove the worker pool as follows:
+
+```
+oc label node ip-10-0-130-218.us-west-1.compute.internal node-role.kubernetes.io/worker-
+```
+
+This will not change the files on the node itself: the infra pool inherits from workers by default. This means that if you add a new MachineConfig to update workers, a purely infra node will still get updated. However this will mean that workloads scheduled for workers will no longer be scheduled on this node, as it no longer has the worker label.
+
 Next you need to create a MachineConfigPool that contains both the `worker` role and your custom one as MachineConfig selector as follows:
 
 ```console
@@ -117,6 +125,9 @@ Removing a custom pool requires first to un-label each node:
 ```console
 $ oc label node ip-10-0-130-218.us-west-1.compute.internal node-role.kubernetes.io/infra-
 ```
+
+Note: a node must have a role at any given time to be properly functioning. If you have infra-only nodes,
+you should first relabel the node as worker and only then proceed to unlabel it from the infra role.
 
 ```console
 $ oc get nodes
