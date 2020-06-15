@@ -61,7 +61,7 @@ var updateBackoff = wait.Backoff{
 	Jitter:   1.0,
 }
 
-var errCouldNotFindMCPSet = newForgetError(errors.New("could not find any MachineConfigPool set for KubeletConfig"))
+var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set for KubeletConfig")
 
 // Controller defines the kubelet config controller.
 type Controller struct {
