@@ -118,6 +118,10 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 
 // isNodeManaged checks whether the MCD has ever run on a node
 func isNodeManaged(node *corev1.Node) bool {
+	if isWindows(node) {
+		glog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
+		return false
+	}
 	if node.Annotations == nil {
 		return false
 	}
