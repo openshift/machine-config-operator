@@ -7,7 +7,7 @@ contents: |
   # address picking logic is flawed and may end up selecting an address from a
   # different subnet or a deprecated address
   Wants=network-online.target
-  After=network-online.target ignition-firstboot-complete.service
+  After=network-online.target machine-config-daemon-host.service
   Before=kubelet.service crio.service
 
   [Service]
@@ -24,4 +24,3 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
-
