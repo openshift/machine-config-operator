@@ -22,6 +22,7 @@ import (
 	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
+	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -32,7 +33,6 @@ import (
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/diff"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -1412,7 +1412,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return false
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file %s: %s", filePath, diff.StringDiff(string(contents), string(expectedContent)))
+		glog.Errorf("content mismatch for file %s (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
 		return false
 	}
 	return true
