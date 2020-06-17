@@ -3,7 +3,6 @@ path: "/etc/NetworkManager/conf.d/99-kni.conf"
 contents:
   inline: |
     [main]
-    dhcp=dhclient
     rc-manager=unmanaged
     [connection]
     ipv6.dhcp-duid=ll
