@@ -124,7 +124,6 @@ func (f *fixture) runController(pool string, expectError bool) {
 			f.t.Errorf("%d unexpected actions: %+v", len(actions)-len(f.actions), actions[i:])
 			break
 		}
-
 		expectedAction := f.actions[i]
 		checkAction(expectedAction, action, f.t)
 	}
@@ -238,9 +237,17 @@ func TestGetNodesForPool(t *testing.T) {
 			err:      false,
 		},
 		{
+			// Mixed cluster with both Windows and Linux worker nodes. Only Linux nodes should be managed by MCO
 			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
-			nodes:    newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			nodes:    append(newMixedNodeSet(3, map[string]string{"node-role/master": ""}, map[string]string{"node-role/worker": "", "node-role/infra": ""}), newNodeWithLabels("windowsNode", map[string]string{osLabel: "windows"})),
 			expected: 3,
+			err:      false,
+		},
+		{
+			// Single Windows node is the cluster, so shouldn't be managed by MCO
+			pool:     helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+			nodes:    []*corev1.Node{newNodeWithLabels("windowsNode", map[string]string{osLabel: "windows"})},
+			expected: 0,
 			err:      false,
 		},
 	}
@@ -338,7 +345,16 @@ func TestGetPrimaryPoolForNode(t *testing.T) {
 
 		expected: nil,
 		err:      true,
-	}}
+	}, {
+		// MCP with Widows worker, it should not be assigned a pool
+		pools: []*mcfgv1.MachineConfigPool{
+			helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0"),
+		},
+		nodeLabel: map[string]string{"node-role/master": "", "node-role/worker": "", osLabel: "windows"},
+		expected:  nil,
+		err:       false,
+	},
+	}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
