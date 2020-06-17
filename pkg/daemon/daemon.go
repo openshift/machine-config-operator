@@ -304,8 +304,7 @@ func (dn *Daemon) ClusterConnect(
 			if usingEviction {
 				verbStr = "Evicted"
 			}
-			glog.Info(fmt.Sprintf("%s pod from Node", verbStr),
-				"pod", fmt.Sprintf("%s/%s", pod.Name, pod.Namespace))
+			glog.Infof("%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
 		},
 		Out:    writer{glog.Info},
 		ErrOut: writer{glog.Error},
