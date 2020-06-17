@@ -54,6 +54,9 @@ const (
 	// masterLabel defines the label associated with master node. The master taint uses the same label as taint's key
 	masterLabel = "node-role.kubernetes.io/master"
 
+	// osLabel is used to identify which type of OS the node has
+	osLabel = "kubernetes.io/os"
+
 	// workerLabel defines the label associated with worker node.
 	workerLabel = "node-role.kubernetes.io/worker"
 
@@ -339,6 +342,20 @@ func (ctrl *Controller) isMaster(node *corev1.Node) bool {
 	return master
 }
 
+// isWindows checks if given node is a Windows node or a Linux node
+func isWindows(node *corev1.Node) bool {
+	windowsOsValue := "windows"
+	if value, ok := node.ObjectMeta.Labels[osLabel]; ok {
+		if value == windowsOsValue {
+			return true
+		}
+		return false
+	}
+	// All the nodes should have a OS label populated by kubelet, if not just to maintain
+	// backwards compatibility, we can returning true here.
+	return false
+}
+
 // Given a master Node, ensure it reflects the current mastersSchedulable setting
 func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 	mastersSchedulable, err := ctrl.getMastersSchedulable()
@@ -510,7 +527,14 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 // getPoolsForNode chooses the MachineConfigPools that should be used for a given node.
 // It disambiguates in the case where e.g. a node has both master/worker roles applied,
 // and where a custom role may be used. It returns a slice of all the pools the node belongs to.
+// It also ignores the Windows nodes.
 func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineConfigPool, error) {
+	if isWindows(node) {
+		// This is not an error, is this a Windows Node and it won't be managed by MCO. We're explicitly logging
+		// here at a high level to disambiguate this from other pools = nil  scenario
+		glog.V(4).Infof("Node %v is a windows node so won't be managed by MCO", node.Name)
+		return nil, nil
+	}
 	pl, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
