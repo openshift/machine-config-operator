@@ -419,6 +419,10 @@ func (dn *Daemon) syncNode(key string) error {
 	// and then proceeds to check the state of the node, which includes
 	// finalizing an update and/or reconciling the current and desired machine configs.
 	if dn.booting {
+		// Be sure only the MCD is running now, disable -firstboot.service
+		if err := upgradeHackFor44AndBelow(); err != nil {
+			return err
+		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
 		}
@@ -974,11 +978,6 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
-		// Be sure only the MCD is running now, disable -firstboot.service
-		if err := upgradeHackFor44AndBelow(); err != nil {
-			return err
-		}
-
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch, err := dn.checkOS(targetOSImageURL)
 		if err != nil {
