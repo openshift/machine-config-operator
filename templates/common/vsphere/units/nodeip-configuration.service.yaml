@@ -18,14 +18,22 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/bin/podman run --rm \
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/bin/podman run --rm \
     --authfile /var/lib/kubelet/config.json \
     --net=host \
     --volume /etc/systemd/system:/etc/systemd/system:z \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
-    {{.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
+    {{.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}; \
+    do \
+    sleep 5; \
+    done"
   ExecStart=/bin/systemctl daemon-reload
 
   [Install]
