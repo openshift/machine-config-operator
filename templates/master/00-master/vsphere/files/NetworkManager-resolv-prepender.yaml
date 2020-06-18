@@ -20,7 +20,12 @@ contents:
         # Ensure resolv.conf exists before we try to run podman
         cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
 
-        NAMESERVER_IP=$(/usr/local/bin/non_virtual_ip \
+        NAMESERVER_IP=$(/usr/bin/podman run --rm \
+            --authfile /var/lib/kubelet/config.json \
+            --net=host \
+            {{ .Images.baremetalRuntimeCfgImage }} \
+            node-ip \
+            show \
             "{{.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.VSphere.IngressIP}}")
         DOMAIN="{{.EtcdDiscoveryDomain}}"
