@@ -92,7 +92,6 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	}
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{
-		NetworkType:         network.Spec.NetworkType,
 		ClusterDNSIP:        dnsIP,
 		KubeletIPv6:         ipv6,
 		CloudProviderConfig: "",
