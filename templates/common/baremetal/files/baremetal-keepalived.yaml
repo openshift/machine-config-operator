@@ -27,6 +27,9 @@ contents:
           path: "/etc/keepalived"
       - name: run-dir
         empty-dir: {}
+      - name: chroot-host
+        hostPath:
+          path: "/"
       containers:
       - name: keepalived
         securityContext:
@@ -120,6 +123,8 @@ contents:
           mountPath: "/etc/keepalived"
         - name: run-dir
           mountPath: "/var/run/keepalived"
+        - name: chroot-host
+          mountPath: "/host"
         readinessProbe:
           httpGet:
             path: /readyz

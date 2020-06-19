@@ -1,0 +1,6 @@
+mode: 0755
+path: "/etc/keepalived/chk_ocp_script_both.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    /usr/bin/curl -o /dev/null -kLfs https://localhost:9443/readyz && [ -e /var/run/keepalived/iptables-rule-exists ] || /usr/bin/curl -kLfs https://localhost:6443/readyz
