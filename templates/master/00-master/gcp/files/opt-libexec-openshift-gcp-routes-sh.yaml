@@ -140,7 +140,7 @@ contents:
                         break 2
                     fi
                 done
-                sleep 5
+                sleep 1 # keep this small enough to not make gcp-routes slower than LBs on recovery
             done
         fi
     }
