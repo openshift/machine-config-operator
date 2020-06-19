@@ -9,3 +9,16 @@ status:
   versions:
     - name: operator
       version: "0.0.1-snapshot"
+  relatedObjects:
+    - group: ""
+      name: openshift-machine-config-operator
+      resource: namespaces
+    - group: machineconfiguration.openshift.io
+      name: master
+      resource: machineconfigpools
+    - group: machineconfiguration.openshift.io
+      name: worker
+      resource: machineconfigpools
+    - group: machineconfiguration.openshift.io
+      name: machine-config-controller
+      resource: controllerconfigs
