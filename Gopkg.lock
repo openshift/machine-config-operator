@@ -432,12 +432,12 @@
   version = "1.0.1"
 
 [[projects]]
-  branch = "master"
-  digest = "1:88a19b9585da51239884c1e556bfc9989dbd4361221a4a20497dedff9fce55c3"
+  digest = "1:cd35412faf741f9fea2d18e2b95a8a67019c14c38e481915c61d450f7c035423"
   name = "github.com/mtrmac/gpgme"
   packages = ["."]
   pruneopts = "NUT"
-  revision = "b2432428689ca58c2b8e8dea9449d3295cf96fc9"
+  revision = "c3d28ade92cee62b3b6819332e3a7e38f564ff2c"
+  version = "v0.1.2"
 
 [[projects]]
   digest = "1:e0cc8395ea893c898ff5eb0850f4d9851c1f57c78c232304a026379a47a552d0"
