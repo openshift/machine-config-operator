@@ -22,7 +22,7 @@ The following goals should not require explicit knowledge of a customer to know 
 
 # Proposal
 
-Extend the Machine Config Operator to include a ContainerRuntimeConfig CRD and ContainerRuntimeConfigController. By using a ContainerRuntimeConfig CRD there is an implicit whitelist of user controlled options for the container runtime. Upon deleting the ContainerRuntimeConfig instance the default config is restored.
+Extend the Machine Config Operator to include a ContainerRuntimeConfig CRD and ContainerRuntimeConfigController. By using a ContainerRuntimeConfig CRD there is an implicit allowlist of user controlled options for the container runtime. Upon deleting the ContainerRuntimeConfig instance the default config is restored.
 
 ## CRD
 

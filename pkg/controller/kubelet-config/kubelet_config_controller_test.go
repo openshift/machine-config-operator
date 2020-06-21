@@ -433,7 +433,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 	}
 }
 
-func TestKubeletConfigBlacklistedOptions(t *testing.T) {
+func TestKubeletConfigDenylistedOptions(t *testing.T) {
 	failureTests := []struct {
 		name   string
 		config *kubeletconfigv1beta1.KubeletConfiguration
