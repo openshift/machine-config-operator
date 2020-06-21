@@ -33,9 +33,9 @@ const (
 	cmdLineFile      = "/proc/cmdline"
 )
 
-// TODO: fill out the whitelist
-// tuneableArgsWhitelist contains allowed keys for tunable arguments
-var tuneableArgsWhitelist = map[string]bool{
+// TODO: fill out the allowlist
+// tuneableArgsAllowlist contains allowed keys for tunable arguments
+var tuneableArgsAllowlist = map[string]bool{
 	"nosmt": true,
 }
 
@@ -58,7 +58,7 @@ func init() {
 
 // isArgTuneable returns if the argument provided is allowed to be modified
 func isArgTunable(arg string) bool {
-	return tuneableArgsWhitelist[arg]
+	return tuneableArgsAllowlist[arg]
 }
 
 // isArgInUse checks to see if the argument is already in use by the system currently
@@ -120,7 +120,7 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 					glog.Infof(`skipping "%s" as it is already in use`, key)
 				}
 			} else {
-				glog.Infof("%s not a whitelisted kernel argument", key)
+				glog.Infof("%s not an allowlisted kernel argument", key)
 			}
 		} else if strings.HasPrefix(line, "DELETE ") {
 			// NOTE: Today only specific bare kernel arguments are allowed so
@@ -137,7 +137,7 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 					glog.Infof(`skipping "%s" as it is not present in the current argument list`, key)
 				}
 			} else {
-				glog.Infof("%s not a whitelisted kernel argument", key)
+				glog.Infof("%s not an allowlisted kernel argument", key)
 			}
 		} else {
 			glog.V(2).Infof(`skipping malformed line in %s: "%s"`, tuningFilePath, line)

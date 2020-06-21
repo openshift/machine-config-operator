@@ -28,7 +28,7 @@ The following goals should not require explicit knowledge of a customer to know 
 
 # Proposal
 
-Extend the Machine Config Operator to include a KubetletConfig CRD and KubeletConfigController. By using a KubeletConfig CRD there is an implicit whitelist of allowed user controlled options. Upon deleting the KubeletConfig instance the default config is restored.
+Extend the Machine Config Operator to include a KubetletConfig CRD and KubeletConfigController. By using a KubeletConfig CRD there is an implicit allowlist of allowed user controlled options. Upon deleting the KubeletConfig instance the default config is restored.
 
 ## CRD
 
