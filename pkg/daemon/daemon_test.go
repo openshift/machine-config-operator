@@ -74,8 +74,8 @@ func TestOverwrittenFile(t *testing.T) {
 		},
 	}
 
-	if status := checkFiles(files); !status {
-		t.Errorf("Invalid files")
+	if err := checkFiles(files); err != nil {
+		t.Errorf("Invalid files: %v", err)
 	}
 
 	// validate overwritten file
@@ -104,8 +104,8 @@ func TestOverwrittenFile(t *testing.T) {
 		},
 	}
 
-	if status := checkFiles(files); !status {
-		t.Errorf("Validating an overwritten file failed")
+	if err := checkFiles(files); err != nil {
+		t.Errorf("Validating an overwritten file failed: %v", err)
 	}
 }
 
