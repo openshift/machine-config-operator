@@ -36,10 +36,10 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 
 		err error
 	}{{
-		err: errors.New("configuration spec for pool dummy-pool is empty"),
+		err: errors.New("configuration spec for pool dummy-pool is empty: <unknown>"),
 	}, {
 		generated: "g",
-		err:       errors.New("list of MachineConfigs that were used to generate configuration for pool dummy-pool is empty"),
+		err:       errors.New("list of MachineConfigs that were used to generate configuration for pool dummy-pool is empty: <unknown>"),
 	}, {
 		knownConfigs: nil,
 		source:       []string{"c-0", "u-0"},
@@ -51,7 +51,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		}},
 		source:    []string{"c-0", "u-0"},
 		generated: "g",
-		err:       errors.New("g must be created by controller version v2"),
+		err:       errors.New("g must be created by controller version v2: <unknown>"),
 	}, {
 		knownConfigs: []config{{
 			name:    "g",
@@ -59,7 +59,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		}},
 		source:    []string{"c-0", "u-0"},
 		generated: "g",
-		err:       errors.New("controller version mismatch for g expected v2 has v1"),
+		err:       errors.New("controller version mismatch for g expected v2 has v1: <unknown>"),
 	}, {
 		knownConfigs: []config{{
 			name:    "g",
@@ -72,7 +72,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		}},
 		source:    []string{"c-0", "u-0"},
 		generated: "g",
-		err:       errors.New("controller version mismatch for c-0 expected v2 has v1"),
+		err:       errors.New("controller version mismatch for c-0 expected v2 has v1: <unknown>"),
 	}, {
 		knownConfigs: []config{{
 			name:    "g",
