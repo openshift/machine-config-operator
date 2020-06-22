@@ -291,6 +291,11 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
+	if err == errCouldNotFindMCPSet {
+		ctrl.queue.AddAfter(key, 1*time.Minute)
+		return
+	}
+
 	if ctrl.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
