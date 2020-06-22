@@ -2,12 +2,14 @@ package e2e_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -91,4 +93,27 @@ func waitForAllMastersUpdate(cs *framework.ClientSet, mastersSchedulable bool) e
 		}
 		return true, nil
 	})
+}
+
+func TestClusterOperatorStatusExtension(t *testing.T) {
+	cs := framework.NewClientSet("")
+	co, err := cs.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
+	require.Nil(t, err)
+	ext := map[string]string{
+		"test": "extension",
+	}
+	rawExt, err := json.Marshal(ext)
+	require.Nil(t, err)
+	co.Status.Extension.Raw = rawExt
+	_, err = cs.ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+	require.Nil(t, err)
+	co, err = cs.ClusterOperators().Get(context.TODO(), "machine-config", metav1.GetOptions{})
+	require.Nil(t, err)
+	require.NotNil(t, co.Status.Extension)
+	coExt := map[string]string{}
+	err = json.Unmarshal(co.Status.Extension.Raw, &coExt)
+	require.Nil(t, err)
+	v, ok := coExt["test"]
+	require.True(t, ok)
+	require.Equal(t, "extension", v)
 }

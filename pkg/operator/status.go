@@ -17,7 +17,6 @@ import (
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 // syncVersion handles reporting the version to the clusteroperator
@@ -332,13 +331,7 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 	}
 	ret := map[string]string{}
 	for _, pool := range pools {
-		p := pool.DeepCopy()
-		err := isMachineConfigPoolConfigurationValid(p, version.Hash, optr.mcLister.Get)
-		if err != nil {
-			glog.V(4).Infof("Skipping status for pool %s because %v", p.GetName(), err)
-			continue
-		}
-		ret[p.GetName()] = machineConfigPoolStatus(p)
+		ret[pool.GetName()] = machineConfigPoolStatus(pool)
 	}
 	return ret, nil
 }
@@ -347,7 +340,7 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
 	// both .status.configuration.name and .status.configuration.source must be set.
 	if pool.Spec.Configuration.Name == "" {
-		return fmt.Errorf("configuration spec for pool %s is empty", pool.GetName())
+		return fmt.Errorf("configuration spec for pool %s is empty: %v", pool.GetName(), machineConfigPoolStatus(pool))
 	}
 	if pool.Status.Configuration.Name == "" {
 		// if status is empty, it means the node controller hasn't seen any node at the target configuration
@@ -355,7 +348,7 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 		return fmt.Errorf("configuration status for pool %s is empty: %s", pool.GetName(), machineConfigPoolStatus(pool))
 	}
 	if len(pool.Status.Configuration.Source) == 0 {
-		return fmt.Errorf("list of MachineConfigs that were used to generate configuration for pool %s is empty", pool.GetName())
+		return fmt.Errorf("list of MachineConfigs that were used to generate configuration for pool %s is empty: %v", pool.GetName(), machineConfigPoolStatus(pool))
 	}
 	mcs := []string{pool.Status.Configuration.Name}
 	for _, fragment := range pool.Status.Configuration.Source {
@@ -374,13 +367,13 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 		// The bootstrapped MCs fragments have this annotation, however, we don't fail (???) if they don't have
 		// the annotation for some reason.
 		if !ok && pool.Status.Configuration.Name == mcName {
-			return fmt.Errorf("%s must be created by controller version %s", mcName, version)
+			return fmt.Errorf("%s must be created by controller version %s: %v", mcName, version, machineConfigPoolStatus(pool))
 		}
 		// user provided MC fragments do not have the annotation, so we just skip the version check there.
 		// The check below is for: 1) the generated MC for the pool, and 2) the bootstrapped fragments
 		// that do have this annotation set with a version.
 		if ok && v != version {
-			return fmt.Errorf("controller version mismatch for %s expected %s has %s", mcName, version, v)
+			return fmt.Errorf("controller version mismatch for %s expected %s has %s: %v", mcName, version, v, machineConfigPoolStatus(pool))
 		}
 	}
 	return nil
