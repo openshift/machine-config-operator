@@ -1052,13 +1052,13 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !dn.validateOnDiskState(expectedConfig) {
 			return fmt.Errorf("unexpected on-disk state validating against %s", expectedConfig.GetName())
 		}
+		glog.Info("Validated on-disk state")
 	} else {
 		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
 			return errors.Wrap(err, "failed to remove force validation file")
 		}
 	}
-	glog.Info("Validated on-disk state")
 
 	// We've validated our state.  In the case where we had a pendingConfig,
 	// make that now currentConfig.  We update the node annotation, delete the
