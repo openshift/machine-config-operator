@@ -113,6 +113,7 @@ func newControllerConfig(name string, platform apicfgv1.PlatformType) *mcfgv1.Co
 					},
 				},
 			},
+			ReleaseImage: "release-reg.io/myuser/myimage:test",
 		},
 	}
 	return cc
@@ -339,22 +340,24 @@ func (f *fixture) expectUpdateContainerRuntimeConfig(config *mcfgv1.ContainerRun
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, "status", config))
 }
 
-func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, verifyPolicyJSON bool) {
+func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, releaseImageReg string, verifyPolicyJSON bool) {
 	icsps := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
 	if icsp != nil {
 		icsps = append(icsps, icsp)
 	}
 	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
 	require.NoError(t, err)
-	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, verifyPolicyJSON)
+	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, releaseImageReg, verifyPolicyJSON)
 }
 
-func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, verifyPolicyJSON bool) {
+func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, releaseImageReg string, verifyPolicyJSON bool) {
 	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
 	// configuration file.
+	// First get the valid blocked registries to ensure we don't block the registry where the release image is from
+	blockedRegistries, _ := getValidBlockedRegistries(releaseImageReg, &imgcfg.Spec)
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
-		imgcfg.Spec.RegistrySources.BlockedRegistries, icsps)
+		blockedRegistries, icsps)
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 
@@ -378,7 +381,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	// Validate the policy.json contents if a change is expected from the tests
 	if verifyPolicyJSON {
 		expectedPolicyJSON, err := updatePolicyJSON(templatePolicyJSON,
-			imgcfg.Spec.RegistrySources.BlockedRegistries,
+			blockedRegistries,
 			imgcfg.Spec.RegistrySources.AllowedRegistries)
 		require.NoError(t, err)
 		policyfile := ignCfg.Storage.Files[1]
@@ -392,7 +395,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	}
 }
 
-// The pathc bytes to expect when creating/updating a containerruntimeconfig
+// The patch bytes to expect when creating/updating a containerruntimeconfig
 var ctrcfgPatchBytes = []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x22, 0x3a, 0x7b, 0x22, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x72, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x39, 0x39, 0x2d, 0x6d, 0x61, 0x73, 0x74, 0x65, 0x72, 0x2d, 0x73, 0x78, 0x32, 0x76, 0x72, 0x2d, 0x63, 0x6f, 0x6e, 0x74, 0x61, 0x69, 0x6e, 0x65, 0x72, 0x72, 0x75, 0x6e, 0x74, 0x69, 0x6d, 0x65, 0x22, 0x5d, 0x7d, 0x7d}
 
 // TestContainerRuntimeConfigCreate ensures that a create happens when an existing containerruntime config is created.
@@ -549,7 +552,7 @@ func TestImageConfigCreate(t *testing.T) {
 			f.run("cluster")
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, true)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, cc.Spec.ReleaseImage, true)
 			}
 		})
 	}
@@ -604,7 +607,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, true)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, cc.Spec.ReleaseImage, true)
 			}
 
 			// Perform Update
@@ -645,7 +648,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfgUpdate, nil, true)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfgUpdate, nil, cc.Spec.ReleaseImage, true)
 			}
 		})
 	}
@@ -705,7 +708,7 @@ func TestICSPUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icsp, false)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icsp, cc.Spec.ReleaseImage, false)
 			}
 
 			// Perform Update
@@ -750,15 +753,13 @@ func TestICSPUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icspUpdate, false)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icspUpdate, cc.Spec.ReleaseImage, false)
 			}
 		})
 	}
 }
 
 func TestRunImageBootstrap(t *testing.T) {
-	emptyImgCfg := &apicfgv1.Image{}
-
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -772,14 +773,17 @@ func TestRunImageBootstrap(t *testing.T) {
 					{Source: "built-in-source.example.com", Mirrors: []string{"local-mirror.local"}},
 				}),
 			}
+			// Adding the release-image registry "release-reg.io" to the list of blocked registries to ensure that is it not added to
+			// both registries.conf and policy.json as blocked
+			imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}})
 
-			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules)
+			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules, imgCfg)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(pools))
 
 			for i := range pools {
 				keyReg, _ := getManagedKeyReg(pools[i], nil)
-				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], keyReg, emptyImgCfg, icspRules, false)
+				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], keyReg, imgCfg, icspRules, cc.Spec.ReleaseImage, true)
 			}
 		})
 	}
@@ -818,7 +822,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range failureTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
-		blocked, err := getValidBlockedRegistries(&cvcfg.Status, &imgcfg.Spec)
+		blocked, err := getValidBlockedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec)
 		if err == nil {
 			t.Errorf("%s: failed", test.name)
 		}
@@ -833,7 +837,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range successTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
-		blocked, err := getValidBlockedRegistries(&cvcfg.Status, &imgcfg.Spec)
+		blocked, err := getValidBlockedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec)
 		if err != nil {
 			t.Errorf("%s: failed", test.name)
 		}

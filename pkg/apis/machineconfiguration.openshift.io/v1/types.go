@@ -79,6 +79,9 @@ type ControllerConfigSpec struct {
 	// Its value is taken from the data.osImageURL field on the machine-config-osimageurl ConfigMap.
 	OSImageURL string `json:"osImageURL"`
 
+	// releaseImage is the image used when installing the cluster
+	ReleaseImage string `json:"releaseImage"`
+
 	// proxy holds the current proxy configuration for the nodes
 	// +nullable
 	Proxy *configv1.ProxyStatus `json:"proxy"`

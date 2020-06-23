@@ -17,6 +17,7 @@ import (
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 	kscheme "k8s.io/client-go/kubernetes/scheme"
 
+	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
@@ -64,13 +65,15 @@ func (b *Bootstrap) Run(destDir string) error {
 	scheme := runtime.NewScheme()
 	mcfgv1.Install(scheme)
 	apioperatorsv1alpha1.Install(scheme)
+	apicfgv1.Install(scheme)
 	codecFactory := serializer.NewCodecFactory(scheme)
-	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion)
+	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
 	var cconfig *mcfgv1.ControllerConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
+	var imgCfg *apicfgv1.Image
 	for _, info := range infos {
 		if info.IsDir() {
 			continue
@@ -107,6 +110,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				cconfig = obj
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 				icspRules = append(icspRules, obj)
+			case *apicfgv1.Image:
+				imgCfg = obj
 			default:
 				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -122,7 +127,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, imgCfg)
 	if err != nil {
 		return err
 	}

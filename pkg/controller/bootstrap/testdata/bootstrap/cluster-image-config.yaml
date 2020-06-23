@@ -1,0 +1,13 @@
+apiVersion: config.openshift.io/v1
+kind: Image
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  registrySources:
+    insecureRegistries:
+    - insecure-reg-1.io
+    - insecure-reg-2.io
+    blockedRegistries:
+    - blocked-reg.io
+    - release-registry.product.example.org
