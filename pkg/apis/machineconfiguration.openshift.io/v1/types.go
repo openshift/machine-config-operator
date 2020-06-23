@@ -37,10 +37,8 @@ type ControllerConfigSpec struct {
 	// cloudProviderConfig is the configuration for the given cloud provider
 	CloudProviderConfig string `json:"cloudProviderConfig"`
 
-	// TODO: Use PlatformType instead of string
-
-	// The openshift platform, e.g. "libvirt", "openstack", "gcp", "baremetal", "aws", or "none"
-	Platform string `json:"platform"`
+	// platform is deprecated, use Infra.Status.PlatformStatus.Type instead
+	Platform string `json:"platform,omitempty"`
 
 	// etcdDiscoveryDomain is deprecated, use Infra.Status.EtcdDiscoveryDomain instead
 	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain,omitempty"`
@@ -86,7 +84,6 @@ type ControllerConfigSpec struct {
 	Proxy *configv1.ProxyStatus `json:"proxy"`
 
 	// infra holds the infrastructure details
-	// TODO this makes platform redundant as everything is contained inside Infra.Status
 	// +nullable
 	Infra *configv1.Infrastructure `json:"infra"`
 

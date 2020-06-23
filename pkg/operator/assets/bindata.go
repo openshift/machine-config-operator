@@ -557,8 +557,7 @@ spec:
               additionalProperties:
                 type: string
             infra:
-              description: infra holds the infrastructure details TODO this makes
-                platform redundant as everything is contained inside Infra.Status
+              description: infra holds the infrastructure details
               type: object
               required:
               - spec
@@ -823,8 +822,7 @@ spec:
                 field on the machine-config-osimageurl ConfigMap.
               type: string
             platform:
-              description: The openshift platform, e.g. "libvirt", "openstack", "gcp",
-                "baremetal", "aws", or "none"
+              description: platform is deprecated. Use infra.status.platformStatus.type instead
               type: string
             proxy:
               description: proxy holds the current proxy configuration for the nodes

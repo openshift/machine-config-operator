@@ -76,19 +76,22 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		return nil, err
 	}
 
-	infraPlatformString := ""
 	// The PlatformStatus field is set in cluster versions >= 4.2
-	// Otherwise use the Platform field
-	if infra.Status.PlatformStatus != nil {
-		infraPlatformString = string(infra.Status.PlatformStatus.Type)
-	} else {
-		//nolint:staticcheck
-		infraPlatformString = string(infra.Status.Platform)
+	// Otherwise default to NonePlatformType
+	//nolint:staticcheck
+	if infra.Status.PlatformStatus == nil && infra.Status.Platform != "" {
+		infra.Status.PlatformStatus = &configv1.PlatformStatus{
+			Type: infra.Status.Platform,
+		}
+	} else if infra.Status.PlatformStatus == nil || infra.Status.PlatformStatus.Type == "" {
+		infra.Status.PlatformStatus = &configv1.PlatformStatus{
+			Type: configv1.NonePlatformType,
+		}
 	}
 
 	platform := "none"
-	if infraPlatformString != "" {
-		platform = strings.ToLower(infraPlatformString)
+	if infra.Status.PlatformStatus.Type != "" {
+		platform = strings.ToLower(string(infra.Status.PlatformStatus.Type))
 	}
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{
@@ -98,8 +101,10 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		// EtcdDiscoveryDomain is unused and deprecated in favour of using Infra.Status.EtcdDiscoveryDomain directly
 		// Still populating it here for now until it will be removed eventually
 		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
-		Platform:            platform,
-		Infra:               infra,
+		// Platform is unused and deprecated in favour of using Infra.Status.PlatformStatus.Type directly
+		// Still populating it here for now until it will be removed eventually
+		Platform: platform,
+		Infra:    infra,
 	}
 
 	if proxy != nil {

@@ -25,28 +25,28 @@ func TestCloudProvider(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudProvider .}}`)
 
 	cases := []struct {
-		platform string
+		platform configv1.PlatformType
 		res      string
 	}{{
-		platform: "aws",
+		platform: configv1.AWSPlatformType,
 		res:      "aws",
 	}, {
-		platform: "openstack",
+		platform: configv1.OpenStackPlatformType,
 		res:      "openstack",
 	}, {
-		platform: "baremetal",
+		platform: configv1.BareMetalPlatformType,
 		res:      "",
 	}, {
-		platform: "gcp",
+		platform: configv1.GCPPlatformType,
 		res:      "gce",
 	}, {
-		platform: "libvirt",
+		platform: configv1.LibvirtPlatformType,
 		res:      "",
 	}, {
-		platform: "none",
+		platform: configv1.NonePlatformType,
 		res:      "",
 	}, {
-		platform: "vsphere",
+		platform: configv1.VSpherePlatformType,
 		res:      "vsphere",
 	}}
 	for idx, c := range cases {
@@ -54,7 +54,13 @@ func TestCloudProvider(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
-					Platform: c.platform,
+					Infra: &configv1.Infrastructure{
+						Status: configv1.InfrastructureStatus{
+							PlatformStatus: &configv1.PlatformStatus{
+								Type: c.platform,
+							},
+						},
+					},
 				},
 			}
 			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
@@ -73,37 +79,37 @@ func TestCloudConfigFlag(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudConfigFlag .}}`)
 
 	cases := []struct {
-		platform string
+		platform configv1.PlatformType
 		content  string
 		res      string
 	}{{
-		platform: "aws",
+		platform: configv1.AWSPlatformType,
 		content:  "",
 		res:      "",
 	}, {
-		platform: "azure",
+		platform: configv1.AzurePlatformType,
 		content:  "",
 		res:      "",
 	}, {
-		platform: "libvirt",
+		platform: configv1.LibvirtPlatformType,
 		content:  "",
 		res:      "",
 	}, {
-		platform: "aws",
+		platform: configv1.AWSPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
 		res: "--cloud-config=/etc/kubernetes/cloud.conf",
 	}, {
-		platform: "libvirt",
+		platform: configv1.LibvirtPlatformType,
 		content: `
 [dummy-config]
     option = a
 `,
 		res: "",
 	}, {
-		platform: "azure",
+		platform: configv1.AzurePlatformType,
 		content: `
 [dummy-config]
     option = a
@@ -115,7 +121,13 @@ func TestCloudConfigFlag(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			config := &mcfgv1.ControllerConfig{
 				Spec: mcfgv1.ControllerConfigSpec{
-					Platform:            c.platform,
+					Infra: &configv1.Infrastructure{
+						Status: configv1.InfrastructureStatus{
+							PlatformStatus: &configv1.PlatformStatus{
+								Type: c.platform,
+							},
+						},
+					},
 					CloudProviderConfig: c.content,
 				},
 			}
@@ -276,14 +288,14 @@ func TestInvalidPlatform(t *testing.T) {
 	}
 
 	// we must treat unrecognized constants as "none"
-	controllerConfig.Spec.Platform = "_bad_"
+	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
 	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
-	controllerConfig.Spec.Platform = "_base"
+	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
 	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }

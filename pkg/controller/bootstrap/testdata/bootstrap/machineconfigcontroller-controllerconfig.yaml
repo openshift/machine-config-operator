@@ -32,12 +32,10 @@ spec:
       apiServerURL: https://api.domain.example.com:6443
       etcdDiscoveryDomain: domain.example.com
       infrastructureName: lab-0aaaa
-      platform: None
       platformStatus:
         type: None
   kubeAPIServerServingCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCktVQkUgQVBJIFNFUlZFUiBTRVJWSU5HIENBIERBVEEKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
   osImageURL: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-  platform: none
   proxy: null
   rootCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tClJPT1QgQ0EgREFUQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
   

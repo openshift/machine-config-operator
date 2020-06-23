@@ -101,7 +101,7 @@ func (f *fixture) validateActions() {
 	}
 }
 
-func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
+func newControllerConfig(name string, platform apicfgv1.PlatformType) *mcfgv1.ControllerConfig {
 	cc := &mcfgv1.ControllerConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
@@ -109,9 +109,11 @@ func newControllerConfig(name, platform string) *mcfgv1.ControllerConfig {
 			Infra: &apicfgv1.Infrastructure{
 				Status: apicfgv1.InfrastructureStatus{
 					EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
+					PlatformStatus: &apicfgv1.PlatformStatus{
+						Type: platform,
+					},
 				},
 			},
-			Platform: platform,
 		},
 	}
 	return cc
@@ -397,8 +399,8 @@ var ctrcfgPatchBytes = []uint8{0x7b, 0x22, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0
 // TestContainerRuntimeConfigCreate ensures that a create happens when an existing containerruntime config is created.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestContainerRuntimeConfigCreate(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -434,8 +436,8 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 // TestContainerRuntimeConfigUpdate ensures that an update happens when an existing containerruntime config is updated.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestContainerRuntimeConfigUpdate(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -515,8 +517,8 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 // TestImageConfigCreate ensures that a create happens when an image config is created.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestImageConfigCreate(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -557,8 +559,8 @@ func TestImageConfigCreate(t *testing.T) {
 // TestImageConfigUpdate ensures that an update happens when an existing image config is updated.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestImageConfigUpdate(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -653,8 +655,8 @@ func TestImageConfigUpdate(t *testing.T) {
 // TestICSPUpdate ensures that an update happens when an existing ICSP is updated.
 // It tests that the necessary get, create, and update steps happen in the correct order.
 func TestICSPUpdate(t *testing.T) {
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
@@ -758,8 +760,8 @@ func TestICSPUpdate(t *testing.T) {
 func TestRunImageBootstrap(t *testing.T) {
 	emptyImgCfg := &apicfgv1.Image{}
 
-	for _, platform := range []string{"aws", "none", "unrecognized"} {
-		t.Run(platform, func(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
