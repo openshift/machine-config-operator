@@ -1049,8 +1049,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		expectedConfig = state.currentConfig
 	}
 	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err != nil {
-		if !dn.validateOnDiskState(expectedConfig) {
-			return fmt.Errorf("unexpected on-disk state validating against %s", expectedConfig.GetName())
+		if err := dn.validateOnDiskState(expectedConfig); err != nil {
+			return fmt.Errorf("unexpected on-disk state validating against %s: %v", expectedConfig.GetName(), err)
 		}
 		glog.Info("Validated on-disk state")
 	} else {
@@ -1264,30 +1264,28 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 // specifies.  If for example an admin ssh'd into a node, or another operator
 // is stomping on our files, we want to highlight that and mark the system
 // degraded.
-func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) bool {
+func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error {
 	// Be sure we're booted into the OS we expect
 	osMatch, err := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if err != nil {
 		glog.Errorf("%s", err)
-		return false
+		return err
 	}
 	if !osMatch {
-		glog.Errorf("expected target osImageURL %s", currentConfig.Spec.OSImageURL)
-		return false
+		return errors.Errorf("expected target osImageURL %s", currentConfig.Spec.OSImageURL)
 	}
 	// And the rest of the disk state
 	currentIgnConfig, report, err := ign.Parse(currentConfig.Spec.Config.Raw)
 	if err != nil {
-		glog.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
-		return false
+		return errors.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
 	}
-	if !checkFiles(currentIgnConfig.Storage.Files) {
-		return false
+	if err := checkFiles(currentIgnConfig.Storage.Files); err != nil {
+		return err
 	}
-	if !checkUnits(currentIgnConfig.Systemd.Units) {
-		return false
+	if err := checkUnits(currentIgnConfig.Systemd.Units); err != nil {
+		return err
 	}
-	return true
+	return nil
 }
 
 // getRefDigest parses a Docker/OCI image reference and returns
@@ -1361,12 +1359,12 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 
 // checkUnits validates the contents of all the units in the
 // target config and returns true if they match.
-func checkUnits(units []igntypes.Unit) bool {
+func checkUnits(units []igntypes.Unit) error {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if status := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); !status {
-				return false
+			if err := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); err != nil {
+				return err
 			}
 		}
 
@@ -1378,25 +1376,23 @@ func checkUnits(units []igntypes.Unit) bool {
 		if u.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
-				glog.Errorf("state validation: error while evaluation symlink for path: %q, err: %v", path, err)
-				return false
+				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
 			}
 			if strings.Compare(pathDevNull, link) != 0 {
-				glog.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
-				return false
+				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
 			}
 		}
-		if status := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); !status {
-			return false
+		if err := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); err != nil {
+			return err
 		}
 
 	}
-	return true
+	return nil
 }
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func checkFiles(files []igntypes.File) bool {
+func checkFiles(files []igntypes.File) error {
 	checkedFiles := make(map[string]bool)
 	for i := len(files) - 1; i >= 0; i-- {
 		f := files[i]
@@ -1410,41 +1406,37 @@ func checkFiles(files []igntypes.File) bool {
 		}
 		contents, err := dataurl.DecodeString(f.Contents.Source)
 		if err != nil {
-			glog.Errorf("couldn't parse file: %v", err)
-			return false
+			return errors.Wrapf(err, "couldn't parse file %q", f.Path)
 		}
-		if status := checkFileContentsAndMode(f.Path, contents.Data, mode); !status {
-			return false
+		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
+			return err
 		}
 		checkedFiles[f.Path] = true
 	}
-	return true
+	return nil
 }
 
 // checkFileContentsAndMode reads the file from the filepath and compares its
 // contents and mode with the expectedContent and mode parameters. It logs an
 // error in case of an error or mismatch and returns the status of the
 // evaluation.
-func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) bool {
+func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) error {
 	fi, err := os.Lstat(filePath)
 	if err != nil {
-		glog.Errorf("could not stat file: %q, error: %v", filePath, err)
-		return false
+		return errors.Wrapf(err, "could not stat file %q", filePath)
 	}
 	if fi.Mode() != mode {
-		glog.Errorf("mode mismatch for file: %q; expected: %v; received: %v", filePath, mode, fi.Mode())
-		return false
+		return errors.Errorf("mode mismatch for file: %q; expected: %v; received: %v", filePath, mode, fi.Mode())
 	}
 	contents, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		glog.Errorf("could not read file: %q, error: %v", filePath, err)
-		return false
+		return errors.Wrapf(err, "could not read file %q", filePath)
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file %s (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
-		return false
+		glog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
+		return errors.Errorf("content mismatch for file %q", filePath)
 	}
-	return true
+	return nil
 }
 
 // Close closes all the connections the node agent has open for it's lifetime
