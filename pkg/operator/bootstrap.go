@@ -32,7 +32,7 @@ func RenderBootstrap(
 	cloudConfigFile, cloudProviderCAFile,
 	etcdCAFile, etcdMetricCAFile, rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
-	destinationDir string,
+	destinationDir, releaseImage string,
 ) error {
 	filesData := map[string][]byte{}
 	files := []string{
@@ -142,6 +142,7 @@ func RenderBootstrap(
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
 	spec.OSImageURL = imgs.MachineOSContent
+	spec.ReleaseImage = releaseImage
 	spec.Images = map[string]string{
 		templatectrl.EtcdImageKey:                imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey:             imgs.MachineConfigOperator,
