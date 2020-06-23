@@ -15,6 +15,9 @@ runverbose() {
     (set -xeuo pipefail && "$@")
 }
 
+echo "KUBECONFIG=${KUBECONFIG:-}"
+ls -al ~/.kube/config || true
+
 # Validate that we have a valid OpenShift 4 login
 runverbose oc get clusterversion
 
@@ -95,8 +98,10 @@ if test ${#machines[@]} != ${#oldreleases[@]}; then
     fatal "timed out waiting for machines"
 fi
 
-echo "Waiting 5 minutes for nodes..."
+echo "Waiting for baseline node provisioning"
+runverbose sleep 4m
 declare -A nodes
+echo "Waiting 5 minutes for nodes"
 for x in $(seq 60); do
     found=0
     for machine in ${machines[@]}; do
@@ -107,8 +112,11 @@ for x in $(seq 60); do
             node=$(oc -n openshift-machine-api get -o json ${machine} | jq -r '.status.nodeRef.name')
             if test "${node}" != "null"; then
                 echo "${machine} has node ${node}"
+                oc get nodes -o wide
                 nodes[$machine]="${node}"
-                runverbose oc debug node/${node} -- chroot /host rpm-ostree status | tee status.txt
+                # We need to override the namespace, because in Prow (CI) we're getting
+                # leakage from the CI kubeconfig somehow
+                runverbose oc debug --to-namespace=openshift-machine-config-operator node/${node} -- chroot /host rpm-ostree status </dev/null | tee status.txt
                 if grep -q 'Version: 410.8' status.txt; then
                     mv status.txt status-41.txt
                 else
@@ -130,6 +138,7 @@ for x in $(seq 60); do
     sleep 5
 done
 if test "${#nodes[@]}" != "${#machines[@]}"; then
+    oc get nodes -o wide
     fatal "timed out waiting for nodes"
 fi
 
