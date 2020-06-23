@@ -8,7 +8,6 @@ spec:
     [test]
       option = dummy
   etcdInitialCount: 3
-  platform: "vsphere"
   etcdCAData: ZHVtbXkgZXRjZC1jYQo=
   rootCAData: ZHVtbXkgcm9vdC1jYQo=
   pullSecret:
@@ -27,6 +26,7 @@ spec:
       etcdDiscoveryDomain: my-test-cluster.installer.team.coreos.systems
       infrastructureName: my-test-cluster
       platformStatus:
+        type: "VSphere"
         vsphere:
           apiServerInternalIP: 10.0.0.1
           ingressIP: 10.0.0.2

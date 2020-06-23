@@ -64,9 +64,11 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 			Infra: &configv1.Infrastructure{
 				Status: configv1.InfrastructureStatus{
 					EtcdDiscoveryDomain: fmt.Sprintf("%s.openshift.testing", name),
+					PlatformStatus: &configv1.PlatformStatus{
+						Type: configv1.LibvirtPlatformType,
+					},
 				},
 			},
-			Platform: "libvirt",
 			PullSecret: &corev1.ObjectReference{
 				Namespace: "default",
 				Name:      "coreos-pull-secret",
