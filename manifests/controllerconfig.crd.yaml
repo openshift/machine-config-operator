@@ -345,6 +345,9 @@ spec:
               description: kubeletIPv6 is true to force a single-stack IPv6 kubelet
                 config
               type: boolean
+            networkType:
+              description: networkType holds the type of network the cluster is using
+              type: string
             osImageURL:
               description: osImageURL is the location of the container image that
                 contains the OS update payload. Its value is taken from the data.osImageURL
