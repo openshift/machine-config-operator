@@ -1,0 +1,2 @@
+name: "openvswitch.service"
+enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else if eq .NetworkType "OpenShiftSDN"}}true{{else}}false{{end}}
