@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
@@ -162,7 +163,8 @@ func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1
 }
 
 const (
-	asExpectedReason = "AsExpected"
+	asExpectedReason    = "AsExpected"
+	poolsNotReadyReason = "PoolsNotReady"
 )
 
 func (optr *Operator) clearDegradedStatus(task string) error {
@@ -254,6 +256,22 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
 	}
+
+	allReady, notReadyPools, err := optr.arePoolsReadyToUpgrade()
+	if err != nil {
+		return err
+	}
+	var message string
+	if len(notReadyPools) != 0 {
+		message = fmt.Sprintf("Please check the MachineConfigPool: %q with: oc describe mcp/<pool-name>", strings.Join(notReadyPools, ","))
+	}
+	coStatus.Message = message
+	if allReady {
+		return optr.updateStatus(co, coStatus)
+	}
+	coStatus.Status = configv1.ConditionFalse
+	coStatus.Reason = poolsNotReadyReason
+
 	return optr.updateStatus(co, coStatus)
 }
 
@@ -322,6 +340,35 @@ func (optr *Operator) setOperatorStatusExtension(status *configv1.ClusterOperato
 		return
 	}
 	status.Extension.Raw = raw
+}
+
+func isPoolReadyToUpgrade(pool *mcfgv1.MachineConfigPool) bool {
+	return mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) && mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolDegraded)
+}
+
+func (optr *Operator) arePoolsReadyToUpgrade() (bool, []string, error) {
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return false, nil, err
+	}
+	var (
+		ready = true
+		ret   []string
+	)
+	for _, pool := range pools {
+		poolReady := isPoolReadyToUpgrade(pool)
+		if !poolReady {
+			ret = append(ret, pool.GetName())
+		}
+		if pool.GetLabels() != nil {
+			_, requiredPool := pool.GetLabels()[requiredForUpgradeMachineConfigPoolLabelKey]
+			if !requiredPool {
+				continue
+			}
+		}
+		ready = ready && poolReady
+	}
+	return ready, ret, nil
 }
 
 func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
