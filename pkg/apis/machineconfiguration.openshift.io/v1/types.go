@@ -92,6 +92,9 @@ type ControllerConfigSpec struct {
 
 	// kubeletIPv6 is true to force a single-stack IPv6 kubelet config
 	KubeletIPv6 bool `json:"kubeletIPv6,omitempty"`
+
+	// EtcdQuorumGuardReplicas specifies a number of replicas set to etcd quorum guard deployment
+	EtcdQuorumGuardReplicas int `json:"etcdQuorumReplicas"`
 }
 
 // ControllerConfigStatus is the status for ControllerConfig

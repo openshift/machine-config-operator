@@ -2,9 +2,10 @@ package operator
 
 import (
 	"fmt"
-	configv1 "github.com/openshift/api/config/v1"
 	"strings"
 	"testing"
+
+	configv1 "github.com/openshift/api/config/v1"
 )
 
 func TestClusterDNSIP(t *testing.T) {
@@ -95,6 +96,16 @@ func TestRenderAsset(t *testing.T) {
 			TargetNamespace: "testing-namespace",
 			Images: &RenderConfigImages{
 				MachineConfigOperator: "{MCO: PLACEHOLDER}",
+			},
+		},
+		FindExpected: "image: {MCO: PLACEHOLDER}",
+	}, {
+		// etcd quorum guard rendering
+		Path: "manifests/etcdquorumguard_deployment.yaml",
+		RenderConfig: &renderConfig{
+			TargetNamespace: "testing-namespace",
+			Images: &RenderConfigImages{
+				EtcdQuorumGuard: "{MCO: PLACEHOLDER}",
 			},
 		},
 		FindExpected: "image: {MCO: PLACEHOLDER}",

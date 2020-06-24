@@ -19,11 +19,11 @@ import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 
 	configv1 "github.com/openshift/api/config/v1"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -256,9 +256,11 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
-	//TODO: alaypatel07 remove after cluster-etcd-operator deployed via CVO as Managed
-	if err = optr.setEtcdOperatorImage(&imgs); err != nil {
-		glog.Errorf("error setting etcd operator images: %#v", err)
+	if nonHAEtcd, err := optr.getEtcdNonHAOverride(); err == nil && nonHAEtcd {
+		glog.V(4).Info("Non HA override in etcd found")
+		spec.EtcdQuorumGuardReplicas = 1
+	} else {
+		spec.EtcdQuorumGuardReplicas = 3
 	}
 
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
@@ -454,6 +456,16 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 			return err
 		}
 	} else if err != nil {
+		return err
+	}
+
+	etcdQuorumGuardBytes, err := renderAsset(config, "manifests/etcdquorumguard_deployment.yaml")
+	if err != nil {
+		return err
+	}
+	etcdQuorumGuard := resourceread.ReadDeploymentV1OrDie(etcdQuorumGuardBytes)
+	_, _, err = resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), etcdQuorumGuard)
+	if err != nil {
 		return err
 	}
 
@@ -794,30 +806,35 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	return infra, network, proxy, nil
 }
 
-func (optr *Operator) setEtcdOperatorImage(imgs *Images) error {
+func (optr *Operator) getEtcdNonHAOverride() (bool, error) {
 	if optr.etcdLister == nil {
 		// if the resource is not found, i.e. it is not created by CVO
 		// which means cluster-etcd-operator images is not part of CVO
-		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
 		glog.V(4).Info("etcd cr not found")
-		return nil
+		return false, nil
 	}
 	etcd, err := optr.etcdLister.Get("cluster")
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-			return nil
+			glog.V(4).Info("etcd cluster object not found")
+			return false, nil
 		}
-		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-		return fmt.Errorf("error getting etcd CR: %#v", err)
+		return false, fmt.Errorf("error getting etcd CR: %#v", err)
 	}
 
-	if etcd.Spec.ManagementState == operatorv1.Unmanaged {
-		glog.V(4).Info("etcd cluster in unmanaged")
-		imgs.ControllerConfigImages.ClusterEtcdOperator = ""
-		return nil
+	if len(etcd.Spec.UnsupportedConfigOverrides.Raw) == 0 {
+		glog.V(4).Info("no unsupported overrides found")
+		return false, nil
 	}
-	return nil
+	overrides := string(etcd.Spec.UnsupportedConfigOverrides.Raw)
+
+	expected := string(runtime.RawExtension{
+		Raw: []byte("{\"useUnsupportedUnsafeNonHANonProductionUnstableEtcd\":true}")}.Raw)
+	if overrides == expected {
+		glog.V(4).Info("non HA override found")
+		return true, nil
+	}
+	return false, nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
