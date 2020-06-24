@@ -183,9 +183,17 @@ func updateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	return changed, nil
 }
 
-func run(_ *cobra.Command, args []string) error {
+func run(_ *cobra.Command, args []string) (retErr error) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
+
+	defer func() {
+		if retErr != nil {
+			// write a pivot failure file that we'll read from MCD since we start this with systemd
+			// and we just follow logs
+			ioutil.WriteFile(types.PivotFailurePath, []byte(retErr.Error()), 0644)
+		}
+	}()
 
 	var container string
 	if fromEtcPullSpec || len(args) == 0 {

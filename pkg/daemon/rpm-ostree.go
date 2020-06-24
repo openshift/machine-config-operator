@@ -172,7 +172,10 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		args := []string{"pull", "-q"}
 		args = append(args, authArgs...)
 		args = append(args, container)
-		pivotutils.RunExt(false, numRetriesNetCommands, "podman", args...)
+		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+		if err != nil {
+			return
+		}
 	} else {
 		if previousPivot != "" {
 			var targetMatched bool
@@ -190,7 +193,10 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		args := []string{"pull", "-q"}
 		args = append(args, authArgs...)
 		args = append(args, container)
-		pivotutils.RunExt(false, numRetriesNetCommands, "podman", args...)
+		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+		if err != nil {
+			return
+		}
 	}
 
 	inspectArgs := []string{"inspect", "--type=image"}
