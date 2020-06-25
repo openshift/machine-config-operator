@@ -47,12 +47,10 @@ type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
 }
 
-func getAppenders(currMachineConfig string, f kubeconfigFunc, osimageurl string) []appenderFunc {
+func getAppenders(currMachineConfig string, f kubeconfigFunc) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
 		func(mc *mcfgv1.MachineConfig) error { return appendNodeAnnotations(&mc.Spec.Config, currMachineConfig) },
-		// append pivot
-		func(mc *mcfgv1.MachineConfig) error { return appendInitialPivot(&mc.Spec.Config, osimageurl) },
 		// append kubeconfig.
 		func(mc *mcfgv1.MachineConfig) error { return appendKubeConfig(&mc.Spec.Config, f) },
 		// append the machineconfig content
@@ -80,50 +78,6 @@ func machineConfigToRawIgnition(mccfg *mcfgv1.MachineConfig) (*runtime.RawExtens
 		return nil, fmt.Errorf("error appending file to raw Ignition config: %v", err)
 	}
 	return &mccfg.Spec.Config, nil
-}
-
-// Golang :cry:
-func boolToPtr(b bool) *bool {
-	return &b
-}
-
-func appendInitialPivot(rawExt *runtime.RawExtension, osimageurl string) error {
-	if osimageurl == "" {
-		return nil
-	}
-
-	// Tell pivot.service to pivot early
-	err := appendFileToRawIgnition(rawExt, daemonconsts.EtcPivotFile, osimageurl+"\n")
-	if err != nil {
-		return err
-	}
-	conf, report, err := ign.Parse(rawExt.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to append initial pivot. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
-	}
-	// Awful hack to create a file in /run
-	// https://github.com/openshift/machine-config-operator/pull/363#issuecomment-463397373
-	// "So one gotcha here is that Ignition will actually write `/run/pivot/image-pullspec` to the filesystem rather than the `/run` tmpfs"
-	if len(conf.Systemd.Units) == 0 {
-		conf.Systemd.Units = make([]igntypes.Unit, 0)
-	}
-	unit := igntypes.Unit{
-		Name:    "mcd-write-pivot-reboot.service",
-		Enabled: boolToPtr(true),
-		Contents: `[Unit]
-Before=pivot.service
-ConditionFirstBoot=true
-[Service]
-ExecStart=/bin/sh -c 'mkdir /run/pivot && touch /run/pivot/reboot-needed'
-[Install]
-WantedBy=multi-user.target
-`}
-	conf.Systemd.Units = append(conf.Systemd.Units, unit)
-	rawExt.Raw, err = json.Marshal(conf)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // appendInitialMachineConfig saves the full serialized MachineConfig that was served

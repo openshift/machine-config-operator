@@ -97,7 +97,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
 	}
 
-	appenders := getAppenders(currConf, bsc.kubeconfigFunc, mc.Spec.OSImageURL)
+	appenders := getAppenders(currConf, bsc.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(mc); err != nil {
 			return nil, err

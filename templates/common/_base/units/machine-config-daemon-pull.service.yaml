@@ -1,0 +1,36 @@
+name: "machine-config-daemon-pull.service"
+enabled: true
+contents: |
+  [Unit]
+  Description=Machine Config Daemon Pull
+  # Make sure it runs only on OSTree booted system
+  ConditionPathExists=/run/ostree-booted
+  # This "stamp file" is unlinked when we complete
+  # machine-config-daemon-firstboot.service
+  ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+  Wants=network-online.target
+  After=network-online.target
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  # See https://github.com/coreos/fedora-coreos-tracker/issues/354
+  ExecStart=/bin/sh -c '/bin/mkdir -p /run/bin && chcon --reference=/usr/bin /run/bin'
+  ExecStart=/bin/sh -c "/usr/bin/podman pull --authfile=/var/lib/kubelet/config.json --quiet '{{ .Images.setupEtcdEnvKey }}'"
+  ExecStart=/bin/sh -c "/usr/bin/podman run --rm --quiet --net=host --entrypoint=cat '{{ .Images.setupEtcdEnvKey }}' /usr/bin/machine-config-daemon > /run/bin/machine-config-daemon.tmp"
+  ExecStart=/bin/sh -c '/usr/bin/chmod a+x /run/bin/machine-config-daemon.tmp && mv /run/bin/machine-config-daemon.tmp /run/bin/machine-config-daemon'
+
+  {{if .Proxy -}}
+  {{if .Proxy.HTTPProxy -}}
+  Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+  {{end -}}
+  {{if .Proxy.HTTPSProxy -}}
+  Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+  {{end -}}
+  {{if .Proxy.NoProxy -}}
+  Environment=NO_PROXY={{.Proxy.NoProxy}}
+  {{end -}}
+  {{end -}}
+
+  [Install]
+  RequiredBy=machine-config-daemon-firstboot.service
