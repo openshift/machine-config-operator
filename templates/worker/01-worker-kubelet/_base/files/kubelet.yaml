@@ -27,6 +27,7 @@ contents:
       memory: 1Gi
       ephemeral-storage: 1Gi
     featureGates:
+      APIPriorityAndFairness: true
       LegacyNodeRoleBehavior: false
       NodeDisruptionExclusion: true
       RotateKubeletServerCertificate: true
