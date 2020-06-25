@@ -1280,9 +1280,25 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	glog.Infof("Updating OS to %s", newURL)
-	if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
-		MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
-		return fmt.Errorf("failed to run pivot: %v", err)
+	// In the cluster case, for now we run indirectly via machine-config-daemon-host.service
+	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
+	if dn.kubeClient != nil {
+		if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
+			MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
+			return fmt.Errorf("failed to run pivot: %v", err)
+		}
+	} else {
+		// If we're here we're invoked via `machine-config-daemon-firstboot.service`, so let's
+		// just run the update directly rather than invoking another service.
+		client := NewNodeUpdaterClient()
+		_, changed, err := client.PullAndRebase(newURL, false)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			// This really shouldn't happen
+			glog.Warningf("Didn't change when updating to %s ?", newURL)
+		}
 	}
 
 	return nil
