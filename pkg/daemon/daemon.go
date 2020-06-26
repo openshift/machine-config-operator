@@ -21,12 +21,18 @@ import (
 	imgref "github.com/containers/image/docker/reference"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
+	"github.com/google/go-cmp/cmp"
+	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/diff"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -38,13 +44,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
-
-	"github.com/openshift/machine-config-operator/lib/resourceread"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -320,8 +319,7 @@ func (dn *Daemon) ClusterConnect(
 			if usingEviction {
 				verbStr = "Evicted"
 			}
-			glog.Info(fmt.Sprintf("%s pod from Node", verbStr),
-				"pod", fmt.Sprintf("%s/%s", pod.Name, pod.Namespace))
+			glog.Infof("%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
 		},
 		Out:    writer{glog.Info},
 		ErrOut: writer{glog.Error},
@@ -421,6 +419,10 @@ func (dn *Daemon) syncNode(key string) error {
 	// and then proceeds to check the state of the node, which includes
 	// finalizing an update and/or reconciling the current and desired machine configs.
 	if dn.booting {
+		// Be sure only the MCD is running now, disable -firstboot.service
+		if err := upgradeHackFor44AndBelow(); err != nil {
+			return err
+		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
 		}
@@ -899,6 +901,24 @@ func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error 
 	return writeFileAtomicallyWithDefaults(dn.currentConfigPath, mcJSON)
 }
 
+// https://bugzilla.redhat.com/show_bug.cgi?id=1842906
+// If we didn't successfully complete -firstboot.service, because
+// 4.5 and newer removed the BindsTo=, the service may start downgrading
+// things.  At this point we should have already applied all target
+// changes, so just rename the file to .bak the same as the -firstboot
+// path does.
+func upgradeHackFor44AndBelow() error {
+	_, err := os.Stat(constants.MachineConfigEncapsulatedPath)
+	if err == nil {
+		glog.Warningf("Failed to complete machine-config-daemon-firstboot before joining cluster!")
+		// Removing this file signals completion of the initial MC processing.
+		if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
+			return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
+		}
+	}
+	return nil
+}
+
 // checkStateOnFirstRun is a core entrypoint for our state machine.
 // It determines whether we're in our desired state, or if we're
 // transitioning between states, and whether or not we need to update
@@ -956,6 +976,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
 	}
 
+	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch, err := dn.checkOS(targetOSImageURL)
@@ -1404,7 +1425,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return false
 	}
 	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file %s: %s", filePath, diff.StringDiff(string(contents), string(expectedContent)))
+		glog.Errorf("content mismatch for file %s (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
 		return false
 	}
 	return true

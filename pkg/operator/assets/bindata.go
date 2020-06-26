@@ -976,9 +976,9 @@ spec:
         operator: Exists
         effect: NoSchedule
       containers:
-      - image: {{.Images.EtcdQuorumGuard}}
+      - name: guard
+        image: {{.Images.EtcdQuorumGuard}}
         imagePullPolicy: IfNotPresent
-        name: guard
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /mnt/kube
@@ -1006,8 +1006,10 @@ spec:
                 export NSS_SDB_USE_CACHE=no
                 [[ -z $cert || -z $key ]] && exit 1
                 curl --max-time 2 --silent --cert "${cert//:/\:}" --key "$key" --cacert "$cacert" "$health_endpoint" |grep '{ *"health" *: *"true" *}'
-            initialDelaySecond: 5
-            periodSecond: 5
+          initialDelaySecond: 5
+          periodSecond: 5
+          failureThreshold: 3
+          timeoutSeconds: 3
         resources:
           requests:
             cpu: 10m
@@ -1402,13 +1404,6 @@ spec:
       hostPID: true
       serviceAccountName: machine-config-daemon
       terminationGracePeriodSeconds: 600
-      tolerations:
-      - key: node-role.kubernetes.io/master
-        operator: Exists
-        effect: NoSchedule
-      - key: node-role.kubernetes.io/etcd
-        operator: Exists
-        effect: NoSchedule
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: "system-node-critical"
@@ -1422,7 +1417,9 @@ spec:
         - name: cookie-secret
           secret:
             secretName: cookie-secret
-`)
+      tolerations:
+      # MCD needs to run everywhere. Tolerate all taints.
+      - operator: Exists`)
 
 func manifestsMachineconfigdaemonDaemonsetYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigdaemonDaemonsetYaml, nil
