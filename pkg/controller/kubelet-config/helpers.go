@@ -2,6 +2,7 @@ package kubeletconfig
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
@@ -18,8 +19,12 @@ import (
 )
 
 func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
+	// Want the kubelet.conf file to have the pretty JSON formatting
+	buf := new(bytes.Buffer)
+	json.Indent(buf, jsonConfig, "", "  ")
+
 	mode := 0644
-	du := dataurl.New(jsonConfig, "text/plain")
+	du := dataurl.New(buf.Bytes(), "text/plain")
 	du.Encoding = dataurl.EncodingASCII
 	tempFile := igntypes.File{
 		Node: igntypes.Node{
