@@ -40,6 +40,18 @@ contents: |
   {{end -}}
   {{end -}}
 
+  {{if .Proxy -}}
+  {{if .Proxy.HTTPProxy -}}
+  Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+  {{end -}}
+  {{if .Proxy.HTTPSProxy -}}
+  Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+  {{end -}}
+  {{if .Proxy.NoProxy -}}
+  Environment=NO_PROXY={{.Proxy.NoProxy}}
+  {{end -}}
+  {{end -}}
+
   [Install]
   WantedBy=multi-user.target
   {{ end -}}
