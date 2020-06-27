@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	ign "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
@@ -302,7 +301,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, _, err := ign.Parse(mcadd.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
@@ -351,7 +350,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, _, err := ign.Parse(mcadd.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Networkd = ign2types.Networkd{
 		Units: []ign2types.Networkdunit{

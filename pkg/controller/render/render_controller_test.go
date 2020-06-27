@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
@@ -296,7 +295,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 
 	// verify that an invalid igntion config (here a config with content and an empty version,
 	// will fail validation
-	ignCfg, _, err := ign.Parse(mcs[1].Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mcs[1].Spec.Config.Raw)
 	require.Nil(t, err)
 	ignCfg.Ignition.Version = ""
 	rawIgnCfg, err := json.Marshal(ignCfg)

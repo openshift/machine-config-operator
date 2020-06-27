@@ -78,17 +78,25 @@ func TestIgnParseWrapper(t *testing.T) {
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
 	testIgn3Config.Ignition.Version = "3.1.0"
+
 	// Make a Ign2 comp config
 	testIgn2Config := NewIgnConfig()
 	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser2}
 
-	// turn it into a raw []byte
-	rawIgn := helpers.MarshalOrDie(testIgn3Config)
+	// turn v2.2 config into a raw []byte
+	rawIgn := helpers.MarshalOrDie(testIgn2Config)
 	// check that it was parsed successfully
 	convertedIgn, err := IgnParseWrapper(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn3Config, convertedIgn)
+	assert.Equal(t, testIgn2Config, convertedIgn)
+
+	// turn v3.1 config into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully
+	convertedIgn, err = IgnParseWrapper(rawIgn)
+	require.Nil(t, err)
+	assert.Equal(t, testIgn2Config, convertedIgn)
 
 	// Make a valid Ign 3.0 cfg
 	testIgn3Config.Ignition.Version = "3.0.0"
@@ -97,6 +105,7 @@ func TestIgnParseWrapper(t *testing.T) {
 	// check that it was parsed successfully
 	convertedIgn, err = IgnParseWrapper(rawIgn)
 	require.Nil(t, err)
+	assert.Equal(t, testIgn2Config, convertedIgn)
 
 	// Make a bad Ign3 cfg
 	testIgn3Config.Ignition.Version = "21.0.0"

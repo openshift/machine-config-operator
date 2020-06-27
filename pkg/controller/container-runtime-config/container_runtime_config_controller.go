@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -935,7 +934,7 @@ func (ctrl *Controller) isUpdatingFromOldCRIOConf(cfg *mcfgv1.ContainerRuntimeCo
 			return false, fmt.Errorf("could not get mc with name %q: %v", managedKey, err)
 		}
 		if mc.Spec.Config.Raw != nil {
-			conf, _, err := ign.Parse(mc.Spec.Config.Raw)
+			conf, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 			if err != nil {
 				return false, fmt.Errorf("error parsing ignition: %v", err)
 			}
