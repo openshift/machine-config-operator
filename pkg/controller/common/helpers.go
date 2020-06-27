@@ -9,10 +9,12 @@ import (
 
 	"github.com/clarketm/json"
 	fcctbase "github.com/coreos/fcct/base/v0_1"
+	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v31tov22"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign2 "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign2_3 "github.com/coreos/ignition/config/v2_3"
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3error "github.com/coreos/ignition/v2/config/shared/errors"
 	ign3_0 "github.com/coreos/ignition/v2/config/v3_0"
@@ -126,6 +128,49 @@ func WriteTerminationError(err error) {
 	msg := err.Error()
 	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0644)
 	glog.Fatal(msg)
+}
+
+// ConvertRawExtIgnition2to3 converts a RawExtension containing Ignition spec v2.2 config
+// into a RawExtension containing Ignition spec v3.1 config
+func ConvertRawExtIgnition2to3(inRawExtIgnV2 *runtime.RawExtension) (runtime.RawExtension, error) {
+	ignCfg, rpt, err := ign2.Parse(inRawExtIgnV2.Raw)
+	if err != nil || rpt.IsFatal() {
+		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config spec v2.2 failed with error: %v\nReport: %v", err, rpt)
+	}
+	converted3, err := convertIgnition2to3(ignCfg)
+	if err != nil {
+		return runtime.RawExtension{}, errors.Errorf("failed to convert config from spec v2.2 to v3.1: %v", err)
+	}
+
+	outIgnV3, err := json.Marshal(converted3)
+	if err != nil {
+		return runtime.RawExtension{}, errors.Errorf("failed to marshal converted config: %v", err)
+	}
+
+	outRawExt := runtime.RawExtension{}
+	outRawExt.Raw = outIgnV3
+
+	return outRawExt, nil
+}
+
+// convertIgnition2to3 takes an ignition spec v2.2 config and returns a v3.1 config
+func convertIgnition2to3(ign2config ign2types.Config) (ign3types.Config, error) {
+	// only support writing to root file system
+	fsMap := map[string]string{
+		"root": "/",
+	}
+
+	// Workaround to get v2.3 as input for converter
+	ign2_3config := ign2_3.Translate(ign2config)
+	ign3_0config, err := v23tov30.Translate(ign2_3config, fsMap)
+	if err != nil {
+		return ign3types.Config{}, errors.Errorf("unable to convert Ignition spec v2 config to v3: %v", err)
+	}
+	// Workaround to get a v3.1 config as output
+	converted3 := translate3.Translate(ign3_0config)
+
+	glog.V(4).Infof("Successfully translated Ignition spec v2 config to Ignition spec v3 config: %v", converted3)
+	return converted3, nil
 }
 
 // convertIgnition3to2 takes an ignition spec v3.1 config and returns a v2.2 config

@@ -61,6 +61,7 @@ github.com/coreos/go-systemd/unit
 # github.com/coreos/go-systemd/v22 v22.0.0
 github.com/coreos/go-systemd/v22/unit
 # github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5
+github.com/coreos/ign-converter/translate/v23tov30
 github.com/coreos/ign-converter/translate/v31tov22
 github.com/coreos/ign-converter/util
 # github.com/coreos/ignition v0.35.0
@@ -75,6 +76,8 @@ github.com/coreos/ignition/config/v2_1
 github.com/coreos/ignition/config/v2_1/types
 github.com/coreos/ignition/config/v2_2
 github.com/coreos/ignition/config/v2_2/types
+github.com/coreos/ignition/config/v2_3
+github.com/coreos/ignition/config/v2_3/types
 github.com/coreos/ignition/config/v2_5_experimental/types
 github.com/coreos/ignition/config/validate
 github.com/coreos/ignition/config/validate/astjson
