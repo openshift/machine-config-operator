@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 func TestValidateIgnition(t *testing.T) {
@@ -39,11 +40,11 @@ func TestValidateIgnition(t *testing.T) {
 	require.NotNil(t, isValid2)
 
 	// Test that a valid ignition config returns nil
-	testIgn3Config.Ignition.Version = "3.0.0"
+	testIgn3Config.Ignition.Version = "3.1.0"
 	mode := 420
 	testfiledata := "data:,greatconfigstuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.FileContents{Source: &testfiledata}, Mode: &mode}}
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 	isValid2 = ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid2)
@@ -60,7 +61,7 @@ func TestConvertIgnition3to2(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.0.0"
+	testIgn3Config.Ignition.Version = "3.1.0"
 	isValid := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid)
 
@@ -72,12 +73,11 @@ func TestConvertIgnition3to2(t *testing.T) {
 }
 
 func TestIgnParseWrapper(t *testing.T) {
-
-	// Make a new Ign3 config
+	// Make a new Ign3.1 config
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.0.0"
+	testIgn3Config.Ignition.Version = "3.1.0"
 	// Make a Ign2 comp config
 	testIgn2Config := NewIgnConfig()
 	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
@@ -89,6 +89,14 @@ func TestIgnParseWrapper(t *testing.T) {
 	convertedIgn, err := IgnParseWrapper(rawIgn)
 	require.Nil(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
+
+	// Make a valid Ign 3.0 cfg
+	testIgn3Config.Ignition.Version = "3.0.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully
+	convertedIgn, err = IgnParseWrapper(rawIgn)
+	require.Nil(t, err)
 
 	// Make a bad Ign3 cfg
 	testIgn3Config.Ignition.Version = "21.0.0"
