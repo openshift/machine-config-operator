@@ -10,15 +10,16 @@ import (
 	"strings"
 	"testing"
 
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	yaml "github.com/ghodss/yaml"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 )
 
 const (
@@ -59,7 +60,7 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal([]byte(mcData), mc)
 	assert.Nil(t, err)
-	mcIgnCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	mcIgnCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -67,7 +68,7 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 
 	origMc := mc.DeepCopy()
-	origIgnCfg, _, err := ign.Parse(origMc.Spec.Config.Raw)
+	origIgnCfg, err := ctrlcommon.IgnParseWrapper(origMc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -75,11 +76,11 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	if err != nil {
 		t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
 	}
-	ignCfg, _, err := ign.Parse(rawIgn.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(rawIgn.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
-	mcIgnCfg, _, err = ign.Parse(mc.Spec.Config.Raw)
+	mcIgnCfg, err = ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
@@ -155,11 +156,11 @@ func TestBootstrapServer(t *testing.T) {
 	}
 
 	// assert on the output.
-	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resCfg, _, err := ign.Parse(res.Raw)
+	resCfg, err := ctrlcommon.IgnParseWrapper(res.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,11 +252,11 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
 
-	ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resCfg, _, err := ign.Parse(res.Raw)
+	resCfg, err := ctrlcommon.IgnParseWrapper(res.Raw)
 	if err != nil {
 		t.Fatal(err)
 	}
