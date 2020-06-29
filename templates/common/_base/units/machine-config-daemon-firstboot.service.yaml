@@ -22,6 +22,18 @@ contents: |
   ExecStart=-/usr/bin/ln --symbolic /usr/libexec/bin/machine-config-daemon /usr/local/bin/machine-config-daemon
   ExecStart=/usr/local/bin/machine-config-daemon firstboot-complete-machineconfig
 
+  {{if .Proxy -}}
+  {{if .Proxy.HTTPProxy -}}
+  Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+  {{end -}}
+  {{if .Proxy.HTTPSProxy -}}
+  Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+  {{end -}}
+  {{if .Proxy.NoProxy -}}
+  Environment=NO_PROXY={{.Proxy.NoProxy}}
+  {{end -}}
+  {{end -}}
+
   [Install]
   WantedBy=multi-user.target
   RequiredBy=crio.service kubelet.service
