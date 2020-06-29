@@ -7,6 +7,19 @@ contents:
     set -eo pipefail
     IFACE=$1
     STATUS=$2
+
+    {{if .Proxy -}}
+    {{if .Proxy.HTTPProxy -}}
+    HTTP_PROXY={{.Proxy.HTTPProxy}}
+    {{end -}}
+    {{if .Proxy.HTTPSProxy -}}
+    HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+    {{end -}}
+    {{if .Proxy.NoProxy -}}
+    NO_PROXY={{.Proxy.NoProxy}}
+    {{end -}}
+    {{end -}}
+
     # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
     [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] && hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
     case "$STATUS" in
