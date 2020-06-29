@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	// Enable sha256 in container image references
@@ -187,14 +188,6 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	defer func() {
-		if retErr != nil {
-			// write a pivot failure file that we'll read from MCD since we start this with systemd
-			// and we just follow logs
-			ioutil.WriteFile(types.PivotFailurePath, []byte(retErr.Error()), 0644)
-		}
-	}()
-
 	var container string
 	if fromEtcPullSpec || len(args) == 0 {
 		fromEtcPullSpec = true
@@ -249,6 +242,10 @@ func Execute(cmd *cobra.Command, args []string) {
 	err := run(cmd, args)
 	if err != nil {
 		fmt.Printf("error: %v\n", err)
+		os.MkdirAll(filepath.Dir(types.PivotFailurePath), 0755)
+		// write a pivot failure file that we'll read from MCD since we start this with systemd
+		// and we just follow logs
+		ioutil.WriteFile(types.PivotFailurePath, []byte(err.Error()), 0644)
 		os.Exit(1)
 	}
 }

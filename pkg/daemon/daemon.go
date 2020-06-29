@@ -1272,12 +1272,12 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 		return err
 	}
 	if !osMatch {
-		return errors.Errorf("expected target osImageURL %s", currentConfig.Spec.OSImageURL)
+		return errors.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
 	}
 	// And the rest of the disk state
 	currentIgnConfig, report, err := ign.Parse(currentConfig.Spec.Config.Raw)
 	if err != nil {
-		return errors.Errorf("Failed to parse Ignition for validation: %s\nReport: %v", err, report)
+		return errors.Errorf("failed to parse Ignition for validation: %s\nReport: %v", err, report)
 	}
 	if err := checkFiles(currentIgnConfig.Storage.Files); err != nil {
 		return err

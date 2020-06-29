@@ -1291,7 +1291,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 			MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
 			pivotErr, err := ioutil.ReadFile(pivottypes.PivotFailurePath)
 			if err != nil || len(pivotErr) == 0 {
-				glog.V(2).Info("pivot error file doesn't contain anything or was never written")
+				glog.Warningf("pivot error file doesn't contain anything, it was never written or an error occurred: %v", err)
 			}
 			return fmt.Errorf("failed to run pivot: %v: %v", err, string(pivotErr))
 		}
@@ -1305,7 +1305,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		}
 		if !changed {
 			// This really shouldn't happen
-			glog.Warningf("Didn't change when updating to %s ?", newURL)
+			glog.Warningf("Didn't change when updating to %q?", newURL)
 		}
 	}
 
