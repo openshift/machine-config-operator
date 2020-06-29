@@ -1289,9 +1289,9 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if dn.kubeClient != nil {
 		if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
 			MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
-			pivotErr, err := ioutil.ReadFile(pivottypes.PivotFailurePath)
-			if err != nil || len(pivotErr) == 0 {
-				glog.Warningf("pivot error file doesn't contain anything, it was never written or an error occurred: %v", err)
+			pivotErr, err2 := ioutil.ReadFile(pivottypes.PivotFailurePath)
+			if err2 != nil || len(pivotErr) == 0 {
+				glog.Warningf("pivot error file doesn't contain anything, it was never written or an error occurred: %v", err2)
 			}
 			return fmt.Errorf("failed to run pivot: %v: %v", err, string(pivotErr))
 		}
