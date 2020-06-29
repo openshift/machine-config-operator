@@ -5,6 +5,19 @@ contents:
     #!/bin/bash
     IFACE=$1
     STATUS=$2
+
+    {{if .Proxy -}}
+    {{if .Proxy.HTTPProxy -}}
+    HTTP_PROXY={{.Proxy.HTTPProxy}}
+    {{end -}}
+    {{if .Proxy.HTTPSProxy -}}
+    HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+    {{end -}}
+    {{if .Proxy.NoProxy -}}
+    NO_PROXY={{.Proxy.NoProxy}}
+    {{end -}}
+    {{end -}}
+
     case "$STATUS" in
         up|down|dhcp4-change|dhcp6-change)
         logger -s "NM resolv-prepender triggered by ${1} ${2}."
