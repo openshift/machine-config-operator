@@ -104,6 +104,18 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
 	}
 
+	if kcDecoded.EvictionSoft != nil && len(kcDecoded.EvictionSoft) > 0 {
+		if kcDecoded.EvictionSoftGracePeriod == nil || len(kcDecoded.EvictionSoftGracePeriod) == 0 {
+			return fmt.Errorf("KubeletConfiguration: EvictionSoftGracePeriod must be set when evictionSoft is defined, evictionSoft: %v", kcDecoded.EvictionSoft)
+		}
+
+		for k := range kcDecoded.EvictionSoft {
+			if _, ok := kcDecoded.EvictionSoftGracePeriod[k]; !ok {
+				return fmt.Errorf("KubeletConfiguration: evictionSoft[%s] is defined but EvictionSoftGracePeriod[%s] is not set", k, k)
+			}
+		}
+	}
+
 	return nil
 }
 
