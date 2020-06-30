@@ -478,6 +478,25 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "evictionSoft cannot be supplied without evictionSoftGracePeriod",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				EvictionSoft: map[string]string{
+					"memory.available": "90%",
+				},
+			},
+		},
+		{
+			name: "evictionSoft cannot be supplied without corresponding evictionSoftGracePeriod",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				EvictionSoft: map[string]string{
+					"memory.available": "90%",
+				},
+				EvictionSoftGracePeriod: map[string]string{
+					"nodefs.inodesFree": "1h",
+				},
+			},
+		},
 	}
 
 	successTests := []struct {
