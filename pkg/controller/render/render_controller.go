@@ -500,14 +500,19 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
+	newPool := pool.DeepCopy()
+	newPool.Spec.Configuration.Source = source
+
 	if pool.Spec.Configuration.Name == generated.Name {
 		_, _, err = resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
+		if err != nil {
+			return err
+		}
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
 		return err
 	}
 
-	newPool := pool.DeepCopy()
 	newPool.Spec.Configuration.Name = generated.Name
-	newPool.Spec.Configuration.Source = source
 	// TODO(walters) Use subresource or JSON patch, but the latter isn't supported by the unit test mocks
 	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
 	if err != nil {
