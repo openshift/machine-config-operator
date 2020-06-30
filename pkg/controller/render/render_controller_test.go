@@ -208,6 +208,10 @@ func (f *fixture) expectUpdateMachineConfigAction(config *mcfgv1.MachineConfig) 
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigs"}, config))
 }
 
+func (f *fixture) expectUpdateMachineConfigPool(pool *mcfgv1.MachineConfigPool) {
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, pool))
+}
+
 func (f *fixture) expectUpdateMachineConfigPoolSpec(pool *mcfgv1.MachineConfigPool) {
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Resource: "machineconfigpools"}, "spec", pool))
 }
@@ -357,8 +361,14 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	mcpNew := mcp.DeepCopy()
+	for _, mc := range mcs {
+		mcpNew.Spec.Configuration.Source = append(mcpNew.Spec.Configuration.Source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: mc.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
+	}
+
 	f.expectGetMachineConfigAction(expmc)
 	f.expectUpdateMachineConfigAction(expmc)
+	f.expectUpdateMachineConfigPool(mcpNew)
 
 	f.run(getKey(mcp, t))
 }
@@ -417,7 +427,13 @@ func TestDoNothing(t *testing.T) {
 	f.mcLister = append(f.mcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
+	mcpNew := mcp.DeepCopy()
+	for _, mc := range mcs {
+		mcpNew.Spec.Configuration.Source = append(mcpNew.Spec.Configuration.Source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: mc.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
+	}
+
 	f.expectGetMachineConfigAction(gmc)
+	f.expectUpdateMachineConfigPool(mcpNew)
 
 	f.run(getKey(mcp, t))
 }
