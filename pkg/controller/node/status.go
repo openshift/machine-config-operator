@@ -80,7 +80,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
-		if status.Configuration.Name != pool.Spec.Configuration.Name {
+		if status.Configuration.Name != pool.Spec.Configuration.Name || !equality.Semantic.DeepEqual(status.Configuration.Source, pool.Spec.Configuration.Source) {
 			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
 			status.Configuration = pool.Spec.Configuration
 		}
