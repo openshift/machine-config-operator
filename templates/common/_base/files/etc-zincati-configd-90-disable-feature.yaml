@@ -1,0 +1,6 @@
+mode: 0755
+path: "/etc/zincati/config.d/90-disable-feature.toml"
+contents:
+  inline: |
+    [updates]
+    enabled = false
