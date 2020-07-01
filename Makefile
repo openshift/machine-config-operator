@@ -105,7 +105,7 @@ install: binaries
 
 Dockerfile.rhel7: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
-	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
+	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/origin/4.5:base,/ocp/4.5:base, < $<) > $@.tmp && mv $@.tmp $@
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e:
