@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -32,13 +32,12 @@ func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
 	du.Encoding = dataurl.EncodingASCII
 	tempFile := igntypes.File{
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/etc/kubernetes/kubelet.conf",
+			Path: "/etc/kubernetes/kubelet.conf",
 		},
 		FileEmbedded1: igntypes.FileEmbedded1{
 			Mode: &mode,
-			Contents: igntypes.FileContents{
-				Source: du.String(),
+			Contents: igntypes.Resource{
+				Source: ctrlcommon.StrToPtr(du.String()),
 			},
 		},
 	}

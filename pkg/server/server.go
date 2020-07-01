@@ -5,7 +5,7 @@ import (
 	"net/url"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -27,11 +27,6 @@ const (
 	// need this is that on bootstrap + first install we don't have the MCD
 	// running and writing that file.
 	machineConfigContentPath = "/etc/mcs-machine-config-content.json"
-
-	// defaultFileSystem defines the default file system to be
-	// used for writing the ignition files created by the
-	// server.
-	defaultFileSystem = "root"
 )
 
 // kubeconfigFunc fetches the kubeconfig that needs to be served.
@@ -138,12 +133,11 @@ func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents str
 	fileMode := int(420)
 	file := igntypes.File{
 		Node: igntypes.Node{
-			Filesystem: defaultFileSystem,
-			Path:       outPath,
+			Path: outPath,
 		},
 		FileEmbedded1: igntypes.FileEmbedded1{
-			Contents: igntypes.FileContents{
-				Source: getEncodedContent(contents),
+			Contents: igntypes.Resource{
+				Source: ctrlcommon.StrToPtr(getEncodedContent(contents)),
 			},
 			Mode: &fileMode,
 		},

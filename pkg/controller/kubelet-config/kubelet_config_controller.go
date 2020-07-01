@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"
@@ -453,7 +453,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
 		}
-		dataURL, err := dataurl.DecodeString(originalKubeletIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
 		}

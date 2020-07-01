@@ -231,6 +231,37 @@ func translateGroups(groups []old.PasswdGroup) (ret []types.PasswdGroup) {
 	return
 }
 
+func replaceOrAppendDropin(dropins []types.Dropin, dropin types.Dropin) []types.Dropin {
+	for i, d := range dropins {
+		if d.Name == dropin.Name {
+			dropins[i] = dropin
+			return dropins
+		}
+	}
+	dropins = append(dropins, dropin)
+	return dropins
+}
+
+func replaceOrAppendUnit(units []types.Unit, unit types.Unit) []types.Unit {
+	for i, u := range units {
+		if u.Name == unit.Name {
+			// Replace existing contents only if new contents are not empty.
+			// The unit may define dropins only and have no content,
+			// in which case we don't want to overwrite the unit contents
+			// and only append the dropins.
+			if unit.Contents != nil && unit.Contents != util.StrPStrict("") {
+				units[i].Contents = unit.Contents
+			}
+			for _, dropin := range unit.Dropins {
+				units[i].Dropins = replaceOrAppendDropin(units[i].Dropins, dropin)
+			}
+			return units
+		}
+	}
+	units = append(units, unit)
+	return units
+}
+
 func translateUnits(units []old.Unit) (ret []types.Unit) {
 	for _, u := range units {
 		var enabled *bool
@@ -245,7 +276,8 @@ func translateUnits(units []old.Unit) (ret []types.Unit) {
 		if u.Enabled != nil && !*u.Enabled {
 			enabled = util.BoolPStrict(false)
 		}
-		ret = append(ret, types.Unit{
+		// ensure units are deduplicated for spec v3
+		ret = replaceOrAppendUnit(ret, types.Unit{
 			Name:     u.Name,
 			Enabled:  enabled,
 			Mask:     util.BoolP(u.Mask),
@@ -370,6 +402,17 @@ func translateNode(n old.Node, m map[string]string) types.Node {
 	}
 }
 
+func replaceOrAppendFile(files []types.File, file types.File) []types.File {
+	for i, f := range files {
+		if f.Node.Path == file.Node.Path {
+			files[i] = file
+			return files
+		}
+	}
+	files = append(files, file)
+	return files
+}
+
 func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 	for _, f := range files {
 		// 2.x files are overwrite by default
@@ -400,7 +443,8 @@ func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 		} else {
 			file.Contents = c
 		}
-		ret = append(ret, file)
+		// ensure files are deduplicated for spec v3
+		ret = replaceOrAppendFile(ret, file)
 	}
 	return
 }

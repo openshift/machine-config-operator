@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
@@ -60,14 +60,15 @@ func TestOverwrittenFile(t *testing.T) {
 	fileMode := int(fi.Mode().Perm())
 
 	// validate single file
+	duString := dataurl.EncodeBytes([]byte("hello world\n"))
 	files := []igntypes.File{
 		{
 			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello world\n")),
+				Contents: igntypes.Resource{
+					Source: &duString,
 				},
 				Mode: &fileMode,
 			},
@@ -79,14 +80,15 @@ func TestOverwrittenFile(t *testing.T) {
 	}
 
 	// validate overwritten file
+	duString2 := dataurl.EncodeBytes([]byte("hello\n"))
 	files = []igntypes.File{
 		{
 			Node: igntypes.Node{
 				Path: "fixtures/test1.txt",
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello\n")),
+				Contents: igntypes.Resource{
+					Source: &duString2,
 				},
 				Mode: &fileMode,
 			},
@@ -96,8 +98,8 @@ func TestOverwrittenFile(t *testing.T) {
 				Path: "fixtures/test1.txt",
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello world\n")),
+				Contents: igntypes.Resource{
+					Source: &duString,
 				},
 				Mode: &fileMode,
 			},

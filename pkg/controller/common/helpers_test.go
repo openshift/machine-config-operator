@@ -90,38 +90,40 @@ func TestConvertIgnition3to2(t *testing.T) {
 
 func TestIgnParseWrapper(t *testing.T) {
 	// Make a new Ign3.1 config
-	testIgn3Config := ign3types.Config{}
+	testIgn3Config := NewIgnConfig()
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
 	testIgn3Config.Ignition.Version = "3.1.0"
 
 	// Make a Ign2 comp config
-	testIgn2Config := NewIgnConfig()
+	testIgn2Config := ign2types.Config{}
 	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser2}
+	testIgn2Config.Ignition.Version = "2.2.0"
 
 	// turn v2.2 config into a raw []byte
 	rawIgn := helpers.MarshalOrDie(testIgn2Config)
 	// check that it was parsed successfully
 	convertedIgn, err := IgnParseWrapper(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn2Config, convertedIgn)
+	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// turn v3.1 config into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
 	convertedIgn, err = IgnParseWrapper(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn2Config, convertedIgn)
+	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.0 cfg
-	testIgn3Config.Ignition.Version = "3.0.0"
+	testIgn3_0Config := testIgn3Config
+	testIgn3_0Config.Ignition.Version = "3.0.0"
 	// turn it into a raw []byte
-	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	rawIgn = helpers.MarshalOrDie(testIgn3_0Config)
 	// check that it was parsed successfully
 	convertedIgn, err = IgnParseWrapper(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn2Config, convertedIgn)
+	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a bad Ign3 cfg
 	testIgn3Config.Ignition.Version = "21.0.0"
@@ -129,5 +131,5 @@ func TestIgnParseWrapper(t *testing.T) {
 	// check that it failed since this is an invalid cfg
 	convertedIgn, err = IgnParseWrapper(rawIgn)
 	require.NotNil(t, err)
-	assert.Equal(t, ign2types.Config{}, convertedIgn)
+	assert.Equal(t, ign3types.Config{}, convertedIgn)
 }

@@ -4,17 +4,23 @@ import (
 	"fmt"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/davecgh/go-spew/spew"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
-	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
 	clienttesting "k8s.io/client-go/testing"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
+
+// Golang :cry:
+func strToPtr(s string) *string {
+	return &s
+}
 
 func TestApplyMachineConfig(t *testing.T) {
 	tests := []struct {
@@ -180,7 +186,7 @@ func TestApplyMachineConfig(t *testing.T) {
 					Raw: helpers.MarshalOrDie(&igntypes.Config{
 						Passwd: igntypes.Passwd{
 							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy",
+								HomeDir: strToPtr("/home/dummy"),
 							}},
 						},
 					}),
@@ -206,7 +212,7 @@ func TestApplyMachineConfig(t *testing.T) {
 						Raw: helpers.MarshalOrDie(&igntypes.Config{
 							Passwd: igntypes.Passwd{
 								Users: []igntypes.PasswdUser{{
-									HomeDir: "/home/dummy",
+									HomeDir: strToPtr("/home/dummy"),
 								}},
 							},
 						}),
@@ -227,7 +233,7 @@ func TestApplyMachineConfig(t *testing.T) {
 						Raw: helpers.MarshalOrDie(&igntypes.Config{
 							Passwd: igntypes.Passwd{
 								Users: []igntypes.PasswdUser{{
-									HomeDir: "/home/dummy-prev",
+									HomeDir: strToPtr("/home/dummy-prev"),
 								}},
 							},
 						}),
@@ -242,7 +248,7 @@ func TestApplyMachineConfig(t *testing.T) {
 					Raw: helpers.MarshalOrDie(&igntypes.Config{
 						Passwd: igntypes.Passwd{
 							Users: []igntypes.PasswdUser{{
-								HomeDir: "/home/dummy",
+								HomeDir: strToPtr("/home/dummy"),
 							}},
 						},
 					}),
@@ -268,7 +274,7 @@ func TestApplyMachineConfig(t *testing.T) {
 						Raw: helpers.MarshalOrDie(&igntypes.Config{
 							Passwd: igntypes.Passwd{
 								Users: []igntypes.PasswdUser{{
-									HomeDir: "/home/dummy",
+									HomeDir: strToPtr("/home/dummy"),
 								}},
 							},
 						}),

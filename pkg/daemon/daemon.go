@@ -19,7 +19,7 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
@@ -1364,17 +1364,17 @@ func checkUnits(units []igntypes.Unit) error {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if err := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); err != nil {
+			if err := checkFileContentsAndMode(path, []byte(*u.Dropins[j].Contents), defaultFilePermissions); err != nil {
 				return err
 			}
 		}
 
-		if u.Contents == "" {
+		if u.Contents == nil || u.Contents == ctrlcommon.StrToPtr("") {
 			continue
 		}
 
 		path := filepath.Join(pathSystemd, u.Name)
-		if u.Mask {
+		if u.Mask != nil && *u.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
 				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
@@ -1383,7 +1383,7 @@ func checkUnits(units []igntypes.Unit) error {
 				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
 			}
 		}
-		if err := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); err != nil {
+		if err := checkFileContentsAndMode(path, []byte(*u.Contents), defaultFilePermissions); err != nil {
 			return err
 		}
 
@@ -1405,7 +1405,7 @@ func checkFiles(files []igntypes.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := dataurl.DecodeString(f.Contents.Source)
+		contents, err := dataurl.DecodeString(*f.Contents.Source)
 		if err != nil {
 			return errors.Wrapf(err, "couldn't parse file %q", f.Path)
 		}

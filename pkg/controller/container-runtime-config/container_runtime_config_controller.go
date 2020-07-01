@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -597,7 +597,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
 func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
-	dataURL, err := dataurl.DecodeString(origFile.Contents.Source)
+	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
 	}
@@ -755,7 +755,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	}
 
 	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
-		dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalRegistriesIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
 		}
@@ -765,7 +765,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		}
 	}
 	if blockedRegs != nil || allowedRegs != nil {
-		dataURL, err := dataurl.DecodeString(originalPolicyIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalPolicyIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original policy json: %v", err)
 		}

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
@@ -159,7 +159,7 @@ func TestBootstrapRun(t *testing.T) {
 				}
 			}
 			require.NotNil(t, registriesConfig)
-			dataURL, err := dataurl.DecodeString(registriesConfig.Contents.Source)
+			dataURL, err := dataurl.DecodeString(*registriesConfig.Contents.Source)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
 			// maintained in pkg/controller/continer-runtime-config.

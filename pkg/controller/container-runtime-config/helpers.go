@@ -12,7 +12,7 @@ import (
 	"github.com/containers/image/pkg/sysregistriesv2"
 	signature "github.com/containers/image/signature"
 	storageconfig "github.com/containers/storage/pkg/config"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -113,13 +113,12 @@ func createNewIgnition(configs []generatedConfigFile) igntypes.Config {
 		configdu.Encoding = dataurl.EncodingASCII
 		configTempFile := igntypes.File{
 			Node: igntypes.Node{
-				Filesystem: "root",
-				Path:       ignConf.filePath,
+				Path: ignConf.filePath,
 			},
 			FileEmbedded1: igntypes.FileEmbedded1{
 				Mode: &mode,
-				Contents: igntypes.FileContents{
-					Source: configdu.String(),
+				Contents: igntypes.Resource{
+					Source: ctrlcommon.StrToPtr(configdu.String()),
 				},
 			},
 		}

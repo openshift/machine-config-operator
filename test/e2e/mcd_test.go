@@ -60,37 +60,37 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabelForRole("worker")
 }
 
-func createIgnFile(path, content, fs string, mode int) ign2types.File {
-	return ign2types.File{
-		FileEmbedded1: ign2types.FileEmbedded1{
-			Contents: ign2types.FileContents{
-				Source: content,
+func createIgnFile(path, content string, mode int) ign3types.File {
+	nodeNameStr := "root"
+	return ign3types.File{
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: &content,
 			},
 			Mode: &mode,
 		},
-		Node: ign2types.Node{
-			Filesystem: fs,
-			Path:       path,
-			User: &ign2types.NodeUser{
-				Name: "root",
+		Node: ign3types.Node{
+			Path: path,
+			User: ign3types.NodeUser{
+				Name: &nodeNameStr,
 			},
 		},
 	}
 }
 
-func createMCToAddFileForRole(name, role, filename, data, fs string) *mcfgv1.MachineConfig {
+func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
 	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
 	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := createIgnFile(filename, "data:,"+data, fs, 420)
+	ignFile := createIgnFile(filename, "data:,"+data, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 	return mcadd
 }
 
-func createMCToAddFile(name, filename, data, fs string) *mcfgv1.MachineConfig {
-	return createMCToAddFileForRole(name, "worker", filename, data, fs)
+func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
+	return createMCToAddFileForRole(name, "worker", filename, data)
 }
 
 func TestMCDeployed(t *testing.T) {
@@ -99,7 +99,7 @@ func TestMCDeployed(t *testing.T) {
 	// TODO: bring this back to 10
 	for i := 0; i < 3; i++ {
 		startTime := time.Now()
-		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
+		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
 
 		// create the dummy MC now
 		_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
@@ -142,7 +142,7 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 	return &mcdList.Items[0], nil
 }
 
-func TestUpdateSSH(t *testing.T) {
+func TestUpdateSSHIgnSpecV2(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	// create a dummy MC with an sshKey for user Core
@@ -160,8 +160,10 @@ func TestUpdateSSH(t *testing.T) {
 			"abc_test",
 		},
 	}
-	ignConfig := ctrlcommon.NewIgnConfig()
+
+	ignConfig := ign2types.Config{}
 	ignConfig.Passwd.Users = append(ignConfig.Passwd.Users, tempUser)
+	ignConfig.Ignition.Version = "2.2.0"
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 
@@ -187,6 +189,58 @@ func TestUpdateSSH(t *testing.T) {
 			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", found)
 		}
 		t.Logf("Node %s has SSH key", node.Name)
+	}
+}
+
+func TestUpdateSSHIgnSpecV3(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// create a dummy MC with an sshKey for user Core
+	mcName := fmt.Sprintf("99-ign3cfg-worker-%s", uuid.NewUUID())
+	mcadd := &mcfgv1.MachineConfig{}
+	mcadd.ObjectMeta = metav1.ObjectMeta{
+		Name:   mcName,
+		Labels: mcLabelForWorkers(),
+	}
+	// create a new MC that adds a valid user & ssh key
+	testIgn3Config := ctrlcommon.NewIgnConfig()
+	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234_test_ign3"}}
+	testIgn3Config.Passwd.Users = append(testIgn3Config.Passwd.Users, tempUser)
+	testIgn3Config.Ignition.Version = "3.1.0"
+	mode := 420
+	testfiledata := "data:,test-ign3-stuff"
+	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
+	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
+	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
+	mcadd.Spec.Config.Raw = rawIgnConfig
+
+	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
+	require.Nil(t, err, "failed to create MC")
+	t.Logf("Created %s", mcadd.Name)
+
+	// grab the latest worker- MC
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
+	require.Nil(t, err)
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+		foundSSH := execCmdOnNode(t, cs, node, "grep", "1234_test_ign3", "/rootfs/home/core/.ssh/authorized_keys")
+		if !strings.Contains(foundSSH, "1234_test_ign3") {
+			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSH)
+		}
+		t.Logf("Node %s has SSH key", node.Name)
+
+		foundFile := execCmdOnNode(t, cs, node, "cat", "/rootfs/etc/testfileconfig")
+		if !strings.Contains(foundFile, "test-ign3-stuff") {
+			t.Fatalf("updated file doesn't contain expected data, got %s", foundFile)
+		}
+		t.Logf("Node %s has file", node.Name)
 	}
 }
 
@@ -300,7 +354,7 @@ func TestKernelType(t *testing.T) {
 func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
 	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
@@ -349,15 +403,13 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	// create a MC that contains a valid ignition config but is not reconcilable
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
 	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
-	ignCfg.Networkd = ign2types.Networkd{
-		Units: []ign2types.Networkdunit{
-			{
-				Name:     "test.network",
-				Contents: "test contents",
-			},
+	// Verify Disk changes react as expected
+	ignCfg.Storage.Disks = []ign3types.Disk{
+		{
+			Device: "/one",
 		},
 	}
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
@@ -451,7 +503,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test", "root")
+	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test")
 
 	workerOldMc := getMcName(t, cs, "worker")
 
@@ -500,7 +552,7 @@ func TestCustomPool(t *testing.T) {
 
 	createMCP(t, cs, "infra")
 
-	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool", "root")
+	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool")
 	_, err := cs.MachineConfigs().Create(context.TODO(), infraMC, metav1.CreateOptions{})
 	require.Nil(t, err)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", infraMC.Name)
@@ -550,7 +602,7 @@ func TestIgn3Cfg(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234_test_ign3"}}
 	testIgn3Config.Passwd.Users = append(testIgn3Config.Passwd.Users, tempUser)
-	testIgn3Config.Ignition.Version = "3.0.0"
+	testIgn3Config.Ignition.Version = "3.1.0"
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
@@ -565,6 +617,7 @@ func TestIgn3Cfg(t *testing.T) {
 
 	// grab the latest worker- MC
 	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+
 	require.Nil(t, err)
 	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
 	require.Nil(t, err)

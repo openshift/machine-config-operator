@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
 
@@ -24,7 +24,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
-			dataURL, _ := dataurl.DecodeString(kubeletConfig.Contents.Source)
+			dataURL, _ := dataurl.DecodeString(*kubeletConfig.Contents.Source)
 			originalKubeConfig, _ := decodeKubeletConfig(dataURL.Data)
 			defaultFeatureGates, err := ctrl.generateFeatureMap(createNewDefaultFeatureGate())
 			if err != nil {

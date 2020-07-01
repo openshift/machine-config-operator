@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -275,13 +275,11 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []igntypes.File{{
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/dummy/0",
+			Path: "/dummy/0",
 		},
 	}, {
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/dummy/1",
+			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -321,13 +319,11 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []igntypes.File{{
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/dummy/0",
+			Path: "/dummy/0",
 		},
 	}, {
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/dummy/1",
+			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{
@@ -393,13 +389,11 @@ func TestDoNothing(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	files := []igntypes.File{{
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/dummy/0",
+			Path: "/dummy/0",
 		},
 	}, {
 		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/dummy/1",
+			Path: "/dummy/1",
 		},
 	}}
 	mcs := []*mcfgv1.MachineConfig{

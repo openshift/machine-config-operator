@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
@@ -84,29 +84,9 @@ func TestReconcilable(t *testing.T) {
 	_, isReconcilable = Reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Ignition", isReconcilable)
 
-	// Verify Networkd unit changes react as expected
-	oldIgnCfg.Networkd = igntypes.Networkd{}
-	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	newIgnCfg.Networkd = igntypes.Networkd{
-		Units: []igntypes.Networkdunit{
-			igntypes.Networkdunit{
-				Name: "test.network",
-			},
-		},
-	}
-	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
-	checkIrreconcilableResults(t, "Networkd", isReconcilable)
-
-	// Match Networkd
-	oldIgnCfg.Networkd = newIgnCfg.Networkd
-	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
-	checkReconcilableResults(t, "Networkd", isReconcilable)
-
 	// Verify Disk changes react as expected
 	oldIgnCfg.Storage.Disks = []igntypes.Disk{
-		igntypes.Disk{
+		{
 			Device: "/one",
 		},
 	}
@@ -121,11 +101,11 @@ func TestReconcilable(t *testing.T) {
 	checkReconcilableResults(t, "Disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
-	oldFSPath := "/foo/bar"
 	oldIgnCfg.Storage.Filesystems = []igntypes.Filesystem{
-		igntypes.Filesystem{
-			Name: "user",
-			Path: &oldFSPath,
+		{
+			Device: "/dev/sda1",
+			Format: ctrlcommon.StrToPtr("ext4"),
+			Path:   ctrlcommon.StrToPtr("/foo/bar"),
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
@@ -140,7 +120,7 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Raid changes react as expected
 	oldIgnCfg.Storage.Raid = []igntypes.Raid{
-		igntypes.Raid{
+		{
 			Name:  "data",
 			Level: "stripe",
 		},
@@ -200,8 +180,17 @@ func TestMachineConfigDiff(t *testing.T) {
 
 func newTestIgnitionFile(i uint) igntypes.File {
 	mode := 0644
-	return igntypes.File{Node: igntypes.Node{Path: fmt.Sprintf("/etc/config%d", i), Filesystem: "root"},
-		FileEmbedded1: igntypes.FileEmbedded1{Contents: igntypes.FileContents{Source: fmt.Sprintf("data:,config%d", i)}, Mode: &mode}}
+	return igntypes.File{
+		Node: igntypes.Node{
+			Path: fmt.Sprintf("/etc/config%d", i),
+		},
+		FileEmbedded1: igntypes.FileEmbedded1{
+			Contents: igntypes.Resource{
+				Source: ctrlcommon.StrToPtr(fmt.Sprintf("data:,config%d", i)),
+			},
+			Mode: &mode,
+		},
+	}
 }
 
 func newMachineConfigFromFiles(files []igntypes.File) *mcfgv1.MachineConfig {
@@ -357,7 +346,8 @@ func TestReconcilableSSH(t *testing.T) {
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
-	tempUser4 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
+	homedirString := "somedir"
+	tempUser4 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}, HomeDir: &homedirString}
 	newIgnCfg.Passwd.Users[0] = tempUser4
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = Reconcilable(oldMcfg, newMcfg)
@@ -433,11 +423,11 @@ func TestInvalidIgnConfig(t *testing.T) {
 	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnConfig)
 
 	// create file to write that contains an impermissable relative path
-	tempFileContents := igntypes.FileContents{Source: "data:,hello%20world%0A"}
+	tempFileContents := igntypes.Resource{Source: ctrlcommon.StrToPtr("data:,hello%20world%0A")}
 	tempMode := 420
 	newIgnConfig := ctrlcommon.NewIgnConfig()
 	newIgnFile := igntypes.File{
-		Node:          igntypes.Node{Path: "home/core/test", Filesystem: "root"},
+		Node:          igntypes.Node{Path: "home/core/test"},
 		FileEmbedded1: igntypes.FileEmbedded1{Contents: tempFileContents, Mode: &tempMode},
 	}
 	newIgnConfig.Storage.Files = append(newIgnConfig.Storage.Files, newIgnFile)

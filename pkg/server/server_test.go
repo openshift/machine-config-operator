@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -270,7 +270,7 @@ func TestClusterServer(t *testing.T) {
 		}
 		foundEncapsulated = true
 		encapMc := new(mcfgv1.MachineConfig)
-		contents, err := getDecodedContent(f.Contents.Source)
+		contents, err := getDecodedContent(*f.Contents.Source)
 		assert.Nil(t, err)
 		err = yaml.Unmarshal([]byte(contents), encapMc)
 		assert.Nil(t, err)
@@ -331,7 +331,7 @@ func createUnitMap(units []igntypes.Unit) map[string]igntypes.Unit {
 func createFileMap(files []igntypes.File) map[string]igntypes.File {
 	m := make(map[string]igntypes.File)
 	for i := range files {
-		file := path.Join(files[i].Filesystem, files[i].Path)
+		file := files[i].Path
 		m[file] = files[i]
 	}
 	return m
