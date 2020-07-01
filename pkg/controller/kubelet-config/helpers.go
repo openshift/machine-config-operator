@@ -13,6 +13,8 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -128,6 +130,36 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		for k := range kcDecoded.EvictionSoft {
 			if _, ok := kcDecoded.EvictionSoftGracePeriod[k]; !ok {
 				return fmt.Errorf("KubeletConfiguration: evictionSoft[%s] is defined but EvictionSoftGracePeriod[%s] is not set", k, k)
+			}
+		}
+	}
+
+	reservedResources := []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory, v1.ResourceEphemeralStorage}
+
+	if kcDecoded.KubeReserved != nil && len(kcDecoded.KubeReserved) > 0 {
+		for _, rr := range reservedResources {
+			if val, ok := kcDecoded.KubeReserved[rr.String()]; ok {
+				q, err := resource.ParseQuantity(val)
+				if err != nil {
+					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in kubeReserved, %s", rr.String(), val)
+				}
+				if q.Sign() == -1 {
+					return fmt.Errorf("KubeletConfiguration: %s reservation value cannot be negative in kubeReserved", rr.String())
+				}
+			}
+		}
+	}
+
+	if kcDecoded.SystemReserved != nil && len(kcDecoded.SystemReserved) > 0 {
+		for _, rr := range reservedResources {
+			if val, ok := kcDecoded.SystemReserved[rr.String()]; ok {
+				q, err := resource.ParseQuantity(val)
+				if err != nil {
+					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in systemReserved, %s", rr.String(), val)
+				}
+				if q.Sign() == -1 {
+					return fmt.Errorf("KubeletConfiguration: %s reservation value cannot be negative in systemReserved", rr.String())
+				}
 			}
 		}
 	}
