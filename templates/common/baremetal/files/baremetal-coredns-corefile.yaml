@@ -6,7 +6,7 @@ contents:
     . {
         errors
         health :18080
-        mdns {{ .EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}}
+        mdns {{ .EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
         cache 30
         reload
