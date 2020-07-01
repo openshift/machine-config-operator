@@ -5,14 +5,31 @@
     forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
     cache 30
     reload
-    hosts {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api-int.{{ .ControllerConfig.EtcdDiscoveryDomain }}
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }} api.{{ .ControllerConfig.EtcdDiscoveryDomain }}
+    template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        match .*.apps.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         fallthrough
     }
-    template IN A {{ .ControllerConfig.EtcdDiscoveryDomain }} {
-        match .*.apps.{{ .ControllerConfig.EtcdDiscoveryDomain }}
-        answer "{{`{{"{{ .Name }}"}}`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+    template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        match .*.apps.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        match api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        match api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        match api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        fallthrough
+    }
+    template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        match api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
         fallthrough
     }
 }
