@@ -11,6 +11,7 @@ contents: |
   ConditionPathExists=!/usr/lib/systemd/system/pivot.service
   After=ignition-firstboot-complete.service
   Before=kubelet.service
+  Before=zincati.service
 
   [Service]
   # Need oneshot to delay kubelet

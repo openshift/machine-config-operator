@@ -13,6 +13,7 @@ contents: |
   ConditionPathExists=!/usr/libexec/bin/machine-config-daemon
   After=ignition-firstboot-complete.service
   Before=machine-config-daemon-host.service
+  Before=zincati.service
 
   [Service]
   # Need oneshot to delay kubelet
