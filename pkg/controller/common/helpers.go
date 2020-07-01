@@ -125,12 +125,30 @@ func WriteTerminationError(err error) {
 	glog.Fatal(msg)
 }
 
+func replaceOrAppend(files []ign2types.File, file ign2types.File) []ign2types.File {
+	for i, f := range files {
+		if f.Node.Path == file.Node.Path {
+			files[i] = file
+			return files
+		}
+	}
+	return append(files, file)
+}
+
 // ConvertIgnition2to3 takes an ignition spec v2 config and returns a v3 config
 func ConvertIgnition2to3(ign2config ign2types.Config) (ign3types.Config, error) {
 	// only support writing to root file system
 	fsMap := map[string]string{
 		"root": "/",
 	}
+
+	// Ensure storage has no duplicate files in Storage.Files
+	// This is a valid situation in Ign2, but not allowed in Ign3
+	files := []ign2types.File{}
+	for _, f := range ign2config.Storage.Files {
+		files = replaceOrAppend(files, f)
+	}
+	ign2config.Storage.Files = files
 
 	// Workaround to get v2.3 as input for converter
 	ign2_3config := ign2_3.Translate(ign2config)
