@@ -1,11 +1,6 @@
 name: "vsphere-hostname.service"
 enabled: true
 contents: |
-  {{ if .Infra -}}
-  {{ if .Infra.Status -}}
-  {{ if .Infra.Status.PlatformStatus -}}
-  {{ if .Infra.Status.PlatformStatus.VSphere -}}
-  {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
   [Unit]
   Description=vSphere hostname
   After=vmtoolsd.service
@@ -18,9 +13,4 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
 
