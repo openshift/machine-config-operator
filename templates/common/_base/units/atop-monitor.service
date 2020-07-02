@@ -1,0 +1,17 @@
+name: atop-monitor.service
+enabled: true
+contents: |
+  [Unit]
+  Description=atop performance monitor
+  [Service]
+  Type=simple
+  Restart=always
+  RestartSec=3
+
+  ExecStart=/usr/bin/podman run --rm \
+    --volume /var/log/kube-apiserver:/var/log/kube-apiserver:z \
+    --pid=host \
+    docker.io/sttts/atop:latest \
+    /usr/bin/atop -w /var/log/kube-apiserver/atop 1
+  [Install]
+  WantedBy=multi-user.target
