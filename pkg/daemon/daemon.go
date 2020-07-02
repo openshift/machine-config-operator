@@ -1027,7 +1027,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	if currentOnDisk != nil && state.currentConfig.GetName() != currentOnDisk.GetName() {
 		// The on disk state (if available) is always considered truth.
 		// We want to handle the case where etcd state was restored from a backup.
-		dn.logSystem("Disk currentConfig %s overrides node annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
+		dn.logSystem("Disk currentConfig %s overrides node's currentConfig annotation %s", currentOnDisk.GetName(), state.currentConfig.GetName())
 		state.currentConfig = currentOnDisk
 	}
 
@@ -1048,6 +1048,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		glog.Infof("Validating against current config %s", state.currentConfig.GetName())
 		expectedConfig = state.currentConfig
 	}
+
 	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err != nil {
 		if err := dn.validateOnDiskState(expectedConfig); err != nil {
 			return fmt.Errorf("unexpected on-disk state validating against %s: %v", expectedConfig.GetName(), err)
@@ -1058,6 +1059,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
 			return errors.Wrap(err, "failed to remove force validation file")
 		}
+		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
 
 	// We've validated our state.  In the case where we had a pendingConfig,
