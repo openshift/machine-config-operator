@@ -605,27 +605,76 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 	return errors.New("detected change to FIPS flag. Refusing to modify FIPS on a running cluster")
 }
 
+// checks for white-space characters in "C" and "POSIX" locales.
+func isSpace(b byte) bool {
+	return b == ' ' || b == '\f' || b == '\n' || b == '\r' || b == '\t' || b == '\v'
+}
+
+// You can use " around spaces, but can't escape ". See next_arg() in kernel code /lib/cmdline.c
+// Gives the start and stop index for the next arg in the string, beyond the provided `begin` index
+func nextArg(args string, begin int) (int, int) {
+	var (
+		start, stop int
+		inQuote     bool
+	)
+	// Skip leading spaces
+	for start = begin; start < len(args) && isSpace(args[start]); start++ {
+	}
+	stop = start
+	for ; stop < len(args); stop++ {
+		if isSpace(args[stop]) && !inQuote {
+			break
+		}
+
+		if args[stop] == '"' {
+			inQuote = !inQuote
+		}
+	}
+
+	return start, stop
+}
+
+func splitKernelArguments(args string) []string {
+	var (
+		start, stop int
+		split       []string
+	)
+	for stop < len(args) {
+		start, stop = nextArg(args, stop)
+		if start != stop {
+			split = append(split, args[start:stop])
+		}
+	}
+	return split
+}
+
+// parseKernelArguments separates out kargs from each entry and returns it as a map for
+// easy comparison
+func parseKernelArguments(kargs []string) map[string]bool {
+	parsed := make(map[string]bool)
+	for _, k := range kargs {
+		for _, arg := range splitKernelArguments(k) {
+			parsed[strings.TrimSpace(arg)] = true
+		}
+	}
+	return parsed
+}
+
 // generateKargsCommand performs a diff between the old/new MC kernelArguments,
 // and generates the command line arguments suitable for `rpm-ostree kargs`.
 // Note what we really should be doing though is also looking at the *current*
 // kernel arguments in case there was drift.  But doing that requires us knowing
-// what the "base" arguments are.  See https://github.com/ostreedev/ostree/issues/479
+// what the "base" arguments are. See https://github.com/ostreedev/ostree/issues/479
 func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
-	oldKargs := make(map[string]bool)
-	for _, arg := range oldConfig.Spec.KernelArguments {
-		oldKargs[arg] = true
-	}
-	newKargs := make(map[string]bool)
-	for _, arg := range newConfig.Spec.KernelArguments {
-		newKargs[arg] = true
-	}
+	oldKargs := parseKernelArguments(oldConfig.Spec.KernelArguments)
+	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
 	cmdArgs := []string{}
-	for _, arg := range oldConfig.Spec.KernelArguments {
+	for arg := range oldKargs {
 		if !newKargs[arg] {
 			cmdArgs = append(cmdArgs, "--delete="+arg)
 		}
 	}
-	for _, arg := range newConfig.Spec.KernelArguments {
+	for arg := range newKargs {
 		if !oldKargs[arg] {
 			cmdArgs = append(cmdArgs, "--append="+arg)
 		}

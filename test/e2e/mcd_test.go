@@ -201,7 +201,7 @@ func TestKernelArguments(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			KernelArguments: []string{"nosmt", "foo=bar"},
+			KernelArguments: []string{"nosmt", "foo=bar", " baz=test bar=\"hello world\""},
 		},
 	}
 
@@ -219,9 +219,10 @@ func TestKernelArguments(t *testing.T) {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		kargs := execCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
-		for _, v := range kargsMC.Spec.KernelArguments {
+		expectedKernelArgs := []string{"nosmt", "foo=bar", "baz=test", "\"bar=hello world\""}
+		for _, v := range expectedKernelArgs {
 			if !strings.Contains(kargs, v) {
-				t.Fatalf("Missing '%s' in kargs", v)
+				t.Fatalf("Missing %q in kargs: %q", v, kargs)
 			}
 		}
 		t.Logf("Node %s has expected kargs", node.Name)
