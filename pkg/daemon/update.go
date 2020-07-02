@@ -239,16 +239,16 @@ func rtKernelUpdateAvailable(updateRpms []os.FileInfo, installedRTKernelRpms []s
 	return false
 }
 
-// return true if the MachineConfigDiff is not empty
+// return true if the machineConfigDiff is not empty
 func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
-	mcDiff, err := NewMachineConfigDiff(oldConfig, newConfig)
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
-		return true, errors.Wrapf(err, "error creating MachineConfigDiff for comparison")
+		return true, errors.Wrapf(err, "error creating machineConfigDiff for comparison")
 	}
-	if mcDiff.IsEmpty() {
+	if mcDiff.isEmpty() {
 		glog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
 		return false, nil
 	}
@@ -284,7 +284,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
-	diff, reconcilableError := Reconcilable(oldConfig, newConfig)
+	diff, reconcilableError := reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
@@ -383,11 +383,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.updateOSAndReboot(newConfig)
 }
 
-// MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
+// machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
 // At some point this may change into holding just the files/units that changed
 // and the MCO would just operate on that.  For now we're just doing this to get
 // improved logging.
-type MachineConfigDiff struct {
+type machineConfigDiff struct {
 	osUpdate   bool
 	kargs      bool
 	fips       bool
@@ -395,6 +395,16 @@ type MachineConfigDiff struct {
 	files      bool
 	units      bool
 	kernelType bool
+}
+
+// isEmpty returns true if the machineConfigDiff has no changes, or
+// in other words if the two MachineConfig objects are equivalent from
+// the MCD's point of view.  This is mainly relevant if e.g. two MC
+// objects happen to have different Ignition versions but are otherwise
+// the same.  (Probably a better way would be to canonicalize)
+func (mcDiff *machineConfigDiff) isEmpty() bool {
+	emptyDiff := machineConfigDiff{}
+	return reflect.DeepEqual(mcDiff, &emptyDiff)
 }
 
 // canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
@@ -405,8 +415,8 @@ func canonicalizeKernelType(kernelType string) string {
 	return ctrlcommon.KernelTypeDefault
 }
 
-// NewMachineConfigDiff compares two MachineConfig objects.
-func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
+// newMachineConfigDiff compares two MachineConfig objects.
+func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	oldIgn, err := ctrlcommon.IgnParseWrapper(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
@@ -420,7 +430,7 @@ func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineC
 	// consider them as equal while comparing KernelArguments in both MachineConfigs
 	kargsEmpty := len(oldConfig.Spec.KernelArguments) == 0 && len(newConfig.Spec.KernelArguments) == 0
 
-	return &MachineConfigDiff{
+	return &machineConfigDiff{
 		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
 		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
@@ -431,17 +441,7 @@ func NewMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineC
 	}, nil
 }
 
-// IsEmpty returns true if the MachineConfigDiff has no changes, or
-// in other words if the two MachineConfig objects are equivalent from
-// the MCD's point of view.  This is mainly relevant if e.g. two MC
-// objects happen to have different Ignition versions but are otherwise
-// the same.  (Probably a better way would be to canonicalize)
-func (d *MachineConfigDiff) IsEmpty() bool {
-	emptyDiff := MachineConfigDiff{}
-	return reflect.DeepEqual(d, &emptyDiff)
-}
-
-// Reconcilable checks the configs to make sure that the only changes requested
+// reconcilable checks the configs to make sure that the only changes requested
 // are ones we know how to do in-place.  If we can reconcile, (nil, nil) is returned.
 // Otherwise, if we can't do it in place, the node is marked as degraded;
 // the returned string value includes the rationale.
@@ -449,7 +449,7 @@ func (d *MachineConfigDiff) IsEmpty() bool {
 // we can only update machine configs that have changes to the files,
 // directories, links, and systemd units sections of the included ignition
 // config currently.
-func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDiff, error) {
+func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
 	// The ignition output in case of success will always have maxVersion
 	oldIgn, err := ctrlcommon.IgnParseWrapper(oldConfig.Spec.Config.Raw)
@@ -548,9 +548,9 @@ func Reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*MachineConfigDif
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
-	mcDiff, err := NewMachineConfigDiff(oldConfig, newConfig)
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error creating MachineConfigDiff")
+		return nil, errors.Wrapf(err, "error creating machineConfigDiff")
 	}
 	return mcDiff, nil
 }
