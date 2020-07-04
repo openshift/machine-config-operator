@@ -33,6 +33,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 )
 
@@ -707,7 +708,10 @@ func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string,
 	args := []string{"pull", "-q"}
 	args = append(args, authArgs...)
 	args = append(args, container)
-	pivotutils.RunExt(false, numRetriesNetCommands, "podman", args...)
+	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	if err != nil {
+		return
+	}
 
 	containerName = "mcd-" + string(uuid.NewUUID())
 	// `podman mount` wants a container, so let's create a dummy one, but not run it
@@ -1334,7 +1338,11 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if dn.kubeClient != nil {
 		if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
 			MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
-			return fmt.Errorf("failed to run pivot: %v", err)
+			pivotErr, err2 := ioutil.ReadFile(pivottypes.PivotFailurePath)
+			if err2 != nil || len(pivotErr) == 0 {
+				glog.Warningf("pivot error file doesn't contain anything, it was never written or an error occurred: %v", err2)
+			}
+			return fmt.Errorf("failed to run pivot: %v: %v", err, string(pivotErr))
 		}
 	} else {
 		// If we're here we're invoked via `machine-config-daemon-firstboot.service`, so let's
@@ -1346,7 +1354,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		}
 		if !changed {
 			// This really shouldn't happen
-			glog.Warningf("Didn't change when updating to %s ?", newURL)
+			glog.Warningf("Didn't change when updating to %q?", newURL)
 		}
 	}
 

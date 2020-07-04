@@ -733,17 +733,26 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
+		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+			return goerrs.Wrapf(err, "error getting nodes for pool %q, sync error: %v", pool.Name, syncErr)
+		}
 		return err
 	}
 
 	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
+		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+			return goerrs.Wrapf(err, "error getting max unavailable count for pool %q, sync error: %v", pool.Name, syncErr)
+		}
 		return err
 	}
 
 	candidates := getCandidateMachines(pool, nodes, maxunavail)
 	for _, node := range candidates {
 		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Spec.Configuration.Name); err != nil {
+			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+				return goerrs.Wrapf(err, "error setting desired machine config annotation for node %q, pool %q, sync error: %v", node.Name, pool.Name, syncErr)
+			}
 			return err
 		}
 	}
