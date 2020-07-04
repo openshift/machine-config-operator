@@ -1,0 +1,6 @@
+name: docker.socket
+dropins:
+- name: mco-disabled.conf
+  contents: |
+    [Unit]
+    ConditionPathExists=/enoent
