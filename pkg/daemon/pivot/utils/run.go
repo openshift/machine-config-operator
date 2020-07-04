@@ -2,58 +2,63 @@ package utils
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // runImpl is the actual shell execution implementation used by other functions.
-func runImpl(capture bool, command string, args ...string) ([]byte, error) {
+func runImpl(command string, args ...string) ([]byte, error) {
 	glog.Infof("Running: %s %s\n", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
-	cmd.Stderr = os.Stderr
-	var stdout bytes.Buffer
-	if !capture {
-		cmd.Stdout = os.Stdout
-	} else {
-		cmd.Stdout = &stdout
-	}
+	// multiplex writes to std streams so we keep seeing logs in MCD/systemd
+	// but we'll still be able to give out something here
+	var b bytes.Buffer
+	stderr := io.MultiWriter(os.Stderr, &b)
+	stdout := io.MultiWriter(os.Stdout, &b)
+	cmd.Stderr = stderr
+	cmd.Stdout = stdout
 	err := cmd.Run()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "running %s %s failed: %s", command, strings.Join(args, " "), b.String())
 	}
-	if capture {
-		return stdout.Bytes(), nil
-	}
-	return []byte{}, nil
+	return b.Bytes(), nil
 }
 
 // runExtBackoff is an extension to runExt that supports configuring retries/duration/backoff.
-func runExtBackoff(capture bool, backoff wait.Backoff, command string, args ...string) string {
-	var output string
-	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		if out, e := runImpl(capture, command, args...); e != nil {
-			glog.Warningf("%s failed: %v; retrying...", command, e)
+func runExtBackoff(backoff wait.Backoff, command string, args ...string) (string, error) {
+	var (
+		output  string
+		lastErr error
+	)
+	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		out, err := runImpl(command, args...)
+		if err != nil {
+			lastErr = err
+			glog.Warningf("%s failed: %v; retrying...", command, err)
 			return false, nil
-		} else if capture {
-			output = strings.TrimSpace(string(out))
 		}
+		output = strings.TrimSpace(string(out))
 		return true, nil
-	})
-	if err != nil {
-		glog.Fatalf("%s: %s", command, err)
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return "", errors.Wrapf(lastErr, "failed to run command %s (%d tries): %v", command, backoff.Steps, err)
+		}
+		return "", errors.Wrap(err, "failed to run command %s (%d tries): %v")
 	}
-	return output
+	return output, nil
 }
 
 // RunExt executes a command, optionally capturing the output and retrying multiple
 // times before exiting with a fatal error.
-func RunExt(capture bool, retries int, command string, args ...string) string {
-	return runExtBackoff(capture, wait.Backoff{
+func RunExt(retries int, command string, args ...string) (string, error) {
+	return runExtBackoff(wait.Backoff{
 		Steps:    retries + 1,     // times to try
 		Duration: 5 * time.Second, // sleep between tries
 		Factor:   2,               // factor by which to increase sleep
