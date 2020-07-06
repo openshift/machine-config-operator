@@ -7,6 +7,7 @@ contents: |
   Type=simple
   Restart=always
   RestartSec=3
+  DefaultDependencies=no
 
   ExecStart=/usr/bin/podman run --rm \
     --volume /var/log/kube-apiserver:/var/log/kube-apiserver:z \
@@ -14,4 +15,4 @@ contents: |
     docker.io/sttts/atop:latest \
     /usr/bin/atop -w /var/log/kube-apiserver/atop 1
   [Install]
-  WantedBy=multi-user.target
+  WantedBy=sysinit.target
