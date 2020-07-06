@@ -7,9 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	"github.com/openshift/machine-config-operator/test/helpers"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 type mockServer struct {
@@ -29,16 +30,26 @@ type scenario struct {
 	checkResponse checkResponse
 }
 
-const expectedContentLength int = 15
+const expectedContentLength int = 32
+
+func setUserAgentOnReq(req *http.Request) *http.Request {
+	req.Header.Set("User-Agent", "Ignition/0.35.0")
+	return req
+}
+
+func setV3UserAgentOnReq(req *http.Request) *http.Request {
+	req.Header.Set("User-Agent", "Ignition/2.3.0")
+	return req
+}
 
 func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
 			name:    "get config path that does not exist",
-			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -49,10 +60,10 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "get config path that exists",
-			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -64,10 +75,10 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "head config path that exists",
-			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -79,16 +90,31 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "post config path that exists",
-			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "get spec v3 config path that exists",
+			request: setV3UserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
 			},
 		},
 	}
@@ -116,7 +142,7 @@ func TestHealthzHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -130,7 +156,7 @@ func TestHealthzHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -144,7 +170,7 @@ func TestHealthzHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -174,7 +200,7 @@ func TestDefaultHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -188,7 +214,7 @@ func TestDefaultHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -202,7 +228,7 @@ func TestDefaultHandler(t *testing.T) {
 			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -229,10 +255,10 @@ func TestAPIServer(t *testing.T) {
 	scenarios := []scenario{
 		{
 			name:    "get config path that does not exist",
-			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, fmt.Errorf("not acceptable")
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -243,10 +269,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "get config path that exists",
-			request: httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -258,10 +284,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "head config path that exists",
-			request: httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -273,10 +299,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "post config path that exists",
-			request: httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -287,10 +313,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "get healthz",
-			request: httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -301,10 +327,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "head healthz",
-			request: httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -315,10 +341,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "post healthz",
-			request: httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -329,10 +355,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "get root",
-			request: httptest.NewRequest(http.MethodGet, "http://testrequest/", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -343,10 +369,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "head root",
-			request: httptest.NewRequest(http.MethodHead, "http://testrequest/", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {
@@ -357,10 +383,10 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "post root",
-			request: httptest.NewRequest(http.MethodPost, "http://testrequest/", nil),
+			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
-					Raw: helpers.MarshalOrDie(new(igntypes.Config)),
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 				}, nil
 			},
 			checkResponse: func(t *testing.T, response *http.Response) {

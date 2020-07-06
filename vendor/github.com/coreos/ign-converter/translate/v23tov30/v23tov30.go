@@ -1,4 +1,4 @@
-// Copyright 2019 Red Hat, Inc.
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,60 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ignconverter
+package v23tov30
 
 import (
 	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
-	"strings"
 
 	old "github.com/coreos/ignition/config/v2_3/types"
 	oldValidate "github.com/coreos/ignition/config/validate"
 	"github.com/coreos/ignition/v2/config/v3_0/types"
 	"github.com/coreos/ignition/v2/config/validate"
+
+	"github.com/coreos/ign-converter/util"
 )
 
-// Error definitions
-
-// Error type for when a filesystem is referenced in a config but there's no mapping to where
-// it should be mounted (i.e. `path` in v3+ configs)
-type NoFilesystemError string
-
-func (e NoFilesystemError) Error() string {
-	return fmt.Sprintf("Config defined filesystem %q but no mapping was defined."+
-		"Please specify a path to be used as the filesystem mountpoint.", string(e))
-}
-
-// DuplicateInodeError is for when files, directories, or links both specify the same path
-type DuplicateInodeError struct {
-	Old string // first occurance of the path
-	New string // second occurance of the path
-}
-
-func (e DuplicateInodeError) Error() string {
-	return fmt.Sprintf("Config has conflicting inodes: %q and %q.  All files, directories and links must specify a unique `path`.", e.Old, e.New)
-}
-
-// UsesOwnLinkError is for when files, directories, or links use symlinks defined in the config
-// in their own path. This is disallowed in v3+ configs.
-type UsesOwnLinkError struct {
-	LinkPath string
-	Name     string
-}
-
-func (e UsesOwnLinkError) Error() string {
-	return fmt.Sprintf("%s uses link defined in config %q. Please use a link not defined in Storage:Links", e.Name, e.LinkPath)
-}
-
-// UsesNetworkdError is the error for including networkd configs
-var UsesNetworkdError = errors.New("config includes deprecated networkd section - use Files instead")
-
-// Check returns if the config is translatable but does not do any translation.
+// Check2_3 returns if the config is translatable but does not do any translation.
 // fsMap is a map from v2 filesystem names to the paths under which they should
 // be mounted in v3.
-func Check(cfg old.Config, fsMap map[string]string) error {
+func Check2_3(cfg old.Config, fsMap map[string]string) error {
 	rpt := oldValidate.ValidateWithoutSource(reflect.ValueOf(cfg))
 	if rpt.IsFatal() || rpt.IsDeprecated() {
 		// disallow any deprecated fields
@@ -73,7 +39,7 @@ func Check(cfg old.Config, fsMap map[string]string) error {
 	}
 
 	if len(cfg.Networkd.Units) != 0 {
-		return UsesNetworkdError
+		return util.UsesNetworkdError
 	}
 
 	// check that all filesystems have a path
@@ -83,7 +49,7 @@ func Check(cfg old.Config, fsMap map[string]string) error {
 	fsMap["root"] = "/"
 	for _, fs := range cfg.Storage.Filesystems {
 		if _, ok := fsMap[fs.Name]; !ok {
-			return NoFilesystemError(fs.Name)
+			return util.NoFilesystemError(fs.Name)
 		}
 	}
 
@@ -102,10 +68,10 @@ func Check(cfg old.Config, fsMap map[string]string) error {
 		path := filepath.Join("/", fsMap[file.Filesystem], file.Path)
 		name := fmt.Sprintf("File: %s", path)
 		if duplicate, isDup := entryMap[path]; isDup {
-			return DuplicateInodeError{duplicate, name}
+			return util.DuplicateInodeError{duplicate, name}
 		}
-		if l := checkPathUsesLink(links, path); l != "" {
-			return &UsesOwnLinkError{
+		if l := util.CheckPathUsesLink(links, path); l != "" {
+			return &util.UsesOwnLinkError{
 				LinkPath: l,
 				Name:     name,
 			}
@@ -116,10 +82,10 @@ func Check(cfg old.Config, fsMap map[string]string) error {
 		path := filepath.Join("/", fsMap[dir.Filesystem], dir.Path)
 		name := fmt.Sprintf("Directory: %s", path)
 		if duplicate, isDup := entryMap[path]; isDup {
-			return DuplicateInodeError{duplicate, name}
+			return util.DuplicateInodeError{duplicate, name}
 		}
-		if l := checkPathUsesLink(links, path); l != "" {
-			return &UsesOwnLinkError{
+		if l := util.CheckPathUsesLink(links, path); l != "" {
+			return &util.UsesOwnLinkError{
 				LinkPath: l,
 				Name:     name,
 			}
@@ -130,11 +96,11 @@ func Check(cfg old.Config, fsMap map[string]string) error {
 		path := filepath.Join("/", fsMap[link.Filesystem], link.Path)
 		name := fmt.Sprintf("Link: %s", path)
 		if duplicate, isDup := entryMap[path]; isDup {
-			return &DuplicateInodeError{duplicate, name}
+			return &util.DuplicateInodeError{duplicate, name}
 		}
 		entryMap[path] = name
-		if l := checkPathUsesLink(links, path); l != "" {
-			return &UsesOwnLinkError{
+		if l := util.CheckPathUsesLink(links, path); l != "" {
+			return &util.UsesOwnLinkError{
 				LinkPath: l,
 				Name:     name,
 			}
@@ -143,17 +109,9 @@ func Check(cfg old.Config, fsMap map[string]string) error {
 	return nil
 }
 
-func checkPathUsesLink(links []string, path string) string {
-	for _, l := range links {
-		if strings.HasPrefix(path, l) && path != l {
-			return l
-		}
-	}
-	return ""
-}
-
+// Translate translates spec v2.3 to v3.0
 func Translate(cfg old.Config, fsMap map[string]string) (types.Config, error) {
-	if err := Check(cfg, fsMap); err != nil {
+	if err := Check2_3(cfg, fsMap); err != nil {
 		return types.Config{}, err
 	}
 	res := types.Config{
@@ -233,15 +191,15 @@ func translateUsers(users []old.PasswdUser) (ret []types.PasswdUser) {
 			PasswordHash:      u.PasswordHash,
 			SSHAuthorizedKeys: translateUserSSH(u.SSHAuthorizedKeys),
 			UID:               u.UID,
-			Gecos:             strP(u.Gecos),
-			HomeDir:           strP(u.HomeDir),
-			NoCreateHome:      boolP(u.NoCreateHome),
-			PrimaryGroup:      strP(u.PrimaryGroup),
+			Gecos:             util.StrP(u.Gecos),
+			HomeDir:           util.StrP(u.HomeDir),
+			NoCreateHome:      util.BoolP(u.NoCreateHome),
+			PrimaryGroup:      util.StrP(u.PrimaryGroup),
 			Groups:            translateUserGroups(u.Groups),
-			NoUserGroup:       boolP(u.NoUserGroup),
-			NoLogInit:         boolP(u.NoLogInit),
-			Shell:             strP(u.Shell),
-			System:            boolP(u.System),
+			NoUserGroup:       util.BoolP(u.NoUserGroup),
+			NoLogInit:         util.BoolP(u.NoLogInit),
+			Shell:             util.StrP(u.Shell),
+			System:            util.BoolP(u.System),
 		})
 	}
 	return
@@ -266,8 +224,8 @@ func translateGroups(groups []old.PasswdGroup) (ret []types.PasswdGroup) {
 		ret = append(ret, types.PasswdGroup{
 			Name:         g.Name,
 			Gid:          g.Gid,
-			PasswordHash: strP(g.PasswordHash),
-			System:       boolP(g.System),
+			PasswordHash: util.StrP(g.PasswordHash),
+			System:       util.BoolP(g.System),
 		})
 	}
 	return
@@ -275,11 +233,23 @@ func translateGroups(groups []old.PasswdGroup) (ret []types.PasswdGroup) {
 
 func translateUnits(units []old.Unit) (ret []types.Unit) {
 	for _, u := range units {
+		var enabled *bool
+		// The Enabled field wins over Enable, since Enable is deprecated in spec v2 and removed in v3.
+		// It does so following the apparent intent of the upstream code [1]
+		// which actually does the opposite for Enable=true Enabled=false
+		// because the first matching line in a systemd preset wins.
+		// [1] https://github.com/coreos/ignition/blob/b4d18ad3fcb278a890327f858c1c10256ab6ee9d/internal/exec/stages/files/units.go#L32
+		if (u.Enabled != nil && *u.Enabled) || u.Enable {
+			enabled = util.BoolP(true)
+		}
+		if u.Enabled != nil && !*u.Enabled {
+			enabled = util.BoolPStrict(false)
+		}
 		ret = append(ret, types.Unit{
 			Name:     u.Name,
-			Enabled:  u.Enabled,
-			Mask:     boolP(u.Mask),
-			Contents: strP(u.Contents),
+			Enabled:  enabled,
+			Mask:     util.BoolP(u.Mask),
+			Contents: util.StrP(u.Contents),
 			Dropins:  translateDropins(u.Dropins),
 		})
 	}
@@ -290,7 +260,7 @@ func translateDropins(dropins []old.SystemdDropin) (ret []types.Dropin) {
 	for _, d := range dropins {
 		ret = append(ret, types.Dropin{
 			Name:     d.Name,
-			Contents: strP(d.Contents),
+			Contents: util.StrP(d.Contents),
 		})
 	}
 	return
@@ -300,7 +270,7 @@ func translateDisks(disks []old.Disk) (ret []types.Disk) {
 	for _, d := range disks {
 		ret = append(ret, types.Disk{
 			Device:     d.Device,
-			WipeTable:  boolP(d.WipeTable),
+			WipeTable:  util.BoolP(d.WipeTable),
 			Partitions: translatePartitions(d.Partitions),
 		})
 	}
@@ -314,9 +284,9 @@ func translatePartitions(parts []old.Partition) (ret []types.Partition) {
 			Number:             p.Number,
 			SizeMiB:            p.SizeMiB,
 			StartMiB:           p.StartMiB,
-			TypeGUID:           strP(p.TypeGUID),
-			GUID:               strP(p.GUID),
-			WipePartitionEntry: boolP(p.WipePartitionEntry),
+			TypeGUID:           util.StrP(p.TypeGUID),
+			GUID:               util.StrP(p.GUID),
+			WipePartitionEntry: util.BoolP(p.WipePartitionEntry),
 			ShouldExist:        p.ShouldExist,
 		})
 	}
@@ -329,7 +299,7 @@ func translateRaid(raids []old.Raid) (ret []types.Raid) {
 			Name:    r.Name,
 			Level:   r.Level,
 			Devices: translateDevices(r.Devices),
-			Spares:  intP(r.Spares),
+			Spares:  util.IntP(r.Spares),
 			Options: translateRaidOptions(r.Options),
 		})
 	}
@@ -361,12 +331,12 @@ func translateFilesystems(fss []old.Filesystem, m map[string]string) (ret []type
 		}
 		ret = append(ret, types.Filesystem{
 			Device:         f.Mount.Device,
-			Format:         strP(f.Mount.Format),
-			WipeFilesystem: boolP(f.Mount.WipeFilesystem),
+			Format:         util.StrP(f.Mount.Format),
+			WipeFilesystem: util.BoolP(f.Mount.WipeFilesystem),
 			Label:          f.Mount.Label,
 			UUID:           f.Mount.UUID,
 			Options:        translateFilesystemOptions(f.Mount.Options),
-			Path:           strP(m[f.Name]),
+			Path:           util.StrP(m[f.Name]),
 		})
 	}
 	return
@@ -390,11 +360,11 @@ func translateNode(n old.Node, m map[string]string) types.Node {
 		Path: filepath.Join(m[n.Filesystem], n.Path),
 		User: types.NodeUser{
 			ID:   n.User.ID,
-			Name: strP(n.User.Name),
+			Name: util.StrP(n.User.Name),
 		},
 		Group: types.NodeGroup{
 			ID:   n.Group.ID,
-			Name: strP(n.Group.Name),
+			Name: util.StrP(n.Group.Name),
 		},
 		Overwrite: n.Overwrite,
 	}
@@ -404,8 +374,15 @@ func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 	for _, f := range files {
 		// 2.x files are overwrite by default
 		if f.Node.Overwrite == nil {
-			f.Node.Overwrite = boolP(true)
+			f.Node.Overwrite = util.BoolP(true)
 		}
+
+		// In spec 3, overwrite must be false if append is true
+		// i.e. spec 2 files with append true must be translated to spec 3 files with overwrite false
+		if f.FileEmbedded1.Append == true {
+			f.Node.Overwrite = util.BoolPStrict(false)
+		}
+
 		file := types.File{
 			Node: translateNode(f.Node, m),
 			FileEmbedded1: types.FileEmbedded1{
@@ -413,8 +390,8 @@ func translateFiles(files []old.File, m map[string]string) (ret []types.File) {
 			},
 		}
 		c := types.FileContents{
-			Compression: strP(f.Contents.Compression),
-			Source:      strPStrict(f.Contents.Source),
+			Compression: util.StrP(f.Contents.Compression),
+			Source:      util.StrPStrict(f.Contents.Source),
 		}
 		c.Verification.Hash = f.FileEmbedded1.Contents.Verification.Hash
 
@@ -433,7 +410,7 @@ func translateLinks(links []old.Link, m map[string]string) (ret []types.Link) {
 		ret = append(ret, types.Link{
 			Node: translateNode(l.Node, m),
 			LinkEmbedded1: types.LinkEmbedded1{
-				Hard:   boolP(l.Hard),
+				Hard:   util.BoolP(l.Hard),
 				Target: l.Target,
 			},
 		})

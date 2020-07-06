@@ -7,14 +7,8 @@ import (
 	"testing"
 	"time"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_0/types"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -24,6 +18,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
@@ -60,18 +60,18 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabelForRole("worker")
 }
 
-func createIgnFile(path, content, fs string, mode int) igntypes.File {
-	return igntypes.File{
-		FileEmbedded1: igntypes.FileEmbedded1{
-			Contents: igntypes.FileContents{
+func createIgnFile(path, content, fs string, mode int) ign2types.File {
+	return ign2types.File{
+		FileEmbedded1: ign2types.FileEmbedded1{
+			Contents: ign2types.FileContents{
 				Source: content,
 			},
 			Mode: &mode,
 		},
-		Node: igntypes.Node{
+		Node: ign2types.Node{
 			Filesystem: fs,
 			Path:       path,
-			User: &igntypes.NodeUser{
+			User: &ign2types.NodeUser{
 				Name: "root",
 			},
 		},
@@ -153,9 +153,9 @@ func TestUpdateSSH(t *testing.T) {
 		Labels: mcLabelForWorkers(),
 	}
 	// create a new MC that adds a valid user & ssh keys
-	tempUser := igntypes.PasswdUser{
+	tempUser := ign2types.PasswdUser{
 		Name: "core",
-		SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{
+		SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{
 			"1234_test",
 			"abc_test",
 		},
@@ -301,7 +301,7 @@ func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, _, err := ign.Parse(mcadd.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
@@ -350,10 +350,10 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 	// create a MC that contains a valid ignition config but is not reconcilable
 	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, _, err := ign.Parse(mcadd.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
-	ignCfg.Networkd = igntypes.Networkd{
-		Units: []igntypes.Networkdunit{
+	ignCfg.Networkd = ign2types.Networkd{
+		Units: []ign2types.Networkdunit{
 			{
 				Name:     "test.network",
 				Contents: "test contents",
@@ -554,7 +554,7 @@ func TestIgn3Cfg(t *testing.T) {
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
-		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.FileContents{Source: &testfiledata}, Mode: &mode}}
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata}, Mode: &mode}}
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 	rawIgnConfig := helpers.MarshalOrDie(testIgn3Config)
 	mcadd.Spec.Config.Raw = rawIgnConfig

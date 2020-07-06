@@ -2,12 +2,18 @@ package server
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
+	"strings"
 
+	"github.com/clarketm/json"
+	"github.com/coreos/go-semver/semver"
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 type poolRequest struct {
@@ -102,6 +108,14 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	useragent := r.Header.Get("User-Agent")
 	glog.Infof("Pool %s requested by address:%q User-Agent:%q", cr.machineConfigPool, r.RemoteAddr, useragent)
 
+	reqConfigVer, err := deriveSpecVersionFromUseragent(useragent)
+	if err != nil {
+		w.Header().Set("Content-Length", "0")
+		w.WriteHeader(http.StatusBadRequest)
+		glog.Errorf("invalid useragent: %v", err)
+		return
+	}
+
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
@@ -115,7 +129,24 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := json.Marshal(conf)
+	// the internally saved config is always spec v2.2
+	// so translation is only necessary when spec v3.1 is requested
+	var serveConf *runtime.RawExtension
+	if reqConfigVer.Equal(*semver.New("3.1.0")) {
+		converted3, err := ctrlcommon.ConvertRawExtIgnition2to3(conf)
+		if err != nil {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			return
+		}
+
+		serveConf = &converted3
+	} else {
+		serveConf = conf
+	}
+
+	data, err := json.Marshal(serveConf)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -137,6 +168,27 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type healthHandler struct{}
+
+// deriveSpecVersionFromUseragent returns a supported Ignition config spec version for a given Ignition user agent
+// or an error for unsuported user agents.
+// Only Ignition versions that come with support for either spec v2.2 or spec v3.1 are supported
+func deriveSpecVersionFromUseragent(useragent string) (*semver.Version, error) {
+	ignVersionString := strings.SplitAfter(useragent, "/")[1]
+	ignSemver, err := semver.NewVersion(ignVersionString)
+	if err != nil {
+		return ignSemver, errors.Errorf("invalid version in useragent: %s", useragent)
+	}
+
+	if !ignSemver.LessThan(*semver.New("0.22.0")) && ignSemver.LessThan(*semver.New("1.0.0")) {
+		// versions [0.22.0;1) support config spec v2.2, and
+		return semver.New("2.2.0"), nil
+	} else if !ignSemver.LessThan(*semver.New("2.3.0")) && ignSemver.LessThan(*semver.New("3.0.0")) {
+		// versions [2.3.0;3) support config spec v3.1
+		return semver.New("3.1.0"), nil
+	}
+
+	return nil, errors.Errorf("unsupported version in useragent: %s", useragent)
+}
 
 // ServeHTTP handles /healthz requests.
 func (h *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

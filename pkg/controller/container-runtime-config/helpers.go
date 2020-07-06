@@ -12,17 +12,17 @@ import (
 	"github.com/containers/image/pkg/sysregistriesv2"
 	signature "github.com/containers/image/signature"
 	storageconfig "github.com/containers/storage/pkg/config"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/runtime-utils/pkg/registries"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -130,9 +130,9 @@ func createNewIgnition(configs []generatedConfigFile) igntypes.Config {
 }
 
 func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %v", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == storageConfigPath {
@@ -144,9 +144,9 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 }
 
 func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %v", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == registriesConfigPath {
@@ -157,9 +157,9 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
 }
 
 func findPolicyJSON(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, report, err := ign.Parse(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Policy JSON Ignition config failed with error: %v\nReport: %v", err, report)
+		return nil, fmt.Errorf("parsing Policy JSON Ignition config failed with error: %v", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == policyConfigPath {
