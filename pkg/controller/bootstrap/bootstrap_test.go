@@ -9,15 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
-
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	ign "github.com/coreos/ignition/config/v2_2"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 func TestParseManifests(t *testing.T) {
@@ -151,7 +150,7 @@ func TestBootstrapRun(t *testing.T) {
 
 			// Ensure that generated registries.conf corresponds to the testdata ImageContentSourcePolicy
 			var registriesConfig *igntypes.File
-			ignCfg, _, err := ign.Parse(mc.Spec.Config.Raw)
+			ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
 			require.NoError(t, err)
 			for i := range ignCfg.Storage.Files {
 				f := &ignCfg.Storage.Files[i]

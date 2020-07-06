@@ -12,54 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ignconverter
+package types
 
-func strP(in string) *string {
-	if in == "" {
-		return nil
-	}
-	return &in
-}
+import (
+	"github.com/coreos/vcontext/path"
+	"github.com/coreos/vcontext/report"
+)
 
-func strPStrict(in string) *string {
-	return &in
-}
-
-func boolP(in bool) *bool {
-	if !in {
-		return nil
-	}
-	return &in
-}
-
-func boolPStrict(in bool) *bool {
-	return &in
-}
-
-func intP(in int) *int {
-	if in == 0 {
-		return nil
-	}
-	return &in
-}
-
-func strV(in *string) string {
-	if in == nil {
-		return ""
-	}
-	return *in
-}
-
-func boolV(in *bool) bool {
-	if in == nil {
-		return false
-	}
-	return *in
-}
-
-func intV(in *int) int {
-	if in == nil {
-		return 0
-	}
-	return *in
+func (d Device) Validate(c path.ContextPath) (r report.Report) {
+	r.AddOnError(c, validatePath(string(d)))
+	return
 }
