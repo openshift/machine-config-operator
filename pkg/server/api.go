@@ -173,6 +173,12 @@ type healthHandler struct{}
 // or an error for unsuported user agents.
 // Only Ignition versions that come with support for either spec v2.2 or spec v3.1 are supported
 func deriveSpecVersionFromUseragent(useragent string) (*semver.Version, error) {
+	// for now, serve v2 if we receive a request without a useragent header with Ignition
+	// this happens if the user pings the endpoint directly (e.g. with curl)
+	// and we don't want to break existing behaviour
+	if !strings.HasPrefix(useragent, "Ignition/") {
+		return semver.New("2.2.0"), nil
+	}
 	ignVersionString := strings.SplitAfter(useragent, "/")[1]
 	ignSemver, err := semver.NewVersion(ignVersionString)
 	if err != nil {
