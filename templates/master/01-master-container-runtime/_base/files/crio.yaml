@@ -27,6 +27,9 @@ contents:
         "SYS_CHROOT",
         "KILL",
     ]
+    hooks_dir = [
+        "/etc/containers/oci/hooks.d",
+    ]
     manage_ns_lifecycle = true
 
     [crio.image]
