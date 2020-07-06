@@ -30,7 +30,7 @@ contents:
 
     default_host="${DHCP4_HOST_NAME:-$DHCP6_HOST_NAME}"
     # truncate the hostname to the first dot and than 64 characters.
-    host=$(echo ${default_host} | cut -f1 -d'.' | cut -c -63)
+    host=$(printf ${default_host} | cut -f1 -d'.' | cut -c -63)
 
     if [ "${#default_host}" -gt 63 ]; then
         log "discovered hostname is longer than than 63 characters"
