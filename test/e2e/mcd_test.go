@@ -201,7 +201,7 @@ func TestKernelArguments(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			KernelArguments: []string{"nosmt", "foo=bar", " baz=test bar=\"hello world\""},
+			KernelArguments: []string{"nosmt", "foo=bar", "foo=baz", " baz=test bar=\"hello world\""},
 		},
 	}
 
@@ -219,7 +219,7 @@ func TestKernelArguments(t *testing.T) {
 		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		kargs := execCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
-		expectedKernelArgs := []string{"nosmt", "foo=bar", "baz=test", "\"bar=hello world\""}
+		expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "\"bar=hello world\""}
 		for _, v := range expectedKernelArgs {
 			if !strings.Contains(kargs, v) {
 				t.Fatalf("Missing %q in kargs: %q", v, kargs)
