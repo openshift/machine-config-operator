@@ -133,6 +133,8 @@ custom MachineConfig objects from a higher level tool.  Although
 in the future ergonomic improvements are planned such as having
 a single MC apply to multiple labels, inline file encoding, etc.
 
+See [Ignition Support in MachineConfigs][/docs/IgnitionSupport.md] for more details and examples.
+
 # What to look at after creating a MachineConfig
 
 Once you create a MachineConfig fragment like the above, the controller will generate a new "rendered" version that will be used as a target.
