@@ -7,6 +7,11 @@ contents:
     {{ if .Infra.Status.PlatformStatus -}}
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
     {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+    global_defs {
+        enable_script_security
+        script_user root
+    }
+
     vrrp_script chk_ocp {
         script "/usr/bin/curl -o /dev/null -kLfs https://localhost:6443/readyz && /usr/bin/curl -o /dev/null -Lfs http://localhost:50936/readyz"
         interval 1
