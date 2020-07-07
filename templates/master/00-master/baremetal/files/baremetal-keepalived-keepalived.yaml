@@ -3,7 +3,7 @@ path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
 contents:
   inline: |
     vrrp_script chk_ocp {
-        script "/usr/bin/curl -o /dev/null -kLfs https://localhost:6443/readyz && /usr/bin/curl -o /dev/null -Lfs http://localhost:50936/readyz"
+        script "/etc/keepalived/chk_ocp_script.sh"
         interval 1
         weight 50
     }
