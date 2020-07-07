@@ -1,0 +1,6 @@
+mode: 0755
+path: "/etc/keepalived/chk_ocp_script.sh"
+contents:
+  inline: |
+    #!/bin/bash 
+    /usr/bin/curl -o /dev/null -kLfs https://localhost:6443/readyz && /usr/bin/curl -o /dev/null -kLfs http://localhost:50936/readyz
