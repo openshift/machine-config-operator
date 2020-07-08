@@ -650,14 +650,23 @@ func splitKernelArguments(args string) []string {
 
 // parseKernelArguments separates out kargs from each entry and returns it as a map for
 // easy comparison
-func parseKernelArguments(kargs []string) map[string]bool {
-	parsed := make(map[string]bool)
+func parseKernelArguments(kargs []string) []string {
+	parsed := []string{}
 	for _, k := range kargs {
 		for _, arg := range splitKernelArguments(k) {
-			parsed[strings.TrimSpace(arg)] = true
+			parsed = append(parsed, strings.TrimSpace(arg))
 		}
 	}
 	return parsed
+}
+
+func inArray(elem string, array []string) bool {
+	for _, k := range array {
+		if k == elem {
+			return true
+		}
+	}
+	return false
 }
 
 // generateKargsCommand performs a diff between the old/new MC kernelArguments,
@@ -669,13 +678,13 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	oldKargs := parseKernelArguments(oldConfig.Spec.KernelArguments)
 	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
 	cmdArgs := []string{}
-	for arg := range oldKargs {
-		if !newKargs[arg] {
+	for _, arg := range oldKargs {
+		if !inArray(arg, newKargs) {
 			cmdArgs = append(cmdArgs, "--delete="+arg)
 		}
 	}
-	for arg := range newKargs {
-		if !oldKargs[arg] {
+	for _, arg := range newKargs {
+		if !inArray(arg, oldKargs) {
 			cmdArgs = append(cmdArgs, "--append="+arg)
 		}
 	}
