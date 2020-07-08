@@ -426,7 +426,7 @@ contents:
 
     # validate_etcd_name uses regex to return the etcd member name key from ETCD_INITIAL_CLUSTER matching the local ETCD_DNS_NAME.
     validate_etcd_name() {
-      ETCD_NAME=$(echo ${ETCD_INITIAL_CLUSTER} | grep -oP "(?<=)[^,,\s]*(?==[^=]*${ETCD_DNS_NAME}\b)") || true
+      ETCD_NAME=$(echo ${ETCD_INITIAL_CLUSTER} | grep -oP "(?<=)[^,\s]*(?==[^=,]*${ETCD_DNS_NAME}\b)") || true
       if [ -z "$ETCD_NAME" ]; then
         echo "Validating INITIAL_CLUSTER failed: ${ETCD_DNS_NAME} is not found in ${ETCD_INITIAL_CLUSTER}" >&2
         exit 1
