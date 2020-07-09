@@ -615,7 +615,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
-	cmd := exec.Command("journalctl", "-b", "-f", "-o", "cat", "-u", logindUnit, "MESSAGE_ID="+sdMessageSessionStart)
+	cmd := exec.Command("journalctl", "-b", "-f", "-o", "cat", "-u", logindUnit)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		exitCh <- err
@@ -639,14 +639,24 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 				l, err := stdout.Read(buf)
 				if err != nil {
 					if err == io.EOF {
+						glog.Warning("runLoginMonitor got EOF while reading the journal, exiting")
 						return
 					}
 					exitCh <- err
 					return
 				}
 				if l > 0 {
-					line := strings.Split(string(buf), "\n")[0]
-					glog.Infof("Detected a new login session: %s", line)
+					lines := strings.Split(string(buf), "\n")
+					var newSession bool
+					for _, line := range lines {
+						if strings.HasPrefix(line, "New session ") {
+							newSession = true
+						}
+					}
+					if !newSession {
+						continue
+					}
+					glog.Info("Detected a new login session")
 					glog.Infof("Login access is discouraged! Applying annotation: %v", machineConfigDaemonSSHAccessAnnotationKey)
 					if err := dn.applySSHAccessedAnnotation(); err != nil {
 						exitCh <- err
