@@ -632,6 +632,9 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 			case <-worker:
 				return
 			default:
+				if dn.node == nil {
+					continue
+				}
 				buf := make([]byte, 1024)
 				l, err := stdout.Read(buf)
 				if err != nil {
