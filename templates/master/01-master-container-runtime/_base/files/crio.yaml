@@ -178,9 +178,9 @@ contents:
     # regarding the proper termination of the container.
     ctr_stop_timeout = 0
 
-    # ManageNetworkNSLifecycle determines whether we pin and remove network namespace
-    # and manage its lifecycle.
-    manage_network_ns_lifecycle = false
+    # ManageNSLifecycle determines whether we pin and remove namespaces
+    # and manage their lifecycle.
+    manage_ns_lifecycle = true
 
     # The "crio.runtime.runtimes" table defines a list of OCI compatible runtimes.
     # The runtime to use is picked based on the runtime_handler provided by the CRI.
