@@ -5,7 +5,7 @@ import (
 	"net/url"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -27,11 +27,6 @@ const (
 	// need this is that on bootstrap + first install we don't have the MCD
 	// running and writing that file.
 	machineConfigContentPath = "/etc/mcs-machine-config-content.json"
-
-	// defaultFileSystem defines the default file system to be
-	// used for writing the ignition files created by the
-	// server.
-	defaultFileSystem = "root"
 )
 
 // kubeconfigFunc fetches the kubeconfig that needs to be served.
@@ -131,25 +126,27 @@ func getNodeAnnotation(conf string) (string, error) {
 }
 
 func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents string) error {
-	conf, err := ctrlcommon.IgnParseWrapper(rawExt.Raw)
+	conf, err := ctrlcommon.ParseAndConvertConfig(rawExt.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to append file. Parsing Ignition config failed with error: %v", err)
 	}
 	fileMode := int(420)
-	file := igntypes.File{
-		Node: igntypes.Node{
-			Filesystem: defaultFileSystem,
-			Path:       outPath,
+	overwrite := true
+	source := getEncodedContent(contents)
+	file := ign3types.File{
+		Node: ign3types.Node{
+			Path:      outPath,
+			Overwrite: &overwrite,
 		},
-		FileEmbedded1: igntypes.FileEmbedded1{
-			Contents: igntypes.FileContents{
-				Source: getEncodedContent(contents),
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: &source,
 			},
 			Mode: &fileMode,
 		},
 	}
 	if len(conf.Storage.Files) == 0 {
-		conf.Storage.Files = make([]igntypes.File, 0)
+		conf.Storage.Files = make([]ign3types.File, 0)
 	}
 	conf.Storage.Files = append(conf.Storage.Files, file)
 	rawExt.Raw, err = json.Marshal(conf)

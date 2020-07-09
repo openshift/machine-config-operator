@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -22,23 +22,25 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
-func createNewKubeletIgnition(jsonConfig []byte) igntypes.Config {
+func createNewKubeletIgnition(jsonConfig []byte) ign3types.Config {
 	// Want the kubelet.conf file to have the pretty JSON formatting
 	buf := new(bytes.Buffer)
 	json.Indent(buf, jsonConfig, "", "  ")
 
 	mode := 0644
+	overwrite := true
 	du := dataurl.New(buf.Bytes(), "text/plain")
 	du.Encoding = dataurl.EncodingASCII
-	tempFile := igntypes.File{
-		Node: igntypes.Node{
-			Filesystem: "root",
-			Path:       "/etc/kubernetes/kubelet.conf",
+	duStr := du.String()
+	tempFile := ign3types.File{
+		Node: ign3types.Node{
+			Path:      "/etc/kubernetes/kubelet.conf",
+			Overwrite: &overwrite,
 		},
-		FileEmbedded1: igntypes.FileEmbedded1{
+		FileEmbedded1: ign3types.FileEmbedded1{
 			Mode: &mode,
-			Contents: igntypes.FileContents{
-				Source: du.String(),
+			Contents: ign3types.Resource{
+				Source: &(duStr),
 			},
 		},
 	}
@@ -57,8 +59,8 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	}
 }
 
-func findKubeletConfig(mc *mcfgv1.MachineConfig) (*igntypes.File, error) {
-	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
+func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %v", err)
 	}

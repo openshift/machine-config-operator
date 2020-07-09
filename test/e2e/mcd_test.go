@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,37 +59,55 @@ func mcLabelForWorkers() map[string]string {
 	return mcLabelForRole("worker")
 }
 
-func createIgnFile(path, content, fs string, mode int) ign2types.File {
-	return ign2types.File{
-		FileEmbedded1: ign2types.FileEmbedded1{
-			Contents: ign2types.FileContents{
-				Source: content,
+// TODO consider also testing for Ign2
+// func createIgn2File(path, content, fs string, mode int) ign2types.File {
+// 	return ign2types.File{
+// 		FileEmbedded1: ign2types.FileEmbedded1{
+// 			Contents: ign2types.FileContents{
+// 				Source: content,
+// 			},
+// 			Mode: &mode,
+// 		},
+// 		Node: ign2types.Node{
+// 			Filesystem: fs,
+// 			Path:       path,
+// 			User: &ign2types.NodeUser{
+// 				Name: "root",
+// 			},
+// 		},
+// 	}
+// }
+
+func createIgn3File(path, content string, mode int) ign3types.File {
+	return ign3types.File{
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: &content,
 			},
 			Mode: &mode,
 		},
-		Node: ign2types.Node{
-			Filesystem: fs,
-			Path:       path,
-			User: &ign2types.NodeUser{
-				Name: "root",
+		Node: ign3types.Node{
+			Path: path,
+			User: ign3types.NodeUser{
+				Name: helpers.StrToPtr("root"),
 			},
 		},
 	}
 }
 
-func createMCToAddFileForRole(name, role, filename, data, fs string) *mcfgv1.MachineConfig {
+func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
 	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
 
 	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := createIgnFile(filename, "data:,"+data, fs, 420)
+	ignFile := createIgn3File(filename, "data:,"+data, 420)
 	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
 	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
 	mcadd.Spec.Config.Raw = rawIgnConfig
 	return mcadd
 }
 
-func createMCToAddFile(name, filename, data, fs string) *mcfgv1.MachineConfig {
-	return createMCToAddFileForRole(name, "worker", filename, data, fs)
+func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
+	return createMCToAddFileForRole(name, "worker", filename, data)
 }
 
 func TestMCDeployed(t *testing.T) {
@@ -99,7 +116,7 @@ func TestMCDeployed(t *testing.T) {
 	// TODO: bring this back to 10
 	for i := 0; i < 3; i++ {
 		startTime := time.Now()
-		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test", "root")
+		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
 
 		// create the dummy MC now
 		_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
@@ -153,9 +170,9 @@ func TestUpdateSSH(t *testing.T) {
 		Labels: mcLabelForWorkers(),
 	}
 	// create a new MC that adds a valid user & ssh keys
-	tempUser := ign2types.PasswdUser{
+	tempUser := ign3types.PasswdUser{
 		Name: "core",
-		SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{
+		SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
 			"1234_test",
 			"abc_test",
 		},
@@ -300,8 +317,8 @@ func TestKernelType(t *testing.T) {
 func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
@@ -349,15 +366,12 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	// create a MC that contains a valid ignition config but is not reconcilable
-	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test", "root")
-	ignCfg, err := ctrlcommon.IgnParseWrapper(mcadd.Spec.Config.Raw)
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
-	ignCfg.Networkd = ign2types.Networkd{
-		Units: []ign2types.Networkdunit{
-			{
-				Name:     "test.network",
-				Contents: "test contents",
-			},
+	ignCfg.Storage.Disks = []ign3types.Disk{
+		ign3types.Disk{
+			Device: "/one",
 		},
 	}
 	rawIgnCfg := helpers.MarshalOrDie(ignCfg)
@@ -451,7 +465,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test", "root")
+	mcHostFile := createMCToAddFile("modify-host-file", "/etc/motd", "mco-test")
 
 	workerOldMc := getMcName(t, cs, "worker")
 
@@ -500,7 +514,7 @@ func TestCustomPool(t *testing.T) {
 
 	createMCP(t, cs, "infra")
 
-	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool", "root")
+	infraMC := createMCToAddFileForRole("infra-host-file", "infra", "/etc/mco-custom-pool", "mco-custom-pool")
 	_, err := cs.MachineConfigs().Create(context.TODO(), infraMC, metav1.CreateOptions{})
 	require.Nil(t, err)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", infraMC.Name)
@@ -550,7 +564,7 @@ func TestIgn3Cfg(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234_test_ign3"}}
 	testIgn3Config.Passwd.Users = append(testIgn3Config.Passwd.Users, tempUser)
-	testIgn3Config.Ignition.Version = "3.0.0"
+	testIgn3Config.Ignition.Version = "3.1.0"
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},

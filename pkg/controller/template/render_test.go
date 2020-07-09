@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -328,7 +328,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				t.Fatal("role label missing")
 			}
 
-			ign, err := ctrlcommon.IgnParseWrapper(cfg.Spec.Config.Raw)
+			ign, err := ctrlcommon.ParseAndConvertConfig(cfg.Spec.Config.Raw)
 			if err != nil {
 				t.Errorf("Failed to parse Ignition config")
 			}
@@ -382,7 +382,7 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	return cc, nil
 }
 
-func findIgnFile(files []igntypes.File, path string, t *testing.T) bool {
+func findIgnFile(files []ign3types.File, path string, t *testing.T) bool {
 	for _, f := range files {
 		if f.Path == path {
 			return true
@@ -391,7 +391,7 @@ func findIgnFile(files []igntypes.File, path string, t *testing.T) bool {
 	return false
 }
 
-func findIgnUnit(units []igntypes.Unit, name string, t *testing.T) bool {
+func findIgnUnit(units []ign3types.Unit, name string, t *testing.T) bool {
 	for _, u := range units {
 		if u.Name == name {
 			return true
