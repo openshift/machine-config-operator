@@ -136,11 +136,12 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// the internally saved config is always spec v2.2
-	// so translation is only necessary when spec v3.1 is requested
+	// the internally saved config should be v3.1, but to eliminate the
+	// potential of race conditions, translate to the requested version
+	// to make sure
 	var serveConf *runtime.RawExtension
 	if reqConfigVer.Equal(*semver.New("3.1.0")) {
-		converted3, err := ctrlcommon.ConvertRawExtIgnition2to3(conf)
+		converted3, err := ctrlcommon.ConvertRawExtIgnitionToV3(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -150,7 +151,16 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		serveConf = &converted3
 	} else {
-		serveConf = conf
+		// Can only be 2.2 here
+		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2(conf)
+		if err != nil {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			return
+		}
+
+		serveConf = &converted2
 	}
 
 	data, err := json.Marshal(serveConf)
