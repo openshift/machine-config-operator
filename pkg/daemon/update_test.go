@@ -76,12 +76,12 @@ func TestReconcilable(t *testing.T) {
 	// newConfig is the config that is being requested to apply to the system
 	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	// Verify Ignition version mismatch react as expected
-	_, isReconcilable := Reconcilable(oldConfig, newConfig)
+	_, isReconcilable := reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Ignition", isReconcilable)
 	//reset to proper Ignition version
 	newIgnCfg.Ignition.Version = igntypes.MaxVersion.String()
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Ignition", isReconcilable)
 
 	// Verify Networkd unit changes react as expected
@@ -95,13 +95,13 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Networkd", isReconcilable)
 
 	// Match Networkd
 	oldIgnCfg.Networkd = newIgnCfg.Networkd
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Networkd", isReconcilable)
 
 	// Verify Disk changes react as expected
@@ -111,13 +111,13 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Disk", isReconcilable)
 
 	// Match storage disks
 	newIgnCfg.Storage.Disks = oldIgnCfg.Storage.Disks
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Disk", isReconcilable)
 
 	// Verify Filesystems changes react as expected
@@ -129,13 +129,13 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Match Storage filesystems
 	newIgnCfg.Storage.Filesystems = oldIgnCfg.Storage.Filesystems
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Filesystem", isReconcilable)
 
 	// Verify Raid changes react as expected
@@ -146,13 +146,13 @@ func TestReconcilable(t *testing.T) {
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "Raid", isReconcilable)
 
 	// Match storage raid
 	newIgnCfg.Storage.Raid = oldIgnCfg.Storage.Raid
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "Raid", isReconcilable)
 
 	// Verify Passwd Groups changes unsupported
@@ -161,41 +161,41 @@ func TestReconcilable(t *testing.T) {
 	newIgnCfg = ctrlcommon.NewIgnConfig()
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "PasswdGroups", isReconcilable)
 
 	tempGroup := igntypes.PasswdGroup{}
 	tempGroup.Name = "testGroup"
 	newIgnCfg.Passwd.Groups = []igntypes.PasswdGroup{tempGroup}
 	newConfig = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, isReconcilable = Reconcilable(oldConfig, newConfig)
+	_, isReconcilable = reconcilable(oldConfig, newConfig)
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
 }
 
-func TestMachineConfigDiff(t *testing.T) {
+func TestmachineConfigDiff(t *testing.T) {
 	oldIgnCfg := ctrlcommon.NewIgnConfig()
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	oldConfig.ObjectMeta = metav1.ObjectMeta{Name: "oldconfig"}
 	newIgnCfg := ctrlcommon.NewIgnConfig()
 	newConfig := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	newConfig.ObjectMeta = metav1.ObjectMeta{Name: "newconfig"}
-	diff, err := NewMachineConfigDiff(oldConfig, newConfig)
+	diff, err := newMachineConfigDiff(oldConfig, newConfig)
 	assert.Nil(t, err)
-	assert.True(t, diff.IsEmpty())
+	assert.True(t, diff.isEmpty())
 
 	newConfig.Spec.OSImageURL = "quay.io/example/foo@sha256:b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c"
-	diff, err = NewMachineConfigDiff(oldConfig, newConfig)
+	diff, err = newMachineConfigDiff(oldConfig, newConfig)
 	assert.Nil(t, err)
-	assert.False(t, diff.IsEmpty())
+	assert.False(t, diff.isEmpty())
 	assert.True(t, diff.osUpdate)
 
 	emptyMc := canonicalizeEmptyMC(nil)
 	otherEmptyMc := canonicalizeEmptyMC(nil)
 	emptyMc.Spec.KernelArguments = nil
 	otherEmptyMc.Spec.KernelArguments = []string{}
-	diff, err = NewMachineConfigDiff(emptyMc, otherEmptyMc)
+	diff, err = newMachineConfigDiff(emptyMc, otherEmptyMc)
 	assert.Nil(t, err)
-	assert.True(t, diff.IsEmpty())
+	assert.True(t, diff.isEmpty())
 }
 
 func newTestIgnitionFile(i uint) igntypes.File {
@@ -220,7 +220,7 @@ func TestReconcilableDiff(t *testing.T) {
 	oldConfig := newMachineConfigFromFiles(oldFiles)
 	newConfig := newMachineConfigFromFiles(append(oldFiles, newTestIgnitionFile(nOldFiles+1)))
 
-	diff, err := Reconcilable(oldConfig, newConfig)
+	diff, err := reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "add file", err)
 	assert.Equal(t, diff.osUpdate, false)
 	assert.Equal(t, diff.passwd, false)
@@ -228,7 +228,7 @@ func TestReconcilableDiff(t *testing.T) {
 	assert.Equal(t, diff.files, true)
 
 	newConfig = newMachineConfigFromFiles(nil)
-	diff, err = Reconcilable(oldConfig, newConfig)
+	diff, err = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "remove all files", err)
 	assert.Equal(t, diff.osUpdate, false)
 	assert.Equal(t, diff.passwd, false)
@@ -237,7 +237,7 @@ func TestReconcilableDiff(t *testing.T) {
 
 	newConfig = newMachineConfigFromFiles(oldFiles)
 	newConfig.Spec.OSImageURL = "example.com/machine-os-content:new"
-	diff, err = Reconcilable(oldConfig, newConfig)
+	diff, err = reconcilable(oldConfig, newConfig)
 	checkReconcilableResults(t, "os update", err)
 	assert.Equal(t, diff.osUpdate, true)
 	assert.Equal(t, diff.passwd, false)
@@ -348,7 +348,7 @@ func TestReconcilableSSH(t *testing.T) {
 	newIgnCfg := ctrlcommon.NewIgnConfig()
 	newIgnCfg.Passwd.Users = []igntypes.PasswdUser{tempUser1}
 	newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, errMsg := Reconcilable(oldMcfg, newMcfg)
+	_, errMsg := reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 
 	// 	Check that updating User with User that is not core is not supported
@@ -358,21 +358,21 @@ func TestReconcilableSSH(t *testing.T) {
 	tempUser3 := igntypes.PasswdUser{Name: "another user", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}}
 	newIgnCfg.Passwd.Users[0] = tempUser3
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, errMsg = Reconcilable(oldMcfg, newMcfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot make updates if any other Passwd.User field is changed.
 	tempUser4 := igntypes.PasswdUser{Name: "core", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}, HomeDir: "somedir"}
 	newIgnCfg.Passwd.Users[0] = tempUser4
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, errMsg = Reconcilable(oldMcfg, newMcfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that we cannot add a user or have len(Passwd.Users)> 1
 	tempUser5 := igntypes.PasswdUser{Name: "some user", SSHAuthorizedKeys: []igntypes.SSHAuthorizedKey{"5678"}}
 	newIgnCfg.Passwd.Users = append(newIgnCfg.Passwd.Users, tempUser5)
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, errMsg = Reconcilable(oldMcfg, newMcfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	// check that user is not attempting to remove the only sshkey from core user
@@ -380,13 +380,13 @@ func TestReconcilableSSH(t *testing.T) {
 	newIgnCfg.Passwd.Users[0] = tempUser6
 	newIgnCfg.Passwd.Users = newIgnCfg.Passwd.Users[:len(newIgnCfg.Passwd.Users)-1]
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, errMsg = Reconcilable(oldMcfg, newMcfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
 	//check that empty Users does not generate error/degrade node
 	newIgnCfg.Passwd.Users = nil
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-	_, errMsg = Reconcilable(oldMcfg, newMcfg)
+	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkReconcilableResults(t, "SSH", errMsg)
 }
 
@@ -447,12 +447,12 @@ func TestInvalidIgnConfig(t *testing.T) {
 	}
 	newIgnConfig.Storage.Files = append(newIgnConfig.Storage.Files, newIgnFile)
 	newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnConfig)
-	_, err := Reconcilable(oldMcfg, newMcfg)
+	_, err := reconcilable(oldMcfg, newMcfg)
 	assert.NotNil(t, err, "Expected error. Relative Paths should fail general ignition validation")
 
 	newIgnConfig.Storage.Files[0].Node.Path = "/home/core/test"
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnConfig)
-	diff, err := Reconcilable(oldMcfg, newMcfg)
+	diff, err := reconcilable(oldMcfg, newMcfg)
 	assert.Nil(t, err, "Expected no error. Absolute paths should not fail general ignition validation")
 	assert.Equal(t, diff.files, true)
 }
