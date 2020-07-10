@@ -37,6 +37,7 @@
 // manifests/ovirt/coredns.yaml
 // manifests/ovirt/keepalived.conf.tmpl
 // manifests/ovirt/keepalived.yaml
+// manifests/userdata_secret.yaml
 // manifests/vsphere/coredns-corefile.tmpl
 // manifests/vsphere/coredns.yaml
 // manifests/vsphere/keepalived.conf.tmpl
@@ -2299,6 +2300,32 @@ func manifestsOvirtKeepalivedYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsUserdata_secretYaml = []byte(`apiVersion: v1
+kind: Secret
+metadata:
+  name: {{.Role}}-user-data-managed
+  namespace: openshift-machine-api
+type: Opaque
+data:
+  disableTemplating: "dHJ1ZQo="
+  userData: {{.PointerConfig}}
+`)
+
+func manifestsUserdata_secretYamlBytes() ([]byte, error) {
+	return _manifestsUserdata_secretYaml, nil
+}
+
+func manifestsUserdata_secretYaml() (*asset, error) {
+	bytes, err := manifestsUserdata_secretYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/userdata_secret.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
@@ -2695,6 +2722,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/ovirt/coredns.yaml":                                           manifestsOvirtCorednsYaml,
 	"manifests/ovirt/keepalived.conf.tmpl":                                   manifestsOvirtKeepalivedConfTmpl,
 	"manifests/ovirt/keepalived.yaml":                                        manifestsOvirtKeepalivedYaml,
+	"manifests/userdata_secret.yaml":                                         manifestsUserdata_secretYaml,
 	"manifests/vsphere/coredns-corefile.tmpl":                                manifestsVsphereCorednsCorefileTmpl,
 	"manifests/vsphere/coredns.yaml":                                         manifestsVsphereCorednsYaml,
 	"manifests/vsphere/keepalived.conf.tmpl":                                 manifestsVsphereKeepalivedConfTmpl,
@@ -2793,6 +2821,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"keepalived.conf.tmpl":  &bintree{manifestsOvirtKeepalivedConfTmpl, map[string]*bintree{}},
 			"keepalived.yaml":       &bintree{manifestsOvirtKeepalivedYaml, map[string]*bintree{}},
 		}},
+		"userdata_secret.yaml": &bintree{manifestsUserdata_secretYaml, map[string]*bintree{}},
 		"vsphere": &bintree{nil, map[string]*bintree{
 			"coredns-corefile.tmpl": &bintree{manifestsVsphereCorednsCorefileTmpl, map[string]*bintree{}},
 			"coredns.yaml":          &bintree{manifestsVsphereCorednsYaml, map[string]*bintree{}},

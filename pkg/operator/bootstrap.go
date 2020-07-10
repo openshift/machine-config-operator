@@ -156,7 +156,7 @@ func RenderBootstrap(
 		templatectrl.BaremetalRuntimeCfgKey:      imgs.BaremetalRuntimeCfg,
 	}
 
-	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
+	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, nil)
 
 	manifests := []manifest{
 		{
