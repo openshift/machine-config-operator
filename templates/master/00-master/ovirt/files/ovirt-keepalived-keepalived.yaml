@@ -2,6 +2,11 @@ mode: 0644
 path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
 contents:
   inline: |
+    global_defs {
+        enable_script_security
+        script_user root
+    }
+
     vrrp_script chk_ocp {
         script "/usr/bin/timeout 0.9 /etc/keepalived/chk_ocp_script.sh"
         interval 1
