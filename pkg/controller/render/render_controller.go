@@ -165,6 +165,8 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 
 func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	mc := obj.(*mcfgv1.MachineConfig)
+	glog.Infof("MachineConfig %s added", mc.Name)
+
 	if mc.DeletionTimestamp != nil {
 		ctrl.deleteMachineConfig(mc)
 		return
@@ -173,7 +175,6 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 	controllerRef := metav1.GetControllerOf(mc)
 	if controllerRef != nil {
 		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
-			glog.V(4).Infof("MachineConfig %s added", mc.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -185,7 +186,6 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s added", mc.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -194,6 +194,8 @@ func (ctrl *Controller) addMachineConfig(obj interface{}) {
 func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 	oldMC := old.(*mcfgv1.MachineConfig)
 	curMC := cur.(*mcfgv1.MachineConfig)
+
+	glog.Infof("MachineConfig %s updated", curMC.Name)
 
 	curControllerRef := metav1.GetControllerOf(curMC)
 	oldControllerRef := metav1.GetControllerOf(oldMC)
@@ -205,7 +207,6 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 
 	if curControllerRef != nil {
 		if pool := ctrl.resolveControllerRef(curControllerRef); pool != nil {
-			glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -217,7 +218,6 @@ func (ctrl *Controller) updateMachineConfig(old, cur interface{}) {
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s updated", curMC.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
@@ -239,10 +239,11 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		}
 	}
 
+	glog.Infof("MachineConfig %s deleted", mc.Name)
+
 	controllerRef := metav1.GetControllerOf(mc)
 	if controllerRef != nil {
 		if pool := ctrl.resolveControllerRef(controllerRef); pool != nil {
-			glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
 			ctrl.enqueueMachineConfigPool(pool)
 			return
 		}
@@ -254,7 +255,6 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 		return
 	}
 
-	glog.V(4).Infof("MachineConfig %s deleted", mc.Name)
 	for _, p := range pools {
 		ctrl.enqueueMachineConfigPool(p)
 	}
