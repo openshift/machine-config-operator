@@ -57,14 +57,14 @@ func TestValidateIgnition(t *testing.T) {
 
 func TestConvertIgnition2to3(t *testing.T) {
 	// Make a new Ign spec v2 config
-	testIgnCfgV2 := ign2types.Config{}
+	testIgn2Config := ign2types.Config{}
 	tempUser := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
-	testIgnCfgV2.Passwd.Users = []ign2types.PasswdUser{tempUser}
-	testIgnCfgV2.Ignition.Version = "2.2.0"
-	isValid := ValidateIgnition(testIgnCfgV2)
+	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser}
+	testIgn2Config.Ignition.Version = "2.2.0"
+	isValid := ValidateIgnition(testIgn2Config)
 	require.Nil(t, isValid)
 
-	convertedIgn, err := convertIgnition2to3(testIgnCfgV2)
+	convertedIgn, err := convertIgnition2to3(testIgn2Config)
 	require.Nil(t, err)
 	assert.IsType(t, ign3types.Config{}, convertedIgn)
 	isValid3 := ValidateIgnition(convertedIgn)
@@ -88,7 +88,7 @@ func TestConvertIgnition3to2(t *testing.T) {
 	require.Nil(t, isValid2)
 }
 
-func TestIgnParseWrapper(t *testing.T) {
+func TestParseAndConvert(t *testing.T) {
 	// Make a new Ign3.1 config
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
@@ -96,38 +96,157 @@ func TestIgnParseWrapper(t *testing.T) {
 	testIgn3Config.Ignition.Version = "3.1.0"
 
 	// Make a Ign2 comp config
-	testIgn2Config := NewIgnConfig()
+	testIgn2Config := ign2types.Config{}
 	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser2}
+	testIgn2Config.Ignition.Version = "2.2.0"
 
 	// turn v2.2 config into a raw []byte
 	rawIgn := helpers.MarshalOrDie(testIgn2Config)
 	// check that it was parsed successfully
-	convertedIgn, err := IgnParseWrapper(rawIgn)
+	convertedIgn, err := ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn2Config, convertedIgn)
+	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// turn v3.1 config into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
-	convertedIgn, err = IgnParseWrapper(rawIgn)
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn2Config, convertedIgn)
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
+	// Make a valid Ign 3.1 cfg
+	testIgn3Config.Ignition.Version = "3.1.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a valid Ign 3.0 cfg
 	testIgn3Config.Ignition.Version = "3.0.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully
-	convertedIgn, err = IgnParseWrapper(rawIgn)
+	// check that it was parsed successfully back to 3.1
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	assert.Equal(t, testIgn2Config, convertedIgn)
+	testIgn3Config.Ignition.Version = "3.1.0"
+	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a bad Ign3 cfg
 	testIgn3Config.Ignition.Version = "21.0.0"
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it failed since this is an invalid cfg
-	convertedIgn, err = IgnParseWrapper(rawIgn)
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.NotNil(t, err)
-	assert.Equal(t, ign2types.Config{}, convertedIgn)
+	assert.Equal(t, ign3types.Config{}, convertedIgn)
+}
+
+func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
+	mode := 420
+	testDataOld := "data:,old"
+	testDataNew := "data:,new"
+	testIgn2Config := ign2types.Config{}
+
+	// file test, add a duplicate file and see if the newest one is preserved
+	fileOld := ign2types.File{
+		Node: ign2types.Node{
+			Filesystem: "root", Path: "/etc/testfileconfig",
+		},
+		FileEmbedded1: ign2types.FileEmbedded1{
+			Contents: ign2types.FileContents{
+				Source: testDataOld,
+			},
+			Mode: &mode,
+		},
+	}
+	testIgn2Config.Storage.Files = append(testIgn2Config.Storage.Files, fileOld)
+
+	fileNew := ign2types.File{
+		Node: ign2types.Node{
+			Filesystem: "root", Path: "/etc/testfileconfig",
+		},
+		FileEmbedded1: ign2types.FileEmbedded1{
+			Contents: ign2types.FileContents{
+				Source: testDataNew,
+			},
+			Mode: &mode,
+		},
+	}
+	testIgn2Config.Storage.Files = append(testIgn2Config.Storage.Files, fileNew)
+
+	// unit test, add three units and three dropins with the same name as follows:
+	// unitOne:
+	//    contents: old
+	//    dropin:
+	//        name: one
+	//        contents: old
+	// unitTwo:
+	//    dropin:
+	//        name: one
+	//        contents: new
+	// unitThree:
+	//    contents: new
+	//    dropin:
+	//        name: two
+	//        contents: new
+	// Which should result in:
+	// unitFinal:
+	//    contents: new
+	//    dropin:
+	//      - name: one
+	//        contents: new
+	//      - name: two
+	//        contents: new
+	//
+	unitName := "testUnit"
+	dropinNameOne := "one"
+	dropinNameTwo := "two"
+	dropinOne := ign2types.SystemdDropin{
+		Contents: testDataOld,
+		Name:     dropinNameOne,
+	}
+	dropinTwo := ign2types.SystemdDropin{
+		Contents: testDataNew,
+		Name:     dropinNameOne,
+	}
+	dropinThree := ign2types.SystemdDropin{
+		Contents: testDataNew,
+		Name:     dropinNameTwo,
+	}
+
+	unitOne := ign2types.Unit{
+		Contents: testDataOld,
+		Name:     unitName,
+	}
+	unitOne.Dropins = append(unitOne.Dropins, dropinOne)
+	testIgn2Config.Systemd.Units = append(testIgn2Config.Systemd.Units, unitOne)
+
+	unitTwo := ign2types.Unit{
+		Name: unitName,
+	}
+	unitTwo.Dropins = append(unitTwo.Dropins, dropinTwo)
+	testIgn2Config.Systemd.Units = append(testIgn2Config.Systemd.Units, unitTwo)
+
+	unitThree := ign2types.Unit{
+		Contents: testDataNew,
+		Name:     unitName,
+	}
+	unitThree.Dropins = append(unitThree.Dropins, dropinThree)
+	testIgn2Config.Systemd.Units = append(testIgn2Config.Systemd.Units, unitThree)
+
+	convertedIgn2Config := removeIgnDuplicateFilesAndUnits(testIgn2Config)
+
+	expectedIgn2Config := ign2types.Config{}
+	expectedIgn2Config.Storage.Files = append(expectedIgn2Config.Storage.Files, fileNew)
+	unitExpected := ign2types.Unit{
+		Contents: testDataNew,
+		Name:     unitName,
+	}
+	unitExpected.Dropins = append(unitExpected.Dropins, dropinThree)
+	unitExpected.Dropins = append(unitExpected.Dropins, dropinTwo)
+	expectedIgn2Config.Systemd.Units = append(expectedIgn2Config.Systemd.Units, unitExpected)
+
+	assert.Equal(t, expectedIgn2Config, convertedIgn2Config)
 }

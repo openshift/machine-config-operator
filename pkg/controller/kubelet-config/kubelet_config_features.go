@@ -106,7 +106,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
-		dataURL, err := dataurl.DecodeString(originalKubeletIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
 		if err != nil {
 			return err
 		}

@@ -2,7 +2,7 @@ package helpers
 
 import (
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,17 +21,27 @@ var (
 	InfraSelector = metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/infra", "")
 )
 
+// StrToPtr returns a pointer to a string
+func StrToPtr(s string) *string {
+	return &s
+}
+
+// BoolToPtr returns a pointer to a bool
+func BoolToPtr(b bool) *bool {
+	return &b
+}
+
 // NewMachineConfig returns a basic machine config with supplied labels, osurl & files added
-func NewMachineConfig(name string, labels map[string]string, osurl string, files []igntypes.File) *mcfgv1.MachineConfig {
+func NewMachineConfig(name string, labels map[string]string, osurl string, files []ign3types.File) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
 	}
 	rawIgnition := MarshalOrDie(
-		&igntypes.Config{
-			Ignition: igntypes.Ignition{
-				Version: igntypes.MaxVersion.String(),
+		&ign3types.Config{
+			Ignition: ign3types.Ignition{
+				Version: ign3types.MaxVersion.String(),
 			},
-			Storage: igntypes.Storage{
+			Storage: ign3types.Storage{
 				Files: files,
 			},
 		},

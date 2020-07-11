@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
 	errors "github.com/pkg/errors"
@@ -319,11 +319,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	oldIgnConfig, err := ctrlcommon.IgnParseWrapper(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing old Ignition config failed with error: %v", err)
 	}
-	newIgnConfig, err := ctrlcommon.IgnParseWrapper(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
@@ -417,11 +417,11 @@ func canonicalizeKernelType(kernelType string) string {
 
 // newMachineConfigDiff compares two MachineConfig objects.
 func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
-	oldIgn, err := ctrlcommon.IgnParseWrapper(oldConfig.Spec.Config.Raw)
+	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
 	}
-	newIgn, err := ctrlcommon.IgnParseWrapper(newConfig.Spec.Config.Raw)
+	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
@@ -452,11 +452,11 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	// The parser will try to translate versions less than maxVersion to maxVersion, or output an err.
 	// The ignition output in case of success will always have maxVersion
-	oldIgn, err := ctrlcommon.IgnParseWrapper(oldConfig.Spec.Config.Raw)
+	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
 	}
-	newIgn, err := ctrlcommon.IgnParseWrapper(newConfig.Spec.Config.Raw)
+	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
@@ -464,14 +464,6 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	// Check if this is a generally valid Ignition Config
 	if err := ctrlcommon.ValidateIgnition(newIgn); err != nil {
 		return nil, err
-	}
-
-	// Networkd section
-
-	// we don't currently configure the network in place. we can't fix it if
-	// something changed here.
-	if !reflect.DeepEqual(oldIgn.Networkd, newIgn.Networkd) {
-		return nil, errors.New("ignition networkd section contains changes")
 	}
 
 	// Passwd section
@@ -531,7 +523,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	// Special case files append: if the new config wants us to append, then we
 	// have to force a reprovision since it's not idempotent
 	for _, f := range newIgn.Storage.Files {
-		if f.Append {
+		if len(f.Append) > 0 {
 			return nil, fmt.Errorf("ignition file %v includes append", f.Path)
 		}
 	}
@@ -560,8 +552,8 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 // Otherwise, an error will be returned and the proposed config will not be reconcilable.
 // At this time we do not support non-"core" users or any changes to the "core" user
 // outside of SSHAuthorizedKeys.
-func verifyUserFields(pwdUser igntypes.PasswdUser) error {
-	emptyUser := igntypes.PasswdUser{}
+func verifyUserFields(pwdUser ign3types.PasswdUser) error {
+	emptyUser := ign3types.PasswdUser{}
 	tempUser := pwdUser
 	if tempUser.Name == coreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
 		tempUser.Name = ""
@@ -872,11 +864,11 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 // touched.
 func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	glog.Info("Updating files")
-	oldIgnConfig, err := ctrlcommon.IgnParseWrapper(oldConfig.Spec.Config.Raw)
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to update files. Parsing old Ignition config failed with error: %v", err)
 	}
-	newIgnConfig, err := ctrlcommon.IgnParseWrapper(newConfig.Spec.Config.Raw)
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to update files. Parsing new Ignition config failed with error: %v", err)
 	}
@@ -907,7 +899,7 @@ func restorePath(path string) error {
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
 //nolint:gocyclo
-func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) error {
+func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newIgnConfig.Storage.Files {
@@ -1044,7 +1036,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 }
 
 // enableUnit enables a systemd unit via symlink
-func (dn *Daemon) enableUnit(unit igntypes.Unit) error {
+func (dn *Daemon) enableUnit(unit ign3types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check that we don't return an error when the link already exists
@@ -1064,7 +1056,7 @@ func (dn *Daemon) enableUnit(unit igntypes.Unit) error {
 }
 
 // disableUnit disables a systemd unit via symlink removal
-func (dn *Daemon) disableUnit(unit igntypes.Unit) error {
+func (dn *Daemon) disableUnit(unit ign3types.Unit) error {
 	// The link location
 	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
 	// sanity check so we don't return an error when the unit was already disabled
@@ -1078,7 +1070,7 @@ func (dn *Daemon) disableUnit(unit igntypes.Unit) error {
 }
 
 // writeUnits writes the systemd units to disk
-func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
+func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	operatingSystem, err := getHostRunningOS()
 	if err != nil {
 		return errors.Wrapf(err, "checking operating system")
@@ -1094,7 +1086,7 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 					return err
 				}
 			}
-			if err := writeFileAtomicallyWithDefaults(dpath, []byte(u.Dropins[i].Contents)); err != nil {
+			if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
 			}
 
@@ -1105,7 +1097,7 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 
 		// check if the unit is masked. if it is, we write a symlink to
 		// /dev/null and continue
-		if u.Mask {
+		if u.Mask != nil && *u.Mask {
 			glog.V(2).Info("Systemd unit masked")
 			if err := os.RemoveAll(fpath); err != nil {
 				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
@@ -1120,7 +1112,7 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 			continue
 		}
 
-		if u.Contents != "" {
+		if u.Contents != nil && *u.Contents != "" {
 			glog.Infof("Writing systemd unit %q", u.Name)
 			if _, err := os.Stat("/usr" + fpath); err == nil &&
 				(operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
@@ -1129,7 +1121,7 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 				}
 			}
 			// write the unit to disk
-			if err := writeFileAtomicallyWithDefaults(fpath, []byte(u.Contents)); err != nil {
+			if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 			}
 
@@ -1142,14 +1134,6 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 		// otherwise the unit is disabled. run disableUnit to ensure the unit is
 		// disabled. even if the unit wasn't previously enabled the result will
 		// be fine as disableUnit is idempotent.
-		// Note: we have to check for legacy unit.Enable and honor it
-		glog.Infof("Enabling systemd unit %q", u.Name)
-		if u.Enable {
-			if err := dn.enableUnit(u); err != nil {
-				return err
-			}
-			glog.V(2).Infof("Enabled systemd unit %q", u.Name)
-		}
 		if u.Enabled != nil {
 			if *u.Enabled {
 				if err := dn.enableUnit(u); err != nil {
@@ -1169,11 +1153,11 @@ func (dn *Daemon) writeUnits(units []igntypes.Unit) error {
 
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
-func (dn *Daemon) writeFiles(files []igntypes.File) error {
+func (dn *Daemon) writeFiles(files []ign3types.File) error {
 	for _, file := range files {
 		glog.Infof("Writing file %q", file.Path)
 
-		contents, err := dataurl.DecodeString(file.Contents.Source)
+		contents, err := dataurl.DecodeString(*file.Contents.Source)
 		if err != nil {
 			return err
 		}
@@ -1181,15 +1165,11 @@ func (dn *Daemon) writeFiles(files []igntypes.File) error {
 		if file.Mode != nil {
 			mode = os.FileMode(*file.Mode)
 		}
-		var (
-			uid, gid = -1, -1
-		)
+
 		// set chown if file information is provided
-		if file.User != nil || file.Group != nil {
-			uid, gid, err = getFileOwnership(file)
-			if err != nil {
-				return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
-			}
+		uid, gid, err := getFileOwnership(file)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
 		}
 		if err := createOrigFile(file.Path, file.Path); err != nil {
 			return err
@@ -1252,31 +1232,28 @@ func createOrigFile(fromPath, fpath string) error {
 }
 
 // This is essentially ResolveNodeUidAndGid() from Ignition; XXX should dedupe
-func getFileOwnership(file igntypes.File) (int, int, error) {
+func getFileOwnership(file ign3types.File) (int, int, error) {
 	uid, gid := 0, 0 // default to root
-	if file.User != nil {
-		if file.User.ID != nil {
-			uid = *file.User.ID
-		} else if file.User.Name != "" {
-			osUser, err := user.Lookup(file.User.Name)
-			if err != nil {
-				return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %s", file.User.Name)
-			}
-			glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, file.User.Name)
-			uid, _ = strconv.Atoi(osUser.Uid)
+	if file.User.ID != nil {
+		uid = *file.User.ID
+	} else if file.User.Name != nil && *file.User.Name != "" {
+		osUser, err := user.Lookup(*file.User.Name)
+		if err != nil {
+			return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %s", *file.User.Name)
 		}
+		glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, *file.User.Name)
+		uid, _ = strconv.Atoi(osUser.Uid)
 	}
-	if file.Group != nil {
-		if file.Group.ID != nil {
-			gid = *file.Group.ID
-		} else if file.Group.Name != "" {
-			osGroup, err := user.LookupGroup(file.Group.Name)
-			if err != nil {
-				return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %s", file.Group.Name)
-			}
-			glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, file.Group.Name)
-			gid, _ = strconv.Atoi(osGroup.Gid)
+
+	if file.Group.ID != nil {
+		gid = *file.Group.ID
+	} else if file.Group.Name != nil && *file.Group.Name != "" {
+		osGroup, err := user.LookupGroup(*file.Group.Name)
+		if err != nil {
+			return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %v", file.Group.Name)
 		}
+		glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, *file.Group.Name)
+		gid, _ = strconv.Atoi(osGroup.Gid)
 	}
 	return uid, gid, nil
 }
@@ -1298,7 +1275,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 }
 
 // Update a given PasswdUser's SSHKey
-func (dn *Daemon) updateSSHKeys(newUsers []igntypes.PasswdUser) error {
+func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	if len(newUsers) == 0 {
 		return nil
 	}
