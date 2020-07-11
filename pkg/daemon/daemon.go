@@ -19,7 +19,8 @@ import (
 	"time"
 
 	imgref "github.com/containers/image/docker/reference"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
@@ -490,7 +491,7 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 		return err
 	}
 	switch c := configi.(type) {
-	case igntypes.Config:
+	case ign3types.Config:
 		glog.V(2).Info("Daemon running directly from Ignition")
 		return dn.runOnceFromIgnition(c)
 	case mcfgv1.MachineConfig:
@@ -1158,7 +1159,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 }
 
 // runOnceFromIgnition executes MCD's subset of Ignition functionality in onceFrom mode
-func (dn *Daemon) runOnceFromIgnition(ignConfig igntypes.Config) error {
+func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 	// Execute update without hitting the cluster
 	if err := dn.writeFiles(ignConfig.Storage.Files); err != nil {
 		return err
@@ -1278,17 +1279,33 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 		return errors.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
 	}
 	// And the rest of the disk state
-	currentIgnConfig, err := ctrlcommon.IgnParseWrapper(currentConfig.Spec.Config.Raw)
+	// We want to verify the disk state in the spec version that it was created with,
+	// to remove possibilities of behaviour changes due to translation
+	ignconfigi, err := ctrlcommon.IgnParseWrapper(currentConfig.Spec.Config.Raw)
 	if err != nil {
 		return errors.Errorf("Failed to parse Ignition for validation: %s", err)
 	}
-	if err := checkFiles(currentIgnConfig.Storage.Files); err != nil {
-		return err
+
+	switch typedConfig := ignconfigi.(type) {
+	case ign3types.Config:
+		if err := checkV3Files(ignconfigi.(ign3types.Config).Storage.Files); err != nil {
+			return err
+		}
+		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units); err != nil {
+			return err
+		}
+		return nil
+	case ign2types.Config:
+		if err := checkV2Files(ignconfigi.(ign2types.Config).Storage.Files); err != nil {
+			return err
+		}
+		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return errors.Errorf("unexpected type for ignition config: %v", typedConfig)
 	}
-	if err := checkUnits(currentIgnConfig.Systemd.Units); err != nil {
-		return err
-	}
-	return nil
 }
 
 // getRefDigest parses a Docker/OCI image reference and returns
@@ -1362,7 +1379,38 @@ func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 
 // checkUnits validates the contents of all the units in the
 // target config and returns true if they match.
-func checkUnits(units []igntypes.Unit) error {
+func checkV3Units(units []ign3types.Unit) error {
+	for _, u := range units {
+		for j := range u.Dropins {
+			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
+			if err := checkFileContentsAndMode(path, []byte(*u.Dropins[j].Contents), defaultFilePermissions); err != nil {
+				return err
+			}
+		}
+
+		if u.Contents == nil || *u.Contents == "" {
+			continue
+		}
+
+		path := filepath.Join(pathSystemd, u.Name)
+		if u.Mask != nil && *u.Mask {
+			link, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
+			}
+			if strings.Compare(pathDevNull, link) != 0 {
+				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
+			}
+		}
+		if err := checkFileContentsAndMode(path, []byte(*u.Contents), defaultFilePermissions); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func checkV2Units(units []ign2types.Unit) error {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
@@ -1395,7 +1443,27 @@ func checkUnits(units []igntypes.Unit) error {
 
 // checkFiles validates the contents of  all the files in the
 // target config.
-func checkFiles(files []igntypes.File) error {
+
+// V3 files should not have any duplication anymore, so there is
+// no need to check for overwrites.
+func checkV3Files(files []ign3types.File) error {
+	for _, f := range files {
+		mode := defaultFilePermissions
+		if f.Mode != nil {
+			mode = os.FileMode(*f.Mode)
+		}
+		contents, err := dataurl.DecodeString(*f.Contents.Source)
+		if err != nil {
+			return errors.Wrapf(err, "couldn't parse file %q", f.Path)
+		}
+		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkV2Files(files []ign2types.File) error {
 	checkedFiles := make(map[string]bool)
 	for i := len(files) - 1; i >= 0; i-- {
 		f := files[i]
@@ -1494,7 +1562,7 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	}
 
 	// Try each supported parser
-	ignConfig, err := ctrlcommon.IgnParseWrapper(content)
+	ignConfig, err := ctrlcommon.ParseAndConvertConfig(content)
 	if err == nil && ignConfig.Ignition.Version != "" {
 		glog.V(2).Info("onceFrom file is of type Ignition")
 		return ignConfig, contentFrom, nil

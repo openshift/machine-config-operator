@@ -26,7 +26,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -358,7 +358,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 
-	ignCfg, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
+	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	require.NoError(t, err)
 	if verifyPolicyJSON {
 		// If there is a change to the policy.json file then there will be 2 files
@@ -371,7 +371,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 		regfile = ignCfg.Storage.Files[1]
 	}
 	assert.Equal(t, registriesConfigPath, regfile.Node.Path)
-	registriesConf, err := dataurl.DecodeString(regfile.Contents.Source)
+	registriesConf, err := dataurl.DecodeString(*regfile.Contents.Source)
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf.Data))
 
@@ -386,7 +386,7 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			policyfile = ignCfg.Storage.Files[0]
 		}
 		assert.Equal(t, policyConfigPath, policyfile.Node.Path)
-		policyJSON, err := dataurl.DecodeString(policyfile.Contents.Source)
+		policyJSON, err := dataurl.DecodeString(*policyfile.Contents.Source)
 		require.NoError(t, err)
 		assert.Equal(t, string(expectedPolicyJSON), string(policyJSON.Data))
 	}
@@ -409,7 +409,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
 			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, nil)
-			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
 			mcs2.Name = ctrCfgKey
 
@@ -446,7 +446,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcp2.ObjectMeta.Labels["custom-crio"] = "storage-config"
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "custom-crio", "my-config"))
 			keyCtrCfg, _ := getManagedKeyCtrCfg(mcp, nil)
-			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
 			mcsUpdate.Name = keyCtrCfg
 
@@ -527,8 +527,8 @@ func TestImageConfigCreate(t *testing.T) {
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
-			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
@@ -569,8 +569,8 @@ func TestImageConfigUpdate(t *testing.T) {
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
-			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			mcs1Update := mcs1.DeepCopy()
 			mcs2Update := mcs2.DeepCopy()
 			mcs1Update.Name = keyReg1
@@ -665,8 +665,8 @@ func TestICSPUpdate(t *testing.T) {
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
 			keyReg1, _ := getManagedKeyReg(mcp, nil)
 			keyReg2, _ := getManagedKeyReg(mcp2, nil)
-			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []igntypes.File{{}})
+			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			icsp := newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
 				{Source: "built-in-source.example.com", Mirrors: []string{"built-in-mirror.example.com"}},
 			})

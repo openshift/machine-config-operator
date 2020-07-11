@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
@@ -52,51 +53,51 @@ func TestValidPath(t *testing.T) {
 	}
 }
 
-func TestOverwrittenFile(t *testing.T) {
+func TestValidateFiles(t *testing.T) {
 	fi, err := os.Lstat("fixtures/test1.txt")
 	if err != nil {
 		t.Errorf("Could not Lstat file: %v", err)
 	}
 	fileMode := int(fi.Mode().Perm())
 
-	// validate single file
-	files := []igntypes.File{
+	// validate single file in spec 3
+	filesV3 := []ign3types.File{
 		{
-			Node: igntypes.Node{
+			Node: ign3types.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
-					Source: dataurl.EncodeBytes([]byte("hello world\n")),
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("hello world\n"))),
 				},
 				Mode: &fileMode,
 			},
 		},
 	}
 
-	if err := checkFiles(files); err != nil {
+	if err := checkV3Files(filesV3); err != nil {
 		t.Errorf("Invalid files: %v", err)
 	}
 
-	// validate overwritten file
-	files = []igntypes.File{
+	// validate overwritten file in spec 2
+	filesV2 := []ign2types.File{
 		{
-			Node: igntypes.Node{
+			Node: ign2types.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
+			FileEmbedded1: ign2types.FileEmbedded1{
+				Contents: ign2types.FileContents{
 					Source: dataurl.EncodeBytes([]byte("hello\n")),
 				},
 				Mode: &fileMode,
 			},
 		},
 		{
-			Node: igntypes.Node{
+			Node: ign2types.Node{
 				Path: "fixtures/test1.txt",
 			},
-			FileEmbedded1: igntypes.FileEmbedded1{
-				Contents: igntypes.FileContents{
+			FileEmbedded1: ign2types.FileEmbedded1{
+				Contents: ign2types.FileContents{
 					Source: dataurl.EncodeBytes([]byte("hello world\n")),
 				},
 				Mode: &fileMode,
@@ -104,7 +105,7 @@ func TestOverwrittenFile(t *testing.T) {
 		},
 	}
 
-	if err := checkFiles(files); err != nil {
+	if err := checkV2Files(filesV2); err != nil {
 		t.Errorf("Validating an overwritten file failed: %v", err)
 	}
 }

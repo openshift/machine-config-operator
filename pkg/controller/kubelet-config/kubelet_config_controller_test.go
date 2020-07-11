@@ -25,7 +25,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -329,7 +329,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
 			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
-			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
@@ -362,7 +362,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
 			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
-			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 
@@ -638,7 +638,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "kubeletType", "small-pods"))
 			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
-			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
 

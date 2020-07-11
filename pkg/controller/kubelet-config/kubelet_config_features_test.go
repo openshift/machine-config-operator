@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
 
@@ -24,7 +24,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
-			dataURL, _ := dataurl.DecodeString(kubeletConfig.Contents.Source)
+			dataURL, _ := dataurl.DecodeString(*kubeletConfig.Contents.Source)
 			originalKubeConfig, _ := decodeKubeletConfig(dataURL.Data)
 			defaultFeatureGates, err := ctrl.generateFeatureMap(createNewDefaultFeatureGate())
 			if err != nil {
@@ -47,8 +47,8 @@ func TestFeaturesDefault(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kubeletConfigKey1, _ := getManagedKubeletConfigKey(mcp, nil)
 			kubeletConfigKey2, _ := getManagedKubeletConfigKey(mcp2, nil)
-			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []igntypes.File{{}})
-			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []igntypes.File{{}})
+			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedFeaturesKeyDeprecated(mcp)
 			mcs2Deprecated := mcs2.DeepCopy()

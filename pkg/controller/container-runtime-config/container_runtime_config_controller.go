@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	igntypes "github.com/coreos/ignition/config/v2_2/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -378,7 +378,7 @@ func (ctrl *Controller) handleImgErr(err error, key interface{}) {
 }
 
 // generateOriginalContainerRuntimeConfigs returns rendered default storage, registries and policy config files
-func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*igntypes.File, *igntypes.File, *igntypes.File, error) {
+func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.ControllerConfig, role string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
@@ -387,7 +387,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	}
 	// Find generated storage.conf, registries.conf, and policy.json
 	var (
-		config, gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON *igntypes.File
+		config, gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON *ign3types.File
 		errStorage, errRegistries, errPolicy                         error
 	)
 	// Find storage config
@@ -596,8 +596,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
-func (ctrl *Controller) mergeConfigChanges(origFile *igntypes.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
-	dataURL, err := dataurl.DecodeString(origFile.Contents.Source)
+func (ctrl *Controller) mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
+	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
 	if err != nil {
 		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
 	}
@@ -741,7 +741,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*igntypes.Config, error) {
+	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -755,7 +755,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	}
 
 	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
-		dataURL, err := dataurl.DecodeString(originalRegistriesIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalRegistriesIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
 		}
@@ -765,7 +765,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		}
 	}
 	if blockedRegs != nil || allowedRegs != nil {
-		dataURL, err := dataurl.DecodeString(originalPolicyIgn.Contents.Source)
+		dataURL, err := dataurl.DecodeString(*originalPolicyIgn.Contents.Source)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original policy json: %v", err)
 		}
@@ -934,7 +934,7 @@ func (ctrl *Controller) isUpdatingFromOldCRIOConf(cfg *mcfgv1.ContainerRuntimeCo
 			return false, fmt.Errorf("could not get mc with name %q: %v", managedKey, err)
 		}
 		if mc.Spec.Config.Raw != nil {
-			conf, err := ctrlcommon.IgnParseWrapper(mc.Spec.Config.Raw)
+			conf, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 			if err != nil {
 				return false, fmt.Errorf("error parsing ignition: %v", err)
 			}
