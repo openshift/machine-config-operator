@@ -411,7 +411,7 @@ func (dn *Daemon) syncNode(key string) error {
 		return nil
 	}
 
-	// Deep-copy otherwise we are mutating our cache.
+	// Deep-copy otherwise we are mutating our cache when modifying it.
 	node = node.DeepCopy()
 	// Update our cached copy of the node
 	dn.node = node
@@ -1227,6 +1227,9 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // been completed.
 func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
 	if err := drain.RunCordonOrUncordon(dn.drainer, node, false); err != nil {
+		return err
+	}
+	if err := dn.refreshNode(); err != nil {
 		return err
 	}
 

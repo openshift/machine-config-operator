@@ -100,7 +100,6 @@ func appendKubeConfig(rawExt *runtime.RawExtension, f kubeconfigFunc) error {
 }
 
 func appendNodeAnnotations(rawExt *runtime.RawExtension, currConf string) error {
-
 	anno, err := getNodeAnnotation(currConf)
 	if err != nil {
 		return err

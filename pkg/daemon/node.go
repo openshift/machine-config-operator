@@ -59,6 +59,7 @@ func getNodeAnnotation(node *corev1.Node, k string) (string, error) {
 func getNodeAnnotationExt(node *corev1.Node, k string, allowNoent bool) (string, error) {
 	v, ok := node.Annotations[k]
 	if !ok {
+		glog.Warningf("Annotation %q missing from node object", k)
 		if !allowNoent {
 			return "", fmt.Errorf("%s annotation not found on node '%s'", k, node.Name)
 		}

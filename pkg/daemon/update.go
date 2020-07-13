@@ -255,6 +255,15 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 	return true, nil
 }
 
+func (dn *Daemon) refreshNode() error {
+	node, err := dn.nodeLister.Get(dn.name)
+	if err != nil {
+		return err
+	}
+	dn.node = node.DeepCopy()
+	return nil
+}
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
@@ -267,6 +276,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
 			if err := dn.nodeWriter.SetWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
 				return errors.Wrap(err, "error setting node's state to Working")
+			}
+			// this refreshes our internal dn.node cache - if we don't do this, calls like drain will end up
+			// using the "old" representation of the cached node (in the informer index as well) and likely
+			// causes hiccups all over.
+			if err := dn.refreshNode(); err != nil {
+				return err
 			}
 		}
 	}
