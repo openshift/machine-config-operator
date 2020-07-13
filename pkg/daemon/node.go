@@ -32,7 +32,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 		currentOnDisk, err := dn.getCurrentConfigOnDisk()
 		if err == nil {
 			glog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
-			return setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
+			return dn.setNodeAnnotations(map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
 		}
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 	}
 
 	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
-	n, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, initial)
+	n, err := dn.setNodeAnnotations(initial)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set initial annotations: %v", err)
 	}

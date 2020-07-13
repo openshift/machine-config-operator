@@ -22,33 +22,37 @@ import (
 func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, f func(*corev1.Node)) (*corev1.Node, error) {
 	var node *corev1.Node
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, err := lister.Get(nodeName)
-		if err != nil {
-			return err
-		}
-		oldNode, err := json.Marshal(n)
-		if err != nil {
-			return err
-		}
-
-		nodeClone := n.DeepCopy()
-		f(nodeClone)
-
-		newNode, err := json.Marshal(nodeClone)
-		if err != nil {
-			return err
-		}
-
-		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
-		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
-		}
-
-		node, err = client.Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
-		return err
+		var innerErr error
+		node, innerErr = UpdateNode(client, lister, nodeName, f)
+		return innerErr
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return nil, fmt.Errorf("unable to update node %q: %v", node, err)
+		return nil, fmt.Errorf("unable to update node %q: %v", nodeName, err)
 	}
 	return node, nil
+}
+
+// UpdateNode calls f to update a node object in Kubernetes.
+func UpdateNode(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, f func(*corev1.Node)) (*corev1.Node, error) {
+	n, err := lister.Get(nodeName)
+	if err != nil {
+		return nil, err
+	}
+	oldNodeClone := n.DeepCopy()
+	oldNodeClone.ResourceVersion = ""
+	oldNode, err := json.Marshal(oldNodeClone)
+	if err != nil {
+		return nil, err
+	}
+	nodeClone := n.DeepCopy()
+	f(nodeClone)
+	newNode, err := json.Marshal(nodeClone)
+	if err != nil {
+		return nil, err
+	}
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+	}
+	return client.Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 }
