@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -214,8 +215,10 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	var container string
+	var containerName string
 	if fromEtcPullSpec || len(args) == 0 {
+		// In this case we will just rebase to OSImage provided in etcPivotFile.
+		// Extensions won't apply. This should be consistent with old behavior.
 		fromEtcPullSpec = true
 		data, err := ioutil.ReadFile(etcPivotFile)
 		if err != nil {
@@ -224,14 +227,34 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 			}
 			return errors.Wrapf(err, "failed to read from %s", etcPivotFile)
 		}
-		container = strings.TrimSpace(string(data))
+		container := strings.TrimSpace(string(data))
+		unitName := "mco-mount-container"
+		glog.Infof("Pulling in image and mounting container on host via systemd-run unit=%s", unitName)
+		err = exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
+			"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "mount-container", container).Run()
+		if err != nil {
+			return errors.Wrapf(err, "failed to create extensions repo")
+		}
+		var containerName string
+		if containerName, err = daemon.ReadFromFile(constants.MountedOSContainerName); err != nil {
+			return err
+		}
+
+		defer func() {
+			// Ideally other than MCD pivot, OSContainer shouldn't be needed by others.
+			// With above assumption, we should be able to delete OSContainer image as well as associated container with force option
+			exec.Command("podman", "rm", containerName).Run()
+			exec.Command("podman", "rmi", container).Run()
+			glog.Infof("Deleted container %s and corresponding image %s", containerName, container)
+		}()
+
 	} else {
-		container = args[0]
+		containerName = args[0]
 	}
 
 	client := daemon.NewNodeUpdaterClient()
 
-	_, changed, err := client.PullAndRebase(container, keep)
+	changed, err := client.PerformRpmOSTreeOperations(containerName, keep)
 	if err != nil {
 		return err
 	}

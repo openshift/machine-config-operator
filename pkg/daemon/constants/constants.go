@@ -55,4 +55,23 @@ const (
 	// "currentConfig" state.  Create this file (empty contents is fine) if you wish the MCD
 	// to proceed and attempt to "reconcile" to the new "desiredConfig" state regardless.
 	MachineConfigDaemonForceFile = "/run/machine-config-daemon-force"
+
+	// NewMachineConfigPath contains all the data from the desired MachineConfig
+	// except the spec/Config. We use this information and compare with old MachineConfig
+	// during pivot to update OS to desired state.
+	NewMachineConfigPath = "/run/newMachineConfig.json"
+
+	// OldMachineConfigPath contains all the data from the MachineConfig from the current state
+	// except the spec/Config. We use this information and compare with new old MachienConfig
+	// during pivot to update OS to desired state.
+	OldMachineConfigPath = "/run/oldMachineConfig.json"
+
+	// MountedOSContainerName contains name of OSContainer which we have already pulled in, created and mounted
+	// while we created extensions repo. We are saving the already created container so that we can further
+	// perform OS rebase or install extensions
+	MountedOSContainerName = "/run/mountedOSContainerName"
+
+	// MountedOSContainerLocation contains the path of mounted container referenced in
+	// MountedOSContainer
+	MountedOSContainerLocation = "/run/mountedOSContainerLocation"
 )

@@ -46,7 +46,8 @@ const (
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
-	fipsFile = "/proc/sys/crypto/fips_enabled"
+	fipsFile       = "/proc/sys/crypto/fips_enabled"
+	extensionsRepo = "/etc/yum.repos.d/coreos-extensions.repo"
 )
 
 func installedRTKernelRpmsOnHost() ([]string, error) {
@@ -255,6 +256,31 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 	return true, nil
 }
 
+func writeMachineConfigs(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	oldMCFile, err := os.Create(constants.OldMachineConfigPath)
+	if err != nil {
+		return fmt.Errorf("Can't open file: %v", err)
+	}
+	defer oldMCFile.Close()
+
+	encoder := json.NewEncoder(oldMCFile)
+	if err := encoder.Encode(oldConfig); err != nil {
+		return fmt.Errorf("Error while encoding: %v", err)
+	}
+
+	newMCFile, err := os.Create(constants.NewMachineConfigPath)
+	if err != nil {
+		return fmt.Errorf("Can't open file: %v", err)
+	}
+	defer newMCFile.Close()
+
+	encoder = json.NewEncoder(newMCFile)
+	if err := encoder.Encode(newConfig); err != nil {
+		return fmt.Errorf("Error while encoding: %v", err)
+	}
+	return nil
+}
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
@@ -297,6 +323,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
 		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
+	}
+
+	// Serialize old and new MachineConfigs in file to be processed later by rpm-ostree during pivot
+	if err := writeMachineConfigs(oldConfig, newConfig); err != nil {
+		return fmt.Errorf("Error serialzing MachineConfigs on host: %v", err)
 	}
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
@@ -395,6 +426,7 @@ type machineConfigDiff struct {
 	files      bool
 	units      bool
 	kernelType bool
+	extensions bool
 }
 
 // isEmpty returns true if the machineConfigDiff has no changes, or
@@ -429,6 +461,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	// Both nil and empty slices are of zero length,
 	// consider them as equal while comparing KernelArguments in both MachineConfigs
 	kargsEmpty := len(oldConfig.Spec.KernelArguments) == 0 && len(newConfig.Spec.KernelArguments) == 0
+	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	return &machineConfigDiff{
 		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
@@ -438,6 +471,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
+		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
 	}, nil
 }
 
@@ -698,8 +732,8 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	return exec.Command("rpm-ostree", args...).Run()
 }
 
-// mountOSContainer mounts the container and returns the mountpoint
-func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string, err error) {
+// MountOSContainer mounts the container and returns the mountpoint
+func MountOSContainer(container string) (mnt, containerName string, err error) {
 	var authArgs []string
 	if _, err = os.Stat(kubeletAuthFile); err == nil {
 		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
@@ -728,6 +762,7 @@ func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string,
 		return
 	}
 	mnt = strings.TrimSpace(string(mntBuf))
+	glog.Infof("Container ID,  mnt  and name %s   %s   %s\n", cid, mnt, containerName)
 	return
 }
 
@@ -771,7 +806,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	var mnt, containerName string
 	var err error
-	if mnt, containerName, err = dn.mountOSContainer(newConfig.Spec.OSImageURL); err != nil {
+	if mnt, containerName, err = MountOSContainer(newConfig.Spec.OSImageURL); err != nil {
 		return err
 	}
 
@@ -1298,6 +1333,33 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
+func addExtRepo(mnt string) error {
+	if err := os.MkdirAll(filepath.Dir(extensionsRepo), 0755); err != nil {
+		return fmt.Errorf("error creating yum repo directory %s: %v", filepath.Dir(extensionsRepo), err)
+	}
+	repo, err := os.Create(extensionsRepo)
+	if err != nil {
+		return fmt.Errorf("error creating extensions repo %s: %v", extensionsRepo, err)
+	}
+	defer repo.Close()
+	if _, err := repo.WriteString("[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + mnt + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ReadFromFile reads the content from a file and returns the content as string
+func ReadFromFile(file string) (string, error) {
+	if _, err := os.Stat(file); err != nil {
+		return "", fmt.Errorf("Error accessing file %s containing created container name %v", file, err)
+	}
+	buf, err := ioutil.ReadFile(file)
+	if err != nil {
+		return "", fmt.Errorf("Error reading content of file %s containing created container name %v", file, err)
+	}
+	return string(buf), nil
+}
+
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
@@ -1306,22 +1368,43 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	}
 
 	newURL := config.Spec.OSImageURL
-	osMatch, err := compareOSImageURL(dn.bootedOSImageURL, newURL)
-	if err != nil {
-		return err
-	}
-	if osMatch {
-		return nil
-	}
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
 	}
+
+	unitName := "mco-mount-container"
+	glog.Infof("Pulling in image and mounting container on host via systemd-run unit=%s", unitName)
+	err := exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
+		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "mount-container", newURL).Run()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create extensions repo")
+	}
+	var containerName, containerMntLoc string
+	if containerName, err = ReadFromFile(constants.MountedOSContainerName); err != nil {
+		return err
+	}
+	if containerMntLoc, err = ReadFromFile(constants.MountedOSContainerLocation); err != nil {
+		return err
+	}
+	if err := addExtRepo(containerMntLoc); err != nil {
+		return fmt.Errorf("Failed adding extensions repo: %v", err)
+	}
+
+	defer os.Remove(extensionsRepo)
+
+	defer func() {
+		// Ideally other than MCD pivot, OSContainer shouldn't be needed by others.
+		// With above assumption, we should be able to delete OSContainer image as well as associated container with force option
+		exec.Command("podman", "rm", containerName).Run()
+		exec.Command("podman", "rmi", config.Spec.OSImageURL).Run()
+		glog.Infof("Deleted container %s and corresponding image %s", containerName, config.Spec.OSImageURL)
+	}()
 
 	glog.Infof("Updating OS to %s", newURL)
 	// In the cluster case, for now we run indirectly via machine-config-daemon-host.service
 	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
 	if dn.kubeClient != nil {
-		if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
+		if err := dn.NodeUpdaterClient.RunPivot(containerName); err != nil {
 			MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
 			pivotErr, err2 := ioutil.ReadFile(pivottypes.PivotFailurePath)
 			if err2 != nil || len(pivotErr) == 0 {
@@ -1333,7 +1416,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		// If we're here we're invoked via `machine-config-daemon-firstboot.service`, so let's
 		// just run the update directly rather than invoking another service.
 		client := NewNodeUpdaterClient()
-		_, changed, err := client.PullAndRebase(newURL, false)
+		changed, err := client.PerformRpmOSTreeOperations(containerName, false)
 		if err != nil {
 			return err
 		}

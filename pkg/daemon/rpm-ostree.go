@@ -9,12 +9,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/opencontainers/go-digest"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
-	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 const (
@@ -45,19 +42,25 @@ type RpmOstreeDeployment struct {
 	RequestedLocalPkgs []string `json:"requested-local-packages"`
 }
 
-// imageInspection is a public implementation of
-// https://github.com/containers/skopeo/blob/82186b916faa9c8c70cfa922229bafe5ae024dec/cmd/skopeo/inspect.go#L20-L31
-type imageInspection struct {
-	Name          string `json:",omitempty"`
-	Tag           string `json:",omitempty"`
-	Digest        digest.Digest
-	RepoDigests   []string
-	Created       *time.Time
-	DockerVersion string
-	Labels        map[string]string
-	Architecture  string
-	Os            string
-	Layers        []string
+// imageInspection is motivated from podman upstream podman inspect
+// https://github.com/containers/podman/blob/master/pkg/inspect/inspect.go#L13
+type containerInspection struct {
+	Name        string
+	ImageName   string
+	Created     *time.Time
+	Config      *ImageConfig
+	GraphDriver *Data
+}
+
+// Data handles the data for a storage driver
+type Data struct {
+	Name string
+	Data map[string]string
+}
+
+// ImageConfig defines the execution parameters which should be used as a base when running a container using an image.
+type ImageConfig struct {
+	Labels map[string]string
 }
 
 // NodeUpdaterClient is an interface describing how to interact with the host
@@ -65,9 +68,10 @@ type imageInspection struct {
 type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
-	PullAndRebase(string, bool) (string, bool, error)
 	RunPivot(string) error
+	Rebase(string) (bool, error)
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
+	PerformRpmOSTreeOperations(string, bool) (bool, error)
 }
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
@@ -140,8 +144,110 @@ func podmanRemove(cid string) {
 	exec.Command("podman", "rm", "-f", cid).Run()
 }
 
-// PullAndRebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid string, changed bool, err error) {
+func readMachineConfigs() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
+	var oldCfgFile, newCfgFile *os.File
+	var oldCfg, newCfg *mcfgv1.MachineConfig
+	var err error
+
+	if oldCfgFile, err = os.Open(constants.OldMachineConfigPath); err != nil {
+		return nil, nil, err
+	}
+	defer oldCfgFile.Close()
+	decoder := json.NewDecoder(oldCfgFile)
+	if err := decoder.Decode(&oldCfg); err != nil {
+		return nil, nil, err
+	}
+
+	if newCfgFile, err = os.Open(constants.NewMachineConfigPath); err != nil {
+		return nil, nil, err
+	}
+	defer newCfgFile.Close()
+	decoder = json.NewDecoder(newCfgFile)
+	if err := decoder.Decode(&newCfg); err != nil {
+		return nil, nil, err
+	}
+
+	return oldCfg, newCfg, nil
+}
+
+func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
+	removed := []string{}
+	added := []string{}
+
+	oldExt := make(map[string]bool)
+	for _, ext := range oldConfig.Spec.Extensions {
+		oldExt[ext] = true
+	}
+	newExt := make(map[string]bool)
+	for _, ext := range newConfig.Spec.Extensions {
+		newExt[ext] = true
+	}
+
+	for ext := range oldExt {
+		if !newExt[ext] {
+			removed = append(removed, ext)
+		}
+	}
+	for ext := range newExt {
+		if !oldExt[ext] {
+			added = append(added, ext)
+		}
+	}
+
+	extArgs := []string{"update"}
+	for _, ext := range added {
+		extArgs = append(extArgs, "--install", ext)
+	}
+	for _, ext := range removed {
+		extArgs = append(extArgs, "--uninstall", ext)
+	}
+
+	return extArgs
+}
+
+// applyExtensions processes specified extensions if it is supported on RHCOS.
+// It deletes an extension if it is no logner available in new rendered MachineConfig.
+// Newly requested extension will be installed and existing extensions gets updated
+// if we have a new version of the extension available in machine-os-content.
+func applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	args := generateExtensionsArgs(oldConfig, newConfig)
+	glog.Infof("Applying extensionsss : %+q", args)
+	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+		glog.Infof("Failed to execute rpm-ostree %+q : %v", args, err)
+		return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+	}
+
+	return nil
+}
+
+// PerformRpmOSTreeOperations runs all rpm-ostree related operations
+func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep bool) (changed bool, err error) {
+	var oldConfig, newConfig *mcfgv1.MachineConfig
+
+	if oldConfig, newConfig, err = readMachineConfigs(); err != nil {
+		return
+	}
+
+	glog.Info("Old MC extensions %s and imageURL  %s", oldConfig.Spec.Extensions, oldConfig.Spec.OSImageURL)
+	glog.Info("New MC extensions %s and imageURL  %s", newConfig.Spec.Extensions, newConfig.Spec.OSImageURL)
+
+	// FIXME: moved rebase before extension becasue rpm-ostree fails to rebase on top of applied extensions
+	// during firstboot test. Maybe related to https://discussion.fedoraproject.org/t/bus-owner-changed-aborting-when-trying-to-upgrade/1919/
+	// We may need to reset package layering before applying rebase.
+	glog.Infof("Updating OS")
+	changed, err = r.Rebase(containerName)
+
+	// extensions
+	if err = applyExtensions(oldConfig, newConfig); err != nil {
+		return
+	}
+
+	return
+
+}
+
+// Rebase potentially rebases system if not already rebased.
+func (r *RpmOstreeClient) Rebase(ContainerName string) (changed bool, err error) {
 	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
@@ -159,96 +265,33 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		glog.Info("Current origin is not custom")
 	}
 
-	var authArgs []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
-	}
-
-	// If we're passed a non-canonical image, resolve it to its sha256 now
-	isCanonicalForm := true
-	if _, err = getRefDigest(container); err != nil {
-		isCanonicalForm = false
-		// In non-canonical form, we pull unconditionally right now
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
-	} else {
-		if previousPivot != "" {
-			var targetMatched bool
-			targetMatched, err = compareOSImageURL(previousPivot, container)
-			if err != nil {
-				return
-			}
-			if targetMatched {
-				changed = false
-				return
-			}
-		}
-
-		// Pull the image
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
-	}
-
-	inspectArgs := []string{"inspect", "--type=image"}
-	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", container))
+	inspectArgs := []string{"inspect", "--type=container"}
+	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", ContainerName))
 	var output []byte
 	output, err = runGetOut("podman", inspectArgs...)
 	if err != nil {
 		return
 	}
-	var imagedataArray []imageInspection
+	var imagedataArray []containerInspection
 	err = json.Unmarshal(output, &imagedataArray)
 	if err != nil {
 		err = errors.Wrapf(err, "unmarshaling podman inspect")
 		return
 	}
 	imagedata := imagedataArray[0]
-	if !isCanonicalForm {
-		imgid = imagedata.RepoDigests[0]
-		glog.Infof("Resolved to: %s", imgid)
-	} else {
-		imgid = container
-	}
 
-	containerName := pivottypes.PivotNamePrefix + string(uuid.NewUUID())
+	containerImageName := imagedata.ImageName
+	glog.Infof("Container Image is : %s", containerImageName)
 
-	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	var cidBuf []byte
-	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, imgid)
-	if err != nil {
-		return
-	}
-	defer func() {
-		// Kill our dummy container
-		podmanRemove(containerName)
-	}()
-
-	cid := strings.TrimSpace(string(cidBuf))
-	// Use the container ID to find its mount point
-	var mntBuf []byte
-	mntBuf, err = runGetOut("podman", "mount", cid)
-	if err != nil {
-		return
-	}
-	mnt := strings.TrimSpace(string(mntBuf))
-	repo := fmt.Sprintf("%s/srv/repo", mnt)
+	repo := fmt.Sprintf("%s/srv/repo", imagedata.GraphDriver.Data["MergedDir"])
+	glog.Infof("Mounted Dir %s", imagedata.GraphDriver.Data["MergedDir"])
 
 	// Now we need to figure out the commit to rebase to
 
 	// Commit label takes priority
-	ostreeCsum, ok := imagedata.Labels["com.coreos.ostree-commit"]
+	ostreeCsum, ok := imagedata.Config.Labels["com.coreos.ostree-commit"]
 	if ok {
-		if ostreeVersion, ok := imagedata.Labels["version"]; ok {
+		if ostreeVersion, ok := imagedata.Config.Labels["version"]; ok {
 			glog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
 		} else {
 			glog.Infof("Pivoting to: %s", ostreeCsum)
@@ -280,7 +323,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 	}
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
-	customURL := fmt.Sprintf("pivot://%s", imgid)
+	customURL := fmt.Sprintf("pivot://%s", containerImageName)
 
 	// RPM-OSTree can now directly slurp from the mounted container!
 	// https://github.com/projectatomic/rpm-ostree/pull/1732
@@ -290,12 +333,6 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		"--custom-origin-description", "Managed by machine-config-operator").Run()
 	if err != nil {
 		return
-	}
-
-	// By default, delete the image.
-	if !keep {
-		// Related: https://github.com/containers/libpod/issues/2234
-		exec.Command("podman", "rmi", imgid).Run()
 	}
 
 	changed = true
@@ -308,7 +345,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 // see https://github.com/openshift/pivot/pull/31 and
 // https://github.com/openshift/machine-config-operator/issues/314
 // Basically rpm_ostree_t has mac_admin, container_t doesn't.
-func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
+func (r *RpmOstreeClient) RunPivot(ContainerName string) error {
 	journalStopCh := make(chan time.Time)
 	defer close(journalStopCh)
 	go followPivotJournalLogs(journalStopCh)
@@ -329,7 +366,7 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 	unitName := "mco-pivot"
 	glog.Infof("Executing OS update (pivot) on host via systemd-run unit=%s", unitName)
 	err := exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
-		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "pivot", osImageURL).Run()
+		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "pivot", ContainerName).Run()
 	if err != nil {
 		return errors.Wrapf(err, "failed to run pivot")
 	}
