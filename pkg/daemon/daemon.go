@@ -204,7 +204,7 @@ func New(
 
 	operatingSystem := "mock"
 	if !mock {
-		operatingSystem, err = getHostRunningOS()
+		operatingSystem, err = GetHostRunningOS()
 		if err != nil {
 			HostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, errors.Wrapf(err, "checking operating system")
@@ -212,7 +212,7 @@ func New(
 	}
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
-	if operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS {
+	if operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -827,7 +827,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 // dynamically after a reboot.
 func (dn *Daemon) LogSystemData() {
 	// Print status if available
-	if dn.OperatingSystem == machineConfigDaemonOSRHCOS || dn.OperatingSystem == machineConfigDaemonOSFCOS {
+	if dn.OperatingSystem == MachineConfigDaemonOSRHCOS || dn.OperatingSystem == MachineConfigDaemonOSFCOS {
 		status, err := dn.NodeUpdaterClient.GetStatus()
 		if err != nil {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
@@ -1369,7 +1369,7 @@ func compareOSImageURL(current, desired string) (bool, error) {
 // Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
 	// Nothing to do if we're not on RHCOS or FCOS
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
 		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true, nil
 	}
