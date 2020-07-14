@@ -228,9 +228,6 @@ func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep 
 		return
 	}
 
-	glog.Info("Old MC extensions %s and imageURL  %s", oldConfig.Spec.Extensions, oldConfig.Spec.OSImageURL)
-	glog.Info("New MC extensions %s and imageURL  %s", newConfig.Spec.Extensions, newConfig.Spec.OSImageURL)
-
 	// FIXME: moved rebase before extension becasue rpm-ostree fails to rebase on top of applied extensions
 	// during firstboot test. Maybe related to https://discussion.fedoraproject.org/t/bus-owner-changed-aborting-when-trying-to-upgrade/1919/
 	// We may need to reset package layering before applying rebase.
