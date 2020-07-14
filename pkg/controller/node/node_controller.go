@@ -456,6 +456,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			daemonconsts.CurrentMachineConfigAnnotationKey,
 			daemonconsts.DesiredMachineConfigAnnotationKey,
 			daemonconsts.MachineConfigDaemonStateAnnotationKey,
+			daemonconsts.MachineConfigDaemonReasonAnnotationKey,
 		}
 		for _, anno := range annos {
 			if oldNode.Annotations[anno] != curNode.Annotations[anno] {
