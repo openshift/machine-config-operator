@@ -15,6 +15,7 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +41,12 @@ const (
 	// renderDelay is a pause to avoid churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	renderDelay = 5 * time.Second
+
+	// updateDelay is the baseline speed at which we react to changes.
+	updateDelay = 5 * time.Second
+	// maxDelay is the maximum time to react to a change as we back off
+	// in the face of errors.
+	maxDelay = 60 * time.Second
 )
 
 var (
@@ -84,8 +91,10 @@ func New(
 	ctrl := &Controller{
 		client:        mcfgClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
 	}
+	ctrl.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxDelay)), "machineconfigcontroller-rendercontroller")
 
 	mcpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.addMachineConfigPool,
