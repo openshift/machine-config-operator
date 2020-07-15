@@ -30,6 +30,29 @@ contents:
       - name: chroot-host
         hostPath:
           path: "/"
+      initContainers:
+      - name: render-config-keepalived
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - runtimecfg
+        - render
+        - "/etc/kubernetes/kubeconfig"
+        - "--api-vip"
+        - "{{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        - "--ingress-vip"
+        - "{{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+        - "/config"
+        - "--out-dir"
+        - "/etc/keepalived"
+        resources: {}
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: conf-dir
+          mountPath: "/etc/keepalived"
+        imagePullPolicy: IfNotPresent
       containers:
       - name: keepalived
         securityContext:
