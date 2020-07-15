@@ -61,9 +61,6 @@ func (a ServicePostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) 
 	case "restart":
 		glog.Infof("Restarting unit %q", a.ServiceName)
 		_, err = systemdConnection.RestartUnit(a.ServiceName, "replace", outputChannel)
-	case "stop":
-		glog.Infof("Stopping unit %q", a.ServiceName)
-		_, err = systemdConnection.StopUnit(a.ServiceName, "replace", outputChannel)
 	default:
 		return fmt.Errorf("Unhandled systemd action %q for %q", a.ServiceAction, a.ServiceName)
 	}
@@ -74,11 +71,16 @@ func (a ServicePostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) 
 
 	output := <-outputChannel
 	switch output {
+	// job completion: one of done, canceled, timeout, failed, dependency, skipped.
 	case "done":
 		glog.Infof("Systemd action %q for %q completed successful: %s", a.ServiceAction, a.ServiceName, output)
 	case "skipped":
-		// TODO: When are actions skipped... is it ever a failure?
-		glog.Infof("Systemd action %q for %q was skipped: %s", a.ServiceAction, a.ServiceName, output)
+		// The code suggests that 'skipped indicates that a job was
+		// skipped because it didn't apply to the units current state'
+		//
+		// This should only apply to stop and start actions which we
+		// don't support yet so treat it like an error for now
+		return fmt.Errorf("Systemd action %q for %q was skipped: %s", a.ServiceAction, a.ServiceName, output)
 	default:
 		return fmt.Errorf("Systemd action %q for %q failed: %s", a.ServiceAction, a.ServiceName, output)
 	}
