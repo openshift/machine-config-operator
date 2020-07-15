@@ -1286,6 +1286,10 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		return nil
 	}
 
+	if config.Spec.OSImageURL == "" {
+		return nil
+	}
+
 	newURL := config.Spec.OSImageURL
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
@@ -1298,7 +1302,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	err := exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
 		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "mount-container", newURL).Run()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create extensions repo")
+		return errors.Wrapf(err, "failed to mount container from image %s", newURL)
 	}
 
 	var containerName, containerMntLoc string
@@ -1309,13 +1313,16 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		return err
 	}
 
-	// Create coreos-extension repo is /etc/yum.repos.d/ . Selinux doesn't allow writing
-	// content to /etc/ in host context. See https://bugzilla.redhat.com/show_bug.cgi?id=1839065#c23
-	if err := addExtRepo(containerMntLoc); err != nil {
-		return fmt.Errorf("Failed adding extensions repo: %v", err)
-	}
+	// We can remove this check on FCOS when it starts shipping extensions repo
+	if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+		// Create coreos-extension repo in /etc/yum.repos.d/ . Selinux doesn't allow writing
+		// content to /etc/ in host context. See https://bugzilla.redhat.com/show_bug.cgi?id=1839065#c23
+		if err := addExtRepo(containerMntLoc); err != nil {
+			return fmt.Errorf("Failed adding extensions repo: %v", err)
+		}
 
-	defer os.Remove(extensionsRepo)
+		defer os.Remove(extensionsRepo)
+	}
 
 	defer func() {
 		exec.Command("podman", "rm", containerName).Run()

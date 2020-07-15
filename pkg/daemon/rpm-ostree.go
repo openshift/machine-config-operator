@@ -138,13 +138,6 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 	return osImageURL, bootedDeployment.Version, nil
 }
 
-// podmanRemove kills and removes a container
-func podmanRemove(cid string) {
-	// Ignore errors here
-	exec.Command("podman", "kill", cid).Run()
-	exec.Command("podman", "rm", "-f", cid).Run()
-}
-
 func readMachineConfigs() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
 	var oldCfgFile, newCfgFile *os.File
 	var oldCfg, newCfg *mcfgv1.MachineConfig
@@ -217,9 +210,8 @@ func applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 		return nil
 	}
 	args := generateExtensionsArgs(oldConfig, newConfig)
-	glog.Infof("Applying extensionss : %+q", args)
+	glog.Infof("Applying extensions : %+q", args)
 	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-		glog.Infof("Failed to execute rpm-ostree %+q : %v", args, err)
 		return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 	}
 
@@ -246,9 +238,8 @@ func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep 
 		return
 	}
 
-	// FIXME: moved rebase before extension becasue rpm-ostree fails to rebase on top of applied extensions
+	// rebase needs to be done before extension since rpm-ostree fails to rebase on top of applied extensions
 	// during firstboot test. Maybe related to https://discussion.fedoraproject.org/t/bus-owner-changed-aborting-when-trying-to-upgrade/1919/
-	// We may need to reset package layering before applying rebase.
 	if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 		glog.Infof("Updating OS")
 		if changed, err = r.Rebase(containerName); err != nil {
@@ -256,14 +247,22 @@ func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep 
 		}
 	}
 
-	// Apply and update extensions
-	if err = applyExtensions(oldConfig, newConfig); err != nil {
+	// We can remove this check on FCOS when it starts shipping extensions repo
+	var operatingSystem string
+	if operatingSystem, err = GetHostRunningOS(); err != nil {
+		err = errors.Wrapf(err, "failed to fetch Running OS on host")
 		return
 	}
+	if operatingSystem == MachineConfigDaemonOSRHCOS {
+		// Apply and update extensions
+		if err = applyExtensions(oldConfig, newConfig); err != nil {
+			return
+		}
 
-	// Switch to real time kernel
-	if err = switchKernel(oldConfig, newConfig); err != nil {
-		return
+		// Switch to real time kernel
+		if err = switchKernel(oldConfig, newConfig); err != nil {
+			return
+		}
 	}
 
 	return
@@ -379,7 +378,7 @@ func (r *RpmOstreeClient) Rebase(containerName string) (changed bool, err error)
 // see https://github.com/openshift/pivot/pull/31 and
 // https://github.com/openshift/machine-config-operator/issues/314
 // Basically rpm_ostree_t has mac_admin, container_t doesn't.
-func (r *RpmOstreeClient) RunPivot(ContainerName string) error {
+func (r *RpmOstreeClient) RunPivot(containerName string) error {
 	journalStopCh := make(chan time.Time)
 	defer close(journalStopCh)
 	go followPivotJournalLogs(journalStopCh)
@@ -400,7 +399,7 @@ func (r *RpmOstreeClient) RunPivot(ContainerName string) error {
 	unitName := "mco-pivot"
 	glog.Infof("Executing OS update (pivot) on host via systemd-run unit=%s", unitName)
 	err := exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
-		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "pivot", ContainerName).Run()
+		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "pivot", containerName).Run()
 	if err != nil {
 		return errors.Wrapf(err, "failed to run pivot")
 	}
