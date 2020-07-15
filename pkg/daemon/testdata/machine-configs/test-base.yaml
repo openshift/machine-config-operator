@@ -1,0 +1,255 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  annotations:
+    machineconfiguration.openshift.io/generated-by-controller-version: was-not-built-properly
+  creationTimestamp: null
+  name: rendered-worker-f65bca0639c20840c47f73c0cf202a7c
+  ownerReferences:
+  - apiVersion: machineconfiguration.openshift.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: MachineConfigPool
+    name: worker
+    uid: ""
+spec:
+  config:
+    ignition:
+      version: 3.1.0
+    passwd:
+      users:
+      - name: core
+        sshAuthorizedKeys:
+        - ssh-rsa SSH-AUTHORIZED-KEY
+    storage:
+      files:
+      - contents:
+          source: data:,
+        mode: 384
+        overwrite: true
+        path: /etc/pki/ca-trust/source/anchors/openshift-config-user-ca-bundle.crt
+      - contents:
+          source: data:,r%20%2Fetc%2Fkubernetes%2Fcni%2Fnet.d%2F80-openshift-network.conf%0Ar%20%2Fetc%2Fkubernetes%2Fcni%2Fnet.d%2F10-ovn-kubernetes.conf%0Ad%20%2Frun%2Fmultus%2Fcni%2Fnet.d%2F%200755%20root%20root%20-%20-%0AD%20%2Fvar%2Flib%2Fcni%2Fnetworks%2Fopenshift-sdn%2F%200755%20root%20root%20-%20-%0A
+        mode: 420
+        overwrite: true
+        path: /etc/tmpfiles.d/cleanup-cni.conf
+      - contents:
+          source: data:,
+        mode: 420
+        overwrite: true
+        path: /etc/kubernetes/static-pod-resources/configmaps/cloud-config/ca-bundle.pem
+      - contents:
+          source: data:,%23%20This%20file%20is%20generated%20by%20the%20Machine%20Config%20Operator's%20containerruntimeconfig%20controller.%0A%23%0A%23%20storage.conf%20is%20the%20configuration%20file%20for%20all%20tools%0A%23%20that%20share%20the%20containers%2Fstorage%20libraries%0A%23%20See%20man%205%20containers-storage.conf%20for%20more%20information%0A%23%20The%20%22container%20storage%22%20table%20contains%20all%20of%20the%20server%20options.%0A%5Bstorage%5D%0A%0A%23%20Default%20Storage%20Driver%0Adriver%20%3D%20%22overlay%22%0A%0A%23%20Temporary%20storage%20location%0Arunroot%20%3D%20%22%2Fvar%2Frun%2Fcontainers%2Fstorage%22%0A%0A%23%20Primary%20Read%2FWrite%20location%20of%20container%20storage%0Agraphroot%20%3D%20%22%2Fvar%2Flib%2Fcontainers%2Fstorage%22%0A%0A%5Bstorage.options%5D%0A%23%20Storage%20options%20to%20be%20passed%20to%20underlying%20storage%20drivers%0A%0A%23%20AdditionalImageStores%20is%20used%20to%20pass%20paths%20to%20additional%20Read%2FOnly%20image%20stores%0A%23%20Must%20be%20comma%20separated%20list.%0Aadditionalimagestores%20%3D%20%5B%0A%5D%0A%0A%23%20Size%20is%20used%20to%20set%20a%20maximum%20size%20of%20the%20container%20image.%20%20Only%20supported%20by%0A%23%20certain%20container%20storage%20drivers.%0Asize%20%3D%20%22%22%0A%0A%23%20OverrideKernelCheck%20tells%20the%20driver%20to%20ignore%20kernel%20checks%20based%20on%20kernel%20version%0Aoverride_kernel_check%20%3D%20%22true%22%0A%0A%23%20Remap-UIDs%2FGIDs%20is%20the%20mapping%20from%20UIDs%2FGIDs%20as%20they%20should%20appear%20inside%20of%0A%23%20a%20container%2C%20to%20UIDs%2FGIDs%20as%20they%20should%20appear%20outside%20of%20the%20container%2C%20and%0A%23%20the%20length%20of%20the%20range%20of%20UIDs%2FGIDs.%20%20Additional%20mapped%20sets%20can%20be%20listed%0A%23%20and%20will%20be%20heeded%20by%20libraries%2C%20but%20there%20are%20limits%20to%20the%20number%20of%0A%23%20mappings%20which%20the%20kernel%20will%20allow%20when%20you%20later%20attempt%20to%20run%20a%0A%23%20container.%0A%23%0A%23%20remap-uids%20%3D%200%3A1668442479%3A65536%0A%23%20remap-gids%20%3D%200%3A1668442479%3A65536%0A%0A%23%20Remap-User%2FGroup%20is%20a%20name%20which%20can%20be%20used%20to%20look%20up%20one%20or%20more%20UID%2FGID%0A%23%20ranges%20in%20the%20%2Fetc%2Fsubuid%20or%20%2Fetc%2Fsubgid%20file.%20%20Mappings%20are%20set%20up%20starting%0A%23%20with%20an%20in-container%20ID%20of%200%20and%20the%20a%20host-level%20ID%20taken%20from%20the%20lowest%0A%23%20range%20that%20matches%20the%20specified%20name%2C%20and%20using%20the%20length%20of%20that%20range.%0A%23%20Additional%20ranges%20are%20then%20assigned%2C%20using%20the%20ranges%20which%20specify%20the%0A%23%20lowest%20host-level%20IDs%20first%2C%20to%20the%20lowest%20not-yet-mapped%20container-level%20ID%2C%0A%23%20until%20all%20of%20the%20entries%20have%20been%20used%20for%20maps.%0A%23%0A%23%20remap-user%20%3D%20%22storage%22%0A%23%20remap-group%20%3D%20%22storage%22%0A%0A%5Bstorage.options.thinpool%5D%0A%23%20Storage%20Options%20for%20thinpool%0A%0A%23%20autoextend_percent%20determines%20the%20amount%20by%20which%20pool%20needs%20to%20be%0A%23%20grown.%20This%20is%20specified%20in%20terms%20of%20%25%20of%20pool%20size.%20So%20a%20value%20of%2020%20means%0A%23%20that%20when%20threshold%20is%20hit%2C%20pool%20will%20be%20grown%20by%2020%25%20of%20existing%0A%23%20pool%20size.%0A%23%20autoextend_percent%20%3D%20%2220%22%0A%0A%23%20autoextend_threshold%20determines%20the%20pool%20extension%20threshold%20in%20terms%0A%23%20of%20percentage%20of%20pool%20size.%20For%20example%2C%20if%20threshold%20is%2060%2C%20that%20means%20when%0A%23%20pool%20is%2060%25%20full%2C%20threshold%20has%20been%20hit.%0A%23%20autoextend_threshold%20%3D%20%2280%22%0A%0A%23%20basesize%20specifies%20the%20size%20to%20use%20when%20creating%20the%20base%20device%2C%20which%0A%23%20limits%20the%20size%20of%20images%20and%20containers.%0A%23%20basesize%20%3D%20%2210G%22%0A%0A%23%20blocksize%20specifies%20a%20custom%20blocksize%20to%20use%20for%20the%20thin%20pool.%0A%23%20blocksize%3D%2264k%22%0A%0A%23%20directlvm_device%20specifies%20a%20custom%20block%20storage%20device%20to%20use%20for%20the%0A%23%20thin%20pool.%20Required%20if%20you%20setup%20devicemapper%0A%23%20directlvm_device%20%3D%20%22%22%0A%0A%23%20directlvm_device_force%20wipes%20device%20even%20if%20device%20already%20has%20a%20filesystem%0A%23%20directlvm_device_force%20%3D%20%22True%22%0A%0A%23%20fs%20specifies%20the%20filesystem%20type%20to%20use%20for%20the%20base%20device.%0A%23%20fs%3D%22xfs%22%0A%0A%23%20log_level%20sets%20the%20log%20level%20of%20devicemapper.%0A%23%200%3A%20LogLevelSuppress%200%20(Default)%0A%23%202%3A%20LogLevelFatal%0A%23%203%3A%20LogLevelErr%0A%23%204%3A%20LogLevelWarn%0A%23%205%3A%20LogLevelNotice%0A%23%206%3A%20LogLevelInfo%0A%23%207%3A%20LogLevelDebug%0A%23%20log_level%20%3D%20%227%22%0A%0A%23%20min_free_space%20specifies%20the%20min%20free%20space%20percent%20in%20a%20thin%20pool%20require%20for%0A%23%20new%20device%20creation%20to%20succeed.%20Valid%20values%20are%20from%200%25%20-%2099%25.%0A%23%20Value%200%25%20disables%0A%23%20min_free_space%20%3D%20%2210%25%22%0A%0A%23%20mkfsarg%20specifies%20extra%20mkfs%20arguments%20to%20be%20used%20when%20creating%20the%20base%0A%23%20device.%0A%23%20mkfsarg%20%3D%20%22%22%0A%0A%23%20mountopt%20specifies%20extra%20mount%20options%20used%20when%20mounting%20the%20thin%20devices.%0A%23%20mountopt%20%3D%20%22%22%0A%0A%23%20use_deferred_removal%20Marking%20device%20for%20deferred%20removal%0A%23%20use_deferred_removal%20%3D%20%22True%22%0A%0A%23%20use_deferred_deletion%20Marking%20device%20for%20deferred%20deletion%0A%23%20use_deferred_deletion%20%3D%20%22True%22%0A%0A%23%20xfs_nospace_max_retries%20specifies%20the%20maximum%20number%20of%20retries%20XFS%20should%0A%23%20attempt%20to%20complete%20IO%20when%20ENOSPC%20(no%20space)%20error%20is%20returned%20by%0A%23%20underlying%20storage%20device.%0A%23%20xfs_nospace_max_retries%20%3D%20%220%22%0A
+        mode: 420
+        overwrite: true
+        path: /etc/containers/storage.conf
+      - contents:
+          source: data:,%23!%2Fbin%2Fbash%0A%23%0A%23%2090-long-hostname%20is%20a%20wrapper%20around%20%2Fusr%2Flocal%2Fsbin%2Fset-valid-hostname.sh%2C%0A%23%20which%20ensures%20that%20a%20node%20has%20a%20valid%20hostname.%0AIF%3D%241%0ASTATUS%3D%242%0A%0Alog()%20%7B%20logger%20--tag%20%22network-manager%2F%24(basename%20%240)%22%20%22%24%7B%40%7D%22%3B%20%7D%0A%0Aif%20%5B%5B%20!%20%22%24STATUS%22%20%3D~%20(up%7Chostname%7Cdhcp4-change%7Cdhcp6-change)%20%5D%5D%3B%20then%0A%20%20%20%20exit%200%0Afi%0A%0Aif%20%5B%5B%20!%20%22%24(%3C%20%2Fproc%2Fsys%2Fkernel%2Fhostname)%22%20%3D~%20(localhost%7Clocalhost.localdomain)%20%5D%5D%3B%20then%0A%20%20%20%20log%20%22hostname%20is%20already%20set%22%0A%20%20%20%20exit%200%0Afi%0A%0A%23%20source%20the%20script%20since%20NetworkManager%20execution%20rules%20do%0A%23%20allow%20sourcing%20from%20%2Fusr%2Flocal.%20RHCOS%20has%20an%20read-only%20rootfs%0A%23%20which%20limits%20where%20this%20can%20be%20stashed.%0Asource%20%2Fusr%2Flocal%2Fsbin%2Fset-valid-hostname.sh%0Ahost_name%3D%22%24%7BDHCP4_HOST_NAME%3A-%24DHCP6_HOST_NAME%7D%22%0A%0Aif%20%5B%20-n%20%22%24%7Bhost_name%7D%22%20%5D%3B%20then%0A%20%20%20%20set_valid_hostname%20%22%24%7Bhost_name%7D%22%0Afi%0A
+        mode: 493
+        overwrite: true
+        path: /etc/NetworkManager/dispatcher.d/90-long-hostname
+      - contents:
+          source: data:,%23%20Force-load%20legacy%20iptables%20so%20it%20is%20usable%20from%20pod%20network%20namespaces%0Aip_tables%0A
+        mode: 420
+        overwrite: true
+        path: /etc/modules-load.d/iptables.conf
+      - contents:
+          source: data:,-----BEGIN%20CERTIFICATE-----%0AKUBE%20API%20SERVER%20SERVING%20CA%20DATA%0A-----END%20CERTIFICATE-----%0A
+        mode: 420
+        overwrite: true
+        path: /etc/kubernetes/kubelet-ca.crt
+      - contents:
+          source: data:,%23%20Turning%20on%20Accounting%20helps%20track%20down%20performance%20issues.%0A%5BManager%5D%0ADefaultCPUAccounting%3Dyes%0ADefaultMemoryAccounting%3Dyes%0ADefaultBlockIOAccounting%3Dyes%0A
+        mode: 420
+        overwrite: true
+        path: /etc/systemd/system.conf.d/kubelet-cgroups.conf
+      - contents:
+          source: data:,%23%20ignore%20known%20SDN-managed%20devices%0A%5Bdevice%5D%0Amatch-device%3Dinterface-name%3Abr-int%3Binterface-name%3Abr-local%3Binterface-name%3Abr-nexthop%2Cinterface-name%3Aovn-k8s-*%2Cinterface-name%3Ak8s-*%3Binterface-name%3Atun0%3Binterface-name%3Abr0%3Bdriver%3Aveth%0Amanaged%3D0%0A
+        mode: 420
+        overwrite: true
+        path: /etc/NetworkManager/conf.d/sdn.conf
+      - contents:
+          source: data:,%7B%22auths%22%3A%7B%22example.com%22%3A%7B%22auth%22%3A%22MCC-PULL-SECRET%22%7D%7D%7D%0A
+        mode: 384
+        overwrite: true
+        path: /var/lib/kubelet/config.json
+      - contents:
+          source: data:,-----BEGIN%20CERTIFICATE-----%0AROOT%20CA%20DATA%0A-----END%20CERTIFICATE-----%0A
+        mode: 420
+        overwrite: true
+        path: /etc/kubernetes/ca.crt
+      - contents:
+          source: data:,net.ipv4.ip_forward%20%3D%201%0Anet.ipv6.conf.all.forwarding%20%3D%201%0A
+        mode: 420
+        overwrite: true
+        path: /etc/sysctl.d/forward.conf
+      - contents:
+          source: data:,%0Afs.inotify.max_user_watches%20%3D%2065536%0Afs.inotify.max_user_instances%20%3D%208192%0A
+        mode: 420
+        overwrite: true
+        path: /etc/sysctl.d/inotify.conf
+      - contents:
+          source: data:,%23!%2Fbin%2Fbash%0A%23%20On%20some%20platforms%20the%20hostname%20may%20be%20too%20long%20(%3E63%20chars).%0A%23%20%20-%20On%20firstboot%20the%20hostname%20is%20set%20in%20the%20initramfs%20before%20NetworkManager%0A%23%20%20%20%20And%20it%20may%20be%20truncated%20at%2064%20characters%20(too%20long)%0A%23%20%20-%20On%20reboot%20affect%20nodes%20use%20'localhost'.%0A%23%0A%23%20This%20script%20is%20a%20simple%20workaround%20for%20hostname%20woes%2C%20including%0A%23%20%20-%20NOT%20a%20localhost%20name%0A%23%20%20-%20NOT%20longer%20than%2063%20characters.%20Names%20will%20be%20truncated%20at%20the%0A%23%20%20%20%20first%20dot%2C%20and%20then%20capped%20at%2063%20char%20(which%20ever%20is%20less).%0A%23%20%20-%20Race%20conditions%20between%20truncated%20hostnames%20by%20the%20dhclient%0A%23%20%20%20%20and%20NetworkManager.%0A%23%0A%23%20Finally%2C%20this%20script%20is%20invoked%20via%3A%0A%23%20%20-%20%2Fetc%2FNetworkManager%2Fdispatcher.d%2F90-long-hostnames%0A%23%20%20-%20on%20boot%20via%20node-valid-hostname.service%0A%0Aexport%20PATH%3D%22%2Fusr%2Fbin%3A%2Fusr%2Flocal%2Fbin%3A%2Fsbin%3A%2Fusr%2Flocal%2Fsbin%3A%2Fbin%3A%24%7BPATH%7D%22%0Alog()%20%7B%20logger%20--tag%20%22%24(basename%20%240)%22%20%22%24%7B%40%7D%22%3B%20%7D%0A%0A%23%20wait_localhost%20waits%20until%20the%20host%20gets%20a%20real%20hostname.%0A%23%20This%20will%20wait%20indefinately.%20node-valid-hostname.service%20will%20terminate%0A%23%20this%20after%205m.%0Await_localhost()%20%7B%0A%20%20%20%20log%20%22waiting%20for%20non-localhost%20hostname%20to%20be%20assigned%22%0A%20%20%20%20while%20%5B%5B%20%22%24(%3C%20%2Fproc%2Fsys%2Fkernel%2Fhostname)%22%20%3D~%20(localhost%7Clocalhost.localdomain)%20%5D%5D%3B%0A%20%20%20%20do%0A%20%20%20%20%20%20%20%20sleep%201%0A%20%20%20%20done%0A%20%20%20%20log%20%22node%20identified%20as%20%24(%3C%2Fproc%2Fsys%2Fkernel%2Fhostname)%22%0A%20%20%20%20exit%200%0A%7D%0A%0Aset_valid_hostname()%20%7B%0A%20%20%20%20local%20host_name%3D%24%7B1%7D%0A%20%20%20%20local%20type_arg%3D%22transient%22%0A%0A%20%20%20%20%23%20%2Fetc%2Fhostname%20is%20used%20for%20static%20hostnames%20and%20is%20authorative.%0A%20%20%20%20%23%20This%20will%20check%20to%20make%20sure%20that%20the%20static%20hostname%20is%20the%0A%20%20%20%20%23%20less%20than%20or%20equal%20to%2063%20characters%20in%20length.%0A%20%20%20%20if%20%5B%20-f%20%2Fetc%2Fhostname%20%5D%20%26%26%20%5B%20%22%24(cat%20%2Fetc%2Fhostname%20%7C%20wc%20-m)%22%20-gt%200%20%5D%3B%20then%0A%20%20%20%20%20%20%20%20etc_name%3D%22%24(%3C%20%2Fetc%2Fhostname)%22%0A%20%20%20%20%20%20%20%20type_arg%3D%22static%22%0A%20%20%20%20%20%20%20%20if%20%5B%20%22%24%7Betc_name%7D%22%20!%3D%20%22%24%7Bhost_name%7D%22%20%5D%3B%20then%0A%20%20%20%20%20%20%20%20%20%20%20%20log%20%22%2Fetc%2Fhostname%20is%20set%20to%20%24%7Betc_name%7D%20but%20does%20not%20match%20%24%7Bhost_name%7D%22%0A%20%20%20%20%20%20%20%20%20%20%20%20log%20%22using%20%2Fetc%2Fhostname%20as%20the%20authorative%20name%22%0A%20%20%20%20%20%20%20%20%20%20%20%20host_name%3D%22%24%7Betc_name%7D%22%0A%20%20%20%20%20%20%20%20fi%0A%20%20%20%20fi%0A%0A%20%20%20%20%23%20Only%20mutate%20the%20hostname%20if%20the%20length%20is%20longer%20than%2063%20characters.%20The%0A%20%20%20%20%23%20hostname%20will%20be%20the%20lesser%20of%2063%20characters%20after%20the%20first%20dot%20in%20the%0A%20%20%20%20%23%20FQDN.%0A%20%20%20%20if%20%5B%20%22%24%7B%23host_name%7D%22%20-gt%2063%20%5D%3B%20then%0A%20%20%20%20%20%20%20%20alt_name%3D%24(printf%20%22%24%7Bhost_name%7D%22%20%7C%20cut%20-f1%20-d'.'%20%7C%20cut%20-c%20-63)%0A%20%20%20%20%20%20%20%20log%20%22%24%7Bhost_name%7D%20is%20longer%20than%2063%20characters%2C%20using%20trunacated%20hostname%22%0A%20%20%20%20%20%20%20%20host_name%3D%22%24%7Balt_name%7D%22%0A%20%20%20%20fi%0A%20%20%20%20log%20%22setting%20%24%7Btype_arg%7D%20hostname%20to%20%24%7Bhost_name%7D%22%0A%20%20%20%20%2Fbin%2Fhostnamectl%20%22--%24%7Btype_arg%7D%22%20set-hostname%20%22%24%7Bhost_name%7D%22%0A%20%20%20%20exit%200%0A%7D%0A%0Acli_run()%20%7B%0A%20%20%20%20mode%3D%22%24%7B1%3A%3Fmode%20must%20be%20the%20first%20argument%7D%22%3B%20shift%3B%0A%20%20%20%20case%20%22%24%7Bmode%7D%22%20in%0A%20%20%20%20%20%20%20%20%20%20%20%20wait_localhost)%20wait_localhost%3B%3B%0A%20%20%20%20%20%20%20%20set_valid_hostname)%20hname%3D%22%24%7B1%3A%3Fhostname%20is%20a%20required%20last%20argument%7D%22%3B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20set_valid_hostname%20%22%24%7Bhname%7D%22%3B%3B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20*)%20log%20%22unknown%20mode%20%24%7Bmode%7D%22%3B%20exit%201%3B%3B%0A%20%20%20%20esac%0A%7D%0A%0A%23%20Allow%20the%20functions%20to%20be%20sourced.%20This%20can%20be%20run%20either%20as%20a%0A%23%20standalone%20command%20or%20in%20systemd%20or%20part%20of%20NetworkManager.%0Aif%20%5B%5B%20%22%24%7BBASH_SOURCE%5B0%5D%7D%22%20%3D%3D%20%22%24%7B0%7D%22%20%5D%5D%3B%20then%0A%20%20%20%20cli_run%20%24%7B%40%7D%0Afi%0A
+        mode: 493
+        overwrite: true
+        path: /usr/local/sbin/set-valid-hostname.sh
+      - contents:
+          source: data:,
+        mode: 493
+        overwrite: true
+        path: /etc/kubernetes/kubelet-plugins/volume/exec/.dummy
+      - contents:
+          source: data:text/plain,unqualified-search-registries%20%3D%20%5B%22registry.access.redhat.com%22%2C%20%22docker.io%22%5D%0A%0A%5B%5Bregistry%5D%5D%0A%20%20prefix%20%3D%20%22%22%0A%20%20location%20%3D%20%22registry.product.example.org%2Focp%2F4.2-DATE-VERSION%22%0A%20%20mirror-by-digest-only%20%3D%20true%0A%0A%20%20%5B%5Bregistry.mirror%5D%5D%0A%20%20%20%20location%20%3D%20%22registry.mirror.example.com%2Focp%22%0A%0A%5B%5Bregistry%5D%5D%0A%20%20prefix%20%3D%20%22%22%0A%20%20location%20%3D%20%22registry.product.example.org%2Focp%2Frelease%22%0A%20%20mirror-by-digest-only%20%3D%20true%0A%0A%20%20%5B%5Bregistry.mirror%5D%5D%0A%20%20%20%20location%20%3D%20%22registry.mirror.example.com%2Focp%22%0A
+        mode: 420
+        overwrite: true
+        path: /etc/containers/registries.conf
+      - contents:
+          source: data:,%5Bcrio.api%5D%0Astream_address%20%3D%20%22%22%0Astream_port%20%3D%20%2210010%22%0A%0A%5Bcrio.runtime%5D%0Aconmon%20%3D%20%22%2Fusr%2Flibexec%2Fcrio%2Fconmon%22%0Aconmon_cgroup%20%3D%20%22pod%22%0Adefault_env%20%3D%20%5B%0A%20%20%20%20%22NSS_SDB_USE_CACHE%3Dno%22%2C%0A%5D%0Alog_level%20%3D%20%22info%22%0Acgroup_manager%20%3D%20%22systemd%22%0Adefault_capabilities%20%3D%20%5B%0A%20%20%20%20%22CHOWN%22%2C%0A%20%20%20%20%22DAC_OVERRIDE%22%2C%0A%20%20%20%20%22FSETID%22%2C%0A%20%20%20%20%22FOWNER%22%2C%0A%20%20%20%20%22NET_RAW%22%2C%0A%20%20%20%20%22SETGID%22%2C%0A%20%20%20%20%22SETUID%22%2C%0A%20%20%20%20%22SETPCAP%22%2C%0A%20%20%20%20%22NET_BIND_SERVICE%22%2C%0A%20%20%20%20%22SYS_CHROOT%22%2C%0A%20%20%20%20%22KILL%22%2C%0A%5D%0Ahooks_dir%20%3D%20%5B%0A%20%20%20%20%22%2Fetc%2Fcontainers%2Foci%2Fhooks.d%22%2C%0A%5D%0Amanage_ns_lifecycle%20%3D%20true%0A%0A%5Bcrio.image%5D%0Aglobal_auth_file%20%3D%20%22%2Fvar%2Flib%2Fkubelet%2Fconfig.json%22%0Apause_image%20%3D%20%22registry.product.example.org%2Focp%2F4.2-DATE-VERSION%40sha256%3Abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb%22%0Apause_image_auth_file%20%3D%20%22%2Fvar%2Flib%2Fkubelet%2Fconfig.json%22%0Apause_command%20%3D%20%22%2Fusr%2Fbin%2Fpod%22%0A%0A%5Bcrio.network%5D%0Anetwork_dir%20%3D%20%22%2Fetc%2Fkubernetes%2Fcni%2Fnet.d%2F%22%0Aplugin_dirs%20%3D%20%5B%0A%20%20%20%20%22%2Fvar%2Flib%2Fcni%2Fbin%22%2C%0A%20%20%20%20%22%2Fusr%2Flibexec%2Fcni%22%2C%0A%5D%0A%0A%5Bcrio.metrics%5D%0Aenable_metrics%20%3D%20true%0Ametrics_port%20%3D%209537%0A
+        mode: 420
+        overwrite: true
+        path: /etc/crio/crio.conf.d/00-default
+      - contents:
+          source: data:,%7B%0A%20%20%20%20%22default%22%3A%20%5B%0A%20%20%20%20%20%20%20%20%7B%0A%20%20%20%20%20%20%20%20%20%20%20%20%22type%22%3A%20%22insecureAcceptAnything%22%0A%20%20%20%20%20%20%20%20%7D%0A%20%20%20%20%5D%2C%0A%20%20%20%20%22transports%22%3A%0A%20%20%20%20%20%20%20%20%7B%0A%20%20%20%20%20%20%20%20%20%20%20%20%22docker-daemon%22%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%7B%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%22%22%3A%20%5B%7B%22type%22%3A%22insecureAcceptAnything%22%7D%5D%0A%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%7D%0A%20%20%20%20%20%20%20%20%7D%0A%7D
+        mode: 420
+        overwrite: true
+        path: /etc/containers/policy.json
+      - contents:
+          source: data:,
+        mode: 420
+        overwrite: true
+        path: /etc/kubernetes/cloud.conf
+      - contents:
+          source: data:,kind%3A%20KubeletConfiguration%0AapiVersion%3A%20kubelet.config.k8s.io%2Fv1beta1%0Aauthentication%3A%0A%20%20x509%3A%0A%20%20%20%20clientCAFile%3A%20%2Fetc%2Fkubernetes%2Fkubelet-ca.crt%0A%20%20anonymous%3A%0A%20%20%20%20enabled%3A%20false%0AcgroupDriver%3A%20systemd%0AcgroupRoot%3A%20%2F%0AclusterDNS%3A%0A%20%20-%20172.30.0.10%0AclusterDomain%3A%20cluster.local%0AcontainerLogMaxSize%3A%2050Mi%0AmaxPods%3A%20250%0AkubeAPIQPS%3A%2050%0AkubeAPIBurst%3A%20100%0ArotateCertificates%3A%20true%0AserializeImagePulls%3A%20false%0AstaticPodPath%3A%20%2Fetc%2Fkubernetes%2Fmanifests%0AsystemCgroups%3A%20%2Fsystem.slice%0AsystemReserved%3A%0A%20%20cpu%3A%20500m%0A%20%20memory%3A%201Gi%0A%20%20ephemeral-storage%3A%201Gi%0AfeatureGates%3A%0A%20%20APIPriorityAndFairness%3A%20true%0A%20%20LegacyNodeRoleBehavior%3A%20false%0A%20%20NodeDisruptionExclusion%3A%20true%0A%20%20RotateKubeletServerCertificate%3A%20true%0A%20%20SCTPSupport%3A%20true%0A%20%20ServiceNodeExclusion%3A%20true%0A%20%20SupportPodPidsLimit%3A%20true%0AserverTLSBootstrap%3A%20true%0A
+        mode: 420
+        overwrite: true
+        path: /etc/kubernetes/kubelet.conf
+    systemd:
+      units:
+      - dropins:
+        - contents: |
+            [Unit]
+          name: 10-mco-default-env.conf
+        name: crio.service
+      - contents: |
+          [Unit]
+          Description=Kubernetes Kubelet
+          Wants=rpc-statd.service network-online.target crio.service
+          After=network-online.target crio.service
+
+          [Service]
+          Type=notify
+          ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
+          ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+          Environment="KUBELET_LOG_LEVEL=4"
+          EnvironmentFile=/etc/os-release
+          EnvironmentFile=-/etc/kubernetes/kubelet-workaround
+          EnvironmentFile=-/etc/kubernetes/kubelet-env
+
+          ExecStart=/usr/bin/hyperkube \
+              kubelet \
+                --config=/etc/kubernetes/kubelet.conf \
+                --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
+                --kubeconfig=/var/lib/kubelet/kubeconfig \
+                --container-runtime=remote \
+                --container-runtime-endpoint=/var/run/crio/crio.sock \
+                --runtime-cgroups=/system.slice/crio.service \
+                --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+                --minimum-container-ttl-duration=6m0s \
+                --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+                --cloud-provider= \
+                 \
+                --pod-infra-container-image=registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+                --v=${KUBELET_LOG_LEVEL}
+
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+        dropins:
+        - contents: |
+            [Unit]
+          name: 10-mco-default-env.conf
+        enabled: true
+        name: kubelet.service
+      - contents: |
+          [Unit]
+          Description=Machine Config Daemon Firstboot
+          # Make sure it runs only on OSTree booted system
+          ConditionPathExists=/run/ostree-booted
+          # Removal of this file signals firstboot completion
+          ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+          After=machine-config-daemon-pull.service
+          Before=crio.service crio-wipe.service
+          Before=kubelet.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/run/bin/machine-config-daemon firstboot-complete-machineconfig
+
+          [Install]
+          WantedBy=multi-user.target
+          RequiredBy=crio.service kubelet.service
+        enabled: true
+        name: machine-config-daemon-firstboot.service
+      - contents: |
+          [Unit]
+          Description=Machine Config Daemon Pull
+          # Make sure it runs only on OSTree booted system
+          ConditionPathExists=/run/ostree-booted
+          # This "stamp file" is unlinked when we complete
+          # machine-config-daemon-firstboot.service
+          ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          # See https://github.com/coreos/fedora-coreos-tracker/issues/354
+          ExecStart=/bin/sh -c '/bin/mkdir -p /run/bin && chcon --reference=/usr/bin /run/bin'
+          ExecStart=/bin/sh -c "/usr/bin/podman pull --authfile=/var/lib/kubelet/config.json --quiet 'registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'"
+          ExecStart=/bin/sh -c "/usr/bin/podman run --rm --quiet --net=host --entrypoint=cat 'registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' /usr/bin/machine-config-daemon > /run/bin/machine-config-daemon.tmp"
+          ExecStart=/bin/sh -c '/usr/bin/chmod a+x /run/bin/machine-config-daemon.tmp && mv /run/bin/machine-config-daemon.tmp /run/bin/machine-config-daemon'
+
+          [Install]
+          RequiredBy=machine-config-daemon-firstboot.service
+        enabled: true
+        name: machine-config-daemon-pull.service
+      - contents: |
+          [Unit]
+          Description=Ensure the node hostname is valid for the cluster
+          Before=network-online.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          User=root
+
+          # SystemD prevents direct execution of the script in /usr/local/sbin,
+          # so it is sourced. See the script for functionality.
+          ExecStart=/bin/bash -c "source /usr/local/sbin/set-valid-hostname.sh; wait_localhost; set_valid_hostname `hostname`"
+
+          # Wait up to 5min for the node to get a real hostname.
+          TimeoutSec=300
+
+          [Install]
+          WantedBy=multi-user.target
+          # Ensure that network-online.target will not complete until the node has a real hostname.
+          RequiredBy=network-online.target
+        enabled: true
+        name: node-valid-hostname.service
+      - enabled: false
+        name: openvswitch.service
+      - enabled: false
+        name: ovsdb-server.service
+      - dropins:
+        - contents: |
+            [Unit]
+          name: 10-mco-default-env.conf
+        name: pivot.service
+  fips: false
+  kernelArguments: []
+  kernelType: default
+  osImageURL: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee

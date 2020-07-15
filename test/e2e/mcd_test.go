@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -22,6 +24,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
+
+
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358

@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/glog"
 	clientconfigv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+	icspclient "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1"
 	clientmachineconfigv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	clientapiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1"
 	appsv1client "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -19,6 +20,7 @@ type ClientSet struct {
 	clientconfigv1.ConfigV1Interface
 	clientmachineconfigv1.MachineconfigurationV1Interface
 	clientapiextensionsv1beta1.ApiextensionsV1beta1Interface
+	icspclient.OperatorV1alpha1Interface
 }
 
 // NewClientSet returns a *ClientBuilder with the given kubeconfig.
@@ -47,6 +49,7 @@ func NewClientSet(kubeconfig string) *ClientSet {
 	clientSet.MachineconfigurationV1Interface = clientmachineconfigv1.NewForConfigOrDie(config)
 	clientSet.ApiextensionsV1beta1Interface = clientapiextensionsv1beta1.NewForConfigOrDie(config)
 	clientSet.AppsV1Interface = appsv1client.NewForConfigOrDie(config)
+	clientSet.OperatorV1alpha1Interface = icspclient.NewForConfigOrDie(config)
 
 	return clientSet
 }

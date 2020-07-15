@@ -305,6 +305,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
+	// calculateActions() must be called prior to updating the disk so as to
+	// compare with the existing file contents
+	actions := calculateActions("", oldConfig, newConfig, diff)
+
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
 		return err
@@ -380,7 +384,51 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	return dn.updateOSAndReboot(newConfig)
+	return dn.finalizeUpdate(newConfig, actions)
+}
+
+func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []ConfigUpdateAction) (retErr error) {
+	if err := dn.updateOS(newConfig); err != nil {
+		return err
+	}
+
+	for _, action := range actions {
+		dn.logSystem("Performing %v", action.Describe())
+		if err := action.Execute(dn, newConfig); err != nil {
+			dn.logSystem("Applying machine config failed, node will reboot: %v", err)
+			return dn.finalizeAndReboot(newConfig)
+		}
+	}
+
+	if dn.kubeClient == nil {
+		// Match drain():
+		//
+		//    If we are not cluster-driven, skip draining of the node
+		//    and there is no need to replcate the SetDone() logic
+		return dn.finalizeAndReboot(newConfig)
+	}
+
+	if err := drain.RunCordonOrUncordon(dn.drainer, dn.node, false); err != nil {
+		glog.Errorf("Could not un-cordon machine, node will reboot: %v", err)
+		return dn.finalizeAndReboot(newConfig)
+	}
+
+	// If we are not rebooting, we need to replicate the
+	// checkStateOnFirstRun() functionality to indicate that the node has
+	// been successfully updated
+
+	state, err := dn.getStateAndConfigs(newConfig.GetName())
+	if err != nil {
+		glog.Errorf("Error processing state and configs, node will reboot: %v", err)
+		return dn.finalizeAndReboot(newConfig)
+	}
+
+	_, err = dn.confirmConfigState(state)
+	if err != nil {
+		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
+		return dn.finalizeAndReboot(newConfig)
+	}
+	return nil
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
