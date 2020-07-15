@@ -69,9 +69,11 @@ func (a ServicePostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) 
 		return fmt.Errorf("Running systemd action failed: %s", err)
 	}
 
+	// If the provided channel is non-nil, a result string will be sent to it upon
+	// job completion
 	output := <-outputChannel
 	switch output {
-	// job completion: one of done, canceled, timeout, failed, dependency, skipped.
+	// one of: done, canceled, timeout, failed, dependency, skipped.
 	case "done":
 		glog.Infof("Systemd action %q for %q completed successful: %s", a.ServiceAction, a.ServiceName, output)
 	case "skipped":
@@ -103,6 +105,34 @@ func filesToMap(files []igntypes.File) map[string]igntypes.File {
 	return fileMap
 }
 
+type ChangeStrategy struct {
+	filePath string
+	comment  string
+	actions []actionResult
+}
+
+//var strategies = func() map[string]ChangeStrategy {
+//        m := map[string]int{}
+//        for i, n := range order {
+//                m[n] = i
+//        }
+//        return m
+//}()
+
+var strategies = map[string]ChangeStrategy{
+	"/etc/containers/registry.conf": {
+		filePath: "/etc/containers/registry.conf",
+		comment: "ICSP",
+		actions: []actionResult{
+				ServicePostAction{
+					Reason:        "Change to /etc/containers/registry.conf",
+					ServiceName:   "crio.service",
+					ServiceAction: "restart",
+				},
+			},
+		},
+	}
+
 func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 	actions := []actionResult{}
 
@@ -117,18 +147,17 @@ func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 		return []actionResult{RebootPostAction{Reason: fmt.Sprintf("File %q was removed", filename.(string))}}
 	}
 
-//	oldFilesMap := filesToMap(oldIgnConfig.Storage.Files)
 	newFilesMap := filesToMap(newIgnConfig.Storage.Files)
 	for file := range newFiles.Intersect(oldFiles).Iter() {
 		candidate := newFilesMap[file.(string)]
 		if err := checkV3Files([]igntypes.File{candidate}); err != nil {
-			if candidate.Node.Path != "/etc/containers/registry.conf" {
-				return []actionResult{RebootPostAction{Reason: fmt.Sprintf("Storage file %q changed", candidate.Node.Path)}}
+			if strategy, ok := strategies[candidate.Node.Path]; ok {
+				for _, a := range strategy.actions {
+					actions = append(actions, a)
+				}
+			} else {
+				return []actionResult{RebootPostAction{Reason: fmt.Sprintf("Registry file %q changed", candidate.Node.Path)}}
 			}
-
-			actions = append(actions, ServicePostAction{
-				Reason:      fmt.Sprintf("change to %q", candidate.Node.Path),
-				ServiceName: "crio.service", ServiceAction: "restart"})
 		}
 	}
 
@@ -136,7 +165,7 @@ func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 }
 
 func calculateActions(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) []actionResult {
-	
+
 	if diff.osUpdate || diff.kargs || diff.fips || diff.kernelType {
 		return []actionResult{RebootPostAction{Reason: "OS/Kernel changed"}}
 	}
@@ -152,7 +181,7 @@ func calculateActions(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineC
 			Reason: fmt.Sprintf("parsing new Ignition config failed with error: %v", err)}}
 	}
 
-	// Check for any changes not excluded by Reconcilable()
+	// Check for any changes not already excluded by Reconcilable()
 	// Alternatively, fold this code into that function
 	if !reflect.DeepEqual(oldIgnConfig.Ignition, newIgnConfig.Ignition) {
 		return []actionResult{RebootPostAction{Reason: "Ignition changed"}}
