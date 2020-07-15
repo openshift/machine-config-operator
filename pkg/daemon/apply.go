@@ -106,32 +106,20 @@ func filesToMap(files []igntypes.File) map[string]igntypes.File {
 }
 
 type ChangeStrategy struct {
-	filePath string
-	comment  string
 	actions []actionResult
 }
 
-//var strategies = func() map[string]ChangeStrategy {
-//        m := map[string]int{}
-//        for i, n := range order {
-//                m[n] = i
-//        }
-//        return m
-//}()
-
 var strategies = map[string]ChangeStrategy{
 	"/etc/containers/registry.conf": {
-		filePath: "/etc/containers/registry.conf",
-		comment: "ICSP",
 		actions: []actionResult{
-				ServicePostAction{
-					Reason:        "Change to /etc/containers/registry.conf",
-					ServiceName:   "crio.service",
-					ServiceAction: "restart",
-				},
+			ServicePostAction{
+				Reason:        "Change to /etc/containers/registry.conf",
+				ServiceName:   "crio.service",
+				ServiceAction: "restart",
 			},
 		},
-	}
+	},
+}
 
 func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 	actions := []actionResult{}
