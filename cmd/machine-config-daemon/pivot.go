@@ -280,7 +280,7 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 	}
 
 	if !changed {
-		glog.Info("No changes; already at target oscontainer, no kernel args provided")
+		glog.Info("No changes; already at target oscontainer, no kernel args provided, no kernelType switch, no extensions applied")
 	}
 
 	return nil

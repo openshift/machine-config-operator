@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"time"
 
@@ -210,8 +211,13 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 // Newly requested extension will be installed and existing extensions gets updated
 // if we have a new version of the extension available in machine-os-content.
 func applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
+	if (extensionsEmpty) ||
+		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
+		return nil
+	}
 	args := generateExtensionsArgs(oldConfig, newConfig)
-	glog.Infof("Applying extensionsss : %+q", args)
+	glog.Infof("Applying extensionss : %+q", args)
 	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
 		glog.Infof("Failed to execute rpm-ostree %+q : %v", args, err)
 		return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
@@ -223,6 +229,18 @@ func applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 // PerformRpmOSTreeOperations runs all rpm-ostree related operations
 func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep bool) (changed bool, err error) {
 	var oldConfig, newConfig *mcfgv1.MachineConfig
+	// Check if we have reached here through update() or by directly calling m-c-d pivot
+	// In the latter case MachineConfig won't get written on host. In such situation let's just Rebase()
+	// and return back. Checking just oldconfig should be enough.
+	if _, err = os.Stat(constants.OldMachineConfigPath); err != nil {
+		if os.IsNotExist(err) {
+			glog.Infof("m-c-d pivot got called outside of MCO: Updating OS")
+			if changed, err = r.Rebase(containerName); err != nil {
+				return
+			}
+		}
+		return
+	}
 
 	if oldConfig, newConfig, err = readMachineConfigs(); err != nil {
 		return
@@ -231,11 +249,20 @@ func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep 
 	// FIXME: moved rebase before extension becasue rpm-ostree fails to rebase on top of applied extensions
 	// during firstboot test. Maybe related to https://discussion.fedoraproject.org/t/bus-owner-changed-aborting-when-trying-to-upgrade/1919/
 	// We may need to reset package layering before applying rebase.
-	glog.Infof("Updating OS")
-	changed, err = r.Rebase(containerName)
+	if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
+		glog.Infof("Updating OS")
+		if changed, err = r.Rebase(containerName); err != nil {
+			return
+		}
+	}
 
-	// extensions
+	// Apply and update extensions
 	if err = applyExtensions(oldConfig, newConfig); err != nil {
+		return
+	}
+
+	// Switch to real time kernel
+	if err = switchKernel(oldConfig, newConfig); err != nil {
 		return
 	}
 
@@ -243,8 +270,26 @@ func (r *RpmOstreeClient) PerformRpmOSTreeOperations(containerName string, keep 
 
 }
 
+func inspectContainer(containerName string) (*containerInspection, error) {
+	inspectArgs := []string{"inspect", "--type=container"}
+	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", containerName))
+	var output []byte
+	output, err := runGetOut("podman", inspectArgs...)
+	if err != nil {
+		return nil, err
+	}
+	var imagedataArray []containerInspection
+	err = json.Unmarshal(output, &imagedataArray)
+	if err != nil {
+		err = errors.Wrapf(err, "unmarshaling podman inspect")
+		return nil, err
+	}
+	return &imagedataArray[0], nil
+
+}
+
 // Rebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) Rebase(ContainerName string) (changed bool, err error) {
+func (r *RpmOstreeClient) Rebase(containerName string) (changed bool, err error) {
 	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
@@ -262,20 +307,10 @@ func (r *RpmOstreeClient) Rebase(ContainerName string) (changed bool, err error)
 		glog.Info("Current origin is not custom")
 	}
 
-	inspectArgs := []string{"inspect", "--type=container"}
-	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", ContainerName))
-	var output []byte
-	output, err = runGetOut("podman", inspectArgs...)
-	if err != nil {
+	var imagedata *containerInspection
+	if imagedata, err = inspectContainer(containerName); err != nil {
 		return
 	}
-	var imagedataArray []containerInspection
-	err = json.Unmarshal(output, &imagedataArray)
-	if err != nil {
-		err = errors.Wrapf(err, "unmarshaling podman inspect")
-		return
-	}
-	imagedata := imagedataArray[0]
 
 	containerImageName := imagedata.ImageName
 	glog.Infof("Container Image is : %s", containerImageName)
@@ -318,6 +353,8 @@ func (r *RpmOstreeClient) Rebase(ContainerName string) (changed bool, err error)
 			return
 		}
 	}
+
+	glog.Infof("Updating OS to %s", containerImageName)
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
 	customURL := fmt.Sprintf("pivot://%s", containerImageName)

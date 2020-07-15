@@ -10,7 +10,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -217,29 +216,6 @@ func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	}
 }
 
-// Returns true if updated packages or new RT kernel related packages are available
-func rtKernelUpdateAvailable(updateRpms []os.FileInfo, installedRTKernelRpms []string) bool {
-	// if list of RT kernel packages in update is more than installed list, then we have additional packages to install
-	if len(updateRpms) > len(installedRTKernelRpms) {
-		return true
-	}
-	for _, pkg := range installedRTKernelRpms {
-		found := false
-		searchRpm := pkg + ".rpm"
-		for _, rpm := range updateRpms {
-			if rpm.Name() == searchRpm {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return true
-		}
-	}
-
-	return false
-}
-
 // return true if the machineConfigDiff is not empty
 func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
@@ -282,6 +258,7 @@ func writeMachineConfigs(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 }
 
 // update the node to the provided node configuration.
+//nolint:gocyclo
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
@@ -329,6 +306,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	if err := writeMachineConfigs(oldConfig, newConfig); err != nil {
 		return fmt.Errorf("Error serialzing MachineConfigs on host: %v", err)
 	}
+
+	defer func() {
+		if retErr != nil {
+			if err := writeMachineConfigs(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back saved MachineConfig on disk %v", err)
+				return
+			}
+		}
+	}()
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
@@ -397,21 +383,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+	// OS update is needed only when OSImageURL or KernelType or Extensions has changed
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
 		return err
 	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.switchKernel(newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back Real time Kernel %v", err)
-				return
-			}
-		}
-	}()
-
-	return dn.updateOSAndReboot(newConfig)
+	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+		return dn.updateOSAndReboot(newConfig)
+	}
+	return dn.finalizeAndReboot(newConfig)
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
@@ -759,20 +739,17 @@ func MountOSContainer(container string) (mnt, containerName string, err error) {
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
 // Right now it supports default (traditional) and realtime kernel
-func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// Do nothing if both old and new KernelType are of type default
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
-	// We support Kernel update only on RHCOS nodes
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		return fmt.Errorf("Updating kernel on non-RHCOS nodes is not supported")
-	}
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
+	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 	var args []string
 
-	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
+	glog.Infof("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		var installedRTKernelRpms []string
@@ -788,82 +765,33 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		for _, installedRTKernelRpm := range installedRTKernelRpms {
 			args = append(args, "--uninstall", installedRTKernelRpm)
 		}
-		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
+		glog.Infof("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
 			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 		}
 		return nil
 	}
 
-	var mnt, containerName string
-	var err error
-	if mnt, containerName, err = MountOSContainer(newConfig.Spec.OSImageURL); err != nil {
-		return err
-	}
-
-	defer func() {
-		// Delete container and remove image once we are done with using rpms available in OSContainer
-		podmanRemove(containerName)
-		exec.Command("podman", "rmi", newConfig.Spec.OSImageURL).Run()
-		dn.logSystem("Deleted container and removed OSContainer image")
-	}()
-
-	// Get kernel-rt packages from OSContainer
-	rtRegex := regexp.MustCompile("kernel-rt(.*).rpm")
-	files, err := ioutil.ReadDir(mnt)
-	if err != nil {
-		return err
-	}
-
-	rtKernelRpms := []os.FileInfo{}
-	for _, file := range files {
-		if rtRegex.MatchString(file.Name()) {
-			rtKernelRpms = append(rtKernelRpms, file)
-		}
-	}
-
-	if len(rtKernelRpms) == 0 {
-		// No kernel-rt rpm package found
-		return fmt.Errorf("No kernel-rt package available in the OSContainer with URL %s", newConfig.Spec.OSImageURL)
-	}
-
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args = []string{"override", "remove"}
 		args = append(args, defaultKernel...)
-		for _, rpm := range rtKernelRpms {
-			args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
+		for _, pkg := range realtimeKernel {
+			args = append(args, "--install", pkg)
 		}
 
-		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
+		glog.Infof("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
 			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 		}
+		return nil
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
-			var installedRTKernelRpms []string
-			var err error
-			args = []string{"uninstall"}
-			if installedRTKernelRpms, err = installedRTKernelRpmsOnHost(); err != nil {
-				return fmt.Errorf("Error while fetching installed RT kernel on host %v", err)
-			}
-			if len(installedRTKernelRpms) == 0 {
-				return fmt.Errorf("No kernel-rt package installed on host")
-			}
-			for _, installedRTKernelRpm := range installedRTKernelRpms {
-				args = append(args, installedRTKernelRpm)
-			}
-			// Perform kernel-rt package update only if updated packages are available
-			if rtKernelUpdateAvailable(rtKernelRpms, installedRTKernelRpms) {
-				for _, rpm := range rtKernelRpms {
-					args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
-				}
-				dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-				if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-					return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
-				}
+			glog.Infof("Updating rt-kernel packages on host: %+q", args)
+			if err := exec.Command("rpm-ostree", "update").Run(); err != nil {
+				return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 			}
 		}
 	}
@@ -1363,6 +1291,8 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
 	}
 
+	// We need to mount OSContainer in host context so that mounted container is
+	// accissible by rpm-ostree to update OS and do package layering from coreos-extension repo.
 	unitName := "mco-mount-container"
 	glog.Infof("Pulling in image and mounting container on host via systemd-run unit=%s", unitName)
 	err := exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
@@ -1370,6 +1300,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to create extensions repo")
 	}
+
 	var containerName, containerMntLoc string
 	if containerName, err = ReadFromFile(constants.MountedOSContainerName); err != nil {
 		return err
@@ -1377,6 +1308,9 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	if containerMntLoc, err = ReadFromFile(constants.MountedOSContainerLocation); err != nil {
 		return err
 	}
+
+	// Create coreos-extension repo is /etc/yum.repos.d/ . Selinux doesn't allow writing
+	// content to /etc/ in host context. See https://bugzilla.redhat.com/show_bug.cgi?id=1839065#c23
 	if err := addExtRepo(containerMntLoc); err != nil {
 		return fmt.Errorf("Failed adding extensions repo: %v", err)
 	}
@@ -1384,14 +1318,11 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 	defer os.Remove(extensionsRepo)
 
 	defer func() {
-		// Ideally other than MCD pivot, OSContainer shouldn't be needed by others.
-		// With above assumption, we should be able to delete OSContainer image as well as associated container with force option
 		exec.Command("podman", "rm", containerName).Run()
 		exec.Command("podman", "rmi", config.Spec.OSImageURL).Run()
 		glog.Infof("Deleted container %s and corresponding image %s", containerName, config.Spec.OSImageURL)
 	}()
 
-	glog.Infof("Updating OS to %s", newURL)
 	// In the cluster case, for now we run indirectly via machine-config-daemon-host.service
 	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
 	if dn.kubeClient != nil {

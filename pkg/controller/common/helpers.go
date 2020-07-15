@@ -111,7 +111,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	// Ensure that kernel-devel extension is applied only with default kernel.
 	if kernelType != KernelTypeDefault {
 		if InSlice("kernel-devel", extensions) {
-			return nil, fmt.Errorf("Installing kernel-devel extension is not supported in kernelType: %s", kernelType)
+			return nil, fmt.Errorf("Installing kernel-devel extension is not supported with kernelType: %s", kernelType)
 		}
 	}
 
