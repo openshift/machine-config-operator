@@ -28,7 +28,7 @@ func (a RebootPostAction) Describe(dn *Daemon) string {
 }
 
 func (a RebootPostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) error {
-	return dn.drainAndReboot(newConfig)
+	return dn.finalizeAndReboot(newConfig)
 }
 
 type ServicePostAction struct {

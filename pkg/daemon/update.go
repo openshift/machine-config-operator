@@ -109,13 +109,6 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
-func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) error {
-	if err := dn.drain(); err != nil {
-		return err
-	}
-	return dn.finalizeAndReboot(newConfig)
-}
-
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -418,7 +411,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		newConfigName,
 	); err != nil {
 		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
-		return dn.drainAndReboot(newConfig)
+		return dn.finalizeAndReboot(newConfig)
 	}
 	glog.Infof("In desired config %s", newConfigName)
 	MCDUpdateState.WithLabelValues(newConfigName, "").SetToCurrentTime()
