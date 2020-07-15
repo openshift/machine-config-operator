@@ -109,6 +109,13 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
+func (dn *Daemon) drainAndReboot(newConfig *mcfgv1.MachineConfig) error {
+	if err := dn.drain(); err != nil {
+		return err
+	}
+	return dn.finalizeAndReboot(newConfig)
+}
+
 // updateOSAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -305,6 +312,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
+	// calculateActions() must be called prior to updating the disk so as to
+	// compare with the existing file contents
+	actions := calculateActions(oldConfig, newConfig, diff)
+
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
 		return err
@@ -380,7 +391,38 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	return dn.updateOSAndReboot(newConfig)
+	if err := dn.updateOS(newConfig); err != nil {
+		return err
+	}
+
+	for _, action := range actions {
+		glog.Infof("Performing %v", action.Describe(dn))
+		if err := action.Execute(dn, newConfig); err != nil {
+			glog.Errorf("Applying machine config failed, node will reboot: %v", err)
+			return dn.finalizeAndReboot(newConfig)
+		}
+	}
+
+	if err := drain.RunCordonOrUncordon(dn.drainer, dn.node, false); err != nil {
+		glog.Errorf("Could not un-cordon machine, node will reboot: %v", err)
+		return dn.finalizeAndReboot(newConfig)
+	}
+
+	// If we are not rebooting, we need to replicate the
+	// checkStateOnFirstRun() functionality to indicate that the node has
+	// been successfully updated
+	if err := dn.nodeWriter.SetDone(
+		dn.kubeClient.CoreV1().Nodes(),
+		dn.nodeLister,
+		dn.name,
+		newConfigName,
+	); err != nil {
+		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
+		return dn.drainAndReboot(newConfig)
+	}
+	glog.Infof("In desired config %s", newConfigName)
+	MCDUpdateState.WithLabelValues(newConfigName, "").SetToCurrentTime()
+	return nil
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
