@@ -7,21 +7,21 @@ import (
 )
 
 const (
-	// machineConfigDaemonOSRHCOS denotes RHEL CoreOS
-	machineConfigDaemonOSRHCOS = "RHCOS"
+	// MachineConfigDaemonOSRHCOS denotes RHEL CoreOS
+	MachineConfigDaemonOSRHCOS = "RHCOS"
 	// machineConfigDaemonOSRHEL denotes RHEL
 	machineConfigDaemonOSRHEL = "RHEL"
 	// machineConfigDaemonOSCENTOS denotes CentOS
 	machineConfigDaemonOSCENTOS = "CENTOS"
-	// machineConfigDaemonOSFCOS denotes Fedora CoreOS
-	machineConfigDaemonOSFCOS = "FCOS"
+	// MachineConfigDaemonOSFCOS denotes Fedora CoreOS
+	MachineConfigDaemonOSFCOS = "FCOS"
 )
 
-// getHostRunningOS reads os-release from the rootFs prefix to return what
+// GetHostRunningOS reads os-release from the rootFs prefix to return what
 // OS variant the daemon is running on. If we are unable to read the
 // os-release file OR the information doesn't match MCD supported OS's
 // an error is returned.
-func getHostRunningOS() (string, error) {
+func GetHostRunningOS() (string, error) {
 	libPath := "/usr/lib/os-release"
 	etcPath := "/etc/os-release"
 
@@ -31,13 +31,13 @@ func getHostRunningOS() (string, error) {
 	}
 
 	if or.ID == "fedora" && or.VARIANT_ID == "coreos" {
-		return machineConfigDaemonOSFCOS, nil
+		return MachineConfigDaemonOSFCOS, nil
 	}
 
 	// See https://github.com/openshift/redhat-release-coreos/blob/master/redhat-release-coreos.spec
 	switch or.ID {
 	case "rhcos":
-		return machineConfigDaemonOSRHCOS, nil
+		return MachineConfigDaemonOSRHCOS, nil
 	case "rhel":
 		return machineConfigDaemonOSRHEL, nil
 	case "centos":

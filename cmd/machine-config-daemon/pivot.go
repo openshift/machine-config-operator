@@ -34,10 +34,16 @@ const (
 	cmdLineFile      = "/proc/cmdline"
 )
 
-// TODO: fill out the allowlist
-// tuneableArgsAllowlist contains allowed keys for tunable arguments
-var tuneableArgsAllowlist = map[string]bool{
+// TODO: fill out the allowlists
+// tuneableRHCOSArgsAllowlist contains allowed keys for tunable kernel arguments on RHCOS
+var tuneableRHCOSArgsAllowlist = map[string]bool{
 	"nosmt": true,
+}
+
+// tuneableFCOSArgsAllowlist contains allowed keys for tunable kernel arguments on FCOS
+var tuneableFCOSArgsAllowlist = map[string]bool{
+	"systemd.unified_cgroup_hierarchy=0": true,
+	"mitigations=auto,nosmt":             true,
 }
 
 var pivotCmd = &cobra.Command{
@@ -57,8 +63,20 @@ func init() {
 }
 
 // isArgTuneable returns if the argument provided is allowed to be modified
-func isArgTunable(arg string) bool {
-	return tuneableArgsAllowlist[arg]
+func isArgTunable(arg string) (bool, error) {
+	operatingSystem, err := daemon.GetHostRunningOS()
+	if err != nil {
+		return false, errors.Errorf("failed to get OS for determining whether kernel arg is tuneable: %v", err)
+	}
+
+	switch operatingSystem {
+	case daemon.MachineConfigDaemonOSRHCOS:
+		return tuneableRHCOSArgsAllowlist[arg], nil
+	case daemon.MachineConfigDaemonOSFCOS:
+		return tuneableFCOSArgsAllowlist[arg], nil
+	default:
+		return false, nil
+	}
 }
 
 // isArgInUse checks to see if the argument is already in use by the system currently
@@ -108,7 +126,11 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 			// NOTE: Today only specific bare kernel arguments are allowed so
 			// there is not a need to split on =.
 			key := strings.TrimSpace(line[len("ADD "):])
-			if isArgTunable(key) {
+			tuneableKarg, err := isArgTunable(key)
+			if err != nil {
+				return addArguments, deleteArguments, err
+			}
+			if tuneableKarg {
 				// Find out if the argument is in use
 				inUse, err := isArgInUse(key, cmdLinePath)
 				if err != nil {
@@ -126,7 +148,11 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 			// NOTE: Today only specific bare kernel arguments are allowed so
 			// there is not a need to split on =.
 			key := strings.TrimSpace(line[len("DELETE "):])
-			if isArgTunable(key) {
+			tuneableKarg, err := isArgTunable(key)
+			if err != nil {
+				return addArguments, deleteArguments, err
+			}
+			if tuneableKarg {
 				inUse, err := isArgInUse(key, cmdLinePath)
 				if err != nil {
 					return addArguments, deleteArguments, err
