@@ -689,7 +689,7 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	if len(diff) == 0 {
 		return nil
 	}
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
 		return fmt.Errorf("Updating kargs on non-CoreOS nodes is not supported: %v", diff)
 	}
 
@@ -739,7 +739,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		return nil
 	}
 	// We support Kernel update only on RHCOS nodes
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS {
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
 		return fmt.Errorf("Updating kernel on non-RHCOS nodes is not supported")
 	}
 
@@ -906,7 +906,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 		newFileSet[f.Path] = struct{}{}
 	}
 
-	operatingSystem, err := getHostRunningOS()
+	operatingSystem, err := GetHostRunningOS()
 	if err != nil {
 		return errors.Wrapf(err, "checking operating system")
 	}
@@ -926,7 +926,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
 					// File is owned by an rpm
 					restore = true
-				} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
+				} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
 					if _, err := os.Stat("/usr" + f.Path); err != nil {
 						if !os.IsNotExist(err) {
 							return err
@@ -1071,7 +1071,7 @@ func (dn *Daemon) disableUnit(unit ign3types.Unit) error {
 
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
-	operatingSystem, err := getHostRunningOS()
+	operatingSystem, err := GetHostRunningOS()
 	if err != nil {
 		return errors.Wrapf(err, "checking operating system")
 	}
@@ -1081,7 +1081,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
 			if _, err := os.Stat("/usr" + dpath); err == nil &&
-				(operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
+				(operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
 				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
 					return err
 				}
@@ -1115,7 +1115,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		if u.Contents != nil && *u.Contents != "" {
 			glog.Infof("Writing systemd unit %q", u.Name)
 			if _, err := os.Stat("/usr" + fpath); err == nil &&
-				(operatingSystem == machineConfigDaemonOSRHCOS || operatingSystem == machineConfigDaemonOSFCOS) {
+				(operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
 				if err := createOrigFile("/usr"+fpath, fpath); err != nil {
 					return err
 				}
@@ -1300,7 +1300,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
-	if dn.OperatingSystem != machineConfigDaemonOSRHCOS && dn.OperatingSystem != machineConfigDaemonOSFCOS {
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
 		glog.V(2).Info("Updating of non-CoreOS nodes are not supported")
 		return nil
 	}
