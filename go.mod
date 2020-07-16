@@ -42,7 +42,6 @@ require (
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.7
-	github.com/joho/godotenv v1.3.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/mattn/go-isatty v0.0.9 // indirect
@@ -52,7 +51,6 @@ require (
 	github.com/opencontainers/runc v1.0.0-rc8.0.20190827142921-dd075602f158 // indirect
 	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
 	github.com/openshift/client-go v0.0.0-20200320150128-a906f3d8e723
-	github.com/openshift/cluster-etcd-operator v0.0.0-alpha.0.0.20191025163650-5854b5c48ce4
 	github.com/openshift/library-go v0.0.0-20200320155611-2a351bebf158
 	github.com/openshift/runtime-utils v0.0.0-20191011150825-9169de69ebf6
 	github.com/pkg/errors v0.8.1
