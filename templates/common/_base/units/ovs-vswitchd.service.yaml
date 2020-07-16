@@ -1,0 +1,6 @@
+name: ovs-vswitchd.service
+dropins:
+  - name: 10-ovs-vswitchd-restart.conf
+    contents: |
+      [Service]
+      Restart=always

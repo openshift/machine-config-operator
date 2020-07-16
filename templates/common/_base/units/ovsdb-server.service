@@ -1,2 +1,7 @@
 name: "ovsdb-server.service"
 enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else if eq .NetworkType "OpenShiftSDN"}}true{{else}}false{{end}}
+dropins:
+  - name: 10-ovsdb-restart.conf
+    contents: |
+      [Service]
+      Restart=always
