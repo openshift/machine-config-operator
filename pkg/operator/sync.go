@@ -102,13 +102,18 @@ func isCloudConfigRequired(infra *configv1.Infrastructure) bool {
 	if infra.Spec.CloudConfig.Name != "" {
 		return true
 	}
-	switch infra.Status.PlatformStatus.Type {
-	case configv1.AzurePlatformType,
-		configv1.GCPPlatformType,
-		configv1.OpenStackPlatformType,
-		configv1.VSpherePlatformType:
-		return true
-	default:
+
+	if infra.Status.PlatformStatus != nil {
+		switch infra.Status.PlatformStatus.Type {
+		case configv1.AzurePlatformType,
+			configv1.GCPPlatformType,
+			configv1.OpenStackPlatformType,
+			configv1.VSpherePlatformType:
+			return true
+		default:
+			return false
+		}
+	} else {
 		return false
 	}
 }
