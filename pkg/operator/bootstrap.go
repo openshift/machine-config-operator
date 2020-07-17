@@ -205,7 +205,7 @@ func RenderBootstrap(
 		if err := os.MkdirAll(dirname, 0655); err != nil {
 			return err
 		}
-		if err := ioutil.WriteFile(path, b, 0655); err != nil {
+		if err := ioutil.WriteFile(path, b, 0644); err != nil {
 			return err
 		}
 	}
