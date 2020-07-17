@@ -1,5 +1,5 @@
 MCO_COMPONENTS = daemon controller server operator
-EXTRA_COMPONENTS = setup-etcd-environment gcp-routes-controller
+EXTRA_COMPONENTS = gcp-routes-controller
 ALL_COMPONENTS = $(patsubst %,machine-config-%,$(MCO_COMPONENTS)) $(EXTRA_COMPONENTS)
 PREFIX ?= /usr
 GO111MODULE?=on
@@ -29,7 +29,7 @@ clean:
 
 # Build machine configs. Intended to be called via another target.
 # Example:
-#    make _build-setup-etcd
+#    make _build-gcp-routes-controller
 _build-%:
 	WHAT=$* hack/build-go.sh
 
