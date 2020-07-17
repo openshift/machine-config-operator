@@ -16,6 +16,9 @@ const (
 	MachineConfigDaemonStateAnnotationKey = "machineconfiguration.openshift.io/state"
 	// OpenShiftOperatorManagedLabel is used to filter out kube objects that don't need to be synced by the MCO
 	OpenShiftOperatorManagedLabel = "openshift.io/operator-managed"
+	// UpdateDisruptionScore is the MCD's estimate of node update disruption; currently
+	// it is 1 for the etcd leader on control plane nodes, and 0 otherwise.
+	UpdateDisruptionScoreAnnotationKey = "machineconfiguration.openshift.io/uds"
 	// MachineConfigDaemonStateWorking is set by daemon when it is applying an update.
 	MachineConfigDaemonStateWorking = "Working"
 	// MachineConfigDaemonStateDone is set by daemon when it is done applying an update.

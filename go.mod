@@ -39,6 +39,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.9
+	github.com/json-iterator/go v1.1.10 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
@@ -55,8 +56,11 @@ require (
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
+	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
+	go.etcd.io/etcd v0.0.0-20191023171146-3cf2f69b5738
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	google.golang.org/appengine v1.6.1 // indirect
+	google.golang.org/grpc v1.26.0
 	k8s.io/api v0.18.3
 	k8s.io/apiextensions-apiserver v0.18.0
 	k8s.io/apimachinery v0.18.3

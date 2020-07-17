@@ -43,6 +43,7 @@ type NodeWriter interface {
 	SetUnreconcilable(err error, client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
 	SetDegraded(err error, client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
 	SetSSHAccessed(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
+	SetEtcdLeader(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string, leader bool) error
 }
 
 // newNodeWriter Create a new NodeWriter
@@ -161,6 +162,26 @@ func (nw *clusterNodeWriter) SetSSHAccessed(client corev1client.NodeInterface, l
 	MCDSSHAccessed.Inc()
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
+	}
+	respChan := make(chan error, 1)
+	nw.writer <- message{
+		client:          client,
+		lister:          lister,
+		node:            node,
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	return <-respChan
+}
+
+// SetEtcdLeader updates the node's etcd leader annotation
+func (nw *clusterNodeWriter) SetEtcdLeader(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string, leader bool) error {
+	val := "0"
+	if leader {
+		val = "1"
+	}
+	annos := map[string]string{
+		constants.UpdateDisruptionScoreAnnotationKey: val,
 	}
 	respChan := make(chan error, 1)
 	nw.writer <- message{

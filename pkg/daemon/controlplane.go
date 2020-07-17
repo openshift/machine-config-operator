@@ -75,5 +75,18 @@ func (dn *Daemon) initializeControlPlane() error {
 	if err := updateOstreeObjectSync(); err != nil {
 		return err
 	}
+	ioniceEtcd(dn.stopCh)
+	go func() {
+		c := watchCurrentEtcdLeader(dn.stopCh)
+		for {
+			select {
+			case leader := <-c:
+				glog.Infof("node is etcd leader: %v", leader)
+				dn.nodeWriter.SetEtcdLeader(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, leader)
+			case <-dn.stopCh:
+				return
+			}
+		}
+	}()
 	return nil
 }

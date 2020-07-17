@@ -467,6 +467,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			daemonconsts.CurrentMachineConfigAnnotationKey,
 			daemonconsts.DesiredMachineConfigAnnotationKey,
 			daemonconsts.MachineConfigDaemonStateAnnotationKey,
+			daemonconsts.UpdateDisruptionScoreAnnotationKey,
 		}
 		for _, anno := range annos {
 			newValue := curNode.Annotations[anno]
@@ -875,9 +876,37 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.
 	return nodes[:capacity]
 }
 
-// getCurrentEtcdLeader is not yet implemented
+// getCurrentEtcdLeader looks at the candidate nodes (should be control plane)
+// at the "update disruption score" key which is currently just a function
+// of the etcd leader, but in the future we might change to something beyond
+// just 0/1 and/or expand beyond the control plane.
 func (ctrl *Controller) getCurrentEtcdLeader(candidates []*corev1.Node) (*corev1.Node, error) {
-	return nil, nil
+	var leader *corev1.Node
+	foundAnno := false
+	key := daemonconsts.UpdateDisruptionScoreAnnotationKey
+	for _, node := range candidates {
+		if v, ok := node.Annotations[key]; ok {
+			if v == "1" {
+				if leader != nil {
+					glog.Warningf("Multiple etcd leaders, also found %s", node.Name)
+				} else {
+					leader = node
+				}
+			} else if v != "0" {
+				glog.Warningf("Unknown %s %s: %s", node.Name, key, v)
+				continue
+			}
+			foundAnno = true
+		}
+	}
+	if !foundAnno {
+		return nil, fmt.Errorf("Didn't find annotation %s on any candidate", key)
+	}
+	if leader != nil {
+		// Take me to your leader
+		return leader, nil
+	}
+	return nil, fmt.Errorf("no leader")
 }
 
 // filterControlPlaneCandidateNodes adjusts the candidates and capacity specifically
