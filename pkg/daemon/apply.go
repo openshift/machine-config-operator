@@ -3,6 +3,9 @@ package daemon
 import (
 	"fmt"
 	"reflect"
+	"strings"
+
+	"k8s.io/client-go/tools/record"
 
 	"github.com/coreos/go-systemd/dbus"
 	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
@@ -45,8 +48,12 @@ func (a ServicePostAction) Describe(dn *Daemon) string {
 }
 
 func (a ServicePostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) error {
-	// TODO: add support for reload operation
+	// TODO: add support for stop and reload operations if necessary
 	// For now only restart operation is supported
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.V(2).Infof)
+
 	systemdConnection, dbusConnErr := dbus.NewSystemConnection()
 	if dbusConnErr != nil {
 		glog.Warningf("Unable to establish systemd dbus connection: %s", dbusConnErr)
@@ -109,19 +116,32 @@ type ChangeStrategy struct {
 	actions []actionResult
 }
 
-var strategies = map[string]ChangeStrategy{
-	"/etc/containers/registry.conf": {
-		actions: []actionResult{
-			ServicePostAction{
-				Reason:        "Change to /etc/containers/registry.conf",
-				ServiceName:   "crio.service",
-				ServiceAction: "restart",
+func lookupStrategy(stripPrefix, filePath string) ([]actionResult, error) {
+
+	strategies := map[string]ChangeStrategy{
+		"/etc/containers/registries.conf": {
+			actions: []actionResult{
+				ServicePostAction{
+					Reason:        "Change to /etc/containers/registries.conf",
+					ServiceName:   "crio.service",
+					ServiceAction: "restart",
+				},
 			},
 		},
-	},
+	}
+
+	key := filePath
+	if len(stripPrefix) > 0 {
+		key = strings.TrimPrefix(filePath, stripPrefix)
+	}
+
+	if strategy, ok := strategies[key]; ok {
+		return strategy.actions, nil
+	}
+	return []actionResult{}, fmt.Errorf("Default strategy for applying changes to %q", key)
 }
 
-func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
+func getFileChanges(stripPrefix string, oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 	actions := []actionResult{}
 
 	oldFiles := mapset.NewSetFromSlice(getFileNames(oldIgnConfig.Storage.Files))
@@ -139,12 +159,13 @@ func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 	for file := range newFiles.Intersect(oldFiles).Iter() {
 		candidate := newFilesMap[file.(string)]
 		if err := checkV3Files([]igntypes.File{candidate}); err != nil {
-			if strategy, ok := strategies[candidate.Node.Path]; ok {
-				for _, a := range strategy.actions {
+			strategyActions, err := lookupStrategy(stripPrefix, candidate.Node.Path)
+			if err == nil {
+				for _, a := range strategyActions {
 					actions = append(actions, a)
 				}
 			} else {
-				return []actionResult{RebootPostAction{Reason: fmt.Sprintf("Registry file %q changed", candidate.Node.Path)}}
+				return []actionResult{RebootPostAction{Reason: err.Error()}}
 			}
 		}
 	}
@@ -152,7 +173,7 @@ func getFileChanges(oldIgnConfig, newIgnConfig igntypes.Config) []actionResult {
 	return actions
 }
 
-func calculateActions(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) []actionResult {
+func calculateActions(stripPrefix string, oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) []actionResult {
 
 	if diff.osUpdate || diff.kargs || diff.fips || diff.kernelType {
 		return []actionResult{RebootPostAction{Reason: "OS/Kernel changed"}}
@@ -181,7 +202,7 @@ func calculateActions(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineC
 		return []actionResult{RebootPostAction{Reason: "Systemd changed"}}
 	}
 	if !reflect.DeepEqual(oldIgnConfig.Storage.Files, newIgnConfig.Storage.Files) {
-		return getFileChanges(oldIgnConfig, newIgnConfig)
+		return getFileChanges(stripPrefix, oldIgnConfig, newIgnConfig)
 	}
 
 	return []actionResult{}

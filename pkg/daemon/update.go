@@ -307,7 +307,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	// calculateActions() must be called prior to updating the disk so as to
 	// compare with the existing file contents
-	actions := calculateActions(oldConfig, newConfig, diff)
+	actions := calculateActions("", oldConfig, newConfig, diff)
 
 	// update files on disk that need updating
 	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
