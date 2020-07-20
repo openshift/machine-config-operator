@@ -15,13 +15,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/vincent-petithory/dataurl"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 const (
@@ -46,14 +47,14 @@ func TestCalculateActions(t *testing.T) {
 		name            string
 		mConfig         string
 		modifyConfig    func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config
-		expectedActions []actionResult
+		expectedActions []ActionResult
 	}{{
 		name:    "no-op",
 		mConfig: "test-base",
 		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
 			return ignCfg
 		},
-		expectedActions: []actionResult{},
+		expectedActions: []ActionResult{},
 	}, {
 		name:    "modified unit",
 		mConfig: "test-base",
@@ -62,12 +63,12 @@ func TestCalculateActions(t *testing.T) {
 			ignCfg.Systemd.Units[0].Enabled = &newValue
 			return ignCfg
 		},
-		expectedActions: []actionResult{
-			RebootPostAction{Reason: "Systemd changed"},
+		expectedActions: []ActionResult{
+			RebootPostAction{Reason: "Systemd configuration changed"},
 		},
 	}, {
 		mConfig: "test-base",
-		name:    "icsp no-op",
+		name:    "icsp url change",
 		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
 			for i := range ignCfg.Storage.Files {
 				f := &ignCfg.Storage.Files[i]
@@ -90,45 +91,6 @@ func TestCalculateActions(t *testing.T) {
 								},
 								MirrorByDigestOnly: true,
 								Mirrors: []sysregistriesv2.Endpoint{
-									{Location: "registry.mirror.example.com/ocp"},
-								},
-							},
-						},
-					}
-
-					data := encodeRegistries(t, tomlConf)
-					f.Contents.Source = &data
-				}
-			}
-
-			return ignCfg
-		},
-		expectedActions: []actionResult{},
-	}, {
-		mConfig: "test-base",
-		name:    "icsp url change",
-		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
-			for i := range ignCfg.Storage.Files {
-				f := &ignCfg.Storage.Files[i]
-				if f.Path == filepath.Join(prefix, "/etc/containers/registries.conf") {
-					tomlConf := sysregistriesv2.V2RegistriesConf{
-						UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
-						Registries: []sysregistriesv2.Registry{
-							{
-								Endpoint: sysregistriesv2.Endpoint{
-									Location: "registry.product.example.org/ocp/4.3-DATE-VERSION",
-								},
-								MirrorByDigestOnly: true,
-								Mirrors: []sysregistriesv2.Endpoint{
-									{Location: "registry.mirror.example.com/ocp"},
-								},
-							},
-							{
-								Endpoint: sysregistriesv2.Endpoint{
-									Location: "registry.product.example.org/ocp/release",
-								},
-								MirrorByDigestOnly: true,
-								Mirrors: []sysregistriesv2.Endpoint{
 									{Location: "registry.mirror.example.com/ocp4"},
 								},
 							},
@@ -142,7 +104,7 @@ func TestCalculateActions(t *testing.T) {
 
 			return ignCfg
 		},
-		expectedActions: []actionResult{
+		expectedActions: []ActionResult{
 			ServicePostAction{
 				Reason:        "Change to /etc/containers/registries.conf",
 				ServiceName:   "crio.service",
@@ -151,47 +113,25 @@ func TestCalculateActions(t *testing.T) {
 		},
 	}, {
 		mConfig: "test-base",
-		name:    "icsp url and unit change",
+		name:    "icsp and systemd change",
 		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
 			newValue := false
 			ignCfg.Systemd.Units[0].Enabled = &newValue
-
 			for i := range ignCfg.Storage.Files {
 				f := &ignCfg.Storage.Files[i]
 				if f.Path == filepath.Join(prefix, "/etc/containers/registries.conf") {
-					tomlConf := sysregistriesv2.V2RegistriesConf{
-						UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
-						Registries: []sysregistriesv2.Registry{
-							{
-								Endpoint: sysregistriesv2.Endpoint{
-									Location: "registry.product.example.org/ocp/4.3-DATE-VERSION",
-								},
-								MirrorByDigestOnly: true,
-								Mirrors: []sysregistriesv2.Endpoint{
-									{Location: "registry.mirror.example.com/ocp"},
-								},
-							},
-							{
-								Endpoint: sysregistriesv2.Endpoint{
-									Location: "registry.product.example.org/ocp/release",
-								},
-								MirrorByDigestOnly: true,
-								Mirrors: []sysregistriesv2.Endpoint{
-									{Location: "registry.mirror.example.com/ocp4"},
-								},
-							},
-						},
-					}
+					tomlConf := sysregistriesv2.V2RegistriesConf{}
 
 					data := encodeRegistries(t, tomlConf)
 					f.Contents.Source = &data
 				}
+
 			}
 
 			return ignCfg
 		},
-		expectedActions: []actionResult{
-			RebootPostAction{Reason: "Systemd changed"},
+		expectedActions: []ActionResult{
+			RebootPostAction{Reason: "Systemd configuration changed"},
 		},
 	}}
 
@@ -249,10 +189,9 @@ func TestCalculateActions(t *testing.T) {
 			if len(actions) != len(test.expectedActions) {
 				failed = true
 
-			} else if !equality.Semantic.DeepEqual(test.expectedActions, actions) {
+			} else if ! cmp.Equal(test.expectedActions, actions) {
 				failed = true
 			}
-
 			if failed {
 				t.Error(diff.ObjectDiff(test.expectedActions, actions))
 			}
