@@ -68,6 +68,26 @@ func TestCalculateActions(t *testing.T) {
 		},
 	}, {
 		mConfig: "test-base",
+		name:    "inotify change",
+		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
+			for i := range ignCfg.Storage.Files {
+				f := &ignCfg.Storage.Files[i]
+				if f.Path == filepath.Join(prefix, "/etc/sysctl.d/inotify.conf") {
+					newData := []byte("fs.inotify.max_user_watches = 65530\nfs.inotify.max_user_instances = 8192")
+					configdu := dataurl.New(newData, "text/plain")
+					configdu.Encoding = dataurl.EncodingASCII
+					data := configdu.String()
+					f.Contents.Source = &data
+				}
+			}
+
+			return ignCfg
+		},
+		expectedActions: []ActionResult{
+			RebootPostAction{Reason: "Default strategy for applying changes to \"/etc/sysctl.d/inotify.conf\""},
+		},
+	}, {
+		mConfig: "test-base",
 		name:    "icsp url change",
 		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
 			for i := range ignCfg.Storage.Files {
@@ -132,6 +152,36 @@ func TestCalculateActions(t *testing.T) {
 		},
 		expectedActions: []ActionResult{
 			RebootPostAction{Reason: "Systemd configuration changed"},
+		},
+	}, {
+		mConfig: "test-base",
+		name:    "icsp and inotify change",
+		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
+			for i := range ignCfg.Storage.Files {
+				f := &ignCfg.Storage.Files[i]
+				if f.Path == filepath.Join(prefix, "/etc/containers/registries.conf") {
+					tomlConf := sysregistriesv2.V2RegistriesConf{
+						UnqualifiedSearchRegistries: []string{"registry.access.redhat.com", "docker.io"},
+						Registries: []sysregistriesv2.Registry{},
+					}
+
+					data := encodeRegistries(t, tomlConf)
+					f.Contents.Source = &data
+
+				} else if f.Path == filepath.Join(prefix, "/etc/sysctl.d/inotify.conf") {
+					newData := []byte("fs.inotify.max_user_watches = 65530\nfs.inotify.max_user_instances = 8192")
+					configdu := dataurl.New(newData, "text/plain")
+					configdu.Encoding = dataurl.EncodingASCII
+					data := configdu.String()
+					f.Contents.Source = &data
+				}
+
+			}
+
+			return ignCfg
+		},
+		expectedActions: []ActionResult{
+			RebootPostAction{Reason: "Default strategy for applying changes to \"/etc/sysctl.d/inotify.conf\""},
 		},
 	}}
 
