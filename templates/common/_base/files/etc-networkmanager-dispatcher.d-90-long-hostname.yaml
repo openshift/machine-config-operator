@@ -4,36 +4,29 @@ contents:
   inline: |
     #!/bin/bash
     #
-    # On Google Compute Platform (GCP) the hostname may be too long (>63 chars).
-    # During firstboot the hostname is set in the initramfs before NetworkManager
-    # runs; on reboot affect nodes use 'localhost'. This hook is a simple work
-    # around: if the host name is longer than 63 characters, then the hostname
-    # is truncated at the _first_ dot.
-    #
-    # Additionally, this hook does not break DNS or cluster DNS resolution,
-    # since NetworkManager sets the appropriate /etc/resolv.conf settings.
-
+    # 90-long-hostname is a wrapper around /usr/local/sbin/set-valid-hostname.sh,
+    # which ensures that a node has a valid hostname.
     IF=$1
     STATUS=$2
 
     log() { logger --tag "network-manager/$(basename $0)" "${@}"; }
 
-    # capture all eligible hostnames
-    if [[ ! "$(/bin/hostname)" =~ (localhost|localhost.local) ]]; then
-        log "hostname is already set"
-        exit 0
-    fi
-
     if [[ ! "$STATUS" =~ (up|hostname|dhcp4-change|dhcp6-change) ]]; then
         exit 0
     fi
 
-    default_host="${DHCP4_HOST_NAME:-$DHCP6_HOST_NAME}"
-    # truncate the hostname to the first dot and than 64 characters.
-    host=$(printf ${default_host} | cut -f1 -d'.' | cut -c -63)
-
-    if [ "${#default_host}" -gt 63 ]; then
-        log "discovered hostname is longer than than 63 characters"
-        log "truncating ${default_host} => ${host}"
-        /bin/hostnamectl --transient set-hostname "${host}"
+    if [[ ! "$(< /proc/sys/kernel/hostname)" =~ (localhost|localhost.localdomain) ]]; then
+        log "hostname is already set"
+        exit 0
     fi
+
+    # source the script since NetworkManager execution rules do
+    # allow sourcing from /usr/local. RHCOS has an read-only rootfs
+    # which limits where this can be stashed.
+    source /usr/local/sbin/set-valid-hostname.sh
+    host_name="${DHCP4_HOST_NAME:-$DHCP6_HOST_NAME}"
+
+    if [ -n "${host_name}" ]; then
+        set_valid_hostname "${host_name}"
+    fi
+
