@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -49,67 +48,6 @@ func TestMCDToken(t *testing.T) {
 	}
 }
 
-func mcLabelForRole(role string) map[string]string {
-	mcLabels := make(map[string]string)
-	mcLabels[mcfgv1.MachineConfigRoleLabelKey] = role
-	return mcLabels
-}
-
-func mcLabelForWorkers() map[string]string {
-	return mcLabelForRole("worker")
-}
-
-// TODO consider also testing for Ign2
-// func createIgn2File(path, content, fs string, mode int) ign2types.File {
-// 	return ign2types.File{
-// 		FileEmbedded1: ign2types.FileEmbedded1{
-// 			Contents: ign2types.FileContents{
-// 				Source: content,
-// 			},
-// 			Mode: &mode,
-// 		},
-// 		Node: ign2types.Node{
-// 			Filesystem: fs,
-// 			Path:       path,
-// 			User: &ign2types.NodeUser{
-// 				Name: "root",
-// 			},
-// 		},
-// 	}
-// }
-
-func createIgn3File(path, content string, mode int) ign3types.File {
-	return ign3types.File{
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Contents: ign3types.Resource{
-				Source: &content,
-			},
-			Mode: &mode,
-		},
-		Node: ign3types.Node{
-			Path: path,
-			User: ign3types.NodeUser{
-				Name: helpers.StrToPtr("root"),
-			},
-		},
-	}
-}
-
-func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
-	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
-
-	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := createIgn3File(filename, "data:,"+data, 420)
-	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
-	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
-	mcadd.Spec.Config.Raw = rawIgnConfig
-	return mcadd
-}
-
-func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
-	return createMCToAddFileForRole(name, "worker", filename, data)
-}
-
 func TestMCDeployed(t *testing.T) {
 	cs := framework.NewClientSet("")
 
@@ -137,26 +75,6 @@ func TestMCDeployed(t *testing.T) {
 		}
 		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
 	}
-}
-
-func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
-	// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
-	listOptions := metav1.ListOptions{
-		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
-	}
-	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
-
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
-	if err != nil {
-		return nil, err
-	}
-	if len(mcdList.Items) != 1 {
-		if len(mcdList.Items) == 0 {
-			return nil, fmt.Errorf("Failed to find MCD for node %s", node.Name)
-		}
-		return nil, fmt.Errorf("Too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
-	}
-	return &mcdList.Items[0], nil
 }
 
 func TestUpdateSSH(t *testing.T) {
