@@ -66,7 +66,7 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 
 	client := daemon.NewNodeUpdaterClient()
 
-	_, changed, err := client.PullAndRebase(container, keep)
+	changed, err := client.Rebase(container)
 	if err != nil {
 		return err
 	}

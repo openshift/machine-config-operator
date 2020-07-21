@@ -307,6 +307,12 @@ spec:
                             description: Name is the name of the unit. This must be suffixed with a
                               valid unit type (e.g. 'thing.service')
                             type: string
+            extensions:
+              description: List of additional features that can be enabled on host
+              type: array
+              items:
+               type: string
+              nullable: true        
             fips:
               description: FIPS controls FIPS mode
               type: boolean
