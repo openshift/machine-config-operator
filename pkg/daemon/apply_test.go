@@ -244,6 +244,10 @@ func TestCalculateActions(t *testing.T) {
 			}
 			if failed {
 				t.Error(diff.ObjectDiff(test.expectedActions, actions))
+			} else {
+				for _, action := range actions {
+					fmt.Printf("Executing action [%v]\n", action.Describe())
+				}
 			}
 			os.Remove(tempDir)
 		})
