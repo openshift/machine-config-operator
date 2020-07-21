@@ -79,45 +79,6 @@ func TestMCDeployed(t *testing.T) {
 
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
-	kargsMC := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
-			Labels: mcLabelForWorkers(),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-			},
-			KernelArguments: []string{"nosmt", "foo=bar", "foo=baz", " baz=test bar=\"hello world\""},
-		},
-	}
-
-	_, err := cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
-	require.Nil(t, err)
-	t.Logf("Created %s", kargsMC.Name)
-	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", kargsMC.Name)
-	require.Nil(t, err)
-	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
-	nodes, err := getNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-		kargs := execCmdOnNode(t, cs, node, "cat", "/rootfs/proc/cmdline")
-		expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "\"bar=hello world\""}
-		for _, v := range expectedKernelArgs {
-			if !strings.Contains(kargs, v) {
-				t.Fatalf("Missing %q in kargs: %q", v, kargs)
-			}
-		}
-		t.Logf("Node %s has expected kargs", node.Name)
-	}
-}
-
-func TestKernelType(t *testing.T) {
-	cs := framework.NewClientSet("")
 
 	// Create infra pool to roll out MC changes
 	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
@@ -130,6 +91,74 @@ func TestKernelType(t *testing.T) {
 	oldInfraRenderedConfig, err := waitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
 	err = waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
 	require.Nil(t, err)
+
+	// create kargs MC
+	kargsMC := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
+			Labels: mcLabelForRole("infra"),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			KernelArguments: []string{"nosmt", "foo=bar", "foo=baz", " baz=test bar=hello world"},
+		},
+	}
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
+	require.Nil(t, err)
+	t.Logf("Created %s", kargsMC.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", kargsMC.Name)
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "infra", renderedConfig)
+	require.Nil(t, err)
+
+	// Re-fetch the infra node for updated annotations
+	infraNode := getSingleNodeByRole(t, cs, "infra")
+	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+	kargs := execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/cmdline")
+	expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
+	for _, v := range expectedKernelArgs {
+		if !strings.Contains(kargs, v) {
+			t.Fatalf("Missing %q in kargs: %q", v, kargs)
+		}
+	}
+	t.Logf("Node %s has expected kargs", infraNode.Name)
+
+	// cleanup - delete karg mc and rollback
+	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
+	err = waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+	require.Nil(t, err)
+
+	unlabelFunc()
+
+	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		require.Nil(t, err)
+		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+	}
+	err = waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+	require.Nil(t, err)
+}
+
+func TestKernelType(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+
+	oldInfraRenderedConfig := getMcName(t, cs, "infra")
 
 	// create kernel type MC and roll out
 	kernelType := &mcfgv1.MachineConfig{
@@ -145,7 +174,7 @@ func TestKernelType(t *testing.T) {
 		},
 	}
 
-	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
+	_, err := cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", kernelType.Name)
