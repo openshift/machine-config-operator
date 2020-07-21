@@ -384,6 +384,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	return dn.finalizeUpdate(newConfig, actions)
+}
+
+func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []ActionResult) (retErr error) {
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
@@ -404,6 +408,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	// If we are not rebooting, we need to replicate the
 	// checkStateOnFirstRun() functionality to indicate that the node has
 	// been successfully updated
+	newConfigName := newConfig.GetName()
 	if err := dn.nodeWriter.SetDone(
 		dn.kubeClient.CoreV1().Nodes(),
 		dn.nodeLister,
