@@ -10,7 +10,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,14 +24,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 )
 
@@ -46,7 +43,9 @@ const (
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
-	fipsFile = "/proc/sys/crypto/fips_enabled"
+	fipsFile          = "/proc/sys/crypto/fips_enabled"
+	extensionsRepo    = "/etc/yum.repos.d/coreos-extensions.repo"
+	osImageContentDir = "/run/mco-machine-os-content/"
 )
 
 func installedRTKernelRpmsOnHost() ([]string, error) {
@@ -109,15 +108,8 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
-// updateOSAndReboot is the last step in an update(), and it can also
+// finalizeAndReboot is the last step in an update(), and it can also
 // be called as a special case for the "bootstrap pivot".
-func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
-	if err := dn.updateOS(newConfig); err != nil {
-		return err
-	}
-	return dn.finalizeAndReboot(newConfig)
-}
-
 func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
 		return errors.Wrapf(err, "failed to log pending config: %s", string(out))
@@ -216,29 +208,6 @@ func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	}
 }
 
-// Returns true if updated packages or new RT kernel related packages are available
-func rtKernelUpdateAvailable(updateRpms []os.FileInfo, installedRTKernelRpms []string) bool {
-	// if list of RT kernel packages in update is more than installed list, then we have additional packages to install
-	if len(updateRpms) > len(installedRTKernelRpms) {
-		return true
-	}
-	for _, pkg := range installedRTKernelRpms {
-		found := false
-		searchRpm := pkg + ".rpm"
-		for _, rpm := range updateRpms {
-			if rpm.Name() == searchRpm {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return true
-		}
-	}
-
-	return false
-}
-
 // return true if the machineConfigDiff is not empty
 func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
@@ -255,7 +224,41 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 	return true, nil
 }
 
+func addExtensionsRepo() error {
+	if err := os.MkdirAll(filepath.Dir(extensionsRepo), 0755); err != nil {
+		return fmt.Errorf("error creating yum repo directory %s: %v", filepath.Dir(extensionsRepo), err)
+	}
+	repo, err := os.Create(extensionsRepo)
+	if err != nil {
+		return fmt.Errorf("error creating extensions repo %s: %v", extensionsRepo, err)
+	}
+	defer repo.Close()
+	if _, err := repo.WriteString("[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func extractOSImage(imgURL string) error {
+	var registryConfig []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
+	}
+	if err := os.MkdirAll(osImageContentDir, 0755); err != nil {
+		return fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
+	}
+	// Extract the image
+	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
+	args = append(args, registryConfig...)
+	args = append(args, imgURL)
+	if _, err := pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+		return err
+	}
+	return nil
+}
+
 // update the node to the provided node configuration.
+//nolint:gocyclo
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
@@ -353,6 +356,37 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return err
+	}
+
+	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+		if err := extractOSImage(newConfig.Spec.OSImageURL); err != nil {
+			return err
+		}
+		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+			if err := addExtensionsRepo(); err != nil {
+				return err
+			}
+		}
+	}
+
+	if mcDiff.osUpdate {
+		if err := dn.updateOS(newConfig); err != nil {
+			return err
+		}
+		defer func() {
+			if retErr != nil {
+				if err := dn.updateOS(oldConfig); err != nil {
+					retErr = errors.Wrapf(retErr, "error rolling back OS update %v", err)
+					return
+				}
+			}
+		}()
+	}
+
 	// kargs
 	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
 		return err
@@ -366,7 +400,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	// Switch to real time kernel
+	// Apply extensions
 	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
 		return err
 	}
@@ -380,7 +414,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	return dn.updateOSAndReboot(newConfig)
+	// Switch to real time kernel
+	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.applyExtensions(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back extensions %v", err)
+				return
+			}
+		}
+	}()
+
+	return dn.finalizeAndReboot(newConfig)
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
@@ -395,6 +443,7 @@ type machineConfigDiff struct {
 	files      bool
 	units      bool
 	kernelType bool
+	extensions bool
 }
 
 // isEmpty returns true if the machineConfigDiff has no changes, or
@@ -429,6 +478,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	// Both nil and empty slices are of zero length,
 	// consider them as equal while comparing KernelArguments in both MachineConfigs
 	kargsEmpty := len(oldConfig.Spec.KernelArguments) == 0 && len(newConfig.Spec.KernelArguments) == 0
+	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	return &machineConfigDiff{
 		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
@@ -438,6 +488,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
 		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
+		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
 	}, nil
 }
 
@@ -698,37 +749,60 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	return exec.Command("rpm-ostree", args...).Run()
 }
 
-// mountOSContainer mounts the container and returns the mountpoint
-func (dn *Daemon) mountOSContainer(container string) (mnt, containerName string, err error) {
-	var authArgs []string
-	if _, err = os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
+	removed := []string{}
+	added := []string{}
+
+	oldExt := make(map[string]bool)
+	for _, ext := range oldConfig.Spec.Extensions {
+		oldExt[ext] = true
 	}
-	// Pull the image
-	args := []string{"pull", "-q"}
-	args = append(args, authArgs...)
-	args = append(args, container)
-	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-	if err != nil {
-		return
+	newExt := make(map[string]bool)
+	for _, ext := range newConfig.Spec.Extensions {
+		newExt[ext] = true
 	}
 
-	containerName = "mcd-" + string(uuid.NewUUID())
-	// `podman mount` wants a container, so let's create a dummy one, but not run it
-	var cidBuf []byte
-	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, container)
-	if err != nil {
-		return
+	for ext := range oldExt {
+		if !newExt[ext] {
+			removed = append(removed, ext)
+		}
+	}
+	for ext := range newExt {
+		if !oldExt[ext] {
+			added = append(added, ext)
+		}
 	}
 
-	cid := strings.TrimSpace(string(cidBuf))
-	// Use the container ID to find its mount point
-	mntBuf, err := runGetOut("podman", "mount", cid)
-	if err != nil {
-		return
+	extArgs := []string{"update"}
+	for _, ext := range added {
+		extArgs = append(extArgs, "--install", ext)
 	}
-	mnt = strings.TrimSpace(string(mntBuf))
-	return
+	for _, ext := range removed {
+		extArgs = append(extArgs, "--uninstall", ext)
+	}
+
+	return extArgs
+}
+
+func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
+	if (extensionsEmpty) ||
+		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
+		return nil
+	}
+	// Right now, we support extensions only on RHCOS nodes
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
+		return fmt.Errorf("Extensions is not supported on non-RHCOS nodes ")
+	}
+
+	args := generateExtensionsArgs(oldConfig, newConfig)
+	glog.Infof("Applying extensions : %+q", args)
+	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
+		return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+	}
+
+	return nil
+
 }
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
@@ -738,12 +812,14 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
+
 	// We support Kernel update only on RHCOS nodes
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
 		return fmt.Errorf("Updating kernel on non-RHCOS nodes is not supported")
 	}
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
+	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 	var args []string
 
 	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
@@ -769,75 +845,26 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		return nil
 	}
 
-	var mnt, containerName string
-	var err error
-	if mnt, containerName, err = dn.mountOSContainer(newConfig.Spec.OSImageURL); err != nil {
-		return err
-	}
-
-	defer func() {
-		// Delete container and remove image once we are done with using rpms available in OSContainer
-		podmanRemove(containerName)
-		exec.Command("podman", "rmi", newConfig.Spec.OSImageURL).Run()
-		dn.logSystem("Deleted container and removed OSContainer image")
-	}()
-
-	// Get kernel-rt packages from OSContainer
-	rtRegex := regexp.MustCompile("kernel-rt(.*).rpm")
-	files, err := ioutil.ReadDir(mnt)
-	if err != nil {
-		return err
-	}
-
-	rtKernelRpms := []os.FileInfo{}
-	for _, file := range files {
-		if rtRegex.MatchString(file.Name()) {
-			rtKernelRpms = append(rtKernelRpms, file)
-		}
-	}
-
-	if len(rtKernelRpms) == 0 {
-		// No kernel-rt rpm package found
-		return fmt.Errorf("No kernel-rt package available in the OSContainer with URL %s", newConfig.Spec.OSImageURL)
-	}
-
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args = []string{"override", "remove"}
 		args = append(args, defaultKernel...)
-		for _, rpm := range rtKernelRpms {
-			args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
+		for _, pkg := range realtimeKernel {
+			args = append(args, "--install", pkg)
 		}
 
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
 			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 		}
+		return nil
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
-			var installedRTKernelRpms []string
-			var err error
-			args = []string{"uninstall"}
-			if installedRTKernelRpms, err = installedRTKernelRpmsOnHost(); err != nil {
-				return fmt.Errorf("Error while fetching installed RT kernel on host %v", err)
-			}
-			if len(installedRTKernelRpms) == 0 {
-				return fmt.Errorf("No kernel-rt package installed on host")
-			}
-			for _, installedRTKernelRpm := range installedRTKernelRpms {
-				args = append(args, installedRTKernelRpm)
-			}
-			// Perform kernel-rt package update only if updated packages are available
-			if rtKernelUpdateAvailable(rtKernelRpms, installedRTKernelRpms) {
-				for _, rpm := range rtKernelRpms {
-					args = append(args, "--install", fmt.Sprintf("%s/%s", mnt, rpm.Name()))
-				}
-				dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-				if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-					return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
-				}
+			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
+			if err := exec.Command("rpm-ostree", "update").Run(); err != nil {
+				return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
 			}
 		}
 	}
@@ -1317,30 +1344,21 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
 	}
 
-	glog.Infof("Updating OS to %s", newURL)
-	// In the cluster case, for now we run indirectly via machine-config-daemon-host.service
-	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
-	if dn.kubeClient != nil {
-		if err := dn.NodeUpdaterClient.RunPivot(newURL); err != nil {
-			MCDPivotErr.WithLabelValues(newURL, err.Error()).SetToCurrentTime()
-			pivotErr, err2 := ioutil.ReadFile(pivottypes.PivotFailurePath)
-			if err2 != nil || len(pivotErr) == 0 {
-				glog.Warningf("pivot error file doesn't contain anything, it was never written or an error occurred: %v", err2)
+	// Before rebase make sure that osImageContentDir exists. This is to continue with OS update in case we came here directly
+	// such as called as a special case for the "bootstrap pivot"
+	if _, err := os.Stat(osImageContentDir); err != nil {
+		if os.IsNotExist(err) {
+			if err := extractOSImage(config.Spec.OSImageURL); err != nil {
+				return err
 			}
-			return fmt.Errorf("failed to run pivot: %v: %v", err, string(pivotErr))
 		}
-	} else {
-		// If we're here we're invoked via `machine-config-daemon-firstboot.service`, so let's
-		// just run the update directly rather than invoking another service.
-		client := NewNodeUpdaterClient()
-		_, changed, err := client.PullAndRebase(newURL, false)
-		if err != nil {
-			return err
-		}
-		if !changed {
-			// This really shouldn't happen
-			glog.Warningf("Didn't change when updating to %q?", newURL)
-		}
+		return fmt.Errorf("Failed to access directory %s : %v", osImageContentDir, err)
+	}
+
+	glog.Infof("Updating OS to %s", newURL)
+	client := NewNodeUpdaterClient()
+	if _, err := client.Rebase(newURL); err != nil {
+		return err
 	}
 
 	return nil

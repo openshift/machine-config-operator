@@ -11,10 +11,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
-	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 const (
@@ -65,7 +62,7 @@ type imageInspection struct {
 type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
-	PullAndRebase(string, bool) (string, bool, error)
+	Rebase(string) (bool, error)
 	RunPivot(string) error
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
 }
@@ -133,15 +130,8 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 	return osImageURL, bootedDeployment.Version, nil
 }
 
-// podmanRemove kills and removes a container
-func podmanRemove(cid string) {
-	// Ignore errors here
-	exec.Command("podman", "kill", cid).Run()
-	exec.Command("podman", "rm", "-f", cid).Run()
-}
-
-// PullAndRebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid string, changed bool, err error) {
+// Rebase potentially rebases system if not already rebased.
+func (r *RpmOstreeClient) Rebase(container string) (changed bool, err error) {
 	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
@@ -164,55 +154,31 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
 	}
 
+	inspectArgs := []string{"inspect"}
+	inspectArgs = append(inspectArgs, authArgs...)
+
+	// Map container image name with transport so that skopeo understands it
+	imageName := "docker://" + container
+	inspectArgs = append(inspectArgs, imageName)
+	var output []byte
+	output, err = runGetOut("skopeo", inspectArgs...)
+	if err != nil {
+		return
+	}
+	var imagedata imageInspection
+	err = json.Unmarshal(output, &imagedata)
+	if err != nil {
+		err = errors.Wrapf(err, "unmarshaling skopeo inspect")
+		return
+	}
+
 	// If we're passed a non-canonical image, resolve it to its sha256 now
 	isCanonicalForm := true
 	if _, err = getRefDigest(container); err != nil {
 		isCanonicalForm = false
-		// In non-canonical form, we pull unconditionally right now
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
-	} else {
-		if previousPivot != "" {
-			var targetMatched bool
-			targetMatched, err = compareOSImageURL(previousPivot, container)
-			if err != nil {
-				return
-			}
-			if targetMatched {
-				changed = false
-				return
-			}
-		}
-
-		// Pull the image
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
 	}
 
-	inspectArgs := []string{"inspect", "--type=image"}
-	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", container))
-	var output []byte
-	output, err = runGetOut("podman", inspectArgs...)
-	if err != nil {
-		return
-	}
-	var imagedataArray []imageInspection
-	err = json.Unmarshal(output, &imagedataArray)
-	if err != nil {
-		err = errors.Wrapf(err, "unmarshaling podman inspect")
-		return
-	}
-	imagedata := imagedataArray[0]
+	var imgid string
 	if !isCanonicalForm {
 		imgid = imagedata.RepoDigests[0]
 		glog.Infof("Resolved to: %s", imgid)
@@ -220,31 +186,9 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		imgid = container
 	}
 
-	containerName := pivottypes.PivotNamePrefix + string(uuid.NewUUID())
-
-	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	var cidBuf []byte
-	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, imgid)
-	if err != nil {
-		return
-	}
-	defer func() {
-		// Kill our dummy container
-		podmanRemove(containerName)
-	}()
-
-	cid := strings.TrimSpace(string(cidBuf))
-	// Use the container ID to find its mount point
-	var mntBuf []byte
-	mntBuf, err = runGetOut("podman", "mount", cid)
-	if err != nil {
-		return
-	}
-	mnt := strings.TrimSpace(string(mntBuf))
-	repo := fmt.Sprintf("%s/srv/repo", mnt)
+	repo := fmt.Sprintf("%s/srv/repo", osImageContentDir)
 
 	// Now we need to figure out the commit to rebase to
-
 	// Commit label takes priority
 	ostreeCsum, ok := imagedata.Labels["com.coreos.ostree-commit"]
 	if ok {
@@ -281,6 +225,7 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
 	customURL := fmt.Sprintf("pivot://%s", imgid)
+	glog.Infof("Executing rebase from %s and checksum %s", customURL, ostreeCsum)
 
 	// RPM-OSTree can now directly slurp from the mounted container!
 	// https://github.com/projectatomic/rpm-ostree/pull/1732
@@ -290,12 +235,6 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		"--custom-origin-description", "Managed by machine-config-operator").Run()
 	if err != nil {
 		return
-	}
-
-	// By default, delete the image.
-	if !keep {
-		// Related: https://github.com/containers/libpod/issues/2234
-		exec.Command("podman", "rmi", imgid).Run()
 	}
 
 	changed = true
