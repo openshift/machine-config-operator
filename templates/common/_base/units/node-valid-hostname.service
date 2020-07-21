@@ -2,19 +2,18 @@ name: node-valid-hostname.service
 enabled: true
 contents: |
   [Unit]
-  Description=Ensure hostname is not localhost
-  # Only run when the host has a localhost name.
-  ConditionHost=|localhost
-  ConditionHost=|localhost.localdomain
+  Description=Ensure the node hostname is valid for the cluster
   Before=network-online.target
 
   [Service]
   Type=oneshot
   RemainAfterExit=yes
-  ExecStartPre=/bin/echo "Node has localhost hostname. Waiting for new hostname."
-  # Get the short hostname. This is more reliable than a regex.
-  ExecStartPre=/bin/bash -c 'while [ `hostname -s` == "localhost" ]; do sleep 1; done;'
-  ExecStart=/bin/sh -c "echo Node changed hostname to `hostname`"
+  User=root
+
+  # SystemD prevents direct execution of the script in /usr/local/sbin,
+  # so it is sourced. See the script for functionality.
+  ExecStart=/bin/bash -c "source /usr/local/sbin/set-valid-hostname.sh; wait_localhost; set_valid_hostname `hostname`"
+
   # Wait up to 5min for the node to get a real hostname.
   TimeoutSec=300
 
@@ -22,3 +21,4 @@ contents: |
   WantedBy=multi-user.target
   # Ensure that network-online.target will not complete until the node has a real hostname.
   RequiredBy=network-online.target
+
