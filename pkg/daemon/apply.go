@@ -16,7 +16,7 @@ import (
 )
 
 type ActionResult interface {
-	Describe(dn *Daemon) string
+	Describe() string
 	Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) error
 }
 
@@ -26,8 +26,8 @@ type RebootPostAction struct {
 	Reason string
 }
 
-func (a RebootPostAction) Describe(dn *Daemon) string {
-	return fmt.Sprintf("Rebooting node %v: %v", dn.node.GetName(), a.Reason)
+func (a RebootPostAction) Describe() string {
+	return fmt.Sprintf("Rebooting node: %v", a.Reason)
 }
 
 func (a RebootPostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) error {
@@ -43,7 +43,7 @@ type ServicePostAction struct {
 	ServiceAction string
 }
 
-func (a ServicePostAction) Describe(dn *Daemon) string {
+func (a ServicePostAction) Describe() string {
 	return fmt.Sprintf("Restarting service %v", a.Reason)
 }
 

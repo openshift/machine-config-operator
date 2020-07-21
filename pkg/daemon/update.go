@@ -393,7 +393,7 @@ func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []Acti
 	}
 
 	for _, action := range actions {
-		glog.Infof("Performing %v", action.Describe(dn))
+		glog.Infof("Performing %v", action.Describe())
 		if err := action.Execute(dn, newConfig); err != nil {
 			glog.Errorf("Applying machine config failed, node will reboot: %v", err)
 			return dn.finalizeAndReboot(newConfig)
