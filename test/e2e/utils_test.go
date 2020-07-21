@@ -95,7 +95,7 @@ func labelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 
 	rand.Seed(time.Now().UnixNano())
 	infraNode := nodes[rand.Intn(len(nodes))]
-	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=").CombinedOutput()
+	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=", "--overwrite=true").CombinedOutput()
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
 	return func() {
 		out, err = exec.Command("oc", "label", "node", infraNode.Name, label+"-").CombinedOutput()
