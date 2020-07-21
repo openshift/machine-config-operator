@@ -77,54 +77,6 @@ func TestMCDeployed(t *testing.T) {
 	}
 }
 
-func TestUpdateSSH(t *testing.T) {
-	cs := framework.NewClientSet("")
-
-	// create a dummy MC with an sshKey for user Core
-	mcName := fmt.Sprintf("00-sshkeys-worker-%s", uuid.NewUUID())
-	mcadd := &mcfgv1.MachineConfig{}
-	mcadd.ObjectMeta = metav1.ObjectMeta{
-		Name:   mcName,
-		Labels: mcLabelForWorkers(),
-	}
-	// create a new MC that adds a valid user & ssh keys
-	tempUser := ign3types.PasswdUser{
-		Name: "core",
-		SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{
-			"1234_test",
-			"abc_test",
-		},
-	}
-	ignConfig := ctrlcommon.NewIgnConfig()
-	ignConfig.Passwd.Users = append(ignConfig.Passwd.Users, tempUser)
-	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
-	mcadd.Spec.Config.Raw = rawIgnConfig
-
-	_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
-	require.Nil(t, err, "failed to create MC")
-	t.Logf("Created %s", mcadd.Name)
-
-	// grab the latest worker- MC
-	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
-	require.Nil(t, err)
-	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
-	require.Nil(t, err)
-	nodes, err := getNodesByRole(cs, "worker")
-	require.Nil(t, err)
-	for _, node := range nodes {
-		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-
-		// now rsh into that daemon and grep the authorized key file to check if 1234_test was written
-		// must do both commands in same shell, combine commands into one exec.Command()
-		found := execCmdOnNode(t, cs, node, "grep", "1234_test", "/rootfs/home/core/.ssh/authorized_keys")
-		if !strings.Contains(found, "1234_test") {
-			t.Fatalf("updated ssh keys not found in authorized_keys, got %s", found)
-		}
-		t.Logf("Node %s has SSH key", node.Name)
-	}
-}
-
 func TestKernelArguments(t *testing.T) {
 	cs := framework.NewClientSet("")
 	kargsMC := &mcfgv1.MachineConfig{
