@@ -393,11 +393,19 @@ func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []Acti
 	}
 
 	for _, action := range actions {
-		glog.Infof("Performing %v", action.Describe())
+		dn.logSystem("Performing %v", action.Describe())
 		if err := action.Execute(dn, newConfig); err != nil {
-			glog.Errorf("Applying machine config failed, node will reboot: %v", err)
+			dn.logSystem("Applying machine config failed, node will reboot: %v", err)
 			return dn.finalizeAndReboot(newConfig)
 		}
+	}
+
+	if dn.kubeClient == nil {
+		// Match drain():
+		//
+		//    If we are not cluster-driven, skip draining of the node
+		//    and there is no need to replcate the SetDone() logic
+		return dn.finalizeAndReboot(newConfig)
 	}
 
 	if err := drain.RunCordonOrUncordon(dn.drainer, dn.node, false); err != nil {
@@ -418,6 +426,7 @@ func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []Acti
 		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
 		return dn.finalizeAndReboot(newConfig)
 	}
+
 	glog.Infof("In desired config %s", newConfigName)
 	MCDUpdateState.WithLabelValues(newConfigName, "").SetToCurrentTime()
 	return nil
