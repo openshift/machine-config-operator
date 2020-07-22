@@ -72,12 +72,28 @@ metadata:
 spec:
   machineConfigPoolSelector:
     matchLabels:
-      custom-kubelet: small-pods
+      pools.operator.machineconfiguration.openshift.io/worker: ""
   kubeletConfig:
     maxPods: 100
 ```
 
 Save your `kubeletconfig` locally, for example as maxpods.yaml
+
+The label in the above example corresponds to the worker MachineConfigPool. By default the master/worker
+MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label youself as follows:
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: set-max-pods
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      custom-kubelet: small-pods
+  kubeletConfig:
+    maxPods: 100
+```
 
 To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-kubelet: small-pods` under labels in the machineConfigPool config: 
 
@@ -119,9 +135,9 @@ Check to ensure that a new 99-worker-XXX-kubelet is created and that a new rende
 $ oc get machineconfigs
 NAME                                 GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
 ...
-99-worker-123-abc-kubelet            fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             7s
+99-worker-kubelet-managed            fc45f8b73b2fc61e567f2111181d3e802f2565d7   3.1.0             7s
 ...
-rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             2s
+rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   3.1.0             2s
 ...
 ```
 

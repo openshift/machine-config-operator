@@ -68,33 +68,35 @@ metadata:
 spec:
  machineConfigPoolSelector:
    matchLabels:
+     pools.operator.machineconfiguration.openshift.io/worker: ""
+ containerRuntimeConfig:
+   pidsLimit: 2048
+```
+Save your `ctrcfg` locally, for example as highpids.yaml
+
+The label in the above example corresponds to the worker MachineConfigPool. By default the master/worker
+MachineConfigPool has labels pools.operator.machineconfiguration.openshift.io/{worker|master}: "" in OCP 4.6 and later. If you have a custom pool, or have an earlier OCP version, you can instead create a label youself as follows:
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+ name: set-pids-limit
+spec:
+ machineConfigPoolSelector:
+   matchLabels:
      custom-crio: high-pid-limit
  containerRuntimeConfig:
    pidsLimit: 2048
 ```
-Save your `ctrcfg` locally, for example as highpids.yaml and create the ctrcfg:
 
-```
-oc create -f highpids.yaml
-```
-
-Check that it was created:
-
-```
-$ oc get ctrcfg
-NAME             AGE
-set-pids-limit   50s
-```
-
-Use the label you created in `matchLabels` in the MachineConfigPool config that you want the changes rolled out to. From the example above, that label would be `custom-crio: high-pid-limit`
-
-To roll out the pids limit changes to all the worker nodes (can switch this to master for the master nodes), add `custom-crio: high-pid-limit` under labels in the machineConfigPool config.  
+To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-crio: high-pid-limit` under labels in the MachineConfigPool config:
 
 ```
 oc edit machineconfigpool worker
 ```
 
-Snippet of the machineConfigPool config with the matching label added:
+Snippet of the MachineConfigPool config with the matching label added:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
@@ -108,14 +110,29 @@ metadata:
   ...
 ```
 
-Check to ensure that a new 99-worker-XXX-containerruntime is created and that a new rendered worker is created:
+Now apply the `ctrcfg` that you created:
+
+
+```
+oc create -f highpids.yaml
+```
+
+Check that it was created:
+
+```
+$ oc get ctrcfg
+NAME             AGE
+set-pids-limit   50s
+```
+
+Check to ensure that a new 99-worker-containerruntime-managed is created and that a new rendered worker is created:
 ```
 $ oc get machineconfigs
-NAME                                 GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
+NAME                                  GENERATEDBYCONTROLLER                      IGNITIONVERSION   AGE
 ...
-99-worker-123-abc-containerruntime   fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             7s
+99-worker-containerrunetime-managed   fc45f8b73b2fc61e567f2111181d3e802f2565d7   3.1.0             7s
 ...
-rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   2.2.0             2s
+rendered-worker-45678XYZ              fc45f8b73b2fc61e567f2111181d3e802f2565d7   3.1.0             2s
 ...
 ```
 The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking 
