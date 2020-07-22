@@ -207,16 +207,11 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 	return true, nil
 }
 
+// addExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
+// install extensions and rt-kernel
 func addExtensionsRepo() error {
-	if err := os.MkdirAll(filepath.Dir(extensionsRepo), 0755); err != nil {
-		return fmt.Errorf("error creating yum repo directory %s: %v", filepath.Dir(extensionsRepo), err)
-	}
-	repo, err := os.Create(extensionsRepo)
-	if err != nil {
-		return fmt.Errorf("error creating extensions repo %s: %v", extensionsRepo, err)
-	}
-	defer repo.Close()
-	if _, err := repo.WriteString("[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"); err != nil {
+	repoConetnt := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
+	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoConetnt)); err != nil {
 		return err
 	}
 	return nil
@@ -240,8 +235,49 @@ func extractOSImage(imgURL string) error {
 	return nil
 }
 
+func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
+	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return err
+	}
+
+	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+		if err := extractOSImage(newConfig.Spec.OSImageURL); err != nil {
+			return err
+		}
+		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+			if err := addExtensionsRepo(); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Update OS
+	if err := dn.updateOS(newConfig); err != nil {
+		return err
+	}
+
+	// Apply kargs
+	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	// Apply extensions
+	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	// Switch to real time kernel
+	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 // update the node to the provided node configuration.
-//nolint:gocyclo
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
@@ -339,73 +375,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
-	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return err
-	}
-
-	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
-		if err := extractOSImage(newConfig.Spec.OSImageURL); err != nil {
-			return err
-		}
-		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
-			if err := addExtensionsRepo(); err != nil {
-				return err
-			}
-		}
-	}
-
-	if mcDiff.osUpdate {
-		if err := dn.updateOS(newConfig); err != nil {
-			return err
-		}
-		defer func() {
-			if retErr != nil {
-				if err := dn.updateOS(oldConfig); err != nil {
-					retErr = errors.Wrapf(retErr, "error rolling back OS update %v", err)
-					return
-				}
-			}
-		}()
-	}
-
-	// kargs
-	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
-		return err
-	}
-	defer func() {
-		if retErr != nil {
-			if err := dn.updateKernelArguments(newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back kernel arguments %v", err)
-				return
-			}
-		}
-	}()
-
-	// Apply extensions
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+	if err := dn.applyOSChanges(oldConfig, newConfig); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.switchKernel(newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back Real time Kernel %v", err)
-				return
-			}
-		}
-	}()
-
-	// Switch to real time kernel
-	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.applyExtensions(newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back extensions %v", err)
+			if err := dn.applyOSChanges(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
 				return
 			}
 		}
@@ -724,7 +701,7 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 		return nil
 	}
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
-		return fmt.Errorf("Updating kargs on non-CoreOS nodes is not supported: %v", diff)
+		return fmt.Errorf("updating kargs on non-CoreOS nodes is not supported: %v", diff)
 	}
 
 	args := append([]string{"kargs"}, diff...)
@@ -775,13 +752,13 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 	}
 	// Right now, we support extensions only on RHCOS nodes
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		return fmt.Errorf("Extensions is not supported on non-RHCOS nodes ")
+		return fmt.Errorf("extensions is not supported on non-RHCOS nodes ")
 	}
 
 	args := generateExtensionsArgs(oldConfig, newConfig)
 	glog.Infof("Applying extensions : %+q", args)
 	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-		return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+		return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
 	}
 
 	return nil
@@ -798,7 +775,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 	// We support Kernel update only on RHCOS nodes
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		return fmt.Errorf("Updating kernel on non-RHCOS nodes is not supported")
+		return fmt.Errorf("updating kernel on non-RHCOS nodes is not supported")
 	}
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
@@ -815,7 +792,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		}
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+			return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
 		}
 		return nil
 	}
@@ -830,7 +807,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-			return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+			return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
 		}
 		return nil
 	}
@@ -839,7 +816,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
 			if err := exec.Command("rpm-ostree", "update").Run(); err != nil {
-				return fmt.Errorf("Failed to execute rpm-ostree %+q : %v", args, err)
+				return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
 			}
 		}
 	}
@@ -1327,7 +1304,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 				return err
 			}
 		}
-		return fmt.Errorf("Failed to access directory %s : %v", osImageContentDir, err)
+		return fmt.Errorf("failed to access directory %s : %v", osImageContentDir, err)
 	}
 
 	glog.Infof("Updating OS to %s", newURL)
