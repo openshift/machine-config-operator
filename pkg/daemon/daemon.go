@@ -544,6 +544,14 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
 	}
 
+	tuningChanged, err := UpdateTuningArgs(KernelTuningFile, CmdLineFile)
+	if err != nil {
+		return err
+	}
+	if !tuningChanged {
+		glog.Info("No changes; already at target oscontainer, no kernel args provided")
+	}
+
 	dn.skipReboot = false
 	return dn.reboot(fmt.Sprintf("Completing firstboot provisioning to %s", mc.GetName()))
 }
