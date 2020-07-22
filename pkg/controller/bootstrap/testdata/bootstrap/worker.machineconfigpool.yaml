@@ -4,7 +4,7 @@ metadata:
   name: worker
   labels:
     "machineconfiguration.openshift.io/mco-built-in": ""
-    "pools.operator.machineconfiguration.openshift.io/worker": ""
+    pools.operator.machineconfiguration.openshift.io/worker: ""
 spec:
   machineConfigSelector:
     matchLabels:
