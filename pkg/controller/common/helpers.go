@@ -111,7 +111,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	// Ensure that kernel-devel extension is applied only with default kernel.
 	if kernelType != KernelTypeDefault {
 		if InSlice("kernel-devel", extensions) {
-			return nil, fmt.Errorf("Installing kernel-devel extension is not supported with kernelType: %s", kernelType)
+			return nil, fmt.Errorf("installing kernel-devel extension is not supported with kernelType: %s", kernelType)
 		}
 	}
 
@@ -317,7 +317,7 @@ func validateExtensions(exts []string) error {
 		}
 	}
 	if len(invalidExts) != 0 {
-		return fmt.Errorf("Invalid extensions found: %v", invalidExts)
+		return fmt.Errorf("invalid extensions found: %v", invalidExts)
 	}
 	return nil
 
