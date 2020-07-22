@@ -30,16 +30,15 @@ type rpmOstreeState struct {
 
 // RpmOstreeDeployment represents a single deployment on a node
 type RpmOstreeDeployment struct {
-	ID                 string   `json:"id"`
-	OSName             string   `json:"osname"`
-	Serial             int32    `json:"serial"`
-	Checksum           string   `json:"checksum"`
-	Version            string   `json:"version"`
-	Timestamp          uint64   `json:"timestamp"`
-	Booted             bool     `json:"booted"`
-	Origin             string   `json:"origin"`
-	CustomOrigin       []string `json:"custom-origin"`
-	RequestedLocalPkgs []string `json:"requested-local-packages"`
+	ID           string   `json:"id"`
+	OSName       string   `json:"osname"`
+	Serial       int32    `json:"serial"`
+	Checksum     string   `json:"checksum"`
+	Version      string   `json:"version"`
+	Timestamp    uint64   `json:"timestamp"`
+	Booted       bool     `json:"booted"`
+	Origin       string   `json:"origin"`
+	CustomOrigin []string `json:"custom-origin"`
 }
 
 // imageInspection is a public implementation of

@@ -48,23 +48,6 @@ const (
 	osImageContentDir = "/run/mco-machine-os-content/"
 )
 
-func installedRTKernelRpmsOnHost() ([]string, error) {
-	var err error
-	var rtKernelRpms = []string{}
-	var bootedDeployment *RpmOstreeDeployment
-	client := NewNodeUpdaterClient()
-	if bootedDeployment, err = client.GetBootedDeployment(); err != nil {
-		return rtKernelRpms, err
-	}
-
-	for _, localPkg := range bootedDeployment.RequestedLocalPkgs {
-		if strings.HasPrefix(localPkg, "kernel-rt-") {
-			rtKernelRpms = append(rtKernelRpms, localPkg)
-		}
-	}
-	return rtKernelRpms, nil
-}
-
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
 }
@@ -825,18 +808,10 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
-		var installedRTKernelRpms []string
-		var err error
 		args = []string{"override", "reset"}
 		args = append(args, defaultKernel...)
-		if installedRTKernelRpms, err = installedRTKernelRpmsOnHost(); err != nil {
-			return fmt.Errorf("Error while fetching installed RT kernel on host %v", err)
-		}
-		if len(installedRTKernelRpms) == 0 {
-			return fmt.Errorf("No kernel-rt package installed on host")
-		}
-		for _, installedRTKernelRpm := range installedRTKernelRpms {
-			args = append(args, "--uninstall", installedRTKernelRpm)
+		for _, pkg := range realtimeKernel {
+			args = append(args, "--uninstall", pkg)
 		}
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
 		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
