@@ -95,7 +95,7 @@ spec:
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
     env:
       - name: ENABLE_UNICAST
-        value: "no"
+        value: "yes"
       - name: IS_BOOTSTRAP
         value: "yes"
     command:
