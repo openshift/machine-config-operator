@@ -210,8 +210,8 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 // addExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
 // install extensions and rt-kernel
 func addExtensionsRepo() error {
-	repoConetnt := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
-	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoConetnt)); err != nil {
+	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
+	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent)); err != nil {
 		return err
 	}
 	return nil

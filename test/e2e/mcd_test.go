@@ -235,6 +235,92 @@ func TestKernelType(t *testing.T) {
 
 }
 
+func TestExtensions(t *testing.T) {
+	cs := framework.NewClientSet("")
+	// Get initial MachineConfig used by the worker pool so that we can rollback to it later on
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	workerOldMC := mcp.Status.Configuration.Name
+
+	// Test that we do early error return for invlid extensions
+	invalidExtensions := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("invalid-Extensions-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			Extensions: []string{"python3", "foo"},
+		},
+	}
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), invalidExtensions, metav1.CreateOptions{})
+	require.NotNil(t, err)
+
+	// Apply valid extensions
+	extensions := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("extensions-%s", uuid.NewUUID()),
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			Extensions: []string{"usbguard"},
+		},
+	}
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
+	require.Nil(t, err)
+	t.Logf("Created %s", extensions.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", extensions.Name)
+	require.Nil(t, err)
+	if err := waitForPoolComplete(t, cs, "worker", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+		installedExtesnions := execCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "usbguard")
+		if !strings.Contains(installedExtesnions, "usbguard") {
+			t.Fatalf("Node %s doesn't have expected extensions", node.Name)
+		}
+		t.Logf("Node %s has expected extensions installed", node.Name)
+	}
+
+	// Delete the applied extensions MachineConfig to make sure rollback works fine
+	if err := cs.MachineConfigs().Delete(context.TODO(), extensions.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	t.Logf("Deleted MachineConfig %s", extensions.Name)
+
+	// Wait for the mcp to rollback to previous config
+	if err := waitForPoolComplete(t, cs, "worker", workerOldMC); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-fetch the worker nodes for updated annotations
+	nodes, err = getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], workerOldMC)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		installedExtesnions := execCmdOnNode(t, cs, node, "rpm", "-qa", "usbguard")
+		if strings.Contains(installedExtesnions, "usbguard") {
+			t.Fatalf("Node %s did not rollback successfully", node.Name)
+		}
+		t.Logf("Node %s has successfully rolled back", node.Name)
+	}
+
+}
+
 func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
