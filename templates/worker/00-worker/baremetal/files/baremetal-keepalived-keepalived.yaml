@@ -10,12 +10,22 @@ contents:
         weight 50
     }
 
+    {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
+
     vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
         virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
         priority 40
         advert_int 1
+        {{`{{if .EnableUnicast}}`}}
+        unicast_src_ip {{`{{.NonVirtualIP}}`}}
+        unicast_peer {
+            {{`{{range .IngressConfig.Peers}}
+            {{if ne $nonVirtualIP .}}{{.}}{{end}}
+            {{end}}`}}
+        }
+        {{`{{end}}`}}
         authentication {
             auth_type PASS
             auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip

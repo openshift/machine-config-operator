@@ -260,20 +260,32 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
 # For more information, see installer/data/data/bootstrap/baremetal/README.md
 # in the installer repo.
 
-vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
+{{`+"`"+`{{$nonVirtualIP := .NonVirtualIP}}`+"`"+`}}
+
+{{`+"`"+`vrrp_instance {{.Cluster.Name}}_API {
     state BACKUP
-    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
-    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
+    interface {{.VRRPInterface}}
+    virtual_router_id {{.Cluster.APIVirtualRouterID }}
     priority 50
     advert_int 1
+    {{ if .EnableUnicast }}
+    unicast_src_ip {{.NonVirtualIP}}
+    unicast_peer {
+        {{range .LBConfig.Backends}}
+        {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
+        {{else}}
+        {{.NonVirtualIP}}
+        {{end}}
+    }
+    {{end}}
     authentication {
         auth_type PASS
-        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
+        auth_pass {{.Cluster.Name}}_api_vip
     }
     virtual_ipaddress {
-        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
     }
-}
+}`+"`"+`}}
 `)
 
 func manifestsBaremetalKeepalivedConfTmplBytes() ([]byte, error) {
@@ -314,50 +326,56 @@ spec:
   - name: manifests
     hostPath:
       path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
+  - name: run-dir
+    empty-dir: {}
+  containers:
+  - name: keepalived-unicast
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
     command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
+    - unicastipserver
     - "--api-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
     - "--ingress-vip"
     - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/keepalived"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: resource-dir
-      mountPath: "/config"
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
-  containers:
   - name: keepalived
     securityContext:
       privileged: true
-    image: {{ .Images.KeepalivedBootstrap }}
+    image: {{.Images.KeepalivedBootstrap}}
     env:
       - name: NSS_SDB_USE_CACHE
         value: "no"
     command:
-    - /usr/sbin/keepalived
-    args:
-    - "-f"
-    - "/etc/keepalived/keepalived.conf"
-    - "--dont-fork"
-    - "--vrrp"
-    - "--log-detail"
-    - "--log-console"
+    - /bin/bash
+    - -c
+    - |
+      #/bin/bash
+      reload_keepalived()
+      {
+        if pid=$(pgrep -o keepalived); then
+            kill -s SIGHUP "$pid"
+        else
+            /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+        fi
+      }
+      msg_handler()
+      {
+        while read -r line; do
+          echo "The client sent: $line" >&2
+          # currently only 'reload' msg is supported
+          if [ "$line" = reload ]; then
+              reload_keepalived
+          fi
+        done
+      }
+      set -ex
+      declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
+      export -f msg_handler
+      export -f reload_keepalived
+      if [ -s "/etc/keepalived/keepalived.conf" ]; then
+          /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+      fi
+      rm -f "$keepalived_sock"
+      socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
     resources:
       requests:
         cpu: 100m
@@ -365,7 +383,64 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/keepalived"
+    - name: run-dir
+      mountPath: "/var/run/keepalived"
+    livenessProbe:
+      exec:
+        command:
+        - /bin/bash
+        - -c
+        - |
+          [[ -s /etc/keepalived/keepalived.conf ]] || \
+          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+      initialDelaySeconds: 20
     terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  - name: keepalived-monitor
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    env:
+      - name: ENABLE_UNICAST
+        value: "no"
+      - name: IS_BOOTSTRAP
+        value: "yes"
+    command:
+    - dynkeepalived
+    - "/etc/kubernetes/kubeconfig"
+    - "/config/keepalived.conf.tmpl"
+    - "/etc/keepalived/keepalived.conf"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    - "--check-interval"
+    - "5s"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: resource-dir
+      mountPath: "/config"
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    - name: run-dir
+      mountPath: "/var/run/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    readinessProbe:
+      httpGet:
+        path: /readyz
+        port: 6443
+        scheme: HTTPS
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
+      timeoutSeconds: 10
     imagePullPolicy: IfNotPresent
   hostNetwork: true
   tolerations:
