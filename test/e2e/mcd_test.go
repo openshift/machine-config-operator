@@ -3,13 +3,16 @@ package e2e_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -17,11 +20,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
+
+
 )
 
 // Test case for https://github.com/openshift/machine-config-operator/issues/358
@@ -523,3 +529,85 @@ func TestIgn3Cfg(t *testing.T) {
 	require.Nil(t, err)
 
 }
+
+func TestUpdateICSP(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// create a dummy MC with an sshKey for user Core
+	icspName := fmt.Sprintf("00-icsp-worker-%s", uuid.NewUUID())
+	icspRule := &apioperatorsv1alpha1.ImageContentSourcePolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   icspName,
+			Labels: mcLabelForWorkers(),
+		},
+		Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+			RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+				{Source: "other.com/ns-o3", Mirrors: []string{fmt.Sprintf("insecure.com/%s", icspName), "blocked.com/ns-b/ns3-b"}},
+			},
+		},
+	}
+
+	nodes, err := getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+
+	uptimes := map[string]string{}
+	for _, node := range nodes {
+		uptime := execCmdOnNode(t, cs, node, "uptime")
+		fields := strings.Split(uptime, " ")
+		uptimes[node.Name] = fields[2]
+		t.Logf("Node %s had uptime: %s (%s)", node.Name, uptime, fields[3])
+	}
+	_, err = cs.ImageContentSourcePolicies().Create(context.TODO(), icspRule, metav1.CreateOptions{})
+	require.Nil(t, err, "failed to create ICSP")
+	t.Logf("Created %s", icspRule.Name)
+
+
+	// Create and apply an empty config with the same name
+	// Once it has been applied, we can also assue the ICSP changes have taken effect
+	mcadd := createMC(icspName, "worker")
+	ignConfig := ctrlcommon.NewIgnConfig()
+	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
+	mcadd.Spec.Config.Raw = rawIgnConfig
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
+	require.Nil(t, err, "failed to create MC")
+	t.Logf("Created %s", mcadd.Name)
+
+	// grab the latest worker- MC
+	renderedConfig, err := waitForRenderedConfig(t, cs, "worker", mcadd.Name)
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "worker", renderedConfig)
+	require.Nil(t, err)
+	nodes, err = getNodesByRole(cs, "worker")
+	require.Nil(t, err)
+
+	for _, node := range nodes {
+		assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+		uptime := execCmdOnNode(t, cs, node, "uptime")
+		fields := strings.Split(uptime, " ")
+		t.Logf("Node %s has uptime: %s (%s)", node.Name, uptime, fields[3])
+
+		// now rsh into that daemon and grep the registries file to check if {icspName} was written
+		// must do both commands in same shell, combine commands into one exec.Command()
+		found := execCmdOnNode(t, cs, node, "grep", "location", "/rootfs/etc/containers/registries.conf")
+		if !strings.Contains(found, icspName) {
+			t.Errorf("updated registry not found in registries.conf, got %s", found)
+		} else {
+			t.Logf("Node %s has the updated registries.conf with %s", node.Name, icspName)
+		}
+
+		// Test for decreased uptime
+		oldUp, err := strconv.Atoi(uptimes[node.Name])
+		require.Nil(t, err)
+
+		newUp, err := strconv.Atoi(fields[2])
+		require.Nil(t, err)
+
+		if oldUp > newUp {
+			t.Errorf("Node %s uptime reduced from %v to %v", node.Name, oldUp, newUp)
+		}
+	}
+}
+
+

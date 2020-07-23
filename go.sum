@@ -557,6 +557,7 @@ github.com/openshift/build-machinery-go v0.0.0-20200424080330-082bf86082cc/go.mo
 github.com/openshift/client-go v0.0.0-20190617165122-8892c0adc000/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/client-go v0.0.0-20200320150128-a906f3d8e723 h1:FfrELmZ9N9NtVE15qmTRkJIETX75QHdr65xiuTKvNYo=
 github.com/openshift/client-go v0.0.0-20200320150128-a906f3d8e723/go.mod h1:wNBSSt4RZTHhUWyhBE3gxTR32QpF9DB2SfS14u2IxuE=
+github.com/openshift/client-go v3.9.0+incompatible h1:13k3Ok0B7TA2hA3bQW2aFqn6y04JaJWdk7ITTyg+Ek0=
 github.com/openshift/library-go v0.0.0-20190619114638-6b58b672ee58/go.mod h1:NBttNjZpWwup/nthuLbPAPSYC8Qyo+BBK5bCtFoyYjo=
 github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901 h1:UQkY3zDJG4MMVzS7VFsyACxs/haMJ2aHNR/jXzWhScs=
 github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901/go.mod h1:NBttNjZpWwup/nthuLbPAPSYC8Qyo+BBK5bCtFoyYjo=
