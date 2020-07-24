@@ -23,7 +23,7 @@ contents:
         hostPath:
           path: "/etc/coredns"
       initContainers:
-      - name: render-config
+      - name: render-config-coredns
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - runtimecfg
