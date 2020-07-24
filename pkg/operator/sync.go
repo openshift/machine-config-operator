@@ -324,18 +324,21 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 	}
 	securePortStr := strconv.Itoa(server.SecurePort)
 	ignitionHost := fmt.Sprintf("%s:%s", internalURLParsed.Hostname(), securePortStr)
-	switch infraStatus.PlatformStatus.Type {
-	case configv1.BareMetalPlatformType:
-		ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIP, securePortStr)
-	case configv1.OpenStackPlatformType:
-		ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIP, securePortStr)
-	case configv1.OvirtPlatformType:
-		ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIP, securePortStr)
-	case configv1.VSpherePlatformType:
-		if infraStatus.PlatformStatus.VSphere.APIServerInternalIP != "" {
-			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIP, securePortStr)
+	if infraStatus.PlatformStatus != nil {
+		switch infraStatus.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIP, securePortStr)
+		case configv1.OpenStackPlatformType:
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIP, securePortStr)
+		case configv1.OvirtPlatformType:
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIP, securePortStr)
+		case configv1.VSpherePlatformType:
+			if infraStatus.PlatformStatus.VSphere.APIServerInternalIP != "" {
+				ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIP, securePortStr)
+			}
 		}
 	}
+
 	return ignitionHost, nil
 }
 
