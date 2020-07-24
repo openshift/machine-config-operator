@@ -47,14 +47,14 @@ func TestCalculateActions(t *testing.T) {
 		name            string
 		mConfig         string
 		modifyConfig    func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config
-		expectedActions []ActionResult
+		expectedActions []ConfigUpdateAction
 	}{{
 		name:    "no-op",
 		mConfig: "test-base",
 		modifyConfig: func(t *testing.T, prefix string, ignCfg igntypes.Config) igntypes.Config {
 			return ignCfg
 		},
-		expectedActions: []ActionResult{},
+		expectedActions: []ConfigUpdateAction{},
 	}, {
 		name:    "modified unit",
 		mConfig: "test-base",
@@ -63,7 +63,7 @@ func TestCalculateActions(t *testing.T) {
 			ignCfg.Systemd.Units[0].Enabled = &newValue
 			return ignCfg
 		},
-		expectedActions: []ActionResult{
+		expectedActions: []ConfigUpdateAction{
 			RebootPostAction{Reason: "Systemd configuration changed"},
 		},
 	}, {
@@ -83,7 +83,7 @@ func TestCalculateActions(t *testing.T) {
 
 			return ignCfg
 		},
-		expectedActions: []ActionResult{
+		expectedActions: []ConfigUpdateAction{
 			RebootPostAction{Reason: "Default strategy for applying changes to \"/etc/sysctl.d/inotify.conf\""},
 		},
 	}, {
@@ -124,7 +124,7 @@ func TestCalculateActions(t *testing.T) {
 
 			return ignCfg
 		},
-		expectedActions: []ActionResult{
+		expectedActions: []ConfigUpdateAction{
 			ServicePostAction{
 				Reason:        "Change to /etc/containers/registries.conf",
 				ServiceName:   "crio.service",
@@ -150,7 +150,7 @@ func TestCalculateActions(t *testing.T) {
 
 			return ignCfg
 		},
-		expectedActions: []ActionResult{
+		expectedActions: []ConfigUpdateAction{
 			RebootPostAction{Reason: "Systemd configuration changed"},
 		},
 	}, {
@@ -180,7 +180,7 @@ func TestCalculateActions(t *testing.T) {
 
 			return ignCfg
 		},
-		expectedActions: []ActionResult{
+		expectedActions: []ConfigUpdateAction{
 			RebootPostAction{Reason: "Default strategy for applying changes to \"/etc/sysctl.d/inotify.conf\""},
 		},
 	}}

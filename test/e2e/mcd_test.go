@@ -531,6 +531,7 @@ func TestIgn3Cfg(t *testing.T) {
 }
 
 func TestUpdateICSP(t *testing.T) {
+	upField := 3
 	cs := framework.NewClientSet("")
 
 	// create a dummy MC with an sshKey for user Core
@@ -554,8 +555,8 @@ func TestUpdateICSP(t *testing.T) {
 	for _, node := range nodes {
 		uptime := execCmdOnNode(t, cs, node, "uptime")
 		fields := strings.Split(uptime, " ")
-		uptimes[node.Name] = fields[2]
-		t.Logf("Node %s had uptime: %s (%s)", node.Name, uptime, fields[3])
+		uptimes[node.Name] = fields[upField]
+		t.Logf("Node %s had uptime: %s (%s)", node.Name, uptime, fields[upField])
 	}
 	_, err = cs.ImageContentSourcePolicies().Create(context.TODO(), icspRule, metav1.CreateOptions{})
 	require.Nil(t, err, "failed to create ICSP")
@@ -586,7 +587,7 @@ func TestUpdateICSP(t *testing.T) {
 		assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 		uptime := execCmdOnNode(t, cs, node, "uptime")
 		fields := strings.Split(uptime, " ")
-		t.Logf("Node %s has uptime: %s (%s)", node.Name, uptime, fields[3])
+		t.Logf("Node %s has uptime: %s (%s)", node.Name, uptime, fields[upField])
 
 		// now rsh into that daemon and grep the registries file to check if {icspName} was written
 		// must do both commands in same shell, combine commands into one exec.Command()
@@ -601,7 +602,7 @@ func TestUpdateICSP(t *testing.T) {
 		oldUp, err := strconv.Atoi(uptimes[node.Name])
 		require.Nil(t, err)
 
-		newUp, err := strconv.Atoi(fields[2])
+		newUp, err := strconv.Atoi(fields[upField])
 		require.Nil(t, err)
 
 		if oldUp > newUp {

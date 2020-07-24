@@ -387,7 +387,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.finalizeUpdate(newConfig, actions)
 }
 
-func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []ActionResult) (retErr error) {
+func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []ConfigUpdateAction) (retErr error) {
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}

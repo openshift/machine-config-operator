@@ -15,13 +15,13 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
-type ActionResult interface {
+type ConfigUpdateAction interface {
 	Describe() string
 	Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) error
 }
 
 type RebootPostAction struct {
-	ActionResult
+	ConfigUpdateAction
 
 	Reason string
 }
@@ -35,7 +35,7 @@ func (a RebootPostAction) Execute(dn *Daemon, newConfig *mcfgv1.MachineConfig) e
 }
 
 type ServicePostAction struct {
-	ActionResult
+	ConfigUpdateAction
 
 	Reason string
 
@@ -113,14 +113,14 @@ func filesToMap(files []igntypes.File) map[string]igntypes.File {
 }
 
 type ChangeStrategy struct {
-	actions []ActionResult
+	actions []ConfigUpdateAction
 }
 
-func lookupStrategy(stripPrefix, filePath string) ([]ActionResult, error) {
+func lookupStrategy(stripPrefix, filePath string) ([]ConfigUpdateAction, error) {
 
 	strategies := map[string]ChangeStrategy{
 		"/etc/containers/registries.conf": {
-			actions: []ActionResult{
+			actions: []ConfigUpdateAction{
 				ServicePostAction{
 					Reason:        "Change to /etc/containers/registries.conf",
 					ServiceName:   "crio.service",
@@ -138,21 +138,21 @@ func lookupStrategy(stripPrefix, filePath string) ([]ActionResult, error) {
 	if strategy, ok := strategies[key]; ok {
 		return strategy.actions, nil
 	}
-	return []ActionResult{}, fmt.Errorf("Default strategy for applying changes to %q", key)
+	return []ConfigUpdateAction{}, fmt.Errorf("Default strategy for applying changes to %q", key)
 }
 
-func getFileChanges(stripPrefix string, oldIgnConfig, newIgnConfig igntypes.Config) []ActionResult {
-	actions := []ActionResult{}
+func getFileChanges(stripPrefix string, oldIgnConfig, newIgnConfig igntypes.Config) []ConfigUpdateAction {
+	actions := []ConfigUpdateAction{}
 
 	oldFiles := mapset.NewSetFromSlice(getFileNames(oldIgnConfig.Storage.Files))
 	newFiles := mapset.NewSetFromSlice(getFileNames(newIgnConfig.Storage.Files))
 
 	for filename := range newFiles.Difference(oldFiles).Iter() {
-		return []ActionResult{RebootPostAction{Reason: fmt.Sprintf("File %q was added", filename.(string))}}
+		return []ConfigUpdateAction{RebootPostAction{Reason: fmt.Sprintf("File %q was added", filename.(string))}}
 	}
 
 	for filename := range oldFiles.Difference(newFiles).Iter() {
-		return []ActionResult{RebootPostAction{Reason: fmt.Sprintf("File %q was removed", filename.(string))}}
+		return []ConfigUpdateAction{RebootPostAction{Reason: fmt.Sprintf("File %q was removed", filename.(string))}}
 	}
 
 	newFilesMap := filesToMap(newIgnConfig.Storage.Files)
@@ -165,7 +165,7 @@ func getFileChanges(stripPrefix string, oldIgnConfig, newIgnConfig igntypes.Conf
 					actions = append(actions, a)
 				}
 			} else {
-				return []ActionResult{RebootPostAction{Reason: err.Error()}}
+				return []ConfigUpdateAction{RebootPostAction{Reason: err.Error()}}
 			}
 		}
 	}
@@ -173,37 +173,37 @@ func getFileChanges(stripPrefix string, oldIgnConfig, newIgnConfig igntypes.Conf
 	return actions
 }
 
-func calculateActions(stripPrefix string, oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) []ActionResult {
+func calculateActions(stripPrefix string, oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) []ConfigUpdateAction {
 
 	if diff.osUpdate || diff.kargs || diff.fips || diff.kernelType {
-		return []ActionResult{RebootPostAction{Reason: "OS/Kernel changed"}}
+		return []ConfigUpdateAction{RebootPostAction{Reason: "OS/Kernel changed"}}
 	}
 
 	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return []ActionResult{RebootPostAction{
+		return []ConfigUpdateAction{RebootPostAction{
 			Reason: fmt.Sprintf("parsing old Ignition config failed with error: %v", err)}}
 	}
 	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return []ActionResult{RebootPostAction{
+		return []ConfigUpdateAction{RebootPostAction{
 			Reason: fmt.Sprintf("parsing new Ignition config failed with error: %v", err)}}
 	}
 
 	// Check for any changes not already excluded by Reconcilable()
 	// Alternatively, fold this code into that function
 	if !reflect.DeepEqual(oldIgnConfig.Ignition, newIgnConfig.Ignition) {
-		return []ActionResult{RebootPostAction{Reason: "Ignition changed"}}
+		return []ConfigUpdateAction{RebootPostAction{Reason: "Ignition changed"}}
 	}
 	if !reflect.DeepEqual(oldIgnConfig.Passwd, newIgnConfig.Passwd) {
-		return []ActionResult{RebootPostAction{Reason: "Passwords changed"}}
+		return []ConfigUpdateAction{RebootPostAction{Reason: "Passwords changed"}}
 	}
 	if !reflect.DeepEqual(oldIgnConfig.Systemd, newIgnConfig.Systemd) {
-		return []ActionResult{RebootPostAction{Reason: "Systemd configuration changed"}}
+		return []ConfigUpdateAction{RebootPostAction{Reason: "Systemd configuration changed"}}
 	}
 	if !reflect.DeepEqual(oldIgnConfig.Storage.Files, newIgnConfig.Storage.Files) {
 		return getFileChanges(stripPrefix, oldIgnConfig, newIgnConfig)
 	}
 
-	return []ActionResult{}
+	return []ConfigUpdateAction{}
 }
