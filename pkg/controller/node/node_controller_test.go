@@ -507,6 +507,10 @@ func TestGetCandidateMachines(t *testing.T) {
 		progress int
 
 		expected []string
+		// otherCandidates is nodes that *could* be updated but we chose not to
+		otherCandidates []string
+		// capacity is the maximum number of nodes we could update
+		capacity uint
 	}{{
 		//no progress
 		progress: 1,
@@ -515,7 +519,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-2", "v1", "v1", corev1.ConditionTrue),
 		},
-		expected: nil,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        1,
 	}, {
 		//no progress
 		progress: 1,
@@ -524,7 +530,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionTrue),
 			newNodeWithReady("node-2", "v1", "v1", corev1.ConditionFalse),
 		},
-		expected: nil,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
 	}, {
 		//no progress because we have an unavailable node
 		progress: 1,
@@ -533,7 +541,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
 			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
 		},
-		expected: nil,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
 	}, {
 		// node-2 is going to change config, so we can only progress one more
 		progress: 3,
@@ -544,7 +554,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: []string{"node-3"},
+		expected:        []string{"node-3"},
+		otherCandidates: []string{"node-4"},
+		capacity:        1,
 	}, {
 		// We have a node working, don't start anything else
 		progress: 1,
@@ -555,7 +567,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
 			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: nil,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
 	}, {
 		//progress on old stuck node
 		progress: 1,
@@ -564,7 +578,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReadyAndDaemonState("node-1", "v0.1", "v0.2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
 			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: []string{"node-1"},
+		expected:        []string{"node-1"},
+		otherCandidates: []string{"node-2"},
+		capacity:        1,
 	}, {
 		// Don't change a degraded node to same config, but also don't start another
 		progress: 1,
@@ -573,7 +589,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReadyAndDaemonState("node-1", "v1", "v1", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
 			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
 		},
-		expected: nil,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
 	}, {
 		// Must be able to roll back
 		progress: 1,
@@ -583,7 +601,9 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReadyAndDaemonState("node-2", "v1", "v2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDegraded),
 			newNodeWithReady("node-3", "v1", "v1", corev1.ConditionTrue),
 		},
-		expected: []string{"node-2"},
+		expected:        []string{"node-2"},
+		otherCandidates: nil,
+		capacity:        1,
 	}, {
 		// Validate we also don't affect nodes which haven't started work
 		progress: 1,
@@ -592,7 +612,26 @@ func TestGetCandidateMachines(t *testing.T) {
 			newNodeWithReadyAndDaemonState("node-2", "v1", "v2", corev1.ConditionTrue, daemonconsts.MachineConfigDaemonStateDone),
 			newNodeWithReady("node-3", "v1", "v1", corev1.ConditionTrue),
 		},
-		expected: nil,
+		expected:        nil,
+		otherCandidates: nil,
+		capacity:        0,
+	}, {
+		// A test with more nodes in mixed order
+		progress: 4,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
+			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-3", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-4", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-5", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-6", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-7", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-8", "v1", "v1", corev1.ConditionTrue),
+		},
+		expected:        []string{"node-3", "node-4"},
+		otherCandidates: []string{"node-5", "node-6"},
+		capacity:        2,
 	}}
 
 	for idx, test := range tests {
@@ -609,6 +648,18 @@ func TestGetCandidateMachines(t *testing.T) {
 				nodeNames = append(nodeNames, node.Name)
 			}
 			assert.Equal(t, test.expected, nodeNames)
+
+			allCandidates, capacity := getAllCandidateMachines(pool, test.nodes, test.progress)
+			assert.Equal(t, test.capacity, capacity)
+			var otherCandidates []string
+			for i, node := range allCandidates {
+				if i < len(nodeNames) {
+					assert.Equal(t, node.Name, nodeNames[i])
+				} else {
+					otherCandidates = append(otherCandidates, node.Name)
+				}
+			}
+			assert.Equal(t, test.otherCandidates, otherCandidates)
 		})
 	}
 }
