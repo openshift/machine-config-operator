@@ -111,7 +111,10 @@ type Daemon struct {
 	enqueueNode func(*corev1.Node)
 	syncHandler func(node string) error
 
-	booting bool
+	// isControlPlane is true if this node is a control plane (master).
+	// The machine may also be a worker (with schedulable masters).
+	isControlPlane bool
+	booting        bool
 
 	currentConfigPath string
 
@@ -380,6 +383,17 @@ func (dn *Daemon) updateErrorState(err error) {
 	}
 }
 
+// initializeNode is called the first time we get our node object
+func (dn *Daemon) initializeNode() {
+	// Some parts of the MCO dispatch on whether or not we're managing a control plane node
+	if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
+		glog.Infof("Node %s is part of the control plane", dn.node.Name)
+		dn.isControlPlane = true
+	} else {
+		glog.Infof("Node %s is not labeled %s", dn.node.Name, ctrlcommon.MasterLabel)
+	}
+}
+
 func (dn *Daemon) syncNode(key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
@@ -413,8 +427,12 @@ func (dn *Daemon) syncNode(key string) error {
 
 	// Deep-copy otherwise we are mutating our cache.
 	node = node.DeepCopy()
-	// Update our cached copy of the node
-	dn.node = node
+	if dn.node == nil {
+		dn.node = node
+		dn.initializeNode()
+	} else {
+		dn.node = node
+	}
 
 	// Take care of the very first sync of the MCD on a node.
 	// This loads the node annotation from the bootstrap (if we're really bootstrapping)
@@ -952,6 +970,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 	// Update our cached copy
 	dn.node = node
+
 	pendingState, err := dn.getPendingState()
 	if err != nil {
 		return err
