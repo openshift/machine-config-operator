@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -40,9 +41,6 @@ import (
 )
 
 const (
-	// MasterLabel defines the label associated with master node. The master taint uses the same label as taint's key
-	MasterLabel = "node-role.kubernetes.io/master"
-
 	// WorkerLabel defines the label associated with worker node.
 	WorkerLabel = "node-role.kubernetes.io/worker"
 
@@ -159,7 +157,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 }
 
 func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
-	nodeList, err := ctrl.nodeLister.List(labels.SelectorFromSet(labels.Set{MasterLabel: ""}))
+	nodeList, err := ctrl.nodeLister.List(labels.SelectorFromSet(labels.Set{ctrlcommon.MasterLabel: ""}))
 	if err != nil {
 		return nil, fmt.Errorf("error while listing master nodes %v", err)
 	}
@@ -239,13 +237,13 @@ func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
 		// Add master taint
 		hasMasterTaint := false
 		for _, taint := range node.Spec.Taints {
-			if taint.Key == MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
+			if taint.Key == ctrlcommon.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
 				hasMasterTaint = true
 			}
 		}
 		if !hasMasterTaint {
 			newTaints := node.Spec.Taints
-			masterUnSchedulableTaint := corev1.Taint{Key: MasterLabel, Effect: corev1.TaintEffectNoSchedule}
+			masterUnSchedulableTaint := corev1.Taint{Key: ctrlcommon.MasterLabel, Effect: corev1.TaintEffectNoSchedule}
 			newTaints = append(newTaints, masterUnSchedulableTaint)
 			node.Spec.Taints = newTaints
 		}
@@ -269,7 +267,7 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 		// Remove master taint
 		newTaints := []corev1.Taint{}
 		for _, t := range node.Spec.Taints {
-			if t.Key == MasterLabel && t.Effect == corev1.TaintEffectNoSchedule {
+			if t.Key == ctrlcommon.MasterLabel && t.Effect == corev1.TaintEffectNoSchedule {
 				continue
 			}
 			newTaints = append(newTaints, t)
@@ -330,7 +328,7 @@ func (ctrl *Controller) getMastersSchedulable() (bool, error) {
 
 // Determine if a given Node is a master
 func (ctrl *Controller) isMaster(node *corev1.Node) bool {
-	_, master := node.ObjectMeta.Labels[MasterLabel]
+	_, master := node.ObjectMeta.Labels[ctrlcommon.MasterLabel]
 	return master
 }
 
