@@ -8,14 +8,18 @@ import (
 	"testing"
 	"time"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -91,7 +95,7 @@ func labelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 
 	rand.Seed(time.Now().UnixNano())
 	infraNode := nodes[rand.Intn(len(nodes))]
-	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=").CombinedOutput()
+	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=", "--overwrite=true").CombinedOutput()
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
 	return func() {
 		out, err = exec.Command("oc", "label", "node", infraNode.Name, label+"-").CombinedOutput()
@@ -175,4 +179,85 @@ func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, args
 	b, err := exec.Command(entryPoint, cmd...).CombinedOutput()
 	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", args, node.Name, string(b))
 	return string(b)
+}
+
+func mcLabelForRole(role string) map[string]string {
+	mcLabels := make(map[string]string)
+	mcLabels[mcfgv1.MachineConfigRoleLabelKey] = role
+	return mcLabels
+}
+
+func mcLabelForWorkers() map[string]string {
+	return mcLabelForRole("worker")
+}
+
+// TODO consider also testing for Ign2
+// func createIgn2File(path, content, fs string, mode int) ign2types.File {
+// 	return ign2types.File{
+// 		FileEmbedded1: ign2types.FileEmbedded1{
+// 			Contents: ign2types.FileContents{
+// 				Source: content,
+// 			},
+// 			Mode: &mode,
+// 		},
+// 		Node: ign2types.Node{
+// 			Filesystem: fs,
+// 			Path:       path,
+// 			User: &ign2types.NodeUser{
+// 				Name: "root",
+// 			},
+// 		},
+// 	}
+// }
+
+func createIgn3File(path, content string, mode int) ign3types.File {
+	return ign3types.File{
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: &content,
+			},
+			Mode: &mode,
+		},
+		Node: ign3types.Node{
+			Path: path,
+			User: ign3types.NodeUser{
+				Name: helpers.StrToPtr("root"),
+			},
+		},
+	}
+}
+
+func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
+	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
+
+	ignConfig := ctrlcommon.NewIgnConfig()
+	ignFile := createIgn3File(filename, "data:,"+data, 420)
+	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
+	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
+	mcadd.Spec.Config.Raw = rawIgnConfig
+	return mcadd
+}
+
+func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
+	return createMCToAddFileForRole(name, "worker", filename, data)
+}
+
+func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
+	// find the MCD pod that has spec.nodeNAME = node.Name and get its name:
+	listOptions := metav1.ListOptions{
+		FieldSelector: fields.SelectorFromSet(fields.Set{"spec.nodeName": node.Name}).String(),
+	}
+	listOptions.LabelSelector = labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String()
+
+	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
+	if err != nil {
+		return nil, err
+	}
+	if len(mcdList.Items) != 1 {
+		if len(mcdList.Items) == 0 {
+			return nil, fmt.Errorf("Failed to find MCD for node %s", node.Name)
+		}
+		return nil, fmt.Errorf("Too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
+	}
+	return &mcdList.Items[0], nil
 }
