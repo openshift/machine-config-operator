@@ -1,5 +1,5 @@
 mode: 0755
-path: "/etc/kubernetes/static-pod-resources/keepalived/chk_ocp_script.sh.tmpl"
+path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_ocp_script.sh.tmpl"
 contents:
   inline: |
     #!/bin/bash

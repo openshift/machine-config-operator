@@ -16,6 +16,9 @@ contents:
       - name: resource-dir
         hostPath:
           path: "/etc/kubernetes/static-pod-resources/keepalived"
+      - name: script-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/keepalived/scripts"
       - name: kubeconfig
         hostPath:
           path: "/etc/kubernetes"
@@ -48,7 +51,7 @@ contents:
         volumeMounts:
         - name: kubeconfig
           mountPath: "/etc/kubernetes"
-        - name: resource-dir
+        - name: script-dir
           mountPath: "/config"
         - name: conf-dir
           mountPath: "/etc/keepalived"
