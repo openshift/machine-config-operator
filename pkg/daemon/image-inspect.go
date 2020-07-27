@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/containers/image/v5/docker"
@@ -28,14 +29,19 @@ func retryIfNecessary(ctx context.Context, operation func() error) error {
 	return err
 }
 
-// parseImageSource converts image URL-like string to an ImageSource.
+// newDockerImageSource creates an image source for an image reference.
 // The caller must call .Close() on the returned ImageSource.
-func parseImageSource(ctx context.Context, name string) (types.ImageSource, error) {
-	ref, err := docker.ParseReference(name)
+func newDockerImageSource(ctx context.Context, sys *types.SystemContext, name string) (types.ImageSource, error) {
+	var imageName string
+	if !strings.HasPrefix(name, "//") {
+		imageName = "//" + name
+	} else {
+		imageName = name
+	}
+	ref, err := docker.ParseReference(imageName)
 	if err != nil {
 		return nil, err
 	}
-	sys := &types.SystemContext{AuthFilePath: kubeletAuthFile}
 
 	return ref.NewImageSource(ctx, sys)
 }
@@ -53,7 +59,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, error) {
 	sys := &types.SystemContext{AuthFilePath: kubeletAuthFile}
 
 	if err := retryIfNecessary(ctx, func() error {
-		src, err = parseImageSource(ctx, imageName)
+		src, err = newDockerImageSource(ctx, sys, imageName)
 		return err
 	}); err != nil {
 		return nil, errors.Wrapf(err, "Error parsing image name %q", imageName)
