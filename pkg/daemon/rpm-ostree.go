@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containers/image/v5/types"
 	"github.com/golang/glog"
-	"github.com/opencontainers/go-digest"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/pkg/errors"
 )
@@ -39,21 +39,6 @@ type RpmOstreeDeployment struct {
 	Booted       bool     `json:"booted"`
 	Origin       string   `json:"origin"`
 	CustomOrigin []string `json:"custom-origin"`
-}
-
-// imageInspection is a public implementation of
-// https://github.com/containers/skopeo/blob/82186b916faa9c8c70cfa922229bafe5ae024dec/cmd/skopeo/inspect.go#L20-L31
-type imageInspection struct {
-	Name          string `json:",omitempty"`
-	Tag           string `json:",omitempty"`
-	Digest        digest.Digest
-	RepoDigests   []string
-	Created       *time.Time
-	DockerVersion string
-	Labels        map[string]string
-	Architecture  string
-	Os            string
-	Layers        []string
 }
 
 // NodeUpdaterClient is an interface describing how to interact with the host
@@ -148,50 +133,19 @@ func (r *RpmOstreeClient) Rebase(container string) (changed bool, err error) {
 		glog.Info("Current origin is not custom")
 	}
 
-	var authArgs []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
-	}
-
-	inspectArgs := []string{"inspect"}
-	inspectArgs = append(inspectArgs, authArgs...)
-
-	// Map container image name with transport so that skopeo understands it
-	imageName := "docker://" + container
-	inspectArgs = append(inspectArgs, imageName)
-	var output []byte
-	output, err = runGetOut("skopeo", inspectArgs...)
+	var imageData *types.ImageInspectInfo
+	imageData, err = imageInspect(fmt.Sprintf("//%s", container))
 	if err != nil {
 		return
-	}
-	var imagedata imageInspection
-	err = json.Unmarshal(output, &imagedata)
-	if err != nil {
-		err = errors.Wrapf(err, "unmarshaling skopeo inspect")
-		return
-	}
-
-	// If we're passed a non-canonical image, resolve it to its sha256 now
-	isCanonicalForm := true
-	if _, err = getRefDigest(container); err != nil {
-		isCanonicalForm = false
-	}
-
-	var imgid string
-	if !isCanonicalForm {
-		imgid = imagedata.RepoDigests[0]
-		glog.Infof("Resolved to: %s", imgid)
-	} else {
-		imgid = container
 	}
 
 	repo := fmt.Sprintf("%s/srv/repo", osImageContentDir)
 
 	// Now we need to figure out the commit to rebase to
 	// Commit label takes priority
-	ostreeCsum, ok := imagedata.Labels["com.coreos.ostree-commit"]
+	ostreeCsum, ok := imageData.Labels["com.coreos.ostree-commit"]
 	if ok {
-		if ostreeVersion, ok := imagedata.Labels["version"]; ok {
+		if ostreeVersion, ok := imageData.Labels["version"]; ok {
 			glog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
 		} else {
 			glog.Infof("Pivoting to: %s", ostreeCsum)
@@ -223,7 +177,7 @@ func (r *RpmOstreeClient) Rebase(container string) (changed bool, err error) {
 	}
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
-	customURL := fmt.Sprintf("pivot://%s", imgid)
+	customURL := fmt.Sprintf("pivot://%s", container)
 	glog.Infof("Executing rebase from %s and checksum %s", customURL, ostreeCsum)
 
 	// RPM-OSTree can now directly slurp from the mounted container!
