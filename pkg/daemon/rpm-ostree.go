@@ -134,7 +134,7 @@ func (r *RpmOstreeClient) Rebase(container string) (changed bool, err error) {
 	}
 
 	var imageData *types.ImageInspectInfo
-	imageData, err = imageInspect(fmt.Sprintf("//%s", container))
+	imageData, err = imageInspect(container)
 	if err != nil {
 		return
 	}
