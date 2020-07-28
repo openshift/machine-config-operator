@@ -1,3 +1,4 @@
+filesystem: "root"
 mode: 0644
 path: "/etc/modules-load.d/iptables.conf"
 contents:
