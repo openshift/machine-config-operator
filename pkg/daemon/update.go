@@ -416,19 +416,18 @@ func (dn *Daemon) finalizeUpdate(newConfig *mcfgv1.MachineConfig, actions []Conf
 	// If we are not rebooting, we need to replicate the
 	// checkStateOnFirstRun() functionality to indicate that the node has
 	// been successfully updated
-	newConfigName := newConfig.GetName()
-	if err := dn.nodeWriter.SetDone(
-		dn.kubeClient.CoreV1().Nodes(),
-		dn.nodeLister,
-		dn.name,
-		newConfigName,
-	); err != nil {
-		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
+
+	state, err := dn.getStateAndConfigs(newConfig.GetName())
+	if err != nil {
+		glog.Errorf("Error processing state and configs, node will reboot: %v", err)
 		return dn.finalizeAndReboot(newConfig)
 	}
 
-	glog.Infof("In desired config %s", newConfigName)
-	MCDUpdateState.WithLabelValues(newConfigName, "").SetToCurrentTime()
+	_, err = dn.confirmConfigState(state)
+	if err != nil {
+		glog.Errorf("Setting node's state to Done failed, node will reboot: %v", err)
+		return dn.finalizeAndReboot(newConfig)
+	}
 	return nil
 }
 
