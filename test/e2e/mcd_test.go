@@ -389,15 +389,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
-	//createMCP(t, cs, "infra")
 
-	// create old mc to have something to verify we successfully rolled back
-	// oldInfraConfig := createMC("old-infra-rpm", "infra")
-	// _, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	// require.Nil(t, err)
-	// oldInfraRenderedConfig, err := waitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
-	// err = waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	// require.Nil(t, err)
 	oldInfraRenderedConfig := getMcName(t, cs, "infra")
 
 	mcHostFile := createMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
@@ -455,8 +447,6 @@ func TestIgn3Cfg(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
-
-	//createMCP(t, cs, "infra")
 
 	// create a dummy MC with an sshKey for user Core
 	mcName := fmt.Sprintf("99-ign3cfg-infra-%s", uuid.NewUUID())
