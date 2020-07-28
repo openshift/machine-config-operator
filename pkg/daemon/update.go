@@ -43,9 +43,9 @@ const (
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
-	fipsFile          = "/proc/sys/crypto/fips_enabled"
-	extensionsRepo    = "/etc/yum.repos.d/coreos-extensions.repo"
-	osImageContentDir = "/run/mco-machine-os-content/"
+	fipsFile              = "/proc/sys/crypto/fips_enabled"
+	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
+	osImageContentBaseDir = "/run/mco-machine-os-content/"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -209,7 +209,7 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 
 // addExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
 // install extensions and rt-kernel
-func addExtensionsRepo() error {
+func addExtensionsRepo(osImageContentDir string) error {
 	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + osImageContentDir + "/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
 	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent)); err != nil {
 		return err
@@ -217,22 +217,35 @@ func addExtensionsRepo() error {
 	return nil
 }
 
-func extractOSImage(imgURL string) error {
+// ExtractOSImage extracts OS image content in a temporary directory under /run/machine-os-content/
+// and returns the path on successful extraction.
+func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	var registryConfig []string
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
 		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
 	}
-	if err := os.MkdirAll(osImageContentDir, 0755); err != nil {
-		return fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
+	if err = os.MkdirAll(osImageContentBaseDir, 0755); err != nil {
+		err = fmt.Errorf("error creating directory %s: %v", osImageContentBaseDir, err)
+		return
 	}
+
+	if osImageContentDir, err = ioutil.TempDir(osImageContentBaseDir, "os-content-"); err != nil {
+		return
+	}
+
+	if err = os.MkdirAll(osImageContentDir, 0755); err != nil {
+		err = fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
+		return
+	}
+
 	// Extract the image
 	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
-	if _, err := pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
-		return err
+	if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+		return
 	}
-	return nil
+	return
 }
 
 func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) error {
@@ -242,19 +255,24 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) err
 		return err
 	}
 
+	var osImageContentDir string
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
-		if err := extractOSImage(newConfig.Spec.OSImageURL); err != nil {
+		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
 			return err
 		}
+		// Delete extracted OS image once we are done.
+		defer os.RemoveAll(osImageContentDir)
+
 		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
-			if err := addExtensionsRepo(); err != nil {
+			if err := addExtensionsRepo(osImageContentDir); err != nil {
 				return err
 			}
+			defer os.Remove(extensionsRepo)
 		}
 	}
 
 	// Update OS
-	if err := dn.updateOS(newConfig); err != nil {
+	if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
 		return err
 	}
 
@@ -263,12 +281,12 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) err
 		return err
 	}
 
-	// Apply extensions
+	// Switch to real time kernel
 	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
 		return err
 	}
 
-	// Switch to real time kernel
+	// Apply extensions
 	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
 		return err
 	}
@@ -1278,7 +1296,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 }
 
 // updateOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
 		glog.V(2).Info("Updating of non-CoreOS nodes are not supported")
 		return nil
@@ -1296,20 +1314,9 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig) error {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
 	}
 
-	// Before rebase make sure that osImageContentDir exists. This is to continue with OS update in case we came here directly
-	// such as called as a special case for the "bootstrap pivot"
-	if _, err := os.Stat(osImageContentDir); err != nil {
-		if os.IsNotExist(err) {
-			if err := extractOSImage(config.Spec.OSImageURL); err != nil {
-				return err
-			}
-		}
-		return fmt.Errorf("failed to access directory %s : %v", osImageContentDir, err)
-	}
-
 	glog.Infof("Updating OS to %s", newURL)
 	client := NewNodeUpdaterClient()
-	if _, err := client.Rebase(newURL); err != nil {
+	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
 		return err
 	}
 
