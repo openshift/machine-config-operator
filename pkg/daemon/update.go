@@ -681,15 +681,6 @@ func parseKernelArguments(kargs []string) []string {
 	return parsed
 }
 
-func inArray(elem string, array []string) bool {
-	for _, k := range array {
-		if k == elem {
-			return true
-		}
-	}
-	return false
-}
-
 // generateKargsCommand performs a diff between the old/new MC kernelArguments,
 // and generates the command line arguments suitable for `rpm-ostree kargs`.
 // Note what we really should be doing though is also looking at the *current*
@@ -700,12 +691,12 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
 	cmdArgs := []string{}
 	for _, arg := range oldKargs {
-		if !inArray(arg, newKargs) {
+		if !ctrlcommon.InSlice(arg, newKargs) {
 			cmdArgs = append(cmdArgs, "--delete="+arg)
 		}
 	}
 	for _, arg := range newKargs {
-		if !inArray(arg, oldKargs) {
+		if !ctrlcommon.InSlice(arg, oldKargs) {
 			cmdArgs = append(cmdArgs, "--append="+arg)
 		}
 	}
