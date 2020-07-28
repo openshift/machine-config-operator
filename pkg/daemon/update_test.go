@@ -53,11 +53,11 @@ func TestUpdateOS(t *testing.T) {
 	}
 
 	// This should be a no-op
-	if err := d.updateOS(mcfg); err != nil {
+	if err := d.updateOS(mcfg, ""); err != nil {
 		t.Errorf("Expected no error. Got %s.", err)
 	}
 	// Second call should return an error
-	if err := d.updateOS(differentMcfg); err == expectedError {
+	if err := d.updateOS(differentMcfg, ""); err == expectedError {
 		t.Error("Expected an error. Got none.")
 	}
 }

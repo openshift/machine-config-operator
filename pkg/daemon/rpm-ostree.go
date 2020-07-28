@@ -46,7 +46,7 @@ type RpmOstreeDeployment struct {
 type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
-	Rebase(string) (bool, error)
+	Rebase(string, string) (bool, error)
 	RunPivot(string) error
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
 }
@@ -115,7 +115,7 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 }
 
 // Rebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) Rebase(container string) (changed bool, err error) {
+func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed bool, err error) {
 	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
