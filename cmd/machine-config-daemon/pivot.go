@@ -66,9 +66,8 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 
 	client := daemon.NewNodeUpdaterClient()
 
-	var osImageContentDir string
-	var err error
-	if osImageContentDir, err = daemon.ExtractOSImage(container); err != nil {
+	osImageContentDir, err := daemon.ExtractOSImage(container)
+	if err != nil {
 		return err
 	}
 	changed, err := client.Rebase(container, osImageContentDir)

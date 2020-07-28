@@ -1031,9 +1031,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !osMatch {
 			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
 			// This only returns on error
-			var osImageContentDir string
-			var err error
-			if osImageContentDir, err = ExtractOSImage(targetOSImageURL); err != nil {
+			osImageContentDir, err := ExtractOSImage(targetOSImageURL)
+			if err != nil {
 				return err
 			}
 			if err := dn.updateOS(state.currentConfig, osImageContentDir); err != nil {
