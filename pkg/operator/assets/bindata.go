@@ -1834,7 +1834,7 @@ func manifestsMasterMachineconfigpoolYaml() (*asset, error) {
 var _manifestsOpenstackCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
         policy sequential
     }
@@ -2107,7 +2107,7 @@ func manifestsOpenstackKeepalivedYaml() (*asset, error) {
 var _manifestsOvirtCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
@@ -2404,7 +2404,7 @@ func manifestsUserdata_secretYaml() (*asset, error) {
 var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
