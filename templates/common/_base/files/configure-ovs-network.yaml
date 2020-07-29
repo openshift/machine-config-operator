@@ -1,0 +1,116 @@
+mode: 0755
+path: "/usr/local/bin/configure-ovs.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eux
+
+    # Configures NICs onto OVS bridge "br-ex"
+    # Configuration is either auto-detected or provided through a config file written already in Network Manager
+    # key files under /etc/NetworkManager/system-connections/
+    # Managing key files is outside of the scope of this script
+
+    iface=""
+    counter=0
+    # find default interface
+    while [ $counter -lt 12 ]; do
+      iface=$(ip -j route show default | jq -r '.[0].dev')
+      if [ -n "$iface" ]; then
+        echo "Default gateway interface found: ${iface}"
+        break
+      fi
+      counter=$((counter+1))
+      echo "No default route found on attempt: ${counter}"
+      sleep 5
+    done
+
+    if [ "$iface" = "br-ex" ]; then
+      echo "Networking already configured and up for br-ex!"
+      exit 0
+    fi
+
+    if [ -z "$iface" ]; then
+      echo "ERROR: Unable to find default gateway interface"
+      exit 1
+    fi
+
+    # find the MAC from OVS config or the default interface to use for OVS internal port
+    # this prevents us from getting a different DHCP lease and dropping connection
+    if ! iface_mac=$(<"/sys/class/net/${iface}/address"); then
+      echo "Unable to determine default interface MAC"
+      exit 1
+    fi
+
+    echo "MAC address found for iface: ${iface}: ${iface_mac}"
+
+    # find MTU from original iface
+    iface_mtu=$(ip -j link show "$iface" | jq -r '.[0].mtu')
+    if [ -z "$iface_mtu" ]; then
+      echo "Unable to determine default interface MTU, defaulting to 1500"
+      iface_mtu=1500
+    else
+      echo "MTU found for iface: ${iface}: ${iface_mtu}"
+    fi
+
+    # create bridge
+    if ! nmcli connection show br-ex &> /dev/null; then
+      nmcli c add type ovs-bridge conn.interface br-ex con-name br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+    fi
+
+    # store old conn for bringing down later
+    old_conn=$(nmcli --fields UUID,DEVICE conn show --active | grep ${iface} | awk '{print $1}')
+
+    # find default port to add to bridge
+    if ! nmcli connection show ovs-port-phys0 &> /dev/null; then
+      nmcli c add type ovs-port conn.interface ${iface} master br-ex con-name ovs-port-phys0
+    fi
+
+    if ! nmcli connection show ovs-port-br-ex &> /dev/null; then
+      nmcli c add type ovs-port conn.interface br-ex master br-ex con-name ovs-port-br-ex
+    fi
+
+    # bring down any old iface
+    nmcli conn down $old_conn
+
+    if ! nmcli connection show ovs-if-phys0 &> /dev/null; then
+      nmcli c add type 802-3-ethernet conn.interface ${iface} master ovs-port-phys0 con-name ovs-if-phys0 \
+        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu}
+    fi
+
+    if ! nmcli connection show ovs-if-br-ex &> /dev/null; then
+      nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
+        ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+    fi
+
+    # wait for DHCP to finish, verify connection is up
+    counter=0
+    while [ $counter -lt 5 ]; do
+      sleep 5
+      # check if connection is active
+      if nmcli --fields GENERAL.STATE conn show ovs-if-br-ex | grep -i "activated"; then
+        echo "OVS successfully configured"
+        ip a show br-ex
+        exit 0
+      fi
+      counter=$((counter+1))
+    done
+
+    echo "WARN: OVS did not succesfully activate NM connection. Attempting to bring up connections"
+    counter=0
+    while [ $counter -lt 5 ]; do
+      if nmcli conn up ovs-if-br-ex; then
+        echo "OVS successfully configured"
+        ip a show br-ex
+        exit 0
+      fi
+      sleep 5
+      counter=$((counter+1))
+    done
+
+    echo "ERROR: Failed to activate ovs-if-br-ex NM connection"
+    # if we made it here networking isnt coming up, revert for debugging
+    set +e
+    nmcli conn down ovs-if-br-ex
+    nmcli conn down ovs-if-phys0
+    nmcli conn up $old_conn
+    exit 1
