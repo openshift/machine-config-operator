@@ -24,11 +24,22 @@ If the updated Ignition config contains changes compatible with the current conf
 
 Not all Ignition config sections are supported; see the following table:
 
-Ignition 2.2.0 sections | Supported
+Ignition spec 2 sections | Supported
 --- | ---
 Files | YES
 systemd Units | YES
 Networkd | NO
+Users | NO *
+Directories | NO
+FileSystems | NO
+Links | NO
+Disks | NO
+RAID | NO
+
+Ignition spec 3 sections | Supported
+--- | ---
+Files | YES
+systemd Units | YES
 Users | NO *
 Groups | NO
 Directories | NO
