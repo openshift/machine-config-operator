@@ -5,7 +5,8 @@ contents: |
   Description=Update GCP routes for forwarded IPs.
   ConditionKernelCommandLine=|ignition.platform.id=gce
   ConditionKernelCommandLine=|ignition.platform.id=gcp
-  After=network.target
+  Wants=network-online.target
+  After=network-online.target
 
   [Service]
   Type=simple
