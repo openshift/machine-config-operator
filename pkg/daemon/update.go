@@ -406,6 +406,16 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
+	// Ideally we would want to update kernelArguments only via MachineConfigs.
+	// We are keeping this to maintain compatibility and OKD requirement.
+	tuningChanged, err := UpdateTuningArgs(KernelTuningFile, CmdLineFile)
+	if err != nil {
+		return err
+	}
+	if tuningChanged {
+		glog.Info("Updated kernel tuning arguments")
+	}
+
 	return dn.finalizeAndReboot(newConfig)
 }
 
