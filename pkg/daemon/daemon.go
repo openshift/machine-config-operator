@@ -113,7 +113,12 @@ type Daemon struct {
 	// isControlPlane is true if this node is a control plane (master).
 	// The machine may also be a worker (with schedulable masters).
 	isControlPlane bool
-	booting        bool
+	// nodeInitialized is true when we've performed one-time initialization
+	// after having updated the node object
+	nodeInitialized bool
+	// booting is true when all initial synchronization to the target
+	// machineconfig is done
+	booting bool
 
 	currentConfigPath string
 
@@ -382,15 +387,24 @@ func (dn *Daemon) updateErrorState(err error) {
 	}
 }
 
-// initializeNode is called the first time we get our node object
-func (dn *Daemon) initializeNode() {
+// initializeNode is called the first time we get our node object; however to
+// ensure we handle failures: everything called from here should be idempotent.
+func (dn *Daemon) initializeNode() error {
+	if dn.nodeInitialized {
+		return nil
+	}
 	// Some parts of the MCO dispatch on whether or not we're managing a control plane node
 	if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
 		glog.Infof("Node %s is part of the control plane", dn.node.Name)
+		if err := dn.initializeControlPlane(); err != nil {
+			return err
+		}
 		dn.isControlPlane = true
 	} else {
 		glog.Infof("Node %s is not labeled %s", dn.node.Name, ctrlcommon.MasterLabel)
 	}
+	dn.nodeInitialized = true
+	return nil
 }
 
 func (dn *Daemon) syncNode(key string) error {
@@ -428,7 +442,9 @@ func (dn *Daemon) syncNode(key string) error {
 	node = node.DeepCopy()
 	if dn.node == nil {
 		dn.node = node
-		dn.initializeNode()
+		if err := dn.initializeNode(); err != nil {
+			return err
+		}
 	} else {
 		dn.node = node
 	}
