@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strings"
 
 	// Enable sha256 in container image references
@@ -13,7 +12,6 @@ import (
 
 	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
-	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -93,10 +91,6 @@ func Execute(cmd *cobra.Command, args []string) {
 	err := run(cmd, args)
 	if err != nil {
 		fmt.Printf("error: %v\n", err)
-		os.MkdirAll(filepath.Dir(types.PivotFailurePath), 0755)
-		// write a pivot failure file that we'll read from MCD since we start this with systemd
-		// and we just follow logs
-		ioutil.WriteFile(types.PivotFailurePath, []byte(err.Error()), 0644)
 		os.Exit(1)
 	}
 }
