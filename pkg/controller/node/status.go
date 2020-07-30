@@ -27,6 +27,12 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 	newPool := pool
 	newPool.Status = newStatus
 	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
+	if pool.Spec.Configuration.Name != newPool.Spec.Configuration.Name {
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, newPool.Spec.Configuration.Name)
+	}
+	if pool.Status.Configuration.Name != newPool.Status.Configuration.Name {
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Completed", "Pool %s has completed update to %s", pool.Name, newPool.Status.Configuration.Name)
+	}
 	return err
 }
 
