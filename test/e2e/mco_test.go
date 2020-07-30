@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/test/e2e/framework"
 	"github.com/stretchr/testify/require"
@@ -92,7 +93,7 @@ func CheckMasterIsAlreadySchedulable(master *corev1.Node) bool {
 	_, hasWorkerLabel := master.Labels[node.WorkerLabel]
 	hasMasterTaint := false
 	for _, taint := range master.Spec.Taints {
-		if taint.Key == node.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
+		if taint.Key == ctrlcommon.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
 			hasMasterTaint = true
 		}
 	}
