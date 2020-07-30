@@ -1318,7 +1318,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 	glog.Infof("Updating OS to %s", newURL)
 	client := NewNodeUpdaterClient()
 	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
-		return err
+		return fmt.Errorf("failed to update OS to %s : %v", newURL, err)
 	}
 
 	return nil
