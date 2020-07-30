@@ -1808,6 +1808,7 @@ metadata:
   labels:
     "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
     "machineconfiguration.openshift.io/mco-built-in": ""
+    "pools.operator.machineconfiguration.openshift.io/master": ""
 spec:
   machineConfigSelector:
     matchLabels:
@@ -2685,6 +2686,7 @@ metadata:
   name: worker
   labels:
     "machineconfiguration.openshift.io/mco-built-in": ""
+    "pools.operator.machineconfiguration.openshift.io/worker": ""
 spec:
   machineConfigSelector:
     matchLabels:

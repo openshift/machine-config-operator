@@ -1,6 +1,8 @@
 package helpers
 
 import (
+	"fmt"
+
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	corev1 "k8s.io/api/core/v1"
@@ -74,7 +76,8 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				"machineconfiguration.openshift.io/mco-built-in": "",
+				"machineconfiguration.openshift.io/mco-built-in":                         "",
+				fmt.Sprintf("pools.operator.machineconfiguration.openshift.io/%s", name): "",
 			},
 			UID: types.UID(utilrand.String(5)),
 		},
