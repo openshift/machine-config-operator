@@ -19,8 +19,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// flag storage
-var keep bool
 var fromEtcPullSpec bool
 
 const (
@@ -40,7 +38,6 @@ var pivotCmd = &cobra.Command{
 // init executes upon import
 func init() {
 	rootCmd.AddCommand(pivotCmd)
-	pivotCmd.PersistentFlags().BoolVarP(&keep, "keep", "k", false, "Do not remove container image")
 	pivotCmd.PersistentFlags().BoolVarP(&fromEtcPullSpec, "from-etc-pullspec", "P", false, "Parse /etc/pivot/image-pullspec")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
@@ -84,19 +81,8 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 		}
 	}
 
-	// Check to see if we need to tune kernel arguments
-	tuningChanged, err := daemon.UpdateTuningArgs(daemon.KernelTuningFile, daemon.CmdLineFile)
-	if err != nil {
-		return err
-	}
-	// If tuning changes but the oscontainer didn't we still denote we changed
-	// for the reboot
-	if tuningChanged {
-		changed = true
-	}
-
 	if !changed {
-		glog.Info("No changes; already at target oscontainer, no kernel args provided")
+		glog.Info("No changes; already at target oscontainer")
 	}
 
 	return nil
