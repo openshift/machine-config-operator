@@ -1,5 +1,0 @@
-mode: 0644
-path: "/etc/kubernetes/static-pod-resources/etcd-member/metric-ca.crt"
-contents:
-  inline: |
-{{.EtcdMetricCAData | toString | indent 4}}

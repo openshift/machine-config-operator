@@ -70,8 +70,6 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setStringIfSet(modified, &existing.NetworkType, required.NetworkType)
 
 	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)
-	setBytesIfSet(modified, &existing.EtcdCAData, required.EtcdCAData)
-	setBytesIfSet(modified, &existing.EtcdMetricCAData, required.EtcdMetricCAData)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
 	setBytesIfSet(modified, &existing.CloudProviderCAData, required.CloudProviderCAData)

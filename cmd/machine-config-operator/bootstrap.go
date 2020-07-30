@@ -103,10 +103,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			OauthProxy:                   bootstrapOpts.oauthProxyImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
-			Etcd:                bootstrapOpts.etcdImage,
 			InfraImage:          bootstrapOpts.infraImage,
-			KubeClientAgent:     bootstrapOpts.kubeClientAgentImage,
-			ClusterEtcdOperator: bootstrapOpts.clusterEtcdOperatorImage,
 			Keepalived:          bootstrapOpts.keepalivedImage,
 			Coredns:             bootstrapOpts.corednsImage,
 			MdnsPublisher:       bootstrapOpts.mdnsPublisherImage,
@@ -123,7 +120,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.networkConfigFile,
 		bootstrapOpts.cloudConfigFile,
 		bootstrapOpts.cloudProviderCAFile,
-		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
+		bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		&imgs,
 		bootstrapOpts.destinationDir,
 	); err != nil {

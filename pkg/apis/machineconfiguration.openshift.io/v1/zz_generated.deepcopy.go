@@ -226,16 +226,6 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
 	}
-	if in.EtcdCAData != nil {
-		in, out := &in.EtcdCAData, &out.EtcdCAData
-		*out = make([]byte, len(*in))
-		copy(*out, *in)
-	}
-	if in.EtcdMetricCAData != nil {
-		in, out := &in.EtcdMetricCAData, &out.EtcdMetricCAData
-		*out = make([]byte, len(*in))
-		copy(*out, *in)
-	}
 	if in.RootCAData != nil {
 		in, out := &in.RootCAData, &out.RootCAData
 		*out = make([]byte, len(*in))

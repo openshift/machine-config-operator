@@ -9,8 +9,6 @@ import (
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
-	operatorv1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
-	operatorlisterv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
@@ -83,7 +81,6 @@ type Operator struct {
 	clusterCmLister  corelisterv1.ConfigMapLister
 	proxyLister      configlistersv1.ProxyLister
 	oseKubeAPILister corelisterv1.ConfigMapLister
-	etcdLister       operatorlisterv1.EtcdLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -100,7 +97,6 @@ type Operator struct {
 	clusterRoleBindingInformerSynced cache.InformerSynced
 	proxyListerSynced                cache.InformerSynced
 	oseKubeAPIListerSynced           cache.InformerSynced
-	etcdSynced                       cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
@@ -133,7 +129,6 @@ func New(
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
-	etcdInformer operatorv1.EtcdInformer,
 	maoSecretInformer coreinformersv1.SecretInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
@@ -203,17 +198,6 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
-	if etcdInformer != nil {
-		optr.etcdLister = etcdInformer.Lister()
-		optr.etcdSynced = etcdInformer.Informer().HasSynced
-		etcdInformer.Informer().AddEventHandler(optr.eventHandler())
-	} else {
-		optr.etcdLister = nil
-		optr.etcdSynced = func() bool {
-			// if etcd is not part of CVO it will return true immediately
-			return true
-		}
-	}
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
@@ -251,8 +235,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.proxyListerSynced,
 		optr.oseKubeAPIListerSynced,
 		optr.mcpListerSynced,
-		optr.mcListerSynced,
-		optr.etcdSynced) {
+		optr.mcListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}

@@ -144,75 +144,6 @@ func TestCloudConfigFlag(t *testing.T) {
 	}
 }
 
-func TestEtcdPeerCertDNSNames(t *testing.T) {
-	dummyTemplate := []byte(`{{etcdPeerCertDNSNames .}}`)
-
-	cases := []struct {
-		etcdDiscoveryDomain string
-
-		url string
-		err bool
-	}{{
-		etcdDiscoveryDomain: "",
-		url:                 "",
-		err:                 true,
-	}, {
-		etcdDiscoveryDomain: "my-test-cluster.tt.testing",
-		url:                 "${ETCD_DNS_NAME},my-test-cluster.tt.testing",
-		err:                 false,
-	}}
-	for idx, c := range cases {
-		name := fmt.Sprintf("case #%d", idx)
-		t.Run(name, func(t *testing.T) {
-			config := &mcfgv1.ControllerConfig{
-				Spec: mcfgv1.ControllerConfigSpec{
-					Infra: &configv1.Infrastructure{
-						Status: configv1.InfrastructureStatus{
-							EtcdDiscoveryDomain: c.etcdDiscoveryDomain,
-						},
-					},
-				},
-			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
-			if err != nil && !c.err {
-				t.Fatalf("expected nil error %v", err)
-			}
-
-			if string(got) != c.url {
-				t.Fatalf("mismatch got: %s want: %s", got, c.url)
-			}
-		})
-	}
-}
-
-func TestEtcdServerCertDNSNames(t *testing.T) {
-	dummyTemplate := []byte(`{{etcdServerCertDNSNames .}}`)
-
-	cases := []struct {
-		url string
-		err bool
-	}{{
-		url: "localhost,etcd.kube-system.svc,etcd.kube-system.svc.cluster.local,etcd.openshift-etcd.svc,etcd.openshift-etcd.svc.cluster.local,${ETCD_WILDCARD_DNS_NAME}",
-		err: false,
-	}}
-	for idx, c := range cases {
-		name := fmt.Sprintf("case #%d", idx)
-		t.Run(name, func(t *testing.T) {
-			config := &mcfgv1.ControllerConfig{
-				Spec: mcfgv1.ControllerConfigSpec{},
-			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`}, name, dummyTemplate)
-			if err != nil && !c.err {
-				t.Fatalf("expected nil error %v", err)
-			}
-
-			if string(got) != c.url {
-				t.Fatalf("mismatch got: %s want: %s", got, c.url)
-			}
-		})
-	}
-}
-
 func TestSkipMissing(t *testing.T) {
 	dummyTemplate := `{{skip "%s"}}`
 
@@ -236,11 +167,8 @@ func TestSkipMissing(t *testing.T) {
 		key: "index",
 		err: false,
 		res: "{{.index}}",
-	}, {
-		key: "etcd_index",
-		err: false,
-		res: "{{.etcd_index}}",
-	}}
+	},
+	}
 
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
