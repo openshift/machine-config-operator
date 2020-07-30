@@ -35,6 +35,7 @@ const (
 	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
 	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
 	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	crioDropInFileCapabilities   = "/etc/crio/crio.conf.d/01-mc-defaultCapabilities"
 )
 
 var errParsingReference = errors.New("error parsing reference of desired image from cluster version config")
@@ -82,6 +83,17 @@ type tomlConfigCRIOLogSizeMax struct {
 	Crio struct {
 		Runtime struct {
 			LogSizeMax int64 `toml:"log_size_max,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOCaps is used for the drop in crio capailities file
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOCaps struct {
+	Crio struct {
+		Runtime struct {
+			DefaultCapabilities []string `toml:"default_capabilities, omitempty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -176,6 +188,10 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
 }
 
+func getManagedKeyCaps(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("99-%s-generated-crio-capabilities", pool.Name)
+}
+
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
 	var condition *mcfgv1.ContainerRuntimeConfigCondition
 	if err != nil {
@@ -264,6 +280,25 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		if err != nil {
 			glog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
+	}
+	return generatedConfigFileList
+}
+
+// createDefaultCapsFile created the drop-in file for the crio capabilities
+// we are dropping the NET_RAW and SYS_CHROOT capabilities by default so adding
+// a drop-in file with those capabilities to ensure we don't break existing clusters.
+// Users will have the option to delete the MC associated with this file when they are
+// ready to drop the NET_RAW and SYS_CHROOT capabilities for their workload.
+func createDefaultCapsFile() []generatedConfigFile {
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	tomlConf := tomlConfigCRIOCaps{}
+	tomlConf.Crio.Runtime.DefaultCapabilities = []string{"CHOWN", "DAC_OVERRIDE", "FSETID", "FOWNER", "NET_RAW", "SETGID", "SETUID", "SETPCAP", "NET_BIND_SERVICE", "SYS_CHROOT", "KILL"}
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFileCapabilities, tomlConf)
+	if err != nil {
+		glog.V(2).Infoln(err, "error adding default capabilities to crio.conf.d: %v", err)
 	}
 	return generatedConfigFileList
 }

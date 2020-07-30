@@ -113,6 +113,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ClientBuilder.MachineConfigClientOrDie("kubelet-config-controller"),
 		),
 		containerruntimeconfig.New(
+			componentNamespace,
 			rootOpts.templates,
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
