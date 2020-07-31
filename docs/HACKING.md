@@ -63,7 +63,7 @@ All tests (unit and e2e) can be executed with:
 
 # Managing Go Dependencies
 
-Dependencies are managed with [go modules](https://github.com/golang/go/wiki/Modules) but committed directly to the repository. 
+Dependencies are managed with [go modules](https://github.com/golang/go/wiki/Modules) but committed directly to the repository.
 
 Please ensure that you are using Go v1.13.  Using a different version may result in unexpected behavior.
 
@@ -300,3 +300,27 @@ It will fail if you use e.g. `:latest`.
 
 At the time of this writing, the [kubelet](https://github.com/smarterclayton/origin/blob/4de957b019aee56931b1a29af148cf64865a969b/images/os/Dockerfile)
 has code to do this in CI, and work is in progress to [replicate that for cri-o](https://github.com/openshift/release/pull/4030).
+
+### Running worker nodes with customized kubelet
+
+1) Ssh to the node (use github.com/eparis/ssh-bastion)
+``
+$ ssh core@<worker-node-ip>
+``
+2) Use scp to copy it the customised kubelet binary
+``
+$ scp root@<remote-host-with-kubelet-binary>:<path/to/kubelet/binary> /home/core
+``
+3) Obtain a writable overlayfs on /usr
+``
+rpm-ostree usroverlay
+``
+4) ``$ systemctl stop kubelet``
+5) Replace kubelet binary (/usr/bin/kubelet). Please refer [here](https://github.com/openshift/machine-config-operator/blob/master/docs/HACKING.md#directly-applying-changes-live-to-a-node) for more detail.
+6) In certain cases, changes might be needed to the service file (/etc/systemd/system/kubelet.service)
+   depending on the version of kubelet you are running. As an example, changing kubelet binary from
+   v1.18.3 to v1.13.0-alpha, it was necessary to remove `--node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID}`
+   because as per upstream kubelet binary node Labels must begin with an allowed prefix (kubelet.kubernetes.io, node.kubernetes.io) or be in the specifically allowed set (beta.kubernetes.io/arch, beta.kubernetes.io/instance-type, beta.kubernetes.io/os, failure-domain.beta.kubernetes.io/region, failure-domain.beta.kubernetes.io/zone, kubernetes.io/arch, kubernetes.io/hostname, kubernetes.io/os, node.kubernetes.io/instance-type, topology.kubernetes.io/region, topology.kubernetes.io/zone).
+7) ``$ systemctl daemon-reload``
+8) ``$ systemctl restart kubelet``
+9) ``$ oc get nodes`` to see the updated kubelet version
