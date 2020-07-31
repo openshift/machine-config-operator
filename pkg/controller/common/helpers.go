@@ -306,30 +306,32 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
-	ignCfg, rpt, err := ign2.Parse(rawIgn)
-	if err == nil && !rpt.IsFatal() {
-		// this is an ignv2cfg that was successfully parsed
-		return ignCfg, nil
+	ignCfgV3_1, rptV3_1, errV3_1 := ign3.Parse(rawIgn)
+	if errV3_1 == nil && !rptV3_1.IsFatal() {
+		return ignCfgV3_1, nil
 	}
-	if err.Error() == ign2error.ErrUnknownVersion.Error() {
-		ignCfgV3, rptV3, errV3 := ign3.Parse(rawIgn)
-		if errV3 == nil && !rptV3.IsFatal() {
-			return ignCfgV3, nil
+	// unlike spec v2 parsers, v3 parsers aren't chained by default so we need to try parsing as spec v3.0 as well
+	if errV3_1.Error() == ign3error.ErrUnknownVersion.Error() {
+		ignCfgV3_0, rptV3_0, errV3_0 := ign3_0.Parse(rawIgn)
+		if errV3_0 == nil && !rptV3_0.IsFatal() {
+			return translate3.Translate(ignCfgV3_0), nil
 		}
-		// unlike spec v2 parsers, v3 parsers aren't chained by default so we need to try parsing as spec v3.0 as well
-		if errV3.Error() == ign3error.ErrUnknownVersion.Error() {
-			ignCfgV3_0, rptV3_0, errV3_0 := ign3_0.Parse(rawIgn)
-			if errV3_0 == nil && !rptV3_0.IsFatal() {
-				return translate3.Translate(ignCfgV3_0), nil
+
+		if errV3_0.Error() == ign3error.ErrUnknownVersion.Error() {
+			ignCfgV2, rptV2, errV2 := ign2.Parse(rawIgn)
+			if errV2 == nil && !rptV2.IsFatal() {
+				return ignCfgV2, nil
 			}
 
-			return ign2types.Config{}, errors.Errorf("parsing Ignition config spec v3.0 failed with error: %v\nReport: %v", errV3_0, rptV3_0)
+			// If the error is still UnknownVersion it's not a 3.1/3.0 or 2.x config, thus unsupported
+			if errV2.Error() == ign2error.ErrUnknownVersion.Error() {
+				return ign3types.Config{}, errors.Errorf("parsing Ignition config failed: unknown version. Supported spec versions: 2.2, 3.0, 3.1")
+			}
+			return ign3types.Config{}, errors.Errorf("parsing Ignition spec v2 failed with error: %v\nReport: %v", errV2, rptV2)
 		}
-
-		return ign2types.Config{}, errors.Errorf("parsing Ignition config spec v3.1 failed with error: %v\nReport: %v", errV3, rptV3)
+		return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.0 failed with error: %v\nReport: %v", errV3_0, rptV3_0)
 	}
-
-	return ign2types.Config{}, errors.Errorf("parsing Ignition config spec v2 failed with error: %v\nReport: %v", err, rpt)
+	return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.1 failed with error: %v\nReport: %v", errV3_1, rptV3_1)
 }
 
 // ParseAndConvertConfig parses rawIgn for both V2 and V3 ignition configs and returns
