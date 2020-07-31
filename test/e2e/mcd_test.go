@@ -292,7 +292,7 @@ func TestExtensions(t *testing.T) {
 
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	installedExtesnions = execCmdOnNode(t, cs, infraNode, "rpm", "-qa", "usbguard")
+	installedExtesnions = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard")
 	if strings.Contains(installedExtesnions, "usbguard") {
 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
 	}
