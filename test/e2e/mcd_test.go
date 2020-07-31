@@ -187,8 +187,8 @@ func TestKernelType(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	kernelInfo := execCmdOnNode(t, cs, infraNode, "uname", "-a")
-	if !strings.Contains(kernelInfo, "PREEMPT RT") {
+	kernelInfo := execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	if !strings.Contains(kernelInfo, "kernel-rt-core") {
 		t.Fatalf("Node %s doesn't have expected kernel", infraNode.Name)
 	}
 	t.Logf("Node %s has expected kernel", infraNode.Name)
@@ -210,8 +210,8 @@ func TestKernelType(t *testing.T) {
 
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kernelInfo = execCmdOnNode(t, cs, infraNode, "uname", "-a")
-	if strings.Contains(kernelInfo, "PREEMPT RT") {
+	kernelInfo = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	if strings.Contains(kernelInfo, "kernel-rt-core") {
 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
 	}
 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
