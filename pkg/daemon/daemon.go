@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	imgref "github.com/containers/image/docker/reference"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
@@ -1024,10 +1023,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
-		osMatch, err := dn.checkOS(targetOSImageURL)
-		if err != nil {
-			return err
-		}
+		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
 			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
 			// This only returns on error
@@ -1307,11 +1303,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 // degraded.
 func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error {
 	// Be sure we're booted into the OS we expect
-	osMatch, err := dn.checkOS(currentConfig.Spec.OSImageURL)
-	if err != nil {
-		glog.Errorf("%s", err)
-		return err
-	}
+	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if !osMatch {
 		return errors.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
 	}
@@ -1345,57 +1337,14 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	}
 }
 
-// getRefDigest parses a Docker/OCI image reference and returns
-// its digest, or an error if the string fails to parse as
-// a "canonical" image reference with a digest.
-func getRefDigest(ref string) (string, error) {
-	refParsed, err := imgref.ParseNamed(ref)
-	if err != nil {
-		return "", errors.Wrapf(err, "parsing reference: %q", ref)
-	}
-	canon, ok := refParsed.(imgref.Canonical)
-	if !ok {
-		return "", fmt.Errorf("not canonical form: %q", ref)
-	}
-
-	return canon.Digest().String(), nil
-}
-
-// compareOSImageURL is the backend for checkOS.
-func compareOSImageURL(current, desired string) (bool, error) {
-	// Since https://github.com/openshift/machine-config-operator/pull/426 landed
-	// we don't use the "unspecified" osImageURL anymore, but let's keep supporting
-	// it for now.
-	// The ://dummy syntax is legacy
-	if desired == "" || desired == "://dummy" {
-		glog.Info(`No target osImageURL provided`)
-		return true, nil
-	}
-
-	// If we're not in pivot:// right now, then it must not match.
-	if current == "" {
-		return false, nil
-	}
-
-	if current == desired {
-		return true, nil
-	}
-
-	bootedDigest, err := getRefDigest(current)
-	if err != nil {
-		return false, errors.Wrap(err, "parsing booted osImageURL")
-	}
-	desiredDigest, err := getRefDigest(desired)
-	if err != nil {
-		return false, errors.Wrap(err, "parsing desired osImageURL")
-	}
-
-	if bootedDigest == desiredDigest {
-		glog.Infof("Current and target osImageURL have matching digest %q", bootedDigest)
-		return true, nil
-	}
-
-	return false, nil
+// compareOSImageURL checks whether the current and desired
+// URL are the same.  This used to do more, but now the
+// only special casing is to support an empty desired URL
+// as meaning "keep current OS" which we probably don't need
+// anymore either.
+func compareOSImageURL(current, desired string) bool {
+	// A desired "" is special cased
+	return desired == "" || current == desired
 }
 
 // checkOS determines whether the booted system matches the target
@@ -1404,11 +1353,11 @@ func compareOSImageURL(current, desired string) (bool, error) {
 // not running RHCOS or FCOS, or if the target osImageURL is "" (unspecified),
 // or if the digests match.
 // Otherwise if `false` is returned, then we need to perform an update.
-func (dn *Daemon) checkOS(osImageURL string) (bool, error) {
+func (dn *Daemon) checkOS(osImageURL string) bool {
 	// Nothing to do if we're not on RHCOS or FCOS
 	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
 		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
-		return true, nil
+		return true
 	}
 
 	return compareOSImageURL(dn.bootedOSImageURL, osImageURL)
