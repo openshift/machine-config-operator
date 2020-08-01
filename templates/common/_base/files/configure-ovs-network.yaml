@@ -14,9 +14,16 @@ contents:
     counter=0
     # find default interface
     while [ $counter -lt 12 ]; do
+      # check ipv4
       iface=$(ip -j route show default | jq -r '.[0].dev')
-      if [ -n "$iface" ]; then
-        echo "Default gateway interface found: ${iface}"
+      if [[ -n "$iface"  && "$iface" != "null" ]]; then
+        echo "IPv4 Default gateway interface found: ${iface}"
+        break
+      fi
+      # check ipv6
+      iface=$(ip -6 -j route show default | jq -r '.[0].dev')
+      if [[ -n "$iface"  && "$iface" != "null" ]]; then
+        echo "IPv6 Default gateway interface found: ${iface}"
         break
       fi
       counter=$((counter+1))
@@ -45,7 +52,7 @@ contents:
 
     # find MTU from original iface
     iface_mtu=$(ip -j link show "$iface" | jq -r '.[0].mtu')
-    if [ -z "$iface_mtu" ]; then
+    if [[ -z "$iface_mtu" ||  "$iface_mtu" == "null" ]]; then
       echo "Unable to determine default interface MTU, defaulting to 1500"
       iface_mtu=1500
     else
