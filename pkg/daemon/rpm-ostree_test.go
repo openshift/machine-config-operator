@@ -42,8 +42,8 @@ func (r RpmOstreeClientMock) RunPivot(string) error {
 }
 
 // PullAndRebase is a mock
-func (r RpmOstreeClientMock) PullAndRebase(string, bool) (string, bool, error) {
-	return "", false, nil
+func (r RpmOstreeClientMock) Rebase(string, string) (bool, error) {
+	return false, nil
 }
 
 func (r RpmOstreeClientMock) GetStatus() (string, error) {

@@ -235,6 +235,87 @@ func TestKernelType(t *testing.T) {
 
 }
 
+func TestExtensions(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+
+	oldInfraRenderedConfig := getMcName(t, cs, "infra")
+
+	// Apply extensions
+	extensions := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("extensions-%s", uuid.NewUUID()),
+			Labels: mcLabelForRole("infra"),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			Extensions: []string{"usbguard"},
+		},
+	}
+
+	_, err := cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
+	require.Nil(t, err)
+	t.Logf("Created %s", extensions.Name)
+	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", extensions.Name)
+	require.Nil(t, err)
+	if err := waitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+	infraNode := getSingleNodeByRole(t, cs, "infra")
+
+	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+	installedExtesnions := execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard")
+	if !strings.Contains(installedExtesnions, "usbguard") {
+		t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
+	}
+	t.Logf("Node %s has expected extensions installed", infraNode.Name)
+
+	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
+	if err := cs.MachineConfigs().Delete(context.TODO(), extensions.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	t.Logf("Deleted MachineConfig %s", extensions.Name)
+
+	// Wait for the mcp to rollback to previous config
+	if err := waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-fetch the infra node for updated annotations
+	infraNode = getSingleNodeByRole(t, cs, "infra")
+
+	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
+	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+	installedExtesnions = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard")
+	if strings.Contains(installedExtesnions, "usbguard") {
+		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
+	}
+	t.Logf("Node %s has successfully rolled back", infraNode.Name)
+
+	unlabelFunc()
+
+	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		require.Nil(t, err)
+		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+	}
+	err = waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+	require.Nil(t, err)
+}
+
 func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 

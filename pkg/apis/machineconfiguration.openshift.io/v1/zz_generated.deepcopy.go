@@ -678,6 +678,11 @@ func (in *MachineConfigSpec) DeepCopyInto(out *MachineConfigSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Extensions != nil {
+		in, out := &in.Extensions, &out.Extensions
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
