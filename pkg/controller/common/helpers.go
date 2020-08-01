@@ -103,6 +103,18 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 		kargs = append(kargs, cfg.Spec.KernelArguments...)
 	}
 
+	extensions := []string{}
+	for _, cfg := range configs {
+		extensions = append(extensions, cfg.Spec.Extensions...)
+	}
+
+	// Ensure that kernel-devel extension is applied only with default kernel.
+	if kernelType != KernelTypeDefault {
+		if InSlice("kernel-devel", extensions) {
+			return nil, fmt.Errorf("installing kernel-devel extension is not supported with kernelType: %s", kernelType)
+		}
+	}
+
 	return &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
 			OSImageURL:      osImageURL,
@@ -112,6 +124,7 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 			},
 			FIPS:       fips,
 			KernelType: kernelType,
+			Extensions: extensions,
 		},
 	}, nil
 }
@@ -285,10 +298,39 @@ func ValidateIgnition(ignconfig interface{}) error {
 	}
 }
 
+// InSlice search for an element in slice and return true if found, otherwise return false
+func InSlice(elem string, slice []string) bool {
+	for _, k := range slice {
+		if k == elem {
+			return true
+		}
+	}
+	return false
+}
+
+func validateExtensions(exts []string) error {
+	supportedExtensions := []string{"usbguard", "kernel-devel"}
+	invalidExts := []string{}
+	for _, ext := range exts {
+		if !InSlice(ext, supportedExtensions) {
+			invalidExts = append(invalidExts, ext)
+		}
+	}
+	if len(invalidExts) != 0 {
+		return fmt.Errorf("invalid extensions found: %v", invalidExts)
+	}
+	return nil
+
+}
+
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime) {
 		return errors.Errorf("kernelType=%s is invalid", cfg.KernelType)
+	}
+
+	if err := validateExtensions(cfg.Extensions); err != nil {
+		return err
 	}
 
 	if cfg.Config.Raw != nil {

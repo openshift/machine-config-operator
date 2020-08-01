@@ -8,13 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containers/image/v5/types"
 	"github.com/golang/glog"
-	"github.com/opencontainers/go-digest"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
-	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 const (
@@ -33,31 +30,15 @@ type rpmOstreeState struct {
 
 // RpmOstreeDeployment represents a single deployment on a node
 type RpmOstreeDeployment struct {
-	ID                 string   `json:"id"`
-	OSName             string   `json:"osname"`
-	Serial             int32    `json:"serial"`
-	Checksum           string   `json:"checksum"`
-	Version            string   `json:"version"`
-	Timestamp          uint64   `json:"timestamp"`
-	Booted             bool     `json:"booted"`
-	Origin             string   `json:"origin"`
-	CustomOrigin       []string `json:"custom-origin"`
-	RequestedLocalPkgs []string `json:"requested-local-packages"`
-}
-
-// imageInspection is a public implementation of
-// https://github.com/containers/skopeo/blob/82186b916faa9c8c70cfa922229bafe5ae024dec/cmd/skopeo/inspect.go#L20-L31
-type imageInspection struct {
-	Name          string `json:",omitempty"`
-	Tag           string `json:",omitempty"`
-	Digest        digest.Digest
-	RepoDigests   []string
-	Created       *time.Time
-	DockerVersion string
-	Labels        map[string]string
-	Architecture  string
-	Os            string
-	Layers        []string
+	ID           string   `json:"id"`
+	OSName       string   `json:"osname"`
+	Serial       int32    `json:"serial"`
+	Checksum     string   `json:"checksum"`
+	Version      string   `json:"version"`
+	Timestamp    uint64   `json:"timestamp"`
+	Booted       bool     `json:"booted"`
+	Origin       string   `json:"origin"`
+	CustomOrigin []string `json:"custom-origin"`
 }
 
 // NodeUpdaterClient is an interface describing how to interact with the host
@@ -65,7 +46,7 @@ type imageInspection struct {
 type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
-	PullAndRebase(string, bool) (string, bool, error)
+	Rebase(string, string) (bool, error)
 	RunPivot(string) error
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
 }
@@ -133,15 +114,8 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 	return osImageURL, bootedDeployment.Version, nil
 }
 
-// podmanRemove kills and removes a container
-func podmanRemove(cid string) {
-	// Ignore errors here
-	exec.Command("podman", "kill", cid).Run()
-	exec.Command("podman", "rm", "-f", cid).Run()
-}
-
-// PullAndRebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid string, changed bool, err error) {
+// Rebase potentially rebases system if not already rebased.
+func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed bool, err error) {
 	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
@@ -159,96 +133,19 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		glog.Info("Current origin is not custom")
 	}
 
-	var authArgs []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
-	}
-
-	// If we're passed a non-canonical image, resolve it to its sha256 now
-	isCanonicalForm := true
-	if _, err = getRefDigest(container); err != nil {
-		isCanonicalForm = false
-		// In non-canonical form, we pull unconditionally right now
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
-	} else {
-		if previousPivot != "" {
-			var targetMatched bool
-			targetMatched, err = compareOSImageURL(previousPivot, container)
-			if err != nil {
-				return
-			}
-			if targetMatched {
-				changed = false
-				return
-			}
-		}
-
-		// Pull the image
-		args := []string{"pull", "-q"}
-		args = append(args, authArgs...)
-		args = append(args, container)
-		_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
-		if err != nil {
-			return
-		}
-	}
-
-	inspectArgs := []string{"inspect", "--type=image"}
-	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", container))
-	var output []byte
-	output, err = runGetOut("podman", inspectArgs...)
+	var imageData *types.ImageInspectInfo
+	imageData, err = imageInspect(container)
 	if err != nil {
 		return
 	}
-	var imagedataArray []imageInspection
-	err = json.Unmarshal(output, &imagedataArray)
-	if err != nil {
-		err = errors.Wrapf(err, "unmarshaling podman inspect")
-		return
-	}
-	imagedata := imagedataArray[0]
-	if !isCanonicalForm {
-		imgid = imagedata.RepoDigests[0]
-		glog.Infof("Resolved to: %s", imgid)
-	} else {
-		imgid = container
-	}
 
-	containerName := pivottypes.PivotNamePrefix + string(uuid.NewUUID())
-
-	// `podman mount` wants a container, so let's make create a dummy one, but not run it
-	var cidBuf []byte
-	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, imgid)
-	if err != nil {
-		return
-	}
-	defer func() {
-		// Kill our dummy container
-		podmanRemove(containerName)
-	}()
-
-	cid := strings.TrimSpace(string(cidBuf))
-	// Use the container ID to find its mount point
-	var mntBuf []byte
-	mntBuf, err = runGetOut("podman", "mount", cid)
-	if err != nil {
-		return
-	}
-	mnt := strings.TrimSpace(string(mntBuf))
-	repo := fmt.Sprintf("%s/srv/repo", mnt)
+	repo := fmt.Sprintf("%s/srv/repo", osImageContentDir)
 
 	// Now we need to figure out the commit to rebase to
-
 	// Commit label takes priority
-	ostreeCsum, ok := imagedata.Labels["com.coreos.ostree-commit"]
+	ostreeCsum, ok := imageData.Labels["com.coreos.ostree-commit"]
 	if ok {
-		if ostreeVersion, ok := imagedata.Labels["version"]; ok {
+		if ostreeVersion, ok := imageData.Labels["version"]; ok {
 			glog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
 		} else {
 			glog.Infof("Pivoting to: %s", ostreeCsum)
@@ -280,7 +177,8 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 	}
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
-	customURL := fmt.Sprintf("pivot://%s", imgid)
+	customURL := fmt.Sprintf("pivot://%s", container)
+	glog.Infof("Executing rebase from %s and checksum %s", customURL, ostreeCsum)
 
 	// RPM-OSTree can now directly slurp from the mounted container!
 	// https://github.com/projectatomic/rpm-ostree/pull/1732
@@ -290,12 +188,6 @@ func (r *RpmOstreeClient) PullAndRebase(container string, keep bool) (imgid stri
 		"--custom-origin-description", "Managed by machine-config-operator").Run()
 	if err != nil {
 		return
-	}
-
-	// By default, delete the image.
-	if !keep {
-		// Related: https://github.com/containers/libpod/issues/2234
-		exec.Command("podman", "rmi", imgid).Run()
 	}
 
 	changed = true

@@ -59,6 +59,10 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 		*modified = true
 		(*existing).FIPS = required.FIPS
 	}
+	if !equality.Semantic.DeepEqual(existing.Extensions, required.Extensions) {
+		*modified = true
+		(*existing).Extensions = required.Extensions
+	}
 }
 
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {
