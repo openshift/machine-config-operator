@@ -153,10 +153,18 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // translated
 func translateConfigForIgnitionMiddleware(rawConf *runtime.RawExtension, useragent string) ([]byte, bool, error) {
 	translated := false
-	ignVersionString := strings.SplitAfter(useragent, "/")[1]
-	ignSemver, err := semver.NewVersion(ignVersionString)
-	if err != nil {
-		return nil, translated, errors.Errorf("invalid version in useragent: %s", useragent)
+
+	var ignSemver *semver.Version
+	var err error
+	// Default to Ignition v2.3.0 (so this function serves config spec v3.1) for non-Ignition user agents
+	if !strings.HasPrefix(useragent, "Ignition/") {
+		ignSemver = semver.New("2.3.0")
+	} else {
+		ignVersionString := strings.SplitAfter(useragent, "/")[1]
+		ignSemver, err = semver.NewVersion(ignVersionString)
+		if err != nil {
+			return nil, translated, errors.Errorf("invalid version in useragent: %s", useragent)
+		}
 	}
 
 	v1 := semver.New("1.0.0")
@@ -170,7 +178,7 @@ func translateConfigForIgnitionMiddleware(rawConf *runtime.RawExtension, userage
 		// Ignition v2.x supports config spec v3.x
 		reqCfgVersion = *v3
 	} else {
-		return nil, translated, errors.Errorf("config version not supported: %s", ignVersionString)
+		return nil, translated, errors.Errorf("config version not supported: %s", ignSemver.String())
 	}
 
 	confi, err := ctrlcommon.IgnParseWrapper(rawConf.Raw)
