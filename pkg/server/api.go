@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"path"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/clarketm/json"
@@ -113,13 +115,14 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	useragent := r.Header.Get("User-Agent")
-	glog.Infof("Pool %s requested by address:%q User-Agent:%q", cr.machineConfigPool, r.RemoteAddr, useragent)
+	acceptHeader := r.Header.Get("Accept")
+	glog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", cr.machineConfigPool, r.RemoteAddr, useragent, acceptHeader)
 
-	reqConfigVer, err := deriveSpecVersionFromUseragent(useragent)
+	reqConfigVer, err := detectSpecVersionFromAcceptHeader(acceptHeader)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(http.StatusBadRequest)
-		glog.Errorf("invalid useragent: %v", err)
+		glog.Error(err)
 		return
 	}
 
@@ -186,31 +189,123 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type healthHandler struct{}
 
-// deriveSpecVersionFromUseragent returns a supported Ignition config spec version for a given Ignition user agent
-// or an error for unsuported user agents.
-// Only Ignition versions that come with support for either spec v2.2 or spec v3.1 are supported
-func deriveSpecVersionFromUseragent(useragent string) (*semver.Version, error) {
-	// for now, serve v2 if we receive a request without a useragent header with Ignition
-	// this happens if the user pings the endpoint directly (e.g. with curl)
-	// and we don't want to break existing behaviour
-	if !strings.HasPrefix(useragent, "Ignition/") {
-		return semver.New("2.2.0"), nil
+type acceptHeaderValue struct {
+	MIMEType    string
+	MIMESubtype string
+	SemVer      *semver.Version
+	QValue      *float32
+}
+
+// Parse an accept header, ignoring any extensions that aren't
+// either version or relative quality factor q.
+func parseAcceptHeader(input string) ([]acceptHeaderValue, error) {
+	var header []acceptHeaderValue
+
+	values := strings.Split(input, ",")
+	for _, value := range values {
+		// remove spaces
+		value = strings.TrimSpace(value)
+		parts := strings.Split(value, ";")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+
+		if !strings.Contains(parts[0], "/") {
+			// This is not a MIME type, ignore bad data
+			continue
+		}
+		// mtype[0] is the main MIME type, mtype[1] is the sub MIME type
+		mtype := strings.SplitN(parts[0], "/", 2)
+
+		// check value extensions for version and q parameters, ignore other extensions
+		var v *semver.Version
+		var q *float32
+		for _, ext := range parts[1:] {
+			if strings.Contains(ext, "=") {
+				keyval := strings.SplitN(ext, "=", 2)
+				if keyval[0] == "version" && v == nil {
+					var err error
+					v, err = semver.NewVersion(keyval[1])
+					if err != nil {
+						// This is not a valid version
+						continue
+					}
+				} else if keyval[0] == "q" && q == nil {
+					q64, err := strconv.ParseFloat(keyval[1], 32)
+					if err != nil {
+						// This is not a valid relative quality factor
+						continue
+					}
+					qval := float32(q64)
+					q = &qval
+				}
+			}
+		}
+
+		// Default q to 1
+		if q == nil {
+			q1 := float32(1.0)
+			q = &q1
+		}
+
+		header = append(header, acceptHeaderValue{
+			mtype[0],
+			mtype[1],
+			v,
+			q,
+		})
 	}
-	ignVersionString := strings.SplitAfter(useragent, "/")[1]
-	ignSemver, err := semver.NewVersion(ignVersionString)
+
+	if len(header) == 0 {
+		return nil, errors.New("no valid accept header detected")
+	}
+
+	// Sort headers by descending q factor value.
+	// This is the order of precedence any application
+	// that receives this header should operate with.
+	sort.SliceStable(header, func(i, j int) bool { return *header[i].QValue > *header[j].QValue })
+
+	return header, nil
+}
+
+// detectSpecVersionFromAcceptHeaderUseragent returns a supported Ignition config spec version for a given Accept header.
+// For non-Ignition Accept headers it defaults to config spec v2.2.0
+func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, error) {
+	// for now, serve v2 if we receive a request without an Ignition accept header.
+	// This happens if the user pings the endpoint directly (e.g. with curl)
+	// and we don't want to break existing behaviour.
+	// For Ignition v0.x, the accept header looks like:
+	// "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1".
+	// For v2.x, it looks like:
+	// "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1".
+	v2_2 := semver.New("2.2.0")
+	v3_1 := semver.New("3.1.0")
+
+	var ignVersionError error
+	headers, err := parseAcceptHeader(acceptHeader)
 	if err != nil {
-		return ignSemver, errors.Errorf("invalid version in useragent: %s", useragent)
+		// no valid accept headers detected at all, serve default
+		return v2_2, nil
 	}
 
-	if !ignSemver.LessThan(*semver.New("0.22.0")) && ignSemver.LessThan(*semver.New("1.0.0")) {
-		// versions [0.22.0;1) support config spec v2.2, and
-		return semver.New("2.2.0"), nil
-	} else if !ignSemver.LessThan(*semver.New("2.3.0")) && ignSemver.LessThan(*semver.New("3.0.0")) {
-		// versions [2.3.0;3) support config spec v3.1
-		return semver.New("3.1.0"), nil
+	for _, header := range headers {
+		if header.MIMESubtype == "vnd.coreos.ignition+json" && header.SemVer != nil {
+			if !header.SemVer.LessThan(*v3_1) && header.SemVer.LessThan(*semver.New("4.0.0")) {
+				return v3_1, nil
+			} else if !header.SemVer.LessThan(*v2_2) && header.SemVer.LessThan(*semver.New("3.0.0")) {
+				return v2_2, nil
+			}
+			ignVersionError = errors.Errorf("unsupported Ignition version in Accept header: %s", acceptHeader)
+		}
+	}
+	// return error if version of Ignition MIME subtype is not supported
+	if ignVersionError != nil {
+		return nil, ignVersionError
 	}
 
-	return nil, errors.Errorf("unsupported version in useragent: %s", useragent)
+	// default to serving spec v2.2 for all non-Ignition headers
+	// as well as Ignition headers without a version specified.
+	return v2_2, nil
 }
 
 // ServeHTTP handles /healthz requests.
