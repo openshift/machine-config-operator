@@ -18,7 +18,6 @@ type GetBootedOSImageURLReturn struct {
 // hold return values that will be returned when their corresponding methods are called.
 type RpmOstreeClientMock struct {
 	GetBootedOSImageURLReturns []GetBootedOSImageURLReturn
-	RunPivotReturns            []error
 }
 
 // GetBootedOSImageURL implements a test version of RpmOStreeClients GetBootedOSImageURL.
@@ -29,16 +28,6 @@ func (r RpmOstreeClientMock) GetBootedOSImageURL() (string, string, error) {
 		r.GetBootedOSImageURLReturns = r.GetBootedOSImageURLReturns[1:]
 	}
 	return returnValues.OsImageURL, returnValues.Version, returnValues.Error
-}
-
-// RunPivot implements a test version of RpmOstreeClients RunPivot. It returns errors as defined
-// in the instances RunPivotReturns field in order.
-func (r RpmOstreeClientMock) RunPivot(string) error {
-	err := r.RunPivotReturns[0]
-	if len(r.RunPivotReturns) > 1 {
-		r.RunPivotReturns = r.RunPivotReturns[1:]
-	}
-	return err
 }
 
 // PullAndRebase is a mock

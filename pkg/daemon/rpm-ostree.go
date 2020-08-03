@@ -6,11 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/containers/image/v5/types"
 	"github.com/golang/glog"
-	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/pkg/errors"
 )
 
@@ -47,7 +45,6 @@ type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
 	Rebase(string, string) (bool, error)
-	RunPivot(string) error
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
 }
 
@@ -192,59 +189,6 @@ func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed b
 
 	changed = true
 	return
-}
-
-// RunPivot executes a pivot from one deployment to another as found in the referenced
-// osImageURL. This was originally https://github.com/openshift/pivot but it's now
-// imported into the MCD itself.  The reason we execute on the host is due to SELinux;
-// see https://github.com/openshift/pivot/pull/31 and
-// https://github.com/openshift/machine-config-operator/issues/314
-// Basically rpm_ostree_t has mac_admin, container_t doesn't.
-func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
-	journalStopCh := make(chan time.Time)
-	defer close(journalStopCh)
-	go followPivotJournalLogs(journalStopCh)
-
-	// These were previously injected by the MCS, let's clean them up if they exist
-	for _, p := range []string{constants.EtcPivotFile, "/run/pivot/reboot-needed"} {
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			return errors.Wrapf(err, "deleting %s", p)
-		}
-	}
-
-	// We used to start machine-config-daemon-host here, but now we make a dynamic
-	// unit because that service was started in too many ways, and the systemd-run
-	// model of creating a unit dynamically is much clearer for what we want here;
-	// conceptually the service is just a dynamic child of this pod (if we could we'd
-	// tie the lifecycle together).  Further, let's shorten our systemd unit names
-	// by using the mco- prefix, and we also inject the RPMOSTREE_CLIENT_ID now.
-	unitName := "mco-pivot"
-	glog.Infof("Executing OS update (pivot) on host via systemd-run unit=%s", unitName)
-	err := exec.Command("systemd-run", "--wait", "--collect", "--unit="+unitName,
-		"-E", "RPMOSTREE_CLIENT_ID=mco", constants.HostSelfBinary, "pivot", osImageURL).Run()
-	if err != nil {
-		return errors.Wrapf(err, "failed to run pivot")
-	}
-	return nil
-}
-
-// Proxy pivot and rpm-ostree daemon journal logs until told to stop. Warns if
-// we encounter an error.
-func followPivotJournalLogs(stopCh <-chan time.Time) {
-	cmd := exec.Command("journalctl", "-f", "-b", "-o", "cat",
-		"-u", "rpm-ostreed",
-		"-u", "mco-pivot")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		glog.Fatal(err)
-		MCDPivotErr.WithLabelValues("", err.Error()).SetToCurrentTime()
-	}
-
-	go func() {
-		<-stopCh
-		cmd.Process.Kill()
-	}()
 }
 
 // runGetOut executes a command, logging it, and return the stdout output.
