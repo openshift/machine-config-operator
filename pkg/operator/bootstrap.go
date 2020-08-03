@@ -110,19 +110,11 @@ func RenderBootstrap(
 
 	// if the cloudConfig is set in infra read the cloudConfigFile
 	if infra.Spec.CloudConfig.Name != "" {
-		data, err := ioutil.ReadFile(cloudConfigFile)
+		cloudConf, err := loadBootstrapCloudProviderConfig(infra, cloudConfigFile)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load the cloud provider config: %v", err)
 		}
-		obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
-		if err != nil {
-			return err
-		}
-		cm, ok := obji.(*corev1.ConfigMap)
-		if !ok {
-			return fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
-		}
-		spec.CloudProviderConfig = cm.Data[infra.Spec.CloudConfig.Key]
+		spec.CloudProviderConfig = cloudConf
 	}
 
 	bundle := make([]byte, 0)
@@ -298,4 +290,26 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	}
 
 	return manifests
+}
+
+// loadBootstrapCloudProviderConfig reads the cloud provider config from cloudConfigFile based on infra object.
+func loadBootstrapCloudProviderConfig(infra *configv1.Infrastructure, cloudConfigFile string) (string, error) {
+	data, err := ioutil.ReadFile(cloudConfigFile)
+	if err != nil {
+		return "", err
+	}
+	obji, err := runtime.Decode(scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion), data)
+	if err != nil {
+		return "", err
+	}
+	cm, ok := obji.(*corev1.ConfigMap)
+	if !ok {
+		return "", fmt.Errorf("expected *corev1.ConfigMap found %T", obji)
+	}
+	cloudConf, ok := cm.Data["cloud.conf"]
+	if !ok {
+		glog.Infof("falling back to reading cloud provider config from user specified key %s", infra.Spec.CloudConfig.Key)
+		cloudConf = cm.Data[infra.Spec.CloudConfig.Key]
+	}
+	return cloudConf, nil
 }
