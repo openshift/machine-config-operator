@@ -255,8 +255,16 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) err
 		return err
 	}
 
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
+	}
+
 	var osImageContentDir string
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+		// We emitted this event before, so keep it
+		if dn.recorder != nil {
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
+		}
 		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
 			return err
 		}
@@ -291,6 +299,9 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) err
 		return err
 	}
 
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "OSUpdateStaged", "Changes to OS staged")
+	}
 	return nil
 
 }
@@ -442,6 +453,21 @@ type machineConfigDiff struct {
 func (mcDiff *machineConfigDiff) isEmpty() bool {
 	emptyDiff := machineConfigDiff{}
 	return reflect.DeepEqual(mcDiff, &emptyDiff)
+}
+
+// osChangesString generates a human-readable set of changes from the diff
+func (mcDiff *machineConfigDiff) osChangesString() string {
+	changes := []string{}
+	if mcDiff.osUpdate {
+		changes = append(changes, "Upgrading OS")
+	}
+	if mcDiff.extensions {
+		changes = append(changes, "Installing extensions")
+	}
+	if mcDiff.kernelType {
+		changes = append(changes, "Changing kernel type")
+	}
+	return strings.Join(changes, "; ")
 }
 
 // canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
@@ -1310,9 +1336,6 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 	}
 	if osMatch {
 		return nil
-	}
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("In cluster upgrade to %s", newURL))
 	}
 
 	glog.Infof("Updating OS to %s", newURL)
