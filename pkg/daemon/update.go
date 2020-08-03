@@ -46,6 +46,9 @@ const (
 	fipsFile              = "/proc/sys/crypto/fips_enabled"
 	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
 	osImageContentBaseDir = "/run/mco-machine-os-content/"
+	cliBinPath            = "/usr/bin/oc"
+	cliRunBinPath         = "/usr/local/bin/oc"
+	podmanPath            = "/usr/bin/podman"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -217,6 +220,37 @@ func addExtensionsRepo(osImageContentDir string) error {
 	return nil
 }
 
+func getOCBinaryPath() (string, error) {
+	if _, err := os.Stat(cliBinPath); err == nil {
+		return cliBinPath, nil
+	}
+
+	cliImage := "registry.svc.openshift.org/origin/4.6:cli"
+	// Pull cli image
+	args := []string{"pull", "--authfile=/var/lib/kubelet/config.json", "--quiet", cliImage}
+	if _, err := pivotutils.RunExt(numRetriesNetCommands, podmanPath, args...); err != nil {
+		return "", err
+	}
+	// Extract oc from cli Container to tmp path
+	cliTmpPath := fmt.Sprintf("%s.tmp", cliRunBinPath)
+	args = []string{"run", "--rm", "--quiet", "--net=host", "--entrypoint=cat", cliImage, cliBinPath, cliTmpPath}
+	if _, err := pivotutils.RunExt(numRetriesNetCommands, podmanPath, args...); err != nil {
+		return "", err
+	}
+	// Chmod tmp path
+	args = []string{"a+x", cliTmpPath}
+	if _, err := pivotutils.RunExt(numRetriesNetCommands, "chmod", args...); err != nil {
+		return "", err
+	}
+	// Move tmp path to /run/bin
+	args = []string{cliTmpPath, cliBinPath}
+	if _, err := pivotutils.RunExt(numRetriesNetCommands, "mv", args...); err != nil {
+		return "", err
+	}
+
+	return cliRunBinPath, nil
+}
+
 // ExtractOSImage extracts OS image content in a temporary directory under /run/machine-os-content/
 // and returns the path on successful extraction.
 func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
@@ -238,11 +272,17 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		return
 	}
 
+	// Extract oc on host if necessary
+	ocPath, err := getOCBinaryPath()
+	if err != nil {
+		return
+	}
+
 	// Extract the image
 	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
-	if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+	if _, err = pivotutils.RunExt(numRetriesNetCommands, ocPath, args...); err != nil {
 		return
 	}
 	return
