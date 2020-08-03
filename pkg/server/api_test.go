@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/coreos/go-semver/semver"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -32,13 +35,118 @@ type scenario struct {
 
 const expectedContentLength int = 32
 
-func setUserAgentOnReq(req *http.Request) *http.Request {
-	req.Header.Set("User-Agent", "Ignition/0.35.0")
+type acceptHeaderScenario struct {
+	name       string
+	input      string
+	headerVals []acceptHeaderValue
+	versionOut *semver.Version
+}
+
+func float32ToPtr(f32 float32) *float32 {
+	return &f32
+}
+
+func TestAcceptHeaders(t *testing.T) {
+	v2_2 := semver.New("2.2.0")
+	v2_4 := semver.New("2.4.0")
+	v3_1 := semver.New("3.1.0")
+	headers := []acceptHeaderScenario{
+		{
+			name:  "IgnV0",
+			input: "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      v2_4,
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      nil, // 1 is not a valid semver
+					QValue:      float32ToPtr(0.5),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v2_2,
+		},
+		{
+			name:  "IgnV2",
+			input: "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      v3_1,
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v3_1,
+		},
+		{
+			name:  "IgnNoVersion",
+			input: "application/vnd.coreos.ignition+json",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      nil,
+					QValue:      float32ToPtr(1.0),
+				},
+			},
+			versionOut: v2_2,
+		},
+		{
+			name:  "Text",
+			input: "text/plain",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "text",
+					MIMESubtype: "plain",
+					SemVer:      nil,
+					QValue:      float32ToPtr(1.0),
+				},
+			},
+			versionOut: v2_2,
+		},
+		{
+			name:       "Invalid",
+			input:      "an-invalid-accept-header",
+			headerVals: nil,
+			versionOut: v2_2,
+		},
+	}
+
+	for _, header := range headers {
+		t.Run(header.name, func(t *testing.T) {
+			headers, _ := parseAcceptHeader(header.input)
+			assert.Equal(t, header.headerVals, headers)
+			version, err := detectSpecVersionFromAcceptHeader(header.input)
+			assert.Equal(t, header.versionOut, version)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func setAcceptHeaderOnReq(req *http.Request) *http.Request {
+	req.Header.Set("Accept", "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1")
 	return req
 }
 
-func setV3UserAgentOnReq(req *http.Request) *http.Request {
-	req.Header.Set("User-Agent", "Ignition/2.3.0")
+func setV3AcceptHeaderOnReq(req *http.Request) *http.Request {
+	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
 	return req
 }
 
@@ -46,7 +154,7 @@ func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
 			name:    "get config path that does not exist",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -60,7 +168,7 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "get config path that exists",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -75,7 +183,7 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "head config path that exists",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -90,7 +198,7 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "post config path that exists",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -104,7 +212,7 @@ func TestAPIHandler(t *testing.T) {
 		},
 		{
 			name:    "get spec v3 config path that exists",
-			request: setV3UserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			request: setV3AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -255,7 +363,7 @@ func TestAPIServer(t *testing.T) {
 	scenarios := []scenario{
 		{
 			name:    "get config path that does not exist",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/does-not-exist", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -269,7 +377,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "get config path that exists",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -284,7 +392,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "head config path that exists",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -299,7 +407,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "post config path that exists",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -313,7 +421,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "get healthz",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/healthz", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -327,7 +435,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "head healthz",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/healthz", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -341,7 +449,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "post healthz",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/healthz", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -355,7 +463,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "get root",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -369,7 +477,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "head root",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodHead, "http://testrequest/", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
@@ -383,7 +491,7 @@ func TestAPIServer(t *testing.T) {
 		},
 		{
 			name:    "post root",
-			request: setUserAgentOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/", nil)),
+			request: setAcceptHeaderOnReq(httptest.NewRequest(http.MethodPost, "http://testrequest/", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
