@@ -25,11 +25,6 @@ func TestUpdateOS(t *testing.T) {
 	// calls to update the host.
 	testClient := RpmOstreeClientMock{
 		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-		RunPivotReturns: []error{
-			// First run will return no error
-			nil,
-			// Second run will return our expected error
-			expectedError},
 	}
 
 	// Create a Daemon instance with mocked clients
@@ -371,18 +366,12 @@ func TestReconcilableSSH(t *testing.T) {
 }
 
 func TestUpdateSSHKeys(t *testing.T) {
-	// expectedError is the error we will use when expecting an error to return
-	expectedError := fmt.Errorf("broken")
 	// testClient is the NodeUpdaterClient mock instance that will front
 	// calls to update the host.
 	testClient := RpmOstreeClientMock{
 		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-		RunPivotReturns: []error{
-			// First run will return no error
-			nil,
-			// Second rrun will return our expected error
-			expectedError},
 	}
+
 	// Create a Daemon instance with mocked clients
 	d := Daemon{
 		mock:              true,
