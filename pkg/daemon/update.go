@@ -1304,11 +1304,7 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 	}
 
 	newURL := config.Spec.OSImageURL
-	osMatch, err := compareOSImageURL(dn.bootedOSImageURL, newURL)
-	if err != nil {
-		return err
-	}
-	if osMatch {
+	if compareOSImageURL(dn.bootedOSImageURL, newURL) {
 		return nil
 	}
 	if dn.recorder != nil {
