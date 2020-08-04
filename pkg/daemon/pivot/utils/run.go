@@ -65,3 +65,16 @@ func RunExt(retries int, command string, args ...string) (string, error) {
 	},
 		command, args...)
 }
+
+// RunExtBackground is like RunExt, but queues the command for "nice" CPU and
+// I/O scheduling.
+func RunExtBackground(retries int, command string, args ...string) (string, error) {
+	args = append([]string{"--", "ionice", "-c", "3", command}, args...)
+	command = "nice"
+	return runExtBackoff(wait.Backoff{
+		Steps:    retries + 1,     // times to try
+		Duration: 5 * time.Second, // sleep between tries
+		Factor:   2,               // factor by which to increase sleep
+	},
+		command, args...)
+}
