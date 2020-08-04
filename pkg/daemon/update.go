@@ -24,12 +24,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 )
 
@@ -217,13 +219,62 @@ func addExtensionsRepo(osImageContentDir string) error {
 	return nil
 }
 
+// podmanRemove kills and removes a container
+func podmanRemove(cid string) {
+	// Ignore errors here
+	exec.Command("podman", "kill", cid).Run()
+	exec.Command("podman", "rm", "-f", cid).Run()
+}
+
+func podmanCopy(imgURL, osImageContentDir string) (err error) {
+	// make sure that osImageContentDir doesn't exist
+	os.RemoveAll(osImageContentDir)
+
+	// Workaround fixes for the environment where oc image extract fails https://bugzilla.redhat.com/show_bug.cgi?id=1862979
+	glog.Infof("Falling back to using podman cp to fetch OS image content")
+
+	// Pull the container image
+	var authArgs []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+	}
+	args := []string{"pull", "-q"}
+	args = append(args, authArgs...)
+	args = append(args, imgURL)
+	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	if err != nil {
+		return
+	}
+
+	// create a container
+	var cidBuf []byte
+	containerName := pivottypes.PivotNamePrefix + string(uuid.NewUUID())
+	cidBuf, err = runGetOut("podman", "create", "--net=none", "--annotation=org.openshift.machineconfigoperator.pivot=true", "--name", containerName, imgURL)
+	if err != nil {
+		return
+	}
+
+	defer func() {
+		// Delete container and remove image once we are done with using rpms available in OSContainer
+		podmanRemove(containerName)
+		exec.Command("podman", "rmi", imgURL).Run()
+		glog.Info("Deleted container and removed OSContainer image")
+	}()
+
+	// copy the content from create container locally into a temp directory under /run/machine-os-content/
+	cid := strings.TrimSpace(string(cidBuf))
+	args = []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
+	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	return
+}
+
 // ExtractOSImage extracts OS image content in a temporary directory under /run/machine-os-content/
 // and returns the path on successful extraction.
 func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
-	var registryConfig []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
-	}
+	// var registryConfig []string
+	// if _, err := os.Stat(kubeletAuthFile); err == nil {
+	// 	registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
+	// }
 	if err = os.MkdirAll(osImageContentBaseDir, 0755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %v", osImageContentBaseDir, err)
 		return
@@ -237,14 +288,20 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		err = fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
 		return
 	}
-
-	// Extract the image
-	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
-	args = append(args, registryConfig...)
-	args = append(args, imgURL)
-	if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+	if err = podmanCopy(imgURL, osImageContentDir); err != nil {
 		return
 	}
+
+	// Extract the image
+	// args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
+	// args = append(args, registryConfig...)
+	// args = append(args, imgURL)
+	// if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+	// 	if err = podmanCopy(imgURL, osImageContentDir); err != nil {
+	// 		return
+	// 	}
+	// }
+
 	return
 }
 
