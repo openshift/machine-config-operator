@@ -10,6 +10,8 @@ import (
 	"github.com/clarketm/json"
 	fcctBase "github.com/coreos/fcct/base"
 	fcctBase0_2 "github.com/coreos/fcct/base/v0_2"
+	fcctCfgCommon "github.com/coreos/fcct/config/common"
+	fcctCfg1_1 "github.com/coreos/fcct/config/v1_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v31tov22"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
@@ -33,6 +35,10 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
+
+var fcctTranslateOptions fcctBase.TranslateOptions = fcctBase.TranslateOptions{
+	NoResourceAutoCompression: true,
+}
 
 // MergeMachineConfigs combines multiple machineconfig objects into one object.
 // It sorts all the configs in increasing order of their name.
@@ -285,9 +291,27 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	return nil
 }
 
-// IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
+func isJSON(data []byte) bool {
+	var js json.RawMessage
+	return json.Unmarshal(data, &js) == nil
+}
+
+// IgnParseWrapper parses rawIgn for CoreOS (FCCT) configs as well as V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
+	if isJSON := isJSON(rawIgn); !isJSON {
+		// try transpiling FCCT to Ign spec v3.1
+		rawFcctIgnCfgV3_1, rptFcct, errFcct := fcctCfg1_1.TranslateBytes(rawIgn, fcctCfgCommon.TranslateOptions{BaseOptions: fcctTranslateOptions})
+		if errFcct != nil || rptFcct.IsFatal() {
+			return ign3types.Config{}, errors.Errorf("transpiling FCCT config failed with error: %v\nReport: %v", errFcct, rptFcct)
+		}
+		fcctIgnCfgV3_1, rptFcctIgnV3_1, errFcctIgnV3_1 := ign3.Parse(rawFcctIgnCfgV3_1)
+		if errFcctIgnV3_1 != nil || rptFcctIgnV3_1.IsFatal() {
+			return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.1 transpiled from FCCT failed with error: %v\nReport: %v", errFcctIgnV3_1, rptFcctIgnV3_1)
+		}
+		return fcctIgnCfgV3_1, nil
+	}
+
 	ignCfgV3_1, rptV3_1, errV3_1 := ign3.Parse(rawIgn)
 	if errV3_1 == nil && !rptV3_1.IsFatal() {
 		return ignCfgV3_1, nil
@@ -438,9 +462,6 @@ func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Co
 func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error) {
 	overwrite := true
 	outConfig := ign3types.Config{}
-	fcctTranslateOptions := fcctBase.TranslateOptions{
-		NoResourceAutoCompression: true,
-	}
 	// Convert data to Ignition resources
 	for _, d := range files {
 		f := new(fcctBase0_2.File)

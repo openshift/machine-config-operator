@@ -53,6 +53,7 @@ require (
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
+	gopkg.in/yaml.v2 v2.3.0
 	k8s.io/api v0.19.2
 	k8s.io/apiextensions-apiserver v0.19.0
 	k8s.io/apimachinery v0.19.2

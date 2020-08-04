@@ -5,6 +5,7 @@ import (
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -123,6 +124,15 @@ func CreateMachineConfigFromIgnition(ignCfg interface{}) *mcfgv1.MachineConfig {
 // MarshalOrDie returns a marshalled interface or panics
 func MarshalOrDie(input interface{}) []byte {
 	bytes, err := json.Marshal(input)
+	if err != nil {
+		panic(err)
+	}
+	return bytes
+}
+
+// YamlMarshalOrDie returns a marshalled interface or panics
+func YamlMarshalOrDie(input interface{}) []byte {
+	bytes, err := yaml.Marshal(input)
 	if err != nil {
 		panic(err)
 	}

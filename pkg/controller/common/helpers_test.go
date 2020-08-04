@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/clarketm/json"
+	fcctBase0_2 "github.com/coreos/fcct/base/v0_2"
+	fcctCfg1_1 "github.com/coreos/fcct/config/v1_1"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
@@ -144,6 +146,20 @@ func TestParseAndConvert(t *testing.T) {
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.NotNil(t, err)
 	assert.Equal(t, ign3types.Config{}, convertedIgn)
+
+	// Make a FCCT comp config
+	testFcctConfig := fcctCfg1_1.Config{}
+	testFcctConfig.Version = "1.1.0"
+	tempFcctUser := fcctBase0_2.PasswdUser{Name: "core", SSHAuthorizedKeys: []fcctBase0_2.SSHAuthorizedKey{"5678", "abc"}}
+	testFcctConfig.Passwd.Users = []fcctBase0_2.PasswdUser{tempFcctUser}
+
+	// turn FCCT config into a raw []byte
+	rawFcct := helpers.YamlMarshalOrDie(testFcctConfig)
+	// check that it was parsed successfully
+	convertedFcct, err := ParseAndConvertConfig(rawFcct)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = "3.1.0"
+	assert.Equal(t, testIgn3Config, convertedFcct)
 }
 
 func TestMergeMachineConfigs(t *testing.T) {
