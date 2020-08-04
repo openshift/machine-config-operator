@@ -175,16 +175,15 @@ func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed b
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
 	customURL := fmt.Sprintf("pivot://%s", container)
-	glog.Infof("Executing rebase from %s and checksum %s", customURL, ostreeCsum)
+	glog.Infof("Executing rebase from repo path %s with customImageURL %s and checksum %s", repo, customURL, ostreeCsum)
 
-	// RPM-OSTree can now directly slurp from the mounted container!
-	// https://github.com/projectatomic/rpm-ostree/pull/1732
-	out, err := exec.Command("rpm-ostree", "rebase", "--experimental",
-		fmt.Sprintf("%s:%s", repo, ostreeCsum),
-		"--custom-origin-url", customURL,
-		"--custom-origin-description", "Managed by machine-config-operator").CombinedOutput()
-	if err != nil {
-		err = errors.Wrapf(err, "failed to run rpm-ostree rebase: %v", string(out))
+	args := []string{"rebase", "--experimental", fmt.Sprintf("%s:%s", repo, ostreeCsum),
+		"--custom-origin-url", customURL, "--custom-origin-description", "Managed by machine-config-operator"}
+
+	var out []byte
+	if out, err = runGetOut("rpm-ostree", args...); err != nil {
+		// capture stdout output as well in case of error
+		err = errors.Wrapf(err, "with stdout output: %v", string(out))
 		return
 	}
 

@@ -230,9 +230,6 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	// make sure that osImageContentDir doesn't exist
 	os.RemoveAll(osImageContentDir)
 
-	// Workaround fixes for the environment where oc image extract fails https://bugzilla.redhat.com/show_bug.cgi?id=1862979
-	glog.Infof("Falling back to using podman cp to fetch OS image content")
-
 	// Pull the container image
 	var authArgs []string
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
@@ -265,16 +262,24 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	cid := strings.TrimSpace(string(cidBuf))
 	args = []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
 	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+
+	// Set selinux context to var_run_t to avoid selinux denial
+	args = []string{"-R", "-t", "var_run_t", osImageContentDir}
+	_, err = runGetOut("chcon", args...)
+	if err != nil {
+		glog.Infof("Error changing selinux context on path %s  %v", osImageContentDir, err)
+		return
+	}
 	return
 }
 
 // ExtractOSImage extracts OS image content in a temporary directory under /run/machine-os-content/
 // and returns the path on successful extraction.
 func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
-	// var registryConfig []string
-	// if _, err := os.Stat(kubeletAuthFile); err == nil {
-	// 	registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
-	// }
+	var registryConfig []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
+	}
 	if err = os.MkdirAll(osImageContentBaseDir, 0755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %v", osImageContentBaseDir, err)
 		return
@@ -288,19 +293,19 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		err = fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
 		return
 	}
-	if err = podmanCopy(imgURL, osImageContentDir); err != nil {
-		return
-	}
 
 	// Extract the image
-	// args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
-	// args = append(args, registryConfig...)
-	// args = append(args, imgURL)
-	// if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
-	// 	if err = podmanCopy(imgURL, osImageContentDir); err != nil {
-	// 		return
-	// 	}
-	// }
+	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
+	args = append(args, registryConfig...)
+	args = append(args, imgURL)
+	if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+		// Workaround fixes for the environment where oc image extract fails.
+		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
+		glog.Infof("Falling back to using podman cp to fetch OS image content")
+		if err = podmanCopy(imgURL, osImageContentDir); err != nil {
+			return
+		}
+	}
 
 	return
 }
