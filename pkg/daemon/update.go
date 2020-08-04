@@ -238,7 +238,7 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	args := []string{"pull", "-q"}
 	args = append(args, authArgs...)
 	args = append(args, imgURL)
-	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
 	if err != nil {
 		return
 	}
@@ -257,7 +257,7 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	// copy the content from create container locally into a temp directory under /run/machine-os-content/
 	cid := strings.TrimSpace(string(cidBuf))
 	args = []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
-	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
 
 	// Set selinux context to var_run_t to avoid selinux denial
 	args = []string{"-R", "-t", "var_run_t", osImageContentDir}
@@ -294,7 +294,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
-	if _, err = pivotutils.RunExt(cmdRetriesCount, "oc", args...); err != nil {
+	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
 		// Workaround fixes for the environment where oc image extract fails.
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
 		glog.Infof("Falling back to using podman cp to fetch OS image content")
