@@ -15,7 +15,7 @@ require (
 	github.com/containers/image v3.0.2+incompatible
 	github.com/containers/image/v5 v5.5.1
 	github.com/containers/storage v1.20.2
-	github.com/coreos/fcct v0.5.0
+	github.com/coreos/fcct v0.7.0
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5

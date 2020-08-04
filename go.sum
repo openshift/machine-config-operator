@@ -155,8 +155,8 @@ github.com/containers/storage v1.20.2 h1:tw/uKRPDnmVrluIzer3dawTFG/bTJLP8IEUyHFh
 github.com/containers/storage v1.20.2/go.mod h1:oOB9Ie8OVPojvoaKWEGSEtHbXUAs+tSyr7RO7ZGteMc=
 github.com/coreos/bbolt v1.3.2/go.mod h1:iRUV2dpdMOn7Bo10OQBFzIJO9kkE559Wcmn+qkEiiKk=
 github.com/coreos/etcd v3.3.10+incompatible/go.mod h1:uF7uidLiAD3TWHmW31ZFd/JWoc32PjwdhPthX9715RE=
-github.com/coreos/fcct v0.5.0 h1:f/z+MCoR2vULes+MyoPEApQ6iluy/JbXoRi6dahPItQ=
-github.com/coreos/fcct v0.5.0/go.mod h1:cbE+j77YSQwFB2fozWVB3qsI2Pi3YiVEbDz/b6Yywdo=
+github.com/coreos/fcct v0.7.0 h1:g2RmLSxURkD9xqO3ZUIumeCsHCxUe9+oLbbTuai2FeI=
+github.com/coreos/fcct v0.7.0/go.mod h1:boOA3u8OgiHWoiSOC9ikl4u8/3GuO7uQco/9bdwMeFQ=
 github.com/coreos/go-oidc v2.1.0+incompatible/go.mod h1:CgnwVTmzoESiwO9qyAFEMiHoZ1nMCKZlZ9V6mm3/LKc=
 github.com/coreos/go-semver v0.2.0/go.mod h1:nnelYz7RCh+5ahJtPPxZlU+153eP4D4r3EedlOD2RNk=
 github.com/coreos/go-semver v0.3.0 h1:wkHLiw0WNATZnSG7epLsujiMCgPAc9xhjJ4tgnAxmfM=
@@ -172,7 +172,6 @@ github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5 h1:rBga8xIJ7M
 github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5/go.mod h1:LNu0WTt8iVH/WJH15R/SjZw7AdyY2qAyf9ILZTCBvho=
 github.com/coreos/ignition v0.35.0 h1:UFodoYq1mOPrbEjtxIsZbThcDyQwAI1owczRDqWmKkQ=
 github.com/coreos/ignition v0.35.0/go.mod h1:WJQapxzEn9DE0ryxsGvm8QnBajm/XsS/PkrDqSpz+bA=
-github.com/coreos/ignition/v2 v2.1.1/go.mod h1:RqmqU64zxarUJa3l4cHtbhcSwfQLpUhv0WVziZwoXvE=
 github.com/coreos/ignition/v2 v2.3.0 h1:TK+STbzVe6KZp4tQ2IaNSRMiWX4/diNngep1F7tP7Zk=
 github.com/coreos/ignition/v2 v2.3.0/go.mod h1:85dmM/CERMZXNrJsXqtNLIxR/dn8G9qlL1CmEjCugp0=
 github.com/coreos/ignition/v2 v2.7.0 h1:JCKxJllVtnk1lQY1uisxrtFSHG5L2NI1LRzc8wBEk84=

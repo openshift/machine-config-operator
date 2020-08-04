@@ -1,4 +1,4 @@
-// Copyright 2019 Red Hat, Inc
+// Copyright 2020 Red Hat, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.)
 
-package v0_1
+package base
 
-import (
-	"errors"
-
-	"github.com/coreos/vcontext/path"
-	"github.com/coreos/vcontext/report"
-)
-
-var (
-	ErrInlineAndSource = errors.New("inline cannot be specified if source is specified")
-)
-
-func (f FileContents) Validate(c path.ContextPath) (r report.Report) {
-	if f.Inline != nil && f.Source != nil {
-		r.AddOnError(c.Append("inline"), ErrInlineAndSource)
-	}
-	return
+type TranslateOptions struct {
+	FilesDir                  string // allow embedding local files relative to this directory
+	NoResourceAutoCompression bool   // skip automatic compression of inline/local resources
 }

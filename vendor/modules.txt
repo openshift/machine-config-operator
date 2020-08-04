@@ -73,8 +73,9 @@ github.com/containers/ocicrypt/spec
 # github.com/containers/storage v1.20.2
 github.com/containers/storage/pkg/config
 github.com/containers/storage/pkg/homedir
-# github.com/coreos/fcct v0.5.0
-github.com/coreos/fcct/base/v0_1
+# github.com/coreos/fcct v0.7.0
+github.com/coreos/fcct/base
+github.com/coreos/fcct/base/v0_2
 github.com/coreos/fcct/translate
 # github.com/coreos/go-semver v0.3.0
 github.com/coreos/go-semver/semver

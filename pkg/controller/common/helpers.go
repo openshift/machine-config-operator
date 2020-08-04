@@ -8,7 +8,8 @@ import (
 	"sort"
 
 	"github.com/clarketm/json"
-	fcctbase "github.com/coreos/fcct/base/v0_1"
+	fcctBase "github.com/coreos/fcct/base"
+	fcctBase0_2 "github.com/coreos/fcct/base/v0_2"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v31tov22"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
@@ -437,39 +438,40 @@ func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Co
 func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error) {
 	overwrite := true
 	outConfig := ign3types.Config{}
+	fcctTranslateOptions := fcctBase.TranslateOptions{
+		NoResourceAutoCompression: true,
+	}
 	// Convert data to Ignition resources
 	for _, d := range files {
-		f := new(fcctbase.File)
+		f := new(fcctBase0_2.File)
 		if err := yaml.Unmarshal([]byte(d), f); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
 		}
 		f.Overwrite = &overwrite
 
 		// Add the file to the config
-		var ctCfg fcctbase.Config
+		var ctCfg fcctBase0_2.Config
 		ctCfg.Storage.Files = append(ctCfg.Storage.Files, *f)
-		ign3_0config, tSet, err := ctCfg.ToIgn3_0()
-		if err != nil {
-			return nil, fmt.Errorf("failed to transpile config to Ignition config %s\nTranslation set: %v", err, tSet)
+		ign3_1config, tSet, report := ctCfg.ToIgn3_1(fcctTranslateOptions)
+		if report.IsFatal() {
+			return nil, fmt.Errorf("failed to transpile config to Ignition config.\nReport: %v\nTranslation set: %v", report, tSet)
 		}
-		ign3_1config := translate3.Translate(ign3_0config)
 		outConfig = ign3.Merge(outConfig, ign3_1config)
 	}
 
 	for _, d := range units {
-		u := new(fcctbase.Unit)
+		u := new(fcctBase0_2.Unit)
 		if err := yaml.Unmarshal([]byte(d), u); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
 		}
 
 		// Add the unit to the config
-		var ctCfg fcctbase.Config
+		var ctCfg fcctBase0_2.Config
 		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
-		ign3_0config, tSet, err := ctCfg.ToIgn3_0()
-		if err != nil {
-			return nil, fmt.Errorf("failed to transpile config to Ignition config %s\nTranslation set: %v", err, tSet)
+		ign3_1config, tSet, report := ctCfg.ToIgn3_1(fcctTranslateOptions)
+		if report.IsFatal() {
+			return nil, fmt.Errorf("failed to transpile config to Ignition config.\nReport: %v\nTranslation set: %v", report, tSet)
 		}
-		ign3_1config := translate3.Translate(ign3_0config)
 		outConfig = ign3.Merge(outConfig, ign3_1config)
 	}
 
