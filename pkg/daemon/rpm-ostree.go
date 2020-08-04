@@ -179,11 +179,12 @@ func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed b
 
 	// RPM-OSTree can now directly slurp from the mounted container!
 	// https://github.com/projectatomic/rpm-ostree/pull/1732
-	err = exec.Command("rpm-ostree", "rebase", "--experimental",
+	out, err := exec.Command("rpm-ostree", "rebase", "--experimental",
 		fmt.Sprintf("%s:%s", repo, ostreeCsum),
 		"--custom-origin-url", customURL,
-		"--custom-origin-description", "Managed by machine-config-operator").Run()
+		"--custom-origin-description", "Managed by machine-config-operator").CombinedOutput()
 	if err != nil {
+		err = errors.Wrapf(err, "failed to run rpm-ostree rebase: %v", string(out))
 		return
 	}
 
