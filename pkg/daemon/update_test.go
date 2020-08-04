@@ -147,7 +147,7 @@ func TestReconcilable(t *testing.T) {
 	checkIrreconcilableResults(t, "PasswdGroups", isReconcilable)
 }
 
-func TestmachineConfigDiff(t *testing.T) {
+func TestMachineConfigDiff(t *testing.T) {
 	oldIgnCfg := ctrlcommon.NewIgnConfig()
 	oldConfig := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
 	oldConfig.ObjectMeta = metav1.ObjectMeta{Name: "oldconfig"}
