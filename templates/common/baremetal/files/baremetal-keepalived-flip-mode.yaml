@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/keepalived/monitor.conf"
+contents:
+  inline: |
+    mode: unicast
