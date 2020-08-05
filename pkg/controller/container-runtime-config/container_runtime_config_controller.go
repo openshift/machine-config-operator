@@ -98,10 +98,6 @@ type Controller struct {
 
 	queue    workqueue.RateLimitingInterface
 	imgQueue workqueue.RateLimitingInterface
-
-	// we need this method to mock out patch calls in unit until https://github.com/openshift/machine-config-operator/pull/611#issuecomment-481397185
-	// which is probably going to be in kube 1.14
-	patchContainerRuntimeConfigsFunc func(string, []byte) error
 }
 
 // New returns a new container runtime config controller
@@ -169,8 +165,6 @@ func New(
 
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
-
-	ctrl.patchContainerRuntimeConfigsFunc = ctrl.patchContainerRuntimeConfigs
 
 	return ctrl
 }
@@ -846,7 +840,7 @@ func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.Co
 		if err != nil {
 			return err
 		}
-		return ctrl.patchContainerRuntimeConfigsFunc(ctrCfg.Name, patch)
+		return ctrl.patchContainerRuntimeConfigs(ctrCfg.Name, patch)
 	})
 }
 
@@ -882,7 +876,7 @@ func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.Cont
 		if err != nil {
 			return err
 		}
-		return ctrl.patchContainerRuntimeConfigsFunc(ctrCfg.Name, patch)
+		return ctrl.patchContainerRuntimeConfigs(ctrCfg.Name, patch)
 	})
 }
 

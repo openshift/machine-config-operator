@@ -87,10 +87,6 @@ type Controller struct {
 
 	queue        workqueue.RateLimitingInterface
 	featureQueue workqueue.RateLimitingInterface
-
-	// we need this method to mock out patch calls in unit until https://github.com/openshift/machine-config-operator/pull/611#issuecomment-481397185
-	// which is probably going to be in kube 1.14
-	patchKubeletConfigsFunc func(string, []byte) error
 }
 
 // New returns a new kubelet config controller
@@ -141,8 +137,6 @@ func New(
 
 	ctrl.featLister = featInformer.Lister()
 	ctrl.featListerSynced = featInformer.Informer().HasSynced
-
-	ctrl.patchKubeletConfigsFunc = ctrl.patchKubeletConfigs
 
 	return ctrl
 }
@@ -550,7 +544,7 @@ func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) 
 		if err != nil {
 			return err
 		}
-		return ctrl.patchKubeletConfigsFunc(newcfg.Name, patch)
+		return ctrl.patchKubeletConfigs(newcfg.Name, patch)
 	})
 }
 
@@ -594,7 +588,7 @@ func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc
 		if err != nil {
 			return err
 		}
-		return ctrl.patchKubeletConfigsFunc(newcfg.Name, patch)
+		return ctrl.patchKubeletConfigs(newcfg.Name, patch)
 	})
 }
 

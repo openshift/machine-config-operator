@@ -6,8 +6,11 @@ import (
 	"testing"
 	"time"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/golang/glog"
-
+	osev1 "github.com/openshift/api/config/v1"
+	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
+	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,11 +25,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
-	osev1 "github.com/openshift/api/config/v1"
-	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
-
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
-	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
@@ -154,11 +152,6 @@ func (f *fixture) newController() *Controller {
 	c.ccListerSynced = alwaysReady
 	c.featListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
-
-	c.patchKubeletConfigsFunc = func(name string, patch []byte) error {
-		f.client.Invokes(core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, name, types.MergePatchType, patch), nil)
-		return nil
-	}
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
