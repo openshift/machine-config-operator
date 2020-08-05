@@ -251,12 +251,8 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 		return
 	}
 
-	defer func() {
-		// Delete container and remove image once we are done with using rpms available in OSContainer
-		podmanRemove(containerName)
-		exec.Command("podman", "rmi", imgURL).Run()
-		glog.Info("Deleted container and removed OSContainer image")
-	}()
+	// only delete created container, we will delete container image later as we may need it for podmanInspect()
+	defer podmanRemove(containerName)
 
 	// copy the content from create container locally into a temp directory under /run/machine-os-content/
 	cid := strings.TrimSpace(string(cidBuf))
