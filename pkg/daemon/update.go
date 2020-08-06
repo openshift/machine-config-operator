@@ -294,7 +294,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
 	args = append(args, imgURL)
-	if _, err = pivotutils.RunExt(numRetriesNetCommands, "oc", args...); err != nil {
+	if _, err = pivotutils.RunExt(cmdRetriesCount, "oc", args...); err != nil {
 		// Workaround fixes for the environment where oc image extract fails.
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
 		glog.Infof("Falling back to using podman cp to fetch OS image content")

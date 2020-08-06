@@ -13,11 +13,16 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	// Number of retry we want to perform
+	cmdRetriesCount = 2
+)
+
 func retryIfNecessary(ctx context.Context, operation func() error) error {
 	err := operation()
-	for attempt := 0; err != nil && attempt < numRetriesNetCommands; attempt++ {
+	for attempt := 0; err != nil && attempt < cmdRetriesCount; attempt++ {
 		delay := time.Duration(int(math.Pow(2, float64(attempt)))) * time.Second
-		fmt.Printf("Warning: failed, retrying in %s ... (%d/%d)", delay, attempt+1, numRetriesNetCommands)
+		fmt.Printf("Warning: failed, retrying in %s ... (%d/%d)", delay, attempt+1, cmdRetriesCount)
 		select {
 		case <-time.After(delay):
 			break
