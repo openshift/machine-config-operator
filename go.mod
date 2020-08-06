@@ -40,6 +40,7 @@ require (
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.9
 	github.com/magiconair/properties v1.8.1 // indirect
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v3.9.1-0.20191111211345-a27ff30ebf09+incompatible
 	github.com/openshift/client-go v0.0.0-20200320150128-a906f3d8e723
 	github.com/openshift/library-go v0.0.0-20200320155611-2a351bebf158
