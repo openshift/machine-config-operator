@@ -5,4 +5,5 @@ dropins:
     # See https://github.com/openshift/machine-config-operator/issues/1897
     [Service]
     Nice=10
-    IOSchedulingClass=idle
+    IOSchedulingClass=best-effort
+    IOSchedulingPriority=6
