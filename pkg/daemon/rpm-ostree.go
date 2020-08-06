@@ -6,9 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/containers/image/v5/types"
 	"github.com/golang/glog"
+	"github.com/opencontainers/go-digest"
+	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
 	"github.com/pkg/errors"
 )
 
@@ -37,6 +40,21 @@ type RpmOstreeDeployment struct {
 	Booted       bool     `json:"booted"`
 	Origin       string   `json:"origin"`
 	CustomOrigin []string `json:"custom-origin"`
+}
+
+// imageInspection is a public implementation of
+// https://github.com/containers/skopeo/blob/82186b916faa9c8c70cfa922229bafe5ae024dec/cmd/skopeo/inspect.go#L20-L31
+type imageInspection struct {
+	Name          string `json:",omitempty"`
+	Tag           string `json:",omitempty"`
+	Digest        digest.Digest
+	RepoDigests   []string
+	Created       *time.Time
+	DockerVersion string
+	Labels        map[string]string
+	Architecture  string
+	Os            string
+	Layers        []string
 }
 
 // NodeUpdaterClient is an interface describing how to interact with the host
@@ -111,8 +129,44 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 	return osImageURL, bootedDeployment.Version, nil
 }
 
+func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
+	// Pull the container image if not already available
+	var authArgs []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+	}
+	args := []string{"pull", "-q"}
+	args = append(args, authArgs...)
+	args = append(args, imgURL)
+	_, err = pivotutils.RunExt(numRetriesNetCommands, "podman", args...)
+	if err != nil {
+		return
+	}
+
+	inspectArgs := []string{"inspect", "--type=image"}
+	inspectArgs = append(inspectArgs, fmt.Sprintf("%s", imgURL))
+	var output []byte
+	output, err = runGetOut("podman", inspectArgs...)
+	if err != nil {
+		return
+	}
+	var imagedataArray []imageInspection
+	err = json.Unmarshal(output, &imagedataArray)
+	if err != nil {
+		err = errors.Wrapf(err, "unmarshaling podman inspect")
+		return
+	}
+	imgdata = &imagedataArray[0]
+	return
+
+}
+
 // Rebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed bool, err error) {
+func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool, err error) {
+	var (
+		ostreeCsum    string
+		ostreeVersion string
+	)
 	defaultDeployment, err := r.GetBootedDeployment()
 	if err != nil {
 		return
@@ -131,18 +185,29 @@ func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed b
 	}
 
 	var imageData *types.ImageInspectInfo
-	imageData, err = imageInspect(container)
-	if err != nil {
-		return
+	if imageData, err = imageInspect(imgURL); err != nil {
+		if err != nil {
+			var podmanImgData *imageInspection
+			glog.Infof("Falling back to using podman inspect")
+			if podmanImgData, err = podmanInspect(imgURL); err != nil {
+				return
+			}
+			ostreeCsum = podmanImgData.Labels["com.coreos.ostree-commit"]
+			ostreeVersion = podmanImgData.Labels["version"]
+		}
+	} else {
+		ostreeCsum = imageData.Labels["com.coreos.ostree-commit"]
+		ostreeVersion = imageData.Labels["version"]
 	}
+	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
+	defer exec.Command("podman", "rmi", imgURL).Run()
 
 	repo := fmt.Sprintf("%s/srv/repo", osImageContentDir)
 
 	// Now we need to figure out the commit to rebase to
 	// Commit label takes priority
-	ostreeCsum, ok := imageData.Labels["com.coreos.ostree-commit"]
-	if ok {
-		if ostreeVersion, ok := imageData.Labels["version"]; ok {
+	if ostreeCsum != "" {
+		if ostreeVersion != "" {
 			glog.Infof("Pivoting to: %s (%s)", ostreeVersion, ostreeCsum)
 		} else {
 			glog.Infof("Pivoting to: %s", ostreeCsum)
@@ -174,16 +239,16 @@ func (r *RpmOstreeClient) Rebase(container, osImageContentDir string) (changed b
 	}
 
 	// This will be what will be displayed in `rpm-ostree status` as the "origin spec"
-	customURL := fmt.Sprintf("pivot://%s", container)
-	glog.Infof("Executing rebase from %s and checksum %s", customURL, ostreeCsum)
+	customURL := fmt.Sprintf("pivot://%s", imgURL)
+	glog.Infof("Executing rebase from repo path %s with customImageURL %s and checksum %s", repo, customURL, ostreeCsum)
 
-	// RPM-OSTree can now directly slurp from the mounted container!
-	// https://github.com/projectatomic/rpm-ostree/pull/1732
-	err = exec.Command("rpm-ostree", "rebase", "--experimental",
-		fmt.Sprintf("%s:%s", repo, ostreeCsum),
-		"--custom-origin-url", customURL,
-		"--custom-origin-description", "Managed by machine-config-operator").Run()
-	if err != nil {
+	args := []string{"rebase", "--experimental", fmt.Sprintf("%s:%s", repo, ostreeCsum),
+		"--custom-origin-url", customURL, "--custom-origin-description", "Managed by machine-config-operator"}
+
+	var out []byte
+	if out, err = runGetOut("rpm-ostree", args...); err != nil {
+		// capture stdout output as well in case of error
+		err = errors.Wrapf(err, "with stdout output: %v", string(out))
 		return
 	}
 
