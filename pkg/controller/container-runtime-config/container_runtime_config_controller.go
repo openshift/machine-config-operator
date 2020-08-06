@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -482,16 +481,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 	// If we have seen this generation and the sync didn't fail, then skip
 	if cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
-		// This is the scenario for upgrades where we are moving from crio.conf to crio.conf.d
-		// this can be removed in the next release
-		fromOldCrio, err := ctrl.isUpdatingFromOldCRIOConf(cfg)
-		if err != nil {
-			return fmt.Errorf("error checking if we are updating from crio.conf: %v", err)
-		}
-		// We want to trigger a resync if we are updating from a version where crio.conf.d didn't exist
-		if !fromOldCrio {
-			return nil
-		}
+		return nil
 	}
 
 	// Validate the ContainerRuntimeConfig CR
@@ -904,37 +894,4 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 	}
 
 	return pools, nil
-}
-
-// isUpdatingFromOldCRIOConf returns true if the mc associated with cfg has /etc/crio/crio.conf as
-// its file path.
-func (ctrl *Controller) isUpdatingFromOldCRIOConf(cfg *mcfgv1.ContainerRuntimeConfig) (bool, error) {
-	mcpPools, err := ctrl.getPoolsForContainerRuntimeConfig(cfg)
-	if err != nil {
-		return false, fmt.Errorf("could not get list of machine config pools: %v", err)
-	}
-	if len(mcpPools) == 0 {
-		return false, nil
-	}
-
-	for _, pool := range mcpPools {
-		managedKey := getManagedKeyCtrCfg(pool)
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
-		if err != nil && !errors.IsNotFound(err) {
-			return false, fmt.Errorf("could not get mc with name %q: %v", managedKey, err)
-		}
-		if mc.Spec.Config.Raw != nil {
-			conf, _, err := ign.Parse(mc.Spec.Config.Raw)
-			if err != nil {
-				return false, fmt.Errorf("error parsing ignition: %v", err)
-			}
-			// If the filepath matches /etc/crio/crio.conf return true
-			for _, file := range conf.Storage.Files {
-				if file.Path == "/etc/crio/crio.conf" {
-					return true, nil
-				}
-			}
-		}
-	}
-	return false, nil
 }
