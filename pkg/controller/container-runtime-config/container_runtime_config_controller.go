@@ -487,6 +487,11 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return nil
 	}
 
+	// If we have seen this generation and the sync didn't fail, then skip
+	if cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
+		return nil
+	}
+
 	// Validate the ContainerRuntimeConfig CR
 	if err := validateUserContainerRuntimeConfig(cfg); err != nil {
 		return ctrl.syncStatusOnly(cfg, err)
