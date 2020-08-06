@@ -29,6 +29,7 @@ contents:
     ]
     hooks_dir = [
         "/etc/containers/oci/hooks.d",
+        "/run/containers/oci/hooks.d",
     ]
     manage_ns_lifecycle = true
 
