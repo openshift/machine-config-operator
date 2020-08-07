@@ -629,11 +629,14 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
 	}
 	if desired.Spec.FIPS == nodeFIPS {
+		if desired.Spec.FIPS {
+			glog.Infof("FIPS is configured and enabled")
+		}
 		// Check if FIPS on the system is at the desired setting
 		current.Spec.FIPS = nodeFIPS
 		return nil
 	}
-	return errors.New("detected change to FIPS flag. Refusing to modify FIPS on a running cluster")
+	return errors.New("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
 }
 
 // checks for white-space characters in "C" and "POSIX" locales.
