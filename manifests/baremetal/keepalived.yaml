@@ -110,7 +110,7 @@ spec:
     - "--cluster-config"
     - "/opt/openshift/manifests/cluster-config.yaml"
     - "--check-interval"
-    - "5s"
+    - "4s"
     resources:
       requests:
         cpu: 100m

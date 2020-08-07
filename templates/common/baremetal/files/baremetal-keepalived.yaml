@@ -107,6 +107,8 @@ contents:
         - "{{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
         - "--ingress-vip"
         - "{{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+        - "--check-interval"
+        - "15s"
         resources:
           requests:
             cpu: 100m
