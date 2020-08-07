@@ -95,7 +95,7 @@ contents:
         image: {{ .Images.baremetalRuntimeCfgImage }}
         env:
           - name: ENABLE_UNICAST
-            value: "yes"
+            value: "no"
           - name: IS_BOOTSTRAP
             value: "no"
         command:
