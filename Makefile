@@ -55,9 +55,6 @@ go-deps:
 	go mod tidy
 	go mod vendor
 	go mod verify
-	# make scripts executable
-	chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
-	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 install-tools:
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
@@ -73,8 +70,7 @@ verify: install-tools
 	gosec -severity high --confidence medium -exclude G204 -quiet ./...
 	# Remove the vendor/k8s.io/code-generator vendor hack
 	# once code-generator plays nice with go modules, see
-	# https://github.com/kubernetes/kubernetes/issues/82531 and
-	# https://github.com/kubernetes/kubernetes/pull/85559
+	# https://github.com/kubernetes/kubernetes/issues/82531
 	pushd vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh
