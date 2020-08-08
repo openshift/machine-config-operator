@@ -27,7 +27,7 @@ require (
 	github.com/elazarl/goproxy/ext v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
 	github.com/ghodss/yaml v1.0.0
-	github.com/go-bindata/go-bindata v3.1.1+incompatible
+	github.com/go-bindata/go-bindata/v3 v3.1.3
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20191002201903-404acd9df4cc // indirect
 	github.com/golang/mock v1.3.1 // indirect
