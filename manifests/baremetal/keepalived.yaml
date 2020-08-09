@@ -15,7 +15,7 @@ spec:
       path: "/etc/kubernetes/static-pod-resources/keepalived"
   - name: kubeconfig
     hostPath:
-      path: "/etc/kubernetes/kubeconfig"
+      path: "/etc/kubernetes"
   - name: conf-dir
     empty-dir: {}
   - name: manifests
@@ -119,23 +119,13 @@ spec:
     - name: resource-dir
       mountPath: "/config"
     - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
+      mountPath: "/etc/kubernetes"
     - name: conf-dir
       mountPath: "/etc/keepalived"
     - name: run-dir
       mountPath: "/var/run/keepalived"
     - name: manifests
       mountPath: "/opt/openshift/manifests"
-    readinessProbe:
-      httpGet:
-        path: /readyz
-        port: 6443
-        scheme: HTTPS
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
     imagePullPolicy: IfNotPresent
   hostNetwork: true
   tolerations:
