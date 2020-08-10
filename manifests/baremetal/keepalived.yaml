@@ -17,7 +17,8 @@ spec:
     hostPath:
       path: "/etc/kubernetes/kubeconfig"
   - name: conf-dir
-    empty-dir: {}
+    hostPath:
+      path: "/etc/keepalived"
   - name: manifests
     hostPath:
       path: "/opt/openshift/manifests"
