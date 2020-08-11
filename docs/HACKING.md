@@ -324,3 +324,28 @@ rpm-ostree usroverlay
 7) ``$ systemctl daemon-reload``
 8) ``$ systemctl restart kubelet``
 9) ``$ oc get nodes`` to see the updated kubelet version
+
+## Accessing the MachineConfigServer Directly
+
+Sometimes you want to be able to make raw `curl` connections to the MachineConfigServer (MCS)
+during testing (i.e. https://github.com/openshift/machine-config-operator/pull/1960).
+
+1) Access one of the nodes
+2) Adjust the `iptables` rules
+3) Use `curl` to talk to the MCS port (22623)
+
+```bash
+$ oc debug node/ip-10-0-147-70.ec2.internal
+Starting pod/ip-10-0-147-70ec2internal-debug ...
+To use host binaries, run `chroot /host`
+Pod IP: 10.0.147.70
+If you don't see a command prompt, try pressing enter.
+sh-4.2# chroot /host
+sh-4.4# /sbin/iptables -D OPENSHIFT-BLOCK-OUTPUT 1
+sh-4.4# curl -k https://<api-server-url>:22623/config/worker
+...
+sh-4.4# curl -H "Accept: application/vnd.coreos.ignition+json; version=3.1.0" -k https://<api-server-url>/config/worker
+...
+```
+
+See the [MachineConfigServer](MachineConfigServer.md) docs for more information.
