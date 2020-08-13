@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang/glog"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -477,6 +478,102 @@ func TestKubeletConfigBlacklistedOptions(t *testing.T) {
 				},
 				EvictionSoftGracePeriod: map[string]string{
 					"nodefs.inodesFree": "1h",
+				},
+			},
+		},
+		{
+			name: "kubeReserved cpu value cannot be negative",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					v1.ResourceCPU.String(): "-20",
+				},
+			},
+		},
+		{
+			name: "systemReserved cpu value cannot be negative",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				SystemReserved: map[string]string{
+					v1.ResourceCPU.String(): "-20",
+				},
+			},
+		},
+		{
+			name: "kubeReserved memory value cannot be negative",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					v1.ResourceMemory.String(): "-20M",
+				},
+			},
+		},
+		{
+			name: "systemReserved memory value cannot be negative",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				SystemReserved: map[string]string{
+					v1.ResourceMemory.String(): "-20M",
+				},
+			},
+		},
+		{
+			name: "kubeReserved cpu value fails to parse",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					v1.ResourceCPU.String(): "Peter Griffin",
+				},
+			},
+		},
+		{
+			name: "systemReserved cpu value fails to parse",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				SystemReserved: map[string]string{
+					v1.ResourceCPU.String(): "Stewie Griffin",
+				},
+			},
+		},
+		{
+			name: "kubeReserved memory value fails to parse",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					v1.ResourceMemory.String(): "Brian Griffin",
+				},
+			},
+		},
+		{
+			name: "systemReserved memory value fails to parse",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				SystemReserved: map[string]string{
+					v1.ResourceMemory.String(): "Meg Griffin",
+				},
+			},
+		},
+		{
+			name: "kubeReserved ephemeral-storage value fails to parse",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					v1.ResourceEphemeralStorage.String(): "Lois Griffin",
+				},
+			},
+		},
+		{
+			name: "kubeReserved ephemeral-storage value cannot be negative",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				KubeReserved: map[string]string{
+					v1.ResourceEphemeralStorage.String(): "-20M",
+				},
+			},
+		},
+		{
+			name: "systemReserved ephemeral-storage value fails to parse",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				SystemReserved: map[string]string{
+					v1.ResourceEphemeralStorage.String(): "Glenn Quagmire",
+				},
+			},
+		},
+		{
+			name: "systemReserved ephemeral-storage value cannot be negative",
+			config: &kubeletconfigv1beta1.KubeletConfiguration{
+				SystemReserved: map[string]string{
+					v1.ResourceEphemeralStorage.String(): "-20M",
 				},
 			},
 		},
