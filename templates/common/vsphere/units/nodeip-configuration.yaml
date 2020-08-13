@@ -20,6 +20,18 @@ contents: |
   Type=oneshot
   ExecStart=/usr/local/bin/nodeip-finder --retry-on-failure {{.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
 
+  {{if .Proxy -}}
+  {{if .Proxy.HTTPProxy -}}
+  Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+  {{end -}}
+  {{if .Proxy.HTTPSProxy -}}
+  Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+  {{end -}}
+  {{if .Proxy.NoProxy -}}
+  Environment=NO_PROXY={{.Proxy.NoProxy}}
+  {{end -}}
+  {{end -}}
+
   [Install]
   WantedBy=multi-user.target
   {{ end -}}
