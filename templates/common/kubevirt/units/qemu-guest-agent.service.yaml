@@ -1,0 +1,31 @@
+name: qemu-guest-agent.service
+enabled: true
+contents: |
+  {{ if .Infra -}}
+  {{ if .Infra.Status -}}
+  {{ if .Infra.Status.PlatformStatus -}}
+
+  [Unit]
+  Description=qemu guest agent container starter
+  Wants=network-online.target
+  After=network-online.target ignition-firstboot-complete.service
+  Before=kubelet.service crio.service
+  [Service]
+  Type=simple
+  ExecStart=/usr/bin/podman run --rm \
+    --name qemu-guest-agent \
+    --privileged \
+    --volume /dev:/dev \
+    --volume /dev/virtio-ports:/dev/virtio-ports \
+    --volume /etc:/etc \
+    --volume /run/dbus:/run/dbus \
+    --volume /run/systemd:/run/systemd  \
+    --volume /usr/share/zoneinfo:/usr/share/zoneinfo \
+    --net=host \
+    --pull missing \
+    docker://registry.svc.ci.openshift.org/ovirt/qemu-guest-agent:4.2
+  [Install]
+  WantedBy=multi-user.target
+  {{ end -}}
+  {{ end -}}
+  {{ end -}}

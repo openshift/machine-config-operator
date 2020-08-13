@@ -1,0 +1,32 @@
+apiVersion: "machineconfigurations.openshift.io/v1"
+kind: "ControllerConfig"
+spec:
+  clusterDNSIP: "10.3.0.10"
+  cloudProviderConfig: |
+    testing
+    multi-line cloud config
+    [test]
+      option = dummy
+  etcdInitialCount: 3
+  etcdCAData: ZHVtbXkgZXRjZC1jYQo=
+  rootCAData: ZHVtbXkgcm9vdC1jYQo=
+  pullSecret:
+    data: ZHVtbXkgZXRjZC1jYQo=
+  images:
+    etcd: image/etcd:1
+    setupEtcdEnv: image/setupEtcdEnv:1
+    infraImage: image/infraImage:1
+    kubeClientAgentImage: image/kubeClientAgentImage:1
+  infra:
+    apiVersion: config.openshift.io/v1
+    kind: Infrastructure
+    status:
+      apiServerInternalURI: https://api-int.my-test-cluster.installer.team.coreos.systems:6443
+      apiServerURL: https://api.my-test-cluster.installer.team.coreos.systems:6443
+      etcdDiscoveryDomain: my-test-cluster.installer.team.coreos.systems
+      infrastructureName: my-test-cluster
+      platformStatus:
+        type: "KubeVirt"
+        kubevirt:
+          apiServerInternalIP: 10.0.0.1
+          ingressIP: 10.0.0.2

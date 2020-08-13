@@ -6,6 +6,10 @@
 // manifests/baremetal/keepalived.yaml
 // manifests/bootstrap-pod-v2.yaml
 // manifests/controllerconfig.crd.yaml
+// manifests/kubevirt/coredns-corefile.tmpl
+// manifests/kubevirt/coredns.yaml
+// manifests/kubevirt/keepalived.conf.tmpl
+// manifests/kubevirt/keepalived.yaml
 // manifests/machineconfigcontroller/clusterrole.yaml
 // manifests/machineconfigcontroller/clusterrolebinding.yaml
 // manifests/machineconfigcontroller/controllerconfig.yaml
@@ -832,6 +836,26 @@ spec:
                                 as a static pod to serve those hostnames to the nodes
                                 in the cluster.
                               type: string
+                        kubevirt:
+                          description: OpenShift contains settings specific to the
+                            kubevirt infrastructure provider.
+                          type: object
+                          properties:
+                            apiServerInternalIP:
+                              description: apiServerInternalIP is an IP address to
+                                contact the Kubernetes API server that can be used
+                                by components inside the cluster, like kubelets using
+                                the infrastructure rather than Kubernetes networking.
+                                It is the IP that the Infrastructure.status.apiServerInternalURI
+                                points to. It is the IP for a self-hosted load balancer
+                                in front of the API servers.
+                              type: string
+                            ingressIP:
+                              description: ingressIP is an external IP which routes
+                                to the default ingress controller. The IP is a suitable
+                                target of a wildcard DNS record used to resolve default
+                                route host names.
+                              type: string
                         type:
                           description: type is the underlying infrastructure provider
                             for the cluster. This value controls whether infrastructure
@@ -839,7 +863,7 @@ spec:
                             provisioning, machine creation and deletion, and other
                             integrations are enabled. If None, no infrastructure automation
                             is enabled. Allowed values are "AWS", "Azure", "BareMetal",
-                            "GCP", "Libvirt", "OpenStack", "VSphere", "oVirt", and
+                            "GCP", "Libvirt", "OpenStack", "VSphere", "oVirt", "KubeVirt" and
                             "None". Individual components may not support all platforms,
                             and must handle unrecognized platforms as None if they
                             do not support that platform.
@@ -1003,6 +1027,277 @@ func manifestsControllerconfigCrdYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "manifests/controllerconfig.crd.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsKubevirtCorednsCorefileTmpl = []byte(`. {
+    errors
+    health :18080
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
+    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
+    cache 30
+    reload
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+}
+`)
+
+func manifestsKubevirtCorednsCorefileTmplBytes() ([]byte, error) {
+	return _manifestsKubevirtCorednsCorefileTmpl, nil
+}
+
+func manifestsKubevirtCorednsCorefileTmpl() (*asset, error) {
+	bytes, err := manifestsKubevirtCorednsCorefileTmplBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/kubevirt/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsKubevirtCorednsYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: coredns
+  namespace: openshift-kubevirt-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: openshift-infra-mdns
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/coredns"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  initContainers:
+  - name: render-config
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - runtimecfg
+    - render
+    - "/etc/kubernetes/kubeconfig"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Kubevirt.IngressIP }}"
+    - "/config"
+    - "--out-dir"
+    - "/etc/coredns"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    resources: {}
+    volumeMounts:
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: resource-dir
+      mountPath: "/config"
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    imagePullPolicy: IfNotPresent
+  containers:
+  - name: coredns
+    securityContext:
+      privileged: true
+    image: {{ .Images.CorednsBootstrap }}
+    args:
+    - "--conf"
+    - "/etc/coredns/Corefile"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/coredns"
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 18080
+        scheme: HTTP
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
+      timeoutSeconds: 10
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 18080
+        scheme: HTTP
+      initialDelaySeconds: 60
+      timeoutSeconds: 5
+      successThreshold: 1
+      failureThreshold: 5
+    terminationMessagePolicy: FallbackToLogsOnError
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsKubevirtCorednsYamlBytes() ([]byte, error) {
+	return _manifestsKubevirtCorednsYaml, nil
+}
+
+func manifestsKubevirtCorednsYaml() (*asset, error) {
+	bytes, err := manifestsKubevirtCorednsYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/kubevirt/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsKubevirtKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
+# API VIPs.
+#
+# For more information, see installer/data/data/bootstrap/baremetal/README.md
+# in the installer repo.
+
+vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
+    state BACKUP
+    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
+    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
+    priority 50
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
+    }
+    virtual_ipaddress {
+        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+    }
+}
+`)
+
+func manifestsKubevirtKeepalivedConfTmplBytes() ([]byte, error) {
+	return _manifestsKubevirtKeepalivedConfTmpl, nil
+}
+
+func manifestsKubevirtKeepalivedConfTmpl() (*asset, error) {
+	bytes, err := manifestsKubevirtKeepalivedConfTmplBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/kubevirt/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _manifestsKubevirtKeepalivedYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: keepalived
+  namespace: openshift-kubevirt-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: openshift-infra-vrrp
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/keepalived"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: conf-dir
+    empty-dir: {}
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  initContainers:
+  - name: render-config
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    command:
+    - runtimecfg
+    - render
+    - "/etc/kubernetes/kubeconfig"
+    - "--api-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP }}"
+    - "--ingress-vip"
+    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Kubevirt.IngressIP }}"
+    - "/config"
+    - "--out-dir"
+    - "/etc/keepalived"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    resources: {}
+    volumeMounts:
+    - name: resource-dir
+      mountPath: "/config"
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    imagePullPolicy: IfNotPresent
+  containers:
+  - name: keepalived
+    securityContext:
+      privileged: true
+    image: {{ .Images.KeepalivedBootstrap }}
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
+    command:
+    - /usr/sbin/keepalived
+    args:
+    - "-f"
+    - "/etc/keepalived/keepalived.conf"
+    - "--dont-fork"
+    - "--vrrp"
+    - "--log-detail"
+    - "--log-console"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsKubevirtKeepalivedYamlBytes() ([]byte, error) {
+	return _manifestsKubevirtKeepalivedYaml, nil
+}
+
+func manifestsKubevirtKeepalivedYaml() (*asset, error) {
+	bytes, err := manifestsKubevirtKeepalivedYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/kubevirt/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -2858,6 +3153,10 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/baremetal/keepalived.yaml":                                    manifestsBaremetalKeepalivedYaml,
 	"manifests/bootstrap-pod-v2.yaml":                                        manifestsBootstrapPodV2Yaml,
 	"manifests/controllerconfig.crd.yaml":                                    manifestsControllerconfigCrdYaml,
+	"manifests/kubevirt/coredns-corefile.tmpl":                               manifestsKubevirtCorednsCorefileTmpl,
+	"manifests/kubevirt/coredns.yaml":                                        manifestsKubevirtCorednsYaml,
+	"manifests/kubevirt/keepalived.conf.tmpl":                                manifestsKubevirtKeepalivedConfTmpl,
+	"manifests/kubevirt/keepalived.yaml":                                     manifestsKubevirtKeepalivedYaml,
 	"manifests/machineconfigcontroller/clusterrole.yaml":                     manifestsMachineconfigcontrollerClusterroleYaml,
 	"manifests/machineconfigcontroller/clusterrolebinding.yaml":              manifestsMachineconfigcontrollerClusterrolebindingYaml,
 	"manifests/machineconfigcontroller/controllerconfig.yaml":                manifestsMachineconfigcontrollerControllerconfigYaml,
@@ -2950,6 +3249,12 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		}},
 		"bootstrap-pod-v2.yaml":     &bintree{manifestsBootstrapPodV2Yaml, map[string]*bintree{}},
 		"controllerconfig.crd.yaml": &bintree{manifestsControllerconfigCrdYaml, map[string]*bintree{}},
+		"kubevirt": &bintree{nil, map[string]*bintree{
+			"coredns-corefile.tmpl": &bintree{manifestsKubevirtCorednsCorefileTmpl, map[string]*bintree{}},
+			"coredns.yaml":          &bintree{manifestsKubevirtCorednsYaml, map[string]*bintree{}},
+			"keepalived.conf.tmpl":  &bintree{manifestsKubevirtKeepalivedConfTmpl, map[string]*bintree{}},
+			"keepalived.yaml":       &bintree{manifestsKubevirtKeepalivedYaml, map[string]*bintree{}},
+		}},
 		"machineconfigcontroller": &bintree{nil, map[string]*bintree{
 			"clusterrole.yaml":                &bintree{manifestsMachineconfigcontrollerClusterroleYaml, map[string]*bintree{}},
 			"clusterrolebinding.yaml":         &bintree{manifestsMachineconfigcontrollerClusterrolebindingYaml, map[string]*bintree{}},

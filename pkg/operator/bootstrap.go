@@ -263,6 +263,28 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 			},
 		)
 	}
+
+	if infra.Status.PlatformStatus.Kubevirt != nil {
+		manifests = append(manifests,
+			manifest{
+				name:     "manifests/kubevirt/coredns.yaml",
+				filename: "kubevirt/manifests/coredns.yaml",
+			},
+			manifest{
+				name:     "manifests/kubevirt/coredns-corefile.tmpl",
+				filename: "kubevirt/static-pod-resources/coredns/Corefile.tmpl",
+			},
+			manifest{
+				name:     "manifests/kubevirt/keepalived.yaml",
+				filename: "kubevirt/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/kubevirt/keepalived.conf.tmpl",
+				filename: "kubevirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
+
 	if infra.Status.PlatformStatus.VSphere != nil && infra.Status.PlatformStatus.VSphere.APIServerInternalIP != "" {
 		manifests = append(manifests,
 			manifest{

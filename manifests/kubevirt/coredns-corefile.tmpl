@@ -1,0 +1,12 @@
+. {
+    errors
+    health :18080
+    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
+    forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
+    cache 30
+    reload
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        fallthrough
+    }
+}
