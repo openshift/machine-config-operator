@@ -3,6 +3,8 @@ enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Configures OVS with proper host networking configuration
+  # Removal of this file signals firstboot completion
+  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
   # This service is used to move a physical NIC into OVS and reconfigure OVS to use the host IP
   Requires=openvswitch.service
   Wants=NetworkManager-wait-online.service
