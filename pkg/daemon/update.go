@@ -306,7 +306,14 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	return
 }
 
-func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+// Remove pending deployment on OSTree based system
+func removePendingDeployment() error {
+	args := []string{"cleanup", "-p"}
+	_, err := runGetOut("rpm-ostree", args...)
+	return err
+}
+
+func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
 	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
@@ -333,6 +340,20 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) err
 	if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
 		return err
 	}
+
+	defer func() {
+		// Operations performed by rpm-ostree on the booted system are available
+		// as staged deployment. It gets applied only when we reboot the system.
+		// In case of an error during any rpm-ostree transaction, removing pending deployment
+		// should be sufficient to discard any applied changes.
+		if retErr != nil {
+			glog.Infof("Rolling back applied changes to OS")
+			if err := removePendingDeployment(); err != nil {
+				retErr = errors.Wrapf(retErr, "error removing staged deployment: %v", err)
+				return
+			}
+		}
+	}()
 
 	// Apply kargs
 	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
