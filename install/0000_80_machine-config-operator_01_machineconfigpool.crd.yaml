@@ -25,6 +25,10 @@ spec:
       configuration is failing.
     name: Degraded
     type: string
+  - JSONPath: .spec.paused
+    description: When paused, updates to the machineconfigpool will not be processed.
+    name: Paused
+    type: boolean
   - JSONPath: .status.machineCount
     description: Total number of machines in the machine config pool
     name: MachineCount
