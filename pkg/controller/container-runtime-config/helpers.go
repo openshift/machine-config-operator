@@ -38,7 +38,7 @@ const (
 	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
 )
 
-var errParsingReference = errors.New("error parsing reference of desired image from cluster version config")
+var errParsingReference = errors.New("error parsing reference of release image")
 
 // TOML-friendly explicit tables used for conversions.
 type tomlConfigStorage struct {
@@ -392,15 +392,15 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 // getValidBlockedRegistries gets the blocked registries in the image spec and validates that the user is not adding
 // the registry being used by the payload to the list of blocked registries.
 // If the user is, we drop that registry and continue with syncing the registries.conf with the other registry options
-func getValidBlockedRegistries(clusterVersionStatus *apicfgv1.ClusterVersionStatus, imgSpec *apicfgv1.ImageSpec) ([]string, error) {
-	if clusterVersionStatus == nil || imgSpec == nil {
+func getValidBlockedRegistries(releaseImage string, imgSpec *apicfgv1.ImageSpec) ([]string, error) {
+	if imgSpec == nil {
 		return nil, nil
 	}
 
 	var blockedRegs []string
 
-	// Get the registry being used by the payload from the clusterversion config
-	ref, err := reference.ParseNamed(clusterVersionStatus.Desired.Image)
+	// Get the registry being used by the payload from the releaseImage
+	ref, err := reference.ParseNamed(releaseImage)
 	if err != nil {
 		return nil, errParsingReference
 	}

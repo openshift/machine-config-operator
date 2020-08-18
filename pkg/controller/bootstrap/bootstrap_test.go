@@ -162,8 +162,12 @@ func TestBootstrapRun(t *testing.T) {
 			dataURL, err := dataurl.DecodeString(*registriesConfig.Contents.Source)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
-			// maintained in pkg/controller/continer-runtime-config.
+			// maintained in pkg/controller/container-runtime-config.
 			assert.Contains(t, string(dataURL.Data), "registry.mirror.example.com/ocp")
+			assert.Contains(t, string(dataURL.Data), "insecure-reg-1.io")
+			assert.Contains(t, string(dataURL.Data), "insecure-reg-2.io")
+			assert.Contains(t, string(dataURL.Data), "blocked-reg.io")
+			assert.NotContains(t, string(dataURL.Data), "release-registry.product.example.org")
 		})
 	}
 }

@@ -68,7 +68,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.releaseImage, "release-image", "", "Release image used for cluster installation.")
-	// bootstrapCmd.MarkFlagRequired("release-image") - will uncomment this after updating bootkube.sh to use the --release-image flag
+	bootstrapCmd.MarkFlagRequired("release-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
@@ -126,6 +126,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.etcdCAFile, bootstrapOpts.etcdMetricCAFile, bootstrapOpts.rootCAFile, bootstrapOpts.kubeCAFile, bootstrapOpts.pullSecretFile,
 		&imgs,
 		bootstrapOpts.destinationDir,
+		bootstrapOpts.releaseImage,
 	); err != nil {
 		glog.Fatalf("error rendering bootstrap manifests: %v", err)
 	}
