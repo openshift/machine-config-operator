@@ -14,7 +14,11 @@ These bootimages are built using [coreos-assembler](https://github.com/coreos/co
 Today, [the installer](https://github.com/openshift/installer/) pins the "bootimages"
 it uses, and released installers also pin the release image.  As noted above,
 release images contain `machine-os-content`, which can be a *different*
-RHCOS version.
+RHCOS version.  You can find the installer-pinned bootimage in e.g. [this file](https://github.com/openshift/installer/blob/release-4.4/data/data/rhcos.json).
+
+[A pending enhancement](https://github.com/openshift/enhancements/pull/201) describes
+generating and inspecting bootimage data from the release image
+(not yet implemented).
 
 It's essential to understand that both the bootimage and the `machine-os-content` container
 are both essentially wrappers for an [OSTree](https://github.com/ostreedev/ostree) commit.
@@ -22,75 +26,86 @@ The OSTree format is an image format designed for in-place operating system upda
 at the filesystem level (like container images) but (unlike container runtimes) has
 tooling to manage things such as the bootloader and handling persistence of `/etc` and `/var`.
 
-On top of the OSTree format, Red Hat Enterprise Linux CoreOS uses [pivot](https://github.com/openshift/pivot/)
-which is a "glue layer" that handles the encapsulation of the `machine-os-content` (oscontainer)
-with the OSTree repository.
+The reason we wrap an OSTree commit inside a container image is so that
+the release image encapsulates basically everything about a cluster (except the bootimage).
+This makes it easy to mirror updates offline.
 
-# The early pivot
+# Applying OS updates before kubelet
 
 We do not want to require that a new bootimage is released for every update,
 and in general it can be hard to require that in every environment (for
-example, bare metal PXE setups).  Hence, the MCO and installer combine to
-implement "the early pivot".  
+example, bare metal PXE setups).
 
-By this mechanism the cluster can install using an older bootimage, and
-bring the operating system into the state targeted by the `machine-os-content`
-in the main release image.  Let's step through aspects of
-cluster bootstrap/installation and add some information about the early pivot.
+[As of today](https://github.com/openshift/machine-config-operator/pull/1766/), when a node boots the MCO serves it Ignition for configuration,
+including a systemd unit called `machine-config-operator-firstboot.service`
+which pulls code onto the host, and then it runs `Before=kubelet.service`
+to perform an OS update and reboot.
+
+One important property of this is that it means OS updates are applied
+before any potentially untrusted workloads land on the node.  Because we just
+use `podman`, we also don't have to worry about having old `kubelet` versions
+join a cluster.
+
+# Understanding OS updates at installation time
 
 First, be sure you've read and understood [openshift/installer overview](https://github.com/openshift/installer/blob/37b99d8c9a3878bac7e8a94b6b0113fad6ffb77a/docs/user/overview.md).
 It's also important to understand the [cluster-version-operator](https://github.com/openshift/cluster-version-operator/) and release image.
 
-In this example we'll use AWS, this process is similar to a situation of
-booting bare metal machines via PXE or VMs in OpenStack.
+In this example we'll discuss AWS, but this process is similar to a situation of
+booting bare metal machines via PXE, or Azure, or a private OpenStack instance.
 
-The openshift-installer starts, and uses the AMI it has pinned as the bootstrap node.
+The openshift-installer starts, and uses the AMI it has pinned as the bootstrap node
+as well as for the control plane.
 
 The bootstrap node's `bootkube.sh` service pulls the release image, which
 contains a reference to the MCO (`machine-config-operator`) and also a
 reference to a newer `machine-os-content`. The `bootkube.sh` service runs the MCO in
 "bootstrap" mode to generate and serve Ignition to the master machines.
 
-These Ignition configs contain a reference to the newer machine-os-content from
-the release image in the `/etc/pivot/image-pullspec` directory.
+The control plane nodes wait in the initramfs, retrying until they are able to
+fetch the Ignition config from the bootstrap node.
 
-The master machines boot, pulling their Ignition configs from the bootstrap
-node. As part of that `pivot.service` runs (which is
-`Before=kubelet.service`, so before the cluster starts). It detects the
-reference to the updated `machine-os-content` and pulls it, uses it to upgrade, and
-reboots.
+When that succeeds, the above process of `machine-config-daemon-firstboot.service`
+runs which extracts OS updates from the `machine-os-content` container image,
+and the control plane nodes each reboot (before `kubelet.service` has started).
 
-The master machines come up and form a cluster.
+When the control plane nodes reboot and form a cluster, the bootstrap
+node is torn down.
 
-# Workers and management via the MCO
+# Workers
 
 At this point, Ignition has been executed, and that only runs once.
+The `machine-config-daemon-firstboot.service` is no longer used for OS updates.
 
 The master machines use the [machine-api-operator](https://github.com/openshift/machine-api-operator) to
 boot the workers.  Each worker pulls Ignition configs from the MCS running
-on the control plane, which has the exact same pivot code.  They also
-upgrade/reboot, and then join the cluster.
+on the control plane.  The exact same process of performing an upgrade
+and reboot happens for each worker.
 
-Thereafter, the MCO takes over fully. The `machine-config-daemon` daemonset
-lands on the master nodes, and will start watching for updates to
-the `machine-os-content` from the release image, as well as any changes
-to the `machineconfig` objects.
+# Management via the Machine Config Daemon
+
+After a node (whether control plane or worker) has joined the cluster, the MCO
+takes over.  Previously, each individual node was running systemd units;
+now changes are coordinated via the MCO.
+
+When the administrator starts an `oc adm upgrade`, if a new `machine-os-content`
+is provided in the release image, it will be rolled out to the control plane
+and workers.
 
 Every change now will be managed by a `machineconfigpool`, ensuring
 that only 1 machine at a time is changed (via `maxUnavailable: 1` default).
 
-However, because of the early pivot, the master nodes have already booted
-the desired version (and the Ignition config generated at bootstrap time should
-match the in-cluster one) so the MCO has nothing to do.
+# MCD host upgrade execution
 
-But now the MCO is fully in control of operating system updates.
-The next time the admin does an `oc adm upgrade`, if a new `machine-os-content`
-is provided in the release image, it will be rolled out to the masters
-and workers.
+Today mostly because of [SELinux reasons](https://bugzilla.redhat.com/show_bug.cgi?id=1839065) the
+MCD copies itself to the host, and runs as part of the host context.
+Then it provides updated content to `rpm-ostreed.service`, which is already
+a daemon running on the host.
 
-At the time of this writing, there is not a mechanism to roll out updates
-to bootimages.  For example, in EC2, the AMI used will remain the same
-for the lifetime of a cluster.  It is likely at some point that the
-[machine-api-operator](https://github.com/openshift/machine-api-operator)
-will extract bootimage data from the release image, but it is not
-yet implemented.
+The MCD tries to watch the systemd journal for relevant service and proxy logs,
+so you *should* be able to `oc -n openshift-machine-config-operator logs -c machine-config-daemon pod/machine-config-daemon-...`
+to debug.
+
+# Updating bootimages
+
+See: https://github.com/openshift/enhancements/pull/201
