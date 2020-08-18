@@ -80,7 +80,6 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
-
 		if status.Configuration.Name != pool.Spec.Configuration.Name || !equality.Semantic.DeepEqual(status.Configuration.Source, pool.Spec.Configuration.Source) {
 			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
 			status.Configuration = pool.Spec.Configuration
@@ -90,9 +89,6 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
 		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name))
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
-		if pool.Spec.Paused == true { // if the pool is Paused and updating, the pool will never progress.
-			glog.Warningf("Pool %s is Paused, but is 'Updating'.  Pool will not progress", pool.Name)
-		}
 	}
 
 	var nodeDegraded bool
