@@ -7,6 +7,7 @@ contents: |
   ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
   # This service is used to move a physical NIC into OVS and reconfigure OVS to use the host IP
   Requires=openvswitch.service
+  Requires=node-valid-hostname.service
   Wants=NetworkManager-wait-online.service
   After=NetworkManager-wait-online.service openvswitch.service node-valid-hostname.service
   Before=network-online.target kubelet.service crio.service
