@@ -10,6 +10,17 @@ contents:
     # key files under /etc/NetworkManager/system-connections/
     # Managing key files is outside of the scope of this script
 
+    # if the interface is of type vmxnet3 add multicast capability for that driver
+    # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
+    function configure_driver_options {
+      intf=$1
+      driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
+      echo "Driver name is" $driver
+      if [ "$driver" = "vmxnet3" ]; then
+        ifconfig "$intf" allmulti
+      fi
+    }
+    
     iface=""
     counter=0
     # find default interface
@@ -32,6 +43,10 @@ contents:
     done
 
     if [ "$iface" = "br-ex" ]; then
+      # handle vlans and bonds etc if they have already been
+      # configured via nm key files and br-ex is already up
+      ifaces=$(ovs-vsctl list-ifaces ${iface})
+      for intf in $ifaces; do configure_driver_options $intf; done
       echo "Networking already configured and up for br-ex!"
       exit 0
     fi
@@ -99,6 +114,7 @@ contents:
       if nmcli --fields GENERAL.STATE conn show ovs-if-br-ex | grep -i "activated"; then
         echo "OVS successfully configured"
         ip a show br-ex
+        configure_driver_options ${iface}
         exit 0
       fi
       counter=$((counter+1))
@@ -110,6 +126,7 @@ contents:
       if nmcli conn up ovs-if-br-ex; then
         echo "OVS successfully configured"
         ip a show br-ex
+        configure_driver_options ${iface}
         exit 0
       fi
       sleep 5
