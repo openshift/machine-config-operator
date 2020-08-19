@@ -134,7 +134,7 @@ func RenderBootstrap(
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
 
-		templatectrl.GCPRoutesControllerKey: imgs.MachineConfigOperator,
+		templatectrl.APIServerWatcherKey:    imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:          imgs.InfraImage,
 		templatectrl.KeepalivedKey:          imgs.Keepalived,
 		templatectrl.CorednsKey:             imgs.Coredns,

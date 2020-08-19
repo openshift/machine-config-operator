@@ -1,0 +1,17 @@
+name: openshift-azure-routes.path
+enabled: true
+contents: |
+  [Unit]
+  Description=Watch for downfile changes
+  Wants=network-online.target
+  After=network-online.target
+  Before=kubelet.service crio.service
+  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
+
+  [Path]
+  PathExistsGlob=/run/cloud-routes/*
+  PathChanged=/run/cloud-routes/
+  MakeDirectory=true
+
+  [Install]
+  WantedBy=multi-user.target
