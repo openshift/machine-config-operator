@@ -276,7 +276,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		templatectrl.EtcdImageKey:                imgs.Etcd,
 		templatectrl.SetupEtcdEnvKey:             imgs.MachineConfigOperator,
 		templatectrl.MachineConfigOperatorKey:    imgs.MachineConfigOperator,
-		templatectrl.GCPRoutesControllerKey:      imgs.MachineConfigOperator,
+		templatectrl.APIServerWatcherKey:         imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:               imgs.InfraImage,
 		templatectrl.KubeClientAgentImageKey:     imgs.KubeClientAgent,
 		templatectrl.ClusterEtcdOperatorImageKey: imgs.ClusterEtcdOperator,

@@ -1,18 +1,17 @@
-filesystem: "root"
 mode: 0644
-path: "/etc/kubernetes/manifests/gcp-routes-controller.yaml"
+path: "/etc/kubernetes/manifests/apiserver-watcher.yaml"
 contents:
   inline: |
     apiVersion: v1
     kind: Pod
     metadata:
-      name: gcp-routes-controller
+      name: apiserver-watcher
       namespace: kube-system
     spec:
       containers:
-      - name: gcp-routes-controller
-        image: "{{.Images.gcpRoutesControllerKey}}"
-        command: ["gcp-routes-controller"]
+      - name: apiserver-watcher
+        image: "{{.Images.apiServerWatcherKey}}"
+        command: ["apiserver-watcher"]
         args:
         - "run"
         - "--health-check-url={{.Infra.Status.APIServerInternalURL}}/readyz"
