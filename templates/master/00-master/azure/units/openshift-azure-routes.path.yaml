@@ -1,0 +1,15 @@
+name: openshift-azure-routes.path
+enabled: true
+contents: |
+  [Unit]
+  Description=Watch for downfile changes
+  Before=kubelet.service
+  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
+
+  [Path]
+  PathExistsGlob=/run/cloud-routes/*
+  PathChanged=/run/cloud-routes/
+  MakeDirectory=true
+
+  [Install]
+  RequiredBy=kubelet.service

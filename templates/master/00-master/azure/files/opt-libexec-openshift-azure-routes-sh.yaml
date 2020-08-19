@@ -1,0 +1,180 @@
+mode: 0755
+path: "/opt/libexec/openshift-azure-routes.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    # Prevent hairpin traffic when the apiserver is up
+
+    # As per the Azure documentation (https://docs.microsoft.com/en-us/azure/load-balancer/concepts#limitations),
+    # if a backend is load-balanced to itself, then the traffic will be dropped.
+    #
+    # This is because the L3LB does DNAT, so while the outgoing packet has a destination
+    # IP of the VIP, the incoming load-balanced packet has a destination IP of the
+    # host. That means that it "sees" a syn with the source and destination
+    # IPs of itself, and duly replies wit a syn-ack back to itself. However, the client
+    # socket expects a syn-ack with a source IP of the VIP, so it drops the packet.
+    #
+    # The solution is to redirect traffic destined to the lb vip back to ourselves.
+    #
+    # We check /run/cloud-routes/ for files $VIP.up and $VIP.down. If the .up file
+    # exists, then we redirect traffic destined for that vip to ourselves via iptables.
+    # A systemd unit watches the directory for changes.
+
+    set -euo pipefail
+
+    # the list of load balancer IPs that are assigned to this node
+    declare -A v4vips
+    declare -A v6vips
+
+    CHAIN_NAME="azure-vips"
+    RUN_DIR="/run/cloud-routes"
+
+    # Create a chan if it doesn't exist
+    ensure_chain4() {
+        local table="${1}"
+        local chain="${2}"
+
+        if ! iptables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            iptables -w -t "${table}" -N "${chain}";
+        fi;
+    }
+
+    # Create a chain if it doesn't exist
+    ensure_chain6() {
+        if [ ! -f /proc/net/if_inet6 ]; then
+            return
+        fi
+        local table="${1}"
+        local chain="${2}"
+
+        if ! ip6tables -w -t "${table}" -S "${chain}" &> /dev/null ; then
+            ip6tables -w -t "${table}" -N "${chain}";
+        fi;
+    }
+
+
+    ensure_rule4() {
+        local table="${1}"
+        local chain="${2}"
+        shift 2
+
+        if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            iptables -w -t "${table}" -A "${chain}" "$@"
+        fi
+    }
+
+    ensure_rule6() {
+        if [ ! -f /proc/net/if_inet6 ]; then
+            return
+        fi
+
+        local table="${1}"
+        local chain="${2}"
+        shift 2
+
+        if ! ip6tables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
+            ip6tables -w -t "${table}" -A "${chain}" "$@"
+        fi
+    }
+
+    # set the chain, ensure entry rules, ensure ESTABLISHED rule
+    initialize() {
+        ensure_chain4 nat "${CHAIN_NAME}-local"
+        ensure_chain6 nat "${CHAIN_NAME}-local"
+
+        ensure_rule4 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}-local
+        ensure_rule6 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}-local
+
+        # Need this so that existing flows (with an entry in conntrack) continue, 
+        # even if the iptables rule is removed
+        ensure_rule4 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+        ensure_rule6 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+    }
+
+    remove_stale() {
+        ## find extra iptables rules
+        for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
+            if [[ ! -v v4vips[${ipt_vip}] ]] || [[ "${v4vips[${ipt_vip}]}" = down ]]; then
+                echo removing stale vip "${ipt_vip}" for local clients
+                iptables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
+            fi
+        done
+
+        if [ ! -f /proc/net/if_inet6 ]; then
+            return
+        fi
+
+        for ipt_vip in $(ip6tables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
+            if [[ ! -v v6vips[${ipt_vip}] ]] || [[ "${v6vips[${ipt_vip}]}" = down ]]; then
+                echo removing stale vip "${ipt_vip}" for local clients
+                ip6tables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
+            fi
+        done
+
+    }
+
+    add_rules() {
+        for vip in "${!v4vips[@]}"; do
+            if [[ "${v4vips[${vip}]}" != down ]]; then
+                echo "ensuring rule for ${vip} for internal clients"
+                ensure_rule4 nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
+            fi
+        done
+
+        for vip in "${!v6vips[@]}"; do
+            if [[ "${v6vips[${vip}]}" != down ]]; then
+                echo "ensuring rule for ${vip} for internal clients"
+                ensure_rule6 nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
+            fi
+        done
+    }
+
+    clear_rules() {
+        iptables -t nat -F "${CHAIN_NAME}-local" || true
+    }
+
+    # out paramaters: v4vips v6vips
+    list_lb_ips() {
+        for k in "${!v4vips[@]}"; do
+            unset v4vips["${k}"]
+        done
+        for k in "${!v6vips[@]}"; do
+            unset v6vips["${k}"]
+        done
+
+
+        shopt -s nullglob
+        for file in "${RUN_DIR}"/*.up ; do 
+            vip=$(basename "${file}" .up)
+            if [[ -e "${RUN_DIR}/${vip}.down" ]]; then
+                echo "${vip} has upfile and downfile, marking as down"
+            else
+                if [[ ${vip} =~ : ]]; then
+                    echo "processing v6 vip ${vip}"
+                    v6vips[${vip}]="${vip}"
+                else
+                    echo "processing v4 vip ${vip}"
+                    v4vips[${vip}]="${vip}"
+                fi
+            fi
+        done
+    }
+
+
+    case "$1" in
+        start)
+            initialize
+            list_lb_ips
+            remove_stale
+            add_rules
+            echo "done applying vip rules"
+            ;;
+        cleanup)
+            clear_rules
+            ;;
+        *)
+            echo $"Usage: $0 {start|cleanup}"
+            exit 1
+    esac
+
