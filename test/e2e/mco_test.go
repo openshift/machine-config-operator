@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"context"
+	corev1 "k8s.io/api/core/v1"
 	"testing"
 	"time"
 
@@ -69,18 +70,31 @@ func checkMasterNodesSchedulability(cs *framework.ClientSet, masterSchedulable b
 	}
 	if masterSchedulable {
 		for _, masterNode := range masterNodes.Items {
-			if !node.CheckMasterIsAlreadySchedulable(&masterNode) {
+			if !CheckMasterIsAlreadySchedulable(&masterNode) {
 				return false
 			}
 		}
 	} else {
 		for _, masterNode := range masterNodes.Items {
-			if node.CheckMasterIsAlreadySchedulable(&masterNode) {
+			if CheckMasterIsAlreadySchedulable(&masterNode) {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+// CheckMasterIsAlreadySchedulable checks if the given node has a worker label and doesn't have NoSchedule master
+// taint
+func CheckMasterIsAlreadySchedulable(master *corev1.Node) bool {
+	_, hasWorkerLabel := master.Labels[node.WorkerLabel]
+	hasMasterTaint := false
+	for _, taint := range master.Spec.Taints {
+		if taint.Key == node.MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
+			hasMasterTaint = true
+		}
+	}
+	return hasWorkerLabel && !hasMasterTaint
 }
 
 func waitForAllMastersUpdate(cs *framework.ClientSet, mastersSchedulable bool) error {

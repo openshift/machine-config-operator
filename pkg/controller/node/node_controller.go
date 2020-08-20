@@ -40,6 +40,12 @@ import (
 )
 
 const (
+	// MasterLabel defines the label associated with master node. The master taint uses the same label as taint's key
+	MasterLabel = "node-role.kubernetes.io/master"
+
+	// WorkerLabel defines the label associated with worker node.
+	WorkerLabel = "node-role.kubernetes.io/worker"
+
 	// maxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
 	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
 	// a machineconfig pool is going to be requeued:
@@ -50,12 +56,6 @@ const (
 	// updateDelay is a pause to deal with churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	updateDelay = 5 * time.Second
-
-	// masterLabel defines the label associated with master node. The master taint uses the same label as taint's key
-	masterLabel = "node-role.kubernetes.io/master"
-
-	// workerLabel defines the label associated with worker node.
-	workerLabel = "node-role.kubernetes.io/worker"
 
 	// schedulerCRName that we're interested in watching.
 	schedulerCRName = "cluster"
@@ -156,7 +156,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 }
 
 func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
-	nodeList, err := ctrl.nodeLister.List(labels.SelectorFromSet(labels.Set{masterLabel: ""}))
+	nodeList, err := ctrl.nodeLister.List(labels.SelectorFromSet(labels.Set{MasterLabel: ""}))
 	if err != nil {
 		return nil, fmt.Errorf("error while listing master nodes %v", err)
 	}
@@ -215,9 +215,6 @@ func (ctrl *Controller) checkMasterNodesOnUpdate(old, cur interface{}) {
 func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) []error {
 	var errs []error
 	for _, node := range currentMasters {
-		if !CheckMasterIsAlreadySchedulable(node) {
-			continue
-		}
 		if err := ctrl.makeMasterNodeUnSchedulable(node); err != nil {
 			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %v", node.Name, err))
 		}
@@ -232,33 +229,28 @@ func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
 	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Remove worker label
 		newLabels := node.Labels
-		if _, hasWorkerLabel := newLabels[workerLabel]; hasWorkerLabel {
-			delete(newLabels, workerLabel)
+		if _, hasWorkerLabel := newLabels[WorkerLabel]; hasWorkerLabel {
+			delete(newLabels, WorkerLabel)
 		}
 		node.Labels = newLabels
 		// Add master taint
-		newTaints := node.Spec.Taints
-		masterUnSchedulableTaint := corev1.Taint{Key: masterLabel, Effect: corev1.TaintEffectNoSchedule}
-		newTaints = append(newTaints, masterUnSchedulableTaint)
-		node.Spec.Taints = newTaints
+		hasMasterTaint := false
+		for _, taint := range node.Spec.Taints {
+			if taint.Key == MasterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
+				hasMasterTaint = true
+			}
+		}
+		if !hasMasterTaint {
+			newTaints := node.Spec.Taints
+			masterUnSchedulableTaint := corev1.Taint{Key: MasterLabel, Effect: corev1.TaintEffectNoSchedule}
+			newTaints = append(newTaints, masterUnSchedulableTaint)
+			node.Spec.Taints = newTaints
+		}
 	})
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-// CheckMasterIsAlreadySchedulable checks if the given node has a worker label and doesn't have NoSchedule master
-// taint
-func CheckMasterIsAlreadySchedulable(node *corev1.Node) bool {
-	_, hasWorkerLabel := node.Labels[workerLabel]
-	hasMasterTaint := false
-	for _, taint := range node.Spec.Taints {
-		if taint.Key == masterLabel && taint.Effect == corev1.TaintEffectNoSchedule {
-			hasMasterTaint = true
-		}
-	}
-	return hasWorkerLabel && !hasMasterTaint
 }
 
 // makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master taint and
@@ -267,14 +259,14 @@ func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
 	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Add worker label
 		newLabels := node.Labels
-		if _, hasWorkerLabel := newLabels[workerLabel]; !hasWorkerLabel {
-			newLabels[workerLabel] = ""
+		if _, hasWorkerLabel := newLabels[WorkerLabel]; !hasWorkerLabel {
+			newLabels[WorkerLabel] = ""
 		}
 		node.Labels = newLabels
 		// Remove master taint
 		newTaints := []corev1.Taint{}
 		for _, t := range node.Spec.Taints {
-			if t.Key == masterLabel && t.Effect == corev1.TaintEffectNoSchedule {
+			if t.Key == MasterLabel && t.Effect == corev1.TaintEffectNoSchedule {
 				continue
 			}
 			newTaints = append(newTaints, t)
@@ -335,7 +327,7 @@ func (ctrl *Controller) getMastersSchedulable() (bool, error) {
 
 // Determine if a given Node is a master
 func (ctrl *Controller) isMaster(node *corev1.Node) bool {
-	_, master := node.ObjectMeta.Labels[masterLabel]
+	_, master := node.ObjectMeta.Labels[MasterLabel]
 	return master
 }
 
@@ -346,14 +338,13 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 		goerrs.Wrap(err, "Getting scheduler config failed")
 		return
 	}
-	alreadySchedulable := CheckMasterIsAlreadySchedulable(node)
-	if mastersSchedulable && !alreadySchedulable {
+	if mastersSchedulable {
 		err = ctrl.makeMasterNodeSchedulable(node)
 		if err != nil {
 			goerrs.Wrap(err, "Failed making master Node schedulable")
 			return
 		}
-	} else if !mastersSchedulable && alreadySchedulable {
+	} else if !mastersSchedulable {
 		err = ctrl.makeMasterNodeUnSchedulable(node)
 		if err != nil {
 			goerrs.Wrap(err, "Failed making master Node unschedulable")
