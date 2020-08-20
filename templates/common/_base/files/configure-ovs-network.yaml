@@ -20,7 +20,8 @@ contents:
         ifconfig "$intf" allmulti
       fi
     }
-    
+
+    NM_CONN_PATH="/etc/NetworkManager/system-connections"
     iface=""
     counter=0
     # find default interface
@@ -79,7 +80,7 @@ contents:
       nmcli c add type ovs-bridge conn.interface br-ex con-name br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
     fi
 
-    # store old conn for bringing down later
+    # store old conn for later
     old_conn=$(nmcli --fields UUID,DEVICE conn show --active | grep ${iface} | awk '{print $1}')
 
     # find default port to add to bridge
@@ -102,8 +103,67 @@ contents:
     nmcli conn up ovs-if-phys0
 
     if ! nmcli connection show ovs-if-br-ex &> /dev/null; then
-      nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
-        ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+      if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
+        echo "Static IP addressing detected on default gateway connection: ${old_conn}"
+        # find and copy the old connection to get the address settings
+        if egrep -l --include=*.nmconnection $old_conn ${NM_CONN_PATH}/*; then
+          old_conn_file=$(egrep -l --include=*.nmconnection $old_conn ${NM_CONN_PATH}/*)
+          cloned=false
+        else
+          echo "WARN: unable to find NM configuration file for conn: ${old_conn}. Attempting to clone conn"
+          old_conn_file=${NM_CONN_PATH}/${old_conn}-clone.nmconnection
+          nmcli conn clone ${old_conn} ${old_conn}-clone
+          cloned=true
+          if [ ! -f "$old_conn_file" ]; then
+            echo "ERROR: unable to locate cloned conn file: ${old_conn_file}"
+            exit 1
+          fi
+          echo "Successfully cloned conn to ${old_conn_file}"
+        fi
+        echo "old connection file found at: ${old_conn_file}"
+        new_conn_file=${NM_CONN_PATH}/ovs-if-br-ex.nmconnection
+        if [ -f "$new_conn_file" ]; then
+          echo "WARN: existing br-ex interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
+        fi
+        cp -f ${old_conn_file} ${new_conn_file}
+        if $cloned; then
+          nmcli conn delete ${old_conn}-clone
+          rm -f ${old_conn_file}
+        fi
+        ovs_port_conn=$(nmcli --fields connection.uuid conn show ovs-port-br-ex | awk '{print $2}')
+        br_iface_uuid=$(cat /proc/sys/kernel/random/uuid)
+        # modify file to work with OVS and have unique settings
+        sed -i '/^\[connection\]$/,/^\[/ s/^uuid=.*$/uuid='"$br_iface_uuid"'/' ${new_conn_file}
+        sed -i '/^multi-connect=.*$/d' ${new_conn_file}
+        sed -i '/^\[connection\]$/,/^\[/ s/^type=.*$/type=ovs-interface/' ${new_conn_file}
+        sed -i '/^\[connection\]$/,/^\[/ s/^id=.*$/id=ovs-if-br-ex/' ${new_conn_file}
+        sed -i '/^\[connection\]$/a slave-type=ovs-port' ${new_conn_file}
+        sed -i '/^\[connection\]$/a master='"$ovs_port_conn" ${new_conn_file}
+        if grep 'interface-name=' ${new_conn_file} &> /dev/null; then
+          sed -i '/^\[connection\]$/,/^\[/ s/^interface-name=.*$/interface-name=br-ex/' ${new_conn_file}
+        else
+          sed -i '/^\[connection\]$/a interface-name=br-ex' ${new_conn_file}
+        fi
+        if ! grep 'cloned-mac-address=' ${new_conn_file} &> /dev/null; then
+          sed -i '/^\[ethernet\]$/,/^\[/ s/^cloned-mac-address=.*$/cloned-mac-address='"$iface_mac"'/' ${new_conn_file}
+        else
+          sed -i '/^\[ethernet\]$/a cloned-mac-address='"$iface_mac" ${new_conn_file}
+        fi
+        if grep 'mtu=' ${new_conn_file} &> /dev/null; then
+          sed -i '/^\[ethernet\]$/,/^\[/ s/^mtu=.*$/mtu='"$iface_mtu"'/' ${new_conn_file}
+        else
+          sed -i '/^\[ethernet\]$/a mtu='"$iface_mtu" ${new_conn_file}
+        fi
+        cat <<EOF >> ${new_conn_file}
+    [ovs-interface]
+    type=internal
+    EOF
+        nmcli c load ${new_conn_file}
+        echo "Loaded new ovs-if-br-ex connection file: ${new_conn_file}"
+      else
+        nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
+          ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+      fi
     fi
 
     # wait for DHCP to finish, verify connection is up
