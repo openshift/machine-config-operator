@@ -21,7 +21,7 @@ contents:
     listen health_check_http_url
       bind :::50936 v4v6
       mode http
-      monitor-uri /healthz
+      monitor-uri /readyz
       option dontlognull
     listen stats
       bind 127.0.0.1:{{`{{ .LBConfig.StatPort }}`}}
@@ -32,7 +32,7 @@ contents:
       stats refresh 30s
       stats auth Username:Password
     backend masters
-       option  httpchk GET /healthz HTTP/1.0
+       option  httpchk GET /readyz HTTP/1.0
        option  log-health-checks
        balance roundrobin
     {{`{{- range .LBConfig.Backends }}
