@@ -808,15 +808,16 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	oldKargs := parseKernelArguments(oldConfig.Spec.KernelArguments)
 	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
 	cmdArgs := []string{}
+
+	// To keep kernel argument processing simpler and bug free, we first delete all
+	// kernel arguments which have been applied by MCO previously and append all of the
+	// kernel arguments present in the new rendered MachineConfig.
+	// See https://bugzilla.redhat.com/show_bug.cgi?id=1866546#c10.
 	for _, arg := range oldKargs {
-		if !ctrlcommon.InSlice(arg, newKargs) {
-			cmdArgs = append(cmdArgs, "--delete="+arg)
-		}
+		cmdArgs = append(cmdArgs, "--delete="+arg)
 	}
 	for _, arg := range newKargs {
-		if !ctrlcommon.InSlice(arg, oldKargs) {
-			cmdArgs = append(cmdArgs, "--append="+arg)
-		}
+		cmdArgs = append(cmdArgs, "--append="+arg)
 	}
 	return cmdArgs
 }

@@ -3,7 +3,7 @@ package daemon
 import (
 	"fmt"
 	"math/rand"
-	"strings"
+	"reflect"
 	"testing"
 	"time"
 
@@ -221,95 +221,61 @@ func TestReconcilableDiff(t *testing.T) {
 }
 
 func TestKernelAguments(t *testing.T) {
-	oldIgnCfg := ctrlcommon.NewIgnConfig()
-	oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-	oldMcfg.Spec.KernelArguments = []string{"nosmt", "foo", "baz=test"}
 	tests := []struct {
-		args      []string
-		deletions []string
-		additions []string
+		oldKargs []string
+		newKargs []string
+		out      []string
 	}{
 		{
-			args:      nil,
-			deletions: []string{"nosmt", "foo", "baz=test"},
-			additions: []string{},
+			oldKargs: nil,
+			newKargs: []string{"hello=world"},
+			out:      []string{"--append=hello=world"},
 		},
 		{
-			args:      oldMcfg.Spec.KernelArguments,
-			deletions: []string{},
-			additions: []string{},
+			oldKargs: []string{"hello=world"},
+			newKargs: nil,
+			out:      []string{"--delete=hello=world"},
 		},
 		{
-			args:      append(oldMcfg.Spec.KernelArguments, "hello=world"),
-			deletions: []string{},
-			additions: []string{"hello=world"},
+			oldKargs: []string{"foo", "bar=1", "hello=world"},
+			newKargs: []string{"hello=world"},
+			out:      []string{"--delete=foo", "--delete=bar=1", "--delete=hello=world", "--append=hello=world"},
 		},
 		{
-			args:      []string{"foo", "hello=world"},
-			deletions: []string{"nosmt", "baz=test"},
-			additions: []string{"hello=world"},
+			oldKargs: []string{"foo", "bar=1 hello=world", "baz"},
+			newKargs: []string{"foo", "bar=1", "hello=world"},
+			out: []string{"--delete=foo", "--delete=bar=1", "--delete=hello=world", "--delete=baz",
+				"--append=foo", "--append=bar=1", "--append=hello=world"},
 		},
 		{
-			args:      []string{"foo", "bar=1 hello=world"},
-			deletions: []string{"nosmt", "baz=test"},
-			additions: []string{"bar=1", "hello=world"},
+			oldKargs: []string{" baz=test bar=\"hello world\""},
+			newKargs: []string{" baz=test bar=\"hello world\"", "foo"},
+			out: []string{"--delete=baz=test", "--delete=bar=\"hello world\"",
+				"--append=baz=test", "--append=bar=\"hello world\"", "--append=foo"},
 		},
 		{
-			args:      []string{"foo", " baz=test bar=\"hello world\""},
-			deletions: []string{"nosmt"},
-			additions: []string{"bar=\"hello world\""},
-		},
-		{
-			args:      append([]string{"foo=baz", "foo=bar"}, oldMcfg.Spec.KernelArguments...),
-			deletions: []string{},
-			additions: []string{"foo=baz", "foo=bar"},
-		},
-		{
-			args:      append([]string{"baz=othertest"}, oldMcfg.Spec.KernelArguments...),
-			deletions: []string{},
-			additions: []string{"baz=othertest"},
+			oldKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=4"},
+			newKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=6"},
+			out: []string{"--delete=hugepagesz=1G", "--delete=hugepages=4", "--delete=hugepagesz=2M", "--delete=hugepages=4",
+				"--append=hugepagesz=1G", "--append=hugepages=4", "--append=hugepagesz=2M", "--append=hugepages=6"},
 		},
 	}
+
 	rand.Seed(time.Now().UnixNano())
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			oldIgnCfg := ctrlcommon.NewIgnConfig()
+			oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
+			oldMcfg.Spec.KernelArguments = test.oldKargs
+
 			newIgnCfg := ctrlcommon.NewIgnConfig()
 			newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-			newMcfg.Spec.KernelArguments = test.args
-			// Randomize the order of both old/new to sort out ordering issues.
-			rand.Shuffle(len(test.args), func(i, j int) {
-				test.args[i], test.args[j] = test.args[j], test.args[i]
-			})
-			oldKargs := oldMcfg.Spec.KernelArguments
-			rand.Shuffle(len(oldMcfg.Spec.KernelArguments), func(i, j int) {
-				oldKargs[i], oldKargs[j] = oldKargs[j], oldKargs[i]
-			})
+			newMcfg.Spec.KernelArguments = test.newKargs
+
 			res := generateKargsCommand(oldMcfg, newMcfg)
-			additionsExpected := make(map[string]bool)
-			for _, k := range test.additions {
-				additionsExpected[k] = true
-			}
-			deletionsExpected := make(map[string]bool)
-			for _, k := range test.deletions {
-				deletionsExpected[k] = true
-			}
-			for _, a := range res {
-				parts := strings.SplitN(a, "=", 2)
-				if len(parts) != 2 {
-					t.Fatalf("Bad karg %v", a)
-				}
-				arg := parts[1]
-				if parts[0] == "--append" {
-					if !additionsExpected[arg] {
-						t.Errorf("Unexpected addition %s", arg)
-					}
-				} else if parts[0] == "--delete" {
-					if !deletionsExpected[arg] {
-						t.Errorf("Unexpected deletion %s", arg)
-					}
-				} else {
-					t.Fatalf("Bad karg %s", a)
-				}
+
+			if !reflect.DeepEqual(test.out, res) {
+				t.Errorf("Failed kernel arguments processing: expected: %v but result is: %v", test.out, res)
 			}
 		})
 	}
