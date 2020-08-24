@@ -71,14 +71,13 @@ func (ImageRegistryConfigRoute) SwaggerDoc() map[string]string {
 }
 
 var map_ImageRegistryConfigStorage = map[string]string{
-	"":                "ImageRegistryConfigStorage describes how the storage should be configured for the image registry.",
-	"emptyDir":        "emptyDir represents ephemeral storage on the pod's host node. WARNING: this storage cannot be used with more than 1 replica and is not suitable for production use. When the pod is removed from a node for any reason, the data in the emptyDir is deleted forever.",
-	"s3":              "s3 represents configuration that uses Amazon Simple Storage Service.",
-	"gcs":             "gcs represents configuration that uses Google Cloud Storage.",
-	"swift":           "swift represents configuration that uses OpenStack Object Storage.",
-	"pvc":             "pvc represents configuration that uses a PersistentVolumeClaim.",
-	"azure":           "azure represents configuration that uses Azure Blob Storage.",
-	"managementState": "managementState indicates if the operator manages the underlying storage unit. If Managed the operator will remove the storage when this operator gets Removed.",
+	"":         "ImageRegistryConfigStorage describes how the storage should be configured for the image registry.",
+	"emptyDir": "emptyDir represents ephemeral storage on the pod's host node. WARNING: this storage cannot be used with more than 1 replica and is not suitable for production use. When the pod is removed from a node for any reason, the data in the emptyDir is deleted forever.",
+	"s3":       "s3 represents configuration that uses Amazon Simple Storage Service.",
+	"gcs":      "gcs represents configuration that uses Google Cloud Storage.",
+	"swift":    "swift represents configuration that uses OpenStack Object Storage.",
+	"pvc":      "pvc represents configuration that uses a PersistentVolumeClaim.",
+	"azure":    "azure represents configuration that uses Azure Blob Storage.",
 }
 
 func (ImageRegistryConfigStorage) SwaggerDoc() map[string]string {
@@ -180,7 +179,7 @@ var map_ImageRegistrySpec = map[string]string{
 	"defaultRoute":    "defaultRoute indicates whether an external facing route for the registry should be created using the default generated hostname.",
 	"routes":          "routes defines additional external facing routes which should be created for the registry.",
 	"replicas":        "replicas determines the number of registry instances to run.",
-	"logging":         "logging is deprecated, use logLevel instead.",
+	"logging":         "logging determines the level of logging enabled in the registry.",
 	"resources":       "resources defines the resource requests+limits for the registry pod.",
 	"nodeSelector":    "nodeSelector defines the node selection constraints for the registry pod.",
 	"tolerations":     "tolerations defines the tolerations for the registry pod.",
@@ -194,7 +193,7 @@ func (ImageRegistrySpec) SwaggerDoc() map[string]string {
 
 var map_ImageRegistryStatus = map[string]string{
 	"":               "ImageRegistryStatus reports image registry operational status.",
-	"storageManaged": "storageManaged is deprecated, please refer to Storage.managementState",
+	"storageManaged": "storageManaged is a boolean which denotes whether or not we created the registry storage medium (such as an S3 bucket).",
 	"storage":        "storage indicates the current applied storage configuration of the registry.",
 }
 
