@@ -52,7 +52,11 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	var err error
 
 	if configs[0].Spec.Config.Raw == nil {
-		outIgn = ign3types.Config{}
+		outIgn = ign3types.Config{
+			Ignition: ign3types.Ignition{
+				Version: ign3types.MaxVersion.String(),
+			},
+		}
 	} else {
 		outIgn, err = ParseAndConvertConfig(configs[0].Spec.Config.Raw)
 		if err != nil {
@@ -66,16 +70,13 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 			fips = true
 		}
 
-		var mergedIgn ign3types.Config
-		if configs[idx].Spec.Config.Raw == nil {
-			mergedIgn = ign3types.Config{}
-		} else {
-			mergedIgn, err = ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
+		if configs[idx].Spec.Config.Raw != nil {
+			mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
 			if err != nil {
 				return nil, err
 			}
+			outIgn = ign3.Merge(outIgn, mergedIgn)
 		}
-		outIgn = ign3.Merge(outIgn, mergedIgn)
 	}
 	rawOutIgn, err := json.Marshal(outIgn)
 	if err != nil {
