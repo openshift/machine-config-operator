@@ -81,6 +81,7 @@ type Operator struct {
 	clusterCmLister  corelisterv1.ConfigMapLister
 	proxyLister      configlistersv1.ProxyLister
 	oseKubeAPILister corelisterv1.ConfigMapLister
+	dnsLister        configlistersv1.DNSLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -97,6 +98,7 @@ type Operator struct {
 	clusterRoleBindingInformerSynced cache.InformerSynced
 	proxyListerSynced                cache.InformerSynced
 	oseKubeAPIListerSynced           cache.InformerSynced
+	dnsListerSynced                  cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -123,6 +125,7 @@ func New(
 	infraInformer configinformersv1.InfrastructureInformer,
 	networkInformer configinformersv1.NetworkInformer,
 	proxyInformer configinformersv1.ProxyInformer,
+	dnsInformer configinformersv1.DNSInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
@@ -160,6 +163,7 @@ func New(
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
 		oseKubeAPIInformer.Informer(),
+		dnsInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -194,6 +198,8 @@ func New(
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
+	optr.dnsLister = dnsInformer.Lister()
+	optr.dnsListerSynced = dnsInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 
@@ -230,7 +236,8 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.proxyListerSynced,
 		optr.oseKubeAPIListerSynced,
 		optr.mcpListerSynced,
-		optr.mcListerSynced) {
+		optr.mcListerSynced,
+		optr.dnsListerSynced) {
 		glog.Error("failed to sync caches")
 		return
 	}

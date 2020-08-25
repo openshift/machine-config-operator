@@ -31,3 +31,6 @@ spec:
           apiServerInternalIP: 10.0.0.1
           ingressIP: 10.0.0.2
           nodeDNSIP: 10.0.0.3
+  dns:
+    spec:
+      baseDomain: my-test-cluster.installer.team.coreos.systems
