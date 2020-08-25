@@ -84,6 +84,10 @@ type ControllerConfigSpec struct {
 	// +nullable
 	Infra *configv1.Infrastructure `json:"infra"`
 
+	// dns holds the cluster dns details
+	// +nullable
+	DNS *configv1.DNS `json:"dns"`
+
 	// kubeletIPv6 is true to force a single-stack IPv6 kubelet config
 	KubeletIPv6 bool `json:"kubeletIPv6,omitempty"`
 

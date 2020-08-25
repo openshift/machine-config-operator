@@ -28,7 +28,7 @@ func RenderBootstrap(
 	additionalTrustBundleFile,
 	proxyFile,
 	clusterConfigConfigMapFile,
-	infraFile, networkFile,
+	infraFile, networkFile, dnsFile,
 	cloudConfigFile, cloudProviderCAFile,
 	rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
@@ -42,6 +42,7 @@ func RenderBootstrap(
 		networkFile,
 		rootCAFile,
 		pullSecretFile,
+		dnsFile,
 	}
 	if kubeAPIServerServingCA != "" {
 		files = append(files, kubeAPIServerServingCA)
@@ -85,7 +86,16 @@ func RenderBootstrap(
 		return fmt.Errorf("expected *configv1.Network found %T", obji)
 	}
 
-	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy)
+	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[dnsFile])
+	if err != nil {
+		return err
+	}
+	dns, ok := obji.(*configv1.DNS)
+	if !ok {
+		return fmt.Errorf("expected *configv1.DNS found %T", obji)
+	}
+
+	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy, dns)
 	if err != nil {
 		return err
 	}

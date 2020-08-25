@@ -100,7 +100,7 @@ func (fi bindataFileInfo) Sys() interface{} {
 var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
+    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
@@ -624,9 +624,47 @@ spec:
             clusterDNSIP:
               description: clusterDNSIP is the cluster DNS IP address
               type: string
-            etcdDiscoveryDomain:
-              description: etcdDiscoveryDomain is deprecated, use infra.status.etcdDiscoveryDomain instead
-              type: string
+            dns:
+              description: dns holds the cluster dns details
+              type: object
+              nullable: true
+              required:
+              - spec
+              properties:
+                spec:
+                  description: spec holds user settable values for configuration
+                  type: object
+                  properties:
+                    baseDomain:
+                      description: baseDomain is the base domain of the cluster. All managed DNS records will be sub-domains of this base.
+                      type: string
+                    publicZone:
+                      description: publicZone is the location where all the DNS records that are publicly accessible to the internet exist.
+                      type: object
+                      properties:
+                        id:
+                          description: id is the identifier that can be used to find the DNS hosted zone.
+                          type: string
+                        tags:
+                          additionalProperties:
+                            type: string
+                          description: tags can be used to query the DNS hosted zone.
+                          type: object
+                    privateZone:
+                      description: privateZone is the location where all the DNS records that are only available internally to the cluster exist.
+                      type: object
+                      properties:
+                        id:
+                          description: id is the identifier that can be used to find the DNS hosted zone.
+                          type: string
+                        tags:
+                          additionalProperties:
+                            type: string
+                          description: tags can be used to query the DNS hosted zone.
+                          type: object
+                status:
+                  description: status holds observed values from the cluster. They may not be overridden.
+                  type: object
             images:
               description: images is map of images that are used by the controller
                 to render templates under ./templates/
