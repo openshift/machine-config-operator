@@ -52,7 +52,11 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	var err error
 
 	if configs[0].Spec.Config.Raw == nil {
-		outIgn = ign3types.Config{}
+		outIgn = ign3types.Config{
+			Ignition: ign3types.Ignition{
+				Version: ign3types.MaxVersion.String(),
+			},
+		}
 	} else {
 		outIgn, err = ParseAndConvertConfig(configs[0].Spec.Config.Raw)
 		if err != nil {
@@ -61,21 +65,13 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	}
 
 	for idx := 1; idx < len(configs); idx++ {
-		// if any of the config has FIPS enabled, it'll be set
-		if configs[idx].Spec.FIPS {
-			fips = true
-		}
-
-		var mergedIgn ign3types.Config
-		if configs[idx].Spec.Config.Raw == nil {
-			mergedIgn = ign3types.Config{}
-		} else {
-			mergedIgn, err = ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
+		if configs[idx].Spec.Config.Raw != nil {
+			mergedIgn, err := ParseAndConvertConfig(configs[idx].Spec.Config.Raw)
 			if err != nil {
 				return nil, err
 			}
+			outIgn = ign3.Merge(outIgn, mergedIgn)
 		}
-		outIgn = ign3.Merge(outIgn, mergedIgn)
 	}
 	rawOutIgn, err := json.Marshal(outIgn)
 	if err != nil {
@@ -84,7 +80,11 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 
 	// sets the KernelType if specified in any of the MachineConfig
 	// Setting kerneType to realtime in any of MachineConfig takes priority
+	// also if any of the config has FIPS enabled, it'll be set
 	for _, cfg := range configs {
+		if cfg.Spec.FIPS {
+			fips = true
+		}
 		if cfg.Spec.KernelType == KernelTypeRealtime {
 			kernelType = cfg.Spec.KernelType
 			break

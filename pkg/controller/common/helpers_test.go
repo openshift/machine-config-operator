@@ -3,11 +3,14 @@ package common
 import (
 	"testing"
 
+	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
 
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -141,6 +144,117 @@ func TestParseAndConvert(t *testing.T) {
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.NotNil(t, err)
 	assert.Equal(t, ign3types.Config{}, convertedIgn)
+}
+
+func TestMergeMachineConfigs(t *testing.T) {
+	// variable setup
+	osImageURL := "testURL"
+	fips := true
+	kargs := []string{"testKarg"}
+	extensions := []string{"testExtensions"}
+
+	// Test that a singular base config that sets FIPS also sets other defaults correctly
+	machineConfigFIPS := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			FIPS: fips,
+		},
+	}
+	inMachineConfigs := []*mcfgv1.MachineConfig{machineConfigFIPS}
+	mergedMachineConfig, err := MergeMachineConfigs(inMachineConfigs, osImageURL)
+	require.Nil(t, err)
+
+	// check that the outgoing config does have the version string set,
+	// despite not having a MC with an ignition conf
+	outIgn := ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+	}
+	rawOutIgn, err := json.Marshal(outIgn)
+	require.Nil(t, err)
+	expectedMachineConfig := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL:      osImageURL,
+			KernelArguments: []string{},
+			Config: runtime.RawExtension{
+				Raw: rawOutIgn,
+			},
+			FIPS:       fips,
+			KernelType: KernelTypeDefault,
+			Extensions: []string{},
+		},
+	}
+	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
+
+	// Test that all other configs can also be set properly
+
+	// osImageURL should be set from the passed variable, make sure that
+	// setting it via a MachineConfig doesn't do anything
+	machineConfigOSImageURL := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL: "badURL",
+		},
+	}
+	machineConfigKernelArgs := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelArguments: kargs,
+		},
+	}
+	machineConfigKernelType := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			KernelType: KernelTypeRealtime,
+		},
+	}
+	machineConfigExtensions := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Extensions: extensions,
+		},
+	}
+	outIgn = ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Passwd: ign3types.Passwd{
+			Users: []ign3types.PasswdUser{
+				ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
+			},
+		},
+	}
+	rawOutIgn, err = json.Marshal(outIgn)
+	machineConfigIgn := &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: rawOutIgn,
+			},
+		},
+	}
+
+	// Now merge all of the above
+	inMachineConfigs = []*mcfgv1.MachineConfig{
+		machineConfigFIPS,
+		machineConfigOSImageURL,
+		machineConfigKernelArgs,
+		machineConfigKernelType,
+		machineConfigExtensions,
+		machineConfigIgn,
+	}
+	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, osImageURL)
+	require.Nil(t, err)
+
+	expectedMachineConfig = &mcfgv1.MachineConfig{
+		Spec: mcfgv1.MachineConfigSpec{
+			OSImageURL:      osImageURL,
+			KernelArguments: kargs,
+			Config: runtime.RawExtension{
+				Raw: rawOutIgn,
+			},
+			FIPS:       true,
+			KernelType: KernelTypeRealtime,
+			Extensions: extensions,
+		},
+	}
+	assert.Equal(t, *mergedMachineConfig, *expectedMachineConfig)
+
 }
 
 func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
