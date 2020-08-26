@@ -615,17 +615,6 @@ spec:
             clusterDNSIP:
               description: clusterDNSIP is the cluster DNS IP address
               type: string
-            etcdCAData:
-              description: etcdCAData specifies the etcd CA data
-              type: string
-              format: byte
-            etcdDiscoveryDomain:
-              description: etcdDiscoveryDomain is deprecated, use infra.status.etcdDiscoveryDomain instead
-              type: string
-            etcdMetricCAData:
-              description: etcdMetricData specifies the etcd metric CA data
-              type: string
-              format: byte
             images:
               description: images is map of images that are used by the controller
                 to render templates under ./templates/

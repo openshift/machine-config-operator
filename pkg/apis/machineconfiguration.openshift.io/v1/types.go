@@ -48,12 +48,6 @@ type ControllerConfigSpec struct {
 	// kubeAPIServerServingCAData managed Kubelet to API Server Cert... Rotated automatically
 	KubeAPIServerServingCAData []byte `json:"kubeAPIServerServingCAData"`
 
-	// etcdCAData specifies the etcd CA data
-	EtcdCAData []byte `json:"etcdCAData"`
-
-	// etcdMetricData specifies the etcd metric CA data
-	EtcdMetricCAData []byte `json:"etcdMetricCAData"`
-
 	// rootCAData specifies the root CA data
 	RootCAData []byte `json:"rootCAData"`
 
