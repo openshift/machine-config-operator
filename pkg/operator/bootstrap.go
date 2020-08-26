@@ -30,7 +30,7 @@ func RenderBootstrap(
 	clusterConfigConfigMapFile,
 	infraFile, networkFile,
 	cloudConfigFile, cloudProviderCAFile,
-	rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
+	etcdCAFile, etcdMetricCAFile, rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
 	destinationDir, releaseImage string,
 ) error {
@@ -41,6 +41,8 @@ func RenderBootstrap(
 		infraFile,
 		networkFile,
 		rootCAFile,
+		etcdCAFile,
+		etcdMetricCAFile,
 		pullSecretFile,
 	}
 	if kubeAPIServerServingCA != "" {
@@ -127,18 +129,24 @@ func RenderBootstrap(
 		spec.CloudProviderCAData = data
 	}
 
+	spec.EtcdCAData = filesData[etcdCAFile]
+	spec.EtcdMetricCAData = filesData[etcdMetricCAFile]
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.ReleaseImage = releaseImage
 	spec.Images = map[string]string{
-		templatectrl.GCPRoutesControllerKey: imgs.MachineConfigOperator,
-		templatectrl.InfraImageKey:          imgs.InfraImage,
-		templatectrl.KeepalivedKey:          imgs.Keepalived,
-		templatectrl.CorednsKey:             imgs.Coredns,
-		templatectrl.MdnsPublisherKey:       imgs.MdnsPublisher,
-		templatectrl.HaproxyKey:             imgs.Haproxy,
-		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
+		templatectrl.EtcdImageKey:                imgs.Etcd,
+		templatectrl.SetupEtcdEnvKey:             imgs.MachineConfigOperator,
+		templatectrl.GCPRoutesControllerKey:      imgs.MachineConfigOperator,
+		templatectrl.InfraImageKey:               imgs.InfraImage,
+		templatectrl.KubeClientAgentImageKey:     imgs.KubeClientAgent,
+		templatectrl.ClusterEtcdOperatorImageKey: imgs.ClusterEtcdOperator,
+		templatectrl.KeepalivedKey:               imgs.Keepalived,
+		templatectrl.CorednsKey:                  imgs.Coredns,
+		templatectrl.MdnsPublisherKey:            imgs.MdnsPublisher,
+		templatectrl.HaproxyKey:                  imgs.Haproxy,
+		templatectrl.BaremetalRuntimeCfgKey:      imgs.BaremetalRuntimeCfg,
 	}
 
 	config := getRenderConfig("", string(filesData[kubeAPIServerServingCA]), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, nil)

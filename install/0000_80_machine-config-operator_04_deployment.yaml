@@ -34,6 +34,8 @@ spec:
         volumeMounts:
         - name: root-ca
           mountPath: /etc/ssl/kubernetes/ca.crt
+        - name: etcd-ca
+          mountPath: /etc/ssl/etcd/ca.crt
         - name: images
           mountPath: /etc/mco/images
       nodeSelector:
@@ -59,6 +61,9 @@ spec:
       - name: images
         configMap:
           name: machine-config-operator-images
+      - name: etcd-ca
+        hostPath:
+          path: /etc/ssl/etcd/ca.crt
       - name: root-ca
         hostPath:
           path: /etc/kubernetes/ca.crt

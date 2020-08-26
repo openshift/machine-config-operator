@@ -3,11 +3,15 @@ apiVersion: image.openshift.io/v1
 spec:
   tags:
   # machine-config-operator is the new master mco image that contains all of the 
-  # component images:mco, mcc, mcs & mcd 
+  # component images:mco, mcc, mcs, mcd & setup etcd
   - name: machine-config-operator
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:machine-config-operator
+  - name: etcd
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:etcd
   - name: pod
     from:
       kind: DockerImage
@@ -27,6 +31,10 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:kube-client-agent
+  - name: cluster-etcd-operator
+    from:
+      kind: DockerImage
+      name: registry.svc.ci.openshift.org/openshift:cluster-etcd-operator
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
