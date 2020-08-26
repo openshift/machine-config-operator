@@ -1,0 +1,9 @@
+name: rpm-ostreed.service
+dropins:
+- name: mco-controlplane-nice.conf
+  contents: |
+    # See https://github.com/openshift/machine-config-operator/issues/1897
+    [Service]
+    Nice=10
+    IOSchedulingClass=best-effort
+    IOSchedulingPriority=6
