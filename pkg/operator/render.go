@@ -96,7 +96,6 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	}
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{
-		NetworkType:         network.Spec.NetworkType,
 		ClusterDNSIP:        dnsIP,
 		KubeletIPv6:         ipv6,
 		CloudProviderConfig: "",
@@ -107,6 +106,13 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		// Still populating it here for now until it will be removed eventually
 		Platform: platform,
 		Infra:    infra,
+	}
+	if network.Status.NetworkType == "" {
+		// At install time, when CNO has not started, status is unset, use the value in spec.
+		ccSpec.NetworkType = network.Spec.NetworkType
+	} else {
+		// After installation, the MCO should not assume the network is changing just because the spec changed, it needs to wait until CNO updates the status.
+		ccSpec.NetworkType = network.Status.NetworkType
 	}
 
 	if proxy != nil {
