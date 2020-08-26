@@ -27,3 +27,9 @@ func TestRunExt(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, int64(3), s.Size())
 }
+
+func TestRunExtBackground(t *testing.T) {
+	o, err := RunExtBackground(0, "echo", "echo", "from", "TestRunExtBackground")
+	assert.Nil(t, err)
+	assert.Equal(t, o, "echo from TestRunExtBackground")
+}
