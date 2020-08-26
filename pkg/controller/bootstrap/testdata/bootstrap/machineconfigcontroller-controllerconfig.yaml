@@ -6,18 +6,14 @@ spec:
   additionalTrustBundle: null
   cloudProviderConfig: ""
   clusterDNSIP: 172.30.0.10
-  etcdCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCkVUQ0QgQ0EgREFUQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
-  etcdMetricCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCkVUQ0QgTUVUUklDIENBIERBVEEKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
   images:
     baremetalRuntimeCfgImage: ""
     corednsImage: ""
-    etcdKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     haproxyImage: ""
     infraImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     keepalivedImage: ""
     kubeClientAgentImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     mdnsPublisherImage: ""
-    setupEtcdEnvKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
   infra:
     apiVersion: config.openshift.io/v1
     kind: Infrastructure
@@ -30,7 +26,6 @@ spec:
     status:
       apiServerInternalURI: https://api-int.domain.example.com:6443
       apiServerURL: https://api.domain.example.com:6443
-      etcdDiscoveryDomain: domain.example.com
       infrastructureName: lab-0aaaa
       platformStatus:
         type: None
