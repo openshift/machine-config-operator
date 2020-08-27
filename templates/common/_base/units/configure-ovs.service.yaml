@@ -1,4 +1,4 @@
-name: ovs-configuration.service
+name: configure-ovs.service
 enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else}}false{{end}}
 contents: |
   [Unit]
