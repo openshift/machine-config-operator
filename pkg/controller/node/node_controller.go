@@ -736,6 +736,9 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if pool.Spec.Paused {
+		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
+			glog.Infof("Pool %s is paused and will not update.", pool.Name)
+		}
 		return ctrl.syncStatusOnly(pool)
 	}
 
