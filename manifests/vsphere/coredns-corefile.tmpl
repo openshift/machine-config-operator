@@ -1,17 +1,17 @@
 . {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
+    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
     forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
     cache 30
     reload
     hosts {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
-    template IN A {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match .*.apps.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN A {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`{{"{{ .Name }}"}}`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
         fallthrough
     }

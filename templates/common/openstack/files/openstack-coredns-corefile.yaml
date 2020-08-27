@@ -5,11 +5,11 @@ contents:
     . {
         errors
         health :18080
-        mdns {{ .Infra.Status.EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
+        mdns {{ .DNS.Spec.BaseDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
             policy sequential
         }
         cache 30
         reload
-        file /etc/coredns/node-dns-db {{ .Infra.Status.EtcdDiscoveryDomain }}
+        file /etc/coredns/node-dns-db {{ .DNS.Spec.BaseDomain }}
     }
