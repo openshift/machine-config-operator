@@ -3,11 +3,11 @@ enabled: true
 contents: |
   [Unit]
   Description=Afterburn Hostname
-  Before=kubelet.service
+  Before=node-valid-hostname.service
 
   [Service]
   ExecStart=/usr/bin/afterburn --provider openstack-metadata --hostname=/etc/hostname
   Type=oneshot
 
   [Install]
-  WantedBy=multi-user.target
+  WantedBy=network-online.target
