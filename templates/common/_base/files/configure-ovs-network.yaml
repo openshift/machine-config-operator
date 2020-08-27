@@ -26,14 +26,14 @@ contents:
     # find default interface
     while [ $counter -lt 12 ]; do
       # check ipv4
-      iface=$(ip -j route show default | jq -r '.[0].dev')
-      if [[ -n "$iface"  && "$iface" != "null" ]]; then
+      iface=$(ip route show default | awk '{if ($4 == "dev") print $5; exit}')
+      if [[ -n "$iface" ]]; then
         echo "IPv4 Default gateway interface found: ${iface}"
         break
       fi
       # check ipv6
-      iface=$(ip -6 -j route show default | jq -r '.[0].dev')
-      if [[ -n "$iface"  && "$iface" != "null" ]]; then
+      iface=$(ip -6 route show default | awk '{if ($4 == "dev") print $5; exit}')
+      if [[ -n "$iface" ]]; then
         echo "IPv6 Default gateway interface found: ${iface}"
         break
       fi
@@ -66,8 +66,8 @@ contents:
     echo "MAC address found for iface: ${iface}: ${iface_mac}"
 
     # find MTU from original iface
-    iface_mtu=$(ip -j link show "$iface" | jq -r '.[0].mtu')
-    if [[ -z "$iface_mtu" ||  "$iface_mtu" == "null" ]]; then
+    iface_mtu=$(ip link show "$iface" | awk '{print $5; exit}')
+    if [[ -z "$iface_mtu" ]]; then
       echo "Unable to determine default interface MTU, defaulting to 1500"
       iface_mtu=1500
     else
