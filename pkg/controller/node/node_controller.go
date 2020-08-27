@@ -409,6 +409,16 @@ func (ctrl *Controller) addNode(obj interface{}) {
 	}
 }
 
+func (ctrl *Controller) logPool(pool *mcfgv1.MachineConfigPool, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	glog.Infof("Pool %s: %s", pool.Name, msg)
+}
+
+func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1.Node, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	glog.Infof("Pool %s: node %s: %s", pool.Name, node.Name, msg)
+}
+
 func (ctrl *Controller) updateNode(old, cur interface{}) {
 	oldNode := old.(*corev1.Node)
 	curNode := cur.(*corev1.Node)
@@ -441,16 +451,16 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	if oldReady != newReady {
 		changed = true
 		if newReadyErr != nil {
-			glog.Infof("Pool %s: node %s is now reporting unready: %v", pool.Name, curNode.Name, newReadyErr)
+			ctrl.logPoolNode(pool, curNode, "Reporting unready: %v", newReadyErr)
 		} else {
-			glog.Infof("Pool %s: node %s is now reporting ready", pool.Name, curNode.Name)
+			ctrl.logPoolNode(pool, curNode, "Reporting ready")
 		}
 	}
 
 	// Specifically log when a node has completed an update so the MCC logs are a useful central aggregate of state changes
 	if oldNode.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] &&
 		isNodeDone(curNode) {
-		glog.Infof("Pool %s: node %s has completed update to %s", pool.Name, curNode.Name, curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
+		ctrl.logPoolNode(pool, curNode, "Completed update to %s", curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
 	} else {
 		annos := []string{
@@ -459,13 +469,18 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			daemonconsts.MachineConfigDaemonStateAnnotationKey,
 		}
 		for _, anno := range annos {
-			if oldNode.Annotations[anno] != curNode.Annotations[anno] {
-				glog.Infof("Pool %s: node %s changed %s = %s", pool.Name, curNode.Name, anno, curNode.Annotations[anno])
+			newValue := curNode.Annotations[anno]
+			if oldNode.Annotations[anno] != newValue {
+				ctrl.logPoolNode(pool, curNode, "changed annotation %s = %s", anno, newValue)
 				changed = true
+				// For the control plane, emit events for these since they're important
+				if pool.Name == masterPoolName {
+					ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "AnnotationChange", "Node %s now has %s=%s", curNode.Name, anno, newValue)
+				}
 			}
 		}
 		if !reflect.DeepEqual(oldNode.Labels, curNode.Labels) {
-			glog.Infof("Pool %s: node %s changed labels", pool.Name, curNode.Name)
+			ctrl.logPoolNode(pool, curNode, "changed labels")
 			changed = true
 		}
 	}
@@ -742,7 +757,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
 	if len(candidates) > 0 {
-		glog.Infof("Pool %s: %d candidate nodes for update, capacity: %d", pool.Name, len(candidates), capacity)
+		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(candidates), capacity)
 		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
 			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
 				return goerrs.Wrapf(err, "error setting desired machine config annotation for pool %q, sync error: %v", pool.Name, syncErr)
@@ -783,7 +798,6 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 }
 
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
-	glog.Infof("Setting node %s to desired config %s", nodeName, currentConfig)
 	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
@@ -869,7 +883,7 @@ func (ctrl *Controller) getCurrentEtcdLeader(candidates []*corev1.Node) (*corev1
 // filterControlPlaneCandidateNodes adjusts the candidates and capacity specifically
 // for the control plane, e.g. based on which node is the etcd leader at the time.
 // nolint:unparam
-func (ctrl *Controller) filterControlPlaneCandidateNodes(candidates []*corev1.Node, capacity uint) ([]*corev1.Node, uint, error) {
+func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) ([]*corev1.Node, uint, error) {
 	if len(candidates) <= 1 {
 		return candidates, capacity, nil
 	}
@@ -880,6 +894,8 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(candidates []*corev1.No
 	var newCandidates []*corev1.Node
 	for _, node := range candidates {
 		if node == etcdLeader {
+			// For now make this an event so we know it's working, even though it's more of a non-event
+			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "DeferringEtcdLeaderUpdate", "Deferring update of etcd leader %s", node.Name)
 			glog.Infof("Deferring update of etcd leader: %s", node.Name)
 			continue
 		}
@@ -892,22 +908,30 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(candidates []*corev1.No
 func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
 	if pool.Name == masterPoolName {
 		var err error
-		candidates, capacity, err = ctrl.filterControlPlaneCandidateNodes(candidates, capacity)
+		candidates, capacity, err = ctrl.filterControlPlaneCandidateNodes(pool, candidates, capacity)
 		if err != nil {
 			return err
 		}
 		// In practice right now these counts will be 1 but let's stay general to support 5 etcd nodes in the future
-		glog.Infof("Pool %s: filtered to %d candidate nodes for update, capacity: %d", pool.Name, len(candidates), capacity)
+		ctrl.logPool(pool, "filtered to %d candidate nodes for update, capacity: %d", len(candidates), capacity)
 	}
 	if capacity < uint(len(candidates)) {
 		// Arbitrarily pick the first N candidates; no attempt at sorting.
 		// Perhaps later we allow admins to weight somehow, or do something more intelligent.
 		candidates = candidates[:capacity]
 	}
+	targetConfig := pool.Spec.Configuration.Name
 	for _, node := range candidates {
-		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, pool.Spec.Configuration.Name); err != nil {
+		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
+		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, targetConfig); err != nil {
 			return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
 		}
+	}
+	if len(candidates) == 1 {
+		candidate := candidates[0]
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Targeted node %s to config %s", candidate.Name, targetConfig)
+	} else {
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Set target for %d nodes to config %s", targetConfig)
 	}
 	return nil
 }

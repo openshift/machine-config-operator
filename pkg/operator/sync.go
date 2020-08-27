@@ -395,14 +395,34 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 }
 
 func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
-	crBytes, err := renderAsset(config, "manifests/machineconfigcontroller/clusterrole.yaml")
-	if err != nil {
-		return err
+	for _, path := range []string{
+		"manifests/machineconfigcontroller/clusterrole.yaml",
+		"manifests/machineconfigcontroller/events-clusterrole.yaml",
+	} {
+		crBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
+		_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
+		if err != nil {
+			return err
+		}
 	}
-	cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
-	if err != nil {
-		return err
+
+	for _, path := range []string{
+		"manifests/machineconfigcontroller/events-rolebinding-default.yaml",
+		"manifests/machineconfigcontroller/events-rolebinding-target.yaml",
+	} {
+		crbBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		crb := resourceread.ReadRoleBindingV1OrDie(crbBytes)
+		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), crb)
+		if err != nil {
+			return err
+		}
 	}
 
 	crbBytes, err := renderAsset(config, "manifests/machineconfigcontroller/clusterrolebinding.yaml")
