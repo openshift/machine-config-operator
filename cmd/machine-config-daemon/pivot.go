@@ -22,12 +22,12 @@ import (
 
 // flag storage
 var keep bool
+var reboot bool
 var fromEtcPullSpec bool
 
 const (
-	// etcPivotFile is used for 4.1 bootimages and is how the MCD
-	// currently communicated with this service.
-	etcPivotFile = "/etc/pivot/image-pullspec"
+	etcPivotFile       = "/etc/pivot/image-pullspec"
+	runPivotRebootFile = "/run/pivot/reboot-needed"
 	// File containing kernel arg changes for tuning
 	kernelTuningFile = "/etc/pivot/kernel-args"
 	cmdLineFile      = "/proc/cmdline"
@@ -53,6 +53,7 @@ var pivotCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(pivotCmd)
 	pivotCmd.PersistentFlags().BoolVarP(&keep, "keep", "k", false, "Do not remove container image")
+	pivotCmd.PersistentFlags().BoolVarP(&reboot, "reboot", "r", false, "Reboot if changed")
 	pivotCmd.PersistentFlags().BoolVarP(&fromEtcPullSpec, "from-etc-pullspec", "P", false, "Parse /etc/pivot/image-pullspec")
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
@@ -233,8 +234,29 @@ func run(_ *cobra.Command, args []string) error {
 
 	if !changed {
 		glog.Info("No changes; already at target oscontainer, no kernel args provided")
+		return nil
 	}
 
+	if reboot {
+		glog.Infof("Rebooting as requested by cmdline flag")
+	} else {
+		// Otherwise see if it's specified by the file
+		_, err = os.Stat(runPivotRebootFile)
+		if err != nil && !os.IsNotExist(err) {
+			return errors.Wrapf(err, "Checking %s", runPivotRebootFile)
+		}
+		if err == nil {
+			glog.Infof("Rebooting due to %s", runPivotRebootFile)
+			reboot = true
+		}
+	}
+	if reboot {
+		// Reboot the machine if asked to do so
+		err := exec.Command("systemctl", "reboot").Run()
+		if err != nil {
+			return errors.Wrapf(err, "rebooting")
+		}
+	}
 	return nil
 }
 

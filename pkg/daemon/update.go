@@ -108,42 +108,13 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
-// Remove pending deployment on OSTree based system
-func removePendingDeployment() error {
-	_, err := runGetOut("rpm-ostree", "cleanup", "-p")
-	return err
-}
-
-func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+// updateOSAndReboot is the last step in an update(), and it can also
+// be called as a special case for the "bootstrap pivot".
+func (dn *Daemon) updateOSAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if err := dn.updateOS(newConfig); err != nil {
 		return err
 	}
-
-	defer func() {
-		// Operations performed by rpm-ostree on the booted system are available
-		// as staged deployment. It gets applied only when we reboot the system.
-		// In case of an error during any rpm-ostree transaction, removing pending deployment
-		// should be sufficient to discard any applied changes.
-		if retErr != nil {
-			glog.Infof("Rolling back applied changes to OS")
-			if err := removePendingDeployment(); err != nil {
-				retErr = errors.Wrapf(retErr, "error removing staged deployment: %v", err)
-				return
-			}
-		}
-	}()
-
-	// kargs
-	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
-		return err
-	}
-
-	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
-		return err
-	}
-
-	return nil
+	return dn.finalizeAndReboot(newConfig)
 }
 
 func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -381,20 +352,34 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.applyOSChanges(oldConfig, newConfig); err != nil {
+	// kargs
+	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
 		return err
 	}
-
 	defer func() {
 		if retErr != nil {
-			if err := dn.applyOSChanges(newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
+			if err := dn.updateKernelArguments(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back kernel arguments %v", err)
 				return
 			}
 		}
 	}()
 
-	return dn.finalizeAndReboot(newConfig)
+	// Switch to real time kernel
+	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.switchKernel(newConfig, oldConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back Real time Kernel %v", err)
+				return
+			}
+		}
+	}()
+
+	return dn.updateOSAndReboot(newConfig)
 }
 
 // MachineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
