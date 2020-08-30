@@ -80,15 +80,25 @@ spec:
       mountPath: "/etc/keepalived"
     - name: run-dir
       mountPath: "/var/run/keepalived"
+    readinessProbe:
+      httpGet:
+        path: /readyz
+        port: 6443
+        scheme: HTTPS
+      periodSeconds: 1
+      successThreshold: 3
+      failureThreshold: 3
+      timeoutSeconds: 2
     livenessProbe:
       exec:
         command:
         - /bin/bash
         - -c
         - |
-          [[ -s /etc/keepalived/keepalived.conf ]] || \
-          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data \
+          && /usr/bin/curl -o /dev/null -kLfs https://localhost:6443/readyz
       initialDelaySeconds: 20
+      failureThreshold: 5
     terminationMessagePolicy: FallbackToLogsOnError
     imagePullPolicy: IfNotPresent
   - name: keepalived-monitor
