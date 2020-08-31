@@ -103,7 +103,7 @@ contents:
         - name: run-dir
           mountPath: "/var/run/haproxy"
         livenessProbe:
-          initialDelaySeconds: 10
+          initialDelaySeconds: 50
           httpGet:
             path: /readyz
             port: 50936
