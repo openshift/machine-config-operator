@@ -1,0 +1,59 @@
+mode: 0644
+path: "/etc/kubernetes/manifests/qemu-guest-agent.yaml"
+contents:
+  inline: |
+    ---
+    kind: Pod
+    apiVersion: v1
+    metadata:
+    name: qemu-guest-agent
+    namespace: openshift-ovirt-infra
+    creationTimestamp:
+    deletionGracePeriodSeconds: 65
+    labels:
+        app: qemu-guest-agent
+    spec:
+    volumes:
+    - name: dev
+        hostPath:
+        path: "/dev"
+    - name: virtio-ports
+        hostPath:
+        path: "/dev/virtio-ports"
+    - name: dbus
+        hostPath:
+        path: "/run/dbus"
+    - name: systemd
+        hostPath:
+        path: "/run/systemd"
+    - name: zoneinfo
+        hostPath:
+        path: "/usr/share/zoneinfo"
+
+    containers:
+    - name: qemu-guest-agent
+        securityContext:
+        privileged: true
+        image: registry.svc.ci.openshift.org/ovirt/qemu-guest-agent:4.2
+        resources:
+        requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: dev
+        mountPath: "/dev"
+        - name: virtio-ports
+        mountPath: "/dev/virtio-ports"
+        - name: dbus
+        mountPath: "/run/dbus"
+        - name: systemd
+        mountPath: "/run/systemd"
+        - name: zoneinfo
+        mountPath: "/usr/share/zoneinfo"
+
+        terminationMessagePolicy: FallbackToLogsOnError
+    hostNetwork: true
+    tolerations:
+    - operator: Exists
+    priorityClassName: system-node-critical
+    status: {}

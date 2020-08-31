@@ -261,6 +261,10 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 				name:     "manifests/ovirt/keepalived.conf.tmpl",
 				filename: "ovirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
 			},
+			manifest{
+				name:     "manifests/ovirt/qemu-guest-agent.yaml",
+				filename: "ovirt/manifests/qemu-guest-agent.yaml",
+			},
 		)
 	}
 	if infra.Status.PlatformStatus.VSphere != nil && infra.Status.PlatformStatus.VSphere.APIServerInternalIP != "" {

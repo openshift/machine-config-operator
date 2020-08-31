@@ -40,6 +40,7 @@
 // manifests/ovirt/coredns.yaml
 // manifests/ovirt/keepalived.conf.tmpl
 // manifests/ovirt/keepalived.yaml
+// manifests/ovirt/qemu-guest-agent.yaml
 // manifests/userdata_secret.yaml
 // manifests/vsphere/coredns-corefile.tmpl
 // manifests/vsphere/coredns.yaml
@@ -2466,6 +2467,78 @@ func manifestsOvirtKeepalivedYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsOvirtQemuGuestAgentYaml = []byte(`---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: qemu-guest-agent
+  namespace: openshift-ovirt-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: qemu-guest-agent
+spec:
+  volumes:
+  - name: dev
+    hostPath:
+      path: "/dev"
+  - name: virtio-ports
+    hostPath:
+      path: "/dev/virtio-ports"
+  - name: dbus
+    hostPath:
+      path: "/run/dbus"
+  - name: systemd
+    hostPath:
+      path: "/run/systemd"
+  - name: zoneinfo
+    hostPath:
+      path: "/usr/share/zoneinfo"      
+
+  containers:
+  - name: qemu-guest-agent
+    securityContext:
+      privileged: true
+    image: registry.svc.ci.openshift.org/ovirt/qemu-guest-agent:4.2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: dev
+      mountPath: "/dev"
+    - name: virtio-ports
+      mountPath: "/dev/virtio-ports"
+    - name: dbus
+      mountPath: "/run/dbus"
+    - name: systemd
+      mountPath: "/run/systemd"
+    - name: zoneinfo
+      mountPath: "/usr/share/zoneinfo"
+
+    terminationMessagePolicy: FallbackToLogsOnError
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}
+`)
+
+func manifestsOvirtQemuGuestAgentYamlBytes() ([]byte, error) {
+	return _manifestsOvirtQemuGuestAgentYaml, nil
+}
+
+func manifestsOvirtQemuGuestAgentYaml() (*asset, error) {
+	bytes, err := manifestsOvirtQemuGuestAgentYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/ovirt/qemu-guest-agent.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsUserdata_secretYaml = []byte(`apiVersion: v1
 kind: Secret
 metadata:
@@ -2892,6 +2965,7 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/ovirt/coredns.yaml":                                           manifestsOvirtCorednsYaml,
 	"manifests/ovirt/keepalived.conf.tmpl":                                   manifestsOvirtKeepalivedConfTmpl,
 	"manifests/ovirt/keepalived.yaml":                                        manifestsOvirtKeepalivedYaml,
+	"manifests/ovirt/qemu-guest-agent.yaml":                                  manifestsOvirtQemuGuestAgentYaml,
 	"manifests/userdata_secret.yaml":                                         manifestsUserdata_secretYaml,
 	"manifests/vsphere/coredns-corefile.tmpl":                                manifestsVsphereCorednsCorefileTmpl,
 	"manifests/vsphere/coredns.yaml":                                         manifestsVsphereCorednsYaml,
@@ -2993,6 +3067,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"coredns.yaml":          &bintree{manifestsOvirtCorednsYaml, map[string]*bintree{}},
 			"keepalived.conf.tmpl":  &bintree{manifestsOvirtKeepalivedConfTmpl, map[string]*bintree{}},
 			"keepalived.yaml":       &bintree{manifestsOvirtKeepalivedYaml, map[string]*bintree{}},
+			"qemu-guest-agent.yaml": &bintree{manifestsOvirtQemuGuestAgentYaml, map[string]*bintree{}},
 		}},
 		"userdata_secret.yaml": &bintree{manifestsUserdata_secretYaml, map[string]*bintree{}},
 		"vsphere": &bintree{nil, map[string]*bintree{
