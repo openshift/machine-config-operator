@@ -10,10 +10,13 @@ import (
 )
 
 // KubeletConfigLister helps list KubeletConfigs.
+// All objects returned here must be treated as read-only.
 type KubeletConfigLister interface {
 	// List lists all KubeletConfigs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.KubeletConfig, err error)
 	// Get retrieves the KubeletConfig from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.KubeletConfig, error)
 	KubeletConfigListerExpansion
 }

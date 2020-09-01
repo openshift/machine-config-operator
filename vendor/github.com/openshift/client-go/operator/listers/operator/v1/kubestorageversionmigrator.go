@@ -10,10 +10,13 @@ import (
 )
 
 // KubeStorageVersionMigratorLister helps list KubeStorageVersionMigrators.
+// All objects returned here must be treated as read-only.
 type KubeStorageVersionMigratorLister interface {
 	// List lists all KubeStorageVersionMigrators in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.KubeStorageVersionMigrator, err error)
 	// Get retrieves the KubeStorageVersionMigrator from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.KubeStorageVersionMigrator, error)
 	KubeStorageVersionMigratorListerExpansion
 }
