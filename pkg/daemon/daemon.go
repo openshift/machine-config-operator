@@ -971,11 +971,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !osMatch {
 			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
 			// This only returns on error
-			if err := dn.updateOS(state.currentConfig); err != nil {
-				return err
-			}
-
-			return dn.finalizeAndReboot(state.currentConfig)
+			return dn.updateOSAndReboot(state.currentConfig)
 		}
 		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
 
