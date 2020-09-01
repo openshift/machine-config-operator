@@ -10,10 +10,13 @@ import (
 )
 
 // KubeAPIServerLister helps list KubeAPIServers.
+// All objects returned here must be treated as read-only.
 type KubeAPIServerLister interface {
 	// List lists all KubeAPIServers in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.KubeAPIServer, err error)
 	// Get retrieves the KubeAPIServer from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.KubeAPIServer, error)
 	KubeAPIServerListerExpansion
 }

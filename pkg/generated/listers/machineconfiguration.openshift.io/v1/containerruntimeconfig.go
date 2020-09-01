@@ -10,10 +10,13 @@ import (
 )
 
 // ContainerRuntimeConfigLister helps list ContainerRuntimeConfigs.
+// All objects returned here must be treated as read-only.
 type ContainerRuntimeConfigLister interface {
 	// List lists all ContainerRuntimeConfigs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.ContainerRuntimeConfig, err error)
 	// Get retrieves the ContainerRuntimeConfig from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.ContainerRuntimeConfig, error)
 	ContainerRuntimeConfigListerExpansion
 }

@@ -10,10 +10,13 @@ import (
 )
 
 // OpenShiftAPIServerLister helps list OpenShiftAPIServers.
+// All objects returned here must be treated as read-only.
 type OpenShiftAPIServerLister interface {
 	// List lists all OpenShiftAPIServers in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.OpenShiftAPIServer, err error)
 	// Get retrieves the OpenShiftAPIServer from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.OpenShiftAPIServer, error)
 	OpenShiftAPIServerListerExpansion
 }
