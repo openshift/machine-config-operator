@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -510,7 +511,7 @@ func TestAPIServer(t *testing.T) {
 			ms := &mockServer{
 				GetConfigFn: scenario.serverFunc,
 			}
-			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "")
+			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "", tls.VersionTLS12)
 			server.handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 
 	"github.com/golang/glog"
@@ -47,7 +48,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	apiHandler := server.NewServerAPIHandler(cs)
-	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key)
+	secureServer := server.NewAPIServer(apiHandler, rootOpts.sport, false, rootOpts.cert, rootOpts.key, tls.VersionTLS12)
 	insecureServer := server.NewAPIServer(apiHandler, rootOpts.isport, true, "", "")
 
 	stopCh := make(chan struct{})

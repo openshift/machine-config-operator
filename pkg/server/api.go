@@ -32,28 +32,30 @@ type poolRequest struct {
 // APIServer provides the HTTP(s) endpoint
 // for providing the machine configs.
 type APIServer struct {
-	handler  http.Handler
-	port     int
-	insecure bool
-	cert     string
-	key      string
+	handler       http.Handler
+	port          int
+	insecure      bool
+	cert          string
+	key           string
+	minTLSVersion uint16
 }
 
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
+func NewAPIServer(a *APIHandler, p int, is bool, c, k string, minTLS uint16) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
 	mux.Handle("/healthz", &healthHandler{})
 	mux.Handle("/", &defaultHandler{})
 
 	return &APIServer{
-		handler:  mux,
-		port:     p,
-		insecure: is,
-		cert:     c,
-		key:      k,
+		handler:       mux,
+		port:          p,
+		insecure:      is,
+		cert:          c,
+		key:           k,
+		minTLSVersion: minTLS,
 	}
 }
 
@@ -64,7 +66,7 @@ func (a *APIServer) Serve() {
 		Handler: a.handler,
 		// We don't want to allow 1.1 as that's old.  This was flagged in a security audit.
 		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
+			MinVersion: a.minTLSVersion,
 		},
 	}
 
