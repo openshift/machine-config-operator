@@ -10,7 +10,7 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
-  Environment="KUBELET_LOG_LEVEL=3"
+  Environment="KUBELET_LOG_LEVEL=4"
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
@@ -40,6 +40,7 @@ contents: |
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
+        --pod-infra-container-image={{.Images.infraImageKey}} \
         --v=${KUBELET_LOG_LEVEL}
 
   Restart=always
