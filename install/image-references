@@ -23,10 +23,6 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:machine-os-content
-  - name: kube-client-agent
-    from:
-      kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:kube-client-agent
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
