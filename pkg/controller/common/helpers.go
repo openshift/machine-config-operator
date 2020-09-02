@@ -212,12 +212,6 @@ func ConvertRawExtIgnitionToV3(inRawExtIgn *runtime.RawExtension) (runtime.RawEx
 // ConvertRawExtIgnitionToV2 ensures that the Ignition config in
 // the RawExtension is spec v2.2, or translates to it.
 func ConvertRawExtIgnitionToV2(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
-	_, rptV2, errV2 := ign2.Parse(inRawExtIgn.Raw)
-	if errV2 == nil && !rptV2.IsFatal() {
-		// The rawExt is already on V2.2, no need to translate
-		return *inRawExtIgn, nil
-	}
-
 	ignCfg, rpt, err := ign3.Parse(inRawExtIgn.Raw)
 	if err != nil || rpt.IsFatal() {
 		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config spec v3.1 failed with error: %v\nReport: %v", err, rpt)
