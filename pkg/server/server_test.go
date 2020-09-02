@@ -53,7 +53,7 @@ func TestStringEncode(t *testing.T) {
 	}
 }
 
-func TestMachineConfigToRawIgnition(t *testing.T) {
+func TestEncapsulated(t *testing.T) {
 	mcPath := filepath.Join(testDir, "machine-configs", testConfig+".yaml")
 	mcData, err := ioutil.ReadFile(mcPath)
 	assert.Nil(t, err)
@@ -72,23 +72,14 @@ func TestMachineConfigToRawIgnition(t *testing.T) {
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
-	rawIgn, err := machineConfigToRawIgnition(mc)
+	err = appendEncapsulated(&mcIgnCfg, mc)
 	if err != nil {
 		t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
 	}
-	ignCfg, err := ctrlcommon.ParseAndConvertConfig(rawIgn.Raw)
-	if err != nil {
-		t.Errorf("decoding Ignition Config failed: %s", err)
-	}
-	mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
-	if err != nil {
-		t.Errorf("decoding Ignition Config failed: %s", err)
-	}
 	assert.Equal(t, 1, len(origIgnCfg.Storage.Files))
 	assert.Equal(t, 2, len(mcIgnCfg.Storage.Files))
-	assert.Equal(t, 2, len(ignCfg.Storage.Files))
-	assert.Equal(t, ignCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
-	assert.Equal(t, ignCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
+	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
+	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
 }
 
 // TestBootstrapServer tests the behavior of the machine config server
@@ -121,13 +112,17 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
+	mcIgnCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		t.Errorf("decoding Ignition Config failed: %s", err)
+	}
 
 	// add new files, units in the expected Ignition.
 	kc, _, err := getKubeConfigContent(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = appendFileToRawIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	err = appendFileToIgnition(&mcIgnCfg, defaultMachineKubeConfPath, string(kc))
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
@@ -135,7 +130,7 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	err = appendFileToRawIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	err = appendFileToIgnition(&mcIgnCfg, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
@@ -227,12 +222,16 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
+	mcIgnCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		t.Errorf("decoding Ignition Config failed: %s", err)
+	}
 
 	kc, _, err := getKubeConfigContent(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = appendFileToRawIgnition(&mc.Spec.Config, defaultMachineKubeConfPath, string(kc))
+	err = appendFileToIgnition(&mcIgnCfg, defaultMachineKubeConfPath, string(kc))
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
@@ -240,7 +239,7 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error while creating annotations err: %v", err)
 	}
-	err = appendFileToRawIgnition(&mc.Spec.Config, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	err = appendFileToIgnition(&mcIgnCfg, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 	if err != nil {
 		t.Fatalf("unexpected error while appending file to ignition: %v", err)
 	}
