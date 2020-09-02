@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	conmonconfig "github.com/containers/conmon/runner/config"
 	"github.com/cri-o/cri-o/internal/pkg/findprocess"
 	"github.com/cri-o/cri-o/pkg/config"
 	"github.com/cri-o/cri-o/utils"
@@ -74,7 +75,7 @@ type exitCodeInfo struct {
 }
 
 // CreateContainer creates a container.
-func (r *runtimeOCI) CreateContainer(c *Container, cgroupParent string) (err error) {
+func (r *runtimeOCI) CreateContainer(c *Container, cgroupParent string) (retErr error) {
 	var stderrBuf bytes.Buffer
 	parentPipe, childPipe, err := newPipe()
 	childStartPipe, parentStartPipe, err := newPipe()
@@ -127,7 +128,7 @@ func (r *runtimeOCI) CreateContainer(c *Container, cgroupParent string) (err err
 		"args": args,
 	}).Debugf("running conmon: %s", r.config.Conmon)
 
-	cmd := exec.Command(r.config.Conmon, args...)
+	cmd := exec.Command(r.config.Conmon, args...) // nolint: gosec
 	cmd.Dir = c.bundlePath
 	cmd.SysProcAttr = sysProcAttrPlatform()
 	cmd.Stdin = os.Stdin
@@ -177,7 +178,7 @@ func (r *runtimeOCI) CreateContainer(c *Container, cgroupParent string) (err err
 
 	// We will delete all container resources if creation fails
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			if err := r.DeleteContainer(c); err != nil {
 				logrus.Warnf("unable to delete container %s: %v", c.ID(), err)
 			}
@@ -228,7 +229,6 @@ func (r *runtimeOCI) StartContainer(c *Container) error {
 
 	if err := utils.ExecCmdWithStdStreams(os.Stdin, os.Stdout, os.Stderr,
 		r.path, rootFlag, r.root, "start", c.id); err != nil {
-
 		return err
 	}
 	c.state.Started = time.Now()
@@ -305,7 +305,7 @@ func (r *runtimeOCI) ExecContainer(c *Container, cmd []string, stdin io.Reader, 
 
 	args := []string{rootFlag, r.root, "exec"}
 	args = append(args, "--process", processFile.Name(), c.ID())
-	execCmd := exec.Command(r.path, args...)
+	execCmd := exec.Command(r.path, args...) // nolint: gosec
 	if v, found := os.LookupEnv("XDG_RUNTIME_DIR"); found {
 		execCmd.Env = append(execCmd.Env, fmt.Sprintf("XDG_RUNTIME_DIR=%s", v))
 	}
@@ -313,27 +313,43 @@ func (r *runtimeOCI) ExecContainer(c *Container, cmd []string, stdin io.Reader, 
 	if tty {
 		cmdErr = ttyCmd(execCmd, stdin, stdout, resize)
 	} else {
+		var r, w *os.File
 		if stdin != nil {
 			// Use an os.Pipe here as it returns true *os.File objects.
 			// This way, if you run 'kubectl exec <pod> -i bash' (no tty) and type 'exit',
 			// the call below to execCmd.Run() can unblock because its Stdin is the read half
 			// of the pipe.
-			r, w, err := os.Pipe()
+			r, w, err = os.Pipe()
 			if err != nil {
 				return err
 			}
-			go func() { _, copyError = pools.Copy(w, stdin) }()
-
 			execCmd.Stdin = r
+			go func() {
+				_, copyError = pools.Copy(w, stdin)
+				w.Close()
+			}()
 		}
+
 		if stdout != nil {
 			execCmd.Stdout = stdout
 		}
+
 		if stderr != nil {
 			execCmd.Stderr = stderr
 		}
 
-		cmdErr = execCmd.Run()
+		if err := execCmd.Start(); err != nil {
+			return err
+		}
+
+		// The read side of the pipe should be closed after the container process has been started.
+		if r != nil {
+			if err := r.Close(); err != nil {
+				return err
+			}
+		}
+
+		cmdErr = execCmd.Wait()
 	}
 
 	if copyError != nil {
@@ -346,7 +362,7 @@ func (r *runtimeOCI) ExecContainer(c *Container, cmd []string, stdin io.Reader, 
 }
 
 // ExecSyncContainer execs a command in a container and returns it's stdout, stderr and return code.
-func (r *runtimeOCI) ExecSyncContainer(c *Container, command []string, timeout int64) (resp *ExecSyncResponse, err error) {
+func (r *runtimeOCI) ExecSyncContainer(c *Container, command []string, timeout int64) (*ExecSyncResponse, error) {
 	pidFile, parentPipe, childPipe, err := prepareExec()
 	if err != nil {
 		return nil, &ExecSyncError{
@@ -405,7 +421,7 @@ func (r *runtimeOCI) ExecSyncContainer(c *Container, command []string, timeout i
 		"--exec-process-spec", processFile.Name(),
 		"--runtime-arg", fmt.Sprintf("%s=%s", rootFlag, r.root))
 
-	cmd := exec.Command(r.config.Conmon, args...)
+	cmd := exec.Command(r.config.Conmon, args...) // nolint: gosec
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
@@ -454,6 +470,18 @@ func (r *runtimeOCI) ExecSyncContainer(c *Container, command []string, timeout i
 
 	logrus.Debugf("Received container exit code: %v, message: %s", ec.ExitCode, ec.Message)
 
+	// When we timeout the command in conmon then we should return
+	// an ExecSyncResponse with a non-zero exit code because
+	// the prober code in the kubelet checks for it. If we return
+	// a custom error, then the probes transition into Unknown status
+	// and the container isn't restarted as expected.
+	if ec.ExitCode == -1 && ec.Message == conmonconfig.TimedOutMessage {
+		return &ExecSyncResponse{
+			Stderr:   []byte(conmonconfig.TimedOutMessage),
+			ExitCode: -1,
+		}, nil
+	}
+
 	if ec.ExitCode == -1 {
 		return nil, &ExecSyncError{
 			Stdout:   stdoutBuf,
@@ -490,7 +518,7 @@ func (r *runtimeOCI) ExecSyncContainer(c *Container, command []string, timeout i
 
 // UpdateContainer updates container resources
 func (r *runtimeOCI) UpdateContainer(c *Container, res *rspec.LinuxResources) error {
-	cmd := exec.Command(r.path, rootFlag, r.root, "update", "--resources", "-", c.id)
+	cmd := exec.Command(r.path, rootFlag, r.root, "update", "--resources", "-", c.id) // nolint: gosec
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -568,6 +596,10 @@ func (r *runtimeOCI) StopContainer(ctx context.Context, c *Container, timeout in
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
 
+	if err := c.ShouldBeStopped(); err != nil {
+		return err
+	}
+
 	// Check if the process is around before sending a signal
 	process, err := findprocess.FindProcess(c.state.Pid)
 	if err == findprocess.ErrNotFound {
@@ -586,7 +618,6 @@ func (r *runtimeOCI) StopContainer(ctx context.Context, c *Container, timeout in
 	if timeout > 0 {
 		if err := utils.ExecCmdWithStdStreams(os.Stdin, os.Stdout, os.Stderr,
 			r.path, rootFlag, r.root, "kill", c.id, c.GetStopSignal()); err != nil {
-
 			if err := checkProcessGone(c); err != nil {
 				return fmt.Errorf("failed to stop container %q: %v", c.id, err)
 			}
@@ -600,7 +631,6 @@ func (r *runtimeOCI) StopContainer(ctx context.Context, c *Container, timeout in
 
 	if err := utils.ExecCmdWithStdStreams(os.Stdin, os.Stdout, os.Stderr,
 		r.path, rootFlag, r.root, "kill", c.id, "KILL"); err != nil {
-
 		if err := checkProcessGone(c); err != nil {
 			return fmt.Errorf("failed to stop container %q: %v", c.id, err)
 		}
@@ -635,22 +665,22 @@ func (r *runtimeOCI) DeleteContainer(c *Container) error {
 }
 
 func updateContainerStatusFromExitFile(c *Container) error {
-	exitFilePath := filepath.Join(c.dir, "exit")
+	exitFilePath := c.exitFilePath()
 	fi, err := os.Stat(exitFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to find container exit file for %v: %v", c.id, err)
+		return errors.Wrapf(err, "failed to find container exit file for %s", c.id)
 	}
 	c.state.Finished, err = getFinishedTime(fi)
 	if err != nil {
-		return fmt.Errorf("failed to get finished time: %v", err)
+		return errors.Wrapf(err, "failed to get finished time")
 	}
 	statusCodeStr, err := ioutil.ReadFile(exitFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to read exit file: %v", err)
+		return errors.Wrapf(err, "failed to read exit file")
 	}
 	statusCode, err := strconv.Atoi(string(statusCodeStr))
 	if err != nil {
-		return fmt.Errorf("status code conversion failed: %v", err)
+		return errors.Wrapf(err, "status code conversion failed")
 	}
 	c.state.ExitCode = utils.Int32Ptr(int32(statusCode))
 	return nil
@@ -666,7 +696,7 @@ func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 		return nil
 	}
 
-	cmd := exec.Command(r.path, rootFlag, r.root, "state", c.id)
+	cmd := exec.Command(r.path, rootFlag, r.root, "state", c.id) // nolint: gosec
 	if v, found := os.LookupEnv("XDG_RUNTIME_DIR"); found {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("XDG_RUNTIME_DIR=%s", v))
 	}
@@ -690,7 +720,7 @@ func (r *runtimeOCI) UpdateContainerStatus(c *Container) error {
 	}
 
 	if c.state.Status == ContainerStateStopped {
-		exitFilePath := filepath.Join(c.dir, "exit")
+		exitFilePath := c.exitFilePath()
 		var fi os.FileInfo
 		err = kwait.ExponentialBackoff(
 			kwait.Backoff{
@@ -757,11 +787,11 @@ func (r *runtimeOCI) WaitContainerStateStopped(ctx context.Context, c *Container
 }
 
 // ContainerStats provides statistics of a container.
-func (r *runtimeOCI) ContainerStats(c *Container) (*ContainerStats, error) {
+func (r *runtimeOCI) ContainerStats(c *Container, cgroup string) (*ContainerStats, error) {
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
 
-	return r.containerStats(c)
+	return r.containerStats(c, cgroup)
 }
 
 // SignalContainer sends a signal to a container process.
@@ -769,13 +799,12 @@ func (r *runtimeOCI) SignalContainer(c *Container, sig syscall.Signal) error {
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
 
-	signalString, err := findStringInSignalMap(sig)
-	if err != nil {
-		return err
+	if !inSignalMap(sig) {
+		return errors.Errorf("unable to find %s in the signal map", sig.String())
 	}
 
 	return utils.ExecCmdWithStdStreams(os.Stdin, os.Stdout, os.Stderr, r.path,
-		rootFlag, r.root, "kill", c.ID(), signalString)
+		rootFlag, r.root, "kill", c.ID(), strconv.Itoa(int(sig)))
 }
 
 // AttachContainer attaches IO to a running container.
@@ -841,6 +870,16 @@ func (r *runtimeOCI) AttachContainer(c *Container, inputStream io.Reader, output
 
 // PortForwardContainer forwards the specified port provides statistics of a container.
 func (r *runtimeOCI) PortForwardContainer(c *Container, port int32, stream io.ReadWriter) error {
+	emptyStreamOnError := true
+	defer func() {
+		if emptyStreamOnError {
+			go func() {
+				if _, copyError := pools.Copy(ioutil.Discard, stream); copyError != nil {
+					logrus.Errorf("error closing port forward stream after other error: %v", copyError)
+				}
+			}()
+		}
+	}()
 	containerPid := c.State().Pid
 	socatPath, lookupErr := exec.LookPath("socat")
 	if lookupErr != nil {
@@ -881,6 +920,7 @@ func (r *runtimeOCI) PortForwardContainer(c *Container, port int32, stream io.Re
 	}
 	var copyError error
 	go func() {
+		emptyStreamOnError = false
 		_, copyError = pools.Copy(inPipe, stream)
 		inPipe.Close()
 	}()
@@ -962,7 +1002,9 @@ func prepareProcessExec(c *Container, cmd []string, tty bool) (*os.File, error) 
 		return nil, err
 	}
 
-	pspec := c.Spec().Process
+	// It's important to make a spec copy here to not overwrite the initial
+	// process spec
+	pspec := *c.Spec().Process
 	pspec.Args = cmd
 	// We need to default this to false else it will inherit terminal as true
 	// from the container.

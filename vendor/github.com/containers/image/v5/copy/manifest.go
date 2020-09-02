@@ -15,7 +15,7 @@ import (
 // Include v2s1 signed but not v2s1 unsigned, because docker/distribution requires a signature even if the unsigned MIME type is used.
 var preferredManifestMIMETypes = []string{manifest.DockerV2Schema2MediaType, manifest.DockerV2Schema1SignedMediaType}
 
-// orderedSet is a list of strings (MIME types in our case), with each string appearing at most once.
+// orderedSet is a list of strings (MIME types or platform descriptors in our case), with each string appearing at most once.
 type orderedSet struct {
 	list     []string
 	included map[string]struct{}
@@ -42,7 +42,7 @@ func (os *orderedSet) append(s string) {
 // Note that the conversion will only happen later, through ic.src.UpdatedImage
 // Returns the preferred manifest MIME type (whether we are converting to it or using it unmodified),
 // and a list of other possible alternatives, in order.
-func (ic *imageCopier) determineManifestConversion(ctx context.Context, destSupportedManifestMIMETypes []string, forceManifestMIMEType string) (string, []string, error) {
+func (ic *imageCopier) determineManifestConversion(ctx context.Context, destSupportedManifestMIMETypes []string, forceManifestMIMEType string, requiresOciEncryption bool) (string, []string, error) {
 	_, srcType, err := ic.src.Manifest(ctx)
 	if err != nil { // This should have been cached?!
 		return "", nil, errors.Wrap(err, "Error reading manifest")
@@ -57,12 +57,14 @@ func (ic *imageCopier) determineManifestConversion(ctx context.Context, destSupp
 		destSupportedManifestMIMETypes = []string{forceManifestMIMEType}
 	}
 
-	if len(destSupportedManifestMIMETypes) == 0 {
+	if len(destSupportedManifestMIMETypes) == 0 && (!requiresOciEncryption || manifest.MIMETypeSupportsEncryption(srcType)) {
 		return srcType, []string{}, nil // Anything goes; just use the original as is, do not try any conversions.
 	}
 	supportedByDest := map[string]struct{}{}
 	for _, t := range destSupportedManifestMIMETypes {
-		supportedByDest[t] = struct{}{}
+		if !requiresOciEncryption || manifest.MIMETypeSupportsEncryption(t) {
+			supportedByDest[t] = struct{}{}
+		}
 	}
 
 	// destSupportedManifestMIMETypes is a static guess; a particular registry may still only support a subset of the types.
@@ -123,17 +125,20 @@ func isMultiImage(ctx context.Context, img types.UnparsedImage) (bool, error) {
 // determineListConversion takes the current MIME type of a list of manifests,
 // the list of MIME types supported for a given destination, and a possible
 // forced value, and returns the MIME type to which we should convert the list
-// of manifests, whether we are converting to it or using it unmodified.
-func (c *copier) determineListConversion(currentListMIMEType string, destSupportedMIMETypes []string, forcedListMIMEType string) (string, error) {
-	// If we're forcing it, we prefer the forced value over everything else.
-	if forcedListMIMEType != "" {
-		return forcedListMIMEType, nil
-	}
+// of manifests (regardless of whether we are converting to it or using it
+// unmodified) and a slice of other list types which might be supported by the
+// destination.
+func (c *copier) determineListConversion(currentListMIMEType string, destSupportedMIMETypes []string, forcedListMIMEType string) (string, []string, error) {
 	// If there's no list of supported types, then anything we support is expected to be supported.
 	if len(destSupportedMIMETypes) == 0 {
 		destSupportedMIMETypes = manifest.SupportedListMIMETypes
 	}
+	// If we're forcing it, replace the list of supported types with the forced value.
+	if forcedListMIMEType != "" {
+		destSupportedMIMETypes = []string{forcedListMIMEType}
+	}
 	var selectedType string
+	var otherSupportedTypes []string
 	for i := range destSupportedMIMETypes {
 		// The second priority is the first member of the list of acceptable types that is a list,
 		// but keep going in case current type occurs later in the list.
@@ -146,9 +151,21 @@ func (c *copier) determineListConversion(currentListMIMEType string, destSupport
 			selectedType = destSupportedMIMETypes[i]
 		}
 	}
+	// Pick out the other list types that we support.
+	for i := range destSupportedMIMETypes {
+		if selectedType != destSupportedMIMETypes[i] && manifest.MIMETypeIsMultiImage(destSupportedMIMETypes[i]) {
+			otherSupportedTypes = append(otherSupportedTypes, destSupportedMIMETypes[i])
+		}
+	}
+	logrus.Debugf("Manifest list has MIME type %s, ordered candidate list [%s]", currentListMIMEType, strings.Join(destSupportedMIMETypes, ", "))
 	if selectedType == "" {
-		return "", errors.Errorf("destination does not support any supported manifest list types (%v)", manifest.SupportedListMIMETypes)
+		return "", nil, errors.Errorf("destination does not support any supported manifest list types (%v)", manifest.SupportedListMIMETypes)
+	}
+	if selectedType != currentListMIMEType {
+		logrus.Debugf("... will convert to %s first, and then try %v", selectedType, otherSupportedTypes)
+	} else {
+		logrus.Debugf("... will use the original manifest list type, and then try %v", otherSupportedTypes)
 	}
 	// Done.
-	return selectedType, nil
+	return selectedType, otherSupportedTypes, nil
 }

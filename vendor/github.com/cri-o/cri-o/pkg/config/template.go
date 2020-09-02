@@ -52,17 +52,17 @@ const templateString = `# The CRI-O configuration file specifies all of the avai
 # the kubelet. The log directory specified must be an absolute directory.
 log_dir = "{{ .LogDir }}"
 
-# Location for CRI-O to lay down the version file
+# Location for CRI-O to lay down the temporary version file
 version_file = "{{ .VersionFile }}"
+
+# Location for CRI-O to lay down the persistent version file
+version_file_persist = "{{ .VersionFilePersist }}"
 
 # The crio.api table contains settings for the kubelet/gRPC interface.
 [crio.api]
 
 # Path to AF_LOCAL socket on which CRI-O will listen.
 listen = "{{ .Listen }}"
-
-# Host IP considered as the primary IP to use by CRI-O for things such as host network IP.
-host_ip = "{{ .HostIP }}"
 
 # IP address on which the stream server will listen.
 stream_address = "{{ .StreamAddress }}"
@@ -111,6 +111,10 @@ default_runtime = "{{ .DefaultRuntime }}"
 # If true, the runtime will not use pivot_root, but instead use MS_MOVE.
 no_pivot = {{ .NoPivot }}
 
+# decryption_keys_path is the path where the keys required for
+# image decryption are stored.
+decryption_keys_path = "{{ .DecryptionKeysPath }}"
+
 # Path to the conmon binary, used for monitoring the OCI runtime.
 # Will be searched for using $PATH if empty.
 conmon = "{{ .Conmon }}"
@@ -122,6 +126,12 @@ conmon_cgroup = "{{ .ConmonCgroup }}"
 # environment variables to conmon or the runtime.
 conmon_env = [
 {{ range $env := .ConmonEnv }}{{ printf "\t%q,\n" $env }}{{ end }}]
+
+# Additional environment variables to set for all the
+# containers. These are overridden if set in the
+# container image spec or in the container runtime configuration.
+default_env = [
+{{ range $env := .DefaultEnv }}{{ printf "\t%q,\n" $env }}{{ end }}]
 
 # If true, SELinux will be used for pod separation on the host.
 selinux = {{ .SELinux }}
@@ -205,9 +215,13 @@ bind_mount_prefix = ""
 read_only = {{ .ReadOnly }}
 
 # Changes the verbosity of the logs based on the level it is set to. Options
-# are fatal, panic, error, warn, info, and debug. This option supports live
-# configuration reload.
+# are fatal, panic, error, warn, info, debug and trace. This option supports
+# live configuration reload.
 log_level = "{{ .LogLevel }}"
+
+# Filter the log messages by the provided regular expression.
+# This option supports live configuration reload.
+log_filter = "{{ .LogFilter }}"
 
 # The UID mappings for the user namespace of each container. A range is
 # specified in the form containerUID:HostUID:Size. Multiple ranges must be
@@ -223,9 +237,19 @@ gid_mappings = "{{ .GIDMappings }}"
 # regarding the proper termination of the container.
 ctr_stop_timeout = {{ .CtrStopTimeout }}
 
-# ManageNetworkNSLifecycle determines whether we pin and remove network namespace
-# and manage its lifecycle.
-manage_network_ns_lifecycle = {{ .ManageNetworkNSLifecycle }}
+# **DEPRECATED** this option is being replaced by manage_ns_lifecycle, which is described below.
+# manage_network_ns_lifecycle = {{ .ManageNSLifecycle }}
+
+# manage_ns_lifecycle determines whether we pin and remove namespaces
+# and manage their lifecycle
+manage_ns_lifecycle = {{ .ManageNSLifecycle }}
+
+# The directory where the state of the managed namespaces gets tracked.
+# Only used when manage_ns_lifecycle is true.
+namespaces_dir = "{{ .NamespacesDir }}"
+
+# pinns_path is the path to find the pinns binary, which is needed to manage namespace lifecycle
+pinns_path = "{{ .PinnsPath }}"
 
 # The "crio.runtime.runtimes" table defines a list of OCI compatible runtimes.
 # The runtime to use is picked based on the runtime_handler provided by the CRI.

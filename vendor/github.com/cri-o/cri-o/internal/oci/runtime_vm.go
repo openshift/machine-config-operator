@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -43,6 +44,7 @@ type runtimeVM struct {
 	client *ttrpc.Client
 	task   task.TaskService
 
+	sync.Mutex
 	ctrs map[string]containerInfo
 }
 
@@ -75,7 +77,7 @@ func newRuntimeVM(path string) RuntimeImpl {
 }
 
 // CreateContainer creates a container.
-func (r *runtimeVM) CreateContainer(c *Container, cgroupParent string) (err error) {
+func (r *runtimeVM) CreateContainer(c *Container, cgroupParent string) (retErr error) {
 	logrus.Debug("runtimeVM.createContainer() start")
 	defer logrus.Debug("runtimeVM.createContainer() end")
 
@@ -96,7 +98,7 @@ func (r *runtimeVM) CreateContainer(c *Container, cgroupParent string) (err erro
 	}
 
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			containerIO.Close()
 		}
 	}()
@@ -106,16 +108,39 @@ func (r *runtimeVM) CreateContainer(c *Container, cgroupParent string) (err erro
 		return err
 	}
 
-	containerIO.AddOutput("logfile", f, f)
+	var stdoutCh, stderrCh <-chan struct{}
+	wc := cioutil.NewSerialWriteCloser(f)
+	stdout, stdoutCh := cio.NewCRILogger(c.LogPath(), wc, cio.Stdout, -1)
+	stderr, stderrCh := cio.NewCRILogger(c.LogPath(), wc, cio.Stderr, -1)
+
+	go func() {
+		if stdoutCh != nil {
+			<-stdoutCh
+		}
+		if stderrCh != nil {
+			<-stderrCh
+		}
+		logrus.Debugf("Finish redirecting log file %q, closing it", c.LogPath())
+		f.Close()
+	}()
+
+	containerIO.AddOutput(c.LogPath(), stdout, stderr)
 	containerIO.Pipe()
 
+	r.Lock()
 	r.ctrs[c.ID()] = containerInfo{
 		cio: containerIO,
 	}
+	r.Unlock()
 
 	defer func() {
-		if err != nil {
-			delete(r.ctrs, c.ID())
+		if retErr != nil {
+			r.Lock()
+			logrus.WithError(err).Warnf("Cleaning up container %s", c.ID())
+			if cleanupErr := r.deleteContainer(c, true); cleanupErr != nil {
+				logrus.WithError(cleanupErr).Infof("deleteContainer failed for container %s", c.ID())
+			}
+			r.Unlock()
 		}
 	}()
 
@@ -240,14 +265,17 @@ func (r *runtimeVM) StartContainer(c *Container) error {
 	if err := r.start(r.ctx, c.ID(), ""); err != nil {
 		return err
 	}
+	c.state.Started = time.Now()
 
 	// Spawn a goroutine waiting for the container to terminate. Once it
 	// happens, the container status is retrieved to be updated.
 	var err error
 	go func() {
-		_, _, err = r.wait(r.ctx, c.ID(), "")
+		_, err = r.wait(r.ctx, c.ID(), "")
 		if err == nil {
-			err = r.UpdateContainerStatus(c)
+			if err1 := r.updateContainerStatus(c); err1 != nil {
+				logrus.Warningf("error updating container status %v", err1)
+			}
 		}
 	}()
 
@@ -297,8 +325,7 @@ func (r *runtimeVM) ExecSyncContainer(c *Container, command []string, timeout in
 	}, nil
 }
 
-func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int64, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) (exitCode int32, err error) {
-
+func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int64, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) (exitCode int32, retErr error) {
 	logrus.Debug("runtimeVM.execContainer() start")
 	defer logrus.Debug("runtimeVM.execContainer() end")
 
@@ -354,7 +381,7 @@ func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int6
 	}
 
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			if err := r.remove(ctx, c.ID(), execID); err != nil {
 				logrus.Debugf("unable to remove container %s: %v", c.ID(), err)
 			}
@@ -390,7 +417,7 @@ func (r *runtimeVM) execContainerCommon(c *Container, cmd []string, timeout int6
 	execCh := make(chan error)
 	go func() {
 		// Wait for the process to terminate
-		exitCode, _, err = r.wait(ctx, c.ID(), execID)
+		exitCode, err = r.wait(ctx, c.ID(), execID)
 		if err != nil {
 			execCh <- err
 		}
@@ -456,13 +483,17 @@ func (r *runtimeVM) StopContainer(ctx context.Context, c *Container, timeout int
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
 
+	if err := c.ShouldBeStopped(); err != nil {
+		return err
+	}
+
 	// Cancel the context before returning to ensure goroutines are stopped.
 	ctx, cancel := context.WithCancel(r.ctx)
 	defer cancel()
 
 	stopCh := make(chan error)
 	go func() {
-		if _, _, err := r.wait(ctx, c.ID(), ""); err != nil {
+		if _, err := r.wait(ctx, c.ID(), ""); err != nil {
 			stopCh <- errdefs.FromGRPC(err)
 		}
 
@@ -519,24 +550,36 @@ func (r *runtimeVM) DeleteContainer(c *Container) error {
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
 
+	return r.deleteContainer(c, false)
+}
+
+// deleteContainer performs all the operations needed to delete a container.
+// force must only be used on clean-up cases.
+// It does **not** Lock the container, thus it's the caller responsibility to do so, when needed.
+func (r *runtimeVM) deleteContainer(c *Container, force bool) error {
+	r.Lock()
 	cInfo, ok := r.ctrs[c.ID()]
-	if !ok {
+	r.Unlock()
+	if !ok && !force {
 		return errors.New("Could not retrieve container information")
 	}
 
-	if err := cInfo.cio.Close(); err != nil {
+	if err := cInfo.cio.Close(); err != nil && !force {
 		return err
 	}
 
-	if err := r.remove(r.ctx, c.ID(), ""); err != nil {
+	if err := r.remove(r.ctx, c.ID(), ""); err != nil && !force {
 		return err
 	}
 
-	if _, err := r.task.Shutdown(r.ctx, &task.ShutdownRequest{ID: c.ID()}); err != nil {
+	_, err := r.task.Shutdown(r.ctx, &task.ShutdownRequest{ID: c.ID()})
+	if err != nil && err != ttrpc.ErrClosed && !force {
 		return err
 	}
 
+	r.Lock()
 	delete(r.ctrs, c.ID())
+	r.Unlock()
 
 	return nil
 }
@@ -549,6 +592,16 @@ func (r *runtimeVM) UpdateContainerStatus(c *Container) error {
 	// Lock the container
 	c.opLock.Lock()
 	defer c.opLock.Unlock()
+
+	return r.updateContainerStatus(c)
+}
+
+// updateContainerStatus is a UpdateContainerStatus helper, which actually does the container's
+// status refresh.
+// It does **not** Lock the container, thus it's the caller responsibility to do so, when needed.
+func (r *runtimeVM) updateContainerStatus(c *Container) error {
+	logrus.Debug("runtimeVM.updateContainerStatus() start")
+	defer logrus.Debug("runtimeVM.updateContainerStatus() end")
 
 	// This can happen on restore, for example if we switch the runtime type
 	// for a container from "oci" to "vm" for the same runtime.
@@ -623,7 +676,7 @@ func (r *runtimeVM) UnpauseContainer(c *Container) error {
 }
 
 // ContainerStats provides statistics of a container.
-func (r *runtimeVM) ContainerStats(c *Container) (*ContainerStats, error) {
+func (r *runtimeVM) ContainerStats(c *Container, _ string) (*ContainerStats, error) {
 	logrus.Debug("runtimeVM.ContainerStats() start")
 	defer logrus.Debug("runtimeVM.ContainerStats() end")
 
@@ -680,7 +733,9 @@ func (r *runtimeVM) AttachContainer(c *Container, inputStream io.Reader, outputS
 		}
 	})
 
+	r.Lock()
 	cInfo, ok := r.ctrs[c.ID()]
+	r.Unlock()
 	if !ok {
 		return errors.New("Could not retrieve container information")
 	}
@@ -730,16 +785,16 @@ func (r *runtimeVM) start(ctx context.Context, ctrID, execID string) error {
 	return nil
 }
 
-func (r *runtimeVM) wait(ctx context.Context, ctrID, execID string) (int32, time.Time, error) {
+func (r *runtimeVM) wait(ctx context.Context, ctrID, execID string) (int32, error) {
 	resp, err := r.task.Wait(ctx, &task.WaitRequest{
 		ID:     ctrID,
 		ExecID: execID,
 	})
 	if err != nil {
-		return -1, time.Time{}, errdefs.FromGRPC(err)
+		return -1, errdefs.FromGRPC(err)
 	}
 
-	return int32(resp.ExitStatus), resp.ExitedAt, nil
+	return int32(resp.ExitStatus), nil
 }
 
 func (r *runtimeVM) kill(ctx context.Context, ctrID, execID string, signal syscall.Signal, all bool) error {
@@ -766,7 +821,7 @@ func (r *runtimeVM) remove(ctx context.Context, ctrID, execID string) error {
 	return nil
 }
 
-func (r runtimeVM) resizePty(ctx context.Context, ctrID, execID string, size remotecommand.TerminalSize) error {
+func (r *runtimeVM) resizePty(ctx context.Context, ctrID, execID string, size remotecommand.TerminalSize) error {
 	_, err := r.task.ResizePty(ctx, &task.ResizePtyRequest{
 		ID:     ctrID,
 		ExecID: execID,

@@ -20,7 +20,9 @@ import (
 	cnitypes "github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containers/buildah/pkg/secrets"
+	"github.com/containers/common/pkg/config"
 	"github.com/containers/libpod/libpod/define"
+	"github.com/containers/libpod/libpod/events"
 	"github.com/containers/libpod/pkg/annotations"
 	"github.com/containers/libpod/pkg/apparmor"
 	"github.com/containers/libpod/pkg/cgroups"
@@ -28,6 +30,7 @@ import (
 	"github.com/containers/libpod/pkg/lookup"
 	"github.com/containers/libpod/pkg/resolvconf"
 	"github.com/containers/libpod/pkg/rootless"
+	"github.com/containers/libpod/pkg/util"
 	"github.com/containers/storage/pkg/archive"
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/opencontainers/runc/libcontainer/user"
@@ -61,7 +64,7 @@ func (c *Container) unmountSHM(mount string) error {
 
 // prepare mounts the container and sets up other required resources like net
 // namespaces
-func (c *Container) prepare() (Err error) {
+func (c *Container) prepare() error {
 	var (
 		wg                              sync.WaitGroup
 		netNS                           ns.NetNS
@@ -91,7 +94,7 @@ func (c *Container) prepare() (Err error) {
 		}
 
 		// handle rootless network namespace setup
-		if c.state.NetNS != nil && c.config.NetMode == "slirp4netns" && !c.config.PostConfigureNetNS {
+		if c.state.NetNS != nil && c.config.NetMode.IsSlirp4netns() && !c.config.PostConfigureNetNS {
 			createNetNSErr = c.runtime.setupRootlessNetNS(c)
 		}
 	}()
@@ -329,7 +332,10 @@ func (c *Container) generateSpec(ctx context.Context) (*spec.Spec, error) {
 
 	// Add addition groups if c.config.GroupAdd is not empty
 	if len(c.config.Groups) > 0 {
-		gids, _ := lookup.GetContainerGroups(c.config.Groups, c.state.Mountpoint, nil)
+		gids, err := lookup.GetContainerGroups(c.config.Groups, c.state.Mountpoint, overrides)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error looking up supplemental groups for container %s", c.ID())
+		}
 		for _, gid := range gids {
 			g.AddProcessAdditionalGid(gid)
 		}
@@ -387,6 +393,20 @@ func (c *Container) generateSpec(ctx context.Context) (*spec.Spec, error) {
 	if c.config.CgroupNsCtr != "" {
 		if err := c.addNamespaceContainer(&g, CgroupNS, c.config.CgroupNsCtr, spec.CgroupNamespace); err != nil {
 			return nil, err
+		}
+	}
+
+	if c.config.IDMappings.AutoUserNs {
+		if err := g.AddOrReplaceLinuxNamespace(string(spec.UserNamespace), ""); err != nil {
+			return nil, err
+		}
+		g.ClearLinuxUIDMappings()
+		for _, uidmap := range c.config.IDMappings.UIDMap {
+			g.AddLinuxUIDMapping(uint32(uidmap.HostID), uint32(uidmap.ContainerID), uint32(uidmap.Size))
+		}
+		g.ClearLinuxGIDMappings()
+		for _, gidmap := range c.config.IDMappings.GIDMap {
+			g.AddLinuxGIDMapping(uint32(gidmap.HostID), uint32(gidmap.ContainerID), uint32(gidmap.Size))
 		}
 	}
 
@@ -592,22 +612,68 @@ func (c *Container) exportCheckpoint(dest string, ignoreRootfs bool) (err error)
 
 	// Get root file-system changes included in the checkpoint archive
 	rootfsDiffPath := filepath.Join(c.bundlePath(), "rootfs-diff.tar")
+	deleteFilesList := filepath.Join(c.bundlePath(), "deleted.files")
 	if !ignoreRootfs {
-		rootfsDiffFile, err := os.Create(rootfsDiffPath)
-		if err != nil {
-			return errors.Wrapf(err, "error creating root file-system diff file %q", rootfsDiffPath)
-		}
-		tarStream, err := c.runtime.GetDiffTarStream("", c.ID())
+		// To correctly track deleted files, let's go through the output of 'podman diff'
+		tarFiles, err := c.runtime.GetDiff("", c.ID())
 		if err != nil {
 			return errors.Wrapf(err, "error exporting root file-system diff to %q", rootfsDiffPath)
 		}
-		_, err = io.Copy(rootfsDiffFile, tarStream)
-		if err != nil {
-			return errors.Wrapf(err, "error exporting root file-system diff to %q", rootfsDiffPath)
+		var rootfsIncludeFiles []string
+		var deletedFiles []string
+
+		for _, file := range tarFiles {
+			if file.Kind == archive.ChangeAdd {
+				rootfsIncludeFiles = append(rootfsIncludeFiles, file.Path)
+				continue
+			}
+			if file.Kind == archive.ChangeDelete {
+				deletedFiles = append(deletedFiles, file.Path)
+				continue
+			}
+			fileName, err := os.Stat(file.Path)
+			if err != nil {
+				continue
+			}
+			if !fileName.IsDir() && file.Kind == archive.ChangeModify {
+				rootfsIncludeFiles = append(rootfsIncludeFiles, file.Path)
+				continue
+			}
 		}
-		tarStream.Close()
-		rootfsDiffFile.Close()
-		includeFiles = append(includeFiles, "rootfs-diff.tar")
+
+		if len(rootfsIncludeFiles) > 0 {
+			rootfsTar, err := archive.TarWithOptions(c.state.Mountpoint, &archive.TarOptions{
+				Compression:      archive.Uncompressed,
+				IncludeSourceDir: true,
+				IncludeFiles:     rootfsIncludeFiles,
+			})
+			if err != nil {
+				return errors.Wrapf(err, "error exporting root file-system diff to %q", rootfsDiffPath)
+			}
+			rootfsDiffFile, err := os.Create(rootfsDiffPath)
+			if err != nil {
+				return errors.Wrapf(err, "error creating root file-system diff file %q", rootfsDiffPath)
+			}
+			defer rootfsDiffFile.Close()
+			_, err = io.Copy(rootfsDiffFile, rootfsTar)
+			if err != nil {
+				return err
+			}
+
+			includeFiles = append(includeFiles, "rootfs-diff.tar")
+		}
+
+		if len(deletedFiles) > 0 {
+			formatJSON, err := json.MarshalIndent(deletedFiles, "", "     ")
+			if err != nil {
+				return errors.Wrapf(err, "error creating delete files list file %q", deleteFilesList)
+			}
+			if err := ioutil.WriteFile(deleteFilesList, formatJSON, 0600); err != nil {
+				return errors.Wrapf(err, "error creating delete files list file %q", deleteFilesList)
+			}
+
+			includeFiles = append(includeFiles, "deleted.files")
+		}
 	}
 
 	input, err := archive.TarWithOptions(c.bundlePath(), &archive.TarOptions{
@@ -636,6 +702,7 @@ func (c *Container) exportCheckpoint(dest string, ignoreRootfs bool) (err error)
 	}
 
 	os.Remove(rootfsDiffPath)
+	os.Remove(deleteFilesList)
 
 	return nil
 }
@@ -676,6 +743,10 @@ func (c *Container) checkpoint(ctx context.Context, options ContainerCheckpointO
 		return errors.Wrapf(define.ErrCtrStateInvalid, "%q is not running, cannot checkpoint", c.state.State)
 	}
 
+	if c.AutoRemove() && options.TargetFile == "" {
+		return errors.Errorf("Cannot checkpoint containers that have been started with '--rm' unless '--export' is used")
+	}
+
 	if err := c.checkpointRestoreLabelLog("dump.log"); err != nil {
 		return err
 	}
@@ -694,6 +765,8 @@ func (c *Container) checkpoint(ctx context.Context, options ContainerCheckpointO
 	if err := ioutil.WriteFile(filepath.Join(c.bundlePath(), "network.status"), formatJSON, 0644); err != nil {
 		return err
 	}
+
+	defer c.newContainerEvent(events.Checkpoint)
 
 	if options.TargetFile != "" {
 		if err = c.exportCheckpoint(options.TargetFile, options.IgnoreRootfs); err != nil {
@@ -766,7 +839,7 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 		return err
 	}
 
-	if (c.state.State != define.ContainerStateConfigured) && (c.state.State != define.ContainerStateExited) {
+	if !c.ensureState(define.ContainerStateConfigured, define.ContainerStateExited) {
 		return errors.Wrapf(define.ErrCtrStateInvalid, "container %s is running or paused, cannot restore", c.ID())
 	}
 
@@ -794,6 +867,15 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 		c.config.StaticIP = nil
 	}
 
+	// If a container is restored multiple times from an exported checkpoint with
+	// the help of '--import --name', the restore will fail if during 'podman run'
+	// a static container MAC address was set with '--mac-address'. The user
+	// can tell the restore process to ignore the static MAC with
+	// '--ignore-static-mac'
+	if options.IgnoreStaticMAC {
+		c.config.StaticMAC = nil
+	}
+
 	// Read network configuration from checkpoint
 	// Currently only one interface with one IP is supported.
 	networkStatusFile, err := os.Open(filepath.Join(c.bundlePath(), "network.status"))
@@ -803,9 +885,9 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 	// TODO: This implicit restoring with or without IP depending on an
 	//       unrelated restore parameter (--name) does not seem like the
 	//       best solution.
-	if err == nil && options.Name == "" && !options.IgnoreStaticIP {
+	if err == nil && options.Name == "" && (!options.IgnoreStaticIP || !options.IgnoreStaticMAC) {
 		// The file with the network.status does exist. Let's restore the
-		// container with the same IP address as during checkpointing.
+		// container with the same IP address / MAC address as during checkpointing.
 		defer networkStatusFile.Close()
 		var networkStatus []*cnitypes.Result
 		networkJSON, err := ioutil.ReadAll(networkStatusFile)
@@ -815,16 +897,35 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 		if err := json.Unmarshal(networkJSON, &networkStatus); err != nil {
 			return err
 		}
-		// Take the first IP address
-		var IP net.IP
-		if len(networkStatus) > 0 {
-			if len(networkStatus[0].IPs) > 0 {
-				IP = networkStatus[0].IPs[0].Address.IP
+		if !options.IgnoreStaticIP {
+			// Take the first IP address
+			var IP net.IP
+			if len(networkStatus) > 0 {
+				if len(networkStatus[0].IPs) > 0 {
+					IP = networkStatus[0].IPs[0].Address.IP
+				}
+			}
+			if IP != nil {
+				// Tell CNI which IP address we want.
+				c.requestedIP = IP
 			}
 		}
-		if IP != nil {
-			// Tell CNI which IP address we want.
-			c.requestedIP = IP
+		if !options.IgnoreStaticMAC {
+			// Take the first device with a defined sandbox.
+			var MAC net.HardwareAddr
+			for _, n := range networkStatus[0].Interfaces {
+				if n.Sandbox != "" {
+					MAC, err = net.ParseMAC(n.Mac)
+					if err != nil {
+						return errors.Wrapf(err, "failed to parse MAC %v", n.Mac)
+					}
+					break
+				}
+			}
+			if MAC != nil {
+				// Tell CNI which MAC address we want.
+				c.requestedMAC = MAC
+			}
 		}
 	}
 
@@ -856,7 +957,12 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 
 	// We want to have the same network namespace as before.
 	if c.config.CreateNetNS {
-		if err := g.AddOrReplaceLinuxNamespace(string(spec.NetworkNamespace), c.state.NetNS.Path()); err != nil {
+		netNSPath := ""
+		if !c.config.PostConfigureNetNS {
+			netNSPath = c.state.NetNS.Path()
+		}
+
+		if err := g.AddOrReplaceLinuxNamespace(string(spec.NetworkNamespace), netNSPath); err != nil {
 			return err
 		}
 	}
@@ -901,10 +1007,35 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 			if err != nil {
 				return errors.Wrapf(err, "Failed to open root file-system diff file %s", rootfsDiffPath)
 			}
+			defer rootfsDiffFile.Close()
 			if err := c.runtime.ApplyDiffTarStream(c.ID(), rootfsDiffFile); err != nil {
 				return errors.Wrapf(err, "Failed to apply root file-system diff file %s", rootfsDiffPath)
 			}
-			rootfsDiffFile.Close()
+		}
+		deletedFilesPath := filepath.Join(c.bundlePath(), "deleted.files")
+		if _, err := os.Stat(deletedFilesPath); err == nil {
+			deletedFilesFile, err := os.Open(deletedFilesPath)
+			if err != nil {
+				return errors.Wrapf(err, "Failed to open deleted files file %s", deletedFilesPath)
+			}
+			defer deletedFilesFile.Close()
+
+			var deletedFiles []string
+			deletedFilesJSON, err := ioutil.ReadAll(deletedFilesFile)
+			if err != nil {
+				return errors.Wrapf(err, "Failed to read deleted files file %s", deletedFilesPath)
+			}
+			if err := json.Unmarshal(deletedFilesJSON, &deletedFiles); err != nil {
+				return errors.Wrapf(err, "Failed to read deleted files file %s", deletedFilesPath)
+			}
+			for _, deleteFile := range deletedFiles {
+				// Using RemoveAll as deletedFiles, which is generated from 'podman diff'
+				// lists completely deleted directories as a single entry: 'D /root'.
+				err = os.RemoveAll(filepath.Join(c.state.Mountpoint, deleteFile))
+				if err != nil {
+					return errors.Wrapf(err, "Failed to delete file %s from container %s during restore", deletedFilesPath, c.ID())
+				}
+			}
 		}
 	}
 
@@ -925,7 +1056,7 @@ func (c *Container) restore(ctx context.Context, options ContainerCheckpointOpti
 		if err != nil {
 			logrus.Debugf("Non-fatal: removal of checkpoint directory (%s) failed: %v", c.CheckpointPath(), err)
 		}
-		cleanup := [...]string{"restore.log", "dump.log", "stats-dump", "stats-restore", "network.status", "rootfs-diff.tar"}
+		cleanup := [...]string{"restore.log", "dump.log", "stats-dump", "stats-restore", "network.status", "rootfs-diff.tar", "deleted.files"}
 		for _, del := range cleanup {
 			file := filepath.Join(c.bundlePath(), del)
 			err = os.Remove(file)
@@ -976,9 +1107,24 @@ func (c *Container) makeBindMounts() error {
 			// We want /etc/resolv.conf and /etc/hosts from the
 			// other container. Unless we're not creating both of
 			// them.
-			depCtr, err := c.runtime.state.Container(c.config.NetNsCtr)
-			if err != nil {
-				return errors.Wrapf(err, "error fetching dependency %s of container %s", c.config.NetNsCtr, c.ID())
+			var (
+				depCtr  *Container
+				nextCtr string
+			)
+
+			// I don't like infinite loops, but I don't think there's
+			// a serious risk of looping dependencies - too many
+			// protections against that elsewhere.
+			nextCtr = c.config.NetNsCtr
+			for {
+				depCtr, err = c.runtime.state.Container(nextCtr)
+				if err != nil {
+					return errors.Wrapf(err, "error fetching dependency %s of container %s", c.config.NetNsCtr, c.ID())
+				}
+				nextCtr = depCtr.config.NetNsCtr
+				if nextCtr == "" {
+					break
+				}
 			}
 
 			// We need that container's bind mounts
@@ -987,22 +1133,17 @@ func (c *Container) makeBindMounts() error {
 				return errors.Wrapf(err, "error fetching bind mounts from dependency %s of container %s", depCtr.ID(), c.ID())
 			}
 
-			if !c.config.UseImageResolvConf {
-				// The other container may not have a resolv.conf or /etc/hosts
-				// If it doesn't, don't copy them
-				resolvPath, exists := bindMounts["/etc/resolv.conf"]
-				if exists {
-					c.state.BindMounts["/etc/resolv.conf"] = resolvPath
-				}
+			// The other container may not have a resolv.conf or /etc/hosts
+			// If it doesn't, don't copy them
+			resolvPath, exists := bindMounts["/etc/resolv.conf"]
+			if !c.config.UseImageResolvConf && exists {
+				c.state.BindMounts["/etc/resolv.conf"] = resolvPath
 			}
 
-			if !c.config.UseImageHosts {
-				// check if dependency container has an /etc/hosts file
-				hostsPath, exists := bindMounts["/etc/hosts"]
-				if !exists {
-					return errors.Errorf("error finding hosts file of dependency container %s for container %s", depCtr.ID(), c.ID())
-				}
-
+			// check if dependency container has an /etc/hosts file.
+			// It may not have one, so only use it if it does.
+			hostsPath, exists := bindMounts["/etc/hosts"]
+			if !c.config.UseImageHosts && exists {
 				depCtr.lock.Lock()
 				// generate a hosts file for the dependency container,
 				// based on either its old hosts file, or the default,
@@ -1088,7 +1229,7 @@ func (c *Container) makeBindMounts() error {
 	}
 
 	// Add Secret Mounts
-	secretMounts := secrets.SecretMountsWithUIDGID(c.config.MountLabel, c.state.RunDir, c.runtime.config.DefaultMountsFile, c.state.RunDir, c.RootUID(), c.RootGID(), rootless.IsRootless(), false)
+	secretMounts := secrets.SecretMountsWithUIDGID(c.config.MountLabel, c.state.RunDir, c.runtime.config.Containers.DefaultMountsFile, c.state.RunDir, c.RootUID(), c.RootGID(), rootless.IsRootless(), false)
 	for _, mount := range secretMounts {
 		if _, ok := c.state.BindMounts[mount.Destination]; !ok {
 			c.state.BindMounts[mount.Destination] = mount.Source
@@ -1149,32 +1290,50 @@ func (c *Container) generateResolvConf() (string, error) {
 		}
 	}
 
+	var dns []net.IP
+	for _, i := range c.runtime.config.Containers.DNSServers {
+		result := net.ParseIP(i)
+		if result == nil {
+			return "", errors.Wrapf(define.ErrInvalidArg, "invalid IP address %s", i)
+		}
+		dns = append(dns, result)
+	}
+	dnsServers := append(dns, c.config.DNSServer...)
 	// If the user provided dns, it trumps all; then dns masq; then resolv.conf
-	if len(c.config.DNSServer) > 0 {
+	switch {
+	case len(dnsServers) > 0:
+
 		// We store DNS servers as net.IP, so need to convert to string
-		for _, server := range c.config.DNSServer {
+		for _, server := range dnsServers {
 			nameservers = append(nameservers, server.String())
 		}
-	} else if len(cniNameServers) > 0 {
+	case len(cniNameServers) > 0:
 		nameservers = append(nameservers, cniNameServers...)
-	} else {
+	default:
 		// Make a new resolv.conf
 		nameservers = resolvconf.GetNameservers(resolv.Content)
 		// slirp4netns has a built in DNS server.
 		if c.config.NetMode.IsSlirp4netns() {
 			nameservers = append([]string{"10.0.2.3"}, nameservers...)
 		}
-
 	}
 
-	search := resolvconf.GetSearchDomains(resolv.Content)
-	if len(c.config.DNSSearch) > 0 {
-		search = c.config.DNSSearch
+	var search []string
+	if len(c.config.DNSSearch) > 0 || len(c.runtime.config.Containers.DNSSearches) > 0 {
+		if !util.StringInSlice(".", c.config.DNSSearch) {
+			search = c.runtime.config.Containers.DNSSearches
+			search = append(search, c.config.DNSSearch...)
+		}
+	} else {
+		search = resolvconf.GetSearchDomains(resolv.Content)
 	}
 
-	options := resolvconf.GetOptions(resolv.Content)
-	if len(c.config.DNSOption) > 0 {
-		options = c.config.DNSOption
+	var options []string
+	if len(c.config.DNSOption) > 0 || len(c.runtime.config.Containers.DNSOptions) > 0 {
+		options = c.runtime.config.Containers.DNSOptions
+		options = append(options, c.config.DNSOption...)
+	} else {
+		options = resolvconf.GetOptions(resolv.Content)
 	}
 
 	destPath := filepath.Join(c.state.RunDir, "resolv.conf")
@@ -1311,36 +1470,30 @@ func (c *Container) copyOwnerAndPerms(source, dest string) error {
 	return nil
 }
 
-// Teardown CNI config on refresh
-func (c *Container) refreshCNI() error {
-	// Let's try and delete any lingering network config...
-	podNetwork := c.runtime.getPodNetwork(c.ID(), c.config.Name, "", c.config.Networks, c.config.PortMappings, c.config.StaticIP)
-	return c.runtime.netPlugin.TearDownPod(podNetwork)
-}
-
 // Get cgroup path in a format suitable for the OCI spec
 func (c *Container) getOCICgroupPath() (string, error) {
 	unified, err := cgroups.IsCgroup2UnifiedMode()
 	if err != nil {
 		return "", err
 	}
-	if (rootless.IsRootless() && !unified) || c.config.NoCgroups {
+	switch {
+	case (rootless.IsRootless() && !unified) || c.config.NoCgroups:
 		return "", nil
-	} else if c.runtime.config.CgroupManager == define.SystemdCgroupsManager {
+	case c.runtime.config.Engine.CgroupManager == config.SystemdCgroupsManager:
 		// When runc is set to use Systemd as a cgroup manager, it
 		// expects cgroups to be passed as follows:
 		// slice:prefix:name
 		systemdCgroups := fmt.Sprintf("%s:libpod:%s", path.Base(c.config.CgroupParent), c.ID())
 		logrus.Debugf("Setting CGroups for container %s to %s", c.ID(), systemdCgroups)
 		return systemdCgroups, nil
-	} else if c.runtime.config.CgroupManager == define.CgroupfsCgroupsManager {
+	case c.runtime.config.Engine.CgroupManager == config.CgroupfsCgroupsManager:
 		cgroupPath, err := c.CGroupPath()
 		if err != nil {
 			return "", err
 		}
 		logrus.Debugf("Setting CGroup path for container %s to %s", c.ID(), cgroupPath)
 		return cgroupPath, nil
-	} else {
-		return "", errors.Wrapf(define.ErrInvalidArg, "invalid cgroup manager %s requested", c.runtime.config.CgroupManager)
+	default:
+		return "", errors.Wrapf(define.ErrInvalidArg, "invalid cgroup manager %s requested", c.runtime.config.Engine.CgroupManager)
 	}
 }

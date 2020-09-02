@@ -20,6 +20,10 @@ func (r *Runtime) createNetNS(ctr *Container) (err error) {
 	return define.ErrNotImplemented
 }
 
-func (c *Container) getContainerNetworkInfo(data *InspectContainerData) *InspectContainerData {
-	return nil
+func (c *Container) getContainerNetworkInfo() (*define.InspectNetworkSettings, error) {
+	return nil, define.ErrNotImplemented
+}
+
+func getCNINetworksDir() (string, error) {
+	return "", define.ErrNotImplemented
 }

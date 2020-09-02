@@ -1,7 +1,10 @@
 package libpod
 
 import (
+	"bufio"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,12 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containers/libpod/libpod/config"
+	"github.com/containers/common/pkg/config"
+
 	"github.com/containers/libpod/libpod/define"
 	"github.com/containers/libpod/utils"
 	"github.com/fsnotify/fsnotify"
 	spec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // Runtime API constants
@@ -187,6 +192,9 @@ func programVersion(mountProgram string) (string, error) {
 	return strings.TrimSuffix(output, "\n"), nil
 }
 
+// DefaultSeccompPath returns the path to the default seccomp.json file
+// if it exists, first it checks OverrideSeccomp and then default.
+// If neither exist function returns ""
 func DefaultSeccompPath() (string, error) {
 	_, err := os.Stat(config.SeccompOverridePath)
 	if err == nil {
@@ -202,4 +210,68 @@ func DefaultSeccompPath() (string, error) {
 		return "", nil
 	}
 	return config.SeccompDefaultPath, nil
+}
+
+// CheckDependencyContainer verifies the given container can be used as a
+// dependency of another container.
+// Both the dependency to check and the container that will be using the
+// dependency must be passed in.
+// It is assumed that ctr is locked, and depCtr is unlocked.
+func checkDependencyContainer(depCtr, ctr *Container) error {
+	state, err := depCtr.State()
+	if err != nil {
+		return errors.Wrapf(err, "error accessing dependency container %s state", depCtr.ID())
+	}
+	if state == define.ContainerStateRemoving {
+		return errors.Wrapf(define.ErrCtrStateInvalid, "cannot use container %s as a dependency as it is being removed", depCtr.ID())
+	}
+
+	if depCtr.ID() == ctr.ID() {
+		return errors.Wrapf(define.ErrInvalidArg, "must specify another container")
+	}
+
+	if ctr.config.Pod != "" && depCtr.PodID() != ctr.config.Pod {
+		return errors.Wrapf(define.ErrInvalidArg, "container has joined pod %s and dependency container %s is not a member of the pod", ctr.config.Pod, depCtr.ID())
+	}
+
+	return nil
+}
+
+// hijackWriteErrorAndClose writes an error to a hijacked HTTP session and
+// closes it. Intended to HTTPAttach function.
+// If error is nil, it will not be written; we'll only close the connection.
+func hijackWriteErrorAndClose(toWrite error, cid string, terminal bool, httpCon io.Closer, httpBuf *bufio.ReadWriter) {
+	if toWrite != nil {
+		errString := []byte(fmt.Sprintf("%v\n", toWrite))
+		if !terminal {
+			// We need a header.
+			header := makeHTTPAttachHeader(2, uint32(len(errString)))
+			if _, err := httpBuf.Write(header); err != nil {
+				logrus.Errorf("Error writing header for container %s attach connection error: %v", cid, err)
+			}
+			// TODO: May want to return immediately here to avoid
+			// writing garbage to the socket?
+		}
+		if _, err := httpBuf.Write(errString); err != nil {
+			logrus.Errorf("Error writing error to container %s HTTP attach connection: %v", cid, err)
+		}
+		if err := httpBuf.Flush(); err != nil {
+			logrus.Errorf("Error flushing HTTP buffer for container %s HTTP attach connection: %v", cid, err)
+		}
+	}
+
+	if err := httpCon.Close(); err != nil {
+		logrus.Errorf("Error closing container %s HTTP attach connection: %v", cid, err)
+	}
+}
+
+// makeHTTPAttachHeader makes an 8-byte HTTP header for a buffer of the given
+// length and stream. Accepts an integer indicating which stream we are sending
+// to (STDIN = 0, STDOUT = 1, STDERR = 2).
+func makeHTTPAttachHeader(stream byte, length uint32) []byte {
+	headerBuf := []byte{stream, 0, 0, 0}
+	lenBuf := []byte{0, 0, 0, 0}
+	binary.BigEndian.PutUint32(lenBuf, length)
+	headerBuf = append(headerBuf, lenBuf...)
+	return headerBuf
 }

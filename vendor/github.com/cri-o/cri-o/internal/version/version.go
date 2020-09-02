@@ -13,7 +13,7 @@ import (
 )
 
 // Version is the version of the build.
-const Version = "1.16.2"
+const Version = "1.17.5"
 
 // ShouldCrioWipe opens the version file, and parses it and the version string
 // If there is a parsing error, then crio should wipe, and the error is returned.
@@ -28,24 +28,24 @@ func ShouldCrioWipe(versionFileName string) (bool, error) {
 func shouldCrioWipe(versionFileName, versionString string) (bool, error) {
 	f, err := os.Open(versionFileName)
 	if err != nil {
-		return true, errors.Errorf("version file %s not found: %v. Triggering wipe", versionFileName, err)
+		return true, errors.Errorf("version file %s not found: %v", versionFileName, err)
 	}
 	r := bufio.NewReader(f)
 	versionBytes, err := ioutil.ReadAll(r)
 	if err != nil {
-		return true, errors.Errorf("reading version file %s failed: %v. Triggering wipe", versionFileName, err)
+		return true, errors.Errorf("reading version file %s failed: %v", versionFileName, err)
 	}
 
 	// parse the version that was laid down by a previous invocation of crio
 	var oldVersion semver.Version
 	if err := oldVersion.UnmarshalJSON(versionBytes); err != nil {
-		return true, errors.Errorf("version file %s malformatted: %v. Triggering wipe", versionFileName, err)
+		return true, errors.Errorf("version file %s malformatted: %v", versionFileName, err)
 	}
 
 	// parse the version of the current binary
 	newVersion, err := parseVersionConstant(versionString, "")
 	if err != nil {
-		return true, errors.Errorf("version constant %s malformatted: %v. Triggering wipe", versionString, err)
+		return true, errors.Errorf("version constant %s malformatted: %v", versionString, err)
 	}
 
 	// in every case that the minor and major version are out of sync,

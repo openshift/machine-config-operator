@@ -2,7 +2,10 @@ package cliconfig
 
 import (
 	"net"
+	"os"
 
+	"github.com/containers/common/pkg/config"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -54,6 +57,10 @@ type AttachValues struct {
 	SigProxy   bool
 }
 
+type AutoUpdateValues struct {
+	PodmanCommand
+}
+
 type ImagesValues struct {
 	PodmanCommand
 	All       bool
@@ -64,6 +71,7 @@ type ImagesValues struct {
 	NoTrunc   bool
 	Quiet     bool
 	Sort      string
+	History   bool
 }
 
 type EventValues struct {
@@ -110,6 +118,7 @@ type CommitValues struct {
 	Pause          bool
 	Quiet          bool
 	IncludeVolumes bool
+	ImageIDFile    string
 }
 
 type ContainersPrune struct {
@@ -127,6 +136,7 @@ type ExecValues struct {
 	PodmanCommand
 	DetachKeys  string
 	Env         []string
+	EnvFile     []string
 	Privileged  bool
 	Interactive bool
 	Tty         bool
@@ -161,9 +171,10 @@ type GenerateKubeValues struct {
 type GenerateSystemdValues struct {
 	PodmanCommand
 	Name          bool
+	New           bool
 	Files         bool
 	RestartPolicy string
-	StopTimeout   int
+	StopTimeout   uint
 }
 
 type HistoryValues struct {
@@ -175,12 +186,15 @@ type HistoryValues struct {
 }
 type PruneImagesValues struct {
 	PodmanCommand
-	All bool
+	All    bool
+	Force  bool
+	Filter []string
 }
 
 type PruneContainersValues struct {
 	PodmanCommand
-	Force bool
+	Force  bool
+	Filter []string
 }
 
 type PodPruneValues struct {
@@ -254,6 +268,7 @@ type LogsValues struct {
 	Tail       int64
 	Timestamps bool
 	Latest     bool
+	UseName    bool
 }
 
 type MountValues struct {
@@ -274,6 +289,7 @@ type NetworkCreateValues struct {
 	IPRange    net.IPNet
 	IPV6       bool
 	Network    net.IPNet
+	MacVLAN    string
 }
 
 type NetworkListValues struct {
@@ -302,12 +318,14 @@ type HealthCheckValues struct {
 
 type KubePlayValues struct {
 	PodmanCommand
-	Authfile        string
-	CertDir         string
-	Creds           string
-	Quiet           bool
-	SignaturePolicy string
-	TlsVerify       bool
+	Authfile           string
+	CertDir            string
+	Creds              string
+	Network            string
+	Quiet              bool
+	SignaturePolicy    string
+	TlsVerify          bool
+	SeccompProfileRoot string
 }
 
 type PodCreateValues struct {
@@ -366,6 +384,7 @@ type PodRestartValues struct {
 type PodRmValues struct {
 	PodmanCommand
 	All    bool
+	Ignore bool
 	Force  bool
 	Latest bool
 }
@@ -387,6 +406,7 @@ type PodStatsValues struct {
 type PodStopValues struct {
 	PodmanCommand
 	All     bool
+	Ignore  bool
 	Latest  bool
 	Timeout uint
 }
@@ -459,31 +479,35 @@ type RefreshValues struct {
 
 type RestartValues struct {
 	PodmanCommand
-	All     bool
-	Latest  bool
-	Running bool
-	Timeout uint
+	All        bool
+	AutoUpdate bool
+	Latest     bool
+	Running    bool
+	Timeout    uint
 }
 
 type RestoreValues struct {
 	PodmanCommand
-	All            bool
-	Keep           bool
-	Latest         bool
-	TcpEstablished bool
-	Import         string
-	Name           string
-	IgnoreRootfs   bool
-	IgnoreStaticIP bool
+	All             bool
+	Keep            bool
+	Latest          bool
+	TcpEstablished  bool
+	Import          string
+	Name            string
+	IgnoreRootfs    bool
+	IgnoreStaticIP  bool
+	IgnoreStaticMAC bool
 }
 
 type RmValues struct {
 	PodmanCommand
-	All     bool
-	Force   bool
-	Latest  bool
-	Storage bool
-	Volumes bool
+	All      bool
+	Force    bool
+	Ignore   bool
+	Latest   bool
+	Storage  bool
+	Volumes  bool
+	CIDFiles []string
 }
 
 type RmiValues struct {
@@ -556,9 +580,11 @@ type StatsValues struct {
 
 type StopValues struct {
 	PodmanCommand
-	All     bool
-	Latest  bool
-	Timeout uint
+	All      bool
+	Ignore   bool
+	Latest   bool
+	Timeout  uint
+	CIDFiles []string
 }
 
 type TopValues struct {
@@ -581,6 +607,12 @@ type UnpauseValues struct {
 
 type VarlinkValues struct {
 	PodmanCommand
+	Timeout int64
+}
+
+type ServiceValues struct {
+	PodmanCommand
+	Varlink bool
 	Timeout int64
 }
 
@@ -636,9 +668,10 @@ type VolumeRmValues struct {
 
 type CleanupValues struct {
 	PodmanCommand
-	All    bool
-	Latest bool
-	Remove bool
+	All         bool
+	Latest      bool
+	Remove      bool
+	RemoveImage bool
 }
 
 type SystemPruneValues struct {
@@ -646,6 +679,11 @@ type SystemPruneValues struct {
 	All    bool
 	Force  bool
 	Volume bool
+}
+
+type SystemResetValues struct {
+	PodmanCommand
+	Force bool
 }
 
 type SystemRenumberValues struct {
@@ -661,4 +699,18 @@ type SystemDfValues struct {
 	PodmanCommand
 	Verbose bool
 	Format  string
+}
+
+type UntagValues struct {
+	PodmanCommand
+}
+
+func GetDefaultConfig() *config.Config {
+	var err error
+	conf, err := config.NewConfig("")
+	if err != nil {
+		logrus.Errorf("Error loading container config %v\n", err)
+		os.Exit(1)
+	}
+	return conf
 }

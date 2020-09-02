@@ -1,13 +1,16 @@
 package libpod
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"path/filepath"
 	"sync"
 
 	"github.com/containers/libpod/libpod/define"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 var (
@@ -47,7 +50,7 @@ func getMissingRuntime(name string, r *Runtime) (OCIRuntime, error) {
 
 	newRuntime := new(MissingRuntime)
 	newRuntime.name = name
-	newRuntime.exitsDir = filepath.Join(r.config.TmpDir, "exits")
+	newRuntime.exitsDir = filepath.Join(r.config.Engine.TmpDir, "exits")
 
 	missingRuntimes[name] = newRuntime
 
@@ -107,9 +110,24 @@ func (r *MissingRuntime) UnpauseContainer(ctr *Container) error {
 	return r.printError()
 }
 
+// HTTPAttach is not available as the runtime is missing
+func (r *MissingRuntime) HTTPAttach(ctr *Container, httpConn net.Conn, httpBuf *bufio.ReadWriter, streams *HTTPAttachStreams, detachKeys *string, cancel <-chan bool) error {
+	return r.printError()
+}
+
+// AttachResize is not available as the runtime is missing
+func (r *MissingRuntime) AttachResize(ctr *Container, newSize remotecommand.TerminalSize) error {
+	return r.printError()
+}
+
 // ExecContainer is not available as the runtime is missing
 func (r *MissingRuntime) ExecContainer(ctr *Container, sessionID string, options *ExecOptions) (int, chan error, error) {
 	return -1, nil, r.printError()
+}
+
+// ExecAttachResize is not available as the runtime is missing.
+func (r *MissingRuntime) ExecAttachResize(ctr *Container, sessionID string, newSize remotecommand.TerminalSize) error {
+	return r.printError()
 }
 
 // ExecStopContainer is not available as the runtime is missing.
@@ -118,6 +136,11 @@ func (r *MissingRuntime) ExecContainer(ctr *Container, sessionID string, options
 // perfect, though.
 func (r *MissingRuntime) ExecStopContainer(ctr *Container, sessionID string, timeout uint) error {
 	return r.printError()
+}
+
+// ExecUpdateStatus is not available as the runtime is missing.
+func (r *MissingRuntime) ExecUpdateStatus(ctr *Container, sessionID string) (bool, error) {
+	return false, r.printError()
 }
 
 // ExecContainerCleanup is not available as the runtime is missing
@@ -172,15 +195,14 @@ func (r *MissingRuntime) ExitFilePath(ctr *Container) (string, error) {
 }
 
 // RuntimeInfo returns information on the missing runtime
-func (r *MissingRuntime) RuntimeInfo() (map[string]interface{}, error) {
-	info := make(map[string]interface{})
-	info["OCIRuntime"] = map[string]interface{}{
-		"name":    r.name,
-		"path":    "missing",
-		"package": "missing",
-		"version": "missing",
+func (r *MissingRuntime) RuntimeInfo() (*define.ConmonInfo, *define.OCIRuntimeInfo, error) {
+	ocirt := define.OCIRuntimeInfo{
+		Name:    r.name,
+		Path:    "missing",
+		Package: "missing",
+		Version: "missing",
 	}
-	return info, nil
+	return nil, &ocirt, nil
 }
 
 // Return an error indicating the runtime is missing

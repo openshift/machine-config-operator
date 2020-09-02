@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"unicode"
@@ -51,8 +52,6 @@ func CommonBuildOptions(c *cobra.Command) (*buildah.CommonBuildOptions, error) {
 		err         error
 	)
 
-	defaultLimits := getDefaultProcessLimits()
-
 	memVal, _ := c.Flags().GetString("memory")
 	if memVal != "" {
 		memoryLimit, err = units.RAMInBytes(memVal)
@@ -79,30 +78,39 @@ func CommonBuildOptions(c *cobra.Command) (*buildah.CommonBuildOptions, error) {
 	}
 
 	noDNS = false
-	dnsServers, _ := c.Flags().GetStringSlice("dns")
-	for _, server := range dnsServers {
-		if strings.ToLower(server) == "none" {
-			noDNS = true
+	dnsServers := []string{}
+	if c.Flag("dns").Changed {
+		dnsServers, _ = c.Flags().GetStringSlice("dns")
+		for _, server := range dnsServers {
+			if strings.ToLower(server) == "none" {
+				noDNS = true
+			}
+		}
+		if noDNS && len(dnsServers) > 1 {
+			return nil, errors.Errorf("invalid --dns, --dns=none may not be used with any other --dns options")
 		}
 	}
-	if noDNS && len(dnsServers) > 1 {
-		return nil, errors.Errorf("invalid --dns, --dns=none may not be used with any other --dns options")
+
+	dnsSearch := []string{}
+	if c.Flag("dns-search").Changed {
+		dnsSearch, _ = c.Flags().GetStringSlice("dns-search")
+		if noDNS && len(dnsSearch) > 0 {
+			return nil, errors.Errorf("invalid --dns-search, --dns-search may not be used with --dns=none")
+		}
 	}
 
-	dnsSearch, _ := c.Flags().GetStringSlice("dns-search")
-	if noDNS && len(dnsSearch) > 0 {
-		return nil, errors.Errorf("invalid --dns-search, --dns-search may not be used with --dns=none")
-	}
-
-	dnsOptions, _ := c.Flags().GetStringSlice("dns-option")
-	if noDNS && len(dnsOptions) > 0 {
-		return nil, errors.Errorf("invalid --dns-option, --dns-option may not be used with --dns=none")
+	dnsOptions := []string{}
+	if c.Flag("dns-search").Changed {
+		dnsOptions, _ = c.Flags().GetStringSlice("dns-option")
+		if noDNS && len(dnsOptions) > 0 {
+			return nil, errors.Errorf("invalid --dns-option, --dns-option may not be used with --dns=none")
+		}
 	}
 
 	if _, err := units.FromHumanSize(c.Flag("shm-size").Value.String()); err != nil {
 		return nil, errors.Wrapf(err, "invalid --shm-size")
 	}
-	volumes, _ := c.Flags().GetStringSlice("volume")
+	volumes, _ := c.Flags().GetStringArray("volume")
 	if err := Volumes(volumes); err != nil {
 		return nil, err
 	}
@@ -110,7 +118,12 @@ func CommonBuildOptions(c *cobra.Command) (*buildah.CommonBuildOptions, error) {
 	cpuQuota, _ := c.Flags().GetInt64("cpu-quota")
 	cpuShares, _ := c.Flags().GetUint64("cpu-shares")
 	httpProxy, _ := c.Flags().GetBool("http-proxy")
-	ulimit, _ := c.Flags().GetStringSlice("ulimit")
+
+	ulimit := []string{}
+	if c.Flag("ulimit").Changed {
+		ulimit, _ = c.Flags().GetStringSlice("ulimit")
+	}
+
 	commonOpts := &buildah.CommonBuildOptions{
 		AddHost:      addHost,
 		CgroupParent: c.Flag("cgroup-parent").Value.String(),
@@ -126,7 +139,7 @@ func CommonBuildOptions(c *cobra.Command) (*buildah.CommonBuildOptions, error) {
 		Memory:       memoryLimit,
 		MemorySwap:   memorySwap,
 		ShmSize:      c.Flag("shm-size").Value.String(),
-		Ulimit:       append(defaultLimits, ulimit...),
+		Ulimit:       ulimit,
 		Volumes:      volumes,
 	}
 	securityOpts, _ := c.Flags().GetStringArray("security-opt")
@@ -270,7 +283,7 @@ func getMounts(mounts []string) (map[string]specs.Mount, error) {
 
 	// TODO(vrothberg): the manual parsing can be replaced with a regular expression
 	//                  to allow a more robust parsing of the mount format and to give
-	//                  precise errors regarding supported format versus suppored options.
+	//                  precise errors regarding supported format versus supported options.
 	for _, mount := range mounts {
 		arr := strings.SplitN(mount, ",", 2)
 		if len(arr) < 2 {
@@ -524,10 +537,10 @@ func validateExtraHost(val string) error {
 	// allow for IPv6 addresses in extra hosts by only splitting on first ":"
 	arr := strings.SplitN(val, ":", 2)
 	if len(arr) != 2 || len(arr[0]) == 0 {
-		return fmt.Errorf("bad format for add-host: %q", val)
+		return errors.Errorf("bad format for add-host: %q", val)
 	}
 	if _, err := validateIPAddress(arr[1]); err != nil {
-		return fmt.Errorf("invalid IP address in add-host: %q", arr[1])
+		return errors.Errorf("invalid IP address in add-host: %q", arr[1])
 	}
 	return nil
 }
@@ -539,7 +552,7 @@ func validateIPAddress(val string) (string, error) {
 	if ip != nil {
 		return ip.String(), nil
 	}
-	return "", fmt.Errorf("%s is not an ip address", val)
+	return "", errors.Errorf("%s is not an ip address", val)
 }
 
 // SystemContextFromOptions returns a SystemContext populated with values
@@ -589,6 +602,7 @@ func SystemContextFromOptions(c *cobra.Command) (*types.SystemContext, error) {
 	if arch, err := c.Flags().GetString("override-arch"); err == nil {
 		ctx.ArchitectureChoice = arch
 	}
+	ctx.BigFilesTemporaryDir = GetTempDir()
 	return ctx, nil
 }
 
@@ -597,6 +611,46 @@ func getAuthFile(authfile string) string {
 		return authfile
 	}
 	return os.Getenv("REGISTRY_AUTH_FILE")
+}
+
+// PlatformFromOptions parses the operating system (os) and architecture (arch)
+// from the provided command line options.
+func PlatformFromOptions(c *cobra.Command) (os, arch string, err error) {
+	os = runtime.GOOS
+	arch = runtime.GOARCH
+
+	if selectedOS, err := c.Flags().GetString("os"); err == nil && selectedOS != runtime.GOOS {
+		os = selectedOS
+	}
+	if selectedArch, err := c.Flags().GetString("arch"); err == nil && selectedArch != runtime.GOARCH {
+		arch = selectedArch
+	}
+
+	if pf, err := c.Flags().GetString("platform"); err == nil && pf != DefaultPlatform() {
+		selectedOS, selectedArch, err := parsePlatform(pf)
+		if err != nil {
+			return "", "", errors.Wrap(err, "unable to parse platform")
+		}
+		arch = selectedArch
+		os = selectedOS
+	}
+
+	return os, arch, nil
+}
+
+const platformSep = "/"
+
+// DefaultPlatform returns the standard platform for the current system
+func DefaultPlatform() string {
+	return runtime.GOOS + platformSep + runtime.GOARCH
+}
+
+func parsePlatform(platform string) (os, arch string, err error) {
+	split := strings.Split(platform, platformSep)
+	if len(split) != 2 {
+		return "", "", errors.Errorf("invalid platform syntax for %q (use OS/ARCH)", platform)
+	}
+	return split[0], split[1], nil
 }
 
 func parseCreds(creds string) (string, string) {
@@ -760,20 +814,20 @@ func parseIDMap(spec []string) (m [][3]uint32, err error) {
 	for _, s := range spec {
 		args := strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsDigit(r) })
 		if len(args)%3 != 0 {
-			return nil, fmt.Errorf("mapping %q is not in the form containerid:hostid:size[,...]", s)
+			return nil, errors.Errorf("mapping %q is not in the form containerid:hostid:size[,...]", s)
 		}
 		for len(args) >= 3 {
 			cid, err := strconv.ParseUint(args[0], 10, 32)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing container ID %q from mapping %q as a number: %v", args[0], s, err)
+				return nil, errors.Wrapf(err, "error parsing container ID %q from mapping %q as a number", args[0], s)
 			}
 			hostid, err := strconv.ParseUint(args[1], 10, 32)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing host ID %q from mapping %q as a number: %v", args[1], s, err)
+				return nil, errors.Wrapf(err, "error parsing host ID %q from mapping %q as a number", args[1], s)
 			}
 			size, err := strconv.ParseUint(args[2], 10, 32)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing %q from mapping %q as a number: %v", args[2], s, err)
+				return nil, errors.Wrapf(err, "error parsing %q from mapping %q as a number", args[2], s)
 			}
 			m = append(m, [3]uint32{uint32(cid), uint32(hostid), uint32(size)})
 			args = args[3:]
@@ -857,8 +911,7 @@ func defaultIsolation() (buildah.Isolation, error) {
 }
 
 // IsolationOption parses the --isolation flag.
-func IsolationOption(c *cobra.Command) (buildah.Isolation, error) {
-	isolation, _ := c.Flags().GetString("isolation")
+func IsolationOption(isolation string) (buildah.Isolation, error) {
 	if isolation != "" {
 		switch strings.ToLower(isolation) {
 		case "oci":
@@ -907,7 +960,7 @@ func Device(device string) (string, string, string, error) {
 	switch len(arr) {
 	case 3:
 		if !isValidDeviceMode(arr[2]) {
-			return "", "", "", fmt.Errorf("invalid device mode: %s", arr[2])
+			return "", "", "", errors.Errorf("invalid device mode: %s", arr[2])
 		}
 		permissions = arr[2]
 		fallthrough
@@ -916,7 +969,7 @@ func Device(device string) (string, string, string, error) {
 			permissions = arr[1]
 		} else {
 			if len(arr[1]) == 0 || arr[1][0] != '/' {
-				return "", "", "", fmt.Errorf("invalid device mode: %s", arr[1])
+				return "", "", "", errors.Errorf("invalid device mode: %s", arr[1])
 			}
 			dst = arr[1]
 		}
@@ -928,7 +981,7 @@ func Device(device string) (string, string, string, error) {
 		}
 		fallthrough
 	default:
-		return "", "", "", fmt.Errorf("invalid device specification: %s", device)
+		return "", "", "", errors.Errorf("invalid device specification: %s", device)
 	}
 
 	if dst == "" {
@@ -955,4 +1008,11 @@ func isValidDeviceMode(mode string) bool {
 		legalDeviceMode[c] = false
 	}
 	return true
+}
+
+func GetTempDir() string {
+	if tmpdir, ok := os.LookupEnv("TMPDIR"); ok {
+		return tmpdir
+	}
+	return "/var/tmp"
 }

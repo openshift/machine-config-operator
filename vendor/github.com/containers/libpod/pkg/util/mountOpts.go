@@ -13,22 +13,22 @@ var (
 	ErrDupeMntOption = errors.Errorf("duplicate mount option passed")
 )
 
-// DefaultMountOptions sets default mount options for ProcessOptions.
-type DefaultMountOptions struct {
-	Noexec bool
-	Nosuid bool
-	Nodev  bool
+type defaultMountOptions struct {
+	noexec bool
+	nosuid bool
+	nodev  bool
 }
 
 // ProcessOptions parses the options for a bind or tmpfs mount and ensures that
 // they are sensible and follow convention. The isTmpfs variable controls
 // whether extra, tmpfs-specific options will be allowed.
-// The defaults variable controls default mount options that will be set. If it
-// is not included, they will be set unconditionally.
-func ProcessOptions(options []string, isTmpfs bool, defaults *DefaultMountOptions) ([]string, error) {
+// The sourcePath variable, if not empty, contains a bind mount source.
+func ProcessOptions(options []string, isTmpfs bool, sourcePath string) ([]string, error) {
 	var (
 		foundWrite, foundSize, foundProp, foundMode, foundExec, foundSuid, foundDev, foundCopyUp, foundBind, foundZ bool
 	)
+
+	var newOptions []string
 
 	for _, opt := range options {
 		// Some options have parameters - size, mode
@@ -80,9 +80,19 @@ func ProcessOptions(options []string, isTmpfs bool, defaults *DefaultMountOption
 				return nil, errors.Wrapf(ErrBadMntOption, "the 'tmpcopyup' option is only allowed with tmpfs mounts")
 			}
 			if foundCopyUp {
-				return nil, errors.Wrapf(ErrDupeMntOption, "the 'tmpcopyup' option can only be set once")
+				return nil, errors.Wrapf(ErrDupeMntOption, "the 'tmpcopyup' or 'notmpcopyup' option can only be set once")
 			}
 			foundCopyUp = true
+		case "notmpcopyup":
+			if !isTmpfs {
+				return nil, errors.Wrapf(ErrBadMntOption, "the 'notmpcopyup' option is only allowed with tmpfs mounts")
+			}
+			if foundCopyUp {
+				return nil, errors.Wrapf(ErrDupeMntOption, "the 'tmpcopyup' or 'notmpcopyup' option can only be set once")
+			}
+			foundCopyUp = true
+			// do not propagate notmpcopyup to the OCI runtime
+			continue
 		case "bind", "rbind":
 			if isTmpfs {
 				return nil, errors.Wrapf(ErrBadMntOption, "the 'bind' and 'rbind' options are not allowed with tmpfs mounts")
@@ -101,29 +111,34 @@ func ProcessOptions(options []string, isTmpfs bool, defaults *DefaultMountOption
 		default:
 			return nil, errors.Wrapf(ErrBadMntOption, "unknown mount option %q", opt)
 		}
+		newOptions = append(newOptions, opt)
 	}
 
 	if !foundWrite {
-		options = append(options, "rw")
+		newOptions = append(newOptions, "rw")
 	}
 	if !foundProp {
-		options = append(options, "rprivate")
+		newOptions = append(newOptions, "rprivate")
 	}
-	if !foundExec && (defaults == nil || defaults.Noexec) {
-		options = append(options, "noexec")
+	defaults, err := getDefaultMountOptions(sourcePath)
+	if err != nil {
+		return nil, err
 	}
-	if !foundSuid && (defaults == nil || defaults.Nosuid) {
-		options = append(options, "nosuid")
+	if !foundExec && defaults.noexec {
+		newOptions = append(newOptions, "noexec")
 	}
-	if !foundDev && (defaults == nil || defaults.Nodev) {
-		options = append(options, "nodev")
+	if !foundSuid && defaults.nosuid {
+		newOptions = append(newOptions, "nosuid")
+	}
+	if !foundDev && defaults.nodev {
+		newOptions = append(newOptions, "nodev")
 	}
 	if isTmpfs && !foundCopyUp {
-		options = append(options, "tmpcopyup")
+		newOptions = append(newOptions, "tmpcopyup")
 	}
 	if !isTmpfs && !foundBind {
-		options = append(options, "rbind")
+		newOptions = append(newOptions, "rbind")
 	}
 
-	return options, nil
+	return newOptions, nil
 }

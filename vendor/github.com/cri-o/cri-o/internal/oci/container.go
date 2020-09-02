@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	"github.com/containers/storage/pkg/idtools"
 	"github.com/docker/docker/pkg/signal"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/fields"
 	pb "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
@@ -21,9 +23,11 @@ import (
 )
 
 const (
-	defaultStopSignal    = "TERM"
+	defaultStopSignal    = "15"
 	defaultStopSignalInt = 15
 )
+
+var ErrContainerStopped = errors.New("container is already stopped")
 
 // Container represents a runtime container.
 type Container struct {
@@ -33,7 +37,6 @@ type Container struct {
 	logPath        string
 	image          string
 	sandbox        string
-	netns          string
 	runtimeHandler string
 	// this is the /var/run/storage/... directory, erased on reboot
 	bundlePath string
@@ -56,7 +59,6 @@ type Container struct {
 	terminal           bool
 	stdin              bool
 	stdinOnce          bool
-	privileged         bool
 	created            bool
 }
 
@@ -79,7 +81,7 @@ type ContainerState struct {
 }
 
 // NewContainer creates a container object.
-func NewContainer(id, name, bundlePath, logPath, netns string, labels, crioAnnotations, annotations map[string]string, image, imageName, imageRef string, metadata *pb.ContainerMetadata, sandbox string, terminal, stdin, stdinOnce, privileged bool, runtimeHandler, dir string, created time.Time, stopSignal string) (*Container, error) {
+func NewContainer(id, name, bundlePath, logPath string, labels, crioAnnotations, annotations map[string]string, image, imageName, imageRef string, metadata *pb.ContainerMetadata, sandbox string, terminal, stdin, stdinOnce bool, runtimeHandler, dir string, created time.Time, stopSignal string) (*Container, error) {
 	state := &ContainerState{}
 	state.Created = created
 	c := &Container{
@@ -89,11 +91,9 @@ func NewContainer(id, name, bundlePath, logPath, netns string, labels, crioAnnot
 		logPath:         logPath,
 		labels:          labels,
 		sandbox:         sandbox,
-		netns:           netns,
 		terminal:        terminal,
 		stdin:           stdin,
 		stdinOnce:       stdinOnce,
-		privileged:      privileged,
 		runtimeHandler:  runtimeHandler,
 		metadata:        metadata,
 		annotations:     annotations,
@@ -131,11 +131,13 @@ func (c *Container) GetStopSignal() string {
 		return defaultStopSignal
 	}
 	cleanSignal := strings.TrimPrefix(strings.ToUpper(c.stopSignal), "SIG")
-	_, ok := signal.SignalMap[cleanSignal]
+	val, ok := signal.SignalMap[cleanSignal]
 	if !ok {
 		return defaultStopSignal
 	}
-	return cleanSignal
+	// return the stop signal in the form of its int converted to a string
+	// i.e stop signal 34 is returned as "34" to avoid back and forth conversion
+	return strconv.Itoa(int(val))
 }
 
 // StopSignal returns the container's own stop signal configured from
@@ -260,19 +262,6 @@ func (c *Container) Dir() string {
 	return c.dir
 }
 
-// NetNsPath returns the path to the network namespace of the container.
-func (c *Container) NetNsPath() (string, error) {
-	if c.state == nil {
-		return "", fmt.Errorf("container state is not populated")
-	}
-
-	if c.netns == "" {
-		return fmt.Sprintf("/proc/%d/ns/net", c.state.Pid), nil
-	}
-
-	return c.netns, nil
-}
-
 // Metadata returns the metadata of the container.
 func (c *Container) Metadata() *pb.ContainerMetadata {
 	return c.metadata
@@ -298,7 +287,6 @@ func (c *Container) AddVolume(v ContainerVolume) {
 // Volumes returns the list of container volumes.
 func (c *Container) Volumes() []ContainerVolume {
 	return c.volumes
-
 }
 
 // SetMountPoint sets the container mount point
@@ -350,4 +338,22 @@ func (c *Container) Description() string {
 // StdinOnce returns whether stdin once is set for the container.
 func (c *Container) StdinOnce() bool {
 	return c.stdinOnce
+}
+
+func (c *Container) exitFilePath() string {
+	return filepath.Join(c.dir, "exit")
+}
+
+// ShouldBeStopped checks whether the container state is in a place
+// where attempting to stop it makes sense
+// a container is not stoppable if it's paused or stopped
+// if it's paused, that's an error, and is reported as such
+func (c *Container) ShouldBeStopped() error {
+	switch c.state.Status {
+	case ContainerStateStopped: // no-op
+		return ErrContainerStopped
+	case ContainerStatePaused:
+		return errors.New("cannot stop paused container")
+	}
+	return nil
 }

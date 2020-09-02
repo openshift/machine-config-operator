@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/containers/libpod/libpod/define"
+	"github.com/pkg/errors"
 )
 
 // Creates a new volume
@@ -22,7 +23,7 @@ func newVolume(runtime *Runtime) (*Volume, error) {
 
 // teardownStorage deletes the volume from volumePath
 func (v *Volume) teardownStorage() error {
-	return os.RemoveAll(filepath.Join(v.runtime.config.VolumePath, v.Name()))
+	return os.RemoveAll(filepath.Join(v.runtime.config.Engine.VolumePath, v.Name()))
 }
 
 // Volumes with options set, or a filesystem type, or a device to mount need to
@@ -45,4 +46,15 @@ func (v *Volume) update() error {
 // save() saves the volume state to the DB
 func (v *Volume) save() error {
 	return v.runtime.state.SaveVolume(v)
+}
+
+// Refresh volume state after a restart.
+func (v *Volume) refresh() error {
+	lock, err := v.runtime.lockManager.AllocateAndRetrieveLock(v.config.LockID)
+	if err != nil {
+		return errors.Wrapf(err, "error acquiring lock %d for volume %s", v.config.LockID, v.Name())
+	}
+	v.lock = lock
+
+	return nil
 }

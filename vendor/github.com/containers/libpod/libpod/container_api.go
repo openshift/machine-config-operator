@@ -3,15 +3,16 @@ package libpod
 import (
 	"bufio"
 	"context"
-	"io"
 	"io/ioutil"
+	"net"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/containers/libpod/libpod/define"
 	"github.com/containers/libpod/libpod/events"
-	"github.com/containers/storage/pkg/stringid"
-	"github.com/docker/docker/oci/caps"
+	"github.com/containers/libpod/libpod/logs"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -97,7 +98,7 @@ func (c *Container) Start(ctx context.Context, recursive bool) (err error) {
 // The channel will be closed automatically after the result of attach has been
 // sent.
 // If recursive is set, StartAndAttach will also start all containers this container depends on.
-func (c *Container) StartAndAttach(ctx context.Context, streams *AttachStreams, keys string, resize <-chan remotecommand.TerminalSize, recursive bool) (attachResChan <-chan error, err error) {
+func (c *Container) StartAndAttach(ctx context.Context, streams *define.AttachStreams, keys string, resize <-chan remotecommand.TerminalSize, recursive bool) (attachResChan <-chan error, err error) {
 	if !c.batched {
 		c.lock.Lock()
 		defer c.lock.Unlock()
@@ -183,7 +184,7 @@ func (c *Container) StopWithTimeout(timeout uint) error {
 		return errors.Wrapf(define.ErrCtrStateInvalid, "can only stop created or running containers. %s is in state %s", c.ID(), c.state.State.String())
 	}
 
-	return c.stop(timeout, false)
+	return c.stop(timeout)
 }
 
 // Kill sends a signal to a container
@@ -214,174 +215,17 @@ func (c *Container) Kill(signal uint) error {
 	return c.save()
 }
 
-// Exec starts a new process inside the container
-// Returns an exit code and an error. If Exec was not able to exec in the container before a failure, an exit code of define.ExecErrorCodeCannotInvoke is returned.
-// If another generic error happens, an exit code of define.ExecErrorCodeGeneric is returned.
-// Sometimes, the $RUNTIME exec call errors, and if that is the case, the exit code is the exit code of the call.
-// Otherwise, the exit code will be the exit code of the executed call inside of the container.
-// TODO investigate allowing exec without attaching
-func (c *Container) Exec(tty, privileged bool, env map[string]string, cmd []string, user, workDir string, streams *AttachStreams, preserveFDs uint, resize chan remotecommand.TerminalSize, detachKeys string) (int, error) {
-	var capList []string
-	if !c.batched {
-		c.lock.Lock()
-		defer c.lock.Unlock()
-
-		if err := c.syncContainer(); err != nil {
-			return define.ExecErrorCodeCannotInvoke, err
-		}
-	}
-
-	if c.state.State != define.ContainerStateRunning {
-		return define.ExecErrorCodeCannotInvoke, errors.Wrapf(define.ErrCtrStateInvalid, "cannot exec into container that is not running")
-	}
-
-	if privileged || c.config.Privileged {
-		capList = caps.GetAllCapabilities()
-	}
-
-	// Generate exec session ID
-	// Ensure we don't conflict with an existing session ID
-	sessionID := stringid.GenerateNonCryptoID()
-	found := true
-	// This really ought to be a do-while, but Go doesn't have those...
-	for found {
-		found = false
-		for id := range c.state.ExecSessions {
-			if id == sessionID {
-				found = true
-				break
-			}
-		}
-		if found {
-			sessionID = stringid.GenerateNonCryptoID()
-		}
-	}
-
-	logrus.Debugf("Creating new exec session in container %s with session id %s", c.ID(), sessionID)
-	if err := c.createExecBundle(sessionID); err != nil {
-		return define.ExecErrorCodeCannotInvoke, err
-	}
-
-	defer func() {
-		// cleanup exec bundle
-		if err := c.cleanupExecBundle(sessionID); err != nil {
-			logrus.Errorf("Error removing exec session %s bundle path for container %s: %v", sessionID, c.ID(), err)
-		}
-	}()
-
-	// if the user is empty, we should inherit the user that the container is currently running with
-	if user == "" {
-		user = c.config.User
-	}
-
-	opts := new(ExecOptions)
-	opts.Cmd = cmd
-	opts.CapAdd = capList
-	opts.Env = env
-	opts.Terminal = tty
-	opts.Cwd = workDir
-	opts.User = user
-	opts.Streams = streams
-	opts.PreserveFDs = preserveFDs
-	opts.Resize = resize
-	opts.DetachKeys = detachKeys
-
-	pid, attachChan, err := c.ociRuntime.ExecContainer(c, sessionID, opts)
-	if err != nil {
-		ec := define.ExecErrorCodeGeneric
-		// Conmon will pass a non-zero exit code from the runtime as a pid here.
-		// we differentiate a pid with an exit code by sending it as negative, so reverse
-		// that change and return the exit code the runtime failed with.
-		if pid < 0 {
-			ec = -1 * pid
-		}
-		return ec, err
-	}
-
-	// We have the PID, add it to state
-	if c.state.ExecSessions == nil {
-		c.state.ExecSessions = make(map[string]*ExecSession)
-	}
-	session := new(ExecSession)
-	session.ID = sessionID
-	session.Command = cmd
-	session.PID = pid
-	c.state.ExecSessions[sessionID] = session
-	if err := c.save(); err != nil {
-		// Now we have a PID but we can't save it in the DB
-		// TODO handle this better
-		return define.ExecErrorCodeGeneric, errors.Wrapf(err, "error saving exec sessions %s for container %s", sessionID, c.ID())
-	}
-	c.newContainerEvent(events.Exec)
-	logrus.Debugf("Successfully started exec session %s in container %s", sessionID, c.ID())
-
-	// Unlock so other processes can use the container
-	if !c.batched {
-		c.lock.Unlock()
-	}
-
-	lastErr := <-attachChan
-
-	exitCode, err := c.readExecExitCode(sessionID)
-	if err != nil {
-		if lastErr != nil {
-			logrus.Errorf(lastErr.Error())
-		}
-		lastErr = err
-	}
-	if exitCode != 0 {
-		if lastErr != nil {
-			logrus.Errorf(lastErr.Error())
-		}
-		lastErr = errors.Wrapf(define.ErrOCIRuntime, "non zero exit code: %d", exitCode)
-	}
-
-	// Lock again
-	if !c.batched {
-		c.lock.Lock()
-	}
-
-	// Sync the container again to pick up changes in state
-	if err := c.syncContainer(); err != nil {
-		logrus.Errorf("error syncing container %s state to remove exec session %s", c.ID(), sessionID)
-		return exitCode, lastErr
-	}
-
-	// Remove the exec session from state
-	delete(c.state.ExecSessions, sessionID)
-	if err := c.save(); err != nil {
-		logrus.Errorf("Error removing exec session %s from container %s state: %v", sessionID, c.ID(), err)
-	}
-	return exitCode, lastErr
-}
-
-// AttachStreams contains streams that will be attached to the container
-type AttachStreams struct {
-	// OutputStream will be attached to container's STDOUT
-	OutputStream io.WriteCloser
-	// ErrorStream will be attached to container's STDERR
-	ErrorStream io.WriteCloser
-	// InputStream will be attached to container's STDIN
-	InputStream *bufio.Reader
-	// AttachOutput is whether to attach to STDOUT
-	// If false, stdout will not be attached
-	AttachOutput bool
-	// AttachError is whether to attach to STDERR
-	// If false, stdout will not be attached
-	AttachError bool
-	// AttachInput is whether to attach to STDIN
-	// If false, stdout will not be attached
-	AttachInput bool
-}
-
-// Attach attaches to a container
-func (c *Container) Attach(streams *AttachStreams, keys string, resize <-chan remotecommand.TerminalSize) error {
+// Attach attaches to a container.
+// This function returns when the attach finishes. It does not hold the lock for
+// the duration of its runtime, only using it at the beginning to verify state.
+func (c *Container) Attach(streams *define.AttachStreams, keys string, resize <-chan remotecommand.TerminalSize) error {
 	if !c.batched {
 		c.lock.Lock()
 		if err := c.syncContainer(); err != nil {
 			c.lock.Unlock()
 			return err
 		}
+		// We are NOT holding the lock for the duration of the function.
 		c.lock.Unlock()
 	}
 
@@ -389,8 +233,146 @@ func (c *Container) Attach(streams *AttachStreams, keys string, resize <-chan re
 		return errors.Wrapf(define.ErrCtrStateInvalid, "can only attach to created or running containers")
 	}
 
-	defer c.newContainerEvent(events.Attach)
+	c.newContainerEvent(events.Attach)
 	return c.attach(streams, keys, resize, false, nil)
+}
+
+// HTTPAttach forwards an attach session over a hijacked HTTP session.
+// HTTPAttach will consume and close the included httpCon, which is expected to
+// be sourced from a hijacked HTTP connection.
+// The cancel channel is optional, and can be used to asynchronously cancel the
+// attach session.
+// The streams variable is only supported if the container was not a terminal,
+// and allows specifying which of the container's standard streams will be
+// forwarded to the client.
+// This function returns when the attach finishes. It does not hold the lock for
+// the duration of its runtime, only using it at the beginning to verify state.
+// The streamLogs parameter indicates that all the container's logs until present
+// will be streamed at the beginning of the attach.
+// The streamAttach parameter indicates that the attach itself will be streamed
+// over the socket; if this is not set, but streamLogs is, only the logs will be
+// sent.
+// At least one of streamAttach and streamLogs must be set.
+func (c *Container) HTTPAttach(httpCon net.Conn, httpBuf *bufio.ReadWriter, streams *HTTPAttachStreams, detachKeys *string, cancel <-chan bool, streamAttach, streamLogs bool) (deferredErr error) {
+	isTerminal := false
+	if c.config.Spec.Process != nil {
+		isTerminal = c.config.Spec.Process.Terminal
+	}
+	// Ensure our contract of writing errors to and closing the HTTP conn is
+	// honored.
+	defer func() {
+		hijackWriteErrorAndClose(deferredErr, c.ID(), isTerminal, httpCon, httpBuf)
+	}()
+
+	if !c.batched {
+		c.lock.Lock()
+		if err := c.syncContainer(); err != nil {
+			c.lock.Unlock()
+
+			return err
+		}
+		// We are NOT holding the lock for the duration of the function.
+		c.lock.Unlock()
+	}
+
+	if !c.ensureState(define.ContainerStateCreated, define.ContainerStateRunning) {
+		return errors.Wrapf(define.ErrCtrStateInvalid, "can only attach to created or running containers")
+	}
+
+	if !streamAttach && !streamLogs {
+		return errors.Wrapf(define.ErrInvalidArg, "must specify at least one of stream or logs")
+	}
+
+	logrus.Infof("Performing HTTP Hijack attach to container %s", c.ID())
+
+	if streamLogs {
+		// Get all logs for the container
+		logChan := make(chan *logs.LogLine)
+		logOpts := new(logs.LogOptions)
+		logOpts.Tail = -1
+		logOpts.WaitGroup = new(sync.WaitGroup)
+		errChan := make(chan error)
+		go func() {
+			var err error
+			// In non-terminal mode we need to prepend with the
+			// stream header.
+			logrus.Debugf("Writing logs for container %s to HTTP attach", c.ID())
+			for logLine := range logChan {
+				if !isTerminal {
+					device := logLine.Device
+					var header []byte
+					headerLen := uint32(len(logLine.Msg))
+
+					switch strings.ToLower(device) {
+					case "stdin":
+						header = makeHTTPAttachHeader(0, headerLen)
+					case "stdout":
+						header = makeHTTPAttachHeader(1, headerLen)
+					case "stderr":
+						header = makeHTTPAttachHeader(2, headerLen)
+					default:
+						logrus.Errorf("Unknown device for log line: %s", device)
+						header = makeHTTPAttachHeader(1, headerLen)
+					}
+					_, err = httpBuf.Write(header)
+					if err != nil {
+						break
+					}
+				}
+				_, err = httpBuf.Write([]byte(logLine.Msg))
+				if err != nil {
+					break
+				}
+				_, err = httpBuf.Write([]byte("\n"))
+				if err != nil {
+					break
+				}
+				err = httpBuf.Flush()
+				if err != nil {
+					break
+				}
+			}
+			errChan <- err
+		}()
+		go func() {
+			logOpts.WaitGroup.Wait()
+			close(logChan)
+		}()
+		if err := c.ReadLog(logOpts, logChan); err != nil {
+			return err
+		}
+		logrus.Debugf("Done reading logs for container %s", c.ID())
+		if err := <-errChan; err != nil {
+			return err
+		}
+	}
+	if !streamAttach {
+		return nil
+	}
+
+	c.newContainerEvent(events.Attach)
+	return c.ociRuntime.HTTPAttach(c, httpCon, httpBuf, streams, detachKeys, cancel)
+}
+
+// AttachResize resizes the container's terminal, which is displayed by Attach
+// and HTTPAttach.
+func (c *Container) AttachResize(newSize remotecommand.TerminalSize) error {
+	if !c.batched {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+
+		if err := c.syncContainer(); err != nil {
+			return err
+		}
+	}
+
+	if !c.ensureState(define.ContainerStateCreated, define.ContainerStateRunning) {
+		return errors.Wrapf(define.ErrCtrStateInvalid, "can only resize created or running containers")
+	}
+
+	logrus.Infof("Resizing TTY of container %s", c.ID())
+
+	return c.ociRuntime.AttachResize(c, newSize)
 }
 
 // Mount mounts a container's filesystem on the host
@@ -404,6 +386,11 @@ func (c *Container) Mount() (string, error) {
 			return "", err
 		}
 	}
+
+	if c.state.State == define.ContainerStateRemoving {
+		return "", errors.Wrapf(define.ErrCtrStateInvalid, "cannot mount container %s as it is being removed", c.ID())
+	}
+
 	defer c.newContainerEvent(events.Mount)
 	return c.mount()
 }
@@ -428,7 +415,11 @@ func (c *Container) Unmount(force bool) error {
 			if c.ensureState(define.ContainerStateRunning, define.ContainerStatePaused) {
 				return errors.Wrapf(define.ErrCtrStateInvalid, "cannot unmount storage for container %s as it is running or paused", c.ID())
 			}
-			if len(c.state.ExecSessions) != 0 {
+			execSessions, err := c.getActiveExecSessions()
+			if err != nil {
+				return err
+			}
+			if len(execSessions) != 0 {
 				return errors.Wrapf(define.ErrCtrStateInvalid, "container %s has active exec sessions, refusing to unmount", c.ID())
 			}
 			return errors.Wrapf(define.ErrInternal, "can't unmount %s last mount, it is still in use", c.ID())
@@ -488,7 +479,12 @@ func (c *Container) Export(path string) error {
 			return err
 		}
 	}
-	defer c.newContainerEvent(events.Export)
+
+	if c.state.State == define.ContainerStateRemoving {
+		return errors.Wrapf(define.ErrCtrStateInvalid, "cannot mount container %s as it is being removed", c.ID())
+	}
+
+	defer c.newContainerEvent(events.Mount)
 	return c.export(path)
 }
 
@@ -554,6 +550,26 @@ func (c *Container) WaitWithInterval(waitTimeout time.Duration) (int32, error) {
 	}
 }
 
+func (c *Container) WaitForConditionWithInterval(waitTimeout time.Duration, condition define.ContainerStatus) (int32, error) {
+	if !c.valid {
+		return -1, define.ErrCtrRemoved
+	}
+	if condition == define.ContainerStateStopped || condition == define.ContainerStateExited {
+		return c.WaitWithInterval(waitTimeout)
+	}
+	for {
+		state, err := c.State()
+		if err != nil {
+			return -1, err
+		}
+		if state == condition {
+			break
+		}
+		time.Sleep(waitTimeout)
+	}
+	return -1, nil
+}
+
 // Cleanup unmounts all mount points in container and cleans up container storage
 // It also cleans up the network stack
 func (c *Container) Cleanup(ctx context.Context) error {
@@ -584,10 +600,15 @@ func (c *Container) Cleanup(ctx context.Context) error {
 
 	// If we didn't restart, we perform a normal cleanup
 
-	// Check if we have active exec sessions
-	if len(c.state.ExecSessions) != 0 {
+	// Check for running exec sessions
+	sessions, err := c.getActiveExecSessions()
+	if err != nil {
+		return err
+	}
+	if len(sessions) > 0 {
 		return errors.Wrapf(define.ErrCtrStateInvalid, "container %s has active exec sessions, refusing to clean up", c.ID())
 	}
+
 	defer c.newContainerEvent(events.Cleanup)
 	return c.cleanup(ctx)
 }
@@ -662,110 +683,11 @@ func (c *Container) Sync() error {
 	return nil
 }
 
-// Refresh refreshes a container's state in the database, restarting the
-// container if it is running
+// Refresh is DEPRECATED and REMOVED.
 func (c *Container) Refresh(ctx context.Context) error {
-	if !c.batched {
-		c.lock.Lock()
-		defer c.lock.Unlock()
-
-		if err := c.syncContainer(); err != nil {
-			return err
-		}
-	}
-
-	wasCreated := false
-	if c.state.State == define.ContainerStateCreated {
-		wasCreated = true
-	}
-	wasRunning := false
-	if c.state.State == define.ContainerStateRunning {
-		wasRunning = true
-	}
-	wasPaused := false
-	if c.state.State == define.ContainerStatePaused {
-		wasPaused = true
-	}
-
-	// First, unpause the container if it's paused
-	if c.state.State == define.ContainerStatePaused {
-		if err := c.unpause(); err != nil {
-			return err
-		}
-	}
-
-	// Next, if the container is running, stop it
-	if c.state.State == define.ContainerStateRunning {
-		if err := c.stop(c.config.StopTimeout, false); err != nil {
-			return err
-		}
-	}
-
-	// If there are active exec sessions, we need to kill them
-	if len(c.state.ExecSessions) > 0 {
-		logrus.Infof("Killing %d exec sessions in container %s. They will not be restored after refresh.",
-			len(c.state.ExecSessions), c.ID())
-	}
-	for _, session := range c.state.ExecSessions {
-		if err := c.ociRuntime.ExecStopContainer(c, session.ID, c.StopTimeout()); err != nil {
-			return errors.Wrapf(err, "error stopping exec session %s of container %s", session.ID, c.ID())
-		}
-	}
-
-	// If the container is in ContainerStateStopped, we need to delete it
-	// from the runtime and clear conmon state
-	if c.state.State == define.ContainerStateStopped {
-		if err := c.delete(ctx); err != nil {
-			return err
-		}
-		if err := c.removeConmonFiles(); err != nil {
-			return err
-		}
-	}
-
-	// Fire cleanup code one more time unconditionally to ensure we are good
-	// to refresh
-	if err := c.cleanup(ctx); err != nil {
-		return err
-	}
-
-	logrus.Debugf("Resetting state of container %s", c.ID())
-
-	// We've finished unwinding the container back to its initial state
-	// Now safe to refresh container state
-	if err := resetState(c.state); err != nil {
-		return errors.Wrapf(err, "error resetting state of container %s", c.ID())
-	}
-	if err := c.refresh(); err != nil {
-		return err
-	}
-
-	logrus.Debugf("Successfully refresh container %s state", c.ID())
-
-	// Initialize the container if it was created in runc
-	if wasCreated || wasRunning || wasPaused {
-		if err := c.prepare(); err != nil {
-			return err
-		}
-		if err := c.init(ctx, false); err != nil {
-			return err
-		}
-	}
-
-	// If the container was running before, start it
-	if wasRunning || wasPaused {
-		if err := c.start(); err != nil {
-			return err
-		}
-	}
-
-	// If the container was paused before, re-pause it
-	if wasPaused {
-		if err := c.pause(); err != nil {
-			return err
-		}
-	}
-	return nil
+	// This has been deprecated for a long while, and is in the process of
+	// being removed.
+	return define.ErrNotImplemented
 }
 
 // ContainerCheckpointOptions is a struct used to pass the parameters
@@ -794,6 +716,11 @@ type ContainerCheckpointOptions struct {
 	// important to be able to restore a container multiple
 	// times with '--import --name'.
 	IgnoreStaticIP bool
+	// IgnoreStaticMAC tells the API to ignore the MAC set
+	// during 'podman run' with '--mac-address'. This is especially
+	// important to be able to restore a container multiple
+	// times with '--import --name'.
+	IgnoreStaticMAC bool
 }
 
 // Checkpoint checkpoints a container
@@ -814,7 +741,6 @@ func (c *Container) Checkpoint(ctx context.Context, options ContainerCheckpointO
 			return err
 		}
 	}
-	defer c.newContainerEvent(events.Checkpoint)
 	return c.checkpoint(ctx, options)
 }
 

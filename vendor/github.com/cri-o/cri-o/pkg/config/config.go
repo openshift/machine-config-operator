@@ -140,7 +140,12 @@ type RootConfig struct {
 	LogDir string `toml:"log_dir"`
 
 	// VersionFile is the location CRI-O will lay down the version file
+	// that checks whether we've rebooted
 	VersionFile string `toml:"version_file"`
+
+	// VersionFilePersist is the location CRI-O will lay down the version file
+	// that checks whether we've upgraded
+	VersionFilePersist string `toml:"version_file_persist"`
 }
 
 // RuntimeHandler represents each item of the "crio.runtime.runtimes" TOML
@@ -175,6 +180,11 @@ type RuntimeConfig struct {
 	// Capabilities to add to all containers.
 	DefaultCapabilities []string `toml:"default_capabilities"`
 
+	// Additional environment variables to set for all the
+	// containers. These are overridden if set in the
+	// container image spec or in the container runtime configuration.
+	DefaultEnv []string `toml:"default_env"`
+
 	// Sysctls to add to all containers.
 	DefaultSysctls []string `toml:"default_sysctls"`
 
@@ -187,6 +197,9 @@ type RuntimeConfig struct {
 	// DefaultRuntime is the _name_ of the OCI runtime to be used as the default.
 	// The name is matched against the Runtimes map below.
 	DefaultRuntime string `toml:"default_runtime"`
+
+	// DecryptionKeysPath is the path where keys for image decryption are stored.
+	DecryptionKeysPath string `toml:"decryption_keys_path"`
 
 	// Conmon is the path to conmon binary, used for managing the runtime.
 	Conmon string `toml:"conmon"`
@@ -234,6 +247,17 @@ type RuntimeConfig struct {
 	// Options are fatal, panic, error (default), warn, info, and debug.
 	LogLevel string `toml:"log_level"`
 
+	// LogFilter specifies a regular expression to filter the log messages
+	LogFilter string `toml:"log_filter"`
+
+	// NamespacesDir is the directory where the state of the managed namespaces
+	// gets tracked
+	NamespacesDir string `toml:"namespaces_dir"`
+
+	// PinNSPath is the path to find the pinns binary, which is needed
+	// to manage namespace lifecycle
+	PinnsPath string `toml:"pinns_path"`
+
 	// Runtimes defines a list of OCI compatible runtimes. The runtime to
 	// use is picked based on the runtime_handler provided by the CRI. If
 	// no runtime_handler is provided, the runtime will be picked based on
@@ -264,9 +288,12 @@ type RuntimeConfig struct {
 	// to the kubernetes log file
 	LogToJournald bool `toml:"log_to_journald"`
 
-	// ManageNetworkNSLifecycle determines whether we pin and remove network namespace
-	// and manage its lifecycle
+	// Deprecated: In favor of ManageNSLifecycle (described below)
 	ManageNetworkNSLifecycle bool `toml:"manage_network_ns_lifecycle"`
+
+	// ManageNSLifecycle determines whether we pin and remove namespaces
+	// and manage their lifecycle
+	ManageNSLifecycle bool `toml:"manage_ns_lifecycle"`
 
 	// ReadOnly run all pods/containers in read-only mode.
 	// This mode will mount tmpfs on /run, /tmp and /var/tmp, if those are not mountpoints
@@ -352,9 +379,6 @@ type APIConfig struct {
 	// StreamTLSCA is the x509 CA(s) file used to verify and authenticate client
 	// communication with the tls encrypted stream
 	StreamTLSCA string `toml:"stream_tls_ca"`
-
-	// HostIP is the IP address that the server uses where it needs to use the primary host IP.
-	HostIP string `toml:"host_ip"`
 }
 
 // MetricsConfig specifies all necessary configuration for Prometheus based
@@ -420,6 +444,24 @@ func (c *Config) UpdateFromFile(path string) error {
 	return nil
 }
 
+// UpdateFromPath recursively iterates the provided path and updates the
+// configuration for it
+func (c *Config) UpdateFromPath(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	return filepath.Walk(path,
+		func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			return c.UpdateFromFile(p)
+		})
+}
+
 // ToFile outputs the given Config as a TOML-encoded file at the given path.
 // Returns errors encountered when generating or writing the file, or nil
 // otherwise.
@@ -456,12 +498,13 @@ func DefaultConfig() (*Config, error) {
 	}
 	return &Config{
 		RootConfig: RootConfig{
-			Root:           storeOpts.GraphRoot,
-			RunRoot:        storeOpts.RunRoot,
-			Storage:        storeOpts.GraphDriverName,
-			StorageOptions: storeOpts.GraphDriverOptions,
-			LogDir:         "/var/log/crio/pods",
-			VersionFile:    CrioVersionPath,
+			Root:               storeOpts.GraphRoot,
+			RunRoot:            storeOpts.RunRoot,
+			Storage:            storeOpts.GraphDriverName,
+			StorageOptions:     storeOpts.GraphDriverOptions,
+			LogDir:             "/var/log/crio/pods",
+			VersionFile:        CrioVersionPathTmp,
+			VersionFilePersist: CrioVersionPathPersist,
 		},
 		APIConfig: APIConfig{
 			Listen:             CrioSocketPath,
@@ -471,7 +514,8 @@ func DefaultConfig() (*Config, error) {
 			GRPCMaxRecvMsgSize: defaultGRPCMaxMsgSize,
 		},
 		RuntimeConfig: RuntimeConfig{
-			DefaultRuntime: defaultRuntime,
+			DecryptionKeysPath: "/etc/crio/keys/",
+			DefaultRuntime:     defaultRuntime,
 			Runtimes: Runtimes{
 				defaultRuntime: {
 					RuntimePath: "",
@@ -495,11 +539,14 @@ func DefaultConfig() (*Config, error) {
 			LogSizeMax:               DefaultLogSizeMax,
 			LogToJournald:            DefaultLogToJournald,
 			DefaultCapabilities:      DefaultCapabilities,
-			LogLevel:                 "error",
+			LogLevel:                 "info",
 			DefaultSysctls:           []string{},
 			DefaultUlimits:           []string{},
-			HooksDir:                 []string{hooks.DefaultDir},
 			AdditionalDevices:        []string{},
+			HooksDir:                 []string{hooks.DefaultDir},
+			ManageNSLifecycle:        false,
+			NamespacesDir:            "/var/run",
+			PinnsPath:                "",
 		},
 		ImageConfig: ImageConfig{
 			DefaultTransport:    defaultTransport,
@@ -674,11 +721,15 @@ func (c *RuntimeConfig) Validate(systemContext *types.SystemContext, onExecution
 		return errors.New("conmon cgroup should be 'pod' or a systemd slice")
 	}
 
-	if c.UIDMappings != "" && c.ManageNetworkNSLifecycle {
-		return fmt.Errorf("cannot use UIDMappings with ManageNetworkNSLifecycle")
+	// while ManageNetworkNSLifecycle is being deprecated, set
+	// ManageNSLifecycle to be true if either are
+	c.ManageNSLifecycle = c.ManageNetworkNSLifecycle || c.ManageNSLifecycle
+
+	if c.UIDMappings != "" && c.ManageNSLifecycle {
+		return fmt.Errorf("cannot use UIDMappings with ManageNSLifecycle")
 	}
-	if c.GIDMappings != "" && c.ManageNetworkNSLifecycle {
-		return fmt.Errorf("cannot use GIDMappings with ManageNetworkNSLifecycle")
+	if c.GIDMappings != "" && c.ManageNSLifecycle {
+		return fmt.Errorf("cannot use GIDMappings with ManageNSLifecycle")
 	}
 
 	if c.LogSizeMax >= 0 && c.LogSizeMax < OCIBufSize {
@@ -706,6 +757,15 @@ func (c *RuntimeConfig) Validate(systemContext *types.SystemContext, onExecution
 		if err := c.ValidateConmonPath("conmon"); err != nil {
 			return errors.Wrapf(err, "conmon validation")
 		}
+
+		// Validate the pinns path
+		if err := c.ValidatePinnsPath("pinns"); err != nil {
+			return errors.Wrapf(err, "pinns validation")
+		}
+
+		if err := os.MkdirAll(c.NamespacesDir, 0755); err != nil {
+			return errors.Wrap(err, "invalid namespaces_dir")
+		}
 	}
 
 	return nil
@@ -726,18 +786,33 @@ func (c *RuntimeConfig) ValidateRuntimes() error {
 // If this is not the case, it tries to find it within the $PATH variable.
 // In any other case, it simply checks if `Conmon` is a valid file.
 func (c *RuntimeConfig) ValidateConmonPath(executable string) error {
-	if c.Conmon == "" {
-		conmon, err := exec.LookPath(executable)
+	var err error
+	c.Conmon, err = validateExecutablePath(executable, c.Conmon)
+
+	return err
+}
+
+func (c *RuntimeConfig) ValidatePinnsPath(executable string) error {
+	var err error
+	c.PinnsPath, err = validateExecutablePath(executable, c.PinnsPath)
+
+	return err
+}
+
+func validateExecutablePath(executable, currentPath string) (string, error) {
+	if currentPath == "" {
+		path, err := exec.LookPath(executable)
 		if err != nil {
-			return err
+			return "", err
 		}
-		c.Conmon = conmon
-		logrus.Debugf("using conmon from $PATH")
-	} else if _, err := os.Stat(c.Conmon); err != nil {
-		return errors.Wrapf(err, "invalid conmon path")
+		logrus.Debugf("using %s from $PATH", executable)
+		return path, nil
 	}
-	logrus.Infof("using conmon executable %q", c.Conmon)
-	return nil
+	if _, err := os.Stat(currentPath); err != nil {
+		return "", errors.Wrapf(err, "invalid %s path", executable)
+	}
+	logrus.Infof("using %s executable %q", executable, currentPath)
+	return currentPath, nil
 }
 
 // Validate is the main entry point for network configuration validation.
@@ -800,7 +875,6 @@ func (r *RuntimeHandler) ValidateRuntimePath(name string) error {
 		}
 		r.RuntimePath = executable
 		logrus.Debugf("using runtime executable from $PATH %q", executable)
-
 	} else if _, err := os.Stat(r.RuntimePath); os.IsNotExist(err) {
 		return fmt.Errorf("invalid runtime_path for runtime '%s': %q",
 			name, err)

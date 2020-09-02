@@ -10,7 +10,6 @@ import (
 	"github.com/containers/buildah/pkg/parse"
 	"github.com/containers/libpod/libpod"
 	"github.com/containers/libpod/pkg/util"
-	pmount "github.com/containers/storage/pkg/mount"
 	spec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -124,7 +123,7 @@ func (config *CreateConfig) parseVolumes(runtime *libpod.Runtime) ([]spec.Mount,
 			if err != nil {
 				return nil, nil, err
 			}
-			initPath = rtc.InitPath
+			initPath = rtc.Engine.InitPath
 		}
 		initMount, err := config.addContainerInitBinary(initPath)
 		if err != nil {
@@ -136,9 +135,9 @@ func (config *CreateConfig) parseVolumes(runtime *libpod.Runtime) ([]spec.Mount,
 		unifiedMounts[initMount.Destination] = initMount
 	}
 
-	// Before superceding, we need to find volume mounts which conflict with
+	// Before superseding, we need to find volume mounts which conflict with
 	// named volumes, and vice versa.
-	// We'll delete the conflicts here as we supercede.
+	// We'll delete the conflicts here as we supersede.
 	for dest := range unifiedMounts {
 		if _, ok := baseVolumes[dest]; ok {
 			delete(baseVolumes, dest)
@@ -150,7 +149,7 @@ func (config *CreateConfig) parseVolumes(runtime *libpod.Runtime) ([]spec.Mount,
 		}
 	}
 
-	// Supercede volumes-from/image volumes with unified volumes from above.
+	// Supersede volumes-from/image volumes with unified volumes from above.
 	// This is an unconditional replacement.
 	for dest, mount := range unifiedMounts {
 		baseMounts[dest] = mount
@@ -160,7 +159,7 @@ func (config *CreateConfig) parseVolumes(runtime *libpod.Runtime) ([]spec.Mount,
 	}
 
 	// If requested, add tmpfs filesystems for read-only containers.
-	if config.ReadOnlyRootfs && config.ReadOnlyTmpfs {
+	if config.Security.ReadOnlyRootfs && config.Security.ReadOnlyTmpfs {
 		readonlyTmpfs := []string{"/tmp", "/var/tmp", "/run"}
 		options := []string{"rw", "rprivate", "nosuid", "nodev", "tmpcopyup"}
 		for _, dest := range readonlyTmpfs {
@@ -336,7 +335,7 @@ func (config *CreateConfig) getMounts() (map[string]spec.Mount, map[string]*libp
 
 	// TODO(vrothberg): the manual parsing can be replaced with a regular expression
 	//                  to allow a more robust parsing of the mount format and to give
-	//                  precise errors regarding supported format versus suppored options.
+	//                  precise errors regarding supported format versus supported options.
 	for _, mount := range config.MountsFlag {
 		arr := strings.SplitN(mount, ",", 2)
 		if len(arr) < 2 {
@@ -409,9 +408,10 @@ func getBindMount(args []string) (spec.Mount, error) {
 			// ro=[true|false]
 			// rw
 			// rw=[true|false]
-			if len(kv) == 1 {
+			switch len(kv) {
+			case 1:
 				newMount.Options = append(newMount.Options, kv[0])
-			} else if len(kv) == 2 {
+			case 2:
 				switch strings.ToLower(kv[1]) {
 				case "true":
 					newMount.Options = append(newMount.Options, kv[0])
@@ -424,7 +424,7 @@ func getBindMount(args []string) (spec.Mount, error) {
 				default:
 					return newMount, errors.Wrapf(optionArgError, "%s must be set to true or false, instead received %q", kv[0], kv[1])
 				}
-			} else {
+			default:
 				return newMount, errors.Wrapf(optionArgError, "badly formatted option %q", val)
 			}
 		case "nosuid", "suid":
@@ -514,11 +514,17 @@ func getTmpfsMount(args []string) (spec.Mount, error) {
 		Source: TypeTmpfs,
 	}
 
-	var setDest, setRORW, setSuid, setDev, setExec bool
+	var setDest, setRORW, setSuid, setDev, setExec, setTmpcopyup bool
 
 	for _, val := range args {
 		kv := strings.Split(val, "=")
 		switch kv[0] {
+		case "tmpcopyup", "notmpcopyup":
+			if setTmpcopyup {
+				return newMount, errors.Wrapf(optionArgError, "cannot pass 'tmpcopyup' and 'notmpcopyup' options more than once")
+			}
+			setTmpcopyup = true
+			newMount.Options = append(newMount.Options, kv[0])
 		case "ro", "rw":
 			if setRORW {
 				return newMount, errors.Wrapf(optionArgError, "cannot pass 'ro' and 'rw' options more than once")
@@ -732,6 +738,7 @@ func (config *CreateConfig) getImageVolumes() (map[string]spec.Mount, map[string
 
 	for vol := range config.BuiltinImgVolumes {
 		cleanDest := filepath.Clean(vol)
+		logrus.Debugf("Adding image volume at %s", cleanDest)
 		if config.ImageVolumeType == "tmpfs" {
 			// Tmpfs image volumes are handled as mounts
 			mount := spec.Mount{
@@ -740,13 +747,13 @@ func (config *CreateConfig) getImageVolumes() (map[string]spec.Mount, map[string
 				Type:        TypeTmpfs,
 				Options:     []string{"rprivate", "rw", "nodev", "exec"},
 			}
-			mounts[vol] = mount
+			mounts[cleanDest] = mount
 		} else {
 			// Anonymous volumes have no name.
 			namedVolume := new(libpod.ContainerNamedVolume)
 			namedVolume.Options = []string{"rprivate", "rw", "nodev", "exec"}
 			namedVolume.Dest = cleanDest
-			volumes[vol] = namedVolume
+			volumes[cleanDest] = namedVolume
 		}
 	}
 
@@ -801,7 +808,7 @@ func (config *CreateConfig) addContainerInitBinary(path string) (spec.Mount, err
 	if path == "" {
 		return mount, fmt.Errorf("please specify a path to the container-init binary")
 	}
-	if !config.PidMode.IsPrivate() {
+	if !config.Pid.PidMode.IsPrivate() {
 		return mount, fmt.Errorf("cannot add init binary as PID 1 (PID namespace isn't private)")
 	}
 	if config.Systemd {
@@ -814,11 +821,11 @@ func (config *CreateConfig) addContainerInitBinary(path string) (spec.Mount, err
 	return mount, nil
 }
 
-// Supercede existing mounts in the spec with new, user-specified mounts.
+// Supersede existing mounts in the spec with new, user-specified mounts.
 // TODO: Should we unmount subtree mounts? E.g., if /tmp/ is mounted by
 // one mount, and we already have /tmp/a and /tmp/b, should we remove
 // the /tmp/a and /tmp/b mounts in favor of the more general /tmp?
-func supercedeUserMounts(mounts []spec.Mount, configMount []spec.Mount) []spec.Mount {
+func SupercedeUserMounts(mounts []spec.Mount, configMount []spec.Mount) []spec.Mount {
 	if len(mounts) > 0 {
 		// If we have overlappings mounts, remove them from the spec in favor of
 		// the user-added volume mounts
@@ -847,75 +854,22 @@ func supercedeUserMounts(mounts []spec.Mount, configMount []spec.Mount) []spec.M
 }
 
 // Ensure mount options on all mounts are correct
-func initFSMounts(inputMounts []spec.Mount) ([]spec.Mount, error) {
-	// We need to look up mounts so we can figure out the proper mount flags
-	// to apply.
-	systemMounts, err := pmount.GetMounts()
-	if err != nil {
-		return nil, errors.Wrapf(err, "error retrieving system mounts to look up mount options")
-	}
-
-	// TODO: We probably don't need to re-build the mounts array
-	var mounts []spec.Mount
-	for _, m := range inputMounts {
-		if m.Type == TypeBind {
-			baseMnt, err := findMount(m.Destination, systemMounts)
+func InitFSMounts(mounts []spec.Mount) error {
+	for i, m := range mounts {
+		switch {
+		case m.Type == TypeBind:
+			opts, err := util.ProcessOptions(m.Options, false, m.Source)
 			if err != nil {
-				return nil, errors.Wrapf(err, "error looking up mountpoint for mount %s", m.Destination)
+				return err
 			}
-			var noexec, nosuid, nodev bool
-			for _, baseOpt := range strings.Split(baseMnt.Opts, ",") {
-				switch baseOpt {
-				case "noexec":
-					noexec = true
-				case "nosuid":
-					nosuid = true
-				case "nodev":
-					nodev = true
-				}
-			}
-
-			defaultMountOpts := new(util.DefaultMountOptions)
-			defaultMountOpts.Noexec = noexec
-			defaultMountOpts.Nosuid = nosuid
-			defaultMountOpts.Nodev = nodev
-
-			opts, err := util.ProcessOptions(m.Options, false, defaultMountOpts)
+			mounts[i].Options = opts
+		case m.Type == TypeTmpfs && filepath.Clean(m.Destination) != "/dev":
+			opts, err := util.ProcessOptions(m.Options, true, "")
 			if err != nil {
-				return nil, err
+				return err
 			}
-			m.Options = opts
-		}
-		if m.Type == TypeTmpfs && filepath.Clean(m.Destination) != "/dev" {
-			opts, err := util.ProcessOptions(m.Options, true, nil)
-			if err != nil {
-				return nil, err
-			}
-			m.Options = opts
-		}
-
-		mounts = append(mounts, m)
-	}
-	return mounts, nil
-}
-
-// TODO: We could make this a bit faster by building a tree of the mountpoints
-// and traversing it to identify the correct mount.
-func findMount(target string, mounts []*pmount.Info) (*pmount.Info, error) {
-	var err error
-	target, err = filepath.Abs(target)
-	if err != nil {
-		return nil, errors.Wrapf(err, "cannot resolve %s", target)
-	}
-	var bestSoFar *pmount.Info
-	for _, i := range mounts {
-		if bestSoFar != nil && len(bestSoFar.Mountpoint) > len(i.Mountpoint) {
-			// Won't be better than what we have already found
-			continue
-		}
-		if strings.HasPrefix(target, i.Mountpoint) {
-			bestSoFar = i
+			mounts[i].Options = opts
 		}
 	}
-	return bestSoFar, nil
+	return nil
 }
