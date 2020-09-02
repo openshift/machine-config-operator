@@ -16,7 +16,7 @@ contents: |
   RemainAfterExit=yes
   # See https://github.com/coreos/fedora-coreos-tracker/issues/354
   ExecStart=/bin/sh -c '/bin/mkdir -p /run/bin && chcon --reference=/usr/bin /run/bin'
-  ExecStart=/bin/sh -c "/usr/bin/podman pull --authfile=/var/lib/kubelet/config.json --quiet '{{ .Images.gcpRoutesControllerKey }}'"
+  ExecStart=/bin/sh -c "while ! /usr/bin/podman pull --authfile=/var/lib/kubelet/config.json --quiet '{{ .Images.gcpRoutesControllerKey }}'; do sleep 1; done"
   ExecStart=/bin/sh -c "/usr/bin/podman run --rm --quiet --net=host --entrypoint=cat '{{ .Images.gcpRoutesControllerKey }}' /usr/bin/machine-config-daemon > /run/bin/machine-config-daemon.tmp"
   ExecStart=/bin/sh -c '/usr/bin/chmod a+x /run/bin/machine-config-daemon.tmp && mv /run/bin/machine-config-daemon.tmp /run/bin/machine-config-daemon'
 
