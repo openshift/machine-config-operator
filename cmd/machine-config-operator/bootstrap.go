@@ -25,9 +25,6 @@ var (
 		cloudProviderCAFile       string
 		corednsImage              string
 		destinationDir            string
-		etcdCAFile                string
-		etcdImage                 string
-		etcdMetricCAFile          string
 		haproxyImage              string
 		imagesConfigMapFile       string
 		infraConfigFile           string
@@ -35,8 +32,6 @@ var (
 		releaseImage              string
 		keepalivedImage           string
 		kubeCAFile                string
-		kubeClientAgentImage      string
-		clusterEtcdOperatorImage  string
 		mcoImage                  string
 		mdnsPublisherImage        string
 		oauthProxyImage           string
@@ -51,8 +46,6 @@ var (
 
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdCAFile, "etcd-ca", "", "path to etcd CA certificate")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdMetricCAFile, "etcd-metric-ca", "", "path to etcd metric CA certificate")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.rootCAFile, "root-ca", "/etc/ssl/kubernetes/ca.crt", "path to root CA certificate")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeCAFile, "kube-ca", "", "path to kube-apiserver serving-ca bundle")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.pullSecretFile, "pull-secret", "/assets/manifests/pull.json", "path to secret manifest that contains pull secret.")
@@ -62,9 +55,6 @@ func init() {
 	bootstrapCmd.MarkFlagRequired("machine-config-operator-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oscontentImage, "machine-config-oscontent-image", "", "Image for osImageURL")
 	bootstrapCmd.MarkFlagRequired("machine-config-oscontent-image")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.etcdImage, "etcd-image", "", "Image for Etcd.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.kubeClientAgentImage, "kube-client-agent-image", "", "Image for Kube Client Agent.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.clusterEtcdOperatorImage, "cluster-etcd-operator-image", "", "Image for Cluster Etcd Operator. An empty string here means the cluster boots without CEO.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraImage, "infra-image", "", "Image for Infra Containers.")
 	bootstrapCmd.MarkFlagRequired("infra-image")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.releaseImage, "release-image", "", "Release image used for cluster installation.")
@@ -103,10 +93,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			OauthProxy:                   bootstrapOpts.oauthProxyImage,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
-			Etcd:                bootstrapOpts.etcdImage,
 			InfraImage:          bootstrapOpts.infraImage,
-			KubeClientAgent:     bootstrapOpts.kubeClientAgentImage,
-			ClusterEtcdOperator: bootstrapOpts.clusterEtcdOperatorImage,
 			Keepalived:          bootstrapOpts.keepalivedImage,
 			Coredns:             bootstrapOpts.corednsImage,
 			MdnsPublisher:       bootstrapOpts.mdnsPublisherImage,
