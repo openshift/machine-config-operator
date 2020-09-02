@@ -5,7 +5,6 @@ import (
 	"net/url"
 
 	"github.com/clarketm/json"
-	ign "github.com/coreos/ignition/config/v2_2"
 	igntypes "github.com/coreos/ignition/config/v2_2/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,7 +38,7 @@ const (
 type kubeconfigFunc func() (kubeconfigData []byte, rootCAData []byte, err error)
 
 // appenderFunc appends Config.
-type appenderFunc func(*mcfgv1.MachineConfig) error
+type appenderFunc func(*igntypes.Config, *mcfgv1.MachineConfig) error
 
 // Server defines the interface that is implemented by different
 // machine config server implementations.
@@ -50,36 +49,40 @@ type Server interface {
 func getAppenders(currMachineConfig string, f kubeconfigFunc, osimageurl string) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
-		func(mc *mcfgv1.MachineConfig) error { return appendNodeAnnotations(&mc.Spec.Config, currMachineConfig) },
+		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error {
+			return appendNodeAnnotations(cfg, currMachineConfig)
+		},
 		// append pivot
-		func(mc *mcfgv1.MachineConfig) error { return appendInitialPivot(&mc.Spec.Config, osimageurl) },
+		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error { return appendInitialPivot(cfg, osimageurl) },
 		// append kubeconfig.
-		func(mc *mcfgv1.MachineConfig) error { return appendKubeConfig(&mc.Spec.Config, f) },
+		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error { return appendKubeConfig(cfg, f) },
 		// append the machineconfig content
-		//nolint:gocritic
-		func(mc *mcfgv1.MachineConfig) error { return appendInitialMachineConfig(mc) },
+		appendInitialMachineConfig,
+		// This has to come last!!!
+		appendEncapsulated,
 	}
 	return appenders
 }
 
-// machineConfigToRawIgnition converts a MachineConfig object into raw Ignition.
-func machineConfigToRawIgnition(mccfg *mcfgv1.MachineConfig) (*runtime.RawExtension, error) {
-	tmpcfg := mccfg.DeepCopy()
+func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig) error {
+	// since we're encapsulating the MC, we don't need the whole ignition section, that's why
+	// we do this dance here to empty out the ignition section itself. We're just interested into the MC fields
 	tmpIgnCfg := ctrlcommon.NewIgnConfig()
 	rawTmpIgnCfg, err := json.Marshal(tmpIgnCfg)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling Ignition config: %v", err)
+		return fmt.Errorf("error marshalling Ignition config: %v", err)
 	}
+	tmpcfg := mc.DeepCopy()
 	tmpcfg.Spec.Config.Raw = rawTmpIgnCfg
 	serialized, err := json.Marshal(tmpcfg)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling MachineConfig: %v", err)
+		return fmt.Errorf("error marshalling MachineConfig: %v", err)
 	}
-	err = appendFileToRawIgnition(&mccfg.Spec.Config, daemonconsts.MachineConfigEncapsulatedPath, string(serialized))
+	err = appendFileToIgnition(conf, daemonconsts.MachineConfigEncapsulatedPath, string(serialized))
 	if err != nil {
-		return nil, fmt.Errorf("error appending file to raw Ignition config: %v", err)
+		return fmt.Errorf("error appending file to raw Ignition config: %v", err)
 	}
-	return &mccfg.Spec.Config, nil
+	return nil
 }
 
 // Golang :cry:
@@ -87,20 +90,17 @@ func boolToPtr(b bool) *bool {
 	return &b
 }
 
-func appendInitialPivot(rawExt *runtime.RawExtension, osimageurl string) error {
+func appendInitialPivot(conf *igntypes.Config, osimageurl string) error {
 	if osimageurl == "" {
 		return nil
 	}
 
 	// Tell pivot.service to pivot early
-	err := appendFileToRawIgnition(rawExt, daemonconsts.EtcPivotFile, osimageurl+"\n")
+	err := appendFileToIgnition(conf, daemonconsts.EtcPivotFile, osimageurl+"\n")
 	if err != nil {
 		return err
 	}
-	conf, report, err := ign.Parse(rawExt.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to append initial pivot. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
-	}
+
 	// Awful hack to create a file in /run
 	// https://github.com/openshift/machine-config-operator/pull/363#issuecomment-463397373
 	// "So one gotcha here is that Ignition will actually write `/run/pivot/image-pullspec` to the filesystem rather than the `/run` tmpfs"
@@ -119,10 +119,6 @@ ExecStart=/bin/sh -c 'mkdir /run/pivot && touch /run/pivot/reboot-needed'
 WantedBy=multi-user.target
 `}
 	conf.Systemd.Units = append(conf.Systemd.Units, unit)
-	rawExt.Raw, err = json.Marshal(conf)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -130,34 +126,33 @@ WantedBy=multi-user.target
 // by the MCS when the node first booted.  This currently is only used as a debugging aid
 // in cases where there is unexpected "drift" between the initial bootstrap MC/Ignition and the one
 // computed by the cluster.
-func appendInitialMachineConfig(mc *mcfgv1.MachineConfig) error {
+func appendInitialMachineConfig(conf *igntypes.Config, mc *mcfgv1.MachineConfig) error {
 	mcJSON, err := json.MarshalIndent(mc, "", "    ")
 	if err != nil {
 		return err
 	}
-	appendFileToRawIgnition(&mc.Spec.Config, machineConfigContentPath, string(mcJSON))
+	appendFileToIgnition(conf, machineConfigContentPath, string(mcJSON))
 	return nil
 }
 
-func appendKubeConfig(rawExt *runtime.RawExtension, f kubeconfigFunc) error {
+func appendKubeConfig(conf *igntypes.Config, f kubeconfigFunc) error {
 	kcData, _, err := f()
 	if err != nil {
 		return err
 	}
-	err = appendFileToRawIgnition(rawExt, defaultMachineKubeConfPath, string(kcData))
+	err = appendFileToIgnition(conf, defaultMachineKubeConfPath, string(kcData))
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func appendNodeAnnotations(rawExt *runtime.RawExtension, currConf string) error {
-
+func appendNodeAnnotations(conf *igntypes.Config, currConf string) error {
 	anno, err := getNodeAnnotation(currConf)
 	if err != nil {
 		return err
 	}
-	err = appendFileToRawIgnition(rawExt, daemonconsts.InitialNodeAnnotationsFilePath, anno)
+	err = appendFileToIgnition(conf, daemonconsts.InitialNodeAnnotationsFilePath, anno)
 	if err != nil {
 		return err
 	}
@@ -177,11 +172,7 @@ func getNodeAnnotation(conf string) (string, error) {
 	return string(contents), nil
 }
 
-func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents string) error {
-	conf, report, err := ign.Parse(rawExt.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to append file. Parsing Ignition config failed with error: %v\nReport: %v", err, report)
-	}
+func appendFileToIgnition(conf *igntypes.Config, outPath, contents string) error {
 	fileMode := int(420)
 	file := igntypes.File{
 		Node: igntypes.Node{
@@ -199,10 +190,6 @@ func appendFileToRawIgnition(rawExt *runtime.RawExtension, outPath, contents str
 		conf.Storage.Files = make([]igntypes.File, 0)
 	}
 	conf.Storage.Files = append(conf.Storage.Files, file)
-	rawExt.Raw, err = json.Marshal(conf)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
