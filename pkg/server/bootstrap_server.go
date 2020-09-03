@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -12,6 +13,7 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 )
 
 // ensure bootstrapServer implements the
@@ -96,20 +98,23 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	if err != nil {
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
 	}
+	ignConf, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
+	}
 
 	appenders := getAppenders(currConf, bsc.kubeconfigFunc)
 	for _, a := range appenders {
-		if err := a(mc); err != nil {
+		if err := a(&ignConf, mc); err != nil {
 			return nil, err
 		}
 	}
 
-	rawIgn, err := machineConfigToRawIgnition(mc)
+	rawConf, err := json.Marshal(ignConf)
 	if err != nil {
-		return nil, fmt.Errorf("server: could not convert MachineConfig to raw Ignition: %v", err)
+		return nil, err
 	}
-
-	return rawIgn, nil
+	return &runtime.RawExtension{Raw: rawConf}, nil
 }
 
 func kubeconfigFromFile(path string) ([]byte, []byte, error) {

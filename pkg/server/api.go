@@ -138,21 +138,11 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-
-	// the internally saved config should be v3.1, but to eliminate the
-	// potential of race conditions, translate to the requested version
-	// to make sure
+	// we know we're at 3.1 in code.. serve directly, parsing is expensive...
+	// we're doing it during an HTTP request, and most notably before we write the HTTP headers
 	var serveConf *runtime.RawExtension
 	if reqConfigVer.Equal(*semver.New("3.1.0")) {
-		converted3, err := ctrlcommon.ConvertRawExtIgnitionToV3(conf)
-		if err != nil {
-			w.Header().Set("Content-Length", "0")
-			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
-			return
-		}
-
-		serveConf = &converted3
+		serveConf = conf
 	} else {
 		// Can only be 2.2 here
 		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2(conf)
