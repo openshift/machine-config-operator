@@ -99,6 +99,23 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 
 	setStringIfSet(modified, &existing.WorkingDir, required.WorkingDir)
 
+	// also sync the env vars here, added to handle proxy
+	for _, required := range required.Env {
+		var existingCurr *corev1.EnvVar
+		for j, curr := range existing.Env {
+			if curr.Name == required.Name {
+				existingCurr = &existing.Env[j]
+				break
+			}
+		}
+		if existingCurr == nil {
+			*modified = true
+			existing.Env = append(existing.Env, corev1.EnvVar{})
+			existingCurr = &existing.Env[len(existing.Env)-1]
+		}
+		ensureEnvVar(modified, existingCurr, required)
+	}
+
 	// any port we specify, we require
 	for _, required := range required.Ports {
 		var existingCurr *corev1.ContainerPort
@@ -171,6 +188,13 @@ func ensureProbeHandler(modified *bool, existing *corev1.Handler, required corev
 }
 
 func ensureContainerPort(modified *bool, existing *corev1.ContainerPort, required corev1.ContainerPort) {
+	if !equality.Semantic.DeepEqual(required, *existing) {
+		*modified = true
+		*existing = required
+	}
+}
+
+func ensureEnvVar(modified *bool, existing *corev1.EnvVar, required corev1.EnvVar) {
 	if !equality.Semantic.DeepEqual(required, *existing) {
 		*modified = true
 		*existing = required

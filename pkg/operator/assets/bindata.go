@@ -1429,6 +1429,20 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: spec.nodeName
+          {{if .ControllerConfig.Proxy}}
+          {{if .ControllerConfig.Proxy.HTTPProxy}}
+          - name: HTTP_PROXY
+            value: {{.ControllerConfig.Proxy.HTTPProxy}}
+          {{end}}
+          {{if .ControllerConfig.Proxy.HTTPSProxy}}
+          - name: HTTPS_PROXY
+            value: {{.ControllerConfig.Proxy.HTTPSProxy}}
+          {{end}}
+          {{if .ControllerConfig.Proxy.NoProxy}}
+          - name: NO_PROXY
+            value: {{.ControllerConfig.Proxy.NoProxy}}
+          {{end}}
+          {{end}}
       - name: oauth-proxy
         image: {{.Images.OauthProxy}}
         ports:

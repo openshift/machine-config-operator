@@ -271,6 +271,8 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 
 // ExtractOSImage extracts OS image content in a temporary directory under /run/machine-os-content/
 // and returns the path on successful extraction.
+// Note that since we do this in the MCD container, cluster proxy configuration must also be injected
+// into the container. See the MCD daemonset.
 func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	var registryConfig []string
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
