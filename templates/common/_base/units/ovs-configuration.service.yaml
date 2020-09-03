@@ -8,8 +8,8 @@ contents: |
   # This service is used to move a physical NIC into OVS and reconfigure OVS to use the host IP
   Requires=openvswitch.service
   Wants=NetworkManager-wait-online.service
-  After=NetworkManager-wait-online.service openvswitch.service node-valid-hostname.service
-  Before=network-online.target kubelet.service crio.service
+  After=NetworkManager-wait-online.service openvswitch.service
+  Before=network-online.target kubelet.service crio.service node-valid-hostname.service
 
   [Service]
   # Need oneshot to delay kubelet
