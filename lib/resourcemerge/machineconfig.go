@@ -78,6 +78,11 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	setBytesIfSet(modified, &existing.KubeAPIServerServingCAData, required.KubeAPIServerServingCAData)
 	setBytesIfSet(modified, &existing.CloudProviderCAData, required.CloudProviderCAData)
 
+	if required.Infra != nil && !equality.Semantic.DeepEqual(existing.Infra, required.Infra) {
+		*modified = true
+		existing.Infra = required.Infra
+	}
+
 	if existing.Infra.Status.PlatformStatus != nil && required.Infra.Status.PlatformStatus != nil {
 		if !equality.Semantic.DeepEqual(existing.Infra.Status.PlatformStatus.Type, required.Infra.Status.PlatformStatus.Type) {
 			*modified = true
