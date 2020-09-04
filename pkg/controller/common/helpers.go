@@ -218,3 +218,13 @@ func IgnParseWrapper(rawIgn []byte) (ignconfig interface{}, err error) {
 	}
 	return ign2types.Config{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, rpt)
 }
+
+// InSlice search for an element in slice and return true if found, otherwise return false
+func InSlice(elem string, slice []string) bool {
+	for _, k := range slice {
+		if k == elem {
+			return true
+		}
+	}
+	return false
+}
