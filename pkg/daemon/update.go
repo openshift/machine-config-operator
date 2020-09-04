@@ -338,7 +338,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osImageContentDir)
 
-		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS || dn.OperatingSystem == MachineConfigDaemonOSFCOS {
 			if err := addExtensionsRepo(osImageContentDir); err != nil {
 				return err
 			}
@@ -880,9 +880,9 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
 		return nil
 	}
-	// Right now, we support extensions only on RHCOS nodes
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		return fmt.Errorf("extensions is not supported on non-RHCOS nodes ")
+	// Right now, we support extensions only on CoreOS nodes
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+		return fmt.Errorf("extensions is not supported on non-CoreOS nodes ")
 	}
 
 	args := generateExtensionsArgs(oldConfig, newConfig)
