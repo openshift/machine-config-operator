@@ -6,6 +6,8 @@ const (
 
 	// SetupEtcdEnvKey is the key that references the setup-etcd-environment image in the controller
 	SetupEtcdEnvKey string = "setupEtcdEnvKey"
+	// MachineConfigOperatorKey is our own image used by e.g. machine-config-daemon-pull.service
+	MachineConfigOperatorKey string = "machineConfigOperator"
 
 	// GCPRoutesControllerKey is the key that references the gcp-routes-controller image in the controller
 	GCPRoutesControllerKey string = "gcpRoutesControllerKey"
