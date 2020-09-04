@@ -268,6 +268,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.Images = map[string]string{
+		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
+
 		templatectrl.GCPRoutesControllerKey: imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:          imgs.InfraImage,
 		templatectrl.KeepalivedKey:          imgs.Keepalived,
