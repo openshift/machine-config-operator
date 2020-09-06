@@ -36,7 +36,11 @@ contents:
                 done
             fi
     EOF
-        cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
+        # Ensure resolv.conf exists before we try to run podman
+        if [[ ! -e /etc/resolv.conf ]]; then
+            cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
+        fi
+
 
         NAMESERVER_IP=$(/usr/bin/podman run --rm \
             --authfile /var/lib/kubelet/config.json \
