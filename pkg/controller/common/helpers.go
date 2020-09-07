@@ -302,29 +302,10 @@ func InSlice(elem string, slice []string) bool {
 	return false
 }
 
-func validateExtensions(exts []string) error {
-	supportedExtensions := []string{"usbguard", "kernel-devel"}
-	invalidExts := []string{}
-	for _, ext := range exts {
-		if !InSlice(ext, supportedExtensions) {
-			invalidExts = append(invalidExts, ext)
-		}
-	}
-	if len(invalidExts) != 0 {
-		return fmt.Errorf("invalid extensions found: %v", invalidExts)
-	}
-	return nil
-
-}
-
 // ValidateMachineConfig validates that given MachineConfig Spec is valid.
 func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	if !(cfg.KernelType == "" || cfg.KernelType == KernelTypeDefault || cfg.KernelType == KernelTypeRealtime) {
 		return errors.Errorf("kernelType=%s is invalid", cfg.KernelType)
-	}
-
-	if err := validateExtensions(cfg.Extensions); err != nil {
-		return err
 	}
 
 	if cfg.Config.Raw != nil {
