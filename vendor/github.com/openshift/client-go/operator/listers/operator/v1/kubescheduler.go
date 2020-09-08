@@ -10,10 +10,13 @@ import (
 )
 
 // KubeSchedulerLister helps list KubeSchedulers.
+// All objects returned here must be treated as read-only.
 type KubeSchedulerLister interface {
 	// List lists all KubeSchedulers in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.KubeScheduler, err error)
 	// Get retrieves the KubeScheduler from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.KubeScheduler, error)
 	KubeSchedulerListerExpansion
 }

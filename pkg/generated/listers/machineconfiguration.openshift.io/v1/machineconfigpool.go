@@ -10,10 +10,13 @@ import (
 )
 
 // MachineConfigPoolLister helps list MachineConfigPools.
+// All objects returned here must be treated as read-only.
 type MachineConfigPoolLister interface {
 	// List lists all MachineConfigPools in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.MachineConfigPool, err error)
 	// Get retrieves the MachineConfigPool from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.MachineConfigPool, error)
 	MachineConfigPoolListerExpansion
 }

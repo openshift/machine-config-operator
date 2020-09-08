@@ -10,10 +10,13 @@ import (
 )
 
 // MachineConfigLister helps list MachineConfigs.
+// All objects returned here must be treated as read-only.
 type MachineConfigLister interface {
 	// List lists all MachineConfigs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.MachineConfig, err error)
 	// Get retrieves the MachineConfig from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.MachineConfig, error)
 	MachineConfigListerExpansion
 }

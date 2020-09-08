@@ -10,8 +10,10 @@ import (
 )
 
 // IngressControllerLister helps list IngressControllers.
+// All objects returned here must be treated as read-only.
 type IngressControllerLister interface {
 	// List lists all IngressControllers in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.IngressController, err error)
 	// IngressControllers returns an object that can list and get IngressControllers.
 	IngressControllers(namespace string) IngressControllerNamespaceLister
@@ -42,10 +44,13 @@ func (s *ingressControllerLister) IngressControllers(namespace string) IngressCo
 }
 
 // IngressControllerNamespaceLister helps list and get IngressControllers.
+// All objects returned here must be treated as read-only.
 type IngressControllerNamespaceLister interface {
 	// List lists all IngressControllers in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.IngressController, err error)
 	// Get retrieves the IngressController from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.IngressController, error)
 	IngressControllerNamespaceListerExpansion
 }

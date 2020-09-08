@@ -10,10 +10,13 @@ import (
 )
 
 // ImageContentSourcePolicyLister helps list ImageContentSourcePolicies.
+// All objects returned here must be treated as read-only.
 type ImageContentSourcePolicyLister interface {
 	// List lists all ImageContentSourcePolicies in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.ImageContentSourcePolicy, err error)
 	// Get retrieves the ImageContentSourcePolicy from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.ImageContentSourcePolicy, error)
 	ImageContentSourcePolicyListerExpansion
 }

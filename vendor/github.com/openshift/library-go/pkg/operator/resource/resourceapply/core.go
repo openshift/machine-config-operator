@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -41,7 +41,7 @@ func ApplyNamespace(client coreclientv1.NamespacesGetter, recorder events.Record
 		return existingCopy, false, nil
 	}
 
-	if klog.V(4) {
+	if klog.V(4).Enabled() {
 		klog.Infof("Namespace %q changes: %v", required.Name, JSONPatchNoError(existing, existingCopy))
 	}
 
@@ -86,7 +86,7 @@ func ApplyService(client coreclientv1.ServicesGetter, recorder events.Recorder, 
 	existingCopy.Spec.Selector = required.Spec.Selector
 	existingCopy.Spec.Type = required.Spec.Type // if this is different, the update will fail.  Status will indicate it.
 
-	if klog.V(4) {
+	if klog.V(4).Enabled() {
 		klog.Infof("Service %q changes: %v", required.Namespace+"/"+required.Name, JSONPatchNoError(existing, required))
 	}
 
@@ -117,7 +117,7 @@ func ApplyPod(client coreclientv1.PodsGetter, recorder events.Recorder, required
 		return existingCopy, false, nil
 	}
 
-	if klog.V(4) {
+	if klog.V(4).Enabled() {
 		klog.Infof("Pod %q changes: %v", required.Namespace+"/"+required.Name, JSONPatchNoError(existing, required))
 	}
 
@@ -147,7 +147,7 @@ func ApplyServiceAccount(client coreclientv1.ServiceAccountsGetter, recorder eve
 	if !*modified {
 		return existingCopy, false, nil
 	}
-	if klog.V(4) {
+	if klog.V(4).Enabled() {
 		klog.Infof("ServiceAccount %q changes: %v", required.Namespace+"/"+required.Name, JSONPatchNoError(existing, required))
 	}
 	actual, err := client.ServiceAccounts(required.Namespace).Update(context.TODO(), existingCopy, metav1.UpdateOptions{})
@@ -226,7 +226,7 @@ func ApplyConfigMap(client coreclientv1.ConfigMapsGetter, recorder events.Record
 		sort.Sort(sort.StringSlice(modifiedKeys))
 		details = fmt.Sprintf("cause by changes in %v", strings.Join(modifiedKeys, ","))
 	}
-	if klog.V(4) {
+	if klog.V(4).Enabled() {
 		klog.Infof("ConfigMap %q changes: %v", required.Namespace+"/"+required.Name, JSONPatchNoError(existing, required))
 	}
 	reportUpdateEvent(recorder, required, err, details)
@@ -234,10 +234,21 @@ func ApplyConfigMap(client coreclientv1.ConfigMapsGetter, recorder events.Record
 }
 
 // ApplySecret merges objectmeta, requires data
-func ApplySecret(client coreclientv1.SecretsGetter, recorder events.Recorder, required *corev1.Secret) (*corev1.Secret, bool, error) {
-	if len(required.StringData) > 0 {
-		return nil, false, fmt.Errorf("Secret.stringData is not supported")
+func ApplySecret(client coreclientv1.SecretsGetter, recorder events.Recorder, requiredInput *corev1.Secret) (*corev1.Secret, bool, error) {
+	// copy the stringData to data.  Error on a data content conflict inside required.  This is usually a bug.
+	required := requiredInput.DeepCopy()
+	if required.Data == nil {
+		required.Data = map[string][]byte{}
 	}
+	for k, v := range required.StringData {
+		if dataV, ok := required.Data[k]; ok {
+			if string(dataV) != v {
+				return nil, false, fmt.Errorf("Secret.stringData[%q] conflicts with Secret.data[%q]", k, k)
+			}
+		}
+		required.Data[k] = []byte(v)
+	}
+	required.StringData = nil
 
 	existing, err := client.Secrets(required.Namespace).Get(context.TODO(), required.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -273,21 +284,35 @@ func ApplySecret(client coreclientv1.SecretsGetter, recorder events.Recorder, re
 
 	existingCopy.Type = required.Type
 
+	// Server defaults some values and we need to do it as well or it will never equal.
+	if existingCopy.Type == "" {
+		existingCopy.Type = corev1.SecretTypeOpaque
+	}
+
 	if equality.Semantic.DeepEqual(existingCopy, existing) {
 		return existing, false, nil
 	}
 
-	if klog.V(4) {
+	if klog.V(4).Enabled() {
 		klog.Infof("Secret %s/%s changes: %v", required.Namespace, required.Name, JSONPatchSecretNoError(existing, existingCopy))
 	}
-	actual, err := client.Secrets(required.Namespace).Update(context.TODO(), existingCopy, metav1.UpdateOptions{})
-	reportUpdateEvent(recorder, existingCopy, err)
 
-	if err == nil {
-		return actual, true, err
-	}
-	if !strings.Contains(err.Error(), "field is immutable") {
-		return actual, true, err
+	var actual *corev1.Secret
+	/*
+	 * Kubernetes validation silently hides failures to update secret type.
+	 * https://github.com/kubernetes/kubernetes/blob/98e65951dccfd40d3b4f31949c2ab8df5912d93e/pkg/apis/core/validation/validation.go#L5048
+	 * We need to explicitly opt for delete+create in that case.
+	 */
+	if existingCopy.Type == existing.Type {
+		actual, err = client.Secrets(required.Namespace).Update(context.TODO(), existingCopy, metav1.UpdateOptions{})
+		reportUpdateEvent(recorder, existingCopy, err)
+
+		if err == nil {
+			return actual, true, err
+		}
+		if !strings.Contains(err.Error(), "field is immutable") {
+			return actual, true, err
+		}
 	}
 
 	// if the field was immutable on a secret, we're going to be stuck until we delete it.  Try to delete and then create
@@ -348,6 +373,24 @@ func SyncSecret(client coreclientv1.SecretsGetter, recorder events.Recorder, sou
 	case err != nil:
 		return nil, false, err
 	default:
+		if source.Type == corev1.SecretTypeServiceAccountToken {
+
+			// Make sure the token is already present, otherwise we have to wait before creating the target
+			if len(source.Data[corev1.ServiceAccountTokenKey]) == 0 {
+				return nil, false, fmt.Errorf("secret %s/%s doesn't have a token yet", source.Namespace, source.Name)
+			}
+
+			if source.Annotations != nil {
+				// When syncing a service account token we have to remove the SA annotation to disable injection into copies
+				delete(source.Annotations, corev1.ServiceAccountNameKey)
+				// To make it clean, remove the dormant annotations as well
+				delete(source.Annotations, corev1.ServiceAccountUIDKey)
+			}
+
+			// SecretTypeServiceAccountToken implies required fields and injection which we do not want in copies
+			source.Type = corev1.SecretTypeOpaque
+		}
+
 		source.Namespace = targetNamespace
 		source.Name = targetName
 		source.ResourceVersion = ""
