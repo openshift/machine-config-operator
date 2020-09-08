@@ -10,10 +10,13 @@ import (
 )
 
 // OpenShiftControllerManagerLister helps list OpenShiftControllerManagers.
+// All objects returned here must be treated as read-only.
 type OpenShiftControllerManagerLister interface {
 	// List lists all OpenShiftControllerManagers in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.OpenShiftControllerManager, err error)
 	// Get retrieves the OpenShiftControllerManager from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.OpenShiftControllerManager, error)
 	OpenShiftControllerManagerListerExpansion
 }

@@ -10,10 +10,13 @@ import (
 )
 
 // ServiceCALister helps list ServiceCAs.
+// All objects returned here must be treated as read-only.
 type ServiceCALister interface {
 	// List lists all ServiceCAs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.ServiceCA, err error)
 	// Get retrieves the ServiceCA from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.ServiceCA, error)
 	ServiceCAListerExpansion
 }

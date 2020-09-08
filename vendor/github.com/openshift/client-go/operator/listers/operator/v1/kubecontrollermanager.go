@@ -10,10 +10,13 @@ import (
 )
 
 // KubeControllerManagerLister helps list KubeControllerManagers.
+// All objects returned here must be treated as read-only.
 type KubeControllerManagerLister interface {
 	// List lists all KubeControllerManagers in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.KubeControllerManager, err error)
 	// Get retrieves the KubeControllerManager from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.KubeControllerManager, error)
 	KubeControllerManagerListerExpansion
 }

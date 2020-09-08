@@ -12,6 +12,9 @@ type OperatorV1Interface interface {
 	RESTClient() rest.Interface
 	AuthenticationsGetter
 	CSISnapshotControllersGetter
+	CloudCredentialsGetter
+	ClusterCSIDriversGetter
+	ConfigsGetter
 	ConsolesGetter
 	DNSesGetter
 	EtcdsGetter
@@ -26,6 +29,7 @@ type OperatorV1Interface interface {
 	ServiceCAsGetter
 	ServiceCatalogAPIServersGetter
 	ServiceCatalogControllerManagersGetter
+	StoragesGetter
 }
 
 // OperatorV1Client is used to interact with features provided by the operator.openshift.io group.
@@ -39,6 +43,18 @@ func (c *OperatorV1Client) Authentications() AuthenticationInterface {
 
 func (c *OperatorV1Client) CSISnapshotControllers() CSISnapshotControllerInterface {
 	return newCSISnapshotControllers(c)
+}
+
+func (c *OperatorV1Client) CloudCredentials() CloudCredentialInterface {
+	return newCloudCredentials(c)
+}
+
+func (c *OperatorV1Client) ClusterCSIDrivers() ClusterCSIDriverInterface {
+	return newClusterCSIDrivers(c)
+}
+
+func (c *OperatorV1Client) Configs() ConfigInterface {
+	return newConfigs(c)
 }
 
 func (c *OperatorV1Client) Consoles() ConsoleInterface {
@@ -95,6 +111,10 @@ func (c *OperatorV1Client) ServiceCatalogAPIServers() ServiceCatalogAPIServerInt
 
 func (c *OperatorV1Client) ServiceCatalogControllerManagers() ServiceCatalogControllerManagerInterface {
 	return newServiceCatalogControllerManagers(c)
+}
+
+func (c *OperatorV1Client) Storages() StorageInterface {
+	return newStorages(c)
 }
 
 // NewForConfig creates a new OperatorV1Client for the given config.

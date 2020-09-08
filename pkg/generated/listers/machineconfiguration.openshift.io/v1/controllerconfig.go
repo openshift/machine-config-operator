@@ -10,10 +10,13 @@ import (
 )
 
 // ControllerConfigLister helps list ControllerConfigs.
+// All objects returned here must be treated as read-only.
 type ControllerConfigLister interface {
 	// List lists all ControllerConfigs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.ControllerConfig, err error)
 	// Get retrieves the ControllerConfig from the index for a given name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.ControllerConfig, error)
 	ControllerConfigListerExpansion
 }

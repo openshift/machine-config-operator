@@ -156,7 +156,7 @@ func newClusterVersionConfig(name, desiredImage string) *apicfgv1.ClusterVersion
 		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
 		Status: apicfgv1.ClusterVersionStatus{
-			Desired: apicfgv1.Update{
+			Desired: apicfgv1.Release{
 				Image: desiredImage,
 			},
 		},
