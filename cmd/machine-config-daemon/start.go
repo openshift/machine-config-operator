@@ -107,6 +107,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
+	// See https://github.com/coreos/rpm-ostree/pull/1880
+	os.Setenv("RPMOSTREE_CLIENT_ID", "machine-config-operator")
+
 	onceFromMode := startOpts.onceFrom != ""
 	if !onceFromMode {
 		// in the daemon case
