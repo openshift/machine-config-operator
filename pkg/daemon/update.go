@@ -338,7 +338,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osImageContentDir)
 
-		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS || dn.OperatingSystem == MachineConfigDaemonOSFCOS {
 			if err := addExtensionsRepo(osImageContentDir); err != nil {
 				return err
 			}
@@ -874,15 +874,35 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 	return extArgs
 }
 
+func validateExtensions(exts []string) error {
+	supportedExtensions := []string{"usbguard", "kernel-devel"}
+	invalidExts := []string{}
+	for _, ext := range exts {
+		if !ctrlcommon.InSlice(ext, supportedExtensions) {
+			invalidExts = append(invalidExts, ext)
+		}
+	}
+	if len(invalidExts) != 0 {
+		return fmt.Errorf("invalid extensions found: %v", invalidExts)
+	}
+	return nil
+
+}
+
 func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
 		return nil
 	}
-	// Right now, we support extensions only on RHCOS nodes
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
-		return fmt.Errorf("extensions is not supported on non-RHCOS nodes ")
+	// Right now, we support extensions only on CoreOS nodes
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+		return fmt.Errorf("extensions is not supported on non-CoreOS nodes ")
+	}
+
+	// Validate extensions allowlist on RHCOS nodes
+	if err := validateExtensions(newConfig.Spec.Extensions); err != nil && dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+		return err
 	}
 
 	args := generateExtensionsArgs(oldConfig, newConfig)
