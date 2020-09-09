@@ -357,7 +357,8 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		// In case of an error during any rpm-ostree transaction, removing pending deployment
 		// should be sufficient to discard any applied changes.
 		if retErr != nil {
-			glog.Infof("Rolling back applied changes to OS")
+			// Print out the error now so that if we fail to cleanup -p, we don't lose it.
+			glog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
 			if err := removePendingDeployment(); err != nil {
 				retErr = errors.Wrapf(retErr, "error removing staged deployment: %v", err)
 				return
