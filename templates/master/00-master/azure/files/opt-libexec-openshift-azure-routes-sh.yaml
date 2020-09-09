@@ -36,7 +36,7 @@ contents:
         local chain="${2}"
 
         if ! iptables -w -t "${table}" -S "${chain}" &> /dev/null ; then
-            iptables -w -t "${table}" -N "${chain}";
+            echo iptables -w -t "${table}" -N "${chain}";
         fi;
     }
 
@@ -49,7 +49,7 @@ contents:
         local chain="${2}"
 
         if ! ip6tables -w -t "${table}" -S "${chain}" &> /dev/null ; then
-            ip6tables -w -t "${table}" -N "${chain}";
+            echo ip6tables -w -t "${table}" -N "${chain}";
         fi;
     }
 
@@ -60,7 +60,7 @@ contents:
         shift 2
 
         if ! iptables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
-            iptables -w -t "${table}" -A "${chain}" "$@"
+            echo iptables -w -t "${table}" -A "${chain}" "$@"
         fi
     }
 
@@ -74,7 +74,7 @@ contents:
         shift 2
 
         if ! ip6tables -w -t "${table}" -C "${chain}" "$@" &> /dev/null; then
-            ip6tables -w -t "${table}" -A "${chain}" "$@"
+            echo ip6tables -w -t "${table}" -A "${chain}" "$@"
         fi
     }
 
@@ -97,7 +97,7 @@ contents:
         for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
             if [[ ! -v v4vips[${ipt_vip}] ]] || [[ "${v4vips[${ipt_vip}]}" = down ]]; then
                 echo removing stale vip "${ipt_vip}" for local clients
-                iptables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
+                echo iptables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
             fi
         done
 
@@ -108,7 +108,7 @@ contents:
         for ipt_vip in $(ip6tables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
             if [[ ! -v v6vips[${ipt_vip}] ]] || [[ "${v6vips[${ipt_vip}]}" = down ]]; then
                 echo removing stale vip "${ipt_vip}" for local clients
-                ip6tables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
+                echo ip6tables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
             fi
         done
 
@@ -131,7 +131,7 @@ contents:
     }
 
     clear_rules() {
-        iptables -t nat -F "${CHAIN_NAME}-local" || true
+        echo iptables -t nat -F "${CHAIN_NAME}-local" || true
     }
 
     # out paramaters: v4vips v6vips
