@@ -132,6 +132,8 @@ func RenderBootstrap(
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.ReleaseImage = releaseImage
 	spec.Images = map[string]string{
+		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
+
 		templatectrl.GCPRoutesControllerKey: imgs.MachineConfigOperator,
 		templatectrl.InfraImageKey:          imgs.InfraImage,
 		templatectrl.KeepalivedKey:          imgs.Keepalived,
