@@ -2,10 +2,12 @@ package containerruntimeconfig
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/docker/reference"
@@ -19,6 +21,7 @@ import (
 	"github.com/openshift/runtime-utils/pkg/registries"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -177,8 +180,54 @@ func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.ContainerRuntimeConfig) (string, error) {
+	// Get all the ctrcfg CRs
+	ctrcfgList, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error listing container runtime configs: %v", err)
+	}
+	// If there is no ctrcfg in the list, return the default MC name with no suffix
+	if ctrcfgList == nil || ctrcfgList.Items == nil {
+		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+	}
+	for _, ctrcfg := range ctrcfgList.Items {
+		if ctrcfg.Name == cfg.Name {
+			val, ok := ctrcfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			// If we find a matching ctrcfg and it is the only one in the list, then return the default MC name with no suffix
+			if !ok && len(ctrcfgList.Items) < 2 {
+				return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+			}
+			// Otherwise if an MC name suffix exists, append it to the default MC name and return that as this ctrcfg exists and
+			// we are probably doing an update action on it
+			if val != "" {
+				return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, val), nil
+			}
+		}
+	}
+
+	// If we are here, this means that a new ctrcfg was created, so we have to calculate the suffix value for its MC name
+	suffixNum := 0
+	// Get the suffix value of the second to last item in the ctrcfg list. We use the second to last item because
+	// the most recent ctrcfg being created has already been added to the list and is the ctrcfg object that we are
+	// trying to figure out the suffix value for
+	val, ok := ctrcfgList.Items[len(ctrcfgList.Items)-2].GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+	if ok {
+		// Convert the suffix value to int so we can add 1 to it for the MC name for the latest ctrcfg object
+		suffixNum, err = strconv.Atoi(val)
+		if err != nil {
+			return "", fmt.Errorf("error converting %s to int: %v", val, err)
+		}
+	}
+	// The max suffix value that we can go till with this logic is 9 - this means that a user can create up to 10 different ctrcfg CRs.
+	// However, if there is a ctrcfg-1 mapping to mc-1 and ctrcfg-2 mapping to mc-2 and the user deletes ctrcfg-1, it will delete mc-1 but
+	// then if the user creates a ctrcfg-new it will map to mc-3. This is what we want as the latest ctrcfg created should be higher in priority
+	// so that those changes can be rolled out to the nodes. But users will have to be mindful of how many ctrcfg CRs they create. Don't think
+	// anyone should ever have the need to create 10 when they can simply update an existing ctrcfg unless it is to apply to another pool.
+	if suffixNum+1 > 9 {
+		return "", fmt.Errorf("the max MC name suffix value that can be used is 9, please delete some ctrcfg CRs to free up suffx values before a new ctrcfg can be created")
+	}
+	// Return the default MC name with the suffixNum+1 value appended to it
+	return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, strconv.Itoa(suffixNum+1)), nil
 }
 
 // Deprecated: use getManagedKeyReg
