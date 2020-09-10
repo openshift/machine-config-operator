@@ -1704,16 +1704,6 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/coredns"
-    readinessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
     livenessProbe:
       httpGet:
         path: /health
@@ -1930,16 +1920,6 @@ spec:
       mountPath: "/var/run/keepalived"
     - name: manifests
       mountPath: "/opt/openshift/manifests"
-    readinessProbe:
-      httpGet:
-        path: /readyz
-        port: 6443
-        scheme: HTTPS
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
     imagePullPolicy: IfNotPresent
   hostNetwork: true
   tolerations:
