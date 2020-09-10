@@ -21,6 +21,7 @@ contents:
     # extract etcdctl binary from container image
     dl_etcdctl() {
       local etcdimg="{{.Images.etcdKey}}"
+      podman image pull "${etcdimg}" --authfile=/var/lib/kubelet/config.json
       local etcdctr=$(podman create "${etcdimg}" --authfile=/var/lib/kubelet/config.json)
       local etcdmnt=$(podman mount "${etcdctr}")
       cp ${etcdmnt}/bin/etcdctl $ASSET_DIR/bin/
