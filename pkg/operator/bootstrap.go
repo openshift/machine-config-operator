@@ -214,19 +214,19 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	if infra.Status.PlatformStatus.BareMetal != nil {
 		manifests = append(manifests,
 			manifest{
-				name:     "manifests/baremetal/coredns.yaml",
+				name:     "manifests/on-prem/coredns.yaml",
 				filename: "baremetal/manifests/coredns.yaml",
 			},
 			manifest{
-				name:     "manifests/baremetal/coredns-corefile.tmpl",
+				name:     "manifests/on-prem/coredns-corefile.tmpl",
 				filename: "baremetal/static-pod-resources/coredns/Corefile.tmpl",
 			},
 			manifest{
-				name:     "manifests/baremetal/keepalived.yaml",
+				name:     "manifests/on-prem/keepalived.yaml",
 				filename: "baremetal/manifests/keepalived.yaml",
 			},
 			manifest{
-				name:     "manifests/baremetal/keepalived.conf.tmpl",
+				name:     "manifests/on-prem/keepalived.conf.tmpl",
 				filename: "baremetal/static-pod-resources/keepalived/keepalived.conf.tmpl",
 			},
 		)
@@ -235,19 +235,19 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	if infra.Status.PlatformStatus.OpenStack != nil {
 		manifests = append(manifests,
 			manifest{
-				name:     "manifests/openstack/coredns.yaml",
+				name:     "manifests/on-prem/coredns.yaml",
 				filename: "openstack/manifests/coredns.yaml",
 			},
 			manifest{
-				name:     "manifests/openstack/coredns-corefile.tmpl",
+				name:     "manifests/on-prem/coredns-corefile.tmpl",
 				filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
 			},
 			manifest{
-				name:     "manifests/openstack/keepalived.yaml",
+				name:     "manifests/on-prem/keepalived.yaml",
 				filename: "openstack/manifests/keepalived.yaml",
 			},
 			manifest{
-				name:     "manifests/openstack/keepalived.conf.tmpl",
+				name:     "manifests/on-prem/keepalived.conf.tmpl",
 				filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
 			},
 		)
@@ -256,19 +256,19 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	if infra.Status.PlatformStatus.Ovirt != nil {
 		manifests = append(manifests,
 			manifest{
-				name:     "manifests/ovirt/coredns.yaml",
+				name:     "manifests/on-prem/coredns.yaml",
 				filename: "ovirt/manifests/coredns.yaml",
 			},
 			manifest{
-				name:     "manifests/ovirt/coredns-corefile.tmpl",
+				name:     "manifests/on-prem/coredns-corefile.tmpl",
 				filename: "ovirt/static-pod-resources/coredns/Corefile.tmpl",
 			},
 			manifest{
-				name:     "manifests/ovirt/keepalived.yaml",
+				name:     "manifests/on-prem/keepalived.yaml",
 				filename: "ovirt/manifests/keepalived.yaml",
 			},
 			manifest{
-				name:     "manifests/ovirt/keepalived.conf.tmpl",
+				name:     "manifests/on-prem/keepalived.conf.tmpl",
 				filename: "ovirt/static-pod-resources/keepalived/keepalived.conf.tmpl",
 			},
 		)
@@ -276,19 +276,19 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 	if infra.Status.PlatformStatus.VSphere != nil && infra.Status.PlatformStatus.VSphere.APIServerInternalIP != "" {
 		manifests = append(manifests,
 			manifest{
-				name:     "manifests/vsphere/coredns.yaml",
+				name:     "manifests/on-prem/coredns.yaml",
 				filename: "vsphere/manifests/coredns.yaml",
 			},
 			manifest{
-				name:     "manifests/vsphere/coredns-corefile.tmpl",
+				name:     "manifests/on-prem/coredns-corefile.tmpl",
 				filename: "vsphere/static-pod-resources/coredns/Corefile.tmpl",
 			},
 			manifest{
-				name:     "manifests/vsphere/keepalived.yaml",
+				name:     "manifests/on-prem/keepalived.yaml",
 				filename: "vsphere/manifests/keepalived.yaml",
 			},
 			manifest{
-				name:     "manifests/vsphere/keepalived.conf.tmpl",
+				name:     "manifests/on-prem/keepalived.conf.tmpl",
 				filename: "vsphere/static-pod-resources/keepalived/keepalived.conf.tmpl",
 			},
 		)
