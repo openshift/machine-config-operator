@@ -16,7 +16,7 @@ contents:
     # existing connections when the vip is removed. This is useful for draining
     # connections - take ourselves out of the vip, but service existing conns.
     #
-    # Additionally, clients can write a file to /run/gcp-routes/$IP.down to force
+    # Additionally, clients can write a file to /run/cloud-routes/$IP.down to force
     # a VIP as down. This is useful for graceful shutdown / upgrade.
     #
     # ~cdc~
@@ -31,7 +31,7 @@ contents:
     }
 
     CHAIN_NAME="gcp-vips"
-    RUN_DIR="/run/gcp-routes"
+    RUN_DIR="/run/cloud-routes"
 
     # Create a chan if it doesn't exist
     ensure_chain() {

@@ -8,13 +8,13 @@ import (
 )
 
 const (
-	componentName = "gcp-routes-controller"
+	componentName = "apisever-watcher"
 )
 
 var (
 	rootCmd = &cobra.Command{
 		Use:           componentName,
-		Short:         "Controls the gcp-routes.service on RHCOS hosts based on health checks",
+		Short:         "Monitors the local apiserver and writes cloud-routes downfiles",
 		Long:          "",
 		SilenceErrors: true,
 		SilenceUsage:  true,

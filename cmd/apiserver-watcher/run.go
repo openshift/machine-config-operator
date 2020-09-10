@@ -4,15 +4,14 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path"
 	"sync"
-	"syscall"
 	"time"
 
 	health "github.com/InVisionApp/go-health"
@@ -26,41 +25,31 @@ import (
 var (
 	runCmd = &cobra.Command{
 		Use:   "run",
-		Short: "Runs the gcp-routes-controller",
+		Short: "Runs the apiserver-watcher",
 		Long:  "",
 		RunE:  runRunCmd,
 	}
 
 	runOpts struct {
-		gcpRoutesService string
-		rootMount        string
-		healthCheckURL   string
-		vip              string
+		rootMount      string
+		healthCheckURL string
+		vip            string
 	}
 )
 
 // downFileDir is the directory in which gcp-routes will look for a flag-file that
 // indicates the route to the VIP should be withdrawn.
-const downFileDir = "/run/gcp-routes"
+const downFileDir = "/run/cloud-routes"
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.PersistentFlags().StringVar(&runOpts.gcpRoutesService, "gcp-routes-service", "openshift-gcp-routes.service", "The name for the service controlling gcp routes on host")
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for writing down files or chrooting.")
 	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
 	runCmd.PersistentFlags().StringVar(&runOpts.vip, "vip", "", "The VIP to remove if the health check fails. Determined from URL if not provided")
 }
 
-type downMode int
-
-const (
-	modeStopService = iota
-	modeDownFile
-)
-
 type handler struct {
-	mode downMode
-	vip  string
+	vip string
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -104,6 +93,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	// as a backend in the load-balancer, and add routes before we've been
 	// re-added.
 	// see openshift/installer/data/data/gcp/network/lb-private.tf
+	// see openshift/installer/data/data/azure/vnet/internal-lb.tf
 	tracker := &healthTracker{
 		state:            unknownTrackerState,
 		ErrCh:            errCh,
@@ -130,7 +120,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for sig := range c {
-			glog.Infof("Signal %s received: shutting down gcp routes service", sig)
+			glog.Infof("Signal %s received: treating service as down", sig)
 			if err := handler.onFailure(); err != nil {
 				glog.Infof("Failed to mark service down on signal: %s", err)
 			}
@@ -151,45 +141,18 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 func newHandler(uri *url.URL) (*handler, error) {
 	h := handler{}
 
-	// determine mode: if /run/gcp-routes exists, we can us the downfile mode
-	realPath := path.Join(runOpts.rootMount, downFileDir)
-	fi, err := os.Stat(realPath)
-	if err == nil && fi.IsDir() {
-		glog.Infof("%s exists, starting in downfile mode", realPath)
-		h.mode = modeDownFile
+	if runOpts.vip != "" {
+		h.vip = runOpts.vip
 	} else {
-		glog.Infof("%s not accessible, will stop gcp-routes.service on health failure", realPath)
-		h.mode = modeStopService
-	}
-
-	// if StopService mode and rootfs specified, chroot
-	if h.mode == modeStopService && runOpts.rootMount != "" {
-		glog.Infof(`Calling chroot("%s")`, runOpts.rootMount)
-		if err := syscall.Chroot(runOpts.rootMount); err != nil {
-			return nil, fmt.Errorf("unable to chroot to %s: %s", runOpts.rootMount, err)
+		addrs, err := net.LookupHost(uri.Hostname())
+		if err != nil {
+			return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
 		}
-
-		glog.V(2).Infof("Moving to / inside the chroot")
-		if err := os.Chdir("/"); err != nil {
-			return nil, fmt.Errorf("unable to change directory to /: %s", err)
+		if len(addrs) != 1 {
+			return nil, fmt.Errorf("hostname %s has %d addresses, expected 1 - aborting", uri.Hostname(), len(addrs))
 		}
-	}
-
-	// otherwise, resolve vip
-	if h.mode == modeDownFile {
-		if runOpts.vip != "" {
-			h.vip = runOpts.vip
-		} else {
-			addrs, err := net.LookupHost(uri.Hostname())
-			if err != nil {
-				return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
-			}
-			if len(addrs) != 1 {
-				return nil, fmt.Errorf("hostname %s has %d addresses, expected 1 - aborting", uri.Hostname(), len(addrs))
-			}
-			h.vip = addrs[0]
-			glog.Infof("Using VIP %s", h.vip)
-		}
+		h.vip = addrs[0]
+		glog.Infof("Using VIP %s", h.vip)
 	}
 
 	return &h, nil
@@ -197,37 +160,42 @@ func newHandler(uri *url.URL) (*handler, error) {
 
 // onFailure: either stop the routes service, or write downfile
 func (h *handler) onFailure() error {
-	if h.mode == modeDownFile {
-		downFile := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.down", h.vip))
-		fp, err := os.OpenFile(downFile, os.O_CREATE, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to create downfile (%s): %v", downFile, err)
-		}
-		_ = fp.Close()
-		glog.Infof("healthcheck failed, created downfile %s", downFile)
-	} else {
-		if err := exec.Command("systemctl", "stop", runOpts.gcpRoutesService).Run(); err != nil {
-			return fmt.Errorf("Failed to terminate gcp routes service %v", err)
-		}
-		glog.Infof("healthcheck failed, stopped %s", runOpts.gcpRoutesService)
+	if err := writeVipStateFile(h.vip, "down"); err != nil {
+		return err
+	}
+	glog.Infof("healthcheck failed, created downfile %s.down", h.vip)
+	if err := removeVipStateFile(h.vip, "up"); err != nil {
+		return err
 	}
 	return nil
 }
 
 // onSuccess: either start routes service, or remove down file
 func (h *handler) onSuccess() error {
-	if h.mode == modeDownFile {
-		downFile := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.down", h.vip))
-		err := os.Remove(downFile)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove downfile (%s): %v", downFile, err)
-		}
-		glog.Infof("healthcheck succeeded, removed downfile %s", downFile)
-	} else {
-		if err := exec.Command("systemctl", "start", runOpts.gcpRoutesService).Run(); err != nil {
-			return fmt.Errorf("Failed to terminate gcp routes service %v", err)
-		}
-		glog.Infof("healthcheck succeeded, started %s", runOpts.gcpRoutesService)
+	if err := removeVipStateFile(h.vip, "down"); err != nil {
+		return err
+	}
+	glog.Infof("healthcheck succeeded, removed downfile %s.down", h.vip)
+	if err := writeVipStateFile(h.vip, "up"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeVipStateFile(vip, state string) error {
+	file := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.%s", vip, state))
+	err := ioutil.WriteFile(file, nil, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create file (%s): %v", file, err)
+	}
+	return nil
+}
+
+func removeVipStateFile(vip, state string) error {
+	file := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.%s", vip, state))
+	err := os.Remove(file)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove file (%s): %v", file, err)
 	}
 	return nil
 }
