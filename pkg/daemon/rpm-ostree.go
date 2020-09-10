@@ -315,7 +315,8 @@ func (r *RpmOstreeClient) RunPivot(osImageURL string) error {
 	defer close(journalStopCh)
 	go followPivotJournalLogs(journalStopCh)
 
-	// This is written by code injected by the MCS, but we always want the MCD to be in control of reboots
+	// This is written by code injected by the MCS for compatibility with 4.1 bootimages,
+	// remove it to clean things up.
 	if err := os.Remove("/run/pivot/reboot-needed"); err != nil && !os.IsNotExist(err) {
 		return errors.Wrap(err, "deleting pivot reboot-needed file")
 	}
