@@ -8,7 +8,7 @@ contents:
     }
 
     vrrp_script chk_ocp {
-        script "/usr/bin/timeout 0.9 /etc/keepalived/chk_ocp_script.sh"
+        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:50936/readyz"
         interval 1
         weight 50
     }
