@@ -1905,7 +1905,8 @@ spec:
       "machineconfiguration.openshift.io/role": "master"
   nodeSelector:
     matchLabels:
-      node-role.kubernetes.io/master: ""`)
+      node-role.kubernetes.io/master: ""
+`)
 
 func manifestsMasterMachineconfigpoolYamlBytes() ([]byte, error) {
 	return _manifestsMasterMachineconfigpoolYaml, nil
@@ -2775,6 +2776,7 @@ kind: MachineConfigPool
 metadata:
   name: worker
   labels:
+    "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
     "machineconfiguration.openshift.io/mco-built-in": ""
     "pools.operator.machineconfiguration.openshift.io/worker": ""
 spec:
@@ -2783,7 +2785,8 @@ spec:
       "machineconfiguration.openshift.io/role": "worker"
   nodeSelector:
     matchLabels:
-      node-role.kubernetes.io/worker: ""`)
+      node-role.kubernetes.io/worker: ""
+`)
 
 func manifestsWorkerMachineconfigpoolYamlBytes() ([]byte, error) {
 	return _manifestsWorkerMachineconfigpoolYaml, nil

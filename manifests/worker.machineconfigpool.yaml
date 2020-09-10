@@ -3,6 +3,7 @@ kind: MachineConfigPool
 metadata:
   name: worker
   labels:
+    "operator.machineconfiguration.openshift.io/required-for-upgrade": ""
     "machineconfiguration.openshift.io/mco-built-in": ""
     "pools.operator.machineconfiguration.openshift.io/worker": ""
 spec:
