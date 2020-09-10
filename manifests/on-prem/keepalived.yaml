@@ -3,11 +3,11 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: keepalived
-  namespace: openshift-kni-infra
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: kni-infra-vrrp
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-vrrp
 spec:
   volumes:
   - name: resource-dir
@@ -114,9 +114,9 @@ spec:
     - "/config/keepalived.conf.tmpl"
     - "/etc/keepalived/keepalived.conf"
     - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+    - "{{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
     - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+    - "{{ onPremPlatformIngressIP .ControllerConfig }}"
     - "--cluster-config"
     - "/opt/openshift/manifests/cluster-config.yaml"
     - "--check-interval"
