@@ -2,20 +2,15 @@ mode: 0644
 path: "/etc/kubernetes/manifests/mdns-publisher.yaml"
 contents:
   inline: |
-    {{ if .Infra -}}
-    {{ if .Infra.Status -}}
-    {{ if .Infra.Status.PlatformStatus -}}
-    {{ if .Infra.Status.PlatformStatus.VSphere -}}
-    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     kind: Pod
     apiVersion: v1
     metadata:
       name: mdns-publisher
-      namespace: openshift-vsphere-infra
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: vsphere-infra-mdns
+        app: {{ onPremPlatformShortName . }}-infra-mdns
     spec:
       volumes:
       - name: resource-dir
@@ -65,9 +60,9 @@ contents:
         - render
         - "/etc/kubernetes/kubeconfig"
         - "--api-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+        - "{{ onPremPlatformAPIServerInternalIP . }}"
         - "--ingress-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+        - "{{ onPremPlatformIngressIP . }}"
         - "/config"
         - "--out-dir"
         - "/etc/mdns"
@@ -106,8 +101,3 @@ contents:
       - operator: Exists
       priorityClassName: system-node-critical
     status: {}
-    {{ end -}}
-    {{ end -}}
-    {{ end -}}
-    {{ end -}}
-    {{ end -}}

@@ -6,11 +6,11 @@ contents:
     apiVersion: v1
     metadata:
       name: haproxy
-      namespace: openshift-ovirt-infra
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: ovirt-infra-api-lb
+        app: {{ onPremPlatformShortName . }}-infra-api-lb
     spec:
       volumes:
       - name: resource-dir
@@ -30,16 +30,37 @@ contents:
       containers:
       - name: haproxy
         image: {{.Images.haproxyImage}}
+        env:
+          - name: OLD_HAPROXY_PS_FORCE_DEL_TIMEOUT
+            value: "120"
         command:
         - "/bin/bash"
         - "-c"
         - |
           #/bin/bash
+          verify_old_haproxy_ps_being_deleted()
+          {
+            local prev_pids
+
+            prev_pids="$1"
+            sleep $OLD_HAPROXY_PS_FORCE_DEL_TIMEOUT
+            cur_pids=$(pidof haproxy)
+
+            for val in $prev_pids; do
+                if [[ $cur_pids =~ (^|[[:space:]])"$val"($|[[:space:]]) ]] ; then
+                   kill $val
+                fi
+            done
+          }
+
           reload_haproxy()
           {
             old_pids=$(pidof haproxy)
             if [ -n "$old_pids" ]; then
                 /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid -x /var/lib/haproxy/run/haproxy.sock -sf $old_pids &
+                #There seems to be some cases where HAProxy doesn't drain properly.
+                #To handle that case, SIGTERM signal being sent to old HAProxy processes which haven't terminated.
+                verify_old_haproxy_ps_being_deleted "$old_pids"  &
             else
                 /usr/sbin/haproxy -W -db -f /etc/haproxy/haproxy.cfg  -p /var/lib/haproxy/run/haproxy.pid &
             fi
@@ -60,6 +81,7 @@ contents:
           declare -r haproxy_log_sock="/var/run/haproxy/haproxy-log.sock"
           export -f msg_handler
           export -f reload_haproxy
+          export -f verify_old_haproxy_ps_being_deleted
           rm -f "$haproxy_sock" "$haproxy_log_sock"
           socat UNIX-RECV:${haproxy_log_sock} STDOUT &
           if [ -s "/etc/haproxy/haproxy.cfg" ]; then
@@ -78,7 +100,7 @@ contents:
         livenessProbe:
           initialDelaySeconds: 50
           httpGet:
-            path: /readyz
+            path: /haproxy_ready
             port: 50936
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
@@ -89,13 +111,13 @@ contents:
         command:
           - "/bin/bash"
           - "-c"
-          - |
+          - |            
             cp /host/etc/resolv.conf /etc/resolv.conf
-            monitor /var/lib/kubelet/kubeconfig  /config/haproxy.cfg.tmpl  /etc/haproxy/haproxy.cfg  --api-vip {{ .Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }}
+            monitor /var/lib/kubelet/kubeconfig  /config/haproxy.cfg.tmpl  /etc/haproxy/haproxy.cfg  --api-vip {{ onPremPlatformAPIServerInternalIP . }}
         resources:
           requests:
             cpu: 100m
-            memory: 200Mi
+            memory: 200Mi          
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/haproxy"
