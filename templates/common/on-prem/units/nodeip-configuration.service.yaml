@@ -25,7 +25,7 @@ contents: |
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
-    {{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}; \
+    {{ onPremPlatformAPIServerInternalIP . }}; \
     do \
     sleep 5; \
     done"
