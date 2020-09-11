@@ -128,9 +128,8 @@ const (
 	// also retrieve the pending config after a reboot
 	pendingStateMessageID = "machine-config-daemon-pending-state"
 
-	kubeletHealthzPollingInterval  = 30 * time.Second
-	kubeletHealthzTimeout          = 30 * time.Second
-	kubeletHealthzFailureThreshold = 3
+	kubeletHealthzPollingInterval = 30 * time.Second
+	kubeletHealthzTimeout         = 30 * time.Second
 
 	// updateDelay is the baseline speed at which we react to changes.  We don't
 	// need to react in milliseconds as any change would involve rebooting the node.
@@ -652,25 +651,21 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 	failureCount := 0
-	KubeletHealthState.WithLabelValues("").Set(float64(failureCount))
+	KubeletHealthState.Set(float64(failureCount))
 	for {
 		select {
 		case <-stopCh:
 			return
 		case <-time.After(kubeletHealthzPollingInterval):
-			if err := dn.getHealth(); err != nil {
-				glog.Warningf("Failed kubelet health check: %v", err)
+			err := dn.getHealth()
+			if err != nil {
 				failureCount++
-				KubeletHealthState.WithLabelValues(err.Error()).Set(float64(failureCount))
-				if failureCount >= kubeletHealthzFailureThreshold {
-					thresholdMessage := "kubelet health failure threshold reached"
-					KubeletHealthState.WithLabelValues(thresholdMessage).Set(float64(failureCount))
-					exitCh <- fmt.Errorf(thresholdMessage)
-				}
+				exitCh <- fmt.Errorf("kubelet health check has failed %d times: %v", failureCount, err)
 			} else {
-				failureCount = 0 // reset failure count on success
-				KubeletHealthState.WithLabelValues("").Set(float64(failureCount))
+				// reset failure count on success
+				failureCount = 0
 			}
+			KubeletHealthState.Set(float64(failureCount))
 		}
 	}
 }

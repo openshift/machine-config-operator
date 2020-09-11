@@ -49,11 +49,11 @@ var (
 		}, []string{"state", "reason"})
 
 	// KubeletHealthState logs kubelet health failures and tallys count
-	KubeletHealthState = prometheus.NewGaugeVec(
+	KubeletHealthState = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "mcd_kubelet_state",
 			Help: "state of kubelet health monitor",
-		}, []string{"err"})
+		})
 
 	// MCDRebootErr logs success/failure of reboot and errors
 	MCDRebootErr = prometheus.NewGaugeVec(
@@ -90,7 +90,7 @@ func registerMCDMetrics() error {
 
 	MCDDrainErr.WithLabelValues("", "").Set(0)
 	MCDPivotErr.WithLabelValues("", "").Set(0)
-	KubeletHealthState.WithLabelValues("").Set(0)
+	KubeletHealthState.Set(0)
 	MCDRebootErr.WithLabelValues("", "").Set(0)
 	MCDUpdateState.WithLabelValues("", "").Set(0)
 
