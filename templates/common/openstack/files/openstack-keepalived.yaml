@@ -21,7 +21,10 @@ contents:
           path: "/etc/kubernetes/static-pod-resources/keepalived/scripts"
       - name: kubeconfig
         hostPath:
-          path: "/etc/kubernetes/kubeconfig"
+          path: "/etc/kubernetes"
+      - name: kubeconfigvarlib
+        hostPath:
+          path: "/var/lib/kubelet"
       - name: conf-dir
         hostPath:
           path: "/etc/keepalived"
@@ -49,7 +52,7 @@ contents:
         resources: {}
         volumeMounts:
         - name: kubeconfig
-          mountPath: "/etc/kubernetes/kubeconfig"
+          mountPath: "/etc/kubernetes"
         - name: script-dir
           mountPath: "/config"
         - name: conf-dir
@@ -118,10 +121,17 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: keepalived-monitor
+        securityContext:
+          privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: ENABLE_UNICAST
+            value: "no"
+          - name: IS_BOOTSTRAP
+            value: "no"
         command:
         - dynkeepalived
-        - "/etc/kubernetes/kubeconfig"
+        - "/var/lib/kubelet/kubeconfig"
         - "/config/keepalived.conf.tmpl"
         - "/etc/keepalived/keepalived.conf"
         - "--api-vip"
@@ -137,8 +147,8 @@ contents:
         volumeMounts:
         - name: resource-dir
           mountPath: "/config"
-        - name: kubeconfig
-          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
         - name: conf-dir
           mountPath: "/etc/keepalived"
         - name: run-dir
