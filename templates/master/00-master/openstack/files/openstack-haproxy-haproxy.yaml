@@ -20,7 +20,7 @@ contents:
     listen health_check_http_url
       bind :::50936 v4v6
       mode http
-      monitor-uri /readyz
+      monitor-uri /haproxy_ready
       option dontlognull
     listen stats
       bind localhost:{{`{{ .LBConfig.StatPort }}`}}
