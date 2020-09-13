@@ -16,14 +16,25 @@ contents:
       - name: resource-dir
         hostPath:
           path: "/etc/kubernetes/static-pod-resources/keepalived"
+      - name: script-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/keepalived/scripts"
       - name: kubeconfig
         hostPath:
-          path: "/etc/kubernetes/kubeconfig"
+          path: "/etc/kubernetes"
+      - name: kubeconfigvarlib
+        hostPath:
+          path: "/var/lib/kubelet"
       - name: conf-dir
         hostPath:
           path: "/etc/keepalived"
+      - name: run-dir
+        empty-dir: {}
+      - name: chroot-host
+        hostPath:
+          path: "/"
       initContainers:
-      - name: render-config
+      - name: render-config-keepalived
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - runtimecfg
@@ -38,10 +49,10 @@ contents:
         - "/etc/keepalived"
         resources: {}
         volumeMounts:
-        - name: resource-dir
-          mountPath: "/config"
         - name: kubeconfig
-          mountPath: "/etc/kubernetes/kubeconfig"
+          mountPath: "/etc/kubernetes"
+        - name: script-dir
+          mountPath: "/config"
         - name: conf-dir
           mountPath: "/etc/keepalived"
         imagePullPolicy: IfNotPresent
@@ -54,14 +65,40 @@ contents:
           - name: NSS_SDB_USE_CACHE
             value: "no"
         command:
-        - /usr/sbin/keepalived
-        args:
-        - "-f"
-        - "/etc/keepalived/keepalived.conf"
-        - "--dont-fork"
-        - "--vrrp"
-        - "--log-detail"
-        - "--log-console"
+        - /bin/bash
+        - -c
+        - |
+          #/bin/bash
+          reload_keepalived()
+          {
+            if pid=$(pgrep -o keepalived); then
+                kill -s SIGHUP "$pid"
+            else
+                /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+            fi
+          }
+
+          msg_handler()
+          {
+            while read -r line; do
+              echo "The client sent: $line" >&2
+              # currently only 'reload' msg is supported
+              if [ "$line" = reload ]; then
+                  reload_keepalived
+              fi
+            done
+          }
+
+          set -ex
+          declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
+          export -f msg_handler
+          export -f reload_keepalived
+          if [ -s "/etc/keepalived/keepalived.conf" ]; then
+              /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+          fi
+
+          rm -f "$keepalived_sock"
+          socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
         resources:
           requests:
             cpu: 100m
@@ -69,13 +106,51 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/keepalived"
+        - name: run-dir
+          mountPath: "/var/run/keepalived"
         livenessProbe:
           exec:
             command:
-            - pgrep
-            - keepalived
-          initialDelaySeconds: 10
+            - /bin/bash
+            - -c
+            - |
+              kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+          initialDelaySeconds: 20
         terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      - name: keepalived-monitor
+        securityContext:
+          privileged: true
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        env:
+          - name: ENABLE_UNICAST
+            value: "no"
+          - name: IS_BOOTSTRAP
+            value: "no"
+        command:
+        - dynkeepalived
+        - "/var/lib/kubelet/kubeconfig"
+        - "/config/keepalived.conf.tmpl"
+        - "/etc/keepalived/keepalived.conf"
+        - "--api-vip"
+        - "{{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}"
+        - "--ingress-vip"
+        - "{{ .Infra.Status.PlatformStatus.OpenStack.IngressIP }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: resource-dir
+          mountPath: "/config"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
+        - name: conf-dir
+          mountPath: "/etc/keepalived"
+        - name: run-dir
+          mountPath: "/var/run/keepalived"
+        - name: chroot-host
+          mountPath: "/host"
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
