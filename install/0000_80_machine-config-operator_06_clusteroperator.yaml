@@ -23,3 +23,5 @@ status:
       resource: kubeletconfigs
     - group: machineconfiguration.openshift.io
       resource: containerruntimeconfigs
+    - group: ""
+      resource: nodes
