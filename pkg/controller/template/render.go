@@ -309,6 +309,9 @@ func skipMissing(key string) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
+		if cfg.Infra.Status.PlatformStatus.External {
+			return "external", nil
+		}
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
 			return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
@@ -345,6 +348,10 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 		cfg.Infra.Status.PlatformStatus = &configv1.PlatformStatus{
 			Type: "",
 		}
+	}
+
+	if cfg.Infra.Status.PlatformStatus.External {
+		return ""
 	}
 
 	flag := "--cloud-config=/etc/kubernetes/cloud.conf"
