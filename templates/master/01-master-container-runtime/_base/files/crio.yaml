@@ -15,19 +15,6 @@ contents:
     ]
     log_level = "info"
     cgroup_manager = "systemd"
-    default_capabilities = [
-        "CHOWN",
-        "DAC_OVERRIDE",
-        "FSETID",
-        "FOWNER",
-        "NET_RAW",
-        "SETGID",
-        "SETUID",
-        "SETPCAP",
-        "NET_BIND_SERVICE",
-        "SYS_CHROOT",
-        "KILL",
-    ]
     hooks_dir = [
         "/etc/containers/oci/hooks.d",
     ]
