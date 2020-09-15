@@ -1,5 +1,5 @@
 name: ovs-configuration.service
-enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else}}false{{end}}
+enabled: {{if eq .NetworkType "OVNKubernetes" "OpenShiftSDN"}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Configures OVS with proper host networking configuration
@@ -14,7 +14,7 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
-  ExecStart=/usr/local/bin/configure-ovs.sh
+  ExecStart=/usr/local/bin/configure-ovs.sh {{.NetworkType}}
   StandardOutput=journal+console
   StandardError=journal+console
 
