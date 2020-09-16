@@ -310,6 +310,7 @@ func TestCalculateStatus(t *testing.T) {
 	tests := []struct {
 		nodes         []*corev1.Node
 		currentConfig string
+		paused        bool
 
 		verify func(mcfgv1.MachineConfigPoolStatus, *testing.T)
 	}{{
@@ -393,6 +394,31 @@ func TestCalculateStatus(t *testing.T) {
 			}
 
 			if got, want := condupdating.Status, corev1.ConditionTrue; got != want {
+				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
+			}
+		},
+	}, {
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v0", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-1", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-2", "v0", "v0", corev1.ConditionTrue),
+		},
+		currentConfig: "v1",
+		paused:        true,
+		verify: func(status mcfgv1.MachineConfigPoolStatus, t *testing.T) {
+			condupdated := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdated)
+			if condupdated == nil {
+				t.Fatal("updated condition not found")
+			}
+			if got, want := condupdated.Status, corev1.ConditionFalse; got != want {
+				t.Fatalf("mismatch condupdated.Status: got %s want: %s", got, want)
+			}
+
+			condupdating := mcfgv1.GetMachineConfigPoolCondition(status, mcfgv1.MachineConfigPoolUpdating)
+			if condupdating == nil {
+				t.Fatal("updated condition not found")
+			}
+			if got, want := condupdating.Status, corev1.ConditionFalse; got != want {
 				t.Fatalf("mismatch condupdating.Status: got %s want: %s", got, want)
 			}
 		},
@@ -612,6 +638,7 @@ func TestCalculateStatus(t *testing.T) {
 			pool := &mcfgv1.MachineConfigPool{
 				Spec: mcfgv1.MachineConfigPoolSpec{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.currentConfig}},
+					Paused:        test.paused,
 				},
 			}
 			status := calculateStatus(pool, test.nodes)

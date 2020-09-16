@@ -93,8 +93,13 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 	} else {
 		supdated := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdated, corev1.ConditionFalse, "", "")
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdated)
-		supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name))
-		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+		if pool.Spec.Paused {
+			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionFalse, "", fmt.Sprintf("Pool is paused; will not update to %s", pool.Spec.Configuration.Name))
+			mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+		} else {
+			supdating := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolUpdating, corev1.ConditionTrue, "", fmt.Sprintf("All nodes are updating to %s", pool.Spec.Configuration.Name))
+			mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
+		}
 	}
 
 	var nodeDegraded bool
