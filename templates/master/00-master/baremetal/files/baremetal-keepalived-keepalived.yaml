@@ -17,16 +17,16 @@ contents:
     # api to take the VIP. This isn't preferred because it means all api
     # traffic will go through one node, but at least it keeps the api available.
     vrrp_script chk_ocp_lb {
-        script "/usr/bin/timeout 0.9 /etc/keepalived/chk_ocp_script.sh"
-        interval 1
+        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script.sh"
+        interval 2
         weight 20
         rise 3
         fall 2
     }
 
     vrrp_script chk_ocp_both {
-        script "/usr/bin/timeout 0.9 /etc/keepalived/chk_ocp_script_both.sh"
-        interval 1
+        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script_both.sh"
+        interval 2
         # Use a smaller weight for this check so it won't trigger the move from
         # bootstrap to master by itself.
         weight 5
