@@ -14,6 +14,8 @@ contents: |
   [Service]
   Type=oneshot
   RemainAfterExit=yes
+  # Disable existing repos (if any) so that OS extensions would use embedded RPMs only
+  ExecStartPre=-/usr/bin/sh -c "sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/*.repo"
   ExecStart=/run/bin/machine-config-daemon firstboot-complete-machineconfig
 
   {{if .Proxy -}}
