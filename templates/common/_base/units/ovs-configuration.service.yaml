@@ -1,5 +1,5 @@
 name: ovs-configuration.service
-enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else}}false{{end}}
+enabled: false
 contents: |
   [Unit]
   Description=Configures OVS with proper host networking configuration
