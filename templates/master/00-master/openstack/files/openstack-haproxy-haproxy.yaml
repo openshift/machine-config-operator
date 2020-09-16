@@ -37,5 +37,5 @@ contents:
        option  log-health-checks
        balance roundrobin
     {{`{{- range .LBConfig.Backends }}
-       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 3s fall 2 rise 3
+       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 1s fall 2 rise 3
     {{- end }}`}}
