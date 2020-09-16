@@ -25,7 +25,6 @@ contents:
         up|dhcp4-change|dhcp6-change)
         >&2 echo "NM resolv-prepender triggered by ${1} ${2}."
 
-        # Ensure resolv.conf exists before we try to run podman
         # In DHCP connections, the resolv.conf content may be late, thus we wait for nameservers
         timeout 45s /bin/bash <<EOF
             if [[ "$STATUS" == dhcp* ]]; then
@@ -36,8 +35,8 @@ contents:
                 done
             fi
     EOF
-        # Ensure resolv.conf exists before we try to run podman
-        if [[ ! -e /etc/resolv.conf ]]; then
+        # Ensure resolv.conf exists and contains nameservers before we try to run podman
+        if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
             cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
         fi
 
