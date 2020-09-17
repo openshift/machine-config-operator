@@ -24,7 +24,7 @@ contents:
         logger -s "NM resolv-prepender triggered by ${1} ${2}."
 
         # Ensure resolv.conf exists before we try to run podman
-        if [[ ! -e /etc/resolv.conf ]]; then
+        if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
             cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
         fi
 
