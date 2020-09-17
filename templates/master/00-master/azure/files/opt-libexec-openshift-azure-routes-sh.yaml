@@ -80,24 +80,29 @@ contents:
 
     # set the chain, ensure entry rules, ensure ESTABLISHED rule
     initialize() {
-        ensure_chain4 nat "${CHAIN_NAME}-local"
-        ensure_chain6 nat "${CHAIN_NAME}-local"
+        ensure_chain4 nat "${CHAIN_NAME}"
+        ensure_chain6 nat "${CHAIN_NAME}"
 
-        ensure_rule4 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}-local
-        ensure_rule6 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}-local
+        ensure_rule4 nat PREROUTING -m comment --comment 'azure LB vip overriding for pods' -j ${CHAIN_NAME}
+        ensure_rule6 nat PREROUTING -m comment --comment 'azure LB vip overriding for pods' -j ${CHAIN_NAME}
 
-        # Need this so that existing flows (with an entry in conntrack) continue, 
+        ensure_rule4 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}
+        ensure_rule6 nat OUTPUT -m comment --comment 'azure LB vip overriding for local clients' -j ${CHAIN_NAME}
+
+        # Need this so that existing flows (with an entry in conntrack) continue,
         # even if the iptables rule is removed
+        ensure_rule4 filter FORWARD -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
+        ensure_rule6 filter FORWARD -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
         ensure_rule4 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
         ensure_rule6 filter OUTPUT -m comment --comment 'azure LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
     }
 
     remove_stale() {
         ## find extra iptables rules
-        for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
+        for ipt_vip in $(iptables -w -t nat -S "${CHAIN_NAME}" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
             if [[ ! -v v4vips[${ipt_vip}] ]] || [[ "${v4vips[${ipt_vip}]}" = down ]]; then
                 echo removing stale vip "${ipt_vip}" for local clients
-                iptables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
+                iptables -w -t nat -D "${CHAIN_NAME}" --dst "${ipt_vip}" -j REDIRECT
             fi
         done
 
@@ -105,10 +110,10 @@ contents:
             return
         fi
 
-        for ipt_vip in $(ip6tables -w -t nat -S "${CHAIN_NAME}-local" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
+        for ipt_vip in $(ip6tables -w -t nat -S "${CHAIN_NAME}" | awk '$4{print $4}' | awk -F/ '{print $1}'); do
             if [[ ! -v v6vips[${ipt_vip}] ]] || [[ "${v6vips[${ipt_vip}]}" = down ]]; then
                 echo removing stale vip "${ipt_vip}" for local clients
-                ip6tables -w -t nat -D "${CHAIN_NAME}-local" --dst "${ipt_vip}" -j REDIRECT
+                ip6tables -w -t nat -D "${CHAIN_NAME}" --dst "${ipt_vip}" -j REDIRECT
             fi
         done
 
@@ -118,20 +123,20 @@ contents:
         for vip in "${!v4vips[@]}"; do
             if [[ "${v4vips[${vip}]}" != down ]]; then
                 echo "ensuring rule for ${vip} for internal clients"
-                ensure_rule4 nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
+                ensure_rule4 nat "${CHAIN_NAME}" --dst "${vip}" -j REDIRECT
             fi
         done
 
         for vip in "${!v6vips[@]}"; do
             if [[ "${v6vips[${vip}]}" != down ]]; then
                 echo "ensuring rule for ${vip} for internal clients"
-                ensure_rule6 nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
+                ensure_rule6 nat "${CHAIN_NAME}" --dst "${vip}" -j REDIRECT
             fi
         done
     }
 
     clear_rules() {
-        iptables -t nat -F "${CHAIN_NAME}-local" || true
+        iptables -t nat -F "${CHAIN_NAME}" || true
     }
 
     # out paramaters: v4vips v6vips
@@ -145,7 +150,7 @@ contents:
 
 
         shopt -s nullglob
-        for file in "${RUN_DIR}"/*.up ; do 
+        for file in "${RUN_DIR}"/*.up ; do
             vip=$(basename "${file}" .up)
             if [[ -e "${RUN_DIR}/${vip}.down" ]]; then
                 echo "${vip} has upfile and downfile, marking as down"
@@ -177,4 +182,3 @@ contents:
             echo $"Usage: $0 {start|cleanup}"
             exit 1
     esac
-
