@@ -11,7 +11,7 @@ spec:
     listKind: IngressControllerList
     plural: ingresscontrollers
     singular: ingresscontroller
-  scope: Cluster
+  scope: Namespaced
   versions:
   - name: v1
     schema:

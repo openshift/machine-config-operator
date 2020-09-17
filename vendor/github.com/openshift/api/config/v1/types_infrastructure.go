@@ -191,6 +191,17 @@ type PlatformStatus struct {
 	// Currently this value cannot be changed once set.
 	Type PlatformType `json:"type"`
 
+	// External is a value used in infrastucture automaton to determine component-specific
+	// behavior for the PlatformType value. Components depending on this variable will
+	// ignore cloud specific detailes associated with the given platform type,
+	// and will concider the value of the infrastructure to be "external" - essentially
+	// disabling any further evaluation.
+	//
+	// This will allow to delegate task of processing platform specific bits
+	// to another component.
+	// +optional
+	External bool `json:"external"`
+
 	// AWS contains settings specific to the Amazon Web Services infrastructure provider.
 	// +optional
 	AWS *AWSPlatformStatus `json:"aws,omitempty"`
