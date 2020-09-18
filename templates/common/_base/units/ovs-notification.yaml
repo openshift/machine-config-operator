@@ -1,0 +1,19 @@
+name: ovs-notification.service
+enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else if eq .NetworkType "OpenShiftSDN"}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Creates a file to let the OVS pod know OVS is running on systemd.
+  Wants=NetworkManager-wait-online.service
+  After=NetworkManager-wait-online.service openvswitch.service
+  Before=network-online.target kubelet.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  # Create the file in a tmpfs so that the file gets deleted on restart
+  ExecStart=/usr/bin/touch /var/run/openvswitch/ovs-notification
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  [Install]
+  WantedBy=network-online.target
