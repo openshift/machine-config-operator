@@ -15,7 +15,8 @@ contents:
         exit 0
     fi
 
-    if [[ ! "$(< /proc/sys/kernel/hostname)" =~ (localhost|localhost.localdomain) ]]; then
+    kn="$(< /proc/sys/kernel/hostname)"
+    if [[ ! "${kn}" =~ (localhost|localhost.localdomain) ]] && [ "${#kn}" -le 63 ]; then
         log "hostname is already set"
         exit 0
     fi
@@ -29,4 +30,3 @@ contents:
     if [ -n "${host_name}" ]; then
         set_valid_hostname "${host_name}"
     fi
-
