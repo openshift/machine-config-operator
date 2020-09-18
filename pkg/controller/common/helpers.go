@@ -363,7 +363,10 @@ func ParseAndConvertConfig(rawIgn []byte) (ign3types.Config, error) {
 	case ign3types.Config:
 		return ignconfigi.(ign3types.Config), nil
 	case ign2types.Config:
-		ignconfv2 := removeIgnDuplicateFilesAndUnits(ignconfigi.(ign2types.Config))
+		ignconfv2, err := removeIgnDuplicateFilesUnitsUsers(ignconfigi.(ign2types.Config))
+		if err != nil {
+			return ign3types.Config{}, err
+		}
 		convertedIgnV3, err := convertIgnition2to3(ignconfv2)
 		if err != nil {
 			return ign3types.Config{}, errors.Wrapf(err, "failed to convert Ignition config spec v2 to v3")
@@ -374,7 +377,7 @@ func ParseAndConvertConfig(rawIgn []byte) (ign3types.Config, error) {
 	}
 }
 
-// Function to remove duplicated files/units from a V2 MC, since the translator
+// Function to remove duplicated files/units/users from a V2 MC, since the translator
 // (and ignition spec V3) does not allow for duplicated entries in one MC.
 // This should really not change the actual final behaviour, since it keeps
 // ordering into consideration and has contents from the highest alphanumeric
@@ -383,10 +386,11 @@ func ParseAndConvertConfig(rawIgn []byte) (ign3types.Config, error) {
 // Append is not considered since we do not allow for appending
 // Units have one exception: dropins are concat'ed
 
-func removeIgnDuplicateFilesAndUnits(ignConfig ign2types.Config) ign2types.Config {
+func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Config, error) {
 
 	files := ignConfig.Storage.Files
 	units := ignConfig.Systemd.Units
+	users := ignConfig.Passwd.Users
 
 	filePathMap := map[string]bool{}
 	var outFiles []ign2types.File
@@ -435,11 +439,33 @@ func removeIgnDuplicateFilesAndUnits(ignConfig ign2types.Config) ign2types.Confi
 		unitNameMap[unitName] = true
 	}
 
+	// Concat sshkey sections into the newest passwdUser in the list
+	// We make the assumption that there is only one user: core
+	// since that is the only supported user by design.
+	// It's technically possible, though, to have created another user
+	// during install time configs, since we only check the validity of
+	// the passwd section if it was changed. Explicitly error in that case.
+	if len(users) > 0 {
+		outUser := users[len(users)-1]
+		if outUser.Name != "core" {
+			return ignConfig, errors.Errorf("unexpected user with name: %v. Only core user is supported.", outUser.Name)
+		}
+		for i := len(users) - 2; i >= 0; i-- {
+			if users[i].Name != "core" {
+				return ignConfig, errors.Errorf("unexpected user with name: %v. Only core user is supported.", users[i].Name)
+			}
+			for j := range users[i].SSHAuthorizedKeys {
+				outUser.SSHAuthorizedKeys = append(outUser.SSHAuthorizedKeys, users[i].SSHAuthorizedKeys[j])
+			}
+		}
+		ignConfig.Passwd.Users = []ign2types.PasswdUser{outUser}
+	}
+
 	// outFiles and outUnits should now have all duplication removed
 	ignConfig.Storage.Files = outFiles
 	ignConfig.Systemd.Units = outUnits
 
-	return ignConfig
+	return ignConfig, nil
 }
 
 // TranspileCoreOSConfigToIgn transpiles Fedora CoreOS config to ignition
