@@ -350,7 +350,8 @@ func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
 	unitThree.Dropins = append(unitThree.Dropins, dropinThree)
 	testIgn2Config.Systemd.Units = append(testIgn2Config.Systemd.Units, unitThree)
 
-	convertedIgn2Config := removeIgnDuplicateFilesAndUnits(testIgn2Config)
+	convertedIgn2Config, err := removeIgnDuplicateFilesUnitsUsers(testIgn2Config)
+	require.Nil(t, err)
 
 	expectedIgn2Config := ign2types.Config{}
 	expectedIgn2Config.Storage.Files = append(expectedIgn2Config.Storage.Files, fileNew)
