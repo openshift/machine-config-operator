@@ -70,6 +70,8 @@ func (optr *Operator) syncRelatedObjects() error {
 		{Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"},
 		{Group: "machineconfiguration.openshift.io", Resource: "machineconfigs"},
+		// gathered because the machineconfigs created container bootstrap credentials and node configuration that gets reflected via the API and is needed for debugging
+		{Group: "", Resource: "nodes"},
 	}
 
 	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
