@@ -1,6 +1,6 @@
 mode: 0755
-path: "/etc/keepalived/chk_ocp_script.sh"
+path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_ocp_script.sh.tmpl"
 contents:
   inline: |
-    #!/bin/bash 
-    /usr/bin/curl -o /dev/null -kLfs https://localhost:6443/readyz && /usr/bin/curl -o /dev/null -kLfs http://localhost:50936/readyz
+    #!/bin/bash
+    /usr/bin/curl -o /dev/null -kLfs https://localhost:{{`{{ .LBConfig.LbPort }}`}}/readyz && [ -e /var/run/keepalived/iptables-rule-exists ]

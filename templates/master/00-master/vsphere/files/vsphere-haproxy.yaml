@@ -105,7 +105,7 @@ contents:
         livenessProbe:
           initialDelaySeconds: 10
           httpGet:
-            path: /readyz
+            path: /haproxy_ready
             port: 50936
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
