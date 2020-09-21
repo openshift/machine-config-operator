@@ -10,7 +10,7 @@
     state BACKUP
     interface {{.VRRPInterface}}
     virtual_router_id {{.Cluster.APIVirtualRouterID }}
-    priority 50
+    priority 70
     advert_int 1
     {{ if .EnableUnicast }}
     unicast_src_ip {{.NonVirtualIP}}
