@@ -746,6 +746,8 @@ var _manifestsMachineconfigcontrollerControllerconfigYaml = []byte(`apiVersion: 
 kind: ControllerConfig
 metadata:
   name: machine-config-controller
+  annotations:
+    machineconfiguration.openshift.io/generated-by-version: "{{ .Version }}"
 spec:
 {{toYAML .ControllerConfig | toString | indent 2}}
 `)
