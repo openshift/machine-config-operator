@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
 type manifest struct {
@@ -91,6 +92,8 @@ func RenderBootstrap(
 	if err != nil {
 		return err
 	}
+
+	spec.RendererVersion = version.Raw
 
 	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)
 	if err != nil && !os.IsNotExist(err) {

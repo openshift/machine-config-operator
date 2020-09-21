@@ -3,6 +3,7 @@ kind: ControllerConfig
 metadata:
   name: machine-config-controller
 spec:
+  rendererVersion: "v0.0.0-was-not-built-properly"
   additionalTrustBundle: null
   cloudProviderConfig: ""
   clusterDNSIP: 172.30.0.10

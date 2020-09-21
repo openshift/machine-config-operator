@@ -62,6 +62,7 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 }
 
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {
+	setStringIfSet(modified, &existing.RendererVersion, required.RendererVersion)
 	setStringIfSet(modified, &existing.ClusterDNSIP, required.ClusterDNSIP)
 	setStringIfSet(modified, &existing.CloudProviderConfig, required.CloudProviderConfig)
 	setStringIfSet(modified, &existing.Platform, required.Platform)

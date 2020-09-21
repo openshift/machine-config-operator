@@ -31,6 +31,11 @@ type ControllerConfig struct {
 
 // ControllerConfigSpec is the spec for ControllerConfig resource.
 type ControllerConfigSpec struct {
+	// RendererVersion is the operator version that generated this object;
+	// readers (e.g. machine-config-controller) whose version does not
+	// match should ignore this file.
+	RendererVersion string `json:"rendererVersion"`
+
 	// clusterDNSIP is the cluster DNS IP address
 	ClusterDNSIP string `json:"clusterDNSIP"`
 
