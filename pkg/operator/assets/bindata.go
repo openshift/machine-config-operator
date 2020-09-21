@@ -1772,7 +1772,7 @@ var _manifestsOnPremKeepalivedConfTmpl = []byte(`# Configuration template for Ke
         auth_pass {{.Cluster.Name}}_api_vip
     }
     virtual_ipaddress {
-        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
+        {{ .Cluster.APIVIP }}
     }
 }`+"`"+`}}
 `)
