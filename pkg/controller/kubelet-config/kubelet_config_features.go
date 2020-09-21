@@ -204,7 +204,11 @@ func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[st
 		return &rv, fmt.Errorf("enabled FeatureSet %v does not have a corresponding config", features.Spec.FeatureSet)
 	}
 	for _, featEnabled := range set.Enabled {
-		rv[featEnabled] = true
+		if featEnabled == "IPv6DualStack" {
+			glog.Infof("Ignoring IPv6DualStack feature gate for kubelet config")
+		} else {
+			rv[featEnabled] = true
+		}
 	}
 	for _, featDisabled := range set.Disabled {
 		rv[featDisabled] = false
