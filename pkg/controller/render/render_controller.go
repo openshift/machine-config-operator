@@ -529,6 +529,12 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
 func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+	// Suppress rendered config generation until a corresponding new controller can roll out too.
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
+	if cconfig.Spec.RendererVersion != version.Raw {
+		return nil, fmt.Errorf("Ignoring controller config generated from %s (my version: %s)", cconfig.Spec.RendererVersion, version.Raw)
+	}
+
 	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid
 	for _, config := range configs {
 		if err := ctrlcommon.ValidateMachineConfig(config.Spec); err != nil {

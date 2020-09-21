@@ -28,6 +28,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -224,6 +225,7 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
 		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5))},
 		Spec: mcfgv1.ControllerConfigSpec{
+			RendererVersion: version.Raw,
 			Infra: &configv1.Infrastructure{
 				Status: configv1.InfrastructureStatus{
 					EtcdDiscoveryDomain: fmt.Sprintf("%s.tt.testing", name),
@@ -382,6 +384,25 @@ func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, "dummy", gmc.Spec.OSImageURL)
+}
+
+func TestVersionSkew(t *testing.T) {
+	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
+	mcs := []*mcfgv1.MachineConfig{
+		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy-test-1", []ign3types.File{}),
+		helpers.NewMachineConfig("00-test-cluster-master-0", map[string]string{"node-role/master": ""}, "dummy-change", []ign3types.File{}),
+	}
+
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
+	cc.Spec.RendererVersion = "different-version"
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	require.NotNil(t, err)
+
+	// Now the same thing without overriding the version
+	cc = newControllerConfig(ctrlcommon.ControllerConfigName)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	require.Nil(t, err)
+	require.NotNil(t, gmc)
 }
 
 func TestDoNothing(t *testing.T) {

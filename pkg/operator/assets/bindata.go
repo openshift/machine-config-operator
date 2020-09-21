@@ -609,6 +609,9 @@ spec:
                 uid:
                   description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                   type: string
+            rendererVersion:
+              description: operator version
+              type: string
             rootCAData:
               description: rootCAData specifies the root CA data
               type: string

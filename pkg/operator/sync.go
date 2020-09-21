@@ -220,6 +220,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 
+	// Propagate our binary version into the controller config to help
+	// suppress rendered config generation until a corresponding
+	// new controller can roll out too.
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
+	spec.RendererVersion = version.Raw
+
 	var trustBundle []byte
 	certPool := x509.NewCertPool()
 	// this is the generic trusted bundle for things like self-signed registries.
