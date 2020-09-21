@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
+	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -391,6 +392,11 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		return err
 	}
 	cc := resourceread.ReadControllerConfigV1OrDie(ccBytes)
+	// Propagate our binary version into the controller config to help
+	// suppress rendered config generation until a corresponding
+	// new controller can roll out too.
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
+	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
 	_, _, err = resourceapply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
 		return err
