@@ -11,6 +11,9 @@ contents: |
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
   Environment="KUBELET_LOG_LEVEL=4"
+{{- if .KubeletIPv6}}
+  Environment="KUBELET_NODE_IP=::"
+{{- end}}
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
@@ -24,11 +27,7 @@ contents: |
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
         --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
-{{- if .KubeletIPv6}}
-        --node-ip=${KUBELET_NODE_IP:-::} \
-{{- else}}
-        --node-ip=${KUBELET_NODE_IP:-} \
-{{- end}}
+        --node-ip=${KUBELET_NODE_IP} \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
