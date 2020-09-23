@@ -548,7 +548,7 @@ func manifestsBootstrapPodV2Yaml() (*asset, error) {
 	return a, nil
 }
 
-var _manifestsControllerconfigCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1beta1
+var _manifestsControllerconfigCrdYaml = []byte(`apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>

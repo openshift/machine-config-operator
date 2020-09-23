@@ -21,7 +21,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -334,8 +334,8 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 		if err != nil {
 			return fmt.Errorf("error getting asset %s: %v", crd, err)
 		}
-		c := resourceread.ReadCustomResourceDefinitionV1Beta1OrDie(crdBytes)
-		_, updated, err := resourceapply.ApplyCustomResourceDefinition(optr.apiExtClient.ApiextensionsV1beta1(), c)
+		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
+		_, updated, err := resourceapply.ApplyCustomResourceDefinition(optr.apiExtClient.ApiextensionsV1(), c)
 		if err != nil {
 			return err
 		}
@@ -706,7 +706,7 @@ const (
 	controllerConfigCompletedTimeout  = 5 * time.Minute
 )
 
-func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.CustomResourceDefinition) error {
+func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomResourceDefinition) error {
 	var lastErr error
 	if err := wait.Poll(customResourceReadyInterval, customResourceReadyTimeout, func() (bool, error) {
 		crd, err := optr.crdLister.Get(resource.Name)
@@ -716,7 +716,7 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1beta1.Cu
 		}
 
 		for _, condition := range crd.Status.Conditions {
-			if condition.Type == apiextv1beta1.Established && condition.Status == apiextv1beta1.ConditionTrue {
+			if condition.Type == apiextv1.Established && condition.Status == apiextv1.ConditionTrue {
 				return true, nil
 			}
 		}

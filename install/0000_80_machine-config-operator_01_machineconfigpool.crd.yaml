@@ -1,4 +1,4 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
@@ -7,42 +7,42 @@ metadata:
     "openshift.io/operator-managed": ""
 spec:
   additionalPrinterColumns:
-  - JSONPath: .status.configuration.name
+  - jsonPath: .status.configuration.name
     name: Config
     type: string
-  - JSONPath: .status.conditions[?(@.type=="Updated")].status
+  - jsonPath: .status.conditions[?(@.type=="Updated")].status
     description: When all the machines in the pool are updated to the correct machine
       config.
     name: Updated
     type: string
-  - JSONPath: .status.conditions[?(@.type=="Updating")].status
+  - jsonPath: .status.conditions[?(@.type=="Updating")].status
     description: When at least one of machine is not either not updated or is in the
       process of updating to the desired machine config.
     name: Updating
     type: string
-  - JSONPath: .status.conditions[?(@.type=="Degraded")].status
+  - jsonPath: .status.conditions[?(@.type=="Degraded")].status
     description: When progress is blocked on updating one or more nodes, or the pool
       configuration is failing.
     name: Degraded
     type: string
-  - JSONPath: .status.machineCount
+  - jsonPath: .status.machineCount
     description: Total number of machines in the machine config pool
     name: MachineCount
     type: number
-  - JSONPath: .status.readyMachineCount
+  - jsonPath: .status.readyMachineCount
     description: Total number of ready machines targeted by the pool
     name: ReadyMachineCount
     type: number
-  - JSONPath: .status.updatedMachineCount
+  - jsonPath: .status.updatedMachineCount
     description: Total number of machines targeted by the pool that have the CurrentMachineConfig
       as their config
     name: UpdatedMachineCount
     type: number
-  - JSONPath: .status.degradedMachineCount
+  - jsonPath: .status.degradedMachineCount
     description: Total number of machines marked degraded (or unreconcilable)
     name: DegradedMachineCount
     type: number
-  - JSONPath: .metadata.creationTimestamp
+  - jsonPath: .metadata.creationTimestamp
     name: Age
     type: date
   # group name to use for REST API: /apis/<group>/<version>
@@ -57,8 +57,6 @@ spec:
   # either Namespaced or Cluster
   scope: Cluster
   preserveUnknownFields: false
-  subresources:
-    status: {}
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
     plural: machineconfigpools

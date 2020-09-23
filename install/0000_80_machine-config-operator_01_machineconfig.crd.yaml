@@ -1,4 +1,4 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
@@ -7,16 +7,16 @@ metadata:
     "openshift.io/operator-managed": ""
 spec:
   additionalPrinterColumns:
-  - JSONPath: .metadata.annotations.machineconfiguration\.openshift\.io/generated-by-controller-version
+  - jsonPath: .metadata.annotations.machineconfiguration\.openshift\.io/generated-by-controller-version
     description: Version of the controller that generated the machineconfig. This
       will be empty if the machineconfig is not managed by a controller.
     name: GeneratedByController
     type: string
-  - JSONPath: .spec.config.ignition.version
+  - jsonPath: .spec.config.ignition.version
     description: Version of the Ignition Config defined in the machineconfig.
     name: IgnitionVersion
     type: string
-  - JSONPath: .metadata.creationTimestamp
+  - jsonPath: .metadata.creationTimestamp
     name: Age
     type: date
   # group name to use for REST API: /apis/<group>/<version>

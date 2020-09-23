@@ -11,8 +11,8 @@ import (
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	apiextinformersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1beta1"
-	apiextlistersv1beta1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1"
+	apiextinformersv1 "k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensions/v1"
+	apiextlistersv1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -69,7 +69,7 @@ type Operator struct {
 
 	syncHandler func(ic string) error
 
-	crdLister        apiextlistersv1beta1.CustomResourceDefinitionLister
+	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
 	ccLister         mcfglistersv1.ControllerConfigLister
 	mcLister         mcfglistersv1.MachineConfigLister
@@ -114,7 +114,7 @@ func New(
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	controllerConfigInformer mcfginformersv1.ControllerConfigInformer,
 	serviceAccountInfomer coreinformersv1.ServiceAccountInformer,
-	crdInformer apiextinformersv1beta1.CustomResourceDefinitionInformer,
+	crdInformer apiextinformersv1.CustomResourceDefinitionInformer,
 	deployInformer appsinformersv1.DeploymentInformer,
 	daemonsetInformer appsinformersv1.DaemonSetInformer,
 	clusterRoleInformer rbacinformersv1.ClusterRoleInformer,
@@ -209,7 +209,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
-	apiClient := optr.apiExtClient.ApiextensionsV1beta1()
+	apiClient := optr.apiExtClient.ApiextensionsV1()
 	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
