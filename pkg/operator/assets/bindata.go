@@ -269,7 +269,7 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
     state BACKUP
     interface {{.VRRPInterface}}
     virtual_router_id {{.Cluster.APIVirtualRouterID }}
-    priority 50
+    priority 70
     advert_int 1
     {{ if .EnableUnicast }}
     unicast_src_ip {{.NonVirtualIP}}
@@ -332,14 +332,6 @@ spec:
   - name: run-dir
     empty-dir: {}
   containers:
-  - name: keepalived-unicast
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - unicastipserver
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
   - name: keepalived
     securityContext:
       privileged: true
@@ -360,13 +352,23 @@ spec:
             /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
         fi
       }
+      stop_keepalived()
+      {
+        echo "Keepalived process stopped" >> /var/run/keepalived/stopped
+        if pid=$(pgrep -o keepalived); then
+            kill -s TERM "$pid"
+        fi
+      }
+
       msg_handler()
       {
         while read -r line; do
           echo "The client sent: $line" >&2
-          # currently only 'reload' msg is supported
+          # currently only 'reload' and 'stop' msgs are supported
           if [ "$line" = reload ]; then
               reload_keepalived
+          elif  [ "$line" = stop ]; then
+              stop_keepalived
           fi
         done
       }
@@ -374,6 +376,12 @@ spec:
       declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
       export -f msg_handler
       export -f reload_keepalived
+      export -f stop_keepalived
+
+      while [ -s "/var/run/keepalived/stopped" ]; do
+         echo "Container stopped"
+         sleep 60
+      done
       if [ -s "/etc/keepalived/keepalived.conf" ]; then
           /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
       fi
@@ -395,6 +403,7 @@ spec:
         - -c
         - |
           [[ -s /etc/keepalived/keepalived.conf ]] || \
+          [[ -s /var/run/keepalived/stopped ]] || \
           kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
       initialDelaySeconds: 20
     terminationMessagePolicy: FallbackToLogsOnError
