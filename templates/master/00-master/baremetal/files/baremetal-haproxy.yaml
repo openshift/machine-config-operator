@@ -98,7 +98,7 @@ contents:
         - name: run-dir
           mountPath: "/var/run/haproxy"
         livenessProbe:
-          initialDelaySeconds: 10
+          initialDelaySeconds: 50
           httpGet:
             path: /haproxy_ready
             port: 50936
