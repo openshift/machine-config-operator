@@ -1,0 +1,6 @@
+mode: 0644
+path: "/etc/ssh/sshd_config.d/10-disable-ssh-key-dir.conf"
+contents:
+  inline: |
+    # disable key lookup from ~/.ssh/authorized_keys.d/ on FCOS
+    AuthorizedKeysCommand none
