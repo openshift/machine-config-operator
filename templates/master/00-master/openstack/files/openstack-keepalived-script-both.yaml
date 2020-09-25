@@ -1,0 +1,7 @@
+filesystem: "root"
+mode: 0755
+path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_ocp_script_both.sh.tmpl"
+contents:
+  inline: |
+    #!/bin/bash
+    /usr/bin/curl -o /dev/null -kLfs https://localhost:{{`{{ .LBConfig.LbPort }}`}}/readyz && [ -e /var/run/keepalived/iptables-rule-exists ] || /usr/bin/curl -kLfs https://localhost:{{`{{ .LBConfig.ApiPort }}`}}/readyz

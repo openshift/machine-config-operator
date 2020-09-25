@@ -22,7 +22,7 @@ contents:
     listen health_check_http_url
       bind :::50936 v4v6
       mode http
-      monitor-uri /readyz
+      monitor-uri /haproxy_ready
       option dontlognull
     listen stats
       bind localhost:{{`{{ .LBConfig.StatPort }}`}}
@@ -37,5 +37,5 @@ contents:
        option  log-health-checks
        balance roundrobin
     {{`{{- range .LBConfig.Backends }}
-       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 3s fall 2 rise 3
+       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 1s fall 2 rise 3
     {{- end }}`}}
