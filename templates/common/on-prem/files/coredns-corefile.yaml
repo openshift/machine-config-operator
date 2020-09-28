@@ -6,7 +6,9 @@ contents:
         errors
         health :18080
         mdns {{ .DNS.Spec.BaseDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
-        forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
+        forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
+            policy sequential
+        }
         cache 30
         reload
         template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
