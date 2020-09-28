@@ -1591,7 +1591,9 @@ var _manifestsOnPremCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
     mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
-    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
+    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
+        policy sequential
+    }
     cache 30
     reload
     template IN {{`+"`"+`{{ .Cluster.IngressVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
