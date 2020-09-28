@@ -1287,9 +1287,20 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 	for _, file := range files {
 		glog.Infof("Writing file %q", file.Path)
 
-		contents, err := dataurl.DecodeString(*file.Contents.Source)
-		if err != nil {
-			return err
+		// We don't support appends in the file section, so instead of waiting to fail validation,
+		// let's explicitly fail here.
+		if len(file.Append) > 0 {
+			return fmt.Errorf("found an append section when writing files. Append is not supported")
+		}
+
+		// To allow writing of "empty" files we'll allow source to be nil
+		contents := &dataurl.DataURL{}
+		if file.Contents.Source != nil {
+			var err error
+			contents, err = dataurl.DecodeString(*file.Contents.Source)
+			if err != nil {
+				return err
+			}
 		}
 		mode := defaultFilePermissions
 		if file.Mode != nil {
