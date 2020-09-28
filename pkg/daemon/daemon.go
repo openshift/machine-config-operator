@@ -1448,13 +1448,20 @@ func checkV2Units(units []ign2types.Unit) error {
 // no need to check for overwrites.
 func checkV3Files(files []ign3types.File) error {
 	for _, f := range files {
+		if len(f.Append) > 0 {
+			return fmt.Errorf("found an append section when checking files. Append is not supported")
+		}
 		mode := defaultFilePermissions
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := dataurl.DecodeString(*f.Contents.Source)
-		if err != nil {
-			return errors.Wrapf(err, "couldn't parse file %q", f.Path)
+		contents := &dataurl.DataURL{}
+		if f.Contents.Source != nil {
+			var err error
+			contents, err = dataurl.DecodeString(*f.Contents.Source)
+			if err != nil {
+				return errors.Wrapf(err, "couldn't parse file %q", f.Path)
+			}
 		}
 		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
 			return err
@@ -1470,6 +1477,9 @@ func checkV2Files(files []ign2types.File) error {
 		// skip over checked validated files
 		if _, ok := checkedFiles[f.Path]; ok {
 			continue
+		}
+		if f.Append {
+			return fmt.Errorf("found an append section when checking files. Append is not supported")
 		}
 		mode := defaultFilePermissions
 		if f.Mode != nil {
