@@ -516,18 +516,6 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 // RunOnceFrom is the primary entrypoint for the non-cluster case
 func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 	dn.skipReboot = skipReboot
-
-	// Unconditionally remove this file in the once-from (classic RHEL)
-	// case.  We use this file to suppress things like kubelet and SDN
-	// starting on CoreOS during the firstboot/pivot boot, but there's
-	// no such thing on classic RHEL.
-	_, err := os.Stat(constants.MachineConfigEncapsulatedPath)
-	if err == nil {
-		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
-			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
-		}
-	}
-
 	configi, contentFrom, err := dn.senseAndLoadOnceFrom(onceFrom)
 	if err != nil {
 		glog.Warningf("Unable to decipher onceFrom config type: %s", err)
@@ -1213,6 +1201,16 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 	}
 	if err := dn.writeUnits(ignConfig.Systemd.Units); err != nil {
 		return err
+	}
+	// Unconditionally remove this file in the once-from (classic RHEL)
+	// case.  We use this file to suppress things like kubelet and SDN
+	// starting on CoreOS during the firstboot/pivot boot, but there's
+	// no such thing on classic RHEL.
+	_, err := os.Stat(constants.MachineConfigEncapsulatedPath)
+	if err == nil {
+		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
+			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
+		}
 	}
 	return dn.reboot("runOnceFromIgnition complete")
 }
