@@ -157,6 +157,10 @@ contents:
             sed -i '/^\[ethernet\]$/a mtu='"$iface_mtu" ${new_conn_file}
           fi
           cat <<EOF >> ${new_conn_file}
+      
+      #Enable coredumping by all processes, core dump is owned by current user and no security is applied
+      sysctl -w fs.suid_dumpable=1
+    
     [ovs-interface]
     type=internal
     EOF
@@ -228,4 +232,8 @@ contents:
 
       # remove bridges created by ovn-kubernetes, try to delete br-ex again in case NM fail to talk to ovsdb
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local -- --if-exists del-br br-ex
+
+      #Enable coredumping by all processes, core dump is owned by current user and no security is applied
+      sysctl -w fs.suid_dumpable=1
+
     fi
