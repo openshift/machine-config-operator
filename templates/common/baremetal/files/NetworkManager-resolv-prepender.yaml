@@ -3,7 +3,7 @@ path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
 contents:
   inline: |
     #!/bin/bash
-    set -eo pipefail
+    set -eEo pipefail
     IFACE=$1
     STATUS=$2
 
@@ -19,8 +19,6 @@ contents:
     {{end -}}
     {{end -}}
 
-    # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
-    [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] && hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
     case "$STATUS" in
         up|dhcp4-change|dhcp6-change)
         >&2 echo "NM resolv-prepender triggered by ${1} ${2}."
@@ -49,6 +47,39 @@ contents:
             show \
             "{{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP}}" \
             "{{.Infra.Status.PlatformStatus.BareMetal.IngressIP}}")
+        # check if we got DHCPv6 hostname. The value would usually be in
+        # DHCP6_FQDN_FQDN but NM internal client does not parse the option
+        # NM only parses it for IPv4
+        if [[ "$NAMESERVER_IP" =~ ":" ]]; then
+            LEASE_FILE=$(mktemp)
+            readonly CONT_NAME="dhcpv6-hostname-workaround"
+
+            trap "podman rm -f $CONT_NAME" ERR
+            /usr/bin/podman run --rm -d --name "$CONT_NAME" \
+                --authfile /var/lib/kubelet/config.json \
+                --net=host \
+                --entrypoint /usr/sbin/dhclient \
+                -v "${LEASE_FILE}:/tmp/workaround.lease:Z" \
+                {{ .Images.baremetalRuntimeCfgImage }} \
+                -d  -sf /bin/true -lf /tmp/workaround.lease -6 -v -D LL "$IFACE"
+            DHCPv6_DHCLIENT_TIMEOUT=15
+            while : ; do
+                mapfile -t NAME_DATA < <(awk '/(host|domain)-name / {print substr($3, 2, length($3) - 3)}' "$LEASE_FILE")
+                if [[ ${#NAME_DATA[@]} -eq 2 ]]; then
+                    hostnamectl set-hostname --static --transient "${NAME_DATA[0]}.${NAME_DATA[1]}"
+                    break
+                else
+                    if [[ DHCPv6_DHCLIENT_TIMEOUT -gt 0 ]]; then
+                        sleep 0.5
+                        DHCPv6_DHCLIENT_TIMEOUT=$((DHCPv6_DHCLIENT_TIMEOUT - 1))
+                    else
+                        break
+                    fi
+                fi
+            done
+            podman rm -f "$CONT_NAME"
+        fi
+
         DOMAIN="{{.Infra.Status.EtcdDiscoveryDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
             >&2 echo "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
