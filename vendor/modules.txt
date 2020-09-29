@@ -33,8 +33,6 @@ github.com/apparentlymart/go-cidr/cidr
 github.com/ashcrow/osrelease
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
-# github.com/blang/semver v3.5.0+incompatible
-github.com/blang/semver
 # github.com/cespare/xxhash/v2 v2.1.1
 github.com/cespare/xxhash/v2
 # github.com/clarketm/json v1.14.1
@@ -413,56 +411,9 @@ github.com/opencontainers/go-digest
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf => github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf
-github.com/openshift/api
-github.com/openshift/api/apps
-github.com/openshift/api/apps/v1
-github.com/openshift/api/authorization
-github.com/openshift/api/authorization/v1
-github.com/openshift/api/build
-github.com/openshift/api/build/v1
-github.com/openshift/api/config
 github.com/openshift/api/config/v1
-github.com/openshift/api/helm
-github.com/openshift/api/helm/v1beta1
-github.com/openshift/api/image
-github.com/openshift/api/image/docker10
-github.com/openshift/api/image/dockerpre012
-github.com/openshift/api/image/v1
-github.com/openshift/api/imageregistry
-github.com/openshift/api/imageregistry/v1
-github.com/openshift/api/kubecontrolplane
-github.com/openshift/api/kubecontrolplane/v1
-github.com/openshift/api/legacyconfig/v1
-github.com/openshift/api/network
-github.com/openshift/api/network/v1
-github.com/openshift/api/oauth
-github.com/openshift/api/oauth/v1
-github.com/openshift/api/openshiftcontrolplane
-github.com/openshift/api/openshiftcontrolplane/v1
-github.com/openshift/api/operator
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
-github.com/openshift/api/operatorcontrolplane
-github.com/openshift/api/operatorcontrolplane/v1alpha1
-github.com/openshift/api/osin
-github.com/openshift/api/osin/v1
-github.com/openshift/api/pkg/serialization
-github.com/openshift/api/project
-github.com/openshift/api/project/v1
-github.com/openshift/api/quota
-github.com/openshift/api/quota/v1
-github.com/openshift/api/route
-github.com/openshift/api/route/v1
-github.com/openshift/api/samples
-github.com/openshift/api/samples/v1
-github.com/openshift/api/security
-github.com/openshift/api/security/v1
-github.com/openshift/api/servicecertsigner
-github.com/openshift/api/servicecertsigner/v1alpha1
-github.com/openshift/api/template
-github.com/openshift/api/template/v1
-github.com/openshift/api/user
-github.com/openshift/api/user/v1
 # github.com/openshift/client-go v0.0.0-20200827190008-3062137373b5
 github.com/openshift/client-go/config/clientset/versioned
 github.com/openshift/client-go/config/clientset/versioned/fake
@@ -490,10 +441,6 @@ github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
 # github.com/openshift/library-go v0.0.0-20200831114015-2ab0c61c15de
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
-github.com/openshift/library-go/pkg/operator/events
-github.com/openshift/library-go/pkg/operator/resource/resourceapply
-github.com/openshift/library-go/pkg/operator/resource/resourcehelper
-github.com/openshift/library-go/pkg/operator/resource/resourcemerge
 github.com/openshift/library-go/pkg/operator/v1helpers
 # github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
 github.com/openshift/runtime-utils/pkg/registries
@@ -1098,8 +1045,6 @@ k8s.io/code-generator/third_party/forked/golang/reflect
 # k8s.io/component-base v0.19.0 => k8s.io/component-base v0.19.0
 k8s.io/component-base/config
 k8s.io/component-base/config/v1alpha1
-k8s.io/component-base/metrics
-k8s.io/component-base/metrics/legacyregistry
 k8s.io/component-base/version
 # k8s.io/gengo v0.0.0-20200428234225-8167cfdcfc14
 k8s.io/gengo/args
@@ -1114,12 +1059,6 @@ k8s.io/gengo/parser
 k8s.io/gengo/types
 # k8s.io/klog/v2 v2.3.0
 k8s.io/klog/v2
-# k8s.io/kube-aggregator v0.19.0 => k8s.io/kube-aggregator v0.19.0
-k8s.io/kube-aggregator/pkg/apis/apiregistration
-k8s.io/kube-aggregator/pkg/apis/apiregistration/v1
-k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1
-k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/scheme
-k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1
 # k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6
 k8s.io/kube-openapi/cmd/openapi-gen/args
 k8s.io/kube-openapi/pkg/common
