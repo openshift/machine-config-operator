@@ -106,6 +106,70 @@ The MCD tries to watch the systemd journal for relevant service and proxy logs,
 so you *should* be able to `oc -n openshift-machine-config-operator logs -c machine-config-daemon pod/machine-config-daemon-...`
 to debug.
 
-# Updating bootimages
+# Questions and answers
 
-See: https://github.com/openshift/enhancements/pull/201
+Q: I upgraded OpenShift and noticed that my AMI hasn't changed, is this normal?
+
+Yes, see: https://github.com/openshift/enhancements/pull/201
+(As well as the rest of this document - we do in-place updates without changing the bootimage)
+
+Q: Is the integrity of operating system upgrades verified?
+
+The overall approach here is that the operating system is just one part of the cluster.
+Integrity of the OpenShift platform is handled to start by the
+[cluster version operator](https://github.com/openshift/cluster-version-operator).
+Today the CVO will by default GPG verify the integrity of the release image
+before applying it.  The release image contains a `sha256` digest of `machine-os-content`
+which is used by the MCO for updates.  On the host, the container runtime
+`podman` verifies the integrity of that `sha256` when pulling the image,
+before the MCO reads its content.  Hence, there is end-to-end GPG-verified integrity
+for the operating system updates (as well as the rest of the cluster components
+which run as regular containers).
+
+Q: Why do you do this weird "ostree repository in container" thing?  Why ostree?
+
+We're using a system that works; ostree is a well tested "image like" update
+system that has been in use for many years by multiple distributions.  It handles
+SELinux and bootloaders, etc.  We're just "encapsulating" that system inside
+a container image for all of the above reasons (management, etc.).
+
+At some point in the future though it's likely that we will try to change
+the `machine-os-content` container to look more like an unpacked container image.
+
+Q: How do I look at the content in the ostree repository inside the container?
+
+You can get the `ostree` tool from many distributions; try e.g.
+`yum -y install ostree` inside a [RHEL UBI](https://www.redhat.com/en/blog/introducing-red-hat-universal-base-image)
+container for example.
+
+From there, probably the simplest thing is to use `oc image extract`
+to unpack the container image.  Something like this:
+```
+$ mkdir machine-os-content
+$ oc image extract quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:02d810d3eb284e684bd20d342af3a800e955cccf0bb55e23ee0b434956221bdd --path /:machine-os-content
+$ find machine-os-content/srv/repo/ -name '*.commit'
+machine-os-content/srv/repo/objects/33/dd81479490fbb61a58af8525a71934e7545b9ed72d846d3e32a3f33f6fac9d.commit
+$ ostree --repo=machine-os-content/srv/repo ls 33dd81479490fbb61a58af8525a71934e7545b9ed72d846d3e32a3f33f6fac9d
+d00755 0 0      0 /
+l00777 0 0      0 /bin -> usr/bin
+l00777 0 0      0 /home -> var/home
+l00777 0 0      0 /lib -> usr/lib
+l00777 0 0      0 /lib64 -> usr/lib64
+l00777 0 0      0 /media -> run/media
+l00777 0 0      0 /mnt -> var/mnt
+l00777 0 0      0 /opt -> var/opt
+l00777 0 0      0 /ostree -> sysroot/ostree
+l00777 0 0      0 /root -> var/roothome
+l00777 0 0      0 /sbin -> usr/sbin
+l00777 0 0      0 /srv -> var/srv
+d00755 0 0      0 /boot
+d00755 0 0      0 /dev
+d00755 0 0      0 /proc
+d00755 0 0      0 /run
+d00755 0 0      0 /sys
+d00755 0 0      0 /sysroot
+d01777 0 0      0 /tmp
+d00755 0 0      0 /usr
+d00755 0 0      0 /var
+$
+```
