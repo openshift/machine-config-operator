@@ -115,12 +115,11 @@ contents:
           privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
-        - monitor
-        - "/var/lib/kubelet/kubeconfig"
-        - "/config/haproxy.cfg.tmpl"
-        - "/etc/haproxy/haproxy.cfg"
-        - "--api-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+          - "/bin/bash"
+          - "-c"
+          - |
+            cp /host/etc/resolv.conf /etc/resolv.conf
+            monitor /var/lib/kubelet/kubeconfig  /config/haproxy.cfg.tmpl  /etc/haproxy/haproxy.cfg  --api-vip {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}
         resources:
           requests:
             cpu: 100m
@@ -136,6 +135,14 @@ contents:
           mountPath: "/host"
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
+        livenessProbe:
+          initialDelaySeconds: 10
+          exec:
+            command:
+              - /bin/bash
+              - -c
+              - |
+                cmp /host/etc/resolv.conf /etc/resolv.conf
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       hostNetwork: true
