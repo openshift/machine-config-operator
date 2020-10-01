@@ -77,9 +77,15 @@ contents:
         echo "MTU found for iface: ${iface}: ${iface_mtu}"
       fi
 
-      # create bridge
+      # create bridge; use NM's ethernet device default route metric (100)
       if ! nmcli connection show br-ex &> /dev/null; then
-        nmcli c add type ovs-bridge conn.interface br-ex con-name br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+        nmcli c add type ovs-bridge \
+            con-name br-ex \
+            conn.interface br-ex \
+            802-3-ethernet.mtu ${iface_mtu} \
+            802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric 100 \
+            ipv6.route-metric 100
       fi
 
       # store old conn for later
