@@ -168,3 +168,7 @@ machineconfigpool.machineconfiguration.openshift.io "infra" deleted
 
 ## Custom pool on master node
 Custom pool on a node having master role is not supported. `oc label node` will apply the new custom role to the target master node but MCO will not apply changes specific to the custom pool. Error can be seen in the Machine Config Controller pod logs. This behaviour is to make sure that control plane nodes remain stable.
+
+## Understanding custom pool updates
+
+A node can be part of at most one pool.  The MCO will roll out updates for pools independently; for example, if there is an OS update or other change that affects all pools, normally 1 node from the `master` and `worker` pool would update at the same time.  If you add an `infra` pool for example, then 1 node from that pool will also try to roll out concurrently with the `master` and `worker`.
