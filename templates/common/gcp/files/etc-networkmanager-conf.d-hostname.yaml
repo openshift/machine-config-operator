@@ -1,0 +1,12 @@
+mode: 0644
+path: "/etc/NetworkManager/conf.d/hostname.conf"
+contents:
+  inline: |
+    # On GCP the hostname is likely to be longer than 63 chars.
+    # /etc/networkmanager/dispatcher.d/90-long-hostname.sh will set
+    # the hostname. The following configuration allows 90-long-hostname.sh
+    # to manage setting transient hostname instead of NetworkManager itself.
+    # See: https://developer.gnome.org/NetworkManager/stable/NetworkManager.conf.html
+    #      https://bugzilla.redhat.com/show_bug.cgi?id=1872885
+    [main]
+    hostname-mode=none
