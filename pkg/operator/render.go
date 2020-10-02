@@ -28,10 +28,9 @@ type renderConfig struct {
 	Images                 *RenderConfigImages
 	KubeAPIServerServingCA string
 	Infra                  configv1.Infrastructure
-	PointerConfig          string
 }
 
-func renderAsset(config interface{}, path string) ([]byte, error) {
+func renderAsset(config *renderConfig, path string) ([]byte, error) {
 	objBytes, err := assets.Asset(path)
 	if err != nil {
 		return nil, fmt.Errorf("error getting asset %s: %v", path, err)
