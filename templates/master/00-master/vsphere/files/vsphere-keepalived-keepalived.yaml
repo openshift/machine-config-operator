@@ -54,6 +54,7 @@ contents:
         interface {{`{{ .VRRPInterface }}`}}
         virtual_router_id {{`{{ .Cluster.APIVirtualRouterID }}`}}
         priority 40
+        nopreempt
         advert_int 1
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
