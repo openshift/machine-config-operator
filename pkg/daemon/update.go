@@ -837,7 +837,8 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 
 	args := append([]string{"kargs"}, diff...)
 	dn.logSystem("Running rpm-ostree %v", args)
-	return exec.Command("rpm-ostree", args...).Run()
+	_, err := runGetOut("rpm-ostree", args...)
+	return err
 }
 
 func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
@@ -908,12 +909,9 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 
 	args := generateExtensionsArgs(oldConfig, newConfig)
 	glog.Infof("Applying extensions : %+q", args)
-	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-		return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
-	}
+	_, err := runGetOut("rpm-ostree", args...)
 
-	return nil
-
+	return err
 }
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
@@ -942,10 +940,8 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 			args = append(args, "--uninstall", pkg)
 		}
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
-		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-			return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
-		}
-		return nil
+		_, err := runGetOut("rpm-ostree", args...)
+		return err
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
@@ -957,18 +953,15 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		}
 
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
-		if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
-			return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
-		}
-		return nil
+		_, err := runGetOut("rpm-ostree", args...)
+		return err
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-			if err := exec.Command("rpm-ostree", "update").Run(); err != nil {
-				return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
-			}
+			_, err := runGetOut("rpm-ostree", args...)
+			return err
 		}
 	}
 
