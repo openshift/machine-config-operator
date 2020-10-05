@@ -260,8 +260,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 func runGetOut(command string, args ...string) ([]byte, error) {
 	glog.Infof("Running captured: %s %s", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
-	cmd.Stderr = os.Stderr
-	rawOut, err := cmd.Output()
+	rawOut, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, errors.Wrapf(err, "error running %s %s: %s", command, strings.Join(args, " "), string(rawOut))
 	}
