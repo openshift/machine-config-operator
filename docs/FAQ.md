@@ -53,3 +53,27 @@ Further, rpm-ostree supports package layering and overrides - these will also be
 If a file that *is* managed by MachineConfig is changed, the MCD will detect this and go degraded.  We go degraded rather than overwrite in order to avoid [reboot loops](https://github.com/openshift/machine-config-operator/pull/245).
 
 In the future, we would like to harden things more so that these things are more controlled, and ideally avoid having any persistent "unmanaged" state.  But it will take significant work to get there; and the status quo means that we can support other operators such as SDN (and e.g. [nmstate](https://github.com/nmstate/kubernetes-nmstate)) that may control parts of the host without the MCO's awareness.
+
+## Q: Can I use the MCO to re-partition or re-install?
+
+Not today.  The [MachineConfig](MachineConfiguration.md) doc discusses which sections
+of the rendered Ignition can be changed, and that does not include e.g. the Ignition
+`storage` section.  For example, you cannot currently switch an existing worker
+node to be encrypted or use RAID after the fact - you must re-provision the system.
+
+The MCO also does not *currently* support explicitly re-provisioning a system "in place", however
+this is likely to be a future feature.  For now, in machineAPI managed environments
+you should `oc delete` the corresponding `machine` object, or in UPI installations,
+cordon and drain the node, then delete the `node` object and re-provision.
+
+A further problem is that the MCO does not make it easy for *new* nodes to boot
+in the new configuration.
+
+Related issues:
+
+ - https://github.com/openshift/machine-config-operator/issues/1619
+ - https://github.com/openshift/machine-config-operator/pull/2035
+
+All this to say, it's quite hard to change storage layout with the MCO today,
+but this is a bug.
+
