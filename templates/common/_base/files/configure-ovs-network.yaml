@@ -4,6 +4,10 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
+    # Create file to signal that ovs-configuration has executed (we are booted into 4.6)
+    # This is necessary because systemd calls from SDN containers are unreliable, so need to look for a file
+    touch /var/run/ovs-config-executed
+
     if [ "$1" == "OVNKubernetes" ]; then
       # Configures NICs onto OVS bridge "br-ex"
       # Configuration is either auto-detected or provided through a config file written already in Network Manager
