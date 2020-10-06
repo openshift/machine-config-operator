@@ -54,7 +54,7 @@ contents:
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
         unicast_peer {
             {{`{{ .BootstrapIP }}`}}
-            {{`{{range .LBConfig.Backends}}
+            {{`{{range .LBConfig.Backends -}}
             {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
             {{end}}`}}
         }
@@ -81,7 +81,7 @@ contents:
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
         unicast_peer {
-            {{`{{range .IngressConfig.Peers}}
+            {{`{{range .IngressConfig.Peers -}}
             {{if ne $nonVirtualIP .}}{{.}}{{end}}
             {{end}}`}}
         }
