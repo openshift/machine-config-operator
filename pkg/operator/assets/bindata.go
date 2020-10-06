@@ -262,21 +262,18 @@ var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for
 # For more information, see installer/data/data/bootstrap/baremetal/README.md
 # in the installer repo.
 
-{{`+"`"+`{{$nonVirtualIP := .NonVirtualIP}}`+"`"+`}}
-
 {{`+"`"+`vrrp_instance {{.Cluster.Name}}_API {
     state BACKUP
     interface {{.VRRPInterface}}
     virtual_router_id {{.Cluster.APIVirtualRouterID }}
     priority 70
     advert_int 1
+    nopreempt
     {{ if .EnableUnicast }}
     unicast_src_ip {{.NonVirtualIP}}
     unicast_peer {
-        {{range .LBConfig.Backends}}
-        {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
-        {{else}}
-        {{.NonVirtualIP}}
+        {{range .LBConfig.Backends -}}
+        {{.Address}}
         {{end}}
     }
     {{end}}
@@ -324,7 +321,8 @@ spec:
     hostPath:
       path: "/etc/kubernetes/kubeconfig"
   - name: conf-dir
-    empty-dir: {}
+    hostPath:
+      path: "/etc/keepalived"
   - name: manifests
     hostPath:
       path: "/opt/openshift/manifests"
