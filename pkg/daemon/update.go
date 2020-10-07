@@ -1398,8 +1398,12 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 		}
 		path := filepath.Join(pathSystemd, u.Name)
 		if _, ok := newUnitSet[path]; !ok {
-			if err := dn.disableUnit(u); err != nil {
-				glog.Warningf("Unable to disable %s: %s", u.Name, err)
+			// since the unit doesn't exist anymore within the MachineConfig,
+			// look to restore defaults here, so that symlinks are removed first
+			// if the system has the service disabled
+			// writeUnits() will catch units that still have references in other MCs
+			if err := dn.presetUnit(u); err != nil {
+				glog.Infof("Did not restore preset for %s (may not exist): %s", u.Name, err)
 			}
 			if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
 				if err := os.Remove(noOrigFileStampName(path)); err != nil {
@@ -1429,38 +1433,34 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 	return nil
 }
 
-// enableUnit enables a systemd unit via symlink
+// enableUnit enables a systemd unit via systemctl
 func (dn *Daemon) enableUnit(unit ign3types.Unit) error {
-	// The link location
-	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
-	// sanity check that we don't return an error when the link already exists
-	if _, err := os.Stat(wantsPath); err == nil {
-		glog.Infof("%s already exists. Not making a new symlink", wantsPath)
-		return nil
-	}
-	// The originating file to link
-	servicePath := filepath.Join(pathSystemd, unit.Name)
-	err := renameio.Symlink(servicePath, wantsPath)
+	_, err := exec.Command("systemctl", "enable", unit.Name).CombinedOutput()
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "enabling unit")
 	}
-	glog.Infof("Enabled %s", unit.Name)
-	glog.V(2).Infof("Symlinked %s to %s", servicePath, wantsPath)
+	glog.Infof("Enabled systemd unit %s", unit.Name)
 	return nil
 }
 
-// disableUnit disables a systemd unit via symlink removal
+// disableUnit disables a systemd unit via systemctl
 func (dn *Daemon) disableUnit(unit ign3types.Unit) error {
-	// The link location
-	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
-	// sanity check so we don't return an error when the unit was already disabled
-	if _, err := os.Stat(wantsPath); err != nil {
-		glog.Infof("%s was not present. No need to remove", wantsPath)
-		return nil
+	_, err := exec.Command("systemctl", "disable", unit.Name).CombinedOutput()
+	if err != nil {
+		return errors.Wrapf(err, "disabling unit")
 	}
-	glog.V(2).Infof("Disabling unit at %s", wantsPath)
+	glog.Infof("Disabled systemd unit %s", unit.Name)
+	return nil
+}
 
-	return os.Remove(wantsPath)
+// presetUnit resets a systemd unit to its preset via systemctl
+func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
+	_, err := exec.Command("systemctl", "preset", unit.Name).CombinedOutput()
+	if err != nil {
+		return errors.Wrapf(err, "running preset on unit")
+	}
+	glog.Infof("Preset systemd unit %s", unit.Name)
+	return nil
 }
 
 // writeUnits writes the systemd units to disk
@@ -1520,22 +1520,26 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		}
 
 		// if the unit doesn't note if it should be enabled or disabled then
-		// skip all linking.
-		// if the unit should be enabled, then enable it.
-		// otherwise the unit is disabled. run disableUnit to ensure the unit is
-		// disabled. even if the unit wasn't previously enabled the result will
-		// be fine as disableUnit is idempotent.
+		// honour system presets. This to account for an edge case where you
+		// deleted a MachineConfig that enabled/disabled the unit to revert,
+		// but the unit itself is referenced in other MCs. deleteStaleData() will
+		// catch fully deleted units.
+		// if the unit should be enabled/disabled, then enable/disable it.
+		// this is a no-op if the system wasn't change this iteration
 		if u.Enabled != nil {
 			if *u.Enabled {
 				if err := dn.enableUnit(u); err != nil {
 					return err
 				}
-				glog.V(2).Infof("Enabled systemd unit %q", u.Name)
 			} else {
 				if err := dn.disableUnit(u); err != nil {
 					return err
 				}
-				glog.V(2).Infof("Disabled systemd unit %q", u.Name)
+			}
+		} else {
+			if err := dn.presetUnit(u); err != nil {
+				// Don't fail here, since a unit may have a dropin referencing a nonexisting actual unit
+				glog.Infof("Could not reset unit preset for %s, skipping. (Error msg: %v)", u.Name, err)
 			}
 		}
 	}
