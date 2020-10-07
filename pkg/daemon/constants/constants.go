@@ -37,6 +37,11 @@ const (
 	// InitialNodeAnnotationsBakPath defines the path of InitialNodeAnnotationsFilePath when the initial bootstrap is done. We leave it around for debugging and reconciling.
 	InitialNodeAnnotationsBakPath = "/etc/machine-config-daemon/node-annotation.json.bak"
 
+	// IgnitionSystemdPresetFile is where Ignition writes initial enabled/disabled systemd unit configs
+	// This should be removed on boot after MCO takes over, so if any of these are deleted we can go back
+	// to initial system settings
+	IgnitionSystemdPresetFile = "/etc/systemd/system-preset/20-ignition.preset"
+
 	// EtcPivotFile is used by the `pivot` command
 	// For more information, see https://github.com/openshift/pivot/pull/25/commits/c77788a35d7ee4058d1410e89e6c7937bca89f6c#diff-04c6e90faac2675aa89e2176d2eec7d8R44
 	EtcPivotFile = "/etc/pivot/image-pullspec"
