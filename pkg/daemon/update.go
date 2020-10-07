@@ -876,7 +876,7 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 }
 
 func validateExtensions(exts []string) error {
-	supportedExtensions := []string{"usbguard", "kernel-devel"}
+	supportedExtensions := []string{"usbguard"}
 	invalidExts := []string{}
 	for _, ext := range exts {
 		if !ctrlcommon.InSlice(ext, supportedExtensions) {
