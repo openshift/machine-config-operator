@@ -47,8 +47,17 @@ const (
 	// fipsFile is the file to check if FIPS is enabled
 	fipsFile              = "/proc/sys/crypto/fips_enabled"
 	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
+	systemdPresetFile     = "/etc/systemd/system-preset/15-mco.preset"
 	osImageContentBaseDir = "/run/mco-machine-os-content/"
 )
+
+// This struct holds the contents of a systemd preset, copied from Ignition/units
+type Preset struct {
+	unit           string
+	enabled        bool
+	instantiatable bool
+	instances      []string
+}
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
@@ -1165,46 +1174,33 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 	return nil
 }
 
-// enableUnit enables a systemd unit via symlink
-func (dn *Daemon) enableUnit(unit ign3types.Unit) error {
-	// The link location
-	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
-	// sanity check that we don't return an error when the link already exists
-	if _, err := os.Stat(wantsPath); err == nil {
-		glog.Infof("%s already exists. Not making a new symlink", wantsPath)
-		return nil
+// parseInstanceUnit extracts the name and a corresponding instance
+// for a given instantiated unit.
+// e.g: echo@bar.service ==> unitName=echo@.service & instance=bar
+// copied from Ignition/units
+func parseInstanceUnit(unit ign3types.Unit) (string, string, error) {
+	at := strings.Index(unit.Name, "@")
+	if at == -1 {
+		return "", "", fmt.Errorf("invalid systemd instantiated unit")
 	}
-	// The originating file to link
-	servicePath := filepath.Join(pathSystemd, unit.Name)
-	err := renameio.Symlink(servicePath, wantsPath)
-	if err != nil {
-		return err
+	dot := strings.LastIndex(unit.Name, ".")
+	if dot == -1 {
+		return "", "", fmt.Errorf("no systemd unit extension")
 	}
-	glog.Infof("Enabled %s", unit.Name)
-	glog.V(2).Infof("Symlinked %s to %s", servicePath, wantsPath)
-	return nil
-}
-
-// disableUnit disables a systemd unit via symlink removal
-func (dn *Daemon) disableUnit(unit ign3types.Unit) error {
-	// The link location
-	wantsPath := filepath.Join(wantsPathSystemd, unit.Name)
-	// sanity check so we don't return an error when the unit was already disabled
-	if _, err := os.Stat(wantsPath); err != nil {
-		glog.Infof("%s was not present. No need to remove", wantsPath)
-		return nil
-	}
-	glog.V(2).Infof("Disabling unit at %s", wantsPath)
-
-	return os.Remove(wantsPath)
+	instance := unit.Name[at+1 : dot]
+	serviceInstance := unit.Name[0:at+1] + unit.Name[dot:len(unit.Name)]
+	return serviceInstance, instance, nil
 }
 
 // writeUnits writes the systemd units to disk
+//nolint:gocyclo
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	operatingSystem, err := GetHostRunningOS()
 	if err != nil {
 		return errors.Wrapf(err, "checking operating system")
 	}
+	// presets map used to enable/disable units
+	presets := make(map[string]*Preset)
 	for _, u := range units {
 		// write the dropin to disk
 		for i := range u.Dropins {
@@ -1258,25 +1254,69 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 			glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
 		}
 
-		// if the unit doesn't note if it should be enabled or disabled then
-		// skip all linking.
-		// if the unit should be enabled, then enable it.
-		// otherwise the unit is disabled. run disableUnit to ensure the unit is
-		// disabled. even if the unit wasn't previously enabled the result will
-		// be fine as disableUnit is idempotent.
+		// re-write all the enabled/disabled units to a preset file, so our next
+		// systemctl preset-all command can set all enabled/disabled files.
+		// this preserves idempotency and emulates Ignition unit write behaviour.
+		// code is copied from Ignition/units/createUnits func.
 		if u.Enabled != nil {
+			// identifier keyword is used to distinguish systemd units
+			// which are either enabled or disabled. Appending
+			// it to a unitName will avoid overwriting the existing
+			// unitName's instance if the state of the unit is different.
+			identifier := "disabled"
 			if *u.Enabled {
-				if err := dn.enableUnit(u); err != nil {
+				identifier = "enabled"
+			}
+			if strings.Contains(u.Name, "@") {
+				unitName, instance, err := parseInstanceUnit(u)
+				if err != nil {
 					return err
 				}
-				glog.V(2).Infof("Enabled systemd unit %q", u.Name)
+				key := fmt.Sprintf("%s-%s", unitName, identifier)
+				if _, ok := presets[key]; ok {
+					presets[key].instances = append(presets[key].instances, instance)
+				} else {
+					presets[key] = &Preset{unitName, *u.Enabled, true, []string{instance}}
+				}
 			} else {
-				if err := dn.disableUnit(u); err != nil {
-					return err
+				key := fmt.Sprintf("%s-%s", u.Name, identifier)
+				if _, ok := presets[u.Name]; !ok {
+					presets[key] = &Preset{u.Name, *u.Enabled, false, []string{}}
+				} else {
+					return fmt.Errorf("%q key is already present in the presets map", key)
 				}
-				glog.V(2).Infof("Disabled systemd unit %q", u.Name)
 			}
 		}
+	}
+
+	// now, write the preset file and re-run systemctl preset-all
+	if len(presets) != 0 {
+		presetFileContentString := ""
+		for _, value := range presets {
+			unitString := value.unit
+			if value.instantiatable {
+				// Let's say we have two instantiated enabled units listed under
+				// the systemd units i.e. echo@foo.service, echo@bar.service
+				// then the unitString will look like "echo@.service foo bar"
+				unitString = fmt.Sprintf("%s %s", unitString, strings.Join(value.instances, " "))
+			}
+			if value.enabled {
+				presetFileContentString = presetFileContentString + "enable " + unitString + "\n"
+			} else {
+				presetFileContentString = presetFileContentString + "disable " + unitString + "\n"
+			}
+		}
+		b := []byte(presetFileContentString)
+		if err := writeFileAtomicallyWithDefaults(systemdPresetFile, b); err != nil {
+			return fmt.Errorf("Failed to write systemd preset file at path %v: %v", systemdPresetFile, err)
+		}
+
+		// re-run systemctl preset-all to account for changes in enable/disabled units
+		output, err := exec.Command("systemctl", "preset-all").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to run systemctl preset-all: %v", err)
+		}
+		glog.Infof("systemd units updated, systemctl preset-all output: %v", output)
 	}
 	return nil
 }
