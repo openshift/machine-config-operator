@@ -1,0 +1,7 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/systemd/system.conf.d/10-default-env-godebug.conf"
+contents:
+  inline: |
+    [Manager]
+    DefaultEnvironment=GODEBUG=x509ignoreCN=0
