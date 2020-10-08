@@ -32,7 +32,13 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 		currentOnDisk, err := dn.getCurrentConfigOnDisk()
 		if err == nil {
 			glog.Infof("Setting initial node config based on current configuration on disk: %s", currentOnDisk.GetName())
-			return setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, map[string]string{constants.CurrentMachineConfigAnnotationKey: currentOnDisk.GetName()})
+			// this state shouldn't really happen, but since we're here, we're just going to set desired == current and state == done,
+			// otherwise the MCD will complain it cannot find those annotations
+			return setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, map[string]string{
+				constants.CurrentMachineConfigAnnotationKey:     currentOnDisk.GetName(),
+				constants.DesiredMachineConfigAnnotationKey:     currentOnDisk.GetName(),
+				constants.MachineConfigDaemonStateAnnotationKey: "done",
+			})
 		}
 		return nil, err
 	}
@@ -43,6 +49,8 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 	}
 
 	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
+	// this sets both current and desired config, as well as state
+	// current should == desired at this point
 	n, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, initial)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set initial annotations: %v", err)
