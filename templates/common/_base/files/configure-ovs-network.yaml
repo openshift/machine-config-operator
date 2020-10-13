@@ -4,6 +4,13 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
+    # Workaround to ensure OVS is installed due to bug in systemd Requires:
+    # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
+    if ! rpm -qa | grep -q openvswitch; then
+      echo "Warning: Openvswitch package is not installed!"
+      exit 1
+    fi
+
     if [ "$1" == "OVNKubernetes" ]; then
       # Configures NICs onto OVS bridge "br-ex"
       # Configuration is either auto-detected or provided through a config file written already in Network Manager
