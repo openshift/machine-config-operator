@@ -98,12 +98,33 @@ contents:
         nmcli c add type ovs-port conn.interface br-ex master br-ex con-name ovs-port-br-ex
       fi
 
+      extra_phys_args=""
+      # check if this interface is a vlan, bond, or ethernet type
+      if [ $(nmcli --get-values connection.type conn show ${old_conn}) == "vlan" ]; then
+        iface_type=vlan
+        vlan_id=$(nmcli --get-values vlan.id conn show ${old_conn})
+        if [ -z "$vlan_id"]; then
+          echo "ERROR: unable to determine vlan_id for vlan connection: ${old_conn}"
+          exit 1
+        fi
+        vlan_parent=$(nmcli --get-values vlan.parent conn show ${old_conn})
+        if [ -z "$vlan_parent" ]; then
+          echo "ERROR: unable to determine vlan_parent for vlan connection: ${old_conn}"
+          exit 1
+        fi
+        extra_phys_args="dev ${vlan_parent} id ${vlan_id}"
+      elif [ $(nmcli --get-values connection.type conn show ${old_conn}) == "bond" ]; then
+        iface_type=bond
+      else
+        iface_type=802-3-ethernet
+      fi
+
       # bring down any old iface
       nmcli device disconnect $iface
 
       if ! nmcli connection show ovs-if-phys0 &> /dev/null; then
-        nmcli c add type 802-3-ethernet conn.interface ${iface} master ovs-port-phys0 con-name ovs-if-phys0 \
-          connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu}
+        nmcli c add type ${iface_type} conn.interface ${iface} master ovs-port-phys0 con-name ovs-if-phys0 \
+          connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args}
       fi
 
       nmcli conn up ovs-if-phys0
