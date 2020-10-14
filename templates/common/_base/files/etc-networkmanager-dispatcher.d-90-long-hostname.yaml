@@ -15,7 +15,7 @@ contents:
         exit 0
     fi
 
-    if [[ ! "$(< /proc/sys/kernel/hostname)" =~ (localhost|localhost.localdomain) ]]; then
+    if [[ ! "$(< /proc/sys/kernel/hostname)" =~ (fedora|localhost|localhost.localdomain) ]]; then
         log "hostname is already set"
         exit 0
     fi
