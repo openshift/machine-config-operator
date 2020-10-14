@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: machine-config-controller
   namespace: {{.TargetNamespace}}
+  annotations:
+    config.openshift.io/inject-proxy: machine-config-controller
 spec:
   selector:
     matchLabels:
