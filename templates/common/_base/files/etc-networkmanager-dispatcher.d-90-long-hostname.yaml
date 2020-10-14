@@ -16,7 +16,7 @@ contents:
     fi
 
     kn="$(< /proc/sys/kernel/hostname)"
-    if [[ ! "${kn}" =~ (localhost|localhost.localdomain) ]] && [ "${#kn}" -le 63 ]; then
+    if [[ ! "${kn}" =~ (fedora|localhost|localhost.localdomain) ]] && [ "${#kn}" -le 63 ]; then
         log "hostname is already set"
         exit 0
     fi
