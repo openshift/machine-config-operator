@@ -53,3 +53,13 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 	}
 	return nil
 }
+
+// InSlice search for an element in slice and return true if found, otherwise return false
+func InSlice(elem string, slice []string) bool {
+	for _, k := range slice {
+		if k == elem {
+			return true
+		}
+	}
+	return false
+}
