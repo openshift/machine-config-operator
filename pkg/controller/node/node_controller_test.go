@@ -632,6 +632,23 @@ func TestGetCandidateMachines(t *testing.T) {
 		expected:        []string{"node-3", "node-4"},
 		otherCandidates: []string{"node-5", "node-6"},
 		capacity:        2,
+	}, {
+		// A test with more nodes in mixed order
+		progress: 4,
+		nodes: []*corev1.Node{
+			newNodeWithReady("node-0", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-1", "v1", "v1", corev1.ConditionFalse),
+			newNodeWithReady("node-2", "v0", "v1", corev1.ConditionTrue),
+			newNodeWithReadyAndOrder("node-3", "v0", "v0", 0, corev1.ConditionTrue),
+			newNodeWithReadyAndOrder("node-4", "v0", "v0", 5, corev1.ConditionTrue),
+			newNodeWithReadyAndOrder("node-5", "v0", "v0", 10, corev1.ConditionTrue),
+			newNodeWithReady("node-6", "v0", "v0", corev1.ConditionTrue),
+			newNodeWithReady("node-7", "v1", "v1", corev1.ConditionTrue),
+			newNodeWithReady("node-8", "v1", "v1", corev1.ConditionTrue),
+		},
+		expected:        []string{"node-5", "node-4"},
+		otherCandidates: []string{"node-6"},
+		capacity:        2,
 	}}
 
 	for idx, test := range tests {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -866,7 +868,7 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 	}
 	capacity -= failingThisConfig
 
-	return nodes, uint(capacity)
+	return prioritizeCandidateNodes(nodes), uint(capacity)
 }
 
 // getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
@@ -878,46 +880,45 @@ func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.
 	return nodes[:capacity]
 }
 
-// getCurrentEtcdLeader is not yet implemented
-func (ctrl *Controller) getCurrentEtcdLeader(candidates []*corev1.Node) (*corev1.Node, error) {
-	return nil, nil
+type nodeOrdering struct {
+	nodes []*corev1.Node
+	order map[*corev1.Node]int
 }
 
-// filterControlPlaneCandidateNodes adjusts the candidates and capacity specifically
-// for the control plane, e.g. based on which node is the etcd leader at the time.
-// nolint:unparam
-func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) ([]*corev1.Node, uint, error) {
-	if len(candidates) <= 1 {
-		return candidates, capacity, nil
-	}
-	etcdLeader, err := ctrl.getCurrentEtcdLeader(candidates)
-	if err != nil {
-		glog.Warningf("Failed to find current etcd leader (continuing anyways): %v", err)
-	}
-	var newCandidates []*corev1.Node
+func (p nodeOrdering) Len() int           { return len(p.nodes) }
+func (p nodeOrdering) Less(i, j int) bool { return p.order[p.nodes[i]] > p.order[p.nodes[j]] }
+func (p nodeOrdering) Swap(i, j int)      { p.nodes[i], p.nodes[j] = p.nodes[j], p.nodes[i] }
+
+// prioritizeCandidateNodes chooses the update ordering
+func prioritizeCandidateNodes(candidates []*corev1.Node) []*corev1.Node {
+	var newCandidates nodeOrdering
+	newCandidates.order = make(map[*corev1.Node]int)
 	for _, node := range candidates {
-		if node == etcdLeader {
-			// For now make this an event so we know it's working, even though it's more of a non-event
-			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "DeferringEtcdLeaderUpdate", "Deferring update of etcd leader %s", node.Name)
-			glog.Infof("Deferring update of etcd leader: %s", node.Name)
-			continue
+		orderVal, ok := node.Annotations[daemonconsts.MachineUpdateOrderingAnnotationKey]
+		if ok {
+			order, err := strconv.Atoi(orderVal)
+			if err != nil {
+				glog.Warningf("Failed to parse %s %s: %v", node.Name, daemonconsts.MachineUpdateOrderingAnnotationKey, err)
+				continue
+			}
+			// order 0 means "skip this node"
+			if order == 0 {
+				continue
+			}
+			if order < 0 {
+				glog.Warningf("Invalid negative ordering %s for node %s", orderVal, node.Name)
+				continue
+			}
+			newCandidates.order[node] = order
 		}
-		newCandidates = append(newCandidates, node)
+		newCandidates.nodes = append(newCandidates.nodes, node)
 	}
-	return newCandidates, capacity, nil
+	sort.Sort(newCandidates)
+	return newCandidates.nodes
 }
 
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
 func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
-	if pool.Name == masterPoolName {
-		var err error
-		candidates, capacity, err = ctrl.filterControlPlaneCandidateNodes(pool, candidates, capacity)
-		if err != nil {
-			return err
-		}
-		// In practice right now these counts will be 1 but let's stay general to support 5 etcd nodes in the future
-		ctrl.logPool(pool, "filtered to %d candidate nodes for update, capacity: %d", len(candidates), capacity)
-	}
 	if capacity < uint(len(candidates)) {
 		// Arbitrarily pick the first N candidates; no attempt at sorting.
 		// Perhaps later we allow admins to weight somehow, or do something more intelligent.

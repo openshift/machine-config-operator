@@ -108,6 +108,16 @@ func newNodeWithReady(name string, currentConfig, desiredConfig string, status c
 	return node
 }
 
+func newNodeWithReadyAndOrder(name string, currentConfig, desiredConfig string, order int, status corev1.ConditionStatus) *corev1.Node {
+	node := newNode(name, currentConfig, desiredConfig)
+	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
+	}
+	node.Annotations[daemonconsts.MachineUpdateOrderingAnnotationKey] = fmt.Sprintf("%d", order)
+	return node
+}
+
 func newNodeWithReadyAndDaemonState(name string, currentConfig, desiredConfig string, status corev1.ConditionStatus, dstate string) *corev1.Node {
 	node := newNode(name, currentConfig, desiredConfig)
 	node.Status = corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}
