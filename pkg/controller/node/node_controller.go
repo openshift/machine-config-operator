@@ -467,6 +467,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			daemonconsts.CurrentMachineConfigAnnotationKey,
 			daemonconsts.DesiredMachineConfigAnnotationKey,
 			daemonconsts.MachineConfigDaemonStateAnnotationKey,
+			daemonconsts.MachineUpdateHoldAnnotationKey,
 		}
 		for _, anno := range annos {
 			newValue := curNode.Annotations[anno]
@@ -758,10 +759,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
-	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
-	if len(candidates) > 0 {
-		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(candidates), capacity)
-		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
+	state := getAllCandidateMachines(pool, nodes, maxunavail)
+	if len(state.candidates) > 0 {
+		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(state.candidates), state.capacity)
+		if err := ctrl.updateCandidateMachines(pool, state.candidates, state.capacity); err != nil {
 			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
 				return goerrs.Wrapf(err, "error setting desired machine config annotation for pool %q, sync error: %v", pool.Name, syncErr)
 			}
@@ -833,20 +834,21 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 	})
 }
 
+type updateCandidateState struct {
+	candidates []*corev1.Node
+	unavail    uint
+	held       uint
+	capacity   uint
+}
+
 // getAllCandidateMachines returns all possible nodes which can be updated to the target config, along with a maximum
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
-func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
+func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) updateCandidateState {
 	targetConfig := pool.Spec.Configuration.Name
-
-	unavail := getUnavailableMachines(nodesInPool)
-	// If we're at capacity, there's nothing to do.
-	if len(unavail) >= maxUnavailable {
-		return nil, 0
-	}
-	capacity := maxUnavailable - len(unavail)
-	failingThisConfig := 0
+	var failingThisConfig uint
+	ret := updateCandidateState{}
 	// We only look at nodes which aren't already targeting our desired config
-	var nodes []*corev1.Node
+	var candidates []*corev1.Node
 	for _, node := range nodesInPool {
 		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
 			if isNodeMCDFailing(node) {
@@ -855,69 +857,47 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 			continue
 		}
 
-		nodes = append(nodes, node)
+		if _, ok := node.Annotations[daemonconsts.MachineUpdateHoldAnnotationKey]; ok {
+			ret.held++
+			continue
+		}
+
+		candidates = append(candidates, node)
 	}
+
+	ret.unavail = uint(len(getUnavailableMachines(nodesInPool)))
+	// If we're at capacity, there's nothing to do.
+	if ret.unavail >= uint(maxUnavailable) {
+		ret.capacity = 0
+		return ret
+	}
+	ret.capacity = uint(maxUnavailable) - ret.unavail
 
 	// Nodes which are failing to target this config also count against
 	// availability - it might be a transient issue, and if the issue
 	// clears we don't want multiple to update at once.
-	if failingThisConfig >= capacity {
-		return nil, 0
+	if failingThisConfig >= ret.capacity {
+		ret.capacity = 0
+		return ret
 	}
-	capacity -= failingThisConfig
+	ret.capacity -= failingThisConfig
+	ret.candidates = candidates
 
-	return nodes, uint(capacity)
+	return ret
 }
 
 // getCandidateMachines returns the maximum subset of nodes which can be updated to the target config given availability constraints.
 func getCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) []*corev1.Node {
-	nodes, capacity := getAllCandidateMachines(pool, nodesInPool, maxUnavailable)
-	if uint(len(nodes)) < capacity {
-		return nodes
+	state := getAllCandidateMachines(pool, nodesInPool, maxUnavailable)
+	fmt.Printf("%+v\n", state)
+	if uint(len(state.candidates)) < state.capacity {
+		return state.candidates
 	}
-	return nodes[:capacity]
-}
-
-// getCurrentEtcdLeader is not yet implemented
-func (ctrl *Controller) getCurrentEtcdLeader(candidates []*corev1.Node) (*corev1.Node, error) {
-	return nil, nil
-}
-
-// filterControlPlaneCandidateNodes adjusts the candidates and capacity specifically
-// for the control plane, e.g. based on which node is the etcd leader at the time.
-// nolint:unparam
-func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) ([]*corev1.Node, uint, error) {
-	if len(candidates) <= 1 {
-		return candidates, capacity, nil
-	}
-	etcdLeader, err := ctrl.getCurrentEtcdLeader(candidates)
-	if err != nil {
-		glog.Warningf("Failed to find current etcd leader (continuing anyways): %v", err)
-	}
-	var newCandidates []*corev1.Node
-	for _, node := range candidates {
-		if node == etcdLeader {
-			// For now make this an event so we know it's working, even though it's more of a non-event
-			ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "DeferringEtcdLeaderUpdate", "Deferring update of etcd leader %s", node.Name)
-			glog.Infof("Deferring update of etcd leader: %s", node.Name)
-			continue
-		}
-		newCandidates = append(newCandidates, node)
-	}
-	return newCandidates, capacity, nil
+	return state.candidates[:state.capacity]
 }
 
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
 func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
-	if pool.Name == masterPoolName {
-		var err error
-		candidates, capacity, err = ctrl.filterControlPlaneCandidateNodes(pool, candidates, capacity)
-		if err != nil {
-			return err
-		}
-		// In practice right now these counts will be 1 but let's stay general to support 5 etcd nodes in the future
-		ctrl.logPool(pool, "filtered to %d candidate nodes for update, capacity: %d", len(candidates), capacity)
-	}
 	if capacity < uint(len(candidates)) {
 		// Arbitrarily pick the first N candidates; no attempt at sorting.
 		// Perhaps later we allow admins to weight somehow, or do something more intelligent.
