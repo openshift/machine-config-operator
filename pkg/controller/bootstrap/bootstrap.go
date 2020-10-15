@@ -128,6 +128,12 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, rconfigs...)
 
+	capsconfigs, err := containerruntimeconfig.RunCapsBootstrap(pools)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, capsconfigs...)
+
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
 		return err
