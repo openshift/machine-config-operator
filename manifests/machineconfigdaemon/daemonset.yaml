@@ -7,6 +7,9 @@ spec:
   selector:
     matchLabels:
       k8s-app: machine-config-daemon
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 10%
   template:
     metadata:
       name: machine-config-daemon
