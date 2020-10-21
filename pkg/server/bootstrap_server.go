@@ -103,7 +103,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		return nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
 	}
 
-	appenders := getAppenders(currConf, bsc.kubeconfigFunc)
+	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
 			return nil, err
