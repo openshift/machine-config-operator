@@ -263,6 +263,11 @@ func (in *ControllerConfigSpec) DeepCopyInto(out *ControllerConfigSpec) {
 		*out = new(configv1.Infrastructure)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.DNS != nil {
+		in, out := &in.DNS, &out.DNS
+		*out = new(configv1.DNS)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 

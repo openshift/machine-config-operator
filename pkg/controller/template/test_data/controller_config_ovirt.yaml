@@ -27,3 +27,6 @@ spec:
       infrastructureName: my-test-cluster
       platformStatus:
         type: "oVirt"
+  dns:
+    spec:
+      baseDomain: my-test-cluster.installer.team.coreos.systems

@@ -10,17 +10,17 @@ contents:
     . {
         errors
         health :18080
-        mdns {{ .Infra.Status.EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
+        mdns {{ .DNS.Spec.BaseDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
         cache 30
         reload
         hosts {
-            {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .Infra.Status.EtcdDiscoveryDomain }}
-            {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .Infra.Status.EtcdDiscoveryDomain }}
+            {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .DNS.Spec.BaseDomain }}
+            {{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .DNS.Spec.BaseDomain }}
             fallthrough
         }
-        template IN A {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match .*.apps.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN A {{ .DNS.Spec.BaseDomain }} {
+            match .*.apps.{{ .DNS.Spec.BaseDomain }}
             answer "{{`{{"{{ .Name }}"}}`}} 60 in a {{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
             fallthrough
         }
