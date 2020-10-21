@@ -78,7 +78,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		return nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
 	}
 
-	appenders := getAppenders(currConf, cs.kubeconfigFunc)
+	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
 			return nil, err
