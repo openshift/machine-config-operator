@@ -148,6 +148,7 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 		Infra   *configv1.Infrastructure
 		Network *configv1.Network
 		Proxy   *configv1.Proxy
+		DNS     *configv1.DNS
 		Error   bool
 	}{{
 		Infra: &configv1.Infrastructure{
@@ -162,6 +163,8 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 		Proxy: &configv1.Proxy{
 			Status: configv1.ProxyStatus{
 				HTTPProxy: "test.proxy"}},
+		DNS: &configv1.DNS{
+			Spec: configv1.DNSSpec{BaseDomain: "tt.testing"}},
 	}, {
 		Infra: &configv1.Infrastructure{
 			Status: configv1.InfrastructureStatus{
@@ -172,6 +175,8 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			}},
 		Network: &configv1.Network{
 			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/99999999"}}},
+		DNS: &configv1.DNS{
+			Spec: configv1.DNSSpec{BaseDomain: "tt.testing"}},
 		Error: true,
 	}, {
 		Infra: &configv1.Infrastructure{
@@ -181,6 +186,8 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			}},
 		Network: &configv1.Network{
 			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/24"}}},
+		DNS: &configv1.DNS{
+			Spec: configv1.DNSSpec{BaseDomain: "tt.testing"}},
 	}, {
 		Infra: &configv1.Infrastructure{
 			Status: configv1.InfrastructureStatus{
@@ -191,6 +198,8 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 			}},
 		Network: &configv1.Network{
 			Spec: configv1.NetworkSpec{ServiceNetwork: []string{}}},
+		DNS: &configv1.DNS{
+			Spec: configv1.DNSSpec{BaseDomain: "tt.testing"}},
 		Error: true,
 	}, {
 		// Test old Infra.Status.Platform field instead of Infra.Status.PlatformStatus
@@ -202,12 +211,14 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 		},
 		Network: &configv1.Network{
 			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/24"}}},
+		DNS: &configv1.DNS{
+			Spec: configv1.DNSSpec{BaseDomain: "tt.testing"}},
 	}}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			desc := fmt.Sprintf("Infra(%#v), Network(%#v)", test.Infra, test.Network)
-			controllerConfigSpec, err := createDiscoveredControllerConfigSpec(test.Infra, test.Network, test.Proxy)
+			controllerConfigSpec, err := createDiscoveredControllerConfigSpec(test.Infra, test.Network, test.Proxy, test.DNS)
 			if err != nil {
 				if !test.Error {
 					t.Fatalf("%s failed: %s", desc, err.Error())

@@ -100,35 +100,35 @@ func (fi bindataFileInfo) Sys() interface{} {
 var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
+    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
-    template IN {{`+"`"+`{{ .Cluster.IngressVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match .*.apps.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN {{`+"`"+`{{ .Cluster.IngressVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
         fallthrough
     }
-    template IN {{`+"`"+`{{ .Cluster.IngressVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match .*.apps.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN {{`+"`"+`{{ .Cluster.IngressVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
         fallthrough
     }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
         fallthrough
     }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
 }
@@ -624,6 +624,47 @@ spec:
             clusterDNSIP:
               description: clusterDNSIP is the cluster DNS IP address
               type: string
+            dns:
+              description: dns holds the cluster dns details
+              type: object
+              nullable: true
+              required:
+              - spec
+              properties:
+                spec:
+                  description: spec holds user settable values for configuration
+                  type: object
+                  properties:
+                    baseDomain:
+                      description: baseDomain is the base domain of the cluster. All managed DNS records will be sub-domains of this base.
+                      type: string
+                    publicZone:
+                      description: publicZone is the location where all the DNS records that are publicly accessible to the internet exist.
+                      type: object
+                      properties:
+                        id:
+                          description: id is the identifier that can be used to find the DNS hosted zone.
+                          type: string
+                        tags:
+                          additionalProperties:
+                            type: string
+                          description: tags can be used to query the DNS hosted zone.
+                          type: object
+                    privateZone:
+                      description: privateZone is the location where all the DNS records that are only available internally to the cluster exist.
+                      type: object
+                      properties:
+                        id:
+                          description: id is the identifier that can be used to find the DNS hosted zone.
+                          type: string
+                        tags:
+                          additionalProperties:
+                            type: string
+                          description: tags can be used to query the DNS hosted zone.
+                          type: object
+                status:
+                  description: status holds observed values from the cluster. They may not be overridden.
+                  type: object
             etcdDiscoveryDomain:
               description: etcdDiscoveryDomain is deprecated, use infra.status.etcdDiscoveryDomain instead
               type: string
@@ -1937,14 +1978,14 @@ func manifestsMasterMachineconfigpoolYaml() (*asset, error) {
 var _manifestsOpenstackCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
+    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
         policy sequential
     }
     cache 30
     reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
 }
@@ -2210,12 +2251,12 @@ func manifestsOpenstackKeepalivedYaml() (*asset, error) {
 var _manifestsOvirtCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
+    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
 }
@@ -2481,17 +2522,17 @@ func manifestsOvirtKeepalivedYaml() (*asset, error) {
 var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
+    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
     hosts {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
-    template IN A {{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }} {
-        match .*.apps.{{ .ControllerConfig.Infra.Status.EtcdDiscoveryDomain }}
+    template IN A {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
         fallthrough
     }

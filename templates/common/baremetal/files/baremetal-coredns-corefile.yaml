@@ -5,35 +5,35 @@ contents:
     . {
         errors
         health :18080
-        mdns {{ .Infra.Status.EtcdDiscoveryDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
+        mdns {{ .DNS.Spec.BaseDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
         forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}}
         cache 30
         reload
-        template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match .*.apps.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match .*.apps.{{ .DNS.Spec.BaseDomain }}
             answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
             fallthrough
         }
-        template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match .*.apps.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match .*.apps.{{ .DNS.Spec.BaseDomain }}
             fallthrough
         }
-        template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match api.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match api.{{ .DNS.Spec.BaseDomain }}
             answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
             fallthrough
         }
-        template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match api.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match api.{{ .DNS.Spec.BaseDomain }}
             fallthrough
         }
-        template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match api-int.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match api-int.{{ .DNS.Spec.BaseDomain }}
             answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
             fallthrough
         }
-        template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .Infra.Status.EtcdDiscoveryDomain }} {
-            match api-int.{{ .Infra.Status.EtcdDiscoveryDomain }}
+        template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
+            match api-int.{{ .DNS.Spec.BaseDomain }}
             fallthrough
         }
     }
