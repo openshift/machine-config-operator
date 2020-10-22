@@ -199,12 +199,8 @@ spec:
                       items:
                         description: Items is list of files to be written
                         type: object
+                        x-kubernetes-preserve-unknown-fields: true
                         properties:
-                          append:
-                            description: Append specifies whether to append to the specified file.
-                              Creates a new file if nothing exists at the path. Cannot be set if
-                              overwrite is set to true.
-                            type: boolean
                           contents:
                             description: Contents specifies options related to the contents of
                               the file

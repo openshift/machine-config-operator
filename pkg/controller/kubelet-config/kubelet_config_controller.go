@@ -367,6 +367,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
+//nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
@@ -453,6 +454,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
+		}
+		if originalKubeletIgn.Contents.Source == nil {
+			return ctrl.syncStatusOnly(cfg, err, "the original Kubelet source string is empty: %v", err)
 		}
 		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
 		if err != nil {

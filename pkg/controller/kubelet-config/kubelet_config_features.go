@@ -106,6 +106,9 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
+		if originalKubeletIgn.Contents.Source == nil {
+			return fmt.Errorf("could not find original Kubelet config to decode")
+		}
 		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
 		if err != nil {
 			return err
