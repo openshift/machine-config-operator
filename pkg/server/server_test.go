@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +73,8 @@ func TestEncapsulated(t *testing.T) {
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
-	err = appendEncapsulated(&mcIgnCfg, mc)
+	// Pass a nil config to test the fallback path
+	err = appendEncapsulated(&mcIgnCfg, mc, nil)
 	if err != nil {
 		t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
 	}
@@ -80,6 +82,20 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, 2, len(mcIgnCfg.Storage.Files))
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
+
+	vers := []*semver.Version{semver.New("3.1.0"), semver.New("2.2.0")}
+	for _, v := range vers {
+		mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		assert.Nil(t, err)
+		err = appendEncapsulated(&mcIgnCfg, mc, v)
+		if err != nil {
+			t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
+		}
+		assert.Equal(t, 1, len(origIgnCfg.Storage.Files))
+		assert.Equal(t, 2, len(mcIgnCfg.Storage.Files))
+		assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
+		assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
+	}
 }
 
 // TestBootstrapServer tests the behavior of the machine config server

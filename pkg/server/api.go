@@ -27,6 +27,7 @@ const (
 
 type poolRequest struct {
 	machineConfigPool string
+	version           *semver.Version
 }
 
 // APIServer provides the HTTP(s) endpoint
@@ -110,13 +111,10 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cr := poolRequest{
-		machineConfigPool: path.Base(r.URL.Path),
-	}
-
+	poolName := path.Base(r.URL.Path)
 	useragent := r.Header.Get("User-Agent")
 	acceptHeader := r.Header.Get("Accept")
-	glog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", cr.machineConfigPool, r.RemoteAddr, useragent, acceptHeader)
+	glog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
 
 	reqConfigVer, err := detectSpecVersionFromAcceptHeader(acceptHeader)
 	if err != nil {
@@ -124,6 +122,11 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		glog.Error(err)
 		return
+	}
+
+	cr := poolRequest{
+		machineConfigPool: poolName,
+		version:           reqConfigVer,
 	}
 
 	conf, err := sh.server.GetConfig(cr)

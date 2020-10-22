@@ -5,6 +5,8 @@ import (
 	"net/url"
 
 	"github.com/clarketm/json"
+	"github.com/coreos/go-semver/semver"
+	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	igntypes "github.com/coreos/ignition/v2/config/v3_1/types"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,7 +43,7 @@ type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
 }
 
-func getAppenders(currMachineConfig string, f kubeconfigFunc) []appenderFunc {
+func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc) []appenderFunc {
 	appenders := []appenderFunc{
 		// append machine annotations file.
 		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error {
@@ -52,19 +54,44 @@ func getAppenders(currMachineConfig string, f kubeconfigFunc) []appenderFunc {
 		// append the machineconfig content
 		appendInitialMachineConfig,
 		// This has to come last!!!
-		appendEncapsulated,
+		func(cfg *igntypes.Config, mc *mcfgv1.MachineConfig) error {
+			return appendEncapsulated(cfg, mc, version)
+		},
 	}
 	return appenders
 }
 
-func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig) error {
-	// since we're encapsulating the MC, we don't need the whole ignition section, that's why
-	// we do this dance here to empty out the ignition section itself. We're just interested into the MC fields
-	tmpIgnCfg := ctrlcommon.NewIgnConfig()
-	rawTmpIgnCfg, err := json.Marshal(tmpIgnCfg)
-	if err != nil {
-		return fmt.Errorf("error marshalling Ignition config: %v", err)
+// appendEncapsulated empties out the ignition portion of a MachineConfig and adds
+// it to /etc/ignition-machine-config-encapsulated.json.  This is used by
+// machine-config-daemon-firstboot.service to process the bits that the main Ignition (that runs in the initramfs)
+// didn't handle such as kernel arguments.
+func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version *semver.Version) error {
+	var rawTmpIgnCfg []byte
+	var err error
+	// In order to handle old RHCOS versions with the MCD baked in (i.e. before the MCS has
+	// https://github.com/openshift/machine-config-operator/pull/1766 )
+	// we need to ensure that the Ignition version we're putting in here is compatible.
+	// It's kind of silly because there isn't *actually* an Ignition config here,
+	// we're just adding a version to make it be a valid MachineConfig which currently
+	// requires an empty Ignition version.
+	if version == nil || version.Slice()[0] == 3 {
+		tmpIgnCfg := ctrlcommon.NewIgnConfig()
+		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
+		if err != nil {
+			return fmt.Errorf("error marshalling Ignition config: %v", err)
+		}
+	} else {
+		tmpIgnCfg := ign2types.Config{
+			Ignition: ign2types.Ignition{
+				Version: ign2types.MaxVersion.String(),
+			},
+		}
+		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
+		if err != nil {
+			return fmt.Errorf("error marshalling Ignition config: %v", err)
+		}
 	}
+
 	tmpcfg := mc.DeepCopy()
 	tmpcfg.Spec.Config.Raw = rawTmpIgnCfg
 	serialized, err := json.Marshal(tmpcfg)
