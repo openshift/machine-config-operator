@@ -114,7 +114,7 @@ contents:
             - /bin/bash
             - -c
             - |
-              kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+            [ kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data ] && [ ps -C keepalived  -o pid=,pcpu= | awk --assign maxcpu=75  '$2>maxcpu {exit 1}' ]
           initialDelaySeconds: 20
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
