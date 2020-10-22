@@ -3,13 +3,18 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/coreos/go-semver/semver"
+	ign2 "github.com/coreos/ignition/config/v2_2"
+	ign3 "github.com/coreos/ignition/v2/config/v3_1"
 	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +77,8 @@ func TestEncapsulated(t *testing.T) {
 	if err != nil {
 		t.Errorf("decoding Ignition Config failed: %s", err)
 	}
-	err = appendEncapsulated(&mcIgnCfg, mc)
+	// Pass a nil config to test the fallback path
+	err = appendEncapsulated(&mcIgnCfg, mc, nil)
 	if err != nil {
 		t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
 	}
@@ -80,6 +86,41 @@ func TestEncapsulated(t *testing.T) {
 	assert.Equal(t, 2, len(mcIgnCfg.Storage.Files))
 	assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
 	assert.Equal(t, mcIgnCfg.Storage.Files[1].Path, daemonconsts.MachineConfigEncapsulatedPath)
+
+	vers := []*semver.Version{semver.New("3.1.0"), semver.New("2.2.0")}
+	t.Logf("vers: %v\n", vers)
+	for _, v := range vers {
+		major := v.Slice()[0]
+		mcIgnCfg, err = ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
+		assert.Nil(t, err)
+		err = appendEncapsulated(&mcIgnCfg, mc, v)
+		if err != nil {
+			t.Errorf("converting MachineConfig to raw Ignition config failed: %s", err)
+		}
+		assert.Equal(t, 1, len(origIgnCfg.Storage.Files))
+		assert.Equal(t, 2, len(mcIgnCfg.Storage.Files))
+		assert.Equal(t, mcIgnCfg.Storage.Files[0].Path, "/etc/coreos/update.conf")
+		encapF := &mcIgnCfg.Storage.Files[1]
+		assert.Equal(t, encapF.Path, daemonconsts.MachineConfigEncapsulatedPath)
+		encapSource := *encapF.Contents.Source
+		dataPrefix := "data:,"
+		assert.True(t, strings.HasPrefix(encapSource, dataPrefix))
+		encapEncoded := encapSource[len(dataPrefix):]
+		encapDataStr, err := url.PathUnescape(encapEncoded)
+		assert.Nil(t, err)
+		t.Logf("encapData: %s", encapDataStr)
+		encapData := []byte(encapDataStr)
+		var mc mcfgv1.MachineConfig
+		err = json.Unmarshal(encapData, &mc)
+		assert.Nil(t, err)
+		if major == 3 {
+			_, _, err := ign3.Parse(mc.Spec.Config.Raw)
+			assert.Nil(t, err)
+		} else {
+			_, _, err := ign2.Parse(mc.Spec.Config.Raw)
+			assert.Nil(t, err)
+		}
+	}
 }
 
 // TestBootstrapServer tests the behavior of the machine config server
