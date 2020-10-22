@@ -106,6 +106,30 @@ The MCD tries to watch the systemd journal for relevant service and proxy logs,
 so you *should* be able to `oc -n openshift-machine-config-operator logs -c machine-config-daemon pod/machine-config-daemon-...`
 to debug.
 
+# Understanding /etc/ignition-machine-config-encapsulated.json
+
+See [this pull request](https://github.com/openshift/machine-config-operator/pull/868/commits/ceeb1260215c95c955a2dd3c16b4bc2fe2e6323d).
+
+When a node boots for the first time, it's the main CoreOS [Ignition](github.com/coreos/ignition/)
+process which handles the config provided.  This Ignition runs in the initramfs and
+performs any repartitioning and filesystem layout, etc.
+
+However, `MachineConfig` objects also have higher level extensions
+like `kernelArguments` that *aren't* handled by Ignition.
+
+The invention of `/etc/ignition-machine-config-encapsulated.json` is
+a way to bridge these two worlds; it's the target `MachineConfig` object
+in JSON form.  The MCS injects this file into the Ignition it serves to the node.
+Then when the node boots into e.g. `rendered-worker-0x1234`, the `machine-config-daemon-firstboot.service`
+(also written by Ignition) reads that file and handles the bits (kernel arguments, extensions, )
+that weren't handled by the "main Ignition" process.
+
+These OS level changes are done along with the OS update process described above.
+
+This ensures that for example if one specifies `nosmt` as a kernel argument,
+to turn off hyperthreading to more strongly isolate workloads, that kernel
+argument will be applied before `kubelet.service` starts.
+
 # Questions and answers
 
 Q: I upgraded OpenShift and noticed that my AMI hasn't changed, is this normal?
