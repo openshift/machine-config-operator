@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	yaml "github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -71,20 +73,23 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}
+	ignConf, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+	}
 
 	appenders := getAppenders(currConf, cs.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
-		if err := a(mc); err != nil {
+		if err := a(&ignConf, mc); err != nil {
 			return nil, err
 		}
 	}
 
-	rawIgn, err := machineConfigToRawIgnition(mc)
+	rawConf, err := json.Marshal(ignConf)
 	if err != nil {
-		return nil, fmt.Errorf("server: could not convert MachineConfig to raw Ignition: %v", err)
+		return nil, err
 	}
-
-	return rawIgn, nil
+	return &runtime.RawExtension{Raw: rawConf}, nil
 }
 
 // getClientConfig returns a Kubernetes client Config.

@@ -1,11 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
 
+	ign "github.com/coreos/ignition/config/v2_2"
 	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -96,20 +98,23 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 	if err != nil {
 		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
 	}
+	ignConf, report, err := ign.Parse(mc.Spec.Config.Raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %v\nReport: %v", err, report)
+	}
 
 	appenders := getAppenders(currConf, bsc.kubeconfigFunc, mc.Spec.OSImageURL)
 	for _, a := range appenders {
-		if err := a(mc); err != nil {
+		if err := a(&ignConf, mc); err != nil {
 			return nil, err
 		}
 	}
 
-	rawIgn, err := machineConfigToRawIgnition(mc)
+	rawConf, err := json.Marshal(ignConf)
 	if err != nil {
-		return nil, fmt.Errorf("server: could not convert MachineConfig to raw Ignition: %v", err)
+		return nil, err
 	}
-
-	return rawIgn, nil
+	return &runtime.RawExtension{Raw: rawConf}, nil
 }
 
 func kubeconfigFromFile(path string) ([]byte, []byte, error) {
