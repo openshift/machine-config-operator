@@ -12,7 +12,7 @@ contents: |
 
   # SystemD prevents direct execution of the script in /usr/local/sbin,
   # so it is sourced. See the script for functionality.
-  ExecStart=/bin/bash -c "source /usr/local/sbin/set-valid-hostname.sh; wait_localhost; set_valid_hostname `hostname`"
+  ExecStart=/bin/bash -c "source /usr/local/sbin/wait-hostname.sh"
 
   # Wait up to 5min for the node to get a real hostname.
   TimeoutSec=300

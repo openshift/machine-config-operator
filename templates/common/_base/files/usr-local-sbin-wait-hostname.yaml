@@ -1,0 +1,20 @@
+mode: 0755
+path: "/usr/local/sbin/wait-valid-hostname.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    export PATH="/usr/bin:/usr/local/bin:/sbin:/usr/local/sbin:/bin:${PATH}"
+    log() { logger --tag "$(basename $0)" "${@}"; }
+
+    # wait_localhost waits until the host gets a real hostname.
+    # This will wait indefinately. node-valid-hostname.service will terminate
+    # this after 5m.
+    log "waiting for non-localhost hostname to be assigned"
+    while [[ "$(< /proc/sys/kernel/hostname)" =~ (localhost|localhost.localdomain) ]];
+    do
+        sleep 1
+    done
+    log "node identified as $(</proc/sys/kernel/hostname)"
+    exit 0
+
