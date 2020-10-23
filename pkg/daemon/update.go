@@ -865,22 +865,43 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 		}
 	}
 
+	// Supported extensions has package list info that is required
+	// to enable an extension
+	extensions := getSupportedExtensions()
+
 	extArgs := []string{"update"}
 	for _, ext := range added {
-		extArgs = append(extArgs, "--install", ext)
+		for _, pkg := range extensions[ext] {
+			extArgs = append(extArgs, "--install", pkg)
+		}
 	}
 	for _, ext := range removed {
-		extArgs = append(extArgs, "--uninstall", ext)
+		for _, pkg := range extensions[ext] {
+			extArgs = append(extArgs, "--uninstall", pkg)
+		}
 	}
 
 	return extArgs
 }
 
+// Returns list of extensions possible to install on a CoreOS based system.
+func getSupportedExtensions() map[string][]string {
+	// In future when list of extensions grow, it will make
+	// more sense to populate it in a dynamic way.
+
+	// These are RHCOS supported extensions.
+	// Each extension keeps a list of packages required to get enabled on host.
+	return map[string][]string{
+		"usbguard":     {"usbguard"},
+		"kernel-devel": {"kernel-devel", "kernel-headers"},
+	}
+}
+
 func validateExtensions(exts []string) error {
-	supportedExtensions := []string{"usbguard", "kernel-devel"}
+	supportedExtensions := getSupportedExtensions()
 	invalidExts := []string{}
 	for _, ext := range exts {
-		if !ctrlcommon.InSlice(ext, supportedExtensions) {
+		if _, ok := supportedExtensions[ext]; !ok {
 			invalidExts = append(invalidExts, ext)
 		}
 	}
