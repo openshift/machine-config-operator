@@ -865,18 +865,15 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 		}
 	}
 
-	// Supported extensions has package list info that is required
-	// to enable an extension
-	extensions := getSupportedExtensions()
-
+	// Extension may be an RPM name or an alias for a list of RPMs
 	extArgs := []string{"update"}
 	for _, ext := range added {
-		for _, pkg := range extensions[ext] {
+		for _, pkg := range extensionToRPMList(ext) {
 			extArgs = append(extArgs, "--install", pkg)
 		}
 	}
 	for _, ext := range removed {
-		for _, pkg := range extensions[ext] {
+		for _, pkg := range extensionToRPMList(ext) {
 			extArgs = append(extArgs, "--uninstall", pkg)
 		}
 	}
@@ -884,26 +881,35 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 	return extArgs
 }
 
-// Returns list of extensions possible to install on a CoreOS based system.
-func getSupportedExtensions() map[string][]string {
-	// In future when list of extensions grow, it will make
-	// more sense to populate it in a dynamic way.
-
-	// These are RHCOS supported extensions.
-	// Each extension keeps a list of packages required to get enabled on host.
-	return map[string][]string{
-		"usbguard":     {"usbguard"},
-		"kernel-devel": {"kernel-devel", "kernel-headers"},
+// getAliasList returns a list of keys from SupportedPackageAliases
+func getAliasList() []string {
+	keys := make([]string, 0, len(constants.SupportedPackageAliases))
+	for k := range constants.SupportedPackageAliases {
+		keys = append(keys, k)
 	}
+	return keys
+}
+
+// return a list of RPMs to install for particular extension
+func extensionToRPMList(ext string) []string {
+	if ctrlcommon.InSlice(ext, getAliasList()) {
+		return constants.SupportedPackageAliases[ext]
+	}
+	return []string{ext}
 }
 
 func validateExtensions(exts []string) error {
-	supportedExtensions := getSupportedExtensions()
+	// Extension can either be an RPM or an alias
+	aliases := getAliasList()
 	invalidExts := []string{}
 	for _, ext := range exts {
-		if _, ok := supportedExtensions[ext]; !ok {
-			invalidExts = append(invalidExts, ext)
+		if ctrlcommon.InSlice(ext, constants.SupportedPackages) {
+			continue
 		}
+		if ctrlcommon.InSlice(ext, aliases) {
+			continue
+		}
+		invalidExts = append(invalidExts, ext)
 	}
 	if len(invalidExts) != 0 {
 		return fmt.Errorf("invalid extensions found: %v", invalidExts)

@@ -56,3 +56,12 @@ const (
 	// to proceed and attempt to "reconcile" to the new "desiredConfig" state regardless.
 	MachineConfigDaemonForceFile = "/run/machine-config-daemon-force"
 )
+
+var (
+	// SupportedPackages lists RPMs available in machine-os-content for RHCOS
+	SupportedPackages = []string{"kernel-headers", "usbguard"}
+	// SupportedPackageAliases expands allowed aliases to a list of RPMs to install
+	SupportedPackageAliases = map[string][]string{
+		"kernel-devel": {"kernel-headers", "kernel-devel"},
+	}
+)
