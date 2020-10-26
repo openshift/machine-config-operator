@@ -91,6 +91,7 @@ func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string
 }
 
 // validates a KubeletConfig and returns an error if invalid
+// nolint:gocyclo
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
@@ -161,6 +162,20 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 				}
 				if q.Sign() == -1 {
 					return fmt.Errorf("KubeletConfiguration: %s reservation value cannot be negative in systemReserved", rr.String())
+				}
+			}
+		}
+	}
+
+	if kcDecoded.EvictionHard != nil && len(kcDecoded.EvictionHard) > 0 {
+		for _, rr := range reservedResources {
+			if val, ok := kcDecoded.EvictionHard[rr.String()]; ok {
+				q, err := resource.ParseQuantity(val)
+				if err != nil {
+					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in evictionHard, %s", rr.String(), val)
+				}
+				if q.Sign() == -1 {
+					return fmt.Errorf("KubeletConfiguration: %s eviction value cannot be negative in evictionHard", rr.String())
 				}
 			}
 		}
