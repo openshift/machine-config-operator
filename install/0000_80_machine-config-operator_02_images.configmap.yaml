@@ -3,6 +3,8 @@ kind: ConfigMap
 metadata:
   name: machine-config-operator-images
   namespace: openshift-machine-config-operator
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 data:
   images.json: >
     {
