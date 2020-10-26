@@ -39,7 +39,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "mcd_pivot_err",
 			Help: "errors encountered during pivot",
-		}, []string{"pivot_target", "err"})
+		}, []string{"node", "pivot_target", "err"})
 
 	// MCDState is state of mcd for indicated node (ex: degraded)
 	MCDState = prometheus.NewGaugeVec(
@@ -59,7 +59,7 @@ var (
 	MCDRebootErr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "mcd_reboot_err",
-		}, []string{"message", "err"})
+		}, []string{"node", "message", "err"})
 
 	// MCDUpdateState logs completed update or error
 	MCDUpdateState = prometheus.NewGaugeVec(
@@ -88,9 +88,9 @@ func registerMCDMetrics() error {
 		}
 	}
 
-	MCDPivotErr.WithLabelValues("", "").Set(0)
+	MCDPivotErr.WithLabelValues("", "", "").Set(0)
 	KubeletHealthState.Set(0)
-	MCDRebootErr.WithLabelValues("", "").Set(0)
+	MCDRebootErr.WithLabelValues("", "", "").Set(0)
 	MCDUpdateState.WithLabelValues("", "").Set(0)
 
 	return nil
