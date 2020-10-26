@@ -20,7 +20,7 @@ spec:
       rules:
         - alert: MCDDrainError
           expr: |
-            mcd_drain > 0
+            mcd_drain_err > 0
           labels:
             severity: warning
           annotations:
