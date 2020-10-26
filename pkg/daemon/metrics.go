@@ -88,7 +88,6 @@ func registerMCDMetrics() error {
 		}
 	}
 
-	MCDDrainErr.WithLabelValues("", "").Set(0)
 	MCDPivotErr.WithLabelValues("", "").Set(0)
 	KubeletHealthState.Set(0)
 	MCDRebootErr.WithLabelValues("", "").Set(0)

@@ -123,6 +123,7 @@ func (dn *Daemon) drain() error {
 	if dn.kubeClient == nil {
 		return nil
 	}
+	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
