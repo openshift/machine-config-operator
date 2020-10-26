@@ -5,6 +5,8 @@ metadata:
   namespace: openshift-machine-config-operator
   labels:
     k8s-app: machine-config-daemon
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   endpoints:
   - interval: 30s

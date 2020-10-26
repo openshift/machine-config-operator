@@ -4,6 +4,8 @@ metadata:
   name: kubeletconfigs.machineconfiguration.openshift.io
   labels:
     "openshift.io/operator-managed": ""
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec:
   group: machineconfiguration.openshift.io
   names:
