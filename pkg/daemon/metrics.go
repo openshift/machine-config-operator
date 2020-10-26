@@ -30,9 +30,9 @@ var (
 	// MCDDrainErr logs errors received during failed drain
 	MCDDrainErr = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "mcd_drain",
+			Name: "mcd_drain_err",
 			Help: "errors from failed drain",
-		}, []string{"drain_time", "err"})
+		}, []string{"node", "err"})
 
 	// MCDPivotErr shows errors encountered during pivot
 	MCDPivotErr = prometheus.NewGaugeVec(
