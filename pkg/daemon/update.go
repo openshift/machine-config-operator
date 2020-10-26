@@ -1718,13 +1718,13 @@ func (dn *Daemon) reboot(rationale string) error {
 	// either, we just have one for the MCD itself.
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
-		MCDRebootErr.WithLabelValues("failed to run reboot", err.Error()).SetToCurrentTime()
+		MCDRebootErr.WithLabelValues(dn.node.Name, "failed to run reboot", err.Error()).SetToCurrentTime()
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
 	time.Sleep(defaultRebootTimeout)
 
 	// if everything went well, this should be unreachable.
-	MCDRebootErr.WithLabelValues("reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
+	MCDRebootErr.WithLabelValues(dn.node.Name, "reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }
