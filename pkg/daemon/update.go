@@ -840,7 +840,7 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	return exec.Command("rpm-ostree", args...).Run()
 }
 
-func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
+func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	removed := []string{}
 	added := []string{}
 
@@ -866,17 +866,34 @@ func generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string
 
 	// Supported extensions has package list info that is required
 	// to enable an extension
-	extensions := getSupportedExtensions()
 
 	extArgs := []string{"update"}
-	for _, ext := range added {
-		for _, pkg := range extensions[ext] {
-			extArgs = append(extArgs, "--install", pkg)
+
+	if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+		extensions := getSupportedExtensions()
+		for _, ext := range added {
+			for _, pkg := range extensions[ext] {
+				extArgs = append(extArgs, "--install", pkg)
+			}
+		}
+		for _, ext := range removed {
+			for _, pkg := range extensions[ext] {
+				extArgs = append(extArgs, "--uninstall", pkg)
+			}
 		}
 	}
-	for _, ext := range removed {
-		for _, pkg := range extensions[ext] {
-			extArgs = append(extArgs, "--uninstall", pkg)
+
+	// FCOS does one to one mapping of extension to package to be installed on FCOS node.
+	// This is needed as OKD layers additional packages on top of official FCOS shipped,
+	// See https://github.com/openshift/release/blob/959c2954344438c4eed3ec7f52a5e099e8335516/ci-operator/jobs/openshift/release/openshift-release-release-4.7-periodics.yaml#L586
+	// TODO: Once the package list has been stabilized, we can make use of the group and add
+	// all the packages required to enable OKD as a single extension.
+	if dn.OperatingSystem == MachineConfigDaemonOSFCOS {
+		for _, ext := range added {
+			extArgs = append(extArgs, "--install", ext)
+		}
+		for _, ext := range removed {
+			extArgs = append(extArgs, "--uninstall", ext)
 		}
 	}
 
@@ -927,7 +944,7 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		return err
 	}
 
-	args := generateExtensionsArgs(oldConfig, newConfig)
+	args := dn.generateExtensionsArgs(oldConfig, newConfig)
 	glog.Infof("Applying extensions : %+q", args)
 	if err := exec.Command("rpm-ostree", args...).Run(); err != nil {
 		return fmt.Errorf("failed to execute rpm-ostree %+q : %v", args, err)
