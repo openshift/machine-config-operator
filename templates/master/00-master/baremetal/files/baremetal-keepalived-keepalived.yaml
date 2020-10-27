@@ -52,8 +52,7 @@ contents:
         advert_int 1
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
-        unicast_peer {
-            {{`{{ .BootstrapIP }}`}}
+        unicast_peer {            
             {{`{{range .LBConfig.Backends -}}
             {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
             {{end}}`}}
