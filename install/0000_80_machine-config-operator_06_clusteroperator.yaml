@@ -4,6 +4,7 @@ metadata:
   name: machine-config
   annotations:
     exclude.release.openshift.io/internal-openshift-hosted: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
 spec: {}
 status:
   versions:
