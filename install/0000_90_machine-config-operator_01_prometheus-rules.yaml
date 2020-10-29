@@ -22,9 +22,10 @@ spec:
       rules:
         - alert: MCDDrainError
           expr: |
-            mcd_drain > 0
+            mcd_drain_err > 0
           labels:
             severity: warning
+          for: 15m
           annotations:
             message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details:  oc logs -f -n openshift-machine-config-operator machine-config-daemon-<hash> -c machine-config-daemon"
     - name: mcd-pivot-error

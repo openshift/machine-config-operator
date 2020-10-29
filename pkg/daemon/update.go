@@ -123,6 +123,7 @@ func (dn *Daemon) drain() error {
 	if dn.kubeClient == nil {
 		return nil
 	}
+	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
@@ -150,14 +151,13 @@ func (dn *Daemon) drain() error {
 		glog.Infof("Draining failed with: %v, retrying", err)
 		return false, nil
 	}); err != nil {
-		failTime := fmt.Sprintf("%v sec", time.Since(startTime).Seconds())
 		if err == wait.ErrWaitTimeout {
 			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
-			MCDDrainErr.WithLabelValues(failTime, failMsg).SetToCurrentTime()
+			MCDDrainErr.WithLabelValues(dn.node.Name, "WaitTimeout").Set(float64(backoff.Steps))
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
 			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
 		}
-		MCDDrainErr.WithLabelValues(failTime, err.Error()).SetToCurrentTime()
+		MCDDrainErr.WithLabelValues(dn.node.Name, "UnknownError").Set(float64(backoff.Steps))
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", err.Error())
 		return errors.Wrap(err, "failed to drain node")
 	}
@@ -165,8 +165,7 @@ func (dn *Daemon) drain() error {
 	dn.logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
-	successTime := fmt.Sprintf("%v sec", t)
-	MCDDrainErr.WithLabelValues(successTime, "").Set(0)
+	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 
 	return nil
 }
@@ -1664,13 +1663,13 @@ func (dn *Daemon) reboot(rationale string) error {
 	// either, we just have one for the MCD itself.
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
-		MCDRebootErr.WithLabelValues("failed to run reboot", err.Error()).SetToCurrentTime()
+		MCDRebootErr.WithLabelValues(dn.node.Name, "failed to run reboot", err.Error()).SetToCurrentTime()
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
 	time.Sleep(defaultRebootTimeout)
 
 	// if everything went well, this should be unreachable.
-	MCDRebootErr.WithLabelValues("reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
+	MCDRebootErr.WithLabelValues(dn.node.Name, "reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }
