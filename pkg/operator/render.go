@@ -38,6 +38,9 @@ func renderAsset(config *renderConfig, path string) ([]byte, error) {
 
 	funcs := sprig.TxtFuncMap()
 	funcs["toYAML"] = toYAML
+	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
+	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
+	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(objBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse asset %s: %v", path, err)
@@ -155,4 +158,61 @@ func isSingleStackIPv6(serviceCIDRs []string) (bool, error) {
 // for the proxy cookie secret object
 func (rc renderConfig) GenerateProxyCookieSecret() string {
 	return base64.StdEncoding.EncodeToString([]byte(utilrand.String(32)))
+}
+
+func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return "kni"
+		case configv1.OvirtPlatformType:
+			return "ovirt"
+		case configv1.OpenStackPlatformType:
+			return "openstack"
+		case configv1.VSpherePlatformType:
+			return "vsphere"
+		default:
+			return ""
+		}
+	} else {
+		return ""
+	}
+}
+
+func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIP, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIP, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
+		case configv1.VSpherePlatformType:
+			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for Ingress IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
+		case configv1.VSpherePlatformType:
+			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
 }

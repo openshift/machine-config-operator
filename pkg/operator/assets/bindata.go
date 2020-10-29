@@ -1,9 +1,5 @@
 // Code generated for package assets by go-bindata DO NOT EDIT. (@generated)
 // sources:
-// manifests/baremetal/coredns-corefile.tmpl
-// manifests/baremetal/coredns.yaml
-// manifests/baremetal/keepalived.conf.tmpl
-// manifests/baremetal/keepalived.yaml
 // manifests/bootstrap-pod-v2.yaml
 // manifests/controllerconfig.crd.yaml
 // manifests/machineconfigcontroller/clusterrole.yaml
@@ -32,18 +28,10 @@
 // manifests/machineconfigserver/node-bootstrapper-token.yaml
 // manifests/machineconfigserver/sa.yaml
 // manifests/master.machineconfigpool.yaml
-// manifests/openstack/coredns-corefile.tmpl
-// manifests/openstack/coredns.yaml
-// manifests/openstack/keepalived.conf.tmpl
-// manifests/openstack/keepalived.yaml
-// manifests/ovirt/coredns-corefile.tmpl
-// manifests/ovirt/coredns.yaml
-// manifests/ovirt/keepalived.conf.tmpl
-// manifests/ovirt/keepalived.yaml
-// manifests/vsphere/coredns-corefile.tmpl
-// manifests/vsphere/coredns.yaml
-// manifests/vsphere/keepalived.conf.tmpl
-// manifests/vsphere/keepalived.yaml
+// manifests/on-prem/coredns-corefile.tmpl
+// manifests/on-prem/coredns.yaml
+// manifests/on-prem/keepalived.conf.tmpl
+// manifests/on-prem/keepalived.yaml
 // manifests/worker.machineconfigpool.yaml
 package assets
 
@@ -95,382 +83,6 @@ func (fi bindataFileInfo) IsDir() bool {
 // Sys return file is sys mode
 func (fi bindataFileInfo) Sys() interface{} {
 	return nil
-}
-
-var _manifestsBaremetalCorednsCorefileTmpl = []byte(`. {
-    errors
-    health :18080
-    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
-    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
-    cache 30
-    reload
-    template IN {{`+"`"+`{{ .Cluster.IngressVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
-        fallthrough
-    }
-    template IN {{`+"`"+`{{ .Cluster.IngressVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        fallthrough
-    }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
-        fallthrough
-    }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        fallthrough
-    }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
-        fallthrough
-    }
-    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        fallthrough
-    }
-}
-`)
-
-func manifestsBaremetalCorednsCorefileTmplBytes() ([]byte, error) {
-	return _manifestsBaremetalCorednsCorefileTmpl, nil
-}
-
-func manifestsBaremetalCorednsCorefileTmpl() (*asset, error) {
-	bytes, err := manifestsBaremetalCorednsCorefileTmplBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/baremetal/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsBaremetalCorednsYaml = []byte(`---
-kind: Pod
-apiVersion: v1
-metadata:
-  name: coredns
-  namespace: openshift-kni-infra
-  creationTimestamp:
-  deletionGracePeriodSeconds: 65
-  labels:
-    app: kni-infra-mdns
-spec:
-  volumes:
-  - name: resource-dir
-    hostPath:
-      path: "/etc/kubernetes/static-pod-resources/coredns"
-  - name: kubeconfig
-    hostPath:
-      path: "/etc/kubernetes/kubeconfig"
-  - name: conf-dir
-    empty-dir: {}
-  - name: manifests
-    hostPath:
-      path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/coredns"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: resource-dir
-      mountPath: "/config"
-    - name: conf-dir
-      mountPath: "/etc/coredns"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
-  containers:
-  - name: coredns
-    securityContext:
-      privileged: true
-    image: {{ .Images.CorednsBootstrap }}
-    args:
-    - "--conf"
-    - "/etc/coredns/Corefile"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: conf-dir
-      mountPath: "/etc/coredns"
-    readinessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
-    livenessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 60
-      timeoutSeconds: 5
-      successThreshold: 1
-      failureThreshold: 5
-    terminationMessagePolicy: FallbackToLogsOnError
-  hostNetwork: true
-  tolerations:
-  - operator: Exists
-  priorityClassName: system-node-critical
-status: {}
-`)
-
-func manifestsBaremetalCorednsYamlBytes() ([]byte, error) {
-	return _manifestsBaremetalCorednsYaml, nil
-}
-
-func manifestsBaremetalCorednsYaml() (*asset, error) {
-	bytes, err := manifestsBaremetalCorednsYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/baremetal/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsBaremetalKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
-# API VIPs.
-#
-# For more information, see installer/data/data/bootstrap/baremetal/README.md
-# in the installer repo.
-
-{{`+"`"+`vrrp_instance {{.Cluster.Name}}_API {
-    state BACKUP
-    interface {{.VRRPInterface}}
-    virtual_router_id {{.Cluster.APIVirtualRouterID }}
-    priority 70
-    advert_int 1
-    nopreempt
-    {{ if .EnableUnicast }}
-    unicast_src_ip {{.NonVirtualIP}}
-    unicast_peer {
-        {{range .LBConfig.Backends -}}
-        {{.Address}}
-        {{end}}
-    }
-    {{end}}
-    authentication {
-        auth_type PASS
-        auth_pass {{.Cluster.Name}}_api_vip
-    }
-    virtual_ipaddress {
-        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
-    }
-}`+"`"+`}}
-`)
-
-func manifestsBaremetalKeepalivedConfTmplBytes() ([]byte, error) {
-	return _manifestsBaremetalKeepalivedConfTmpl, nil
-}
-
-func manifestsBaremetalKeepalivedConfTmpl() (*asset, error) {
-	bytes, err := manifestsBaremetalKeepalivedConfTmplBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/baremetal/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsBaremetalKeepalivedYaml = []byte(`---
-kind: Pod
-apiVersion: v1
-metadata:
-  name: keepalived
-  namespace: openshift-kni-infra
-  creationTimestamp:
-  deletionGracePeriodSeconds: 65
-  labels:
-    app: kni-infra-vrrp
-spec:
-  volumes:
-  - name: resource-dir
-    hostPath:
-      path: "/etc/kubernetes/static-pod-resources/keepalived"
-  - name: kubeconfig
-    hostPath:
-      path: "/etc/kubernetes/kubeconfig"
-  - name: conf-dir
-    hostPath:
-      path: "/etc/keepalived"
-  - name: manifests
-    hostPath:
-      path: "/opt/openshift/manifests"
-  - name: run-dir
-    empty-dir: {}
-  containers:
-  - name: keepalived
-    securityContext:
-      privileged: true
-    image: {{.Images.KeepalivedBootstrap}}
-    env:
-      - name: NSS_SDB_USE_CACHE
-        value: "no"
-    command:
-    - /bin/bash
-    - -c
-    - |
-      #/bin/bash
-      reload_keepalived()
-      {
-        if pid=$(pgrep -o keepalived); then
-            kill -s SIGHUP "$pid"
-        else
-            /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
-        fi
-      }
-      stop_keepalived()
-      {
-        echo "Keepalived process stopped" >> /var/run/keepalived/stopped
-        if pid=$(pgrep -o keepalived); then
-            kill -s TERM "$pid"
-        fi
-      }
-
-      msg_handler()
-      {
-        while read -r line; do
-          echo "The client sent: $line" >&2
-          # currently only 'reload' and 'stop' msgs are supported
-          if [ "$line" = reload ]; then
-              reload_keepalived
-          elif  [ "$line" = stop ]; then
-              stop_keepalived
-          fi
-        done
-      }
-      set -ex
-      declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
-      export -f msg_handler
-      export -f reload_keepalived
-      export -f stop_keepalived
-
-      while [ -s "/var/run/keepalived/stopped" ]; do
-         echo "Container stopped"
-         sleep 60
-      done
-      if [ -s "/etc/keepalived/keepalived.conf" ]; then
-          /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
-      fi
-      rm -f "$keepalived_sock"
-      socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    - name: run-dir
-      mountPath: "/var/run/keepalived"
-    livenessProbe:
-      exec:
-        command:
-        - /bin/bash
-        - -c
-        - |
-          [[ -s /etc/keepalived/keepalived.conf ]] || \
-          [[ -s /var/run/keepalived/stopped ]] || \
-          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
-      initialDelaySeconds: 20
-    terminationMessagePolicy: FallbackToLogsOnError
-    imagePullPolicy: IfNotPresent
-  - name: keepalived-monitor
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    env:
-      - name: ENABLE_UNICAST
-        value: "yes"
-      - name: IS_BOOTSTRAP
-        value: "yes"
-    command:
-    - dynkeepalived
-    - "/etc/kubernetes/kubeconfig"
-    - "/config/keepalived.conf.tmpl"
-    - "/etc/keepalived/keepalived.conf"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    - "--check-interval"
-    - "5s"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: resource-dir
-      mountPath: "/config"
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    - name: run-dir
-      mountPath: "/var/run/keepalived"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    readinessProbe:
-      httpGet:
-        path: /readyz
-        port: 6443
-        scheme: HTTPS
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
-    imagePullPolicy: IfNotPresent
-  hostNetwork: true
-  tolerations:
-  - operator: Exists
-  priorityClassName: system-node-critical
-status: {}
-`)
-
-func manifestsBaremetalKeepalivedYamlBytes() ([]byte, error) {
-	return _manifestsBaremetalKeepalivedYaml, nil
-}
-
-func manifestsBaremetalKeepalivedYaml() (*asset, error) {
-	bytes, err := manifestsBaremetalKeepalivedYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/baremetal/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
 }
 
 var _manifestsBootstrapPodV2Yaml = []byte(`apiVersion: v1
@@ -1975,595 +1587,68 @@ func manifestsMasterMachineconfigpoolYaml() (*asset, error) {
 	return a, nil
 }
 
-var _manifestsOpenstackCorednsCorefileTmpl = []byte(`. {
-    errors
-    health :18080
-    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
-    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
-        policy sequential
-    }
-    cache 30
-    reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        fallthrough
-    }
-}
-`)
-
-func manifestsOpenstackCorednsCorefileTmplBytes() ([]byte, error) {
-	return _manifestsOpenstackCorednsCorefileTmpl, nil
-}
-
-func manifestsOpenstackCorednsCorefileTmpl() (*asset, error) {
-	bytes, err := manifestsOpenstackCorednsCorefileTmplBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/openstack/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOpenstackCorednsYaml = []byte(`---
-kind: Pod
-apiVersion: v1
-metadata:
-  name: coredns
-  namespace: openshift-openstack-infra
-  creationTimestamp:
-  deletionGracePeriodSeconds: 65
-  labels:
-    app: openstack-infra-mdns
-spec:
-  volumes:
-  - name: resource-dir
-    hostPath:
-      path: "/etc/kubernetes/static-pod-resources/coredns"
-  - name: kubeconfig
-    hostPath:
-      path: "/etc/kubernetes/kubeconfig"
-  - name: conf-dir
-    empty-dir: {}
-  - name: manifests
-    hostPath:
-      path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/coredns"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: resource-dir
-      mountPath: "/config"
-    - name: conf-dir
-      mountPath: "/etc/coredns"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
-  containers:
-  - name: coredns
-    securityContext:
-      privileged: true
-    image: {{ .Images.CorednsBootstrap }}
-    args:
-    - "--conf"
-    - "/etc/coredns/Corefile"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: conf-dir
-      mountPath: "/etc/coredns"
-    readinessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
-    livenessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 60
-      timeoutSeconds: 5
-      successThreshold: 1
-      failureThreshold: 5
-    terminationMessagePolicy: FallbackToLogsOnError
-  hostNetwork: true
-  tolerations:
-  - operator: Exists
-  priorityClassName: system-node-critical
-status: {}
-`)
-
-func manifestsOpenstackCorednsYamlBytes() ([]byte, error) {
-	return _manifestsOpenstackCorednsYaml, nil
-}
-
-func manifestsOpenstackCorednsYaml() (*asset, error) {
-	bytes, err := manifestsOpenstackCorednsYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/openstack/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOpenstackKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
-# API VIPs.
-#
-# For more information, see installer/data/data/bootstrap/baremetal/README.md
-# in the installer repo.
-
-vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
-    state BACKUP
-    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
-    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
-    priority 50
-    advert_int 1
-    authentication {
-        auth_type PASS
-        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
-    }
-    virtual_ipaddress {
-        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
-    }
-}
-`)
-
-func manifestsOpenstackKeepalivedConfTmplBytes() ([]byte, error) {
-	return _manifestsOpenstackKeepalivedConfTmpl, nil
-}
-
-func manifestsOpenstackKeepalivedConfTmpl() (*asset, error) {
-	bytes, err := manifestsOpenstackKeepalivedConfTmplBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/openstack/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOpenstackKeepalivedYaml = []byte(`---
-kind: Pod
-apiVersion: v1
-metadata:
-  name: keepalived
-  namespace: openshift-openstack-infra
-  creationTimestamp:
-  deletionGracePeriodSeconds: 65
-  labels:
-    app: openstack-infra-vrrp
-spec:
-  volumes:
-  - name: resource-dir
-    hostPath:
-      path: "/etc/kubernetes/static-pod-resources/keepalived"
-  - name: kubeconfig
-    hostPath:
-      path: "/etc/kubernetes/kubeconfig"
-  - name: conf-dir
-    empty-dir: {}
-  - name: manifests
-    hostPath:
-      path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.OpenStack.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/keepalived"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: resource-dir
-      mountPath: "/config"
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
-  containers:
-  - name: keepalived
-    securityContext:
-      privileged: true
-    image: {{ .Images.KeepalivedBootstrap }}
-    env:
-      - name: NSS_SDB_USE_CACHE
-        value: "no"
-    command:
-    - /usr/sbin/keepalived
-    args:
-    - "-f"
-    - "/etc/keepalived/keepalived.conf"
-    - "--dont-fork"
-    - "--vrrp"
-    - "--log-detail"
-    - "--log-console"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    terminationMessagePolicy: FallbackToLogsOnError
-    imagePullPolicy: IfNotPresent
-  hostNetwork: true
-  tolerations:
-  - operator: Exists
-  priorityClassName: system-node-critical
-status: {}
-`)
-
-func manifestsOpenstackKeepalivedYamlBytes() ([]byte, error) {
-	return _manifestsOpenstackKeepalivedYaml, nil
-}
-
-func manifestsOpenstackKeepalivedYaml() (*asset, error) {
-	bytes, err := manifestsOpenstackKeepalivedYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/openstack/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOvirtCorednsCorefileTmpl = []byte(`. {
+var _manifestsOnPremCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
     mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
     cache 30
     reload
-    hosts /etc/coredns/api-int.hosts {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        fallthrough
-    }
-}
-`)
-
-func manifestsOvirtCorednsCorefileTmplBytes() ([]byte, error) {
-	return _manifestsOvirtCorednsCorefileTmpl, nil
-}
-
-func manifestsOvirtCorednsCorefileTmpl() (*asset, error) {
-	bytes, err := manifestsOvirtCorednsCorefileTmplBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/ovirt/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOvirtCorednsYaml = []byte(`---
-kind: Pod
-apiVersion: v1
-metadata:
-  name: coredns
-  namespace: openshift-ovirt-infra
-  creationTimestamp:
-  deletionGracePeriodSeconds: 65
-  labels:
-    app: ovirt-infra-mdns
-spec:
-  volumes:
-  - name: resource-dir
-    hostPath:
-      path: "/etc/kubernetes/static-pod-resources/coredns"
-  - name: kubeconfig
-    hostPath:
-      path: "/etc/kubernetes/kubeconfig"
-  - name: conf-dir
-    empty-dir: {}
-  - name: manifests
-    hostPath:
-      path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/coredns"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: resource-dir
-      mountPath: "/config"
-    - name: conf-dir
-      mountPath: "/etc/coredns"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
-  containers:
-  - name: coredns
-    securityContext:
-      privileged: true
-    image: {{ .Images.CorednsBootstrap }}
-    args:
-    - "--conf"
-    - "/etc/coredns/Corefile"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: conf-dir
-      mountPath: "/etc/coredns"
-    readinessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 10
-      periodSeconds: 10
-      successThreshold: 1
-      failureThreshold: 3
-      timeoutSeconds: 10
-    livenessProbe:
-      httpGet:
-        path: /health
-        port: 18080
-        scheme: HTTP
-      initialDelaySeconds: 60
-      timeoutSeconds: 5
-      successThreshold: 1
-      failureThreshold: 5
-    terminationMessagePolicy: FallbackToLogsOnError
-  hostNetwork: true
-  tolerations:
-  - operator: Exists
-  priorityClassName: system-node-critical
-status: {}
-`)
-
-func manifestsOvirtCorednsYamlBytes() ([]byte, error) {
-	return _manifestsOvirtCorednsYaml, nil
-}
-
-func manifestsOvirtCorednsYaml() (*asset, error) {
-	bytes, err := manifestsOvirtCorednsYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/ovirt/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOvirtKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
-# API VIPs.
-#
-# For more information, see installer/data/data/bootstrap/baremetal/README.md
-# in the installer repo.
-
-vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
-    state BACKUP
-    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
-    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
-    priority 50
-    advert_int 1
-    authentication {
-        auth_type PASS
-        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
-    }
-    virtual_ipaddress {
-        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
-    }
-}
-`)
-
-func manifestsOvirtKeepalivedConfTmplBytes() ([]byte, error) {
-	return _manifestsOvirtKeepalivedConfTmpl, nil
-}
-
-func manifestsOvirtKeepalivedConfTmpl() (*asset, error) {
-	bytes, err := manifestsOvirtKeepalivedConfTmplBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/ovirt/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsOvirtKeepalivedYaml = []byte(`---
-kind: Pod
-apiVersion: v1
-metadata:
-  name: keepalived
-  namespace: openshift-ovirt-infra
-  creationTimestamp:
-  deletionGracePeriodSeconds: 65
-  labels:
-    app: ovirt-infra-vrrp
-spec:
-  volumes:
-  - name: resource-dir
-    hostPath:
-      path: "/etc/kubernetes/static-pod-resources/keepalived"
-  - name: kubeconfig
-    hostPath:
-      path: "/etc/kubernetes/kubeconfig"
-  - name: conf-dir
-    empty-dir: {}
-  - name: manifests
-    hostPath:
-      path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.Ovirt.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/keepalived"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: resource-dir
-      mountPath: "/config"
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
-  containers:
-  - name: keepalived
-    securityContext:
-      privileged: true
-    image: {{ .Images.KeepalivedBootstrap }}
-    env:
-      - name: NSS_SDB_USE_CACHE
-        value: "no"
-    command:
-    - /usr/sbin/keepalived
-    args:
-    - "-f"
-    - "/etc/keepalived/keepalived.conf"
-    - "--dont-fork"
-    - "--vrrp"
-    - "--log-detail"
-    - "--log-console"
-    resources:
-      requests:
-        cpu: 100m
-        memory: 200Mi
-    volumeMounts:
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    terminationMessagePolicy: FallbackToLogsOnError
-    imagePullPolicy: IfNotPresent
-  hostNetwork: true
-  tolerations:
-  - operator: Exists
-  priorityClassName: system-node-critical
-status: {}
-`)
-
-func manifestsOvirtKeepalivedYamlBytes() ([]byte, error) {
-	return _manifestsOvirtKeepalivedYaml, nil
-}
-
-func manifestsOvirtKeepalivedYaml() (*asset, error) {
-	bytes, err := manifestsOvirtKeepalivedYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "manifests/ovirt/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _manifestsVsphereCorednsCorefileTmpl = []byte(`. {
-    errors
-    health :18080
-    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
-    forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}}
-    cache 30
-    reload
-    hosts {
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }} api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        fallthrough
-    }
-    template IN A {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+    template IN {{`+"`"+`{{ .Cluster.IngressVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
         match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in a {{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ onPremPlatformIngressIP .ControllerConfig }}"
+        fallthrough
+    }
+    template IN {{`+"`"+`{{ .Cluster.IngressVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
+        fallthrough
+    }
+    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        fallthrough
+    }
+    template IN {{`+"`"+`{{ .Cluster.APIVIPRecordType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        answer "{{`+"`"+`{{"{{ .Name }}"}}`+"`"+`}} 60 in {{`+"`"+`{{"{{ .Type }}"}}`+"`"+`}} {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
+        fallthrough
+    }
+    template IN {{`+"`"+`{{ .Cluster.APIVIPEmptyType }}`+"`"+`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
+        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
 }
 `)
 
-func manifestsVsphereCorednsCorefileTmplBytes() ([]byte, error) {
-	return _manifestsVsphereCorednsCorefileTmpl, nil
+func manifestsOnPremCorednsCorefileTmplBytes() ([]byte, error) {
+	return _manifestsOnPremCorednsCorefileTmpl, nil
 }
 
-func manifestsVsphereCorednsCorefileTmpl() (*asset, error) {
-	bytes, err := manifestsVsphereCorednsCorefileTmplBytes()
+func manifestsOnPremCorednsCorefileTmpl() (*asset, error) {
+	bytes, err := manifestsOnPremCorednsCorefileTmplBytes()
 	if err != nil {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "manifests/vsphere/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	info := bindataFileInfo{name: "manifests/on-prem/coredns-corefile.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
 
-var _manifestsVsphereCorednsYaml = []byte(`---
+var _manifestsOnPremCorednsYaml = []byte(`---
 kind: Pod
 apiVersion: v1
 metadata:
   name: coredns
-  namespace: openshift-vsphere-infra
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: vsphere-infra-mdns
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-mdns
 spec:
   volumes:
   - name: resource-dir
@@ -2585,9 +1670,9 @@ spec:
     - render
     - "/etc/kubernetes/kubeconfig"
     - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+    - "{{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
     - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+    - "{{ onPremPlatformIngressIP .ControllerConfig }}"
     - "/config"
     - "--out-dir"
     - "/etc/coredns"
@@ -2646,69 +1731,77 @@ spec:
 status: {}
 `)
 
-func manifestsVsphereCorednsYamlBytes() ([]byte, error) {
-	return _manifestsVsphereCorednsYaml, nil
+func manifestsOnPremCorednsYamlBytes() ([]byte, error) {
+	return _manifestsOnPremCorednsYaml, nil
 }
 
-func manifestsVsphereCorednsYaml() (*asset, error) {
-	bytes, err := manifestsVsphereCorednsYamlBytes()
+func manifestsOnPremCorednsYaml() (*asset, error) {
+	bytes, err := manifestsOnPremCorednsYamlBytes()
 	if err != nil {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "manifests/vsphere/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	info := bindataFileInfo{name: "manifests/on-prem/coredns.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
 
-var _manifestsVsphereKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
+var _manifestsOnPremKeepalivedConfTmpl = []byte(`# Configuration template for Keepalived, which is used to manage the DNS and
 # API VIPs.
 #
 # For more information, see installer/data/data/bootstrap/baremetal/README.md
 # in the installer repo.
 
-vrrp_instance {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_API {
+{{`+"`"+`vrrp_instance {{.Cluster.Name}}_API {
     state BACKUP
-    interface {{`+"`"+`{{.VRRPInterface}}`+"`"+`}}
-    virtual_router_id {{`+"`"+`{{.Cluster.APIVirtualRouterID }}`+"`"+`}}
-    priority 50
+    interface {{.VRRPInterface}}
+    virtual_router_id {{.Cluster.APIVirtualRouterID }}
+    priority 70
     advert_int 1
+    nopreempt
+    {{ if .EnableUnicast }}
+    unicast_src_ip {{.NonVirtualIP}}
+    unicast_peer {
+        {{range .LBConfig.Backends -}}
+        {{.Address}}
+        {{end}}
+    }
+    {{end}}
     authentication {
         auth_type PASS
-        auth_pass {{`+"`"+`{{.Cluster.Name}}`+"`"+`}}_api_vip
+        auth_pass {{.Cluster.Name}}_api_vip
     }
     virtual_ipaddress {
-        {{`+"`"+`{{ .Cluster.APIVIP }}`+"`"+`}}/{{`+"`"+`{{ .Cluster.VIPNetmask }}`+"`"+`}}
+        {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
     }
-}
-
+}`+"`"+`}}
 `)
 
-func manifestsVsphereKeepalivedConfTmplBytes() ([]byte, error) {
-	return _manifestsVsphereKeepalivedConfTmpl, nil
+func manifestsOnPremKeepalivedConfTmplBytes() ([]byte, error) {
+	return _manifestsOnPremKeepalivedConfTmpl, nil
 }
 
-func manifestsVsphereKeepalivedConfTmpl() (*asset, error) {
-	bytes, err := manifestsVsphereKeepalivedConfTmplBytes()
+func manifestsOnPremKeepalivedConfTmpl() (*asset, error) {
+	bytes, err := manifestsOnPremKeepalivedConfTmplBytes()
 	if err != nil {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "manifests/vsphere/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	info := bindataFileInfo{name: "manifests/on-prem/keepalived.conf.tmpl", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
 
-var _manifestsVsphereKeepalivedYaml = []byte(`---
+var _manifestsOnPremKeepalivedYaml = []byte(`---
 kind: Pod
 apiVersion: v1
 metadata:
   name: keepalived
-  namespace: openshift-vsphere-infra
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: vsphere-infra-vrrp
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-vrrp
 spec:
   volumes:
   - name: resource-dir
@@ -2718,54 +1811,69 @@ spec:
     hostPath:
       path: "/etc/kubernetes/kubeconfig"
   - name: conf-dir
-    empty-dir: {}
+    hostPath:
+      path: "/etc/keepalived"
   - name: manifests
     hostPath:
       path: "/opt/openshift/manifests"
-  initContainers:
-  - name: render-config
-    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
-    command:
-    - runtimecfg
-    - render
-    - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
-    - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
-    - "/config"
-    - "--out-dir"
-    - "/etc/keepalived"
-    - "--cluster-config"
-    - "/opt/openshift/manifests/cluster-config.yaml"
-    resources: {}
-    volumeMounts:
-    - name: resource-dir
-      mountPath: "/config"
-    - name: kubeconfig
-      mountPath: "/etc/kubernetes/kubeconfig"
-    - name: conf-dir
-      mountPath: "/etc/keepalived"
-    - name: manifests
-      mountPath: "/opt/openshift/manifests"
-    imagePullPolicy: IfNotPresent
+  - name: run-dir
+    empty-dir: {}
   containers:
   - name: keepalived
     securityContext:
       privileged: true
-    image: {{ .Images.KeepalivedBootstrap }}
+    image: {{.Images.KeepalivedBootstrap}}
     env:
       - name: NSS_SDB_USE_CACHE
         value: "no"
     command:
-    - /usr/sbin/keepalived
-    args:
-    - "-f"
-    - "/etc/keepalived/keepalived.conf"
-    - "--dont-fork"
-    - "--vrrp"
-    - "--log-detail"
-    - "--log-console"
+    - /bin/bash
+    - -c
+    - |
+      #/bin/bash
+      reload_keepalived()
+      {
+        if pid=$(pgrep -o keepalived); then
+            kill -s SIGHUP "$pid"
+        else
+            /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+        fi
+      }
+      stop_keepalived()
+      {
+        echo "Keepalived process stopped" >> /var/run/keepalived/stopped
+        if pid=$(pgrep -o keepalived); then
+            kill -s TERM "$pid"
+        fi
+      }
+
+      msg_handler()
+      {
+        while read -r line; do
+          echo "The client sent: $line" >&2
+          # currently only 'reload' and 'stop' msgs are supported
+          if [ "$line" = reload ]; then
+              reload_keepalived
+          elif  [ "$line" = stop ]; then
+              stop_keepalived
+          fi
+        done
+      }
+      set -ex
+      declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
+      export -f msg_handler
+      export -f reload_keepalived
+      export -f stop_keepalived
+
+      while [ -s "/var/run/keepalived/stopped" ]; do
+         echo "Container stopped"
+         sleep 60
+      done
+      if [ -s "/etc/keepalived/keepalived.conf" ]; then
+          /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
+      fi
+      rm -f "$keepalived_sock"
+      socat UNIX-LISTEN:${keepalived_sock},fork system:'bash -c msg_handler'
     resources:
       requests:
         cpu: 100m
@@ -2773,7 +1881,65 @@ spec:
     volumeMounts:
     - name: conf-dir
       mountPath: "/etc/keepalived"
+    - name: run-dir
+      mountPath: "/var/run/keepalived"
+    livenessProbe:
+      exec:
+        command:
+        - /bin/bash
+        - -c
+        - |
+          [[ -s /etc/keepalived/keepalived.conf ]] || \
+          [[ -s /var/run/keepalived/stopped ]] || \
+          kill -s SIGUSR1 "$(pgrep -o keepalived)" && ! grep -q "State = FAULT" /tmp/keepalived.data
+      initialDelaySeconds: 20
     terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  - name: keepalived-monitor
+    image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
+    env:
+      - name: ENABLE_UNICAST
+        value: "yes"
+      - name: IS_BOOTSTRAP
+        value: "yes"
+    command:
+    - dynkeepalived
+    - "/etc/kubernetes/kubeconfig"
+    - "/config/keepalived.conf.tmpl"
+    - "/etc/keepalived/keepalived.conf"
+    - "--api-vip"
+    - "{{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
+    - "--ingress-vip"
+    - "{{ onPremPlatformIngressIP .ControllerConfig }}"
+    - "--cluster-config"
+    - "/opt/openshift/manifests/cluster-config.yaml"
+    - "--check-interval"
+    - "5s"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: resource-dir
+      mountPath: "/config"
+    - name: kubeconfig
+      mountPath: "/etc/kubernetes/kubeconfig"
+    - name: conf-dir
+      mountPath: "/etc/keepalived"
+    - name: run-dir
+      mountPath: "/var/run/keepalived"
+    - name: manifests
+      mountPath: "/opt/openshift/manifests"
+    readinessProbe:
+      httpGet:
+        path: /readyz
+        port: 6443
+        scheme: HTTPS
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      successThreshold: 1
+      failureThreshold: 3
+      timeoutSeconds: 10
     imagePullPolicy: IfNotPresent
   hostNetwork: true
   tolerations:
@@ -2782,17 +1948,17 @@ spec:
 status: {}
 `)
 
-func manifestsVsphereKeepalivedYamlBytes() ([]byte, error) {
-	return _manifestsVsphereKeepalivedYaml, nil
+func manifestsOnPremKeepalivedYamlBytes() ([]byte, error) {
+	return _manifestsOnPremKeepalivedYaml, nil
 }
 
-func manifestsVsphereKeepalivedYaml() (*asset, error) {
-	bytes, err := manifestsVsphereKeepalivedYamlBytes()
+func manifestsOnPremKeepalivedYaml() (*asset, error) {
+	bytes, err := manifestsOnPremKeepalivedYamlBytes()
 	if err != nil {
 		return nil, err
 	}
 
-	info := bindataFileInfo{name: "manifests/vsphere/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	info := bindataFileInfo{name: "manifests/on-prem/keepalived.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -2879,10 +2045,6 @@ func AssetNames() []string {
 
 // _bindata is a table, holding each asset generator, mapped to its name.
 var _bindata = map[string]func() (*asset, error){
-	"manifests/baremetal/coredns-corefile.tmpl":                              manifestsBaremetalCorednsCorefileTmpl,
-	"manifests/baremetal/coredns.yaml":                                       manifestsBaremetalCorednsYaml,
-	"manifests/baremetal/keepalived.conf.tmpl":                               manifestsBaremetalKeepalivedConfTmpl,
-	"manifests/baremetal/keepalived.yaml":                                    manifestsBaremetalKeepalivedYaml,
 	"manifests/bootstrap-pod-v2.yaml":                                        manifestsBootstrapPodV2Yaml,
 	"manifests/controllerconfig.crd.yaml":                                    manifestsControllerconfigCrdYaml,
 	"manifests/machineconfigcontroller/clusterrole.yaml":                     manifestsMachineconfigcontrollerClusterroleYaml,
@@ -2911,18 +2073,10 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigserver/node-bootstrapper-token.yaml":             manifestsMachineconfigserverNodeBootstrapperTokenYaml,
 	"manifests/machineconfigserver/sa.yaml":                                  manifestsMachineconfigserverSaYaml,
 	"manifests/master.machineconfigpool.yaml":                                manifestsMasterMachineconfigpoolYaml,
-	"manifests/openstack/coredns-corefile.tmpl":                              manifestsOpenstackCorednsCorefileTmpl,
-	"manifests/openstack/coredns.yaml":                                       manifestsOpenstackCorednsYaml,
-	"manifests/openstack/keepalived.conf.tmpl":                               manifestsOpenstackKeepalivedConfTmpl,
-	"manifests/openstack/keepalived.yaml":                                    manifestsOpenstackKeepalivedYaml,
-	"manifests/ovirt/coredns-corefile.tmpl":                                  manifestsOvirtCorednsCorefileTmpl,
-	"manifests/ovirt/coredns.yaml":                                           manifestsOvirtCorednsYaml,
-	"manifests/ovirt/keepalived.conf.tmpl":                                   manifestsOvirtKeepalivedConfTmpl,
-	"manifests/ovirt/keepalived.yaml":                                        manifestsOvirtKeepalivedYaml,
-	"manifests/vsphere/coredns-corefile.tmpl":                                manifestsVsphereCorednsCorefileTmpl,
-	"manifests/vsphere/coredns.yaml":                                         manifestsVsphereCorednsYaml,
-	"manifests/vsphere/keepalived.conf.tmpl":                                 manifestsVsphereKeepalivedConfTmpl,
-	"manifests/vsphere/keepalived.yaml":                                      manifestsVsphereKeepalivedYaml,
+	"manifests/on-prem/coredns-corefile.tmpl":                                manifestsOnPremCorednsCorefileTmpl,
+	"manifests/on-prem/coredns.yaml":                                         manifestsOnPremCorednsYaml,
+	"manifests/on-prem/keepalived.conf.tmpl":                                 manifestsOnPremKeepalivedConfTmpl,
+	"manifests/on-prem/keepalived.yaml":                                      manifestsOnPremKeepalivedYaml,
 	"manifests/worker.machineconfigpool.yaml":                                manifestsWorkerMachineconfigpoolYaml,
 }
 
@@ -2968,12 +2122,6 @@ type bintree struct {
 
 var _bintree = &bintree{nil, map[string]*bintree{
 	"manifests": &bintree{nil, map[string]*bintree{
-		"baremetal": &bintree{nil, map[string]*bintree{
-			"coredns-corefile.tmpl": &bintree{manifestsBaremetalCorednsCorefileTmpl, map[string]*bintree{}},
-			"coredns.yaml":          &bintree{manifestsBaremetalCorednsYaml, map[string]*bintree{}},
-			"keepalived.conf.tmpl":  &bintree{manifestsBaremetalKeepalivedConfTmpl, map[string]*bintree{}},
-			"keepalived.yaml":       &bintree{manifestsBaremetalKeepalivedYaml, map[string]*bintree{}},
-		}},
 		"bootstrap-pod-v2.yaml":     &bintree{manifestsBootstrapPodV2Yaml, map[string]*bintree{}},
 		"controllerconfig.crd.yaml": &bintree{manifestsControllerconfigCrdYaml, map[string]*bintree{}},
 		"machineconfigcontroller": &bintree{nil, map[string]*bintree{
@@ -3008,23 +2156,11 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"sa.yaml":                                  &bintree{manifestsMachineconfigserverSaYaml, map[string]*bintree{}},
 		}},
 		"master.machineconfigpool.yaml": &bintree{manifestsMasterMachineconfigpoolYaml, map[string]*bintree{}},
-		"openstack": &bintree{nil, map[string]*bintree{
-			"coredns-corefile.tmpl": &bintree{manifestsOpenstackCorednsCorefileTmpl, map[string]*bintree{}},
-			"coredns.yaml":          &bintree{manifestsOpenstackCorednsYaml, map[string]*bintree{}},
-			"keepalived.conf.tmpl":  &bintree{manifestsOpenstackKeepalivedConfTmpl, map[string]*bintree{}},
-			"keepalived.yaml":       &bintree{manifestsOpenstackKeepalivedYaml, map[string]*bintree{}},
-		}},
-		"ovirt": &bintree{nil, map[string]*bintree{
-			"coredns-corefile.tmpl": &bintree{manifestsOvirtCorednsCorefileTmpl, map[string]*bintree{}},
-			"coredns.yaml":          &bintree{manifestsOvirtCorednsYaml, map[string]*bintree{}},
-			"keepalived.conf.tmpl":  &bintree{manifestsOvirtKeepalivedConfTmpl, map[string]*bintree{}},
-			"keepalived.yaml":       &bintree{manifestsOvirtKeepalivedYaml, map[string]*bintree{}},
-		}},
-		"vsphere": &bintree{nil, map[string]*bintree{
-			"coredns-corefile.tmpl": &bintree{manifestsVsphereCorednsCorefileTmpl, map[string]*bintree{}},
-			"coredns.yaml":          &bintree{manifestsVsphereCorednsYaml, map[string]*bintree{}},
-			"keepalived.conf.tmpl":  &bintree{manifestsVsphereKeepalivedConfTmpl, map[string]*bintree{}},
-			"keepalived.yaml":       &bintree{manifestsVsphereKeepalivedYaml, map[string]*bintree{}},
+		"on-prem": &bintree{nil, map[string]*bintree{
+			"coredns-corefile.tmpl": &bintree{manifestsOnPremCorednsCorefileTmpl, map[string]*bintree{}},
+			"coredns.yaml":          &bintree{manifestsOnPremCorednsYaml, map[string]*bintree{}},
+			"keepalived.conf.tmpl":  &bintree{manifestsOnPremKeepalivedConfTmpl, map[string]*bintree{}},
+			"keepalived.yaml":       &bintree{manifestsOnPremKeepalivedYaml, map[string]*bintree{}},
 		}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},

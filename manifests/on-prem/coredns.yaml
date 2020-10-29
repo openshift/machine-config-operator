@@ -3,11 +3,11 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: coredns
-  namespace: openshift-vsphere-infra
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: vsphere-infra-mdns
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-mdns
 spec:
   volumes:
   - name: resource-dir
@@ -29,9 +29,9 @@ spec:
     - render
     - "/etc/kubernetes/kubeconfig"
     - "--api-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+    - "{{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
     - "--ingress-vip"
-    - "{{ .ControllerConfig.Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+    - "{{ onPremPlatformIngressIP .ControllerConfig }}"
     - "/config"
     - "--out-dir"
     - "/etc/coredns"
