@@ -7,7 +7,7 @@
     reload
     template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
         match .*.apps.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.IngressIP }}"
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformIngressIP .ControllerConfig }}"
         fallthrough
     }
     template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
@@ -16,7 +16,7 @@
     }
     template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
         match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
         fallthrough
     }
     template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
@@ -25,7 +25,7 @@
     }
     template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
         match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
-        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ .ControllerConfig.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP }}"
+        answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
         fallthrough
     }
     template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
