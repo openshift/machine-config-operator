@@ -53,11 +53,11 @@ require (
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
-	k8s.io/api v0.19.0
+	k8s.io/api v0.19.2
 	k8s.io/apiextensions-apiserver v0.19.0
-	k8s.io/apimachinery v0.19.0
+	k8s.io/apimachinery v0.19.2
 	k8s.io/client-go v0.19.0
-	k8s.io/code-generator v0.19.0
+	k8s.io/code-generator v0.19.2
 	k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9
 	k8s.io/kubelet v0.19.0
 )
@@ -68,7 +68,7 @@ replace (
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20201028190007-969b2d302160
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.19.0
