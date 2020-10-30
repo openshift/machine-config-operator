@@ -47,8 +47,8 @@ contents:
             {{ .Images.baremetalRuntimeCfgImage }} \
             node-ip \
             show \
-            "{{.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP}}" \
-            "{{.Infra.Status.PlatformStatus.BareMetal.IngressIP}}")
+            "{{ onPremPlatformAPIServerInternalIP . }}" \
+            "{{ onPremPlatformIngressIP . }}")
         DOMAIN="{{.DNS.Spec.BaseDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
             >&2 echo "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
