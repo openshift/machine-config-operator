@@ -44,6 +44,10 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
+      # We want to support switching cluster network types "day 2".
+      # This may involve a MachineConfig rollout, so using the
+      # host network will avoid potential deadlocks.
+      hostNetwork: true
       tolerations:
       - key: "node-role.kubernetes.io/master"
         operator: "Exists"

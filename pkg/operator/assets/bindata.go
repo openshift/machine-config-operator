@@ -793,6 +793,10 @@ spec:
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
       serviceAccountName: machine-config-controller
+      # We want to support switching cluster network types "day 2".
+      # This may involve a MachineConfig rollout, so using the
+      # host network will avoid potential deadlocks.
+      hostNetwork: true
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
