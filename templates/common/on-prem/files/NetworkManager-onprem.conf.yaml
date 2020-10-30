@@ -1,5 +1,5 @@
 mode: 0644
-path: "/etc/NetworkManager/conf.d/99-kni.conf"
+path: "/etc/NetworkManager/conf.d/99-{{ onPremPlatformShortName . }}.conf"
 contents:
   inline: |
     [main]
