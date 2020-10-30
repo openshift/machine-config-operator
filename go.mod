@@ -58,7 +58,7 @@ require (
 	k8s.io/apimachinery v0.19.0
 	k8s.io/client-go v0.19.0
 	k8s.io/code-generator v0.19.0
-	k8s.io/kubectl v0.19.0
+	k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9
 	k8s.io/kubelet v0.19.0
 )
 
@@ -87,7 +87,7 @@ replace (
 	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.19.0
 	k8s.io/kube-proxy => k8s.io/kube-proxy v0.19.0
 	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.19.0
-	k8s.io/kubectl => k8s.io/kubectl v0.19.0
+	k8s.io/kubectl => k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9
 	k8s.io/kubelet => k8s.io/kubelet v0.19.0
 	k8s.io/kubernetes => k8s.io/kubernetes v1.19.0
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.19.0
