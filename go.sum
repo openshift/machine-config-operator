@@ -153,7 +153,6 @@ github.com/coreos/ignition v0.35.0/go.mod h1:WJQapxzEn9DE0ryxsGvm8QnBajm/XsS/Pkr
 github.com/coreos/ignition/v2 v2.1.1/go.mod h1:RqmqU64zxarUJa3l4cHtbhcSwfQLpUhv0WVziZwoXvE=
 github.com/coreos/ignition/v2 v2.3.0 h1:TK+STbzVe6KZp4tQ2IaNSRMiWX4/diNngep1F7tP7Zk=
 github.com/coreos/ignition/v2 v2.3.0/go.mod h1:85dmM/CERMZXNrJsXqtNLIxR/dn8G9qlL1CmEjCugp0=
-github.com/coreos/ignition/v2 v2.7.0 h1:JCKxJllVtnk1lQY1uisxrtFSHG5L2NI1LRzc8wBEk84=
 github.com/coreos/pkg v0.0.0-20160727233714-3ac0863d7acf/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
 github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
 github.com/coreos/vcontext v0.0.0-20190529201340-22b159166068 h1:y2aHj7QqyAJ6YBBONTAr17YxHHiogDkYnTsJvFNhxwY=
@@ -607,7 +606,6 @@ github.com/openshift/build-machinery-go v0.0.0-20200211121458-5e3d6e570160/go.mo
 github.com/openshift/build-machinery-go v0.0.0-20200819073603-48aa266c95f7/go.mod h1:b1BuldmJlbA/xYtdZvKi+7j5YGB44qJUJDZ9zwiNCfE=
 github.com/openshift/client-go v0.0.0-20200827190008-3062137373b5 h1:E6WhVL5p3rfjtc+o+jVG/29Aclnf3XIF7akxXvadwR0=
 github.com/openshift/client-go v0.0.0-20200827190008-3062137373b5/go.mod h1:5rGmrkQ8DJEUXA+AR3rEjfH+HFyg4/apY9iCQFgvPfE=
-github.com/openshift/client-go v3.9.0+incompatible h1:13k3Ok0B7TA2hA3bQW2aFqn6y04JaJWdk7ITTyg+Ek0=
 github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901 h1:UQkY3zDJG4MMVzS7VFsyACxs/haMJ2aHNR/jXzWhScs=
 github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901/go.mod h1:NBttNjZpWwup/nthuLbPAPSYC8Qyo+BBK5bCtFoyYjo=
 github.com/openshift/library-go v0.0.0-20200831114015-2ab0c61c15de h1:V984tJombwXeUvZaMiMSzN6yOiHUdd1kWLHS1a54Yrw=
@@ -1100,8 +1098,8 @@ k8s.io/kube-aggregator v0.19.0 h1:rL4fsftMaqkKjaibArYDaBeqN41CHaJzgRJjUB9IrIg=
 k8s.io/kube-aggregator v0.19.0/go.mod h1:1Ln45PQggFAG8xOqWPIYMxUq8WNtpPnYsbUJ39DpF/A=
 k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6 h1:+WnxoVtG8TMiudHBSEtrVL1egv36TkkJm+bA8AxicmQ=
 k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6/go.mod h1:UuqjUnNftUyPE5H64/qeyjQoUZhGpeFDVdxjTeEVN2o=
-k8s.io/kubectl v0.19.0 h1:t9uxaZzGvqc2jY96mjnPSjFHtaKOxoUegeGZdaGT6aw=
-k8s.io/kubectl v0.19.0/go.mod h1:gPCjjsmE6unJzgaUNXIFGZGafiUp5jh0If3F/x7/rRg=
+k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9 h1:uhm/4DWcOMsM+mmu/9MrpVHjKRqniY7uCWiBfrx7elo=
+k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9/go.mod h1:z0VpeQ+4UcTGHHe9r8iduuU70zL9CIxKoIrQbsL813U=
 k8s.io/kubelet v0.19.0 h1:1x+ZC2o7rRKy+bMen5u3PpBdterOck7i4EpZUM3zDfE=
 k8s.io/kubelet v0.19.0/go.mod h1:cGds22piF/LnFzfAaIT+efvOYBHVYdunqka6NVuNw9g=
 k8s.io/metrics v0.19.0/go.mod h1:WykpW8B60OeAJx1imdwUgyOID2kDljr/Q+1zrPJ98Wo=
