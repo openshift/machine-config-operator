@@ -1,0 +1,8 @@
+mode: 0644
+path: "/etc/tmpfiles.d/kni.conf"
+contents:
+  inline: |
+    D /run/nm-system-connections 0755 root root - -
+    D /run/nm-system-connections-work 0755 root root - -
+    d /etc/NetworkManager/system-connections-merged 0755 root root - -
+
