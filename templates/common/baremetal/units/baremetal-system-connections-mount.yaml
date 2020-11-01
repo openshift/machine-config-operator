@@ -1,0 +1,13 @@
+name: etc-NetworkManager-system\x2dconnections\x2dmerged.mount
+enabled: true
+contents: |
+  [Unit]
+  After=systemd-tmpfiles-setup.service
+  [Mount]
+  Where=/etc/NetworkManager/system-connections-merged
+  What=overlay
+  Type=overlay
+  Options=lowerdir=/etc/NetworkManager/system-connections,upperdir=/run/nm-system-connections,workdir=/run/nm-system-connections-work
+  [Install]
+  WantedBy=multi-user.target
+  
