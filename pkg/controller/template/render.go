@@ -27,9 +27,10 @@ type RenderConfig struct {
 }
 
 const (
-	filesDir     = "files"
-	unitsDir     = "units"
-	platformBase = "_base"
+	filesDir       = "files"
+	unitsDir       = "units"
+	platformBase   = "_base"
+	platformOnPrem = "on-prem"
 )
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
@@ -192,7 +193,10 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	platformDirs := []string{}
 	if !*commonAdded {
 		// Loop over templates/common which applies everywhere
-		for _, dir := range []string{platformBase, platformString} {
+		for _, dir := range []string{platformBase, platformOnPrem, platformString} {
+			if dir == platformOnPrem && !onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
+				continue
+			}
 			basePath := filepath.Join(templateDir, "common", dir)
 			exists, err := existsDir(basePath)
 			if err != nil {
@@ -205,8 +209,12 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 		}
 		*commonAdded = true
 	}
+
 	// And now over the target e.g. templates/master/00-master,01-master-container-runtime,01-master-kubelet
-	for _, dir := range []string{platformBase, platformString} {
+	for _, dir := range []string{platformBase, platformOnPrem, platformString} {
+		if dir == platformOnPrem && !onPremPlatform(config.Infra.Status.PlatformStatus.Type) {
+			continue
+		}
 		platformPath := filepath.Join(path, dir)
 		exists, err := existsDir(platformPath)
 		if err != nil {
@@ -283,6 +291,10 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["skip"] = skipMissing
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
+	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
+	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
+	funcs["onPremPlatformShortName"] = onPremPlatformShortName
+	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
@@ -356,6 +368,76 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 	}
 }
 
+func onPremPlatformShortName(cfg RenderConfig) interface{} {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return "kni"
+		case configv1.OvirtPlatformType:
+			return "ovirt"
+		case configv1.OpenStackPlatformType:
+			return "openstack"
+		case configv1.VSpherePlatformType:
+			return "vsphere"
+		default:
+			return ""
+		}
+	} else {
+		return ""
+	}
+}
+
+func onPremPlatformKeepalivedEnableUnicast(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return "yes", nil
+		default:
+			return "no", nil
+		}
+	} else {
+		return "no", nil
+	}
+}
+
+func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIP, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIP, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
+		case configv1.VSpherePlatformType:
+			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for Ingress IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
+		case configv1.VSpherePlatformType:
+			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
 // existsDir returns true if path exists and is a directory, false if the path
 // does not exist, and error if there is a runtime error or the path is not a directory
 func existsDir(path string) (bool, error) {
@@ -370,4 +452,13 @@ func existsDir(path string) (bool, error) {
 		return false, fmt.Errorf("expected template directory, %q is not a directory", path)
 	}
 	return true, nil
+}
+
+func onPremPlatform(platformString configv1.PlatformType) bool {
+	switch platformString {
+	case configv1.BareMetalPlatformType, configv1.OvirtPlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
+		return true
+	default:
+		return false
+	}
 }

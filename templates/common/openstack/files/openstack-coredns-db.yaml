@@ -10,7 +10,7 @@ contents:
                                     1209600    ; expire (2 weeks)
                                     3600       ; minimum (1 hour)
                                     )
-    api-int IN A {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
-    api IN A {{ .Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP }}
+    api-int IN A {{ onPremPlatformAPIServerInternalIP . }}
+    api IN A {{ onPremPlatformAPIServerInternalIP . }}
 
-    *.apps  IN  A {{ .Infra.Status.PlatformStatus.OpenStack.IngressIP }}
+    *.apps  IN  A {{ onPremPlatformIngressIP . }}
