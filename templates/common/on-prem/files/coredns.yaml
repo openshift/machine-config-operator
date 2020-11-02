@@ -1,0 +1,118 @@
+mode: 0644
+path: "/etc/kubernetes/manifests/coredns.yaml"
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: coredns
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: {{ onPremPlatformShortName . }}-infra-mdns
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/coredns"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes/kubeconfig"
+      - name: conf-dir
+        hostPath:
+          path: "/etc/coredns"
+      - name: nm-resolv
+        hostPath:
+          path: "/var/run/NetworkManager"
+      initContainers:
+      - name: render-config-coredns
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - runtimecfg
+        - render
+        - "/etc/kubernetes/kubeconfig"
+        - "--api-vip"
+        - "{{ onPremPlatformAPIServerInternalIP . }}"
+        - "--ingress-vip"
+        - "{{ onPremPlatformIngressIP . }}"
+        - "/config"
+        - "--out-dir"
+        - "/etc/coredns"
+        resources: {}
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        imagePullPolicy: IfNotPresent
+      containers:
+      - name: coredns
+        securityContext:
+          privileged: true
+        image: {{.Images.corednsImage}}
+        args:
+        - "--conf"
+        - "/etc/coredns/Corefile"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 18080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 18080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      - name: coredns-monitor
+        securityContext:
+          privileged: true
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - corednsmonitor
+        - "/etc/kubernetes/kubeconfig"
+        - "/config/Corefile.tmpl"
+        - "/etc/coredns/Corefile"
+        - "--api-vip"
+        - "{{ onPremPlatformAPIServerInternalIP . }}"
+        - "--ingress-vip"
+        - "{{ onPremPlatformIngressIP . }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi          
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: "/etc/kubernetes/kubeconfig"
+        - name: resource-dir
+          mountPath: "/config"
+        - name: conf-dir
+          mountPath: "/etc/coredns"
+        - name: nm-resolv
+          mountPath: "/var/run/NetworkManager"
+        imagePullPolicy: IfNotPresent        
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}
