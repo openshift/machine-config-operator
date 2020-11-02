@@ -2,20 +2,15 @@ mode: 0644
 path: "/etc/kubernetes/manifests/keepalived.yaml"
 contents:
   inline: |
-    {{ if .Infra -}}
-    {{ if .Infra.Status -}}
-    {{ if .Infra.Status.PlatformStatus -}}
-    {{ if .Infra.Status.PlatformStatus.VSphere -}}
-    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     kind: Pod
     apiVersion: v1
     metadata:
       name: keepalived
-      namespace: openshift-vsphere-infra
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: vsphere-infra-vrrp
+        app: {{ onPremPlatformShortName . }}-infra-vrrp
     spec:
       volumes:
       - name: resource-dir
@@ -46,9 +41,9 @@ contents:
         - render
         - "/etc/kubernetes/kubeconfig"
         - "--api-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+        - "{{ onPremPlatformAPIServerInternalIP . }}"
         - "--ingress-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+        - "{{ onPremPlatformIngressIP . }}"
         - "/config"
         - "--out-dir"
         - "/etc/keepalived"
@@ -129,7 +124,7 @@ contents:
         image: {{ .Images.baremetalRuntimeCfgImage }}
         env:
           - name: ENABLE_UNICAST
-            value: "no"
+            value: "{{ onPremPlatformKeepalivedEnableUnicast . }}"
           - name: IS_BOOTSTRAP
             value: "no"
         command:
@@ -138,9 +133,9 @@ contents:
         - "/config/keepalived.conf.tmpl"
         - "/etc/keepalived/keepalived.conf"
         - "--api-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP }}"
+        - "{{ onPremPlatformAPIServerInternalIP . }}"
         - "--ingress-vip"
-        - "{{ .Infra.Status.PlatformStatus.VSphere.IngressIP }}"
+        - "{{ onPremPlatformIngressIP . }}"
         resources:
           requests:
             cpu: 100m
@@ -156,14 +151,19 @@ contents:
           mountPath: "/var/run/keepalived"
         - name: chroot-host
           mountPath: "/host"
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 6443
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 10
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
       - operator: Exists
       priorityClassName: system-node-critical
     status: {}
-    {{ end -}}
-    {{ end -}}
-    {{ end -}}
-    {{ end -}}
-    {{ end -}}
