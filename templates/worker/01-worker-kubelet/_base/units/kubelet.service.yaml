@@ -39,3 +39,20 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
+dropins:
+- name: 10-mco-default-env.conf
+  contents: |
+    [Unit]
+    Description=MCO environment configuration
+    {{if .Proxy -}}
+    [Service]
+    {{if .Proxy.HTTPProxy -}}
+    Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+    {{end -}}
+    {{if .Proxy.HTTPSProxy -}}
+    Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+    {{end -}}
+    {{if .Proxy.NoProxy -}}
+    Environment=NO_PROXY={{.Proxy.NoProxy}}
+    {{end -}}
+    {{end -}}
