@@ -1062,6 +1062,42 @@ func restorePath(path string) error {
 	return nil
 }
 
+// parse path to find out if its a systemd dropin
+// Returns is dropin (true/false), service name, dropin name
+func isPathASystemdDropin(path string) (bool, string, string) {
+	if !strings.HasPrefix(path, "/etc/systemd/system") {
+		return false, "", ""
+	}
+	if !strings.HasSuffix(path, ".conf") {
+		return false, "", ""
+	}
+	pathSegments := strings.Split(path, "/")
+	dropinName := pathSegments[len(pathSegments)-1]
+	servicePart := pathSegments[len(pathSegments)-2]
+	allServiceSegments := strings.Split(servicePart, ".")
+	if allServiceSegments[len(allServiceSegments)-1] != "d" {
+		return false, "", ""
+	}
+	serviceName := strings.Join(allServiceSegments[:len(allServiceSegments)-1], ".")
+	return true, serviceName, dropinName
+}
+
+// iterate systemd units and return true if this path is already covered by a systemd dropin
+func isPathInDropins(path string, systemd *ign3types.Systemd) bool {
+	if ok, service, dropin := isPathASystemdDropin(path); ok {
+		for _, u := range systemd.Units {
+			if u.Name == service {
+				for _, j := range u.Dropins {
+					if j.Name == dropin {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 // deleteStaleData performs a diff of the new and the old Ignition config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
@@ -1118,6 +1154,13 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 					return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
 				}
 			}
+
+			// Check Systemd.Units.Dropins - don't remove the file if configuration has been converted into a dropin
+			if isPathInDropins(f.Path, &newIgnConfig.Systemd) {
+				glog.Infof("Not removing file %q: replaced with systemd dropin", f.Path)
+				continue
+			}
+
 			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 			if err := os.Remove(f.Path); err != nil {
 				newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
