@@ -840,6 +840,25 @@ func restorePath(path string) error {
 	return nil
 }
 
+// parse path to find out if its a systemd dropin
+// Returns is dropin (true/false), service name, dropin name
+func isSystemdDropin(path string) (bool, string, string) {
+	if !strings.HasPrefix(path, "/etc/systemd/system") {
+		return false, "", ""
+	}
+	pathSegments := strings.Split(path, "/")
+	if len(pathSegments) != 5 {
+		return false, "", ""
+	}
+	dropinName := pathSegments[len(pathSegments)-1]
+	segmentWithService := pathSegments[len(pathSegments)-2]
+	sectionSegments := strings.SplitN(segmentWithService, ".", 1)
+	if sectionSegments[len(sectionSegments)-1] != "service.d" {
+		return false, "", ""
+	}
+	return true, string(segmentWithService[0]), dropinName
+}
+
 // deleteStaleData performs a diff of the new and the old Ignition config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
@@ -889,6 +908,29 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 						return err
 					}
 					glog.V(2).Infof("Restored file %q", f.Path)
+					continue
+				}
+
+				// Check Systemd.Units.Dropins - don't remove the file if configuration has been converted into a dropin
+				fileReplacedWithDropin := false
+				if ok, service, dropin := isSystemdDropin(f.Path); ok {
+					for _, u := range newIgnConfig.Systemd.Units {
+						if u.Name == service {
+							for _, j := range u.Dropins {
+								if j.Name == dropin {
+									fileReplacedWithDropin = true
+									break
+								}
+							}
+							if fileReplacedWithDropin {
+								break
+							}
+						}
+					}
+				}
+
+				if fileReplacedWithDropin {
+					glog.V(2).Infof("Not removing file %q: replaced with systemd dropin", f.Path)
 					continue
 				}
 
