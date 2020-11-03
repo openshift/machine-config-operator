@@ -843,20 +843,27 @@ func restorePath(path string) error {
 // parse path to find out if its a systemd dropin
 // Returns is dropin (true/false), service name, dropin name
 func isSystemdDropin(path string) (bool, string, string) {
+	glog.V(2).Infof("DEBUG isSystemdDropin path=%v", path)
 	if !strings.HasPrefix(path, "/etc/systemd/system") {
 		return false, "", ""
 	}
 	pathSegments := strings.Split(path, "/")
+	glog.V(2).Infof("DEBUG isSystemdDropin pathSegments=%v", pathSegments)
 	if len(pathSegments) != 5 {
 		return false, "", ""
 	}
 	dropinName := pathSegments[len(pathSegments)-1]
-	segmentWithService := pathSegments[len(pathSegments)-2]
-	sectionSegments := strings.SplitN(segmentWithService, ".", 1)
-	if sectionSegments[len(sectionSegments)-1] != "service.d" {
+	glog.V(2).Infof("DEBUG isSystemdDropin dropinName=%v", dropinName)
+	servicePart := pathSegments[len(pathSegments)-2]
+	glog.V(2).Infof("DEBUG isSystemdDropin servicePart=%v", servicePart)
+	allServiceSegments := strings.Split(servicePart, ".")
+	glog.V(2).Infof("DEBUG isSystemdDropin allServiceSegments=%v", allServiceSegments)
+	if allServiceSegments[len(allServiceSegments)-1] != "d" {
 		return false, "", ""
 	}
-	return true, string(segmentWithService[0]), dropinName
+	serviceName := strings.Join(allServiceSegments[:len(allServiceSegments)-1], ".")
+	glog.V(2).Infof("DEBUG isSystemdDropin serviceName=%v", serviceName)
+	return true, serviceName, dropinName
 }
 
 // deleteStaleData performs a diff of the new and the old Ignition config. It then deletes
@@ -914,10 +921,15 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *igntypes.Config) e
 				// Check Systemd.Units.Dropins - don't remove the file if configuration has been converted into a dropin
 				fileReplacedWithDropin := false
 				if ok, service, dropin := isSystemdDropin(f.Path); ok {
+					glog.V(2).Infof("DEBUG isSystemdDropin ok=%v service=%v dropin=%v", ok, service, dropin)
 					for _, u := range newIgnConfig.Systemd.Units {
+						glog.V(2).Infof("DEBUG isSystemdDropin service=%v", u.Name)
 						if u.Name == service {
+							glog.V(2).Infof("DEBUG isSystemdDropin found matching service")
 							for _, j := range u.Dropins {
+								glog.V(2).Infof("DEBUG isSystemdDropin dropin=%v", j.Name)
 								if j.Name == dropin {
+									glog.V(2).Infof("DEBUG isSystemdDropin found matching dropin")
 									fileReplacedWithDropin = true
 									break
 								}
