@@ -21,8 +21,7 @@ contents: |
     --volume /etc/systemd/system:/etc/systemd/system:z \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
-    set --retry-on-failure \
-    ; \
+    set --retry-on-failure; \
     do \
     sleep 5; \
     done"
