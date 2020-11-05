@@ -2,6 +2,7 @@ mode: 0644
 path: "/etc/NetworkManager/conf.d/99-{{ onPremPlatformShortName . }}.conf"
 contents:
   inline: |
+    {{ if (onPremPlatformAPIServerInternalIP .) -}}
     [main]
     rc-manager=unmanaged
     [connection]
@@ -9,3 +10,4 @@ contents:
     ipv6.dhcp-iaid=mac
     [keyfile]
     path=/etc/NetworkManager/system-connections-merged
+    {{ end -}}
