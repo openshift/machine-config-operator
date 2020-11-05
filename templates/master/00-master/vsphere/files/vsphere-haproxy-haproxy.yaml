@@ -1,0 +1,49 @@
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/haproxy/haproxy.cfg.tmpl"
+contents:
+  inline: |
+    {{ if .Infra -}}
+    {{ if .Infra.Status -}}
+    {{ if .Infra.Status.PlatformStatus -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+    defaults
+      maxconn 20000
+      mode    tcp
+      log     /var/run/haproxy/haproxy-log.sock local0
+      option  dontlognull
+      retries 3
+      timeout http-request 10s
+      timeout queue        1m
+      timeout connect      10s
+      timeout client       86400s
+      timeout server       86400s
+      timeout tunnel       86400s
+    frontend  main
+      bind :::{{`{{ .LBConfig.LbPort }}`}} v4v6
+      default_backend masters
+    listen health_check_http_url
+      bind :::50936 v4v6
+      mode http
+      monitor-uri /haproxy_ready
+      option dontlognull
+    listen stats
+      bind localhost:{{`{{ .LBConfig.StatPort }}`}}
+      mode http
+      stats enable
+      stats hide-version
+      stats uri /haproxy_stats
+      stats refresh 30s
+      stats auth Username:Password
+    backend masters
+       option  httpchk GET /readyz HTTP/1.0
+       option  log-health-checks
+       balance roundrobin
+    {{`{{- range .LBConfig.Backends }}
+       server {{ .Host }} {{ .Address }}:{{ .Port }} weight 1 verify none check check-ssl inter 1s fall 2 rise 3
+    {{- end }}`}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}

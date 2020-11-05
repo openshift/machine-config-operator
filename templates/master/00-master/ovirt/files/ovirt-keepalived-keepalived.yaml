@@ -1,0 +1,58 @@
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/keepalived/keepalived.conf.tmpl"
+contents:
+  inline: |
+    global_defs {
+        enable_script_security
+        script_user root
+    }
+
+    vrrp_script chk_ocp {
+        script "/usr/bin/timeout 0.9 /etc/keepalived/chk_ocp_script.sh"
+        interval 1
+        weight 50
+    }
+
+    # TODO: Improve this check. The port is assumed to be alive.
+    # Need to assess what is the ramification if the port is not there.
+    vrrp_script chk_ingress {
+        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
+        interval 1
+        weight 50
+    }
+
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_API {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.APIVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_api_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        }
+        track_script {
+            chk_ocp
+        }
+    }
+
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {
+        state BACKUP
+        interface {{`{{ .VRRPInterface }}`}}
+        virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
+        priority 40
+        advert_int 1
+        authentication {
+            auth_type PASS
+            auth_pass {{`{{ .Cluster.Name }}`}}_ingress_vip
+        }
+        virtual_ipaddress {
+            {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+        }
+        track_script {
+            chk_ingress
+        }
+    }

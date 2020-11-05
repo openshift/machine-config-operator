@@ -1,0 +1,19 @@
+mode: 0644
+path: "/etc/NetworkManager/conf.d/99-kni.conf"
+contents:
+  inline: |
+    {{ if .Infra -}}
+    {{ if .Infra.Status -}}
+    {{ if .Infra.Status.PlatformStatus -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+    [main]
+    rc-manager=unmanaged
+    [connection]
+    ipv6.dhcp-duid=ll
+    ipv6.dhcp-iaid=mac
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}

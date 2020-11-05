@@ -1,0 +1,31 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/40-mdns-hostname"
+contents:
+  inline: |
+    {{ if .Infra -}}
+    {{ if .Infra.Status -}}
+    {{ if .Infra.Status.PlatformStatus -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere -}}
+    {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+    #!/bin/bash
+    STATUS=$2
+    case "$STATUS" in
+        up|down|dhcp4-change|dhcp6-change|hostname)
+        logger -s "NM mdns-hostname triggered by ${2}."
+        set +e
+        t_hostname=$(hostname)
+        if [ -z "${t_hostname}" ]; then
+           t_hostname="localhost"
+        fi
+        mkdir -p /etc/mdns
+        echo "${t_hostname}">/etc/mdns/hostname
+        logger -s "Hostname changed: ${t_hostname}"
+        ;;
+        *)
+        ;;
+    esac
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
+    {{ end -}}
