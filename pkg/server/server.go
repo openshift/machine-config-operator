@@ -123,7 +123,8 @@ func appendKubeConfig(conf *igntypes.Config, f kubeconfigFunc) error {
 	if err != nil {
 		return err
 	}
-	err = appendFileToIgnition(conf, defaultMachineKubeConfPath, string(kcData))
+	// Use 0640 as mode for security, so only root:root can read this.
+	err = appendFileToIgnitionWithMode(conf, defaultMachineKubeConfPath, string(kcData), 416)
 	if err != nil {
 		return err
 	}
@@ -157,6 +158,10 @@ func getNodeAnnotation(conf string) (string, error) {
 
 func appendFileToIgnition(conf *igntypes.Config, outPath, contents string) error {
 	fileMode := int(420)
+	return appendFileToIgnitionWithMode(conf, outPath, contents, fileMode)
+}
+
+func appendFileToIgnitionWithMode(conf *igntypes.Config, outPath, contents string, fileMode int) error {
 	overwrite := true
 	source := getEncodedContent(contents)
 	file := igntypes.File{
