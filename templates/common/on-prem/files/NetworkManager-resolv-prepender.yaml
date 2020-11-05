@@ -2,6 +2,7 @@ mode: 0755
 path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
 contents:
   inline: |
+    {{ if (onPremPlatformAPIServerInternalIP .) -}}
     #!/bin/bash
     set -eo pipefail
     IFACE=$1
@@ -63,3 +64,4 @@ contents:
         *)
         ;;
     esac
+    {{ end -}}
