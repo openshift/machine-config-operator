@@ -27,13 +27,4 @@ contents:
             match api.{{ .DNS.Spec.BaseDomain }}
             fallthrough
         }
-        template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
-            match api-int.{{ .DNS.Spec.BaseDomain }}
-            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP . }}"
-            fallthrough
-        }
-        template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
-            match api-int.{{ .DNS.Spec.BaseDomain }}
-            fallthrough
-        }
     }
