@@ -77,3 +77,6 @@ Related issues:
 All this to say, it's quite hard to change storage layout with the MCO today,
 but this is a bug.
 
+## Q: Does the MCO run on RHEL worker nodes?
+
+Yes, RHEL worker nodes will have a instance of the Machine Config Daemon running on them.  However, only a subset of MCO functionality is supported on RHEL worker nodes.  It is possible to create a Machine Config to write files and `systemd` units to RHEL worker nodes, but it is not possible to manage OS updates, kernel arguments, or extensions on RHEL worker nodes.
