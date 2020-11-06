@@ -1076,7 +1076,7 @@ func isPathASystemdDropin(path string) (bool, string, string) {
 }
 
 // iterate systemd units and return true if this path is already covered by a systemd dropin
-func isPathInDropins(path string, systemd *ign3types.Systemd) bool {
+func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool {
 	if ok, service, dropin := isPathASystemdDropin(path); ok {
 		for _, u := range systemd.Units {
 			if u.Name == service {
@@ -1151,7 +1151,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 		}
 
 		// Check Systemd.Units.Dropins - don't remove the file if configuration has been converted into a dropin
-		if isPathInDropins(f.Path, &newIgnConfig.Systemd) {
+		if dn.isPathInDropins(f.Path, &newIgnConfig.Systemd) {
 			glog.Infof("Not removing file %q: replaced with systemd dropin", f.Path)
 			continue
 		}
