@@ -67,7 +67,16 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}
 
-	currConf := mp.Status.Configuration.Name
+	// For new nodes, we roll out the latest if at least one node has successfully updated.
+	// This avoids deadlocks in situations where the old configuration broke somehow
+	// (e.g. pull secret expired)
+	// and also avoids provisioning a new node, only to update it not long thereafter.
+	var currConf string
+	if mp.Status.UpdatedMachineCount > 0 {
+		currConf = mp.Spec.Configuration.Name
+	} else {
+		currConf = mp.Status.Configuration.Name
+	}
 
 	mc, err := cs.machineClient.MachineConfigs().Get(context.TODO(), currConf, metav1.GetOptions{})
 	if err != nil {
