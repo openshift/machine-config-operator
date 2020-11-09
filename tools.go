@@ -7,7 +7,6 @@ import (
 	_ "github.com/go-bindata/go-bindata"
 	_ "github.com/go-bindata/go-bindata/go-bindata"
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
-	_ "github.com/securego/gosec/cmd/gosec"
 	_ "k8s.io/code-generator" // Imports non-go generator scripts for vendoring
 	_ "k8s.io/code-generator/cmd/client-gen"
 	_ "k8s.io/code-generator/cmd/conversion-gen"
