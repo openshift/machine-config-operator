@@ -171,6 +171,8 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 			return "openstack"
 		case configv1.VSpherePlatformType:
 			return "vsphere"
+		case configv1.KubevirtPlatformType:
+			return "kubevirt"
 		default:
 			return ""
 		}
@@ -190,6 +192,8 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
 		case configv1.VSpherePlatformType:
 			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+		case configv1.KubevirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Kubevirt.IngressIP, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
@@ -209,6 +213,8 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
 		case configv1.VSpherePlatformType:
 			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+		case configv1.KubevirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}

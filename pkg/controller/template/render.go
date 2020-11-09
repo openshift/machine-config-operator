@@ -140,7 +140,7 @@ func platformStringFromControllerConfigSpec(ic *mcfgv1.ControllerConfigSpec) (st
 		return "", fmt.Errorf("cannot generate MachineConfigs when no platformStatus.type is set")
 	case platformBase:
 		return "", fmt.Errorf("platform _base unsupported")
-	case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.BareMetalPlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType, configv1.LibvirtPlatformType, configv1.OvirtPlatformType, configv1.VSpherePlatformType, configv1.NonePlatformType:
+	case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.BareMetalPlatformType, configv1.GCPPlatformType, configv1.OpenStackPlatformType, configv1.LibvirtPlatformType, configv1.OvirtPlatformType, configv1.VSpherePlatformType, configv1.KubevirtPlatformType, configv1.NonePlatformType:
 		return strings.ToLower(string(ic.Infra.Status.PlatformStatus.Type)), nil
 	default:
 		// platformNone is used for a non-empty, but currently unsupported platform.
@@ -379,6 +379,8 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 			return "openstack"
 		case configv1.VSpherePlatformType:
 			return "vsphere"
+		case configv1.KubevirtPlatformType:
+			return "kubevirt"
 		default:
 			return ""
 		}
@@ -390,7 +392,7 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 func onPremPlatformKeepalivedEnableUnicast(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
+		case configv1.BareMetalPlatformType, configv1.KubevirtPlatformType:
 			return "yes", nil
 		default:
 			return "no", nil
@@ -409,6 +411,8 @@ func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIP, nil
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
+		case configv1.KubevirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Kubevirt.IngressIP, nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
 				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
@@ -440,6 +444,8 @@ func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 			// VSphere UPI doesn't populate VSphere field. So it's not an error,
 			// and there is also no data
 			return nil, nil
+		case configv1.KubevirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
@@ -466,7 +472,7 @@ func existsDir(path string) (bool, error) {
 
 func onPremPlatform(platformString configv1.PlatformType) bool {
 	switch platformString {
-	case configv1.BareMetalPlatformType, configv1.OvirtPlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
+	case configv1.BareMetalPlatformType, configv1.OvirtPlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType, configv1.KubevirtPlatformType:
 		return true
 	default:
 		return false
