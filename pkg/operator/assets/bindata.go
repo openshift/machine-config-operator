@@ -1644,7 +1644,7 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: coredns
-  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
+  namespace: openshift-kni-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
@@ -1797,7 +1797,7 @@ kind: Pod
 apiVersion: v1
 metadata:
   name: keepalived
-  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
+  namespace: openshift-kni-infra
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:

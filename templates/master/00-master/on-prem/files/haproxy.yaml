@@ -6,7 +6,7 @@ contents:
     apiVersion: v1
     metadata:
       name: haproxy
-      namespace: openshift-{{ onPremPlatformShortName . }}-infra
+      namespace: openshift-kni-infra
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
