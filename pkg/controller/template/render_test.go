@@ -44,6 +44,9 @@ func TestCloudProvider(t *testing.T) {
 		platform: configv1.LibvirtPlatformType,
 		res:      "",
 	}, {
+		platform: configv1.KubevirtPlatformType,
+		res:      "",
+	}, {
 		platform: configv1.NonePlatformType,
 		res:      "",
 	}, {
@@ -197,6 +200,7 @@ var (
 		"libvirt":   "./test_data/controller_config_libvirt.yaml",
 		"none":      "./test_data/controller_config_none.yaml",
 		"vsphere":   "./test_data/controller_config_vsphere.yaml",
+		"kubevirt":  "./test_data/controller_config_kubevirt.yaml",
 	}
 )
 
