@@ -10,7 +10,6 @@ contents:
     spec:
       activeDeadlineSeconds: 60
       restartPolicy: Never
-      serviceAccountName: pv-recycler-controller
       containers:
         -
           name: recycler-container
