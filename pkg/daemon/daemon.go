@@ -1022,6 +1022,10 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
 	}
 
+	if err := dn.removeRollback(); err != nil {
+		return errors.Wrapf(err, "Failed to remove rollback")
+	}
+
 	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
