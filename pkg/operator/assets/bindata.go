@@ -1284,6 +1284,9 @@ rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
   verbs: ["*"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
 `)
 
 func manifestsMachineconfigserverClusterroleYamlBytes() ([]byte, error) {
@@ -1445,6 +1448,12 @@ spec:
       - name: certs
         secret:
           secretName: machine-config-server-tls
+      # See https://github.com/openshift/enhancements/pull/443
+      # This will only exist in 4.7+ clusters by default.
+      - name: provisioning-token
+        secret:
+          secretName: provisioning-token
+          optional: true
 `)
 
 func manifestsMachineconfigserverDaemonsetYamlBytes() ([]byte, error) {

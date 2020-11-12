@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"time"
 
 	yaml "github.com/ghodss/yaml"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	rest "k8s.io/client-go/rest"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
@@ -33,6 +37,8 @@ const (
 var _ = Server(&clusterServer{})
 
 type clusterServer struct {
+	client kubernetes.Interface
+
 	// machineClient is used to interact with the
 	// machine config, pool objects.
 	machineClient v1.MachineconfigurationV1Interface
@@ -52,16 +58,51 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
 	}
 
+	client, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, errors.Wrapf(err, "creating core client")
+	}
+
 	mc := v1.NewForConfigOrDie(restConfig)
 	return &clusterServer{
+		client:         client,
 		machineClient:  mc,
 		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
 }
 
+// authorizeRequest checks the provided token
+func (cs *clusterServer) authorizeRequest(cr poolRequest) (bool, error) {
+	s, err := cs.client.CoreV1().Secrets("openshift-machine-config-operator").Get(context.TODO(), "provisioning-token", metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return false, errors.Wrapf(err, "Fetching provisioning-token")
+		}
+		// If the cluster doesn't have a `provisioning-token` secret, we don't require it.
+		return true, nil
+	}
+	// Unconditionally sleep to mitigate brute force attacks
+	time.Sleep(1 * time.Second)
+	if cr.token != string(s.Data["token"]) {
+		return false, nil
+	}
+	return true, nil
+}
+
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
 func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
+	authorized, err := cs.authorizeRequest(cr)
+	if err != nil {
+		return nil, err
+	}
+	if !authorized {
+		return nil, &configError{
+			msg:       "Provided token is invalid",
+			forbidden: true,
+		}
+	}
+
 	mp, err := cs.machineClient.MachineConfigPools().Get(context.TODO(), cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)

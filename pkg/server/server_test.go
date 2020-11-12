@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -243,6 +244,8 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
 
+	basecs := k8sfake.NewSimpleClientset()
+
 	cs := fake.NewSimpleClientset()
 	_, err = cs.MachineconfigurationV1().MachineConfigPools().Create(context.TODO(), mp, metav1.CreateOptions{})
 	if err != nil {
@@ -254,6 +257,7 @@ func TestClusterServer(t *testing.T) {
 	}
 
 	csc := &clusterServer{
+		client:         basecs,
 		machineClient:  cs.MachineconfigurationV1(),
 		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
 	}
@@ -320,6 +324,36 @@ func TestClusterServer(t *testing.T) {
 	if !foundEncapsulated {
 		t.Errorf("missing %s", daemonconsts.MachineConfigEncapsulatedPath)
 	}
+
+	// Test https://github.com/openshift/enhancements/pull/443
+	provisioningSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "provisioning-token"},
+		Data: map[string][]byte{
+			"token": []byte("somesecrettoken"),
+		},
+	}
+	basecs.CoreV1().Secrets("openshift-machine-config-operator").Create(context.TODO(), provisioningSecret, metav1.CreateOptions{})
+
+	// Do a request without a token
+	res, err = csc.GetConfig(poolRequest{
+		machineConfigPool: testPool,
+	})
+	assert.Error(t, err)
+
+	// Incorrect token
+	res, err = csc.GetConfig(poolRequest{
+		token:             "someothertoken",
+		machineConfigPool: testPool,
+	})
+	assert.Error(t, err)
+
+	// Valid token
+	res, err = csc.GetConfig(poolRequest{
+		token:             "somesecrettoken",
+		machineConfigPool: testPool,
+	})
+	assert.Nil(t, err)
+	assert.NotNil(t, res)
 }
 
 func getKubeConfigContent(t *testing.T) ([]byte, []byte, error) {

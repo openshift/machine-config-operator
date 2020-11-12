@@ -27,7 +27,9 @@ const (
 
 type poolRequest struct {
 	machineConfigPool string
-	version           *semver.Version
+	// The provisioning token, see https://github.com/openshift/enhancements/pull/443
+	token   string
+	version *semver.Version
 }
 
 // APIServer provides the HTTP(s) endpoint
@@ -114,7 +116,10 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	poolName := path.Base(r.URL.Path)
 	useragent := r.Header.Get("User-Agent")
 	acceptHeader := r.Header.Get("Accept")
-	glog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q", poolName, r.RemoteAddr, useragent, acceptHeader)
+	q := r.URL.Query()
+	token := q.Get("token")
+	tokenProvided := token != ""
+	glog.Infof("Pool %s requested by address:%q User-Agent:%q Accept-Header: %q TokenPresent: %v", poolName, r.RemoteAddr, useragent, acceptHeader, tokenProvided)
 
 	reqConfigVer, err := detectSpecVersionFromAcceptHeader(acceptHeader)
 	if err != nil {
@@ -126,14 +131,20 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	cr := poolRequest{
 		machineConfigPool: poolName,
+		token:             token,
 		version:           reqConfigVer,
 	}
 
 	conf, err := sh.server.GetConfig(cr)
 	if err != nil {
 		w.Header().Set("Content-Length", "0")
-		w.WriteHeader(http.StatusInternalServerError)
-		glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		if IsForbidden(err) {
+			w.WriteHeader(http.StatusForbidden)
+			glog.Infof("Denying unauthorized request: %v", err)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't get config for req: %v, error: %v", cr, err)
+		}
 		return
 	}
 	if conf == nil {
