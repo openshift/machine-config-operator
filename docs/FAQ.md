@@ -54,6 +54,23 @@ If a file that *is* managed by MachineConfig is changed, the MCD will detect thi
 
 In the future, we would like to harden things more so that these things are more controlled, and ideally avoid having any persistent "unmanaged" state.  But it will take significant work to get there; and the status quo means that we can support other operators such as SDN (and e.g. [nmstate](https://github.com/nmstate/kubernetes-nmstate)) that may control parts of the host without the MCO's awareness.
 
+## Q: How do I debug a node failing to join the cluster?
+
+In clusters that are managed by the [Machine API](https://github.com/openshift/machine-api-operator/), see
+[this question](https://github.com/openshift/machine-api-operator/blob/master/FAQ.md#i-created-a-machine-but-it-never-joined-the-cluster)
+first.
+
+A node failing to join can fail broadly speaking at two separate stages; inside
+the initramfs (Ignition), or in the real root.  If Ignition fails, at the moment
+this requires accessing the console of the affected machine.  See also
+[this issue](https://github.com/coreos/ignition/issues/585).
+
+If the system fails in the real root, and you have configured a SSH key for
+the cluster, you should be able to `ssh` to the node.  A good first command is
+`systemctl --failed`.  Important units to look at would be `machine-config-daemon-firstboot.service`
+and `kubelet.service` - in general, the problem is likely to be some dependency
+of kubelet.
+
 ## Q: Can I use the MCO to re-partition or re-install?
 
 Not today.  The [MachineConfig](MachineConfiguration.md) doc discusses which sections
