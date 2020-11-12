@@ -107,7 +107,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName)
 	// there's a weird race where we observe the pool is updated when in reality
 	// that update is from before. Sleeping allows a new update cycle to start
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 10)
 
 	// ensure config rolls back as expected
 	waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
