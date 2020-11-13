@@ -39,13 +39,13 @@ contents:
       # find default interface
       while [ $counter -lt 12 ]; do
         # check ipv4
-        iface=$(ip route show default | awk '{if ($4 == "dev") print $5; exit}')
+        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
         if [[ -n "$iface" ]]; then
           echo "IPv4 Default gateway interface found: ${iface}"
           break
         fi
         # check ipv6
-        iface=$(ip -6 route show default | awk '{if ($4 == "dev") print $5; exit}')
+        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
         if [[ -n "$iface" ]]; then
           echo "IPv6 Default gateway interface found: ${iface}"
           break
