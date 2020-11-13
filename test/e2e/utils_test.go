@@ -51,7 +51,8 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
-			return false, err
+			t.Logf("Error getting MachingConfigPool %v %v... retrying", pool, err)
+			return false, nil
 		}
 		for _, mc := range mcp.Spec.Configuration.Source {
 			if mc.Name == mcName {
@@ -73,7 +74,8 @@ func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
-			return false, err
+			t.Logf("Error getting MachingConfigPool %v %v... retrying", pool, err)
+			return false, nil
 		}
 		if mcp.Status.Configuration.Name != target {
 			return false, nil
