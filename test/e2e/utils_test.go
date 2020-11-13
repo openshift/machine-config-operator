@@ -75,8 +75,12 @@ func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 			t.Logf("Error getting MachingConfigPool %v %v... retrying", pool, err)
 			return false, nil
 		}
+		t.Logf("rphillips - mcp.Status.Configuration.Name=%v target=%v\n", mcp.Status.Configuration.Name, target)
 		if mcp.Status.Configuration.Name != target {
 			return false, nil
+		}
+		for _, statusCondition := range mcp.Status.Conditions {
+			t.Logf("rphillips - target=%v statusCondition=%+v\n", target, statusCondition)
 		}
 		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) {
 			return true, nil
