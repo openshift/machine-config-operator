@@ -75,7 +75,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 		err := cs.MachineConfigs().Delete(oldMCConfig.Name, &metav1.DeleteOptions{})
 		require.Nil(t, err, "machine config deletion failed")
 	})
-	waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
+	lastTarget := waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
 
 	// create our ctrcfg and attach it to our created node pool
 	cleanupCtrcfgFunc := createCtrcfgWithConfig(t, cs, ctrcfgName, poolName, cfg)
@@ -94,14 +94,10 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfValue strin
 	// cleanup ctrcfg and make sure it doesn't error
 	err = cleanupCtrcfgFunc()
 	require.Nil(t, err)
-
 	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName)
-	// there's a weird race where we observe the pool is updated when in reality
-	// that update is from before. Sleeping allows a new update cycle to start
-	time.Sleep(time.Second * 5)
 
 	// ensure config rolls back as expected
-	waitForConfigAndPoolComplete(t, cs, poolName, oldMCConfig.Name)
+	waitForPoolComplete(t, cs, poolName, lastTarget)
 
 	restoredConfValue := getValueFromCrioConfig(t, cs, node, regexKey)
 	require.Equal(t, restoredConfValue, oldConfValue, "ctrcfg deletion didn't cause node to roll back config")
