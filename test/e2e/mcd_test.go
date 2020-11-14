@@ -252,7 +252,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"usbguard"},
+			Extensions: []string{"usbguard", "kernel-devel"},
 		},
 	}
 
@@ -269,10 +269,14 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedExtesnions := execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard")
-	if !strings.Contains(installedExtesnions, "usbguard") {
-		t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
+	installedPackages := execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers")
+	expectedPackages := []string{"usbguard", "kernel-devel", "kernel-headers"}
+	for _, v := range expectedPackages {
+		if !strings.Contains(installedPackages, v) {
+			t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
+		}
 	}
+
 	t.Logf("Node %s has expected extensions installed", infraNode.Name)
 
 	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
@@ -292,10 +296,15 @@ func TestExtensions(t *testing.T) {
 
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	installedExtesnions = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard")
-	if strings.Contains(installedExtesnions, "usbguard") {
-		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
+
+	installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers")
+	expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers"}
+	for _, v := range expectedPackages {
+		if strings.Contains(installedPackages, v) {
+			t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
+		}
 	}
+
 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
 
 	unlabelFunc()
