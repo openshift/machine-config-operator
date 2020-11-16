@@ -555,6 +555,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 // syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
 // have updated to the latest configuration.
 func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
+	glog.Infof("syncing Required MachineConfigPools")
 	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, requiredForUpgradeMachineConfigPoolLabelKey, ""))
 	if err != nil {
 		return err
@@ -604,11 +605,13 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				continue
 			}
 			lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 			return false, nil
 		}
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
+			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
 			return fmt.Errorf("%v during syncRequiredMachineConfigPools: %v", err, lastErr)
 		}
 		return err
