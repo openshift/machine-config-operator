@@ -560,14 +560,6 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	if err != nil {
 		return err
 	}
-	isPoolStatusConditionTrue := func(pool *mcfgv1.MachineConfigPool, conditionType mcfgv1.MachineConfigPoolConditionType) bool {
-		for _, condition := range pool.Status.Conditions {
-			if condition.Type == conditionType {
-				return condition.Status == corev1.ConditionTrue
-			}
-		}
-		return false
-	}
 
 	var lastErr error
 	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
@@ -842,4 +834,13 @@ func mergeCertWithCABundle(initialBundle, newBundle []byte, subject string) []by
 		initialBundle = next
 	}
 	return mergedBytes
+}
+
+func isPoolStatusConditionTrue(pool *mcfgv1.MachineConfigPool, conditionType mcfgv1.MachineConfigPoolConditionType) bool {
+	for _, condition := range pool.Status.Conditions {
+		if condition.Type == conditionType {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
