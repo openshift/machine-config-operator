@@ -3,6 +3,8 @@ enabled: true
 contents: |
   [Unit]
   Description=Set GCP Transient Hostname
+  # Removal of this file signals firstboot completion
+  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
   # Block services relying on Networking being up.
   Before=network-online.target
   # Wait for NetworkManager to report its online
