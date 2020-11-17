@@ -16,6 +16,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
@@ -28,6 +29,7 @@ type renderConfig struct {
 	Images                 *RenderConfigImages
 	KubeAPIServerServingCA string
 	Infra                  configv1.Infrastructure
+	Constants              map[string]string
 }
 
 func renderAsset(config *renderConfig, path string) ([]byte, error) {
@@ -42,6 +44,11 @@ func renderAsset(config *renderConfig, path string) ([]byte, error) {
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
+
+	if config.Constants == nil {
+		config.Constants = constants.ConstantsByName
+	}
+
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(objBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse asset %s: %v", path, err)
