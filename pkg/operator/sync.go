@@ -19,6 +19,7 @@ import (
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 
@@ -556,10 +557,6 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 // have updated to the latest configuration.
 func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	glog.Infof("syncing Required MachineConfigPools")
-	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, requiredForUpgradeMachineConfigPoolLabelKey, ""))
-	if err != nil {
-		return err
-	}
 
 	var lastErr error
 	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
@@ -580,29 +577,41 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				return false, nil
 			}
 		}
-		pools, err := optr.mcpLister.List(sel)
+
+		pools, err := optr.mcpLister.List(labels.Everything())
 		if err != nil {
 			lastErr = err
 			return false, nil
 		}
 		for _, pool := range pools {
-			if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, optr.mcLister.Get); err != nil {
-				lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
+			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+			if degraded {
+				lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
+				glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
+				syncerr := optr.syncUpgradeableStatus()
+				if syncerr != nil {
+					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+				}
 				return false, nil
 			}
-			degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
-			if pool.Generation <= pool.Status.ObservedGeneration &&
-				isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) &&
-				!degraded {
-				continue
+
+			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
+
+			if hasRequiredPoolLabel {
+				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, optr.mcLister.Get); err != nil {
+					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
+					return false, nil
+				}
+
+				if pool.Generation <= pool.Status.ObservedGeneration &&
+					isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
+					continue
+				}
 			}
-			lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
-			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
-			syncerr := optr.syncUpgradeableStatus()
-			if syncerr != nil {
-				glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
-			}
-			return false, nil
+		}
+		syncstatuserr := optr.syncUpgradeableStatus()
+		if syncstatuserr != nil {
+			glog.Errorf("Error syncingUpgradeableStatus: %q", syncstatuserr)
 		}
 		return true, nil
 	}); err != nil {
