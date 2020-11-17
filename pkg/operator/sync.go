@@ -598,6 +598,10 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			}
 			lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
+			syncerr := optr.syncUpgradeableStatus()
+			if syncerr != nil {
+				glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
+			}
 			return false, nil
 		}
 		return true, nil
