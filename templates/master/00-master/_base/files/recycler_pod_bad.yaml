@@ -1,5 +1,5 @@
 mode: 0644
-path: "/etc/kubernetes/recycler-pod.yaml"
+path: "/etc/kubernetes/manifests/recycler-pod.yaml"
 contents:
   inline: |
     apiVersion: v1
