@@ -174,11 +174,7 @@ contents:
           else
             sed -i '/^\[connection\]$/a interface-name=br-ex' ${new_conn_file}
           fi
-          if ! grep 'cloned-mac-address=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[ethernet\]$/,/^\[/ s/^cloned-mac-address=.*$/cloned-mac-address='"$iface_mac"'/' ${new_conn_file}
-          else
-            sed -i '/^\[ethernet\]$/a cloned-mac-address='"$iface_mac" ${new_conn_file}
-          fi
+          sed -i '/^cloned-mac-address=.*$/d' ${new_conn_file}
           if grep 'mtu=' ${new_conn_file} &> /dev/null; then
             sed -i '/^\[ethernet\]$/,/^\[/ s/^mtu=.*$/mtu='"$iface_mtu"'/' ${new_conn_file}
           else
@@ -192,7 +188,7 @@ contents:
           echo "Loaded new ovs-if-br-ex connection file: ${new_conn_file}"
         else
           nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
-            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu}
         fi
       fi
 
