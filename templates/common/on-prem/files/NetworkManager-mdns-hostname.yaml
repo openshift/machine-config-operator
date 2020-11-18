@@ -2,6 +2,7 @@ mode: 0755
 path: "/etc/NetworkManager/dispatcher.d/40-mdns-hostname"
 contents:
   inline: |
+    {{ if (onPremPlatformAPIServerInternalIP .) -}}
     #!/bin/bash
     STATUS=$2
     case "$STATUS" in
@@ -19,3 +20,4 @@ contents:
         *)
         ;;
     esac
+    {{ end -}}

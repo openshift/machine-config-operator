@@ -410,7 +410,12 @@ func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+			}
+			// VSphere UPI doesn't populate VSphere field. So it's not an error,
+			// and there is also no data
+			return nil, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
@@ -429,7 +434,12 @@ func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+			}
+			// VSphere UPI doesn't populate VSphere field. So it's not an error,
+			// and there is also no data
+			return nil, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
