@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	"github.com/vincent-petithory/dataurl"

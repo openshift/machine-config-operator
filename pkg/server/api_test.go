@@ -50,6 +50,7 @@ func TestAcceptHeaders(t *testing.T) {
 	v2_2 := semver.New("2.2.0")
 	v2_4 := semver.New("2.4.0")
 	v3_1 := semver.New("3.1.0")
+	v3_2 := semver.New("3.2.0")
 	headers := []acceptHeaderScenario{
 		{
 			name:  "IgnV0",
@@ -78,6 +79,25 @@ func TestAcceptHeaders(t *testing.T) {
 		},
 		{
 			name:  "IgnV2",
+			input: "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1",
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      v3_2,
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v3_2,
+		},
+		{
+			name:  "IgnV2_31",
 			input: "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1",
 			headerVals: []acceptHeaderValue{
 				{
@@ -145,8 +165,13 @@ func setAcceptHeaderOnReq(req *http.Request) *http.Request {
 	return req
 }
 
-func setV3AcceptHeaderOnReq(req *http.Request) *http.Request {
+func setV3_1AcceptHeaderOnReq(req *http.Request) *http.Request {
 	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
+	return req
+}
+
+func setV3AcceptHeaderOnReq(req *http.Request) *http.Request {
+	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
 	return req
 }
 
@@ -208,6 +233,21 @@ func TestAPIHandler(t *testing.T) {
 				checkStatus(t, response, http.StatusMethodNotAllowed)
 				checkContentLength(t, response, 0)
 				checkBodyLength(t, response, 0)
+			},
+		},
+		{
+			name:    "get spec v3_1 config path that exists",
+			request: setV3_1AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
 			},
 		},
 		{

@@ -344,7 +344,7 @@ sh-4.2# chroot /host
 sh-4.4# /sbin/iptables -D OPENSHIFT-BLOCK-OUTPUT 1
 sh-4.4# curl -k https://<api-server-url>:22623/config/worker
 ...
-sh-4.4# curl -H "Accept: application/vnd.coreos.ignition+json; version=3.1.0" -k https://<api-server-url>/config/worker
+sh-4.4# curl -H "Accept: application/vnd.coreos.ignition+json; version=3.2.0" -k https://<api-server-url>/config/worker
 ...
 ```
 

@@ -141,11 +141,21 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	// we know we're at 3.1 in code.. serve directly, parsing is expensive...
+	// we know we're at 3.2 in code.. serve directly, parsing is expensive...
 	// we're doing it during an HTTP request, and most notably before we write the HTTP headers
 	var serveConf *runtime.RawExtension
-	if reqConfigVer.Equal(*semver.New("3.1.0")) {
+	if reqConfigVer.Equal(*semver.New("3.2.0")) {
 		serveConf = conf
+	} else if reqConfigVer.Equal(*semver.New("3.1.0")) {
+		converted31, err := ctrlcommon.ConvertRawExtIgnitionToV3_1(conf)
+		if err != nil {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			return
+		}
+
+		serveConf = &converted31
 	} else {
 		// Can only be 2.2 here
 		converted2, err := ctrlcommon.ConvertRawExtIgnitionToV2(conf)
@@ -270,9 +280,10 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 	// For Ignition v0.x, the accept header looks like:
 	// "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1".
 	// For v2.x, it looks like:
-	// "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1".
+	// "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1".
 	v2_2 := semver.New("2.2.0")
 	v3_1 := semver.New("3.1.0")
+	v3_2 := semver.New("3.2.0")
 
 	var ignVersionError error
 	headers, err := parseAcceptHeader(acceptHeader)
@@ -283,7 +294,9 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 
 	for _, header := range headers {
 		if header.MIMESubtype == "vnd.coreos.ignition+json" && header.SemVer != nil {
-			if !header.SemVer.LessThan(*v3_1) && header.SemVer.LessThan(*semver.New("4.0.0")) {
+			if !header.SemVer.LessThan(*v3_2) && header.SemVer.LessThan(*semver.New("4.0.0")) {
+				return v3_2, nil
+			} else if !header.SemVer.LessThan(*v3_1) && header.SemVer.LessThan(*v3_2) {
 				return v3_1, nil
 			} else if !header.SemVer.LessThan(*v2_2) && header.SemVer.LessThan(*semver.New("3.0.0")) {
 				return v2_2, nil

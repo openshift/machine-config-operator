@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"

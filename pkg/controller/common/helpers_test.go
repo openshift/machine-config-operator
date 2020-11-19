@@ -5,7 +5,7 @@ import (
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,7 +43,7 @@ func TestValidateIgnition(t *testing.T) {
 	require.NotNil(t, isValid2)
 
 	// Test that a valid ignition config returns nil
-	testIgn3Config.Ignition.Version = "3.1.0"
+	testIgn3Config.Ignition.Version = "3.2.0"
 	mode := 420
 	testfiledata := "data:,greatconfigstuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
@@ -75,12 +75,11 @@ func TestConvertIgnition2to3(t *testing.T) {
 }
 
 func TestConvertIgnition3to2(t *testing.T) {
-
 	// Make a new Ign3 config
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.1.0"
+	testIgn3Config.Ignition.Version = "3.2.0"
 	isValid := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid)
 
@@ -92,11 +91,11 @@ func TestConvertIgnition3to2(t *testing.T) {
 }
 
 func TestParseAndConvert(t *testing.T) {
-	// Make a new Ign3.1 config
+	// Make a new Ign3.2 config
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser}
-	testIgn3Config.Ignition.Version = "3.1.0"
+	testIgn3Config.Ignition.Version = "3.2.0"
 
 	// Make a Ign2 comp config
 	testIgn2Config := ign2types.Config{}
@@ -118,8 +117,8 @@ func TestParseAndConvert(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
-	// Make a valid Ign 3.1 cfg
-	testIgn3Config.Ignition.Version = "3.1.0"
+	// Make a valid Ign 3.2 cfg
+	testIgn3Config.Ignition.Version = "3.2.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
 	// check that it was parsed successfully
@@ -127,14 +126,24 @@ func TestParseAndConvert(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
+	// Make a valid Ign 3.1 cfg
+	testIgn3Config.Ignition.Version = "3.1.0"
+	// turn it into a raw []byte
+	rawIgn = helpers.MarshalOrDie(testIgn3Config)
+	// check that it was parsed successfully back to 3.2
+	convertedIgn, err = ParseAndConvertConfig(rawIgn)
+	require.Nil(t, err)
+	testIgn3Config.Ignition.Version = "3.2.0"
+	assert.Equal(t, testIgn3Config, convertedIgn)
+
 	// Make a valid Ign 3.0 cfg
 	testIgn3Config.Ignition.Version = "3.0.0"
 	// turn it into a raw []byte
 	rawIgn = helpers.MarshalOrDie(testIgn3Config)
-	// check that it was parsed successfully back to 3.1
+	// check that it was parsed successfully back to 3.2
 	convertedIgn, err = ParseAndConvertConfig(rawIgn)
 	require.Nil(t, err)
-	testIgn3Config.Ignition.Version = "3.1.0"
+	testIgn3Config.Ignition.Version = "3.2.0"
 	assert.Equal(t, testIgn3Config, convertedIgn)
 
 	// Make a bad Ign3 cfg
