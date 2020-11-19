@@ -328,6 +328,12 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 
 	var osImageContentDir string
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+		// When we're going to apply an OS update, switch the block
+		// scheduler to BFQ to apply more fairness between etcd
+		// and the OS update.
+		if err := setRootDeviceSchedulerBFQ(); err != nil {
+			return err
+		}
 		// We emitted this event before, so keep it
 		if dn.recorder != nil {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
