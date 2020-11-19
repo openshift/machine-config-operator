@@ -18,7 +18,7 @@ require (
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
-	github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5
+	github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
 	github.com/coreos/ignition v0.35.0
 	github.com/coreos/ignition/v2 v2.7.0
 	github.com/davecgh/go-spew v1.1.1

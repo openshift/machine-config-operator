@@ -168,13 +168,11 @@ github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f h1:JOrtw2xFKzlg+
 github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=
 github.com/coreos/go-systemd/v22 v22.0.0 h1:XJIw/+VlJ+87J+doOxznsAWIdmWuViOVhkQamW5YV28=
 github.com/coreos/go-systemd/v22 v22.0.0/go.mod h1:xO0FLkIi5MaZafQlIrOotqXZ90ih+1atmu1JpKERPPk=
-github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5 h1:rBga8xIJ7MzGbTfruI8Kfxu1X3FlIquMRuW9yLsW5Mc=
-github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5/go.mod h1:LNu0WTt8iVH/WJH15R/SjZw7AdyY2qAyf9ILZTCBvho=
+github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa h1:oIF6XCee+GoGNTykmC2pvx3A3d5ES/CHAB2H0beGji0=
+github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa/go.mod h1:pqAsDWa5YDi10Va/aqQI0bwOs9hXqoE2xwb5vnFys5s=
 github.com/coreos/ignition v0.35.0 h1:UFodoYq1mOPrbEjtxIsZbThcDyQwAI1owczRDqWmKkQ=
 github.com/coreos/ignition v0.35.0/go.mod h1:WJQapxzEn9DE0ryxsGvm8QnBajm/XsS/PkrDqSpz+bA=
 github.com/coreos/ignition/v2 v2.1.1/go.mod h1:RqmqU64zxarUJa3l4cHtbhcSwfQLpUhv0WVziZwoXvE=
-github.com/coreos/ignition/v2 v2.3.0 h1:TK+STbzVe6KZp4tQ2IaNSRMiWX4/diNngep1F7tP7Zk=
-github.com/coreos/ignition/v2 v2.3.0/go.mod h1:85dmM/CERMZXNrJsXqtNLIxR/dn8G9qlL1CmEjCugp0=
 github.com/coreos/ignition/v2 v2.7.0 h1:JCKxJllVtnk1lQY1uisxrtFSHG5L2NI1LRzc8wBEk84=
 github.com/coreos/ignition/v2 v2.7.0/go.mod h1:3CjaRpg51hmJzPjarbzB0RvSZbLkNOczxKJobTl6nOY=
 github.com/coreos/pkg v0.0.0-20160727233714-3ac0863d7acf/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
