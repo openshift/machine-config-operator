@@ -180,11 +180,6 @@ func (f *fixture) newController() *Controller {
 		ci.Config().V1().ClusterVersions(),
 		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
 
-	c.patchContainerRuntimeConfigsFunc = func(name string, patch []byte) error {
-		f.client.Invokes(core.NewRootPatchAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, name, types.MergePatchType, patch), nil)
-		return nil
-	}
-
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
