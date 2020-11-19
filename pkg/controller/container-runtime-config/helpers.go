@@ -71,7 +71,7 @@ type tomlConfigCRIOLogLevel struct {
 type tomlConfigCRIOPidsLimit struct {
 	Crio struct {
 		Runtime struct {
-			PidsLimit int64 `toml:"pids_limit,omitemtpy"`
+			PidsLimit int64 `toml:"pids_limit,omitempty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
