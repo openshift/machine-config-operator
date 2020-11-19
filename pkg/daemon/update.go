@@ -1065,6 +1065,42 @@ func restorePath(path string) error {
 	return nil
 }
 
+// parse path to find out if its a systemd dropin
+// Returns is dropin (true/false), service name, dropin name
+func isPathASystemdDropin(path string) (bool, string, string) {
+	if !strings.HasPrefix(path, "/etc/systemd/system") {
+		return false, "", ""
+	}
+	if !strings.HasSuffix(path, ".conf") {
+		return false, "", ""
+	}
+	pathSegments := strings.Split(path, "/")
+	dropinName := pathSegments[len(pathSegments)-1]
+	servicePart := pathSegments[len(pathSegments)-2]
+	allServiceSegments := strings.Split(servicePart, ".")
+	if allServiceSegments[len(allServiceSegments)-1] != "d" {
+		return false, "", ""
+	}
+	serviceName := strings.Join(allServiceSegments[:len(allServiceSegments)-1], ".")
+	return true, serviceName, dropinName
+}
+
+// iterate systemd units and return true if this path is already covered by a systemd dropin
+func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool {
+	if ok, service, dropin := isPathASystemdDropin(path); ok {
+		for _, u := range systemd.Units {
+			if u.Name == service {
+				for _, j := range u.Dropins {
+					if j.Name == dropin {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 // deleteStaleData performs a diff of the new and the old Ignition config. It then deletes
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
@@ -1083,55 +1119,63 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 	}
 
 	for _, f := range oldIgnConfig.Storage.Files {
-		if _, ok := newFileSet[f.Path]; !ok {
-			if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
-				if err := os.Remove(noOrigFileStampName(f.Path)); err != nil {
-					return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(f.Path), err)
-				}
-				glog.V(2).Infof("Removing file %q completely", f.Path)
-			} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
-				// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
-				// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
-				// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
-				var restore bool
-				if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
-					// File is owned by an rpm
-					restore = true
-				} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
-					if _, err := os.Stat("/usr" + f.Path); err != nil {
-						if !os.IsNotExist(err) {
-							return err
-						}
-
-						// If the error is ErrNotExist then we don't restore the file
-					} else {
-						restore = true
-					}
-				}
-
-				if restore {
-					if err := restorePath(f.Path); err != nil {
+		if _, ok := newFileSet[f.Path]; ok {
+			continue
+		}
+		if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
+			if err := os.Remove(noOrigFileStampName(f.Path)); err != nil {
+				return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(f.Path), err)
+			}
+			glog.V(2).Infof("Removing file %q completely", f.Path)
+		} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
+			// Add a check for backwards compatibility: basically if the file doesn't exist in /usr/etc (on FCOS/RHCOS)
+			// and no rpm is claiming it, we assume that the orig file came from a wrongful backup of a MachineConfig
+			// file instead of a file originally on disk. See https://bugzilla.redhat.com/show_bug.cgi?id=1814397
+			var restore bool
+			if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
+				// File is owned by an rpm
+				restore = true
+			} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
+				if _, err := os.Stat("/usr" + f.Path); err != nil {
+					if !os.IsNotExist(err) {
 						return err
 					}
-					glog.V(2).Infof("Restored file %q", f.Path)
-					continue
-				}
 
-				if err := os.Remove(origFileName(f.Path)); err != nil {
-					return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+					// If the error is ErrNotExist then we don't restore the file
+				} else {
+					restore = true
 				}
 			}
-			glog.V(2).Infof("Deleting stale config file: %s", f.Path)
-			if err := os.Remove(f.Path); err != nil {
-				newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
-				if !os.IsNotExist(err) {
-					return newErr
+
+			if restore {
+				if err := restorePath(f.Path); err != nil {
+					return err
 				}
-				// otherwise, just warn
-				glog.Warningf("%v", newErr)
+				glog.V(2).Infof("Restored file %q", f.Path)
+				continue
 			}
-			glog.Infof("Removed stale file %q", f.Path)
+
+			if err := os.Remove(origFileName(f.Path)); err != nil {
+				return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+			}
 		}
+
+		// Check Systemd.Units.Dropins - don't remove the file if configuration has been converted into a dropin
+		if dn.isPathInDropins(f.Path, &newIgnConfig.Systemd) {
+			glog.Infof("Not removing file %q: replaced with systemd dropin", f.Path)
+			continue
+		}
+
+		glog.V(2).Infof("Deleting stale config file: %s", f.Path)
+		if err := os.Remove(f.Path); err != nil {
+			newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
+			if !os.IsNotExist(err) {
+				return newErr
+			}
+			// otherwise, just warn
+			glog.Warningf("%v", newErr)
+		}
+		glog.Infof("Removed stale file %q", f.Path)
 	}
 
 	newUnitSet := make(map[string]struct{})
