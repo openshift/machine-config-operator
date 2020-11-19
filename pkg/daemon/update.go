@@ -518,6 +518,10 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // remove the rollback once the MCD pod has landed on a node, so
 // we know kubelet is working.
 func (dn *Daemon) removeRollback() error {
+	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+		// do not attempt to rollback on non-RHCOS/FCOS machines
+		return nil
+	}
 	_, err := runGetOut("rpm-ostree", "cleanup", "-r")
 	return err
 }
