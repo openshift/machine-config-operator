@@ -10,7 +10,8 @@ import (
 	"github.com/clarketm/json"
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
-	"github.com/coreos/ign-converter/translate/v31tov22"
+	"github.com/coreos/ign-converter/translate/v32tov22"
+	"github.com/coreos/ign-converter/translate/v32tov31"
 	ign2error "github.com/coreos/ignition/config/shared/errors"
 	ign2 "github.com/coreos/ignition/config/v2_2"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
@@ -18,9 +19,12 @@ import (
 	validate2 "github.com/coreos/ignition/config/validate"
 	ign3error "github.com/coreos/ignition/v2/config/shared/errors"
 	ign3_0 "github.com/coreos/ignition/v2/config/v3_0"
-	ign3 "github.com/coreos/ignition/v2/config/v3_1"
-	translate3 "github.com/coreos/ignition/v2/config/v3_1/translate"
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3_1 "github.com/coreos/ignition/v2/config/v3_1"
+	translate3_1 "github.com/coreos/ignition/v2/config/v3_1/translate"
+	ign3_1types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_2"
+	translate3 "github.com/coreos/ignition/v2/config/v3_2/translate"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
@@ -144,22 +148,28 @@ func WriteTerminationError(err error) {
 }
 
 // ConvertRawExtIgnitionToV3 ensures that the Ignition config in
-// the RawExtension is spec v3.1, or translates to it.
+// the RawExtension is spec v3.2, or translates to it.
 func ConvertRawExtIgnitionToV3(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
 	// This function is only used by the MCServer so we don't need to consider v3.0
 	_, rptV3, errV3 := ign3.Parse(inRawExtIgn.Raw)
 	if errV3 == nil && !rptV3.IsFatal() {
-		// The rawExt is already on V3.1, no need to translate
+		// The rawExt is already on V3.2, no need to translate
 		return *inRawExtIgn, nil
 	}
 
-	ignCfg, rpt, err := ign2.Parse(inRawExtIgn.Raw)
-	if err != nil || rpt.IsFatal() {
-		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config spec v2.2 failed with error: %v\nReport: %v", err, rpt)
-	}
-	converted3, err := convertIgnition2to3(ignCfg)
-	if err != nil {
-		return runtime.RawExtension{}, errors.Errorf("failed to convert config from spec v2.2 to v3.1: %v", err)
+	var converted3 ign3types.Config
+	ignCfgV3_1, rptV3_1, errV3_1 := ign3_1.Parse(inRawExtIgn.Raw)
+	if errV3_1 == nil && !rptV3_1.IsFatal() {
+		converted3 = translate3.Translate(ignCfgV3_1)
+	} else {
+		ignCfg, rpt, err := ign2.Parse(inRawExtIgn.Raw)
+		if err != nil || rpt.IsFatal() {
+			return runtime.RawExtension{}, errors.Errorf("parsing Ignition config spec v2.2 failed with error: %v\nReport: %v", err, rpt)
+		}
+		converted3, err = convertIgnition2to3(ignCfg)
+		if err != nil {
+			return runtime.RawExtension{}, errors.Errorf("failed to convert config from spec v2.2 to v3.2: %v", err)
+		}
 	}
 
 	outIgnV3, err := json.Marshal(converted3)
@@ -173,17 +183,46 @@ func ConvertRawExtIgnitionToV3(inRawExtIgn *runtime.RawExtension) (runtime.RawEx
 	return outRawExt, nil
 }
 
+// ConvertRawExtIgnitionToV3_1 ensures that the Ignition config in
+// the RawExtension is spec v3.1, or translates to it.
+func ConvertRawExtIgnitionToV3_1(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
+	rawExt, err := ConvertRawExtIgnitionToV3(inRawExtIgn)
+	if err != nil {
+		return runtime.RawExtension{}, err
+	}
+
+	ignCfgV3, rptV3, errV3 := ign3.Parse(rawExt.Raw)
+	if errV3 != nil || rptV3.IsFatal() {
+		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
+	}
+
+	ignCfgV31, err := convertIgnition32to31(ignCfgV3)
+	if err != nil {
+		return runtime.RawExtension{}, err
+	}
+
+	outIgnV31, err := json.Marshal(ignCfgV31)
+	if err != nil {
+		return runtime.RawExtension{}, errors.Errorf("failed to marshal converted config: %v", err)
+	}
+
+	outRawExt := runtime.RawExtension{}
+	outRawExt.Raw = outIgnV31
+
+	return outRawExt, nil
+}
+
 // ConvertRawExtIgnitionToV2 ensures that the Ignition config in
 // the RawExtension is spec v2.2, or translates to it.
 func ConvertRawExtIgnitionToV2(inRawExtIgn *runtime.RawExtension) (runtime.RawExtension, error) {
 	ignCfg, rpt, err := ign3.Parse(inRawExtIgn.Raw)
 	if err != nil || rpt.IsFatal() {
-		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config spec v3.1 failed with error: %v\nReport: %v", err, rpt)
+		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config spec v3.2 failed with error: %v\nReport: %v", err, rpt)
 	}
 
 	converted2, err := convertIgnition3to2(ignCfg)
 	if err != nil {
-		return runtime.RawExtension{}, errors.Errorf("failed to convert config from spec v3.1 to v2.2: %v", err)
+		return runtime.RawExtension{}, errors.Errorf("failed to convert config from spec v3.2 to v2.2: %v", err)
 	}
 
 	outIgnV2, err := json.Marshal(converted2)
@@ -197,7 +236,7 @@ func ConvertRawExtIgnitionToV2(inRawExtIgn *runtime.RawExtension) (runtime.RawEx
 	return outRawExt, nil
 }
 
-// convertIgnition2to3 takes an ignition spec v2.2 config and returns a v3.1 config
+// convertIgnition2to3 takes an ignition spec v2.2 config and returns a v3.2 config
 func convertIgnition2to3(ign2config ign2types.Config) (ign3types.Config, error) {
 	// only support writing to root file system
 	fsMap := map[string]string{
@@ -210,22 +249,33 @@ func convertIgnition2to3(ign2config ign2types.Config) (ign3types.Config, error) 
 	if err != nil {
 		return ign3types.Config{}, errors.Errorf("unable to convert Ignition spec v2 config to v3: %v", err)
 	}
-	// Workaround to get a v3.1 config as output
-	converted3 := translate3.Translate(ign3_0config)
+	// Workaround to get a v3.2 config as output
+	converted3 := translate3.Translate(translate3_1.Translate(ign3_0config))
 
 	glog.V(4).Infof("Successfully translated Ignition spec v2 config to Ignition spec v3 config: %v", converted3)
 	return converted3, nil
 }
 
-// convertIgnition3to2 takes an ignition spec v3.1 config and returns a v2.2 config
+// convertIgnition3to2 takes an ignition spec v3.2 config and returns a v2.2 config
 func convertIgnition3to2(ign3config ign3types.Config) (ign2types.Config, error) {
-	converted2, err := v31tov22.Translate(ign3config)
+	converted2, err := v32tov22.Translate(ign3config)
 	if err != nil {
 		return ign2types.Config{}, errors.Errorf("unable to convert Ignition spec v3 config to v2: %v", err)
 	}
 	glog.V(4).Infof("Successfully translated Ignition spec v3 config to Ignition spec v2 config: %v", converted2)
 
 	return converted2, nil
+}
+
+// convertIgnition32to31 takes an ignition spec v3.2 config and returns a v3.1 config
+func convertIgnition32to31(ign3config ign3types.Config) (ign3_1types.Config, error) {
+	converted31, err := v32tov31.Translate(ign3config)
+	if err != nil {
+		return ign3_1types.Config{}, errors.Errorf("unable to convert Ignition spec v3_2 config to v3_1: %v", err)
+	}
+	glog.V(4).Infof("Successfully translated Ignition spec v3_2 config to Ignition spec v3_1 config: %v", converted31)
+
+	return converted31, nil
 }
 
 // ValidateIgnition wraps the underlying Ignition V2/V3 validation, but explicitly supports
@@ -287,32 +337,39 @@ func ValidateMachineConfig(cfg mcfgv1.MachineConfigSpec) error {
 // IgnParseWrapper parses rawIgn for both V2 and V3 ignition configs and returns
 // a V2 or V3 Config or an error. This wrapper is necessary since V2 and V3 use different parsers.
 func IgnParseWrapper(rawIgn []byte) (interface{}, error) {
-	ignCfgV3_1, rptV3_1, errV3_1 := ign3.Parse(rawIgn)
-	if errV3_1 == nil && !rptV3_1.IsFatal() {
-		return ignCfgV3_1, nil
+	ignCfgV3_2, rptV3_2, errV3_2 := ign3.Parse(rawIgn)
+	if errV3_2 == nil && !rptV3_2.IsFatal() {
+		return ignCfgV3_2, nil
 	}
-	// unlike spec v2 parsers, v3 parsers aren't chained by default so we need to try parsing as spec v3.0 as well
-	if errV3_1.Error() == ign3error.ErrUnknownVersion.Error() {
-		ignCfgV3_0, rptV3_0, errV3_0 := ign3_0.Parse(rawIgn)
-		if errV3_0 == nil && !rptV3_0.IsFatal() {
-			return translate3.Translate(ignCfgV3_0), nil
+	if errV3_2.Error() == ign3error.ErrUnknownVersion.Error() {
+		ignCfgV3_1, rptV3_1, errV3_1 := ign3_1.Parse(rawIgn)
+		if errV3_1 == nil && !rptV3_1.IsFatal() {
+			return translate3.Translate(ignCfgV3_1), nil
 		}
-
-		if errV3_0.Error() == ign3error.ErrUnknownVersion.Error() {
-			ignCfgV2, rptV2, errV2 := ign2.Parse(rawIgn)
-			if errV2 == nil && !rptV2.IsFatal() {
-				return ignCfgV2, nil
+		// unlike spec v2 parsers, v3 parsers aren't chained by default so we need to try parsing as spec v3.0 as well
+		if errV3_1.Error() == ign3error.ErrUnknownVersion.Error() {
+			ignCfgV3_0, rptV3_0, errV3_0 := ign3_0.Parse(rawIgn)
+			if errV3_0 == nil && !rptV3_0.IsFatal() {
+				return translate3.Translate(translate3_1.Translate(ignCfgV3_0)), nil
 			}
 
-			// If the error is still UnknownVersion it's not a 3.1/3.0 or 2.x config, thus unsupported
-			if errV2.Error() == ign2error.ErrUnknownVersion.Error() {
-				return ign3types.Config{}, errors.Errorf("parsing Ignition config failed: unknown version. Supported spec versions: 2.2, 3.0, 3.1")
+			if errV3_0.Error() == ign3error.ErrUnknownVersion.Error() {
+				ignCfgV2, rptV2, errV2 := ign2.Parse(rawIgn)
+				if errV2 == nil && !rptV2.IsFatal() {
+					return ignCfgV2, nil
+				}
+
+				// If the error is still UnknownVersion it's not a 3.2/3.1/3.0 or 2.x config, thus unsupported
+				if errV2.Error() == ign2error.ErrUnknownVersion.Error() {
+					return ign3types.Config{}, errors.Errorf("parsing Ignition config failed: unknown version. Supported spec versions: 2.2, 3.0, 3.1, 3.2")
+				}
+				return ign3types.Config{}, errors.Errorf("parsing Ignition spec v2 failed with error: %v\nReport: %v", errV2, rptV2)
 			}
-			return ign3types.Config{}, errors.Errorf("parsing Ignition spec v2 failed with error: %v\nReport: %v", errV2, rptV2)
+			return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.0 failed with error: %v\nReport: %v", errV3_0, rptV3_0)
 		}
-		return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.0 failed with error: %v\nReport: %v", errV3_0, rptV3_0)
+		return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.1 failed with error: %v\nReport: %v", errV3_1, rptV3_1)
 	}
-	return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.1 failed with error: %v\nReport: %v", errV3_1, rptV3_1)
+	return ign3types.Config{}, errors.Errorf("parsing Ignition config spec v3.2 failed with error: %v\nReport: %v", errV3_2, rptV3_2)
 }
 
 // ParseAndConvertConfig parses rawIgn for both V2 and V3 ignition configs and returns
@@ -452,8 +509,8 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 		if err != nil {
 			return nil, fmt.Errorf("failed to transpile config to Ignition config %s\nTranslation set: %v", err, tSet)
 		}
-		ign3_1config := translate3.Translate(ign3_0config)
-		outConfig = ign3.Merge(outConfig, ign3_1config)
+		ign3_2config := translate3.Translate(translate3_1.Translate(ign3_0config))
+		outConfig = ign3.Merge(outConfig, ign3_2config)
 	}
 
 	for _, d := range units {
@@ -469,8 +526,8 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 		if err != nil {
 			return nil, fmt.Errorf("failed to transpile config to Ignition config %s\nTranslation set: %v", err, tSet)
 		}
-		ign3_1config := translate3.Translate(ign3_0config)
-		outConfig = ign3.Merge(outConfig, ign3_1config)
+		ign3_2config := translate3.Translate(translate3_1.Translate(ign3_0config))
+		outConfig = ign3.Merge(outConfig, ign3_2config)
 	}
 
 	return &outConfig, nil

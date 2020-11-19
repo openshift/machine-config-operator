@@ -57,7 +57,7 @@ type MachineConfigSpec struct {
 }
 ```
 
-The actual custom resource manifest then could look like this if you are applying it to cluster on version >= 4.6:
+The actual custom resource manifest then could look like this if you are applying it to cluster on version >= 4.7:
 
 ```
 apiVersion: machineconfiguration.openshift.io/v1
@@ -67,7 +67,7 @@ metadata:
 spec:
   config:
     ignition:
-      version: 3.1.0
+      version: 3.2.0
     storage:
       files:
       - contents:
@@ -216,7 +216,7 @@ metadata:
 spec:
   config:
     ignition:
-      version: 3.1.0
+      version: 3.2.0
   extensions:
     - usbguard
 ```
