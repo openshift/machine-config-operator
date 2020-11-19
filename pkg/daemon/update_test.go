@@ -392,6 +392,83 @@ func TestInvalidIgnConfig(t *testing.T) {
 	assert.Equal(t, diff.files, true)
 }
 
+func TestDropinCheck(t *testing.T) {
+	tests := []struct {
+		service  string
+		dropin   string
+		path     string
+		expected bool
+	}{
+		{
+			service:  "kubelet.service",
+			dropin:   "10-foo.conf",
+			path:     "/etc/systemd/system/kubelet.service.d/10-foo.conf",
+			expected: true,
+		},
+		{
+			service:  "kubelet.service",
+			dropin:   "10-foo.conf",
+			path:     "/usr/etc/systemd/system/kubelet.service.d/10-foo.conf",
+			expected: false,
+		},
+		{
+			service:  "kubelet.service",
+			dropin:   "10-foo.conf",
+			path:     "/etc/systemd/system/crio.service.d/10-foo.conf",
+			expected: false,
+		},
+		{
+			service:  "kubelet.service",
+			dropin:   "10-foo.conf",
+			path:     "/etc/systemd/system/kubelet.service.d/20-bar.conf",
+			expected: false,
+		},
+	}
+
+	testClient := RpmOstreeClientMock{
+		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+	}
+
+	d := Daemon{
+		mock:              true,
+		name:              "nodeName",
+		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		NodeUpdaterClient: testClient,
+		kubeClient:        k8sfake.NewSimpleClientset(),
+		bootedOSImageURL:  "test",
+	}
+
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			ignCfg := ctrlcommon.NewIgnConfig()
+			ignCfg.Systemd.Units = []ign3types.Unit{
+				ign3types.Unit{
+					Name: test.service,
+					Dropins: []ign3types.Dropin{
+						ign3types.Dropin{
+							Name:     test.dropin,
+							Contents: helpers.StrToPtr("[Unit]"),
+						},
+						ign3types.Dropin{
+							Name:     "99-other.conf",
+							Contents: helpers.StrToPtr("[Unit]"),
+						},
+					},
+				},
+				ign3types.Unit{
+					Name: "other.service",
+				},
+			}
+
+			actual := d.isPathInDropins(test.path, &ignCfg.Systemd)
+
+			if !reflect.DeepEqual(test.expected, actual) {
+				t.Errorf("Failed stale file check: expected: %v but result is: %v", test.expected, actual)
+			}
+		})
+	}
+}
+
 // checkReconcilableResults is a shortcut for verifying results that should be reconcilable
 func checkReconcilableResults(t *testing.T, key string, reconcilableError error) {
 	if reconcilableError != nil {
