@@ -37,19 +37,17 @@ var tuneableFCOSArgsAllowlist = map[string]bool{
 
 // isArgTuneable returns if the argument provided is allowed to be modified
 func isArgTunable(arg string) (bool, error) {
-	operatingSystem, err := GetHostRunningOS()
+	os, err := GetHostRunningOS()
 	if err != nil {
 		return false, errors.Errorf("failed to get OS for determining whether kernel arg is tuneable: %v", err)
 	}
 
-	switch operatingSystem {
-	case MachineConfigDaemonOSRHCOS:
+	if os.IsRHCOS() {
 		return tuneableRHCOSArgsAllowlist[arg], nil
-	case MachineConfigDaemonOSFCOS:
+	} else if os.IsFCOS() {
 		return tuneableFCOSArgsAllowlist[arg], nil
-	default:
-		return false, nil
 	}
+	return false, nil
 }
 
 // isArgInUse checks to see if the argument is already in use by the system currently

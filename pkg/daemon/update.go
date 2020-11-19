@@ -343,7 +343,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osImageContentDir)
 
-		if dn.OperatingSystem == MachineConfigDaemonOSRHCOS || dn.OperatingSystem == MachineConfigDaemonOSFCOS {
+		if dn.os.IsCoreOSVariant() {
 			if err := addExtensionsRepo(osImageContentDir); err != nil {
 				return err
 			}
@@ -524,7 +524,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // remove the rollback once the MCD pod has landed on a node, so
 // we know kubelet is working.
 func (dn *Daemon) removeRollback() error {
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+	if !dn.os.IsCoreOSVariant() {
 		// do not attempt to rollback on non-RHCOS/FCOS machines
 		return nil
 	}
@@ -851,7 +851,7 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 	if len(diff) == 0 {
 		return nil
 	}
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+	if !dn.os.IsCoreOSVariant() {
 		return fmt.Errorf("updating kargs on non-CoreOS nodes is not supported: %v", diff)
 	}
 
@@ -890,7 +890,7 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 
 	extArgs := []string{"update"}
 
-	if dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+	if dn.os.IsRHCOS() {
 		extensions := getSupportedExtensions()
 		for _, ext := range added {
 			for _, pkg := range extensions[ext] {
@@ -909,7 +909,7 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	// See https://github.com/openshift/release/blob/959c2954344438c4eed3ec7f52a5e099e8335516/ci-operator/jobs/openshift/release/openshift-release-release-4.7-periodics.yaml#L586
 	// TODO: Once the package list has been stabilized, we can make use of the group and add
 	// all the packages required to enable OKD as a single extension.
-	if dn.OperatingSystem == MachineConfigDaemonOSFCOS {
+	if dn.os.IsFCOS() {
 		for _, ext := range added {
 			extArgs = append(extArgs, "--install", ext)
 		}
@@ -956,12 +956,12 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 		return nil
 	}
 	// Right now, we support extensions only on CoreOS nodes
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+	if !dn.os.IsCoreOSVariant() {
 		return fmt.Errorf("extensions is not supported on non-CoreOS nodes ")
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
-	if err := validateExtensions(newConfig.Spec.Extensions); err != nil && dn.OperatingSystem == MachineConfigDaemonOSRHCOS {
+	if err := validateExtensions(newConfig.Spec.Extensions); err != nil && dn.os.IsRHCOS() {
 		return err
 	}
 
@@ -981,7 +981,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 	}
 
 	// We support Kernel update only on RHCOS nodes
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS {
+	if !dn.os.IsRHCOS() {
 		return fmt.Errorf("updating kernel on non-RHCOS nodes is not supported")
 	}
 
@@ -1123,11 +1123,6 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 		newFileSet[f.Path] = struct{}{}
 	}
 
-	operatingSystem, err := GetHostRunningOS()
-	if err != nil {
-		return errors.Wrapf(err, "checking operating system")
-	}
-
 	for _, f := range oldIgnConfig.Storage.Files {
 		if _, ok := newFileSet[f.Path]; ok {
 			continue
@@ -1145,7 +1140,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) 
 			if _, err := exec.Command("rpm", "-qf", f.Path).CombinedOutput(); err == nil {
 				// File is owned by an rpm
 				restore = true
-			} else if strings.HasPrefix(f.Path, "/etc") && (operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
+			} else if strings.HasPrefix(f.Path, "/etc") && dn.os.IsCoreOSVariant() {
 				if _, err := os.Stat("/usr" + f.Path); err != nil {
 					if !os.IsNotExist(err) {
 						return err
@@ -1296,17 +1291,14 @@ func (dn *Daemon) disableUnit(unit ign3types.Unit) error {
 
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
-	operatingSystem, err := GetHostRunningOS()
-	if err != nil {
-		return errors.Wrapf(err, "checking operating system")
-	}
+
 	for _, u := range units {
 		// write the dropin to disk
 		for i := range u.Dropins {
 			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
 			if _, err := os.Stat("/usr" + dpath); err == nil &&
-				(operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
+				dn.os.IsCoreOSVariant() {
 				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
 					return err
 				}
@@ -1340,7 +1332,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 		if u.Contents != nil && *u.Contents != "" {
 			glog.Infof("Writing systemd unit %q", u.Name)
 			if _, err := os.Stat("/usr" + fpath); err == nil &&
-				(operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
+				dn.os.IsCoreOSVariant() {
 				if err := createOrigFile("/usr"+fpath, fpath); err != nil {
 					return err
 				}
@@ -1536,7 +1528,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+	if !dn.os.IsCoreOSVariant() {
 		glog.V(2).Info("Updating of non-CoreOS nodes are not supported")
 		return nil
 	}
