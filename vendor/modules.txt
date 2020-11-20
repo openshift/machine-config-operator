@@ -410,7 +410,7 @@ github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.2-0.20190823105129-775207bd45b6
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf => github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf
+# github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf => github.com/openshift/api v0.0.0-20201028190007-969b2d302160
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
@@ -652,7 +652,7 @@ gopkg.in/inf.v0
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 gopkg.in/yaml.v3
-# k8s.io/api v0.19.0 => k8s.io/api v0.19.0
+# k8s.io/api v0.19.2 => k8s.io/api v0.19.0
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
 k8s.io/api/admissionregistration/v1
@@ -712,7 +712,7 @@ k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensio
 k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/internalinterfaces
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1
-# k8s.io/apimachinery v0.19.0 => k8s.io/apimachinery v0.19.0
+# k8s.io/apimachinery v0.19.2 => k8s.io/apimachinery v0.19.0
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/api/meta
@@ -1008,7 +1008,7 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/code-generator v0.19.0 => k8s.io/code-generator v0.19.0
+# k8s.io/code-generator v0.19.2 => k8s.io/code-generator v0.19.0
 k8s.io/code-generator
 k8s.io/code-generator/cmd/client-gen
 k8s.io/code-generator/cmd/client-gen/args
