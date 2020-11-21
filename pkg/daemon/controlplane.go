@@ -64,14 +64,10 @@ func updateOstreeObjectSync() error {
 }
 
 // initializeControlPlane performs setup for the node that should
-// only occur on the control plane.  Currently this switches the IO
-// scheduler and starts a goroutine acting as a small controller
-// for reflecting the etcd leader status in the node object to help
-// the MCC coordinate control plane updates.
+// only occur on the control plane.  This used to set the IO
+// scheduler too but we now only do that late in the process when
+// we go to start an OS update.
 func (dn *Daemon) initializeControlPlane() error {
-	if err := setRootDeviceSchedulerBFQ(); err != nil {
-		return err
-	}
 	if err := updateOstreeObjectSync(); err != nil {
 		return err
 	}
