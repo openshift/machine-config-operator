@@ -321,6 +321,10 @@ type OVNKubernetesConfig struct {
 	// not using OVN.
 	// +optional
 	HybridOverlayConfig *HybridOverlayConfig `json:"hybridOverlayConfig,omitempty"`
+	// ipsecConfig enables and configures IPsec for pods on the pod network within the
+	// cluster.
+	// +optional
+	IPsecConfig *IPsecConfig `json:"ipsecConfig,omitempty"`
 }
 
 type HybridOverlayConfig struct {
@@ -330,6 +334,14 @@ type HybridOverlayConfig struct {
 	// Default is 4789
 	// +optional
 	HybridOverlayVXLANPort *uint32 `json:"hybridOverlayVXLANPort,omitempty"`
+}
+
+type IPsecConfig struct {
+	// enable enables IPsec encryption for pod-to-pod traffic on the pod network
+	// within the cluster. Default is false.
+	// +optional
+	// +kubebuilder:default:=false
+	Enable bool `json:"enable"`
 }
 
 // NetworkType describes the network plugin type to configure

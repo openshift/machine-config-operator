@@ -467,15 +467,23 @@ func (IngressController) SwaggerDoc() map[string]string {
 }
 
 var map_IngressControllerCaptureHTTPCookie = map[string]string{
-	"":           "IngressControllerCaptureHTTPCookie describes an HTTP cookie that should be captured.",
-	"matchType":  "matchType specifies the type of match to be performed on the cookie name.  Allowed values are \"Exact\" for an exact string match and \"Prefix\" for a string prefix match.  If \"Exact\" is specified, a name must be specified in the name field.  If \"Prefix\" is provided, a prefix must be specified in the namePrefix field.  For example, specifying matchType \"Prefix\" and namePrefix \"foo\" will capture a cookie named \"foo\" or \"foobar\" but not one named \"bar\".  The first matching cookie is captured.",
-	"name":       "name specifies a cookie name.  Its value must be a valid HTTP cookie name as defined in RFC 6265 section 4.1.",
-	"namePrefix": "namePrefix specifies a cookie name prefix.  Its value must be a valid HTTP cookie name as defined in RFC 6265 section 4.1.",
-	"maxLength":  "maxLength specifies a maximum length of the string that will be logged, which includes the cookie name, cookie value, and one-character delimiter.  If the log entry exceeds this length, the value will be truncated in the log message.  Note that the ingress controller may impose a separate bound on the total length of HTTP headers in a request.",
+	"":          "IngressControllerCaptureHTTPCookie describes an HTTP cookie that should be captured.",
+	"maxLength": "maxLength specifies a maximum length of the string that will be logged, which includes the cookie name, cookie value, and one-character delimiter.  If the log entry exceeds this length, the value will be truncated in the log message.  Note that the ingress controller may impose a separate bound on the total length of HTTP headers in a request.",
 }
 
 func (IngressControllerCaptureHTTPCookie) SwaggerDoc() map[string]string {
 	return map_IngressControllerCaptureHTTPCookie
+}
+
+var map_IngressControllerCaptureHTTPCookieUnion = map[string]string{
+	"":           "IngressControllerCaptureHTTPCookieUnion describes optional fields of an HTTP cookie that should be captured.",
+	"matchType":  "matchType specifies the type of match to be performed on the cookie name.  Allowed values are \"Exact\" for an exact string match and \"Prefix\" for a string prefix match.  If \"Exact\" is specified, a name must be specified in the name field.  If \"Prefix\" is provided, a prefix must be specified in the namePrefix field.  For example, specifying matchType \"Prefix\" and namePrefix \"foo\" will capture a cookie named \"foo\" or \"foobar\" but not one named \"bar\".  The first matching cookie is captured.",
+	"name":       "name specifies a cookie name.  Its value must be a valid HTTP cookie name as defined in RFC 6265 section 4.1.",
+	"namePrefix": "namePrefix specifies a cookie name prefix.  Its value must be a valid HTTP cookie name as defined in RFC 6265 section 4.1.",
+}
+
+func (IngressControllerCaptureHTTPCookieUnion) SwaggerDoc() map[string]string {
+	return map_IngressControllerCaptureHTTPCookieUnion
 }
 
 var map_IngressControllerCaptureHTTPHeader = map[string]string{
@@ -754,6 +762,14 @@ func (IPAMConfig) SwaggerDoc() map[string]string {
 	return map_IPAMConfig
 }
 
+var map_IPsecConfig = map[string]string{
+	"enable": "enable enables IPsec encryption for pod-to-pod traffic on the pod network within the cluster. Default is false.",
+}
+
+func (IPsecConfig) SwaggerDoc() map[string]string {
+	return map_IPsecConfig
+}
+
 var map_KuryrConfig = map[string]string{
 	"":                             "KuryrConfig configures the Kuryr-Kubernetes SDN",
 	"daemonProbesPort":             "The port kuryr-daemon will listen for readiness and liveness requests.",
@@ -814,6 +830,7 @@ var map_OVNKubernetesConfig = map[string]string{
 	"mtu":                 "mtu is the MTU to use for the tunnel interface. This must be 100 bytes smaller than the uplink mtu. Default is 1400",
 	"genevePort":          "geneve port is the UDP port to be used by geneve encapulation. Default is 6081",
 	"hybridOverlayConfig": "HybridOverlayConfig configures an additional overlay network for peers that are not using OVN.",
+	"ipsecConfig":         "ipsecConfig enables and configures IPsec for pods on the pod network within the cluster.",
 }
 
 func (OVNKubernetesConfig) SwaggerDoc() map[string]string {
