@@ -119,8 +119,8 @@ func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 }
 
 func (dn *Daemon) drain() error {
-	// Skip draining of the node when we're not cluster driven
-	if dn.kubeClient == nil {
+	// Skip draining of the node when we're not cluster driven or SNO mode(skip always for now)
+	if dn.kubeClient == nil || true {
 		return nil
 	}
 
