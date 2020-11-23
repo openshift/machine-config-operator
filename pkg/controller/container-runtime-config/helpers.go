@@ -26,11 +26,12 @@ import (
 )
 
 const (
-	minLogSize           = 8192
-	minPidsLimit         = 20
-	storageConfigPath    = "/etc/containers/storage.conf"
-	registriesConfigPath = "/etc/containers/registries.conf"
-	policyConfigPath     = "/etc/containers/policy.json"
+	minLogSize              = 8192
+	minPidsLimit            = 20
+	storageConfigPath       = "/etc/containers/storage.conf"
+	registriesConfigPath    = "/etc/containers/registries.conf"
+	searchRegDropInFilePath = "/etc/containers/registries.conf.d/01-image-searchRegistries.conf"
+	policyConfigPath        = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
 	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
@@ -244,7 +245,7 @@ func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path strin
 	return configFileList, nil
 }
 
-// createCRIODropinFiles gets the data from the CRD and creates the respective drio in file in /etc/crio/crio.conf.d
+// createCRIODropinFiles gets the data from the CRD and creates the respective drop in file in /etc/crio/crio.conf.d
 // We create different drop-in files for each CRI-O field that can be changed by the ctrcfg CR
 // this ensures that we don't have to rely on hard coded defaults that might cause problems
 // in future if something in cri-o or the templates used by the MCO changes
@@ -277,6 +278,22 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 		if err != nil {
 			glog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
+	}
+	return generatedConfigFileList
+}
+
+// updateSearchRegistriesConfig gets the ContainerRuntimeSearchRegistries data from the Image CRD
+// and creates a drop-in file for it at /etc/containers/registries.conf.d
+func updateSearchRegistriesConfig(searchRegs []string) []generatedConfigFile {
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	tomlConf := sysregistriesv2.V2RegistriesConf{}
+	tomlConf.UnqualifiedSearchRegistries = searchRegs
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, searchRegDropInFilePath, tomlConf)
+	if err != nil {
+		glog.Warningln("error updating user changes for containerRuntimeSearchRegistries to registries.conf.d: ", err)
 	}
 	return generatedConfigFileList
 }
