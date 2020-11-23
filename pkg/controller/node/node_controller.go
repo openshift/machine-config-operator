@@ -954,11 +954,15 @@ func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, 
 	if pool.Name == masterPoolName {
 		// calculate the fault tolerance dynamically for the master pool
 		// to avoid risking losing etcd quorum.
-		tolerance := len(nodes) - ((len(nodes) / 2) + 1)
-		if maxunavail > tolerance {
-			glog.Warningf("Refusing to honor master pool maxUnavailable %d to prevent losing etcd quorum, using %d instead", maxunavail, tolerance)
-			return tolerance, nil
+
+		if len(nodes) > 1 {
+			tolerance := len(nodes) - ((len(nodes) / 2) + 1)
+			if maxunavail > tolerance {
+				glog.Warningf("Refusing to honor master pool maxUnavailable %d to prevent losing etcd quorum, using %d instead", maxunavail, tolerance)
+				return tolerance, nil
+			}
 		}
+
 	}
 	return maxunavail, nil
 }
