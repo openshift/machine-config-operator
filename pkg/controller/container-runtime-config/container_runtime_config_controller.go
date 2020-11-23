@@ -682,7 +682,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		}
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
-				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries, icspRules)
+				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries,
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules)
 			if err != nil {
 				return err
 			}
@@ -743,7 +744,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs, allowedRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
+	insecureRegs, blockedRegs, allowedRegs, searchRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -782,10 +783,15 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
 		}
 	}
-	registriesIgn := createNewIgnition([]generatedConfigFile{
+	generatedConfigFileList := []generatedConfigFile{
 		{filePath: registriesConfigPath, data: registriesTOML},
 		{filePath: policyConfigPath, data: policyJSON},
-	})
+	}
+	if searchRegs != nil {
+		generatedConfigFileList = append(generatedConfigFileList, updateSearchRegistriesConfig(searchRegs)...)
+	}
+
+	registriesIgn := createNewIgnition(generatedConfigFileList)
 	return &registriesIgn, nil
 }
 
@@ -796,13 +802,15 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		insecureRegs []string
 		blockedRegs  []string
 		allowedRegs  []string
+		searchRegs   []string
 		err          error
 	)
 
-	// Read the insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
+	// Read the search, insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
 	if imgCfg != nil {
 		insecureRegs = imgCfg.Spec.RegistrySources.InsecureRegistries
 		allowedRegs = imgCfg.Spec.RegistrySources.AllowedRegistries
+		searchRegs = imgCfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries
 		blockedRegs, err = getValidBlockedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec)
 		if err != nil && err != errParsingReference {
 			glog.V(2).Infof("%v, skipping....", err)
@@ -819,7 +827,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role,
-			insecureRegs, blockedRegs, allowedRegs, icspRules)
+			insecureRegs, blockedRegs, allowedRegs, searchRegs, icspRules)
 		if err != nil {
 			return nil, err
 		}
