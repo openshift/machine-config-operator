@@ -93,9 +93,56 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
-// finalizeAndReboot is the last step in an update(), and it can also
-// be called as a special case for the "bootstrap pivot".
-func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
+func reloadCrioConfig() error {
+	_, err := runGetOut("pkill", "-HUP", "crio")
+	return err
+}
+
+// performRebootAction takes action based on what rebootAction has been asked.
+// For non-reboot action, it applies configuration, updates node's config and state.
+// In the end uncordon node to schedule workload.
+// If at any point an error occurs, we reboot the node so that node has correct configuration.
+func (dn *Daemon) performRebootAction(action rebootAction, configName string) error {
+	switch action {
+	case rebootActionNone:
+		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
+	case rebootActionReloadCrio:
+		if err := reloadCrioConfig(); err != nil {
+			dn.logSystem("Reloading crio configuration failed, rebooting: %v", err)
+			dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+		}
+		dn.logSystem("crio config reloaded successfully! Desired config %s has been applied, skipping reboot", configName)
+	default:
+		// Defaults to rebooting node
+		dn.logSystem("Rebooting node")
+		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+	}
+
+	// We are here, which means reboot was not needed to apply the configuration.
+
+	// Get current state of node, in case of an error reboot
+	state, err := dn.getStateAndConfigs(configName)
+	if err != nil {
+		glog.Errorf("Error processing state and configs, rebooting: %v", err)
+		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+	}
+
+	var inDesiredConfig bool
+	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+		glog.Errorf("Setting node's state to Done failed, rebooting: %v", err)
+		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+	}
+	if inDesiredConfig {
+		return nil
+	}
+
+	// currentConfig != desiredConfig, kick off an update
+	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+}
+
+// finalizeBeforeReboot is the last step in an update() and then we take appropriate rebootAction.
+// It can also be called as a special case for the "bootstrap pivot".
+func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
 		return errors.Wrapf(err, "failed to log pending config: %s", string(out))
 	}
@@ -114,8 +161,7 @@ func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
 	}
 
-	// reboot. this function shouldn't actually return.
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
+	return nil
 }
 
 func (dn *Daemon) drain() error {
@@ -515,7 +561,19 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		glog.Info("Updated kernel tuning arguments")
 	}
 
-	return dn.finalizeAndReboot(newConfig)
+	if err := dn.finalizeBeforeReboot(newConfig); err != nil {
+		return err
+	}
+
+	// TODO: Need Jerry's work to determine exact reboot action
+	var action rebootAction
+	action = dn.getRebootAction()
+	return dn.performRebootAction(action, newConfig.GetName())
+}
+
+func (dn *Daemon) getRebootAction() rebootAction {
+	// Until we have logic, always reboot
+	return rebootActionReboot
 }
 
 // removeRollback removes the rpm-ostree rollback deployment.  It
