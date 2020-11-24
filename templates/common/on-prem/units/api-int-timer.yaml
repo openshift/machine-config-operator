@@ -1,0 +1,12 @@
+name: api-int.timer
+enabled: true
+contents: |
+  [Unit]
+  Description=Run api-int service periodically
+
+  [Timer]
+  OnBootSec=10sec
+  OnUnitActiveSec=1min
+
+  [Install]
+  WantedBy=timers.target
