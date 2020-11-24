@@ -38,8 +38,8 @@ require (
 	github.com/imdario/mergo v0.3.9
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20200829102639-8a3a835f1acf
-	github.com/openshift/client-go v0.0.0-20200827190008-3062137373b5
+	github.com/openshift/api v0.0.0-20201119214056-f1dea5ee7f60
+	github.com/openshift/client-go v0.0.0-20201120154203-dfba10361467
 	github.com/openshift/library-go v0.0.0-20200831114015-2ab0c61c15de
 	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
 	github.com/pkg/errors v0.9.1
@@ -56,7 +56,7 @@ require (
 	k8s.io/api v0.19.2
 	k8s.io/apiextensions-apiserver v0.19.0
 	k8s.io/apimachinery v0.19.2
-	k8s.io/client-go v0.19.0
+	k8s.io/client-go v0.19.2
 	k8s.io/code-generator v0.19.2
 	k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9
 	k8s.io/kubelet v0.19.0
@@ -68,7 +68,7 @@ replace (
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20201028190007-969b2d302160
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20201119214056-f1dea5ee7f60
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.19.0

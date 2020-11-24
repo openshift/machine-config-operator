@@ -319,6 +319,17 @@ spec:
                               Default is 4789
                             type: integer
                             format: int32
+                      ipsecConfig:
+                        description: ipsecConfig enables and configures IPsec for
+                          pods on the pod network within the cluster.
+                        type: object
+                        properties:
+                          enable:
+                            description: enable enables IPsec encryption for pod-to-pod
+                              traffic on the pod network within the cluster. Default
+                              is false.
+                            type: boolean
+                            default: false
                       mtu:
                         description: mtu is the MTU to use for the tunnel interface.
                           This must be 100 bytes smaller than the uplink mtu. Default
