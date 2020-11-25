@@ -41,6 +41,7 @@ func renderAsset(config *renderConfig, path string) ([]byte, error) {
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
+	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(objBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse asset %s: %v", path, err)
@@ -178,6 +179,19 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 		}
 	} else {
 		return ""
+	}
+}
+
+func onPremPlatformKeepalivedEnableUnicast(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType, configv1.KubevirtPlatformType:
+			return "yes", nil
+		default:
+			return "no", nil
+		}
+	} else {
+		return "no", nil
 	}
 }
 
