@@ -1,0 +1,49 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/30-static-dhcpv6"
+contents:
+  inline: |
+    #!/bin/bash
+    set -ex -o pipefail
+
+    if [ -z $DHCP6_IP6_ADDRESS ]
+    then
+        >&2 echo "Not a DHCP6 address. Ignoring."
+        exit 0
+    fi
+
+    LEASE_TIME=$(ip -j -6 a show "$DEVICE_IFACE" | jq -r '.[].addr_info[] | select(.scope=="global") | select(.deprecated!=true) | .preferred_life_time')
+
+    if [ ${LEASE_TIME:-0} -lt 4294967295 ]
+    then
+        >&2 echo "Not an infinite DHCP6 lease. Ignoring."
+        exit 0
+    fi
+
+    IPS=($IP6_ADDRESS_0)
+    # For ipv6 we have two addresses: DHCP and link-local. Make sure we're using the right one.
+    CHECK_STR="^${DHCP6_IP6_ADDRESS}/"
+    if [[ $IP6_ADDRESS_1 =~ ${CHECK_STR} ]]
+    then
+        IPS=($IP6_ADDRESS_1)
+    fi
+    CIDR=${IPS[0]}
+
+    nmcli con mod "$CONNECTION_ID" ipv6.addresses "$CIDR"
+    nmcli con mod "$CONNECTION_ID" connection.autoconnect "yes"
+    nmcli con mod "$CONNECTION_ID" ipv6.method "manual"
+    nmcli con mod "$CONNECTION_ID" ipv6.gateway "$IP6_GATEWAY"
+    nmcli con mod "$CONNECTION_ID" ipv6.dns "$IP6_NAMESERVERS"
+    SEARCH_DOMAIN="${DHCP6_FQDN_FQDN#*.}"
+    if [ -n "$SEARCH_DOMAIN" ]; then
+        nmcli con mod "$CONNECTION_ID" ipv6.dns-search "$SEARCH_DOMAIN"
+    fi
+    plus=''
+    for i in $(seq 0 $(($IP6_NUM_ROUTES-1)) )
+    do
+        varname="IP6_ROUTE_$i"
+        nmcli con mod "$CONNECTION_ID" ${plus}ipv6.routes "${!varname}"
+        plus='+'
+    done
+
+    # Copy it from the OverlayFS mount to the persistent lowerdir
+    cp "$CONNECTION_FILENAME" /etc/NetworkManager/system-connections
