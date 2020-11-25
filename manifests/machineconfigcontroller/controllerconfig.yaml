@@ -2,5 +2,7 @@ apiVersion: machineconfiguration.openshift.io/v1
 kind: ControllerConfig
 metadata:
   name: machine-config-controller
+  annotations:
+    machineconfiguration.openshift.io/generated-by-version: "{{ .Version }}"
 spec:
 {{toYAML .ControllerConfig | toString | indent 2}}
