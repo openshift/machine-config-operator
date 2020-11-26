@@ -35,6 +35,32 @@ func BoolToPtr(b bool) *bool {
 
 // NewMachineConfig returns a basic machine config with supplied labels, osurl & files added
 func NewMachineConfig(name string, labels map[string]string, osurl string, files []ign3types.File) *mcfgv1.MachineConfig {
+	return NewMachineConfigExtended(
+		name,
+		labels,
+		files,
+		[]ign3types.Unit{},
+		[]ign3types.SSHAuthorizedKey{},
+		[]string{},
+		false,
+		[]string{},
+		"",
+		osurl,
+	)
+}
+
+// NewMachineConfigExtended returns a more comprehensive machine config
+func NewMachineConfigExtended(
+	name string,
+	labels map[string]string,
+	files []ign3types.File,
+	units []ign3types.Unit,
+	sshkeys []ign3types.SSHAuthorizedKey,
+	extensions []string,
+	fips bool,
+	kernelArguments []string,
+	kernelType, osurl string,
+) *mcfgv1.MachineConfig {
 	if labels == nil {
 		labels = map[string]string{}
 	}
@@ -45,6 +71,17 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 			},
 			Storage: ign3types.Storage{
 				Files: files,
+			},
+			Systemd: ign3types.Systemd{
+				Units: units,
+			},
+			Passwd: ign3types.Passwd{
+				Users: []ign3types.PasswdUser{
+					{
+						Name:              "core",
+						SSHAuthorizedKeys: sshkeys,
+					},
+				},
 			},
 		},
 	)
@@ -59,10 +96,14 @@ func NewMachineConfig(name string, labels map[string]string, osurl string, files
 			UID:    types.UID(utilrand.String(5)),
 		},
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: osurl,
 			Config: runtime.RawExtension{
 				Raw: rawIgnition,
 			},
+			Extensions:      extensions,
+			FIPS:            fips,
+			KernelArguments: kernelArguments,
+			KernelType:      kernelType,
+			OSImageURL:      osurl,
 		},
 	}
 }
