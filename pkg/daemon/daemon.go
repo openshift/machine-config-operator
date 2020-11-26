@@ -1144,6 +1144,12 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		state.currentConfig = state.pendingConfig
 	}
 
+	if state.bootstrapping {
+		if err := dn.storeCurrentConfigOnDisk(state.currentConfig); err != nil {
+			return false, err
+		}
+	}
+
 	// In case of node reboot, it may be the case that desiredConfig changed while we
 	// were coming up, so we next look at that before uncordoning the node (so
 	// we don't uncordon and then immediately re-cordon)
