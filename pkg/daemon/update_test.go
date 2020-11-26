@@ -12,6 +12,7 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
@@ -464,6 +465,144 @@ func TestDropinCheck(t *testing.T) {
 
 			if !reflect.DeepEqual(test.expected, actual) {
 				t.Errorf("Failed stale file check: expected: %v but result is: %v", test.expected, actual)
+			}
+		})
+	}
+}
+
+// Test to see if the correct action is calculated given a machineconfig diff
+// i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
+func TestCalculatePostConfigChangeAction(t *testing.T) {
+	files := map[string]ign3types.File{
+		"pullsecret1": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/var/lib/kubelet/config.json",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubelet conf 1\n"))),
+				},
+			},
+		},
+		"pullsecret2": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/var/lib/kubelet/config.json",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubelet conf 2\n"))),
+				},
+			},
+		},
+		"registries1": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/etc/containers/registries.conf",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("registries content 1\n"))),
+				},
+			},
+		},
+		"registries2": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/etc/containers/registries.conf",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("registries content 2\n"))),
+				},
+			},
+		},
+		"randomfile1": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/etc/random-reboot-file",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("test\n"))),
+				},
+			},
+		},
+		"randomfile2": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/etc/random-reboot-file",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("test 2\n"))),
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		oldConfig      *mcfgv1.MachineConfig
+		newConfig      *mcfgv1.MachineConfig
+		expectedAction []string
+	}{
+		{
+			// test that a normal file change is reboot
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["randomfile1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["randomfile2"]}),
+			expectedAction: []string{postConfigChangeActionReboot},
+		},
+		{
+			// test that a pull secret change is none
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["pullsecret1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["pullsecret2"]}),
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
+			// test that a SSH key change is none
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy://"),
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
+			// test that a registries change is reload
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["registries1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["registries2"]}),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// test that a registries change (reload) overwrites pull secret (none)
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["registries1"], files["pullsecret1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["registries2"], files["pullsecret2"]}),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// test that a osImage change (reboot) overwrites registries (reload) and SSH keys (none)
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["registries2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy1://"),
+			expectedAction: []string{postConfigChangeActionReboot},
+		},
+		{
+			// test that adding a pull secret is none
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["registries1"], files["pullsecret2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
+			// test that removing a registries is crio reload
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["randomfile1"], files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["randomfile1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// mixed test - final should be reboot due to kargs changes
+			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
+			expectedAction: []string{postConfigChangeActionReboot},
+		},
+	}
+
+	for idx, test := range tests {
+		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
+			calculatedAction, err := calculatePostConfigChangeAction(test.oldConfig, test.newConfig)
+
+			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
+				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
 			}
 		})
 	}

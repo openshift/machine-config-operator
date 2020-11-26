@@ -481,8 +481,7 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 			// debug: remove
 			glog.Infof("File diff: %v was added", path)
 			diffFileSet = append(diffFileSet, path)
-		}
-		if !reflect.DeepEqual(oldFile, newFile) {
+		} else if !reflect.DeepEqual(oldFile, newFile) {
 			// debug: remove
 			glog.Infof("File diff: detected change to %v", newFile.Path)
 			diffFileSet = append(diffFileSet, path)
