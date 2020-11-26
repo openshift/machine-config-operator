@@ -532,6 +532,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	// Suppress rendered config generation until a corresponding new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
+	// !!!: broken at bootstrap
 	if genver, ok := cconfig.Annotations[daemonconsts.GeneratedByVersionAnnotationKey]; ok {
 		if genver != version.Raw {
 			return nil, fmt.Errorf("Ignoring controller config generated from %s (my version: %s)", genver, version.Raw)
