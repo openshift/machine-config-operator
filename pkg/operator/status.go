@@ -247,6 +247,12 @@ func (optr *Operator) syncUpgradeableStatus() error {
 	if co == nil {
 		return nil
 	}
+
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+
 	// Report default "Upgradeable=True" status. When known hazardous states for upgrades are
 	// determined, specific "Upgradeable=False" status can be added with messages for how admins
 	// can resolve it.
@@ -256,6 +262,14 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
 	}
+	for _, pool := range pools {
+		degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+		if degraded {
+			coStatus.Status = configv1.ConditionFalse
+			coStatus.Reason = "One or more machine config pool is degraded, please see `oc get mcp` for further details and resolve before upgrading"
+		}
+	}
+
 	return optr.updateStatus(co, coStatus)
 }
 
