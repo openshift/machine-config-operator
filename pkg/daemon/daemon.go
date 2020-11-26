@@ -165,14 +165,6 @@ const (
 	onceFromRemoteConfig
 )
 
-type rebootAction int
-
-const (
-	rebootActionReboot rebootAction = iota
-	rebootActionNone
-	rebootActionReloadCrio
-)
-
 var (
 	defaultRebootTimeout = 24 * time.Hour
 )

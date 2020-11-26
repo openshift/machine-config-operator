@@ -48,6 +48,12 @@ const (
 	fipsFile              = "/proc/sys/crypto/fips_enabled"
 	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
 	osImageContentBaseDir = "/run/mco-machine-os-content/"
+
+	// These are the actions for a node to take after applying config changes.
+	// Defaults to reboot.
+	postConfigChangeActionNone       = "none"
+	postConfigChangeActionReboot     = "reboot"
+	postConfigChangeActionReloadCrio = "reload crio"
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -98,24 +104,24 @@ func reloadCrioConfig() error {
 	return err
 }
 
-// performRebootAction takes action based on what rebootAction has been asked.
+// performPostConfigChangeAction takes action based on what postConfigChangeAction has been asked.
 // For non-reboot action, it applies configuration, updates node's config and state.
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
-func (dn *Daemon) performRebootAction(action rebootAction, configName string) error {
-	switch action {
-	case rebootActionNone:
+func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
+	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
+		dn.logSystem("Rebooting node")
+		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+	}
+	if ctrlcommon.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
 		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
-	case rebootActionReloadCrio:
+	}
+	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
 		if err := reloadCrioConfig(); err != nil {
 			dn.logSystem("Reloading crio configuration failed, rebooting: %v", err)
 			dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 		}
 		dn.logSystem("crio config reloaded successfully! Desired config %s has been applied, skipping reboot", configName)
-	default:
-		// Defaults to rebooting node
-		dn.logSystem("Rebooting node")
-		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 
 	// We are here, which means reboot was not needed to apply the configuration.
@@ -140,7 +146,7 @@ func (dn *Daemon) performRebootAction(action rebootAction, configName string) er
 	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 }
 
-// finalizeBeforeReboot is the last step in an update() and then we take appropriate rebootAction.
+// finalizeBeforeReboot is the last step in an update() and then we take appropriate postConfigChangeAction.
 // It can also be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
@@ -440,6 +446,91 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 
 }
 
+func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign3types.Config) (actions []string) {
+	filesPostConfigChangeActionNone := []string{
+		"/var/lib/kubelet/config.json",
+	}
+	filesPostConfigChangeActionReloadCrio := []string{
+		"/etc/containers/registries.conf",
+	}
+
+	oldFileSet := make(map[string]ign3types.File)
+	for _, f := range oldIgnConfig.Storage.Files {
+		oldFileSet[f.Path] = f
+	}
+	newFileSet := make(map[string]ign3types.File)
+	for _, f := range newIgnConfig.Storage.Files {
+		newFileSet[f.Path] = f
+	}
+	diffFileSet := []string{}
+
+	// First check if any files were removed
+	for path := range oldFileSet {
+		_, ok := newFileSet[path]
+		if !ok {
+			// debug: remove
+			glog.Infof("File diff: %v was deleted", path)
+			diffFileSet = append(diffFileSet, path)
+		}
+	}
+
+	// Now check if any files were added/changed
+	for path, newFile := range newFileSet {
+		oldFile, ok := oldFileSet[path]
+		if !ok {
+			// debug: remove
+			glog.Infof("File diff: %v was added", path)
+			diffFileSet = append(diffFileSet, path)
+		}
+		if !reflect.DeepEqual(oldFile, newFile) {
+			// debug: remove
+			glog.Infof("File diff: detected change to %v", newFile.Path)
+			diffFileSet = append(diffFileSet, path)
+		}
+	}
+
+	// Now calculate action
+	for _, k := range diffFileSet {
+		if ctrlcommon.InSlice(k, filesPostConfigChangeActionNone) {
+			continue
+		} else if ctrlcommon.InSlice(k, filesPostConfigChangeActionReloadCrio) {
+			actions = []string{postConfigChangeActionReloadCrio}
+			continue
+		} else {
+			actions = []string{postConfigChangeActionReboot}
+			break
+		}
+	}
+
+	if len(actions) == 0 {
+		actions = []string{postConfigChangeActionNone}
+	}
+	return
+}
+
+func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig) ([]string, error) {
+	diff, err := newMachineConfigDiff(oldConfig, newConfig)
+	if err != nil {
+		return []string{}, err
+	}
+	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
+		// must reboot
+		return []string{postConfigChangeActionReboot}, nil
+	}
+
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return []string{}, err
+	}
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return []string{}, err
+	}
+
+	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
+	return calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig), nil
+}
+
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
@@ -485,6 +576,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
+
+	// TODO: consider how we should honor "force" flag here. Maybe if force, always reboot?
+	// TODO: consider if we should not cordon if no action needs to be taken
+	actions, err := calculatePostConfigChangeAction(oldConfig, newConfig)
+	if err != nil {
+		return err
+	}
 
 	if err := dn.drain(); err != nil {
 		return err
@@ -565,15 +663,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	// TODO: Need Jerry's work to determine exact reboot action
-	var action rebootAction
-	action = dn.getRebootAction()
-	return dn.performRebootAction(action, newConfig.GetName())
-}
-
-func (dn *Daemon) getRebootAction() rebootAction {
-	// Until we have logic, always reboot
-	return rebootActionReboot
+	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
 // removeRollback removes the rpm-ostree rollback deployment.  It
