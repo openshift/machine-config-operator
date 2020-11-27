@@ -1921,7 +1921,7 @@ spec:
     image: {{ .Images.BaremetalRuntimeCfgBootstrap }}
     env:
       - name: ENABLE_UNICAST
-        value: "yes"
+        value: "{{ onPremPlatformKeepalivedEnableUnicast .ControllerConfig }}"
       - name: IS_BOOTSTRAP
         value: "yes"
     command:
