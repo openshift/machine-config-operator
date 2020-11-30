@@ -22,7 +22,30 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
-func createNewKubeletIgnition(jsonConfig []byte) ign3types.Config {
+func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
+	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
+
+	mode := 0644
+	overwrite := true
+	du := dataurl.New([]byte(config), "text/plain")
+	du.Encoding = dataurl.EncodingASCII
+	duStr := du.String()
+
+	return &ign3types.File{
+		Node: ign3types.Node{
+			Path:      "/etc/systemd/system/kubelet.service.d/20-logging.conf",
+			Overwrite: &overwrite,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Mode: &mode,
+			Contents: ign3types.Resource{
+				Source: &(duStr),
+			},
+		},
+	}
+}
+
+func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
 	// Want the kubelet.conf file to have the pretty JSON formatting
 	buf := new(bytes.Buffer)
 	json.Indent(buf, jsonConfig, "", "  ")
@@ -32,7 +55,8 @@ func createNewKubeletIgnition(jsonConfig []byte) ign3types.Config {
 	du := dataurl.New(buf.Bytes(), "text/plain")
 	du.Encoding = dataurl.EncodingASCII
 	duStr := du.String()
-	tempFile := ign3types.File{
+
+	return &ign3types.File{
 		Node: ign3types.Node{
 			Path:      "/etc/kubernetes/kubelet.conf",
 			Overwrite: &overwrite,
@@ -44,9 +68,6 @@ func createNewKubeletIgnition(jsonConfig []byte) ign3types.Config {
 			},
 		},
 	}
-	tempIgnConfig := ctrlcommon.NewIgnConfig()
-	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, tempFile)
-	return tempIgnConfig
 }
 
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
@@ -93,7 +114,10 @@ func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string
 // validates a KubeletConfig and returns an error if invalid
 // nolint:gocyclo
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
-	if cfg.Spec.KubeletConfig.Raw == nil {
+	if cfg.Spec.LogLevel != nil && (*cfg.Spec.LogLevel < 1 || *cfg.Spec.LogLevel > 10) {
+		return fmt.Errorf("KubeletConfig's LogLevel is not valid [1,10]: %v", cfg.Spec.LogLevel)
+	}
+	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
 	}
 	kcDecoded, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
