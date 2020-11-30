@@ -140,6 +140,11 @@ contents:
         extra_phys_args="dev ${vlan_parent} id ${vlan_id}"
       elif [ $(nmcli --get-values connection.type conn show ${old_conn}) == "bond" ]; then
         iface_type=bond
+        # check bond options
+        bond_opts=$(nmcli --get-values bond.options conn show ${old_conn})
+        if [ -n "$bond_opts" ]; then
+          extra_phys_args+="bond.options ${bond_opts} "
+        fi
       else
         iface_type=802-3-ethernet
       fi
