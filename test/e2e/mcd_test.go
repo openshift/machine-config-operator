@@ -259,7 +259,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"usbguard", "kernel-devel"},
+			Extensions: []string{"usbguard", "kernel-devel", "sandboxed-containers"},
 		},
 	}
 
@@ -283,11 +283,12 @@ func TestExtensions(t *testing.T) {
 	var expectedPackages []string
 	if isOKD {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+		// "sandboxed-containers" extension is not available on OKD
 		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
 		expectedPackages = []string{"usbguard", "kernel-devel"}
 	} else {
-		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers")
-		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers"}
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers")
+		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers"}
 	}
 	for _, v := range expectedPackages {
 		if !strings.Contains(installedPackages, v) {
@@ -317,9 +318,10 @@ func TestExtensions(t *testing.T) {
 
 	if isOKD {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+		// "sandboxed-containers" extension is not available on OKD
 		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
 	} else {
-		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers")
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers")
 	}
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
