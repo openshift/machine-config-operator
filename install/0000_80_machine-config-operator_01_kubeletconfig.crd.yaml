@@ -42,6 +42,12 @@ spec:
           description: KubeletConfigSpec defines the desired state of KubeletConfig
           type: object
           properties:
+            logLevel:
+              description: logLevel defines the log level of the Kubelet
+              type: integer
+              format: int64
+              minimum: 1
+              maximum: 10
             kubeletConfig:
               type: object
               x-kubernetes-preserve-unknown-fields: true
