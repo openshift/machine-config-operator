@@ -54,6 +54,11 @@ If a file that *is* managed by MachineConfig is changed, the MCD will detect thi
 
 In the future, we would like to harden things more so that these things are more controlled, and ideally avoid having any persistent "unmanaged" state.  But it will take significant work to get there; and the status quo means that we can support other operators such as SDN (and e.g. [nmstate](https://github.com/nmstate/kubernetes-nmstate)) that may control parts of the host without the MCO's awareness.
 
+## Q: I changed something, how do I make the MCO revert it?
+
+First, be sure you've read the above question.  If it's a file that is managed by the MCO, then
+use e.g. `oc debug node/$nodename chroot /host touch /run/machine-config-daemon-force`.  See [mco#1086](https://github.com/openshift/machine-config-operator/pull/1086/) and [mco#1891](https://github.com/openshift/machine-config-operator/pull/1891).  Wait for the next MCD sync.
+
 ## Q: How do I debug a node failing to join the cluster?
 
 In clusters that are managed by the [Machine API](https://github.com/openshift/machine-api-operator/), see
