@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -306,6 +307,129 @@ func TestExtensions(t *testing.T) {
 	}
 
 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
+
+	unlabelFunc()
+
+	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+	require.Nil(t, err)
+	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		require.Nil(t, err)
+		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+	}
+	err = waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+	require.Nil(t, err)
+}
+
+func TestNoReboot(t *testing.T) {
+	cs := framework.NewClientSet("")
+	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	oldInfraRenderedConfig := getMcName(t, cs, "infra")
+
+	infraNode := getSingleNodeByRole(t, cs, "infra")
+
+	output := execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
+	t.Logf("Debug: Initial uptime file content %s", output)
+	oldTime := strings.Split(output, " ")[0]
+	t.Logf("Node %s initial uptime: %s", infraNode.Name, oldTime)
+
+	// Adding authorized key for user core
+	testIgnConfig := ctrlcommon.NewIgnConfig()
+	testSSHKey := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"test adding authorized key without node reboot"}}
+	testIgnConfig.Passwd.Users = append(testIgnConfig.Passwd.Users, testSSHKey)
+
+	addAuthorizedKey := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("authorzied-key-infra-%s", uuid.NewUUID()),
+			Labels: mcLabelForRole("infra"),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(testIgnConfig),
+			},
+		},
+	}
+
+	_, err := cs.MachineConfigs().Create(context.TODO(), addAuthorizedKey, metav1.CreateOptions{})
+	require.Nil(t, err, "failed to create MC")
+	t.Logf("Created %s", addAuthorizedKey.Name)
+
+	// grab the latest worker- MC
+	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", addAuthorizedKey.Name)
+	require.Nil(t, err)
+	err = waitForPoolComplete(t, cs, "infra", renderedConfig)
+	require.Nil(t, err)
+
+	// Re-fetch the infra node for updated annotations
+	infraNode = getSingleNodeByRole(t, cs, "infra")
+
+	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+	foundSSHKey := execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/home/core/.ssh/authorized_keys")
+	if !strings.Contains(foundSSHKey, "test adding authorized key without node reboot") {
+		t.Fatalf("updated ssh keys not found in authorized_keys, got %s", foundSSHKey)
+	}
+	t.Logf("Node %s has SSH key", infraNode.Name)
+
+	output = execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
+	newTime := strings.Split(output, " ")[0]
+
+	// To ensure we didn't reboot, new uptime should be greater than old uptime
+	uptimeOld, err := strconv.ParseFloat(oldTime, 64)
+	require.Nil(t, err)
+
+	uptimeNew, err := strconv.ParseFloat(newTime, 64)
+	require.Nil(t, err)
+
+	if uptimeOld > uptimeNew {
+		t.Fatalf("Node %s rebooted uptime decreased from %f to %f", infraNode.Name, uptimeOld, uptimeNew)
+	}
+
+	t.Logf("Node %s didn't reboot as expected, uptime increased from %f to %f ", infraNode.Name, uptimeOld, uptimeNew)
+
+	// Delete the applied authorized key MachineConfig to make sure rollback works fine without node reboot
+	if err := cs.MachineConfigs().Delete(context.TODO(), addAuthorizedKey.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	t.Logf("Deleted MachineConfig %s", addAuthorizedKey.Name)
+
+	// Wait for the mcp to rollback to previous config
+	if err := waitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-fetch the infra node for updated annotations
+	infraNode = getSingleNodeByRole(t, cs, "infra")
+
+	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
+	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+	foundSSHKey = execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/home/core/.ssh/authorized_keys")
+	if strings.Contains(foundSSHKey, "test adding authorized key without node reboot") {
+		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
+	}
+
+	t.Logf("Node %s has successfully rolled back", infraNode.Name)
+
+	// Ensure that node didn't reboot during rollback
+	output = execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
+	newTime = strings.Split(output, " ")[0]
+
+	uptimeNew, err = strconv.ParseFloat(newTime, 64)
+	require.Nil(t, err)
+
+	if uptimeOld > uptimeNew {
+		t.Fatalf("Node %s rebooted during rollback, uptime decreased from %f to %f", infraNode.Name, uptimeOld, uptimeNew)
+	}
+
+	t.Logf("Node %s didn't reboot as expected during rollback, uptime increased from %f to %f ", infraNode.Name, uptimeOld, uptimeNew)
 
 	unlabelFunc()
 
