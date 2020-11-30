@@ -1048,8 +1048,9 @@ func getSupportedExtensions() map[string][]string {
 	// These are RHCOS supported extensions.
 	// Each extension keeps a list of packages required to get enabled on host.
 	return map[string][]string{
-		"usbguard":     {"usbguard"},
-		"kernel-devel": {"kernel-devel", "kernel-headers"},
+		"usbguard":             {"usbguard"},
+		"kernel-devel":         {"kernel-devel", "kernel-headers"},
+		"sandboxed-containers": {"kata-containers"},
 	}
 }
 
