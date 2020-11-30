@@ -209,6 +209,7 @@ contents:
         # check if connection is active
         if nmcli --fields GENERAL.STATE conn show ovs-if-br-ex | grep -i "activated"; then
           echo "OVS successfully configured"
+          cp /etc/NetworkManager/system-connections-merged/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection /etc/NetworkManager/system-connections
           ip a show br-ex
           configure_driver_options ${iface}
           exit 0
@@ -221,6 +222,7 @@ contents:
       while [ $counter -lt 5 ]; do
         if nmcli conn up ovs-if-br-ex; then
           echo "OVS successfully configured"
+          cp /etc/NetworkManager/system-connections-merged/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection /etc/NetworkManager/system-connections
           ip a show br-ex
           configure_driver_options ${iface}
           exit 0
@@ -260,6 +262,7 @@ contents:
         nmcli c del br-ex
       fi
 
+      rm -f /etc/NetworkManager/system-connections/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection
       # remove bridges created by ovn-kubernetes, try to delete br-ex again in case NM fail to talk to ovsdb
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local -- --if-exists del-br br-ex
     fi
