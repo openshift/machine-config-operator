@@ -89,13 +89,30 @@ contents:
         echo "MTU found for iface: ${iface}: ${iface_mtu}"
       fi
 
-      # create bridge
-      if ! nmcli connection show br-ex &> /dev/null; then
-        nmcli c add type ovs-bridge conn.interface br-ex con-name br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
-      fi
-
       # store old conn for later
       old_conn=$(nmcli --fields UUID,DEVICE conn show --active | grep ${iface} | awk '{print $1}')
+
+      extra_brex_args=""
+      # check for dhcp client ids
+      dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
+      if [ -n "$dhcp_client_id" ]; then
+        extra_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
+      fi
+
+      dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
+      if [ -n "$dhcp6_client_id" ]; then
+        extra_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
+      fi
+
+      # create bridge
+      if ! nmcli connection show br-ex &> /dev/null; then
+        nmcli c add type ovs-bridge \
+            con-name br-ex \
+            conn.interface br-ex \
+            802-3-ethernet.mtu ${iface_mtu} \
+            802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ${extra_brex_args}
+      fi
 
       # find default port to add to bridge
       if ! nmcli connection show ovs-port-phys0 &> /dev/null; then
