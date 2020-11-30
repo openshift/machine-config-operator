@@ -4,17 +4,12 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
-
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     if ! rpm -qa | grep -q openvswitch; then
       echo "Warning: Openvswitch package is not installed!"
       exit 1
     fi
-
-    # Create file to signal that ovs-configuration has executed (we are booted into 4.6)
-    # This is necessary because systemd calls from SDN containers are unreliable, so need to look for a file
-    touch /var/run/ovs-config-executed
 
     if [ "$1" == "OVNKubernetes" ]; then
       # Configures NICs onto OVS bridge "br-ex"
@@ -39,13 +34,13 @@ contents:
       # find default interface
       while [ $counter -lt 12 ]; do
         # check ipv4
-        iface=$(ip route show default | awk '{if ($4 == "dev") print $5; exit}')
+        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
         if [[ -n "$iface" ]]; then
           echo "IPv4 Default gateway interface found: ${iface}"
           break
         fi
         # check ipv6
-        iface=$(ip -6 route show default | awk '{if ($4 == "dev") print $5; exit}')
+        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
         if [[ -n "$iface" ]]; then
           echo "IPv6 Default gateway interface found: ${iface}"
           break
@@ -89,9 +84,15 @@ contents:
         echo "MTU found for iface: ${iface}: ${iface_mtu}"
       fi
 
-      # create bridge
+      # create bridge; use NM's ethernet device default route metric (100)
       if ! nmcli connection show br-ex &> /dev/null; then
-        nmcli c add type ovs-bridge conn.interface br-ex con-name br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+        nmcli c add type ovs-bridge \
+            con-name br-ex \
+            conn.interface br-ex \
+            802-3-ethernet.mtu ${iface_mtu} \
+            802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric 100 \
+            ipv6.route-metric 100
       fi
 
       # store old conn for later
