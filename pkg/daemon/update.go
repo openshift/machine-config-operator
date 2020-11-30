@@ -1101,6 +1101,7 @@ func getSupportedExtensions() map[string][]string {
 	return map[string][]string{
 		"usbguard":     {"usbguard"},
 		"kernel-devel": {"kernel-devel", "kernel-headers"},
+		"qemu-kiwi": {"ipxe-roms-qemu", "libpmem", "pixman", "qemu-kiwi", "qemu-kvm-common", "seabios-bin", "seavgabios-bin", "sgabios-bin"},
 	}
 }
 

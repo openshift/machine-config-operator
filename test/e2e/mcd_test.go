@@ -259,7 +259,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"usbguard", "kernel-devel"},
+			Extensions: []string{"usbguard", "kernel-devel", "qemu-kiwi"},
 		},
 	}
 
@@ -286,8 +286,8 @@ func TestExtensions(t *testing.T) {
 		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
 		expectedPackages = []string{"usbguard", "kernel-devel"}
 	} else {
-		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers")
-		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers"}
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "ipxe-roms-qemu", "libpmem", "pixman", "qemu-kiwi", "qemu-kvm-common", "seabios-bin", "seavgabios-bin", "sgabios-bin")
+		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "ipxe-roms-qemu", "libpmem", "pixman", "qemu-kiwi", "qemu-kvm-common", "seabios-bin", "seavgabios-bin", "sgabios-bin"}
 	}
 	for _, v := range expectedPackages {
 		if !strings.Contains(installedPackages, v) {
@@ -317,9 +317,9 @@ func TestExtensions(t *testing.T) {
 
 	if isOKD {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
-		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "ipxe-roms-qemu", "libpmem", "pixman", "qemu-kiwi", "qemu-kvm-common", "seabios-bin", "seavgabios-bin", "sgabios-bin")
 	} else {
-		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers")
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "ipxe-roms-qemu", "libpmem", "pixman", "qemu-kiwi", "qemu-kvm-common", "seabios-bin", "seavgabios-bin", "sgabios-bin")
 	}
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
