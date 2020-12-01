@@ -3,7 +3,7 @@
 The pull secret is used to pull the release payload image and it's currently stored as a secret in openshift-config/pull-secret.
 The ControllerConfig has an ObjectRefrence pointing to said secret and the Operator sets this up during its sync.
 The reference is then used by the TemplateController to grab the actual pull secret and generate the templates for MachineConfigs using it.
-That results in the pull secret being laid down *on every node*, therefore nodes are now be able to pull the release payload image.
+That results in the pull secret being laid down *on every node*, therefore nodes are now able to pull the release payload image.
 
 The pull secret has an expiration, and when it expires you need to change it as follows:
 
