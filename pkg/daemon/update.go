@@ -99,8 +99,8 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 	}
 }
 
-func reloadCrioConfig() error {
-	_, err := runGetOut("pkill", "-HUP", "crio")
+func reloadService(name string) error {
+	_, err := runGetOut("systemctl", "reload", name)
 	return err
 }
 
@@ -117,11 +117,12 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
-		if err := reloadCrioConfig(); err != nil {
-			dn.logSystem("Reloading crio configuration failed, rebooting: %v", err)
+		serviceName := "crio"
+		if err := reloadService(serviceName); err != nil {
+			dn.logSystem("Reloading %s configuration failed, rebooting: %v", serviceName, err)
 			dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 		}
-		dn.logSystem("crio config reloaded successfully! Desired config %s has been applied, skipping reboot", configName)
+		dn.logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
 
 	// We are here, which means reboot was not needed to apply the configuration.
