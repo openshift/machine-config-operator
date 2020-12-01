@@ -156,6 +156,12 @@ func TestKernelArguments(t *testing.T) {
 func TestKernelType(t *testing.T) {
 	cs := framework.NewClientSet("")
 
+	isOKD, err := isOKDCluster(cs)
+	require.Nil(t, err)
+	if isOKD {
+		t.Skip("skipping test on OKD")
+	}
+
 	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
 	oldInfraRenderedConfig := getMcName(t, cs, "infra")
@@ -174,7 +180,7 @@ func TestKernelType(t *testing.T) {
 		},
 	}
 
-	_, err := cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", kernelType.Name)
