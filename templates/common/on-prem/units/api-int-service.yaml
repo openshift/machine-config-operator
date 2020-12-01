@@ -8,4 +8,4 @@ contents: |
 
   [Service]
   Type=oneshot
-  ExecStart=/bin/bash -c "grep -q {{ onPremPlatformAPIServerInternalIP . }} api-int api-int.{{ .DNS.Spec.BaseDomain }} /etc/hosts || echo '{{ onPremPlatformAPIServerInternalIP . }} api-int api-int.{{ .DNS.Spec.BaseDomain }}' >> /etc/hosts"
+  ExecStart=/bin/bash -c "grep -q -e '{{ onPremPlatformAPIServerInternalIP . }} api-int api-int.{{ .DNS.Spec.BaseDomain }}' -F /etc/hosts || echo '{{ onPremPlatformAPIServerInternalIP . }} api-int api-int.{{ .DNS.Spec.BaseDomain }}' >> /etc/hosts"
