@@ -72,7 +72,7 @@ care of updating the base operating system.
 Updates are provided via the `OSImageURL` component of a MachineConfig object.
 This should generally be controlled by the
 [cluster-version-operator](https://github.com/openshift/cluster-version-operator/),
-and its current existence in MachineConfig objects should be though of as an
+and its current existence in MachineConfig objects should be thought of as an
 implementation detail.
 
 MachineConfigDaemon only supports updating Red Hat CoreOS, which uses rpm-ostree.
