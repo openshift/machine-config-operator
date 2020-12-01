@@ -107,7 +107,7 @@ Use kubernetes Deployment behavior for LabelSelector to find Pods.
 
 ### Generating desired MachineConfig
 
-Use the merging behavior defined in MachineConfig design document [here](./MachineConfiguration.md#how-to-create-generated-machineconfig) to create a single MachineConfig from all the MachineConfig object that were selected above.
+Use the merging behavior defined in MachineConfig design document [here](./MachineConfiguration.md#how-to-create-generated-machineconfig) to create a single MachineConfig from all the MachineConfig objects that were selected above.
 
 #### Ordering the MachineConfigs
 
@@ -121,7 +121,7 @@ UpdateController watches for changes on MachineConfigPool and runs update if,
 
 1. If the `.Status.CurrentMachineConfig` has been updated.
 
-2. If new nodes can be updated to the current configuration as new Machines are available with old configuration if permitted by `NodeLimit` or the `NodeLimit` has increased allowing more node to be updated.
+2. If new nodes can be updated to the current configuration as new Machines are available with old configuration if permitted by `NodeLimit` or the `NodeLimit` has increased allowing more nodes to be updated.
 
 **Historically** the following annotations were used to coordinate between UpdateController and the MachineConfigDaemon,
 
@@ -171,4 +171,4 @@ The MachineConfigController performs the following operations:
 1. Serializes the KubeletConfig to json
 1. Creates or Updates a MachineConfig (called `99-[role]-kubelet-managed`) with a new /etc/kubernetes/kubelet.conf
 
-The machine will subseqently reboot by the MachineConfigDaemon to apply the new config.
+The machine will subsequently reboot by the MachineConfigDaemon to apply the new config.

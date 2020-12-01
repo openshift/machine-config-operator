@@ -46,7 +46,7 @@ If for example you write a daemonset that writes a custom systemd unit into e.g.
 
 Another case today is that the SDN operator will extract some binaries from its container image and drop them in `/opt` (which is really `/var/opt`).
 
-Stated more generally, on an OSTree managed system, all content in `/etc` and `/var` is [preserved by default across upgrades](https://ostree.readthedocs.io/en/latest/manual/adapting-existing/).
+Stated more generally, on an OSTree managed system, all content in `/etc` and `/var` is [preserved by default across upgrades](https://ostreedev.github.io/ostree/adapting-existing/).
 
 Further, rpm-ostree supports package layering and overrides - these will also be preserved by the MCO (currently).  Although note that there is no current mechanism to trigger a MCO-coordinated drain/reboot, which is particularly relevant for `rpm-ostree install/override` changes.
 
