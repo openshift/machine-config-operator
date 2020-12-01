@@ -1176,9 +1176,9 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
 		MCDUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
-
-		// All good!
 	}
+
+	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
 	return inDesiredConfig, nil
 }
 

@@ -49,10 +49,14 @@ const (
 	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
 	osImageContentBaseDir = "/run/mco-machine-os-content/"
 
-	// These are the actions for a node to take after applying config changes.
-	// Defaults to reboot.
-	postConfigChangeActionNone       = "none"
-	postConfigChangeActionReboot     = "reboot"
+	// These are the actions for a node to take after applying config changes. (e.g. a new machineconfig is applied)
+	// "None" means no special action needs to be taken. A drain will still happen.
+	// This currently happens when ssh keys or pull secret (/var/lib/kubelet/config.json) is changed
+	postConfigChangeActionNone = "none"
+	// Rebooting is still the default scenario for any other change
+	postConfigChangeActionReboot = "reboot"
+	// Crio reload will happen when /etc/containers/registries.conf is changed. This will cause
+	// a "systemctl reload crio"
 	postConfigChangeActionReloadCrio = "reload crio"
 )
 
@@ -114,13 +118,19 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 	if ctrlcommon.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
+		if dn.recorder != nil {
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", "Config changes do not require reboot.")
+		}
 		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
 		serviceName := "crio"
 		if err := reloadService(serviceName); err != nil {
-			dn.logSystem("Reloading %s configuration failed, rebooting: %v", serviceName, err)
+			dn.logSystem("Reloading %s configuration failed, node will reboot instead. Error: %v", serviceName, err)
 			dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+		}
+		if dn.recorder != nil {
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
 		}
 		dn.logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
@@ -130,13 +140,13 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	// Get current state of node, in case of an error reboot
 	state, err := dn.getStateAndConfigs(configName)
 	if err != nil {
-		glog.Errorf("Error processing state and configs, rebooting: %v", err)
+		glog.Errorf("Error processing state and configs, node will reboot instead. Error: %v", err)
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 
 	var inDesiredConfig bool
 	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
-		glog.Errorf("Setting node's state to Done failed, rebooting: %v", err)
+		glog.Errorf("Setting node's state to Done failed, node will reboot instead. Error: %v", err)
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
 	if inDesiredConfig {
@@ -578,7 +588,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	// TODO: consider how we should honor "force" flag here. Maybe if force, always reboot?
-	// TODO: consider if we should not cordon if no action needs to be taken
 	actions, err := calculatePostConfigChangeAction(oldConfig, newConfig)
 	if err != nil {
 		return err
