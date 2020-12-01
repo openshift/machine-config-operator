@@ -1,0 +1,9 @@
+filesystem: "root"
+mode: 0644
+path: "/etc/systemd/system.conf.d/10-default-env-proxy.conf"
+contents:
+  inline: |
+    {{if .Proxy -}}
+    [Manager]
+    DefaultEnvironment=HTTP_PROXY={{.Proxy.HTTPProxy}} HTTPS_PROXY={{.Proxy.HTTPSProxy}} NO_PROXY={{.Proxy.NoProxy}}
+    {{end -}}
