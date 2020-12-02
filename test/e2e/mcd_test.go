@@ -334,7 +334,6 @@ func TestNoReboot(t *testing.T) {
 	infraNode := getSingleNodeByRole(t, cs, "infra")
 
 	output := execCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
-	t.Logf("Debug: Initial uptime file content %s", output)
 	oldTime := strings.Split(output, " ")[0]
 	t.Logf("Node %s initial uptime: %s", infraNode.Name, oldTime)
 
