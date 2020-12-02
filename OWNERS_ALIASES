@@ -1,6 +1,18 @@
 # See the OWNERS_ALIASES docs: https://git.k8s.io/community/contributors/guide/owners.md#OWNERS_ALIASES
 
 aliases:
+  baremetal-approvers:
+    - bcrochet
+    - celebdor
+    - cybertron
+    - hardys
+    - yboaron
+  baremetal-reviewers:
+    - bcrochet
+    - celebdor
+    - cybertron
+    - hardys
+    - yboaron
   openstack-approvers:
     - EmilienM
     - Fedosin
@@ -17,3 +29,15 @@ aliases:
     - mandre
     - mdbooth
     - pierreprinetti
+  ovirt-approvers:
+    - Gal-Zaidman
+    - rgolangh
+  ovirt-reviewers:
+    - Gal-Zaidman
+    - rgolangh
+  vsphere-approvers:
+    - jcpowermac
+    - patrickdillon
+  vsphere-reviewers:
+    - jcpowermac
+    - patrickdillon
