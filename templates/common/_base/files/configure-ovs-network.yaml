@@ -85,7 +85,7 @@ contents:
       fi
 
       # store old conn for later
-      old_conn=$(nmcli --fields UUID,DEVICE conn show --active | grep ${iface} | awk '{print $1}')
+      old_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
 
       extra_brex_args=""
       # check for dhcp client ids
