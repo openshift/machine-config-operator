@@ -60,6 +60,7 @@ require (
 	k8s.io/code-generator v0.19.2
 	k8s.io/kubectl v0.0.0-20201023045331-0a68e0d30fe9
 	k8s.io/kubelet v0.19.0
+	k8s.io/utils v0.0.0-20200729134348-d5654de09c73
 )
 
 replace (

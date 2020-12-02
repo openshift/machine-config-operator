@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	utilnet "k8s.io/utils/net"
 )
 
 type renderConfig struct {
@@ -82,7 +83,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	if err != nil {
 		return nil, err
 	}
-	ipv6, err := isSingleStackIPv6(network.Spec.ServiceNetwork)
+	ipFamilies, err := ipFamilies(network.Spec.ServiceNetwork)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +108,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 
 	ccSpec := &mcfgv1.ControllerConfigSpec{
 		ClusterDNSIP:        dnsIP,
-		KubeletIPv6:         ipv6,
+		IPFamilies:          ipFamilies,
 		CloudProviderConfig: "",
 		// EtcdDiscoveryDomain is unused and deprecated in favour of using Infra.Status.EtcdDiscoveryDomain directly
 		// Still populating it here for now until it will be removed eventually
@@ -149,17 +150,26 @@ func clusterDNSIP(iprange string) (string, error) {
 	return ip.String(), nil
 }
 
-func isSingleStackIPv6(serviceCIDRs []string) (bool, error) {
+func ipFamilies(serviceCIDRs []string) (mcfgv1.IPFamiliesType, error) {
+	var ipv4, ipv6 bool
 	for _, cidr := range serviceCIDRs {
-		ip, _, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return false, err
-		}
-		if ip.To4() != nil {
-			return false, nil
+		if utilnet.IsIPv6CIDRString(cidr) {
+			ipv6 = true
+		} else {
+			ipv4 = true
 		}
 	}
-	return true, nil
+
+	switch {
+	case ipv4 && ipv6:
+		return mcfgv1.IPFamiliesDualStack, nil
+	case ipv4:
+		return mcfgv1.IPFamiliesIPv4, nil
+	case ipv6:
+		return mcfgv1.IPFamiliesIPv6, nil
+	default:
+		return "", fmt.Errorf("could not determine cluster IP families from config")
+	}
 }
 
 // GenerateProxyCookieSecret creates a random b64 encoded secret

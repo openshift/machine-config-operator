@@ -23,7 +23,11 @@ contents: |
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
         --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
+{{- if eq .IPFamilies "DualStack"}}
+        --node-ip=${KUBELET_NODE_IPS} \
+{{- else}}
         --node-ip=${KUBELET_NODE_IP} \
+{{- end}}
         --address=${KUBELET_NODE_IP} \
         --minimum-container-ttl-duration=6m0s \
         --cloud-provider={{cloudProvider .}} \
