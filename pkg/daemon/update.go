@@ -117,20 +117,27 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		dn.logSystem("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 	}
+
 	if ctrlcommon.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
 		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", "Config changes do not require reboot.")
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
 		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
+
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
 		serviceName := "crio"
+
 		if err := reloadService(serviceName); err != nil {
+			if dn.recorder != nil {
+				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
+			}
 			dn.logSystem("Reloading %s configuration failed, node will reboot instead. Error: %v", serviceName, err)
 			dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
 		}
+
 		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
 		}
 		dn.logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
@@ -519,6 +526,17 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 }
 
 func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig) ([]string, error) {
+	// If a machine-config-daemon-force file is present, it means the user wants to
+	// move to desired state without additional validation. We will reboot the node in
+	// this case regardless of what MachineConfig diff is.
+	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err == nil {
+		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
+			return []string{}, errors.Wrap(err, "failed to remove force validation file")
+		}
+		glog.Infof("Setting post config change action to postConfigChangeActionReboot; %s present", constants.MachineConfigDaemonForceFile)
+		return []string{postConfigChangeActionReboot}, nil
+	}
+
 	diff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
 		return []string{}, err
@@ -587,7 +605,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
-	// TODO: consider how we should honor "force" flag here. Maybe if force, always reboot?
 	actions, err := calculatePostConfigChangeAction(oldConfig, newConfig)
 	if err != nil {
 		return err
