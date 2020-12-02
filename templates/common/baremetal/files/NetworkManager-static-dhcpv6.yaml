@@ -19,6 +19,14 @@ contents:
         exit 0
     fi
 
+    # We don't want this to run before OVNKubernetes creates its bridge. If we
+    # see the default CONNECTION_ID we know to wait.
+    if [ "$CONNECTION_ID" == "Wired Connection" ]
+    then
+        >&2 echo "Refusing to modify default connection."
+        exit 0
+    fi
+
     IPS=($IP6_ADDRESS_0)
     # For ipv6 we have two addresses: DHCP and link-local. Make sure we're using the right one.
     CHECK_STR="^${DHCP6_IP6_ADDRESS}/"
