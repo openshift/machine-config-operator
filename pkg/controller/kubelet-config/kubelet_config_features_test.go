@@ -72,34 +72,3 @@ func TestFeaturesDefault(t *testing.T) {
 		})
 	}
 }
-
-func createNewDualStackFeatureGate() *configv1.FeatureGate {
-	return &configv1.FeatureGate{
-		Spec: configv1.FeatureGateSpec{
-			FeatureGateSelection: configv1.FeatureGateSelection{
-				FeatureSet: configv1.IPv6DualStackNoUpgrade,
-			},
-		},
-	}
-}
-
-// Hack for 4.6; don't pass the IPv6DualStack feature gate to kubelet
-func TestFeaturesDualStack(t *testing.T) {
-	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.NonePlatformType)
-	f.ccLister = append(f.ccLister, cc)
-
-	ctrl := f.newController()
-	defaultFeatureGates, err := ctrl.generateFeatureMap(createNewDefaultFeatureGate())
-	if err != nil {
-		t.Errorf("could not generate defaultFeatureGates: %v", err)
-	}
-	dualStackFeatureGates, err := ctrl.generateFeatureMap(createNewDualStackFeatureGate())
-	if err != nil {
-		t.Errorf("could not generate dualStackFeatureGates: %v", err)
-	}
-
-	if !reflect.DeepEqual(dualStackFeatureGates, defaultFeatureGates) {
-		t.Errorf("IPv6DualStack FeatureGates do not match Default FeatureGates: (dualStack=[%v], default=[%v]", dualStackFeatureGates, defaultFeatureGates)
-	}
-}
