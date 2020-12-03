@@ -5,6 +5,7 @@ metadata:
   name: default-account-openshift-machine-config-operator
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
 subjects:
 - kind: ServiceAccount
   name: default
@@ -22,6 +23,7 @@ metadata:
   namespace: openshift-machine-config-operator
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
 rules:
   - apiGroups:
     - ""
@@ -42,6 +44,7 @@ metadata:
   namespace: openshift-machine-config-operator
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

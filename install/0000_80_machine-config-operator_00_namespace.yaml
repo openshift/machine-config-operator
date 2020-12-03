@@ -4,6 +4,7 @@ metadata:
   name: openshift-machine-config-operator
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
     openshift.io/node-selector: ""
   labels:
     name: openshift-machine-config-operator
@@ -16,6 +17,7 @@ metadata:
   name: openshift-openstack-infra
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
     openshift.io/node-selector: ""
   labels:
     name: openshift-openstack-infra
@@ -27,6 +29,7 @@ metadata:
   name: openshift-kni-infra
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
     openshift.io/node-selector: ""
   labels:
     name: openshift-kni-infra
@@ -38,6 +41,7 @@ metadata:
   name: openshift-ovirt-infra
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
     openshift.io/node-selector: ""
   labels:
     name: openshift-ovirt-infra
@@ -49,6 +53,7 @@ metadata:
   name: openshift-vsphere-infra
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
     openshift.io/node-selector: ""
   labels:
     name: openshift-vsphere-infra
