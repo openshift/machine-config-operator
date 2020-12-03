@@ -5,6 +5,8 @@ contents: |
   Description=vSphere hostname
   After=vmtoolsd.service
   Before=kubelet.service
+  Before=node-valid-hostname.service
+  Before=NetworkManager.service
 
   [Service]
   ExecStart=/usr/local/bin/vsphere-hostname.sh
