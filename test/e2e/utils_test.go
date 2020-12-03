@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -166,21 +167,24 @@ func createMC(name, role string) *mcfgv1.MachineConfig {
 
 // execCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
-func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, args ...string) string {
+func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
 	mcd, err := mcdForNode(cs, &node)
 	require.Nil(t, err)
 	mcdName := mcd.ObjectMeta.Name
 
 	entryPoint := "oc"
-	cmd := []string{"rsh",
+	args := []string{"rsh",
 		"-n", "openshift-machine-config-operator",
 		"-c", "machine-config-daemon",
 		mcdName}
-	cmd = append(cmd, args...)
+	args = append(args, subArgs...)
 
-	b, err := exec.Command(entryPoint, cmd...).CombinedOutput()
-	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", args, node.Name, string(b))
-	return string(b)
+	cmd := exec.Command(entryPoint, args...)
+	cmd.Stderr = os.Stderr
+
+	out, err := cmd.Output()
+	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
+	return string(out)
 }
 
 func mcLabelForRole(role string) map[string]string {

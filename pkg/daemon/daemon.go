@@ -1015,7 +1015,10 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if err := dn.drain(); err != nil {
 			return err
 		}
-		return dn.finalizeAndReboot(state.pendingConfig)
+		if err := dn.finalizeBeforeReboot(state.pendingConfig); err != nil {
+			return err
+		}
+		return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.pendingConfig.GetName()))
 	}
 
 	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
@@ -1043,7 +1046,10 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			if err := os.RemoveAll(osImageContentDir); err != nil {
 				return err
 			}
-			return dn.finalizeAndReboot(state.currentConfig)
+			if err := dn.finalizeBeforeReboot(state.currentConfig); err != nil {
+				return err
+			}
+			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
 		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
 
@@ -1097,28 +1103,39 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		glog.Info("Validated on-disk state")
 	} else {
 		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
-		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
-			return errors.Wrap(err, "failed to remove force validation file")
-		}
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
 
-	// We've validated our state.  In the case where we had a pendingConfig,
-	// make that now currentConfig.  We update the node annotation, delete the
-	// state file, etc.
-	//
-	// However, it may be the case that desiredConfig changed while we
-	// were coming up, so we next look at that before uncordoning the node (so
-	// we don't uncordon and then immediately re-cordon)
+	// We've validated state. Now, ensure that node is in desired state
+	var inDesiredConfig bool
+	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
+		return err
+	}
+	if inDesiredConfig {
+		return nil
+	}
+
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
+	}
+	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
+	// Kick off an update.
+	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+}
+
+// updateConfigAndState updates node to desired state, labels nodes as done and uncordon
+func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
+	// In the case where we had a pendingConfig, make that now currentConfig.
+	// We update the node annotation, delete the state file, etc.
 	if state.pendingConfig != nil {
 		if dn.recorder != nil {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
 		}
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
-			return errors.Wrap(err, "error setting node's state to Done")
+			return true, errors.Wrap(err, "error setting node's state to Done")
 		}
 		if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
-			return errors.Wrapf(err, "failed to reset pending config: %s", string(out))
+			return true, errors.Wrapf(err, "failed to reset pending config: %s", string(out))
 		}
 
 		state.currentConfig = state.pendingConfig
@@ -1126,10 +1143,13 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	if state.bootstrapping {
 		if err := dn.storeCurrentConfigOnDisk(state.currentConfig); err != nil {
-			return err
+			return false, err
 		}
 	}
 
+	// In case of node reboot, it may be the case that desiredConfig changed while we
+	// were coming up, so we next look at that before uncordoning the node (so
+	// we don't uncordon and then immediately re-cordon)
 	inDesiredConfig := state.currentConfig.GetName() == state.desiredConfig.GetName()
 	if inDesiredConfig {
 		if state.pendingConfig != nil {
@@ -1138,7 +1158,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
 			if err := dn.completeUpdate(dn.node, state.pendingConfig.GetName()); err != nil {
 				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
-				return err
+				return inDesiredConfig, err
 			}
 		}
 		// If we're degraded here, it means we got an error likely on startup and we retried.
@@ -1147,22 +1167,16 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 				MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
-				return errors.Wrap(err, "error setting node's state to Done")
+				return inDesiredConfig, errors.Wrap(err, "error setting node's state to Done")
 			}
 		}
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
 		MCDUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
+	}
 
-		// All good!
-		return nil
-	}
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
-	}
-	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
-	// Kick off an update.
-	return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
+	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
+	return inDesiredConfig, nil
 }
 
 // runOnceFromMachineConfig utilizes a parsed machineConfig and executes in onceFrom
