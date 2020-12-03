@@ -1,0 +1,63 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/30-static-dhcp"
+contents:
+  inline: |
+    #!/bin/bash
+    set -ex -o pipefail
+
+    if [[ "{{ .NetworkType }}" == "OVNKubernetes" && "$CONNECTION_ID" == "Wired Connection" ]]
+    then
+        >&2 echo "Refusing to modify default connection."
+        exit 0
+    fi
+
+    if [ -z ${DHCP4_IP_ADDRESS:-} ]
+    then
+        >&2 echo "Not a DHCP4 address. Ignoring."
+        exit 0
+    fi
+
+    if [ ${DHCP4_DHCP_LEASE_TIME:-0} -lt 4294967295 ]
+    then
+        >&2 echo "Not an infinite DHCP4 lease. Ignoring."
+        exit 0
+    fi
+
+    IPS=($IP4_ADDRESS_0)
+    CIDR=${IPS[0]}
+    GATEWAY=${IPS[1]}
+
+    TYPE=$(nmcli --get-values connection.type connection show "$CONNECTION_ID")
+
+    if ! nmcli con show inf-lease-to-static
+    then
+        nmcli con add type "$TYPE" con-name inf-lease-to-static
+    fi
+    nmcli con mod inf-lease-to-static \
+      conn.interface "$1" \
+      connection.autoconnect yes \
+      ipv4.addresses "$CIDR" \
+      ipv4.method manual \
+      ipv4.gateway "$GATEWAY" \
+      ipv4.dns "$IP4_NAMESERVERS"
+
+    if [ -n "$IP4_DOMAINS" ]; then
+        nmcli con mod inf-lease-to-static ipv4.dns-search "$IP4_DOMAINS"
+    fi
+    plus=''
+    for i in $(seq 0 $(($IP4_NUM_ROUTES-1)) )
+    do
+        varname="IP4_ROUTE_$i"
+        nmcli con mod inf-lease-to-static ${plus}ipv4.routes "${!varname}"
+        plus='+'
+    done
+
+    nmcli con up inf-lease-to-static
+
+    # Copy it from the OverlayFS mount to the persistent lowerdir
+    cp "/etc/NetworkManager/system-connections-merged/inf-lease-to-static.nmconnection" /etc/NetworkManager/system-connections
+
+    if [ -n "${DHCP4_HOST_NAME:-}" ]
+    then
+        hostnamectl set-hostname --static --transient "$DHCP4_HOST_NAME"
+    fi
