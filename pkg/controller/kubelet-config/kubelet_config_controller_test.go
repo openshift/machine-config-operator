@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"

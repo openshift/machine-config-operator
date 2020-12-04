@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 

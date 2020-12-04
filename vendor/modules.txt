@@ -82,9 +82,10 @@ github.com/coreos/go-semver/semver
 github.com/coreos/go-systemd/unit
 # github.com/coreos/go-systemd/v22 v22.0.0
 github.com/coreos/go-systemd/v22/unit
-# github.com/coreos/ign-converter v0.0.0-20200629171308-e40a44f244c5
+# github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
 github.com/coreos/ign-converter/translate/v23tov30
-github.com/coreos/ign-converter/translate/v31tov22
+github.com/coreos/ign-converter/translate/v32tov22
+github.com/coreos/ign-converter/translate/v32tov31
 github.com/coreos/ign-converter/util
 # github.com/coreos/ignition v0.35.0
 github.com/coreos/ignition/config/shared/errors
@@ -116,6 +117,9 @@ github.com/coreos/ignition/v2/config/v3_0/types
 github.com/coreos/ignition/v2/config/v3_1
 github.com/coreos/ignition/v2/config/v3_1/translate
 github.com/coreos/ignition/v2/config/v3_1/types
+github.com/coreos/ignition/v2/config/v3_2
+github.com/coreos/ignition/v2/config/v3_2/translate
+github.com/coreos/ignition/v2/config/v3_2/types
 github.com/coreos/ignition/v2/config/validate
 # github.com/coreos/vcontext v0.0.0-20191017033345-260217907eb5
 github.com/coreos/vcontext/json
