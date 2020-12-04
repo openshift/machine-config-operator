@@ -54,8 +54,8 @@ type Daemon struct {
 	// name is the node name.
 	name string
 
-	// OperatingSystem the operating system the MCD is running on
-	OperatingSystem string
+	// os the operating system the MCD is running on
+	os OperatingSystem
 
 	// IgnitionVersion is the version of the installed Ignition binary on the system
 	IgnitionVersion string
@@ -208,9 +208,9 @@ func New(
 		err        error
 	)
 
-	operatingSystem := "mock"
+	os := OperatingSystem{}
 	if !mock {
-		operatingSystem, err = GetHostRunningOS()
+		os, err = GetHostRunningOS()
 		if err != nil {
 			HostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, errors.Wrapf(err, "checking operating system")
@@ -218,7 +218,7 @@ func New(
 	}
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
-	if operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS {
+	if os.IsCoreOSVariant() {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -244,7 +244,7 @@ func New(
 	// RHEL 7.6/Centos 7 logger (util-linux) doesn't have the --journald flag
 	loggerSupportsJournal := true
 	if !mock {
-		if operatingSystem == machineConfigDaemonOSRHEL || operatingSystem == machineConfigDaemonOSCENTOS {
+		if os.IsLikeTraditionalRHEL7() {
 			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
 			if err != nil {
 				return nil, errors.Wrapf(err, "running logger --help")
@@ -254,13 +254,13 @@ func New(
 	}
 
 	// report OS & version (if RHCOS or FCOS) to prometheus
-	HostOS.WithLabelValues(operatingSystem, osVersion).Set(1)
+	HostOS.WithLabelValues(os.ToPrometheusLabel(), osVersion).Set(1)
 
 	return &Daemon{
 		mock:                  mock,
 		booting:               true,
 		IgnitionVersion:       ignVersion,
-		OperatingSystem:       operatingSystem,
+		os:                    os,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
 		bootID:                bootID,
@@ -854,7 +854,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 // dynamically after a reboot.
 func (dn *Daemon) LogSystemData() {
 	// Print status if available
-	if dn.OperatingSystem == MachineConfigDaemonOSRHCOS || dn.OperatingSystem == MachineConfigDaemonOSFCOS {
+	if dn.os.IsCoreOSVariant() {
 		status, err := dn.NodeUpdaterClient.GetStatus()
 		if err != nil {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
@@ -1385,7 +1385,7 @@ func compareOSImageURL(current, desired string) bool {
 // Otherwise if `false` is returned, then we need to perform an update.
 func (dn *Daemon) checkOS(osImageURL string) bool {
 	// Nothing to do if we're not on RHCOS or FCOS
-	if dn.OperatingSystem != MachineConfigDaemonOSRHCOS && dn.OperatingSystem != MachineConfigDaemonOSFCOS {
+	if !dn.os.IsCoreOSVariant() {
 		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true
 	}

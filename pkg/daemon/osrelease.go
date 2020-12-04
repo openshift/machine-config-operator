@@ -1,49 +1,67 @@
 package daemon
 
 import (
-	"fmt"
+	"strings"
 
 	"github.com/ashcrow/osrelease"
 )
 
-const (
-	// MachineConfigDaemonOSRHCOS denotes RHEL CoreOS
-	MachineConfigDaemonOSRHCOS = "RHCOS"
-	// machineConfigDaemonOSRHEL denotes RHEL
-	machineConfigDaemonOSRHEL = "RHEL"
-	// machineConfigDaemonOSCENTOS denotes CentOS
-	machineConfigDaemonOSCENTOS = "CENTOS"
-	// MachineConfigDaemonOSFCOS denotes Fedora CoreOS
-	MachineConfigDaemonOSFCOS = "FCOS"
-)
+// OperatingSystem is a wrapper around a subset of the os-release fields
+// and also tracks whether ostree is in use.
+type OperatingSystem struct {
+	// ID is the ID field from the os-release
+	ID string
+	// VariantID is the VARIANT_ID field from the os-release
+	VariantID string
+	// VersionID is the VERSION_ID field from the os-release
+	VersionID string
+}
 
-// GetHostRunningOS reads os-release from the rootFs prefix to return what
-// OS variant the daemon is running on. If we are unable to read the
-// os-release file OR the information doesn't match MCD supported OS's
-// an error is returned.
-func GetHostRunningOS() (string, error) {
+// IsRHCOS is true if the OS is RHEL CoreOS
+func (os OperatingSystem) IsRHCOS() bool {
+	return os.ID == "rhcos"
+}
+
+// IsFCOS is true if the OS is RHEL CoreOS
+func (os OperatingSystem) IsFCOS() bool {
+	return os.ID == "fedora" && os.VariantID == "coreos"
+}
+
+// IsCoreOSVariant is true if the OS is FCOS or a derivative (ostree+Ignition)
+// which includes RHCOS.
+func (os OperatingSystem) IsCoreOSVariant() bool {
+	// We should probably add VARIANT_ID=coreos to RHCOS too and key off that
+	return os.IsFCOS() || os.IsRHCOS()
+}
+
+// IsLikeTraditionalRHEL7 is true if the OS is traditional RHEL7 or CentOS7:
+// yum based + kickstart/cloud-init (not Ignition).
+func (os OperatingSystem) IsLikeTraditionalRHEL7() bool {
+	// Today nothing else is going to show up with a version ID of 7
+	return os.VersionID == "7"
+}
+
+// ToPrometheusLabel returns a value we historically fed to Prometheus
+func (os OperatingSystem) ToPrometheusLabel() string {
+	// We historically upper cased this
+	return strings.ToUpper(os.ID)
+}
+
+// GetHostRunningOS reads os-release to generate the OperatingSystem data.
+func GetHostRunningOS() (OperatingSystem, error) {
 	libPath := "/usr/lib/os-release"
 	etcPath := "/etc/os-release"
 
+	ret := OperatingSystem{}
+
 	or, err := osrelease.NewWithOverrides(etcPath, libPath)
 	if err != nil {
-		return "", err
+		return ret, err
 	}
 
-	if or.ID == "fedora" && or.VARIANT_ID == "coreos" {
-		return MachineConfigDaemonOSFCOS, nil
-	}
+	ret.ID = or.ID
+	ret.VariantID = or.VARIANT_ID
+	ret.VersionID = or.VERSION_ID
 
-	// See https://github.com/openshift/redhat-release-coreos/blob/master/redhat-release-coreos.spec
-	switch or.ID {
-	case "rhcos":
-		return MachineConfigDaemonOSRHCOS, nil
-	case "rhel":
-		return machineConfigDaemonOSRHEL, nil
-	case "centos":
-		return machineConfigDaemonOSCENTOS, nil
-	default:
-		// default to unknown OS
-		return "", fmt.Errorf("an unsupported OS is being used: %s:%s", or.ID, or.VARIANT_ID)
-	}
+	return ret, nil
 }
