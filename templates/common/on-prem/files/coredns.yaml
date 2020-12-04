@@ -64,16 +64,6 @@ contents:
         volumeMounts:
         - name: conf-dir
           mountPath: "/etc/coredns"
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 18080
-            scheme: HTTP
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          successThreshold: 1
-          failureThreshold: 3
-          timeoutSeconds: 10
         livenessProbe:
           httpGet:
             path: /health
