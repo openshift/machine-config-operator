@@ -111,6 +111,8 @@ func newControllerConfig(name string, platform apicfgv1.PlatformType) *mcfgv1.Co
 					PlatformStatus: &apicfgv1.PlatformStatus{
 						Type: platform,
 					},
+					APIServerURL:         fmt.Sprintf("https://api.%s.tt.testing:6443", name),
+					APIServerInternalURL: fmt.Sprintf("https://api-int.%s.tt.testing:6443", name),
 				},
 			},
 			ReleaseImage: "release-reg.io/myuser/myimage:test",
