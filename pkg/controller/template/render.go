@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -24,6 +26,9 @@ import (
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
 	PullSecret string
+
+	// no need to set this, will be automatically configured
+	Constants map[string]string
 }
 
 const (
@@ -295,9 +300,15 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
+	funcs["urlHost"] = urlHost
+	funcs["urlPort"] = urlPort
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
+	}
+
+	if config.Constants == nil {
+		config.Constants = constants.ConstantsByName
 	}
 
 	buf := new(bytes.Buffer)
@@ -476,5 +487,39 @@ func onPremPlatform(platformString configv1.PlatformType) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// urlHost is a template function that returns the hostname of a url (without the port)
+func urlHost(u string) (interface{}, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+
+	return parsed.Hostname(), nil
+}
+
+// urlPort is a template function that returns the port of a url, with defaults
+// provided if necessary.
+func urlPort(u string) (interface{}, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+
+	port := parsed.Port()
+	if port != "" {
+		return port, nil
+	}
+
+	// default port
+	switch parsed.Scheme {
+	case "https":
+		return "443", nil
+	case "http":
+		return "80", nil
+	default:
+		return "", fmt.Errorf("unknown scheme in %s", u)
 	}
 }

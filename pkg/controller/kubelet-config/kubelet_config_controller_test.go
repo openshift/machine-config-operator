@@ -106,6 +106,8 @@ func newControllerConfig(name string, platform osev1.PlatformType) *mcfgv1.Contr
 					PlatformStatus: &osev1.PlatformStatus{
 						Type: platform,
 					},
+					APIServerURL:         fmt.Sprintf("https://api.%s.tt.testing:6443", name),
+					APIServerInternalURL: fmt.Sprintf("https://api-int.%s.tt.testing:6443", name),
 				},
 			},
 		},

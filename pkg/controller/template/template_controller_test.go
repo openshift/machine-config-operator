@@ -67,6 +67,8 @@ func newControllerConfig(name string) *mcfgv1.ControllerConfig {
 					PlatformStatus: &configv1.PlatformStatus{
 						Type: configv1.LibvirtPlatformType,
 					},
+					APIServerURL:         fmt.Sprintf("https://api.%s.tt.testing:6443", name),
+					APIServerInternalURL: fmt.Sprintf("https://api-int.%s.tt.testing:6443", name),
 				},
 			},
 			PullSecret: &corev1.ObjectReference{
