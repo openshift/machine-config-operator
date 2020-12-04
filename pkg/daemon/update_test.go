@@ -32,7 +32,7 @@ func TestUpdateOS(t *testing.T) {
 	d := Daemon{
 		mock:              true,
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		os:                OperatingSystem{},
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		bootedOSImageURL:  "test",
@@ -343,7 +343,7 @@ func TestUpdateSSHKeys(t *testing.T) {
 	d := Daemon{
 		mock:              true,
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		os:                OperatingSystem{},
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		bootedOSImageURL:  "test",
@@ -433,7 +433,7 @@ func TestDropinCheck(t *testing.T) {
 	d := Daemon{
 		mock:              true,
 		name:              "nodeName",
-		OperatingSystem:   MachineConfigDaemonOSRHCOS,
+		os:                OperatingSystem{},
 		NodeUpdaterClient: testClient,
 		kubeClient:        k8sfake.NewSimpleClientset(),
 		bootedOSImageURL:  "test",
