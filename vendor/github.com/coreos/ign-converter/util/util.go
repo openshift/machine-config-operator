@@ -55,6 +55,25 @@ func (e UsesOwnLinkError) Error() string {
 	return fmt.Sprintf("%s uses link defined in config %q. Please use a link not defined in Storage:Links", e.Name, e.LinkPath)
 }
 
+// DuplicateUnitError is for when a unit name is used twice
+type DuplicateUnitError struct {
+	Name string
+}
+
+func (e DuplicateUnitError) Error() string {
+	return fmt.Sprintf("Config has duplicate unit name %q.  All units must specify a unique `name`.", e.Name)
+}
+
+// DuplicateDropinError is for when a unit has multiple dropins with the same name
+type DuplicateDropinError struct {
+	Unit string
+	Name string
+}
+
+func (e DuplicateDropinError) Error() string {
+	return fmt.Sprintf("Config has duplicate dropin name %q in unit %q.  All dropins must specify a unique `name`.", e.Name, e.Unit)
+}
+
 func CheckPathUsesLink(links []string, path string) string {
 	for _, l := range links {
 		if strings.HasPrefix(path, l) && path != l {

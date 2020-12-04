@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"

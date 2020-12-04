@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -672,7 +672,7 @@ func TestIgn3Cfg(t *testing.T) {
 	testIgn3Config := ign3types.Config{}
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234_test_ign3"}}
 	testIgn3Config.Passwd.Users = append(testIgn3Config.Passwd.Users, tempUser)
-	testIgn3Config.Ignition.Version = "3.1.0"
+	testIgn3Config.Ignition.Version = "3.2.0"
 	mode := 420
 	testfiledata := "data:,test-ign3-stuff"
 	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},

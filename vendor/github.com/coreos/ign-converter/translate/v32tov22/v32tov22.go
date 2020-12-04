@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v31tov22
+package v32tov22
 
 import (
 	"fmt"
@@ -22,13 +22,13 @@ import (
 
 	old "github.com/coreos/ignition/config/v2_2/types"
 	oldValidate "github.com/coreos/ignition/config/validate"
-	"github.com/coreos/ignition/v2/config/v3_1/types"
+	"github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/coreos/ignition/v2/config/validate"
 
 	"github.com/coreos/ign-converter/util"
 )
 
-// Translate translates Ignition spec config v3.1 to v2.2
+// Translate translates Ignition spec config v3.2 to v2.2
 func Translate(cfg types.Config) (old.Config, error) {
 	rpt := validate.ValidateWithContext(cfg, nil)
 	if rpt.IsFatal() {
@@ -66,12 +66,32 @@ func Translate(cfg types.Config) (old.Config, error) {
 		return old.Config{}, fmt.Errorf("HTTP proxies in Ignition.Proxy are not supported on 2.2")
 	}
 
+	if len(cfg.Storage.Luks) > 0 {
+		return old.Config{}, fmt.Errorf("LUKS is not supported on 2.2")
+	}
+
+	// ShouldExist for Users & Groups do not exist in 2.2
+	for _, u := range cfg.Passwd.Users {
+		if u.ShouldExist != nil && !*u.ShouldExist {
+			return old.Config{}, fmt.Errorf("ShouldExist in Passwd.Users is not supported on 2.2")
+		}
+	}
+	for _, g := range cfg.Passwd.Groups {
+		if g.ShouldExist != nil && !*g.ShouldExist {
+			return old.Config{}, fmt.Errorf("ShouldExist in Passwd.Groups is not supported on 2.2")
+		}
+	}
+
 	// Size and Start are sectors not MiB in 2.2, so we don't understand them.
+	// Resize is not in 2.2
 	// Fail for now
 	for _, d := range cfg.Storage.Disks {
 		for _, p := range d.Partitions {
 			if p.SizeMiB != nil || p.StartMiB != nil {
 				return old.Config{}, fmt.Errorf("SizeMiB and StartMiB in Storage.Disks.Partitions is not supported on 2.2")
+			}
+			if p.Resize != nil && *p.Resize {
+				return old.Config{}, fmt.Errorf("Resize in Storage.Disks.Partitions is not supported on 2.2")
 			}
 		}
 	}

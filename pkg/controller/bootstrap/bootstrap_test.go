@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	ign3types "github.com/coreos/ignition/v2/config/v3_1/types"
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
