@@ -1,0 +1,23 @@
+name: gcp-hostname.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Set GCP Transient Hostname
+  # Removal of this file signals firstboot completion
+  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
+  # Block services relying on Networking being up.
+  Before=network-online.target
+  # Wait for NetworkManager to report its online
+  After=NetworkManager-wait-online.service
+  # Run before hostname checks
+  Before=node-valid-hostname.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStartPre=/usr/bin/afterburn --provider gcp --hostname=/run/afterburn.hostname
+  ExecStart=/bin/bash -c "source /usr/local/sbin/set-valid-hostname.sh; set_valid_hostname `cat /run/afterburn.hostname`"
+
+  [Install]
+  WantedBy=multi-user.target
+  WantedBy=network-online.target
