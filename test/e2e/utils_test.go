@@ -28,12 +28,14 @@ func getMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
 	return mcp.Status.Configuration.Name
 }
 
-// waitForConfigAndPoolComplete is a helper function that gets a renderedConfig and waits for its pool to complete
-func waitForConfigAndPoolComplete(t *testing.T, cs *framework.ClientSet, pool, mcName string) {
+// waitForConfigAndPoolComplete is a helper function that gets a renderedConfig and waits for its pool to complete.
+// The return value is the final rendered config.
+func waitForConfigAndPoolComplete(t *testing.T, cs *framework.ClientSet, pool, mcName string) string {
 	config, err := waitForRenderedConfig(t, cs, pool, mcName)
 	require.Nil(t, err, "failed to render machine config %s from pool %s", mcName, pool)
 	err = waitForPoolComplete(t, cs, pool, config)
 	require.Nil(t, err, "pool %s did not update to config %s", pool, config)
+	return config
 }
 
 // waitForRenderedConfig polls a MachineConfigPool until it has
