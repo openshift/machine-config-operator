@@ -10,7 +10,6 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
-  Environment="KUBELET_LOG_LEVEL=3"
 {{- if .KubeletIPv6}}
   Environment="KUBELET_NODE_IP=::"
 {{- end}}

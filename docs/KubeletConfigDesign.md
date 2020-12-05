@@ -70,12 +70,16 @@ kind: KubeletConfig
 metadata:
   name: set-max-pods
 spec:
+  logLevel: 5
   machineConfigPoolSelector:
     matchLabels:
       pools.operator.machineconfiguration.openshift.io/worker: ""
   kubeletConfig:
     maxPods: 100
 ```
+
+The logLevel attribute is optional and will default to level 2. Increasing the logLevel
+uses more IO, CPU, and resources on all the machines within the pool.
 
 Save your `kubeletconfig` locally, for example as maxpods.yaml
 
@@ -88,6 +92,7 @@ kind: KubeletConfig
 metadata:
   name: set-max-pods
 spec:
+  logLevel: 5
   machineConfigPoolSelector:
     matchLabels:
       custom-kubelet: small-pods

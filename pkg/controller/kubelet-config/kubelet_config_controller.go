@@ -444,41 +444,49 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		isNotFound := macherrors.IsNotFound(err)
-		// Generate the original KubeletConfig
-		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
+
+		var kubeletIgnition *ign3types.File
+		var logLevelIgnition *ign3types.File
+
+		if cfg.Spec.KubeletConfig != nil && cfg.Spec.KubeletConfig.Raw != nil {
+			// Generate the original KubeletConfig
+			originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
+			}
+			if originalKubeletIgn.Contents.Source == nil {
+				return ctrl.syncStatusOnly(cfg, err, "the original Kubelet source string is empty: %v", err)
+			}
+			dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
+			}
+			originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
+			}
+			specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
+			}
+			// Merge the Old and New
+			err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
+			}
+			// Merge in Feature Gates
+			err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not merge FeatureGates: %v", err)
+			}
+			// Encode the new config into raw JSON
+			cfgJSON, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
+			}
+			kubeletIgnition = createNewKubeletIgnition(cfgJSON)
 		}
-		if originalKubeletIgn.Contents.Source == nil {
-			return ctrl.syncStatusOnly(cfg, err, "the original Kubelet source string is empty: %v", err)
-		}
-		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
-		}
-		originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
-		}
-		specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
-		}
-		// Merge the Old and New
-		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
-		}
-		// Merge in Feature Gates
-		err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not merge FeatureGates: %v", err)
-		}
-		// Encode the new config into raw JSON
-		cfgJSON, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
-		}
+
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
@@ -487,8 +495,20 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			}
 			mc.ObjectMeta.UID = uuid.NewUUID()
 		}
-		cfgIgn := createNewKubeletIgnition(cfgJSON)
-		rawIgn, err := json.Marshal(cfgIgn)
+
+		if cfg.Spec.LogLevel != nil {
+			logLevelIgnition = createNewKubeletLogLevelIgnition(*cfg.Spec.LogLevel)
+		}
+
+		tempIgnConfig := ctrlcommon.NewIgnConfig()
+		if logLevelIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *logLevelIgnition)
+		}
+		if kubeletIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		}
+
+		rawIgn, err := json.Marshal(tempIgnConfig)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not marshal kubelet config Ignition: %v", err)
 		}
