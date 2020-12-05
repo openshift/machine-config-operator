@@ -121,30 +121,33 @@ func isCloudConfigRequired(infra *configv1.Infrastructure) bool {
 
 // Sync cloud config on supported platform from cloud.conf available in openshift-config-managed/kube-cloud-config ConfigMap.
 func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *configv1.Infrastructure) error {
-	if _, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config"); err != nil {
+	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config")
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			if isCloudConfigRequired(infra) {
-				// Return error only if cloud config is required, otherwise prceeds further.
+				// Return error only if cloud config is required, otherwise proceeds further.
 				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %v",
 					"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
 			}
-		} else {
-			return err
+			return nil
 		}
-
+		return err
+	}
+	// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
+	cc, err := getCloudConfigFromConfigMap(cm, "cloud.conf")
+	if err != nil {
+		if isCloudConfigRequired(infra) {
+			// Return error only if cloud config is required, otherwise proceeds further.
+			return fmt.Errorf("%s/%s configmap must have the %s key on platform %s but not found",
+				"openshift-config-managed", "kube-cloud-config", "cloud.conf", infra.Status.PlatformStatus.Type)
+		}
 	} else {
-		// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
-		cc, err := optr.getCloudConfigFromConfigMap("openshift-config-managed", "kube-cloud-config", "cloud.conf")
-		if err != nil {
-			return err
-		}
-
 		spec.CloudProviderConfig = cc
+	}
 
-		caCert, err := optr.getCAsFromConfigMap("openshift-config-managed", "kube-cloud-config", "ca-bundle.pem")
-		if err == nil {
-			spec.CloudProviderCAData = caCert
-		}
+	caCert, err := getCAsFromConfigMap(cm, "ca-bundle.pem")
+	if err == nil {
+		spec.CloudProviderCAData = caCert
 	}
 	return nil
 }
@@ -772,6 +775,10 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
+	return getCAsFromConfigMap(cm, key)
+}
+
+func getCAsFromConfigMap(cm *corev1.ConfigMap, key string) ([]byte, error) {
 	if bd, bdok := cm.BinaryData[key]; bdok {
 		return bd, nil
 	} else if d, dok := cm.Data[key]; dok {
@@ -783,7 +790,7 @@ func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, 
 		}
 		return raw, nil
 	} else {
-		return nil, fmt.Errorf("%s not found in %s/%s", key, namespace, name)
+		return nil, fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 	}
 }
 
@@ -792,10 +799,14 @@ func (optr *Operator) getCloudConfigFromConfigMap(namespace, name, key string) (
 	if err != nil {
 		return "", err
 	}
+	return getCloudConfigFromConfigMap(cm, key)
+}
+
+func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, error) {
 	if cc, ok := cm.Data[key]; ok {
 		return cc, nil
 	}
-	return "", fmt.Errorf("%s not found in %s/%s", key, namespace, name)
+	return "", fmt.Errorf("%s not found in %s/%s", key, cm.Namespace, cm.Name)
 }
 
 // getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
