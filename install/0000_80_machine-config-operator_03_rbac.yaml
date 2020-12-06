@@ -4,6 +4,7 @@ apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: default-account-openshift-machine-config-operator
   annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
 subjects:
@@ -22,6 +23,7 @@ metadata:
   name: prometheus-k8s
   namespace: openshift-machine-config-operator
   annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
 rules:
@@ -43,6 +45,7 @@ metadata:
   name: prometheus-k8s
   namespace: openshift-machine-config-operator
   annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
 roleRef:
