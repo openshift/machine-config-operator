@@ -30,6 +30,8 @@ spec:
       description: ContainerRuntimeConfig describes a customized Container Runtime
         configuration.
       type: object
+      required:
+      - spec
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
@@ -46,6 +48,8 @@ spec:
         spec:
           description: ContainerRuntimeConfigSpec defines the desired state of ContainerRuntimeConfig
           type: object
+          required:
+            - containerRuntimeConfig
           properties:
             containerRuntimeConfig:
               description: ContainerRuntimeConfiguration defines the tuneables of
