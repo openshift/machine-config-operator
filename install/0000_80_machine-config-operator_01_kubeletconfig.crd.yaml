@@ -23,6 +23,8 @@ spec:
     "openAPIV3Schema":
       description: KubeletConfig describes a customized Kubelet configuration.
       type: object
+      required:
+      - spec
       properties:
         apiVersion:
           description: 'APIVersion defines the versioned schema of this representation
