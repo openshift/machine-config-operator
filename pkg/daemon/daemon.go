@@ -219,6 +219,10 @@ func New(
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
 	if os.IsCoreOSVariant() {
+		err := nodeUpdaterClient.Start()
+		if err != nil {
+			return nil, err
+		}
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
