@@ -477,6 +477,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign3types.Config) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
 		"/var/lib/kubelet/config.json",
+		"/etc/kubernetes/kubelet-ca.crt",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		"/etc/containers/registries.conf",
