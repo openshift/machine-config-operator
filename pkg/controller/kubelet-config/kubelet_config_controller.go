@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/clarketm/json"
@@ -571,17 +572,24 @@ func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc
 			return err
 		}
 
-		uid := string(mc.ObjectMeta.GetUID())
-
-		// if the finalizer is already set then skip
+		kcTmp := newcfg.DeepCopy()
+		// We want to use the mc name as the finalizer instead of the uid because
+		// every time a resync happens, a new uid is generated. This is why the list
+		// of finalizers had multiple entries. So check if the list of finalizers consists
+		// of uids, if it does then clear the list of finalizers and we will add the mc
+		// name to it, ensuring we don't have duplicate or multiple finalizers.
 		for _, finalizerName := range newcfg.Finalizers {
-			if finalizerName == mc.Name || finalizerName == uid {
-				return nil
+			if !strings.Contains(finalizerName, "kubelet") {
+				kcTmp.ObjectMeta.SetFinalizers([]string{})
 			}
 		}
-
-		kcTmp := newcfg.DeepCopy()
-		kcTmp.ObjectMeta.Finalizers = append(kcTmp.ObjectMeta.Finalizers, uid)
+		// Only append the mc name if it is not already in the list of finalizers.
+		// When we update an existing kubeletconfig, the generation number increases causing
+		// a resync to happen. When this happens, the mc name is the same, so we don't
+		// want to add duplicate entries to the list of finalizers.
+		if !ctrlcommon.InSlice(mc.Name, kcTmp.ObjectMeta.Finalizers) {
+			kcTmp.ObjectMeta.Finalizers = append(kcTmp.ObjectMeta.Finalizers, mc.Name)
+		}
 
 		modJSON, err := json.Marshal(kcTmp)
 		if err != nil {
