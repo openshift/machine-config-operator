@@ -205,7 +205,6 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 	bundle := make([]byte, 0)
 	bundle = append(bundle, rootCA...)
-	bundle = append(bundle, kubeAPIServerServingCABytes...)
 
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
