@@ -610,8 +610,11 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	if err := dn.drain(); err != nil {
-		return err
+	// if the only action is nothing, then we don't need to drain.
+	if len(actions) != 1 || actions[0] != postConfigChangeActionNone {
+		if err := dn.drain(); err != nil {
+			return err
+		}
 	}
 
 	// update files on disk that need updating
