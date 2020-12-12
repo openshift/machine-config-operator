@@ -5,9 +5,6 @@ contents:
     #!/usr/bin/env bash
     set -e
 
-    if [ $(hostname -s) = "localhost" ]; then
-      if hostname=$(/bin/vmtoolsd --cmd 'info-get guestinfo.hostname'); then
-          /usr/bin/hostnamectl --transient --static set-hostname ${hostname}
-      fi
+    if vm_name=$(/bin/vmtoolsd --cmd 'info-get guestinfo.hostname'); then
+        /usr/bin/hostnamectl --transient set-hostname ${vm_name}
     fi
-
