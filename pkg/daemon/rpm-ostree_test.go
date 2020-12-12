@@ -30,6 +30,11 @@ func (r RpmOstreeClientMock) GetBootedOSImageURL() (string, string, error) {
 	return returnValues.OsImageURL, returnValues.Version, returnValues.Error
 }
 
+// Start is a mock
+func (r RpmOstreeClientMock) Start() error {
+	return nil
+}
+
 // PullAndRebase is a mock
 func (r RpmOstreeClientMock) Rebase(string, string) (bool, error) {
 	return false, nil

@@ -60,6 +60,7 @@ type imageInspection struct {
 // NodeUpdaterClient is an interface describing how to interact with the host
 // around content deployment
 type NodeUpdaterClient interface {
+	Start() error
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
 	Rebase(string, string) (bool, error)
@@ -97,6 +98,18 @@ func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	}
 
 	return nil, fmt.Errorf("not currently booted in a deployment")
+}
+
+// Start ensures the daemon is running; the DBus activation timeout
+// is shorter than the systemd timeout.  xref
+// https://bugzilla.redhat.com/show_bug.cgi?id=1888565#c3
+func (r *RpmOstreeClient) Start() error {
+	_, err := runGetOut("systemctl", "start", "rpm-ostreed")
+	if err != nil {
+		return fmt.Errorf("failed to start rpm-ostreed: %v", err)
+	}
+
+	return nil
 }
 
 // GetStatus returns multi-line human-readable text describing system status
