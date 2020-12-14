@@ -15,3 +15,7 @@ dropins:
       Environment=NO_PROXY={{.Proxy.NoProxy}}
       {{end -}}
       {{end -}}
+  - name: 10-mco-default-madv.conf
+    contents: |
+      [Service]
+      Environment="GODEBUG=x509ignoreCN=0,madvdontneed=1"
