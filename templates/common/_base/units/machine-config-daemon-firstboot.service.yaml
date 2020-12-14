@@ -10,7 +10,6 @@ contents: |
   After=machine-config-daemon-pull.service
   Before=crio.service crio-wipe.service
   Before=kubelet.service
-  Wants=rpm-ostreed.service
 
   [Service]
   Type=oneshot
