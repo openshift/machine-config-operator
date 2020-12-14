@@ -199,7 +199,7 @@ oc adm release new -n origin --server https://api.ci.openshift.org \
 
 `{version number}` is an openshift version, for example 4.5
 
-Make sure you're using a relatively new `oc` binary from `openshift/origin`. The image must be pullable by
+Make sure you're using a relatively new `oc` binary from `openshift/oc`. The image must be pullable by
 remote resources (nodes), therefore using a local registry might not work.
 
 Any registry credentials need to be present in `~/.docker/config.json` for `oc` to interact with the registry.
