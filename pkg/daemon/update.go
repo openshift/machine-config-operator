@@ -692,20 +692,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
-// removeRollback removes the rpm-ostree rollback deployment.  It
-// takes up space, and we don't generally expect administrators to
-// use this versus e.g. removing broken configuration.  We only
-// remove the rollback once the MCD pod has landed on a node, so
-// we know kubelet is working.
-func (dn *Daemon) removeRollback() error {
-	if !dn.os.IsCoreOSVariant() {
-		// do not attempt to rollback on non-RHCOS/FCOS machines
-		return nil
-	}
-	_, err := runGetOut("rpm-ostree", "cleanup", "-r")
-	return err
-}
-
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
 // At some point this may change into holding just the files/units that changed
 // and the MCO would just operate on that.  For now we're just doing this to get
