@@ -6,3 +6,7 @@ dropins:
       [Service]
       EnvironmentFile=/etc/mco/proxy.env
       {{end -}}
+  - name: 10-mco-default-madv.conf
+    contents: |
+      [Service]
+      Environment="GODEBUG=x509ignoreCN=0,madvdontneed=1"
