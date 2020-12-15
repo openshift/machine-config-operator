@@ -132,8 +132,6 @@ const (
 	pathIgnition = "/usr/lib/dracut/modules.d/30ignition/ignition"
 	// pathSystemd is the path systemd modifiable units, services, etc.. reside
 	pathSystemd = "/etc/systemd/system"
-	// wantsPathSystemd is the path where enabled units should be linked
-	wantsPathSystemd = "/etc/systemd/system/multi-user.target.wants/"
 	// pathDevNull is the systems path to and endless blackhole
 	pathDevNull = "/dev/null"
 	// currentConfigPath is where we store the current config on disk to validate
@@ -455,6 +453,9 @@ func (dn *Daemon) syncNode(key string) error {
 	if dn.booting {
 		// Be sure only the MCD is running now, disable -firstboot.service
 		if err := upgradeHackFor44AndBelow(); err != nil {
+			return err
+		}
+		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
@@ -960,6 +961,16 @@ func upgradeHackFor44AndBelow() error {
 		if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
 			return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
 		}
+	}
+	return nil
+}
+
+// Remove artifacts used by ignition, that the MCO should no longer
+// use since the machine is up.
+// Currently removes the systemd preset file written by Ignition.
+func removeIgnitionArtifacts() error {
+	if err := os.Remove(constants.IgnitionSystemdPresetFile); err != nil && !os.IsNotExist(err) {
+		return errors.Wrap(err, "failed to remove Ignition-written systemd preset file")
 	}
 	return nil
 }
