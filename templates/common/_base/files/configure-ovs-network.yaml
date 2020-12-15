@@ -216,7 +216,8 @@ contents:
           echo "Loaded new ovs-if-br-ex connection file: ${new_conn_file}"
         else
           nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
-            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric 100 ipv6.route-metric 100
         fi
       fi
 
@@ -229,6 +230,7 @@ contents:
           echo "OVS successfully configured"
           cp /etc/NetworkManager/system-connections-merged/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection /etc/NetworkManager/system-connections
           ip a show br-ex
+          ip route show
           configure_driver_options ${iface}
           exit 0
         fi
@@ -242,6 +244,7 @@ contents:
           echo "OVS successfully configured"
           cp /etc/NetworkManager/system-connections-merged/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection /etc/NetworkManager/system-connections
           ip a show br-ex
+          ip route show
           configure_driver_options ${iface}
           exit 0
         fi
