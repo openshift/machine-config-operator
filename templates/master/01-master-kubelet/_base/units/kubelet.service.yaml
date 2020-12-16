@@ -12,6 +12,8 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+  Environment="KUBELET_NODE_LABELS=node-role.kubernetes.io/master"
+  Environment="KUBELET_NODE_TAINTS=node-role.kubernetes.io/master=:NoSchedule"
 {{- if eq .IPFamilies "IPv6"}}
   Environment="KUBELET_NODE_IP=::"
 {{- end}}
@@ -28,18 +30,18 @@ contents: |
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
-        --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
 {{- if eq .IPFamilies "DualStack"}}
         --node-ip=${KUBELET_NODE_IPS} \
 {{- else}}
         --node-ip=${KUBELET_NODE_IP} \
 {{- end}}
+        --node-labels=node.openshift.io/os_id=${ID},${KUBELET_NODE_LABELS} \
+        --register-with-taints=${KUBELET_NODE_TAINTS} \
         --minimum-container-ttl-duration=6m0s \
         --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         {{cloudConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
-        --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
         --pod-infra-container-image={{.Images.infraImageKey}} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY} \
         --v=${KUBELET_LOG_LEVEL}
