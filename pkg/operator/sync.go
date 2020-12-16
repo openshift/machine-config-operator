@@ -20,6 +20,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 
@@ -35,6 +36,15 @@ import (
 
 const (
 	requiredForUpgradeMachineConfigPoolLabelKey = "operator.machineconfiguration.openshift.io/required-for-upgrade"
+)
+
+var (
+	platformsRequiringCloudConf = sets.NewString(
+		string(configv1.AzurePlatformType),
+		string(configv1.GCPPlatformType),
+		string(configv1.OpenStackPlatformType),
+		string(configv1.VSpherePlatformType),
+	)
 )
 
 type syncFunc struct {
@@ -98,25 +108,17 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	return syncErr.err
 }
 
-// Return true if cloud config is required on a platform.
-func isCloudConfigRequired(infra *configv1.Infrastructure) bool {
-	if infra.Spec.CloudConfig.Name != "" {
-		return true
-	}
+// Return true if kube-cloud-config ConfigMap is required.
+func isKubeCloudConfigCMRequired(infra *configv1.Infrastructure) bool {
+	return infra.Spec.CloudConfig.Name != "" || isCloudConfRequired(infra)
+}
 
-	if infra.Status.PlatformStatus != nil {
-		switch infra.Status.PlatformStatus.Type {
-		case configv1.AzurePlatformType,
-			configv1.GCPPlatformType,
-			configv1.OpenStackPlatformType,
-			configv1.VSpherePlatformType:
-			return true
-		default:
-			return false
-		}
-	} else {
+// Return true if the platform requires a cloud.conf.
+func isCloudConfRequired(infra *configv1.Infrastructure) bool {
+	if infra.Status.PlatformStatus == nil {
 		return false
 	}
+	return platformsRequiringCloudConf.Has(string(infra.Status.PlatformStatus.Type))
 }
 
 // Sync cloud config on supported platform from cloud.conf available in openshift-config-managed/kube-cloud-config ConfigMap.
@@ -124,8 +126,8 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 	cm, err := optr.clusterCmLister.ConfigMaps("openshift-config-managed").Get("kube-cloud-config")
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			if isCloudConfigRequired(infra) {
-				// Return error only if cloud config is required, otherwise proceeds further.
+			if isKubeCloudConfigCMRequired(infra) {
+				// Return error only if the kube-cloud-config ConfigMap is required, otherwise proceeds further.
 				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %v",
 					"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
 			}
@@ -136,8 +138,8 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 	// Read cloud.conf from openshift-config-managed/kube-cloud-config ConfigMap.
 	cc, err := getCloudConfigFromConfigMap(cm, "cloud.conf")
 	if err != nil {
-		if isCloudConfigRequired(infra) {
-			// Return error only if cloud config is required, otherwise proceeds further.
+		if isCloudConfRequired(infra) {
+			// Return error only if cloud.conf is required, otherwise proceeds further.
 			return fmt.Errorf("%s/%s configmap must have the %s key on platform %s but not found",
 				"openshift-config-managed", "kube-cloud-config", "cloud.conf", infra.Status.PlatformStatus.Type)
 		}
