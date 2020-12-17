@@ -17,6 +17,8 @@ contents: |
   ExecStart=/usr/local/bin/configure-ovs.sh {{.NetworkType}}
   StandardOutput=journal+console
   StandardError=journal+console
+  Restart=on-abnormal
+  RestartSec=90s
 
   [Install]
   WantedBy=network-online.target
