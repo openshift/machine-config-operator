@@ -35,8 +35,19 @@ func setRootDeviceSchedulerBFQ() error {
 		return err
 	}
 	schedulerContents := string(schedulerContentsBuf)
-	if strings.Contains(schedulerContents, fmt.Sprintf("[%s]", sched)) {
-		glog.Infof("Device %s already uses scheduler %s", rootDevSysfs, sched)
+	schedSupported := false
+	for _, v := range strings.Split(schedulerContents, " ") {
+		switch v {
+		case fmt.Sprintf("[%s]", sched):
+			glog.Infof("Device %s already uses scheduler %s", rootDevSysfs, sched)
+			return nil
+		case sched:
+			schedSupported = true
+			break
+		}
+	}
+	if !schedSupported {
+		glog.Infof("Device %s does not support the %s scheduler", rootDevSysfs, sched)
 		return nil
 	}
 
