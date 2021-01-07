@@ -1,7 +1,6 @@
 name: nodeip-configuration.service
-enabled: true
+enabled: {{if (onPremPlatformAPIServerInternalIP .)}}true{{else}}false{{end}}
 contents: |
-  {{ if (onPremPlatformAPIServerInternalIP .) -}}
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
   # This only applies to VIP managing environments where the kubelet and crio IP
@@ -45,4 +44,3 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
-  {{ end -}}
