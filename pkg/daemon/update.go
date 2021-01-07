@@ -330,9 +330,13 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
 		// When we're going to apply an OS update, switch the block
 		// scheduler to BFQ to apply more fairness between etcd
-		// and the OS update.
-		if err := setRootDeviceSchedulerBFQ(); err != nil {
-			return err
+		// and the OS update. Only do this on masters since etcd
+		// only operates on masters, and RHEL compute nodes can't
+		// do this.
+		if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
+			if err := setRootDeviceSchedulerBFQ(); err != nil {
+				return err
+			}
 		}
 		// We emitted this event before, so keep it
 		if dn.recorder != nil {
