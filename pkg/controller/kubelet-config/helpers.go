@@ -149,18 +149,6 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
 	}
 
-	if kcDecoded.EvictionSoft != nil && len(kcDecoded.EvictionSoft) > 0 {
-		if kcDecoded.EvictionSoftGracePeriod == nil || len(kcDecoded.EvictionSoftGracePeriod) == 0 {
-			return fmt.Errorf("KubeletConfiguration: EvictionSoftGracePeriod must be set when evictionSoft is defined, evictionSoft: %v", kcDecoded.EvictionSoft)
-		}
-
-		for k := range kcDecoded.EvictionSoft {
-			if _, ok := kcDecoded.EvictionSoftGracePeriod[k]; !ok {
-				return fmt.Errorf("KubeletConfiguration: evictionSoft[%s] is defined but EvictionSoftGracePeriod[%s] is not set", k, k)
-			}
-		}
-	}
-
 	reservedResources := []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory, v1.ResourceEphemeralStorage}
 
 	if kcDecoded.KubeReserved != nil && len(kcDecoded.KubeReserved) > 0 {
@@ -170,8 +158,8 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 				if err != nil {
 					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in kubeReserved, %s", rr.String(), val)
 				}
-				if q.Sign() == -1 {
-					return fmt.Errorf("KubeletConfiguration: %s reservation value cannot be negative in kubeReserved", rr.String())
+				if q.Sign() < 0 || q.IsZero() {
+					return fmt.Errorf("KubeletConfiguration: %s reservation value must be positive in kubeReserved", rr.String())
 				}
 			}
 		}
@@ -184,22 +172,72 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 				if err != nil {
 					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in systemReserved, %s", rr.String(), val)
 				}
-				if q.Sign() == -1 {
-					return fmt.Errorf("KubeletConfiguration: %s reservation value cannot be negative in systemReserved", rr.String())
+				if q.Sign() < 0 || q.IsZero() {
+					return fmt.Errorf("KubeletConfiguration: %s reservation value must be positive in systemReserved", rr.String())
+				}
+			}
+		}
+	}
+
+	resourceFields := []string{"memory.available", "nodefs.available", "nodefs.inodesFree", "imagefs.available"}
+
+	if kcDecoded.EvictionSoft != nil && len(kcDecoded.EvictionSoft) > 0 {
+		if kcDecoded.EvictionSoftGracePeriod == nil || len(kcDecoded.EvictionSoftGracePeriod) == 0 {
+			return fmt.Errorf("KubeletConfiguration: EvictionSoftGracePeriod must be set when evictionSoft is defined, evictionSoft: %v", kcDecoded.EvictionSoft)
+		}
+
+		for k := range kcDecoded.EvictionSoft {
+			found := false
+			for _, r := range resourceFields {
+				if k == r {
+					found = true
+				}
+			}
+
+			if !found {
+				return fmt.Errorf("KubeletConfiguration: unknown resource %s defined in evictionSoft", k)
+			}
+
+			if _, ok := kcDecoded.EvictionSoftGracePeriod[k]; !ok {
+				return fmt.Errorf("KubeletConfiguration: evictionSoft[%s] is defined but EvictionSoftGracePeriod[%s] is not set", k, k)
+			}
+		}
+
+		for _, r := range resourceFields {
+			if val, ok := kcDecoded.EvictionSoft[r]; ok {
+				q, err := resource.ParseQuantity(val)
+				if err != nil {
+					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in evictionSoft, %s", r, val)
+				}
+				if q.Sign() < 0 || q.IsZero() {
+					return fmt.Errorf("KubeletConfiguration: %s eviction value must be positive in evictionSoft", r)
 				}
 			}
 		}
 	}
 
 	if kcDecoded.EvictionHard != nil && len(kcDecoded.EvictionHard) > 0 {
-		for _, rr := range reservedResources {
-			if val, ok := kcDecoded.EvictionHard[rr.String()]; ok {
+		for k := range kcDecoded.EvictionHard {
+			found := false
+			for _, r := range resourceFields {
+				if k == r {
+					found = true
+				}
+			}
+
+			if !found {
+				return fmt.Errorf("KubeletConfiguration: unknown resource %s defined in evictionHard", k)
+			}
+		}
+
+		for _, r := range resourceFields {
+			if val, ok := kcDecoded.EvictionHard[r]; ok {
 				q, err := resource.ParseQuantity(val)
 				if err != nil {
-					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in evictionHard, %s", rr.String(), val)
+					return fmt.Errorf("KubeletConfiguration: invalid value specified for %s reservation in evictionHard, %s", r, val)
 				}
-				if q.Sign() == -1 {
-					return fmt.Errorf("KubeletConfiguration: %s eviction value cannot be negative in evictionHard", rr.String())
+				if q.Sign() < 0 || q.IsZero() {
+					return fmt.Errorf("KubeletConfiguration: %s eviction value must be positive in evictionHard", r)
 				}
 			}
 		}
