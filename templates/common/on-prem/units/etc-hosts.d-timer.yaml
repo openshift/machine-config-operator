@@ -1,8 +1,8 @@
-name: api-int.timer
+name: etc-hosts.d.timer
 enabled: true
 contents: |
   [Unit]
-  Description=Run api-int service periodically
+  Description=Run etc-hosts.d service periodically
 
   [Timer]
   OnBootSec=10sec

@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/hosts.d/50-apiint"
+contents:
+  inline: |
+    {{ onPremPlatformAPIServerInternalIP . }} api-int api-int.{{ .DNS.Spec.BaseDomain }}

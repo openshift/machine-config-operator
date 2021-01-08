@@ -1,0 +1,53 @@
+mode: 0755
+path: "/usr/local/sbin/etc-hosts-appender.sh"
+contents:
+  inline: |
+      #!/bin/bash
+      tmpfile=$(mktemp)
+      grepfile=$(mktemp)
+      newhosts=$(mktemp)
+      trap "rm -f $tmpfile $grepfile $newhosts" EXIT
+
+      # Files should be named in the format NN-xyz, where NN is a two digit number
+      # and xyz is a name for the entry. *-xyz files with a larger NN will take
+      # priority over lower ones.
+
+      for i in $(find /etc/hosts.d -type f | sort)
+      do
+          # This won't handle -'s in the base, but as it's a poc I'm not going to fix it
+          spaced=$(echo $(basename $i) | tr '-' ' ')
+          base=($spaced)
+          base=${base[1]}
+          grep -v "# $base$" $tmpfile > $grepfile
+          cat $grepfile
+          cat $grepfile > $tmpfile
+          contents=$(cat $i)
+          if [ -n "$contents" ]
+          then
+              echo "$contents # $base" >> $tmpfile
+          fi
+      done
+
+      inblock=0
+      while read line
+      do
+          if [ "$line" == '# Start of MCO hosts block' ]
+          then
+              inblock=1
+          fi
+          echo $line
+          if [ $inblock -eq 0 ]
+          then
+              echo $line >> $newhosts
+          fi
+          if [ "$line" == '# End of MCO hosts block' ]
+          then
+              inblock=0
+          fi
+      done </etc/hosts
+
+      echo '# Start of MCO hosts block' >> $newhosts
+      cat $tmpfile >> $newhosts
+      echo '# End of MCO hosts block' >> $newhosts
+      mv $newhosts /etc/hosts
+
