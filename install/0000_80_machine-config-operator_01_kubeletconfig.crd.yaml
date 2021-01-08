@@ -53,6 +53,9 @@ spec:
               minimum: 1
               maximum: 10
             kubeletConfig:
+              description: The fields of the kubelet configuration are defined in 
+                kubernetes upstream. Please refer to the types defined in the 
+                version/commit used by OpenShift of the upstream kubernetes. 
               type: object
               x-kubernetes-preserve-unknown-fields: true
             machineConfigPoolSelector:
