@@ -29,11 +29,19 @@ contents:
 
     TYPE=$(nmcli --get-values connection.type connection show "$CONNECTION_ID")
 
-    if ! nmcli con show inf-lease-to-static
+    # Modifying the default connection id directly doesn't do what we want.
+    # If we see that, then we need to create a new connection.
+    if [ "$CONNECTION_ID" == "Wired Connection" ]
     then
-        nmcli con add type "$TYPE" con-name inf-lease-to-static
+        if ! nmcli con show inf-lease-to-static
+        then
+            nmcli con add type "$TYPE" con-name inf-lease-to-static
+        fi
+        STATIC_INT_NAME=inf-lease-to-static
+    else
+        STATIC_INT_NAME="$CONNECTION_ID"
     fi
-    nmcli con mod inf-lease-to-static \
+    nmcli con mod "$STATIC_INT_NAME" \
       conn.interface "$1" \
       connection.autoconnect yes \
       ipv4.addresses "$CIDR" \
@@ -42,20 +50,20 @@ contents:
       ipv4.dns "$IP4_NAMESERVERS"
 
     if [ -n "$IP4_DOMAINS" ]; then
-        nmcli con mod inf-lease-to-static ipv4.dns-search "$IP4_DOMAINS"
+        nmcli con mod "$STATIC_INT_NAME" ipv4.dns-search "$IP4_DOMAINS"
     fi
     plus=''
     for i in $(seq 0 $(($IP4_NUM_ROUTES-1)) )
     do
         varname="IP4_ROUTE_$i"
-        nmcli con mod inf-lease-to-static ${plus}ipv4.routes "${!varname}"
+        nmcli con mod "$STATIC_INT_NAME" ${plus}ipv4.routes "${!varname}"
         plus='+'
     done
 
-    nmcli con up inf-lease-to-static
+    nmcli con up "$STATIC_INT_NAME"
 
     # Copy it from the OverlayFS mount to the persistent lowerdir
-    cp "/etc/NetworkManager/system-connections-merged/inf-lease-to-static.nmconnection" /etc/NetworkManager/system-connections
+    cp "/etc/NetworkManager/system-connections-merged/${STATIC_INT_NAME}.nmconnection" /etc/NetworkManager/system-connections
 
     if [ -n "${DHCP4_HOST_NAME:-}" ]
     then
