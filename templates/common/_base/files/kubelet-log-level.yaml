@@ -3,4 +3,4 @@ path: "/etc/systemd/system/kubelet.service.d/20-logging.conf"
 contents:
   inline: |
     [Service]
-    Environment="KUBELET_LOG_LEVEL=2"
+    Environment="KUBELET_LOG_LEVEL=3"
