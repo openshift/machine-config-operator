@@ -1148,6 +1148,7 @@ k8s.io/kubelet/config/v1beta1
 k8s.io/utils/buffer
 k8s.io/utils/exec
 k8s.io/utils/integer
+k8s.io/utils/net
 k8s.io/utils/pointer
 k8s.io/utils/trace
 # mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed

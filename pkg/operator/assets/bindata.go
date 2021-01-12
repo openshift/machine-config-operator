@@ -557,15 +557,15 @@ spec:
                                 in the cluster.
                               type: string
               nullable: true
+            ipFamilies:
+              description: ipFamilies indicates the IP families in use by the cluster
+                network
+              type: string
             kubeAPIServerServingCAData:
               description: kubeAPIServerServingCAData managed Kubelet to API Server
                 Cert... Rotated automatically
               type: string
               format: byte
-            kubeletIPv6:
-              description: kubeletIPv6 is true to force a single-stack IPv6 kubelet
-                config
-              type: boolean
             networkType:
               description: networkType holds the type of network the cluster is using
               type: string

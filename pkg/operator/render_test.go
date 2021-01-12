@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 func TestClusterDNSIP(t *testing.T) {
@@ -39,38 +40,38 @@ func TestClusterDNSIP(t *testing.T) {
 	}
 }
 
-func TestIsSingleStackIPv6(t *testing.T) {
+func TestIPFamilies(t *testing.T) {
 	tests := []struct {
 		Ranges []string
-		Output bool
+		Output mcfgv1.IPFamiliesType
 		Error  bool
 	}{{
 		Ranges: []string{"192.168.2.0/20"},
-		Output: false,
+		Output: mcfgv1.IPFamiliesIPv4,
 	}, {
 		Ranges: []string{"2001:db8::/32"},
-		Output: true,
+		Output: mcfgv1.IPFamiliesIPv6,
 	}, {
 		Ranges: []string{"192.168.2.0/20", "2001:db8::/32"},
-		Output: false,
+		Output: mcfgv1.IPFamiliesDualStack,
 	}, {
 		Ranges: []string{"2001:db8::/32", "192.168.2.0/20"},
-		Output: false,
+		Output: mcfgv1.IPFamiliesDualStack,
 	}, {
-		Ranges: []string{"192.168.1.254/32"},
+		Ranges: []string{},
 		Error:  true,
 	}}
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			desc := fmt.Sprintf("isSingleStackIPv6(%#v)", test.Ranges)
-			ipv6, err := isSingleStackIPv6(test.Ranges)
+			desc := fmt.Sprintf("ipFamilies(%#v)", test.Ranges)
+			families, err := ipFamilies(test.Ranges)
 			if err != nil {
 				if !test.Error {
 					t.Fatalf("%s failed: %s", desc, err.Error())
 				}
 			}
-			if ipv6 != test.Output {
-				t.Fatalf("%s failed: got = %t want = %t", desc, ipv6, test.Output)
+			if families != test.Output {
+				t.Fatalf("%s failed: got = %s want = %s", desc, families, test.Output)
 			}
 		})
 	}
