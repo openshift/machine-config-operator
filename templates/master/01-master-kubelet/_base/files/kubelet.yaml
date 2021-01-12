@@ -28,6 +28,9 @@ contents:
       ephemeral-storage: 1Gi
     featureGates:
       APIPriorityAndFairness: true
+{{- if eq .IPFamilies "DualStack"}}
+      IPv6DualStack: true
+{{- end}}
       LegacyNodeRoleBehavior: false
       NodeDisruptionExclusion: true
       RotateKubeletServerCertificate: true
