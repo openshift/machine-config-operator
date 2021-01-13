@@ -264,7 +264,7 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.KubeletConfig
 	if len(args) > 0 {
 		format, ok := args[0].(string)
 		if ok {
-			condition.Message = fmt.Sprintf(format, args[:1]...)
+			condition.Message = fmt.Sprintf(format, args[1:]...)
 		}
 	}
 	return *condition
