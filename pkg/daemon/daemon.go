@@ -1530,7 +1530,7 @@ func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.F
 		return errors.Wrapf(err, "could not stat file %q", filePath)
 	}
 	if fi.Mode() != mode {
-		return errors.Errorf("mode mismatch for file: %q; expected: %v; received: %v", filePath, mode, fi.Mode())
+		return errors.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
 	}
 	contents, err := ioutil.ReadFile(filePath)
 	if err != nil {
