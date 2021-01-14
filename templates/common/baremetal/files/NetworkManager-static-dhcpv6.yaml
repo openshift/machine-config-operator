@@ -11,8 +11,8 @@ contents:
         exit 0
     fi
 
-    LEASE_TIME=$(ip -j -6 a show "$DEVICE_IFACE" | jq -r ".[].addr_info[] | select(.scope==\"global\") | select(.deprecated!=true) | select(.local==\"$DHCP6_IP6_ADDRESS\") | .preferred_life_time")
-    PREFIX_LEN=$(ip -j -6 a show "$DEVICE_IFACE" | jq -r ".[].addr_info[] | select(.scope==\"global\") | select(.deprecated!=true) | select(.local==\"$DHCP6_IP6_ADDRESS\") | .prefixlen")
+    LEASE_TIME=$(ip -j -6 a show "$DEVICE_IFACE" | jq -r --arg DHCP6_IP6_ADDRESS "$DHCP6_IP6_ADDRESS" ".[].addr_info[] | select(.local==$DHCP6_IP6_ADDRESS) | select(.scope==\"global\") | select(.deprecated!=true) | select(.local==\"$DHCP6_IP6_ADDRESS\") | .preferred_life_time")
+    PREFIX_LEN=$(ip -j -6 a show "$DEVICE_IFACE" | jq -r --arg DHCP6_IP6_ADDRESS "$DHCP6_IP6_ADDRESS" ".[].addr_info[] | select(.local==$DHCP6_IP6_ADDRESS) | select(.scope==\"global\") | select(.deprecated!=true) | select(.local==\"$DHCP6_IP6_ADDRESS\") | .prefixlen")
 
     if [ ${LEASE_TIME:-0} -lt 4294967295 ]
     then
