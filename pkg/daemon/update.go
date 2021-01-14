@@ -1432,6 +1432,9 @@ func (dn *Daemon) enableUnits(units []string) error {
 	args := append([]string{"enable"}, units...)
 	stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
 	if err != nil {
+		if !dn.os.IsLikeTraditionalRHEL7() {
+			return fmt.Errorf("error enabling units: %s", stdouterr)
+		}
 		// In RHEL7, the systemd version is too low, so it is unable to handle broken
 		// symlinks during enable. Do a best-effort removal of potentially broken
 		// hard coded symlinks and try again.
@@ -1461,7 +1464,7 @@ func (dn *Daemon) enableUnits(units []string) error {
 		}
 		stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("error enabling unit: %s", stdouterr)
+			return fmt.Errorf("error enabling units: %s", stdouterr)
 		}
 	}
 	glog.Infof("Enabled systemd units: %v", units)
