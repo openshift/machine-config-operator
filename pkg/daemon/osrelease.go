@@ -38,6 +38,9 @@ func (os OperatingSystem) IsCoreOSVariant() bool {
 // yum based + kickstart/cloud-init (not Ignition).
 func (os OperatingSystem) IsLikeTraditionalRHEL7() bool {
 	// Today nothing else is going to show up with a version ID of 7
+	if len(os.VersionID) > 2 {
+		return strings.HasPrefix(os.VersionID, "7.")
+	}
 	return os.VersionID == "7"
 }
 
