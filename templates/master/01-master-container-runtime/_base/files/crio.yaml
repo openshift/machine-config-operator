@@ -11,6 +11,7 @@ contents:
     conmon_cgroup = "pod"
     default_env = [
         "NSS_SDB_USE_CACHE=no",
+        "GOGC=10"
     ]
     log_level = "info"
     cgroup_manager = "systemd"
