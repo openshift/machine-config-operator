@@ -13,6 +13,46 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
+func TestRemoveEtcdNoProxyConfig(t *testing.T) {
+	cases := []struct {
+		name            string
+		proxy           string
+		expectedNoProxy string
+	}{
+		{
+			name:            "empty NoProxy",
+			proxy:           "",
+			expectedNoProxy: "",
+		},
+		{
+			name:            "NoProxy etcd with domain",
+			proxy:           ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com,etcd-0.a.com,etcd-1.a.com,etcd-2.a.com,localhost",
+			expectedNoProxy: ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com,localhost",
+		},
+		{
+			name:            "NoProxy etcd last with domain",
+			proxy:           ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com,etcd-0.a.com,etcd-1.a.com,etcd-2.a.com",
+			expectedNoProxy: ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com",
+		},
+		{
+			name:            "NoProxy etcd without domain",
+			proxy:           ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com,etcd-0.,etcd-1.,etcd-2.,localhost",
+			expectedNoProxy: ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com,localhost",
+		},
+		{
+			name:            "NoProxy etcd last without domain",
+			proxy:           ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com,etcd-0.,etcd-1.,etcd-2.",
+			expectedNoProxy: ".cluster.local,.svc,1001:db8::/120,127.0.0.1,2002:db8::/53,2003:db8::/112,api-int.a.com",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			noProxy := removeEtcdNoProxyConfig(tc.proxy)
+			assert.Equal(t, tc.expectedNoProxy, noProxy)
+		})
+	}
+}
+
 func TestSyncCloudConfig(t *testing.T) {
 	cases := []struct {
 		name                        string
