@@ -317,7 +317,7 @@ func (dn *Daemon) ClusterConnect(
 		Client:              dn.kubeClient,
 		Force:               true,
 		IgnoreAllDaemonSets: true,
-		DeleteLocalData:     true,
+		DeleteEmptyDirData:  true,
 		GracePeriodSeconds:  -1,
 		Timeout:             90 * time.Second,
 		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
