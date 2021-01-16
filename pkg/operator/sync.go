@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"regexp"
 	"strings"
 	"time"
 
@@ -830,7 +831,23 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, nil, nil, nil, err
 	}
+	if proxy != nil && proxy.Status != (configv1.ProxyStatus{}) {
+		proxy.Status.NoProxy = removeEtcdNoProxyConfig(proxy.Status.NoProxy)
+	}
 	return infra, network, proxy, dns, nil
+}
+
+// removeEtcdNoProxyConfig temporarily remove of etcd NoProxy records
+// this allows MCD to tolerate divergence of on disk state until records
+// are removed from installer.
+func removeEtcdNoProxyConfig(lines string) string {
+	filtered := []string{}
+	for _, entry := range strings.Split(lines, ",") {
+		if !regexp.MustCompile(`^etcd-.*$`).MatchString(entry) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return strings.Join(filtered, ",")
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
