@@ -117,7 +117,6 @@ type RegistrySources struct {
 	// Note: this search list only works with the container runtime, i.e CRI-O. Will NOT work with builds or imagestream imports.
 	// +optional
 	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:UniqueItems=true
 	// +kubebuilder:validation:Format=hostname
 	// +listType=set
 	ContainerRuntimeSearchRegistries []string `json:"containerRuntimeSearchRegistries,omitempty"`
