@@ -7,6 +7,19 @@ contents:
     set -eo pipefail
     IFACE=$1
     STATUS=$2
+
+    {{if .Proxy -}}
+    {{if .Proxy.HTTPProxy -}}
+    export HTTP_PROXY={{.Proxy.HTTPProxy}}
+    {{end -}}
+    {{if .Proxy.HTTPSProxy -}}
+    export HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+    {{end -}}
+    {{if .Proxy.NoProxy -}}
+    export NO_PROXY={{.Proxy.NoProxy}}
+    {{end -}}
+    {{end -}}
+
     case "$STATUS" in
         up|down|dhcp4-change|dhcp6-change)
         logger -s "NM resolv-prepender triggered by ${1} ${2}."
