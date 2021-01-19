@@ -60,10 +60,11 @@ type imageInspection struct {
 // NodeUpdaterClient is an interface describing how to interact with the host
 // around content deployment
 type NodeUpdaterClient interface {
-	GetStatus() (string, error)
-	GetBootedOSImageURL() (string, string, error)
-	Rebase(string, string) (bool, error)
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
+	GetBootedOSImageURL() (string, string, error)
+	GetKernelArgs() ([]string, error)
+	GetStatus() (string, error)
+	Rebase(string, string) (bool, error)
 }
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
@@ -74,6 +75,14 @@ type RpmOstreeClient struct{}
 
 // NewNodeUpdaterClient returns a new instance of the default DeploymentClient (RpmOstreeClient)
 func NewNodeUpdaterClient() NodeUpdaterClient {
+	os, err := GetHostRunningOS()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to query operating system: %v", err))
+	}
+	if !os.IsCoreOSVariant() {
+		glog.Infof("Host is not a CoreOS variant")
+		return &notCoreOSClient{}
+	}
 	return &RpmOstreeClient{}
 }
 
@@ -127,6 +136,15 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 	}
 
 	return osImageURL, bootedDeployment.Version, nil
+}
+
+// GetKernelArgs returns the kernel arguments known to rpm-ostree
+func (r *RpmOstreeClient) GetKernelArgs() ([]string, error) {
+	out, err := runGetOut("rpm-ostree", "kargs")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(string(out), " "), nil
 }
 
 func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {

@@ -685,7 +685,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
 	// We are keeping this to maintain compatibility and OKD requirement.
-	tuningChanged, err := UpdateTuningArgs(KernelTuningFile, CmdLineFile)
+	tuningChanged, err := UpdateTuningArgs(KernelTuningFile)
 	if err != nil {
 		return err
 	}
@@ -995,7 +995,7 @@ func parseKernelArguments(kargs []string) []string {
 // Note what we really should be doing though is also looking at the *current*
 // kernel arguments in case there was drift.  But doing that requires us knowing
 // what the "base" arguments are. See https://github.com/ostreedev/ostree/issues/479
-func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
+func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig, nc NodeUpdaterClient) []string {
 	oldKargs := parseKernelArguments(oldConfig.Spec.KernelArguments)
 	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
 	cmdArgs := []string{}
@@ -1005,7 +1005,17 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	// kernel arguments present in the new rendered MachineConfig.
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=1866546#c10.
 	for _, arg := range oldKargs {
-		cmdArgs = append(cmdArgs, "--delete="+arg)
+		curArgs, err := nc.GetKernelArgs()
+		if err != nil {
+			glog.Warningf("Unable to query for current kernel arguments, using MCC expected arguments: %v", err)
+			curArgs = oldKargs
+		}
+		for _, v := range curArgs {
+			if strings.Contains(v, arg) {
+				cmdArgs = append(cmdArgs, "--delete="+arg)
+				break
+			}
+		}
 	}
 	for _, arg := range newKargs {
 		cmdArgs = append(cmdArgs, "--append="+arg)
@@ -1015,7 +1025,7 @@ func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 
 // updateKernelArguments adjusts the kernel args
 func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	diff := generateKargsCommand(oldConfig, newConfig)
+	diff := generateKargsCommand(oldConfig, newConfig, dn.NodeUpdaterClient)
 	if len(diff) == 0 {
 		return nil
 	}
