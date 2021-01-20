@@ -273,7 +273,7 @@ func TestKernelAguments(t *testing.T) {
 			newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 			newMcfg.Spec.KernelArguments = test.newKargs
 
-			res := generateKargsCommand(oldMcfg, newMcfg)
+			res := generateKargs(oldMcfg, newMcfg)
 
 			if !reflect.DeepEqual(test.out, res) {
 				t.Errorf("Failed kernel arguments processing: expected: %v but result is: %v", test.out, res)
