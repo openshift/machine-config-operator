@@ -451,8 +451,10 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 	}()
 
 	// Apply kargs
-	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
-		return err
+	if mcDiff.kargs {
+		if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
+			return err
+		}
 	}
 
 	// Switch to real time kernel
