@@ -3,4 +3,4 @@ path: "/etc/kubernetes/static-pod-resources/keepalived/scripts/chk_ocp_script_bo
 contents:
   inline: |
     #!/bin/bash
-    /usr/bin/curl -o /dev/null -kLfs https://localhost:{{`{{ .LBConfig.LbPort }}`}}/readyz && [ -e /var/run/keepalived/iptables-rule-exists ] || /usr/bin/curl -kLfs https://localhost:{{`{{ .LBConfig.ApiPort }}`}}/readyz
+    /usr/bin/curl -o /dev/null --max-time 0.9 -kLfs https://localhost:{{`{{ .LBConfig.LbPort }}`}}/readyz && [ -e /var/run/keepalived/iptables-rule-exists ] || /usr/bin/curl --max-time 0.9 -kLfs https://localhost:{{`{{ .LBConfig.ApiPort }}`}}/readyz

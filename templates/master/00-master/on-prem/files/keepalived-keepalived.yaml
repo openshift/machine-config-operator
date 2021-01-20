@@ -17,7 +17,7 @@ contents:
     # api to take the VIP. This isn't preferred because it means all api
     # traffic will go through one node, but at least it keeps the api available.
     vrrp_script chk_ocp_lb {
-        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script.sh"
+        script "/etc/keepalived/chk_ocp_script.sh"
         interval 2
         weight 20
         rise 3
@@ -25,7 +25,7 @@ contents:
     }
 
     vrrp_script chk_ocp_both {
-        script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script_both.sh"
+        script "/etc/keepalived/chk_ocp_script_both.sh"
         interval 2
         # Use a smaller weight for this check so it won't trigger the move from
         # bootstrap to master by itself.
@@ -37,7 +37,7 @@ contents:
     # TODO: Improve this check. The port is assumed to be alive.
     # Need to assess what is the ramification if the port is not there.
     vrrp_script chk_ingress {
-        script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
+        script "/usr/bin/curl -o /dev/null --max-time 0.9 -Lfs http://localhost:1936/healthz/ready"
         interval 1
         weight 50
     }
@@ -52,7 +52,7 @@ contents:
         advert_int 1
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
-        unicast_peer {            
+        unicast_peer {
             {{`{{range .LBConfig.Backends -}}
             {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
             {{end}}`}}
