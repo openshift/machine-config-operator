@@ -51,13 +51,8 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		glog.V(4).Infof("Finished syncing feature handler %q (%v)", key, time.Since(startTime))
 	}()
 
-	_, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
 	// Fetch the Feature
-	features, err := ctrl.featLister.Get(name)
+	features, err := ctrl.featLister.Get(clusterFeatureInstanceName)
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("FeatureSet %v is missing, using default", key)
 		features = &osev1.FeatureGate{
@@ -131,8 +126,10 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err != nil {
 			return err
 		}
+		tempIgnConfig := ctrlcommon.NewIgnConfig()
 		cfgIgn := createNewKubeletIgnition(cfgJSON)
-		rawCfgIgn, err := json.Marshal(cfgIgn)
+		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+		rawCfgIgn, err := json.Marshal(tempIgnConfig)
 		if err != nil {
 			return err
 		}
