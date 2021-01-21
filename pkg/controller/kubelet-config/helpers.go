@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -72,6 +73,9 @@ func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
 
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	return &osev1.FeatureGate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterFeatureInstanceName,
+		},
 		Spec: osev1.FeatureGateSpec{
 			FeatureGateSelection: osev1.FeatureGateSelection{
 				FeatureSet: osev1.Default,
