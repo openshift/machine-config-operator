@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/clarketm/json"
@@ -446,8 +447,28 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 	return err
 }
 
+// addAnnotation adds the annotions for a ctrcfg object with the given annotationKey and annotationVal
+func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annotationKey, annotationVal string) error {
+	annotationUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
+		if getErr != nil {
+			return getErr
+		}
+		newcfg.SetAnnotations(map[string]string{
+			annotationKey: annotationVal,
+		})
+		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Update(context.TODO(), newcfg, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if annotationUpdateErr != nil {
+		glog.Warningf("error updating the container runtime config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
+	}
+	return annotationUpdateErr
+}
+
 // syncContainerRuntimeConfig will sync the ContainerRuntimeconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
+// nolint: gocyclo
 func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing ContainerRuntimeconfig %q (%v)", key, startTime)
@@ -507,7 +528,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey, err := getManagedKeyCtrCfg(pool, ctrl.client)
+		managedKey, err := getManagedKeyCtrCfg(pool, ctrl.client, cfg)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
@@ -552,6 +573,15 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
+			}
+			_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			arr := strings.Split(managedKey, "-")
+			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
+			// suffix annotation and suffix value to the ctrcfg object
+			if len(arr) > 4 && !ok {
+				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerRuntimeConfig")
+				}
 			}
 		}
 
