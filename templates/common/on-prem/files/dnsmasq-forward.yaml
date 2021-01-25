@@ -1,0 +1,6 @@
+mode: 0644
+path: "/etc/dnsmasq.d/internal-addresses.conf"
+contents:
+  inline: |
+    address=/apps.{{ .DNS.Spec.BaseDomain }}/{{ onPremPlatformIngressIP . }}
+    addn-hosts=/etc/api-int.host

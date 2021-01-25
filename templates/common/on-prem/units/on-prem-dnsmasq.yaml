@@ -1,0 +1,10 @@
+name: on-prem-dnsmasq.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Run dnsmasq to provide local
+  Before=kubelet.service crio.service
+  [Service]
+  ExecStart=/usr/sbin/dnsmasq -k
+  [Install]
+  WantedBy=multi-user.target
