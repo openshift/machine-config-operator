@@ -122,7 +122,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			return err
 		}
 		// Encode the new config into raw JSON
-		cfgJSON, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+		cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 		if err != nil {
 			return err
 		}
