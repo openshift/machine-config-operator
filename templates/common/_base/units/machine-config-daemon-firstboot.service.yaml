@@ -17,8 +17,17 @@ contents: |
   # Disable existing repos (if any) so that OS extensions would use embedded RPMs only
   ExecStartPre=-/usr/bin/sh -c "sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/*.repo"
   ExecStart=/run/bin/machine-config-daemon firstboot-complete-machineconfig
+
   {{if .Proxy -}}
-  EnvironmentFile=/etc/mco/proxy.env
+  {{if .Proxy.HTTPProxy -}}
+  Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
+  {{end -}}
+  {{if .Proxy.HTTPSProxy -}}
+  Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
+  {{end -}}
+  {{if .Proxy.NoProxy -}}
+  Environment=NO_PROXY={{.Proxy.NoProxy}}
+  {{end -}}
   {{end -}}
 
   [Install]
