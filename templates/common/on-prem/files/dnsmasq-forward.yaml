@@ -1,0 +1,6 @@
+mode: 0644
+path: "/etc/kubernetes/static-pod-resources/dnsmasq/cluster-forward.conf.tmpl"
+contents:
+  inline: |
+    server=/{{ .DNS.Spec.BaseDomain }}/{{`{{.NonVirtualIP}}`}}#5333
+    addn-hosts=/etc/api-int.host

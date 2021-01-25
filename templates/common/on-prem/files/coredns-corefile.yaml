@@ -2,7 +2,7 @@ mode: 0644
 path: "/etc/kubernetes/static-pod-resources/coredns/Corefile.tmpl"
 contents:
   inline: |
-    . {
+    .:5333 {
         errors
         health :18080
         mdns {{ .DNS.Spec.BaseDomain }} 0 {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
