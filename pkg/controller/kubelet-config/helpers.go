@@ -183,7 +183,7 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 		}
 	}
 
-	resourceFields := []string{"memory.available", "nodefs.available", "nodefs.inodesFree", "imagefs.available"}
+	resourceFields := []string{"memory.available", "nodefs.available", "nodefs.inodesFree", "imagefs.available", "imagefs.inodesFree", "pid.available"}
 
 	if kcDecoded.EvictionSoft != nil && len(kcDecoded.EvictionSoft) > 0 {
 		if kcDecoded.EvictionSoftGracePeriod == nil || len(kcDecoded.EvictionSoftGracePeriod) == 0 {
