@@ -180,6 +180,7 @@ func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-containerruntime", pool.Name, pool.ObjectMeta.UID)
 }
 
+// nolint: dupl
 func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.ContainerRuntimeConfig) (string, error) {
 	// Get all the ctrcfg CRs
 	ctrcfgList, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
@@ -224,7 +225,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 	// so that those changes can be rolled out to the nodes. But users will have to be mindful of how many ctrcfg CRs they create. Don't think
 	// anyone should ever have the need to create 10 when they can simply update an existing ctrcfg unless it is to apply to another pool.
 	if suffixNum+1 > 9 {
-		return "", fmt.Errorf("the max MC name suffix value that can be used is 9, please delete some ctrcfg CRs to free up suffx values before a new ctrcfg can be created")
+		return "", fmt.Errorf("max number of supported ctrcfgs (10) has been reached. Please delete old ctrcfgs before retrying")
 	}
 	// Return the default MC name with the suffixNum+1 value appended to it
 	return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, strconv.Itoa(suffixNum+1)), nil

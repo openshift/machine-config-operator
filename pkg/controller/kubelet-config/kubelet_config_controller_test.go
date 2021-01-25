@@ -117,7 +117,7 @@ func newControllerConfig(name string, platform osev1.PlatformType) *mcfgv1.Contr
 }
 
 func newKubeletConfig(name string, kubeconf *kubeletconfigv1beta1.KubeletConfiguration, selector *metav1.LabelSelector) *mcfgv1.KubeletConfig {
-	kcRaw, err := encodeKubeletConfig(kubeconf, kubeletconfigv1beta1.SchemeGroupVersion)
+	kcRaw, err := EncodeKubeletConfig(kubeconf, kubeletconfigv1beta1.SchemeGroupVersion)
 	if err != nil {
 		panic(err)
 	}
@@ -319,12 +319,13 @@ func TestKubeletConfigCreate(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
+			f.newController()
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -351,6 +352,7 @@ func TestKubeletConfigLogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
+			f.newController()
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
@@ -364,7 +366,7 @@ func TestKubeletConfigLogFile(t *testing.T) {
 				},
 				Status: mcfgv1.KubeletConfigStatus{},
 			}
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -391,12 +393,13 @@ func TestKubeletConfigUpdates(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
+			f.newController()
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -435,7 +438,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 				t.Errorf("KubeletConfig could not be unmarshalled")
 			}
 			kcDecoded.MaxPods = 101
-			kcRaw, err := encodeKubeletConfig(kcDecoded, kubeletconfigv1beta1.SchemeGroupVersion)
+			kcRaw, err := EncodeKubeletConfig(kcDecoded, kubeletconfigv1beta1.SchemeGroupVersion)
 			if err != nil {
 				t.Errorf("KubeletConfig could not be marshalled")
 			}
@@ -774,12 +777,13 @@ func TestKubeletFeatureExists(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "Unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
+			f.newController()
 
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, nil)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)

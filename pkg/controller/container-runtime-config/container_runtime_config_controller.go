@@ -530,7 +530,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// Get MachineConfig
 		managedKey, err := getManagedKeyCtrCfg(pool, ctrl.client, cfg)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err)
+			return ctrl.syncStatusOnly(cfg, err, "could not get ctrcfg key: %v", err)
 		}
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		isNotFound := errors.IsNotFound(err)
