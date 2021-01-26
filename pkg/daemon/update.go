@@ -1434,7 +1434,40 @@ func (dn *Daemon) enableUnits(units []string) error {
 	args := append([]string{"enable"}, units...)
 	stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("error enabling unit: %s", stdouterr)
+		if !dn.os.IsLikeTraditionalRHEL7() {
+			return fmt.Errorf("error enabling units: %s", stdouterr)
+		}
+		// In RHEL7, the systemd version is too low, so it is unable to handle broken
+		// symlinks during enable. Do a best-effort removal of potentially broken
+		// hard coded symlinks and try again.
+		// See: https://bugzilla.redhat.com/show_bug.cgi?id=1913536
+		wantsPathSystemd := "/etc/systemd/system/multi-user.target.wants/"
+		for _, unit := range units {
+			unitLinkPath := filepath.Join(wantsPathSystemd, unit)
+			fi, fiErr := os.Lstat(unitLinkPath)
+			if fiErr != nil {
+				if !os.IsNotExist(fiErr) {
+					return fmt.Errorf("error trying to enable unit, fallback failed with %s (original error %s)",
+						fiErr, stdouterr)
+				}
+				continue
+			}
+			if fi.Mode()&os.ModeSymlink == 0 {
+				return fmt.Errorf("error trying to enable unit, a non-symlink file exists at %s (original error %s)",
+					unitLinkPath, stdouterr)
+			}
+			if _, evalErr := filepath.EvalSymlinks(unitLinkPath); evalErr != nil {
+				// this is a broken symlink, remove
+				if rmErr := os.Remove(unitLinkPath); rmErr != nil {
+					return fmt.Errorf("error trying to enable unit, cannot remove broken symlink: %s (original error %s)",
+						rmErr, stdouterr)
+				}
+			}
+		}
+		stdouterr, err := exec.Command("systemctl", args...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("error enabling units: %s", stdouterr)
+		}
 	}
 	glog.Infof("Enabled systemd units: %v", units)
 	return nil
