@@ -1381,7 +1381,20 @@ func checkV3Units(units []ign3types.Unit) error {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if err := checkFileContentsAndMode(path, []byte(*u.Dropins[j].Contents), defaultFilePermissions); err != nil {
+
+			var content string
+			if u.Dropins[j].Contents == nil {
+				content = ""
+			} else {
+				content = *u.Dropins[j].Contents
+			}
+
+			// Backwards compatibility check: the new behavior is to noop when a drop-in for zero length.
+			// However, to maintain backwards compatibility, we allow existing zero length files to exist.
+			if err := checkFileContentsAndMode(path, []byte(content), defaultFilePermissions); err != nil {
+				if content == "" && os.IsNotExist(err) {
+					continue
+				}
 				return err
 			}
 		}
