@@ -1414,12 +1414,17 @@ func checkV3Units(units []ign3types.Unit) error {
 				content = *u.Dropins[j].Contents
 			}
 
-			// Backwards compatibility check: the new behavior is to noop when a drop-in for zero length.
-			// However, to maintain backwards compatibility, we allow existing zero length files to exist.
-			if err := checkFileContentsAndMode(path, []byte(content), defaultFilePermissions); err != nil {
-				if content == "" && os.IsNotExist(err) {
+			// As of 4.7 we now remove any empty defined dropins, check for that first
+			if _, err := os.Stat(path); content == "" && err != nil {
+				if os.IsNotExist(err) {
 					continue
 				}
+				return err
+			}
+
+			// To maintain backwards compatibility, we allow existing zero length files to exist.
+			// Thus we are also ok if the dropin exists but has no content
+			if err := checkFileContentsAndMode(path, []byte(content), defaultFilePermissions); err != nil {
 				return err
 			}
 		}
