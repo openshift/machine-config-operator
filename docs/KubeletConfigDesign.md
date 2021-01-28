@@ -61,6 +61,12 @@ KubeletConfig
   [KubeletConfigurationSpec](https://github.com/kubernetes/kubernetes/blob/release-1.11/pkg/kubelet/apis/kubeletconfig/v1beta1/types.go#L45)
 ```
 
+## VALIDATION
+
+It's importent to note that, since the fields of the kubelet configuration are directly fetched from upstream the validation 
+of those values is handled directly by the kubelet. Please refer to the upstream version of the relavent kubernetes for the 
+valid values of these fields. Invalid values of the kubelet configuration fields may render cluster nodes unusable.
+
 ## Example
 This is what an example `kubelet config` CR looks like. Note: you must make sure to add a label under `matchLabels` in the KubeletConfig CR:
 
