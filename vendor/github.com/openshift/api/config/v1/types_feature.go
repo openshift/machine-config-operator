@@ -40,6 +40,15 @@ var (
 
 	// IPv6DualStackNoUpgrade enables dual-stack. Turning this feature set on IS NOT SUPPORTED, CANNOT BE UNDONE, and PREVENTS UPGRADES.
 	IPv6DualStackNoUpgrade FeatureSet = "IPv6DualStackNoUpgrade"
+
+	// CSIMigration enables CSI migration support on ALL OCP components. Upgrades are enabled with this feature.
+	CSIMigration FeatureSet = "CSIMigration"
+
+	// CSIMigrationControlPlane enables CSI migration support ONLY on control-plane components. Upgrades are enabled with this feature.
+	CSIMigrationControlPlane FeatureSet = "CSIMigrationControlPlane"
+
+	// CSIMigrationNode enables CSI migration support ONLY on nodes. Upgrades are enabled with this feature.
+	CSIMigrationNode FeatureSet = "CSIMigrationNode"
 )
 
 type FeatureGateSpec struct {
@@ -114,6 +123,39 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 	IPv6DualStackNoUpgrade: newDefaultFeatures().
 		with(
 			"IPv6DualStack", // sig-network, danwinship
+		).
+		toFeatures(),
+	CSIMigration: newDefaultFeatures().
+		with(
+			"CSIMigration", // sig-storage, bertinatto
+			"CSIMigrationAWS",
+			"CSIMigrationGCE",
+			"CSIMigrationAzureDisk",
+			"CSIMigrationAzureFile",
+			"CSIMigrationvSphere",
+			"CSIMigrationOpenStack",
+		).
+		toFeatures(),
+	CSIMigrationControlPlane: newDefaultFeatures().
+		with(
+			"CSIMigration", // sig-storage, bertinatto
+			"CSIMigrationAWS",
+			"CSIMigrationGCE",
+			"CSIMigrationAzureDisk",
+			"CSIMigrationAzureFile",
+			"CSIMigrationvSphere",
+			"CSIMigrationOpenStack",
+		).
+		toFeatures(),
+	CSIMigrationNode: newDefaultFeatures().
+		with(
+			"CSIMigration", // sig-storage, bertinatto
+			"CSIMigrationAWS",
+			"CSIMigrationGCE",
+			"CSIMigrationAzureDisk",
+			"CSIMigrationAzureFile",
+			"CSIMigrationvSphere",
+			"CSIMigrationOpenStack",
 		).
 		toFeatures(),
 }
