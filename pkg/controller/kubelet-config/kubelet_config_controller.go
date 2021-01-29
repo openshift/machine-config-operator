@@ -359,6 +359,25 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 	return err
 }
 
+// addAnnotation adds the annotions for a kubeletconfig object with the given annotationKey and annotationVal
+func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, annotationVal string) error {
+	annotationUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
+		if getErr != nil {
+			return getErr
+		}
+		newcfg.SetAnnotations(map[string]string{
+			annotationKey: annotationVal,
+		})
+		_, updateErr := ctrl.client.MachineconfigurationV1().KubeletConfigs().Update(context.TODO(), newcfg, metav1.UpdateOptions{})
+		return updateErr
+	})
+	if annotationUpdateErr != nil {
+		glog.Warningf("error updating the kubelet config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
+	}
+	return annotationUpdateErr
+}
+
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 //nolint:gocyclo
@@ -435,9 +454,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client)
+		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
 		if err != nil {
-			return err
+			return ctrl.syncStatusOnly(cfg, err, "could not get kubelet config key: %v", err)
 		}
 		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 		if err != nil && !macherrors.IsNotFound(err) {
@@ -480,7 +499,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 				return ctrl.syncStatusOnly(cfg, err, "could not merge FeatureGates: %v", err)
 			}
 			// Encode the new config into raw JSON
-			cfgJSON, err := encodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+			cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
 			}
@@ -494,6 +513,15 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 			}
 			mc.ObjectMeta.UID = uuid.NewUUID()
+			_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			arr := strings.Split(managedKey, "-")
+			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
+			// suffix annotation and suffix value to the kubelet config object
+			if len(arr) > 4 && !ok {
+				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
+				}
+			}
 		}
 
 		if cfg.Spec.LogLevel != nil {
