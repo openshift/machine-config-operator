@@ -22,6 +22,7 @@ contents:
         "/run/containers/oci/hooks.d",
     ]
     manage_ns_lifecycle = true
+    separate_pull_cgroup = "system.slice"
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"
