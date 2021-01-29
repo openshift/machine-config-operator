@@ -199,6 +199,10 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 //nolint:gocritic
 func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[string]bool, error) {
 	rv := make(map[string]bool)
+	if features.Spec.FeatureSet == osev1.CSIMigrationControlPlane {
+		glog.Infof("Ignoring CSIMigrationControlPlane feature gate for kubelet config")
+		return &rv, nil
+	}
 	set, ok := osev1.FeatureSets[features.Spec.FeatureSet]
 	if !ok {
 		return &rv, fmt.Errorf("enabled FeatureSet %v does not have a corresponding config", features.Spec.FeatureSet)
