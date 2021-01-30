@@ -286,11 +286,6 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
-	if err == errCouldNotFindMCPSet {
-		ctrl.queue.AddAfter(key, 1*time.Minute)
-		return
-	}
-
 	if ctrl.queue.NumRequeues(key) < maxRetries {
 		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
@@ -349,7 +344,16 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		if getErr != nil {
 			return getErr
 		}
-		newcfg.Status.Conditions = append(newcfg.Status.Conditions, wrapErrorWithCondition(err, args...))
+		// To avoid a long list of same statuses, only append a status if it is the first status
+		// or if the status message is different from the message of the last status recorded
+		// If the last status message is the same as the new one, then update the last status to
+		// reflect the latest time stamp from the new status message.
+		newStatusCondition := wrapErrorWithCondition(err, args...)
+		if len(newcfg.Status.Conditions) == 0 || newStatusCondition.Message != newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message {
+			newcfg.Status.Conditions = append(newcfg.Status.Conditions, newStatusCondition)
+		} else if newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message == newStatusCondition.Message {
+			newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1] = newStatusCondition
+		}
 		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return lerr
 	})
