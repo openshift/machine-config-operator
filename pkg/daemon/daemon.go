@@ -451,6 +451,16 @@ func (dn *Daemon) syncNode(key string) error {
 	// and then proceeds to check the state of the node, which includes
 	// finalizing an update and/or reconciling the current and desired machine configs.
 	if dn.booting {
+		// Prevent any reboots
+		if err := maskRebootTarget(); err != nil {
+			return err
+		}
+		defer func() {
+			if err := unmaskRebootTarget(); err != nil {
+				glog.Error(err)
+			}
+		}()
+
 		// Be sure only the MCD is running now, disable -firstboot.service
 		if err := upgradeHackFor44AndBelow(); err != nil {
 			return err
