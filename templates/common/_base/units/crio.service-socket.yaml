@@ -1,0 +1,6 @@
+name: crio.service
+dropins:
+  - name: 10-mco-profile-unix-socket.conf
+    contents: |
+      [Service]
+      Environment="ENABLE_PROFILE_UNIX_SOCKET=true"

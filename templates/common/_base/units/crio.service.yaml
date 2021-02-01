@@ -1,16 +1,6 @@
 name: crio.service
 dropins:
-  - name: 10-mco-default-env.conf
-    contents: |
-      {{if .Proxy -}}
-      [Service]
-      EnvironmentFile=/etc/mco/proxy.env
-      {{end -}}
   - name: 10-mco-default-madv.conf
     contents: |
       [Service]
       Environment="GODEBUG=x509ignoreCN=0,madvdontneed=1"
-  - name: 10-mco-profile-unix-socket.conf
-    contents: |
-      [Service]
-      Environment="ENABLE_PROFILE_UNIX_SOCKET=true"
