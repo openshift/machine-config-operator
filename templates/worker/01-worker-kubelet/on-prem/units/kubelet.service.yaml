@@ -22,7 +22,7 @@ contents: |
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
-        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+        --node-labels=node-role.kubernetes.io/worker,${FIRST_BOOT_ONLY_KUBELET_NODE_EXTRA_LABELS},node.openshift.io/os_id=${ID} \
 {{- if eq .IPFamilies "DualStack"}}
         --node-ip=${KUBELET_NODE_IPS} \
 {{- else}}
