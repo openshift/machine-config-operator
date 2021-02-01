@@ -6,6 +6,22 @@ contents:
     set -eux
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
+    copy_nm_conn_files() {
+      src_path="/etc/NetworkManager/system-connections-merged"
+      dst_path="/etc/NetworkManager/system-connections"
+      if [ -d $src_path ]; then
+        echo "$src_path exists"
+        fileList=$(echo {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection)
+        for file in ${fileList[*]}; do
+          if [ ! -f $dst_path/$file ]; then
+            cp $src_path/$file $dst_path/$file
+          else
+            echo "Skipping $file since it exists in $dst_path"
+          fi
+        done
+      fi
+    }
+    
     if ! rpm -qa | grep -q openvswitch; then
       echo "Warning: Openvswitch package is not installed!"
       exit 1
@@ -228,7 +244,7 @@ contents:
         # check if connection is active
         if nmcli --fields GENERAL.STATE conn show ovs-if-br-ex | grep -i "activated"; then
           echo "OVS successfully configured"
-          cp /etc/NetworkManager/system-connections-merged/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection /etc/NetworkManager/system-connections
+          copy_nm_conn_files
           ip a show br-ex
           ip route show
           configure_driver_options ${iface}
@@ -242,7 +258,7 @@ contents:
       while [ $counter -lt 5 ]; do
         if nmcli conn up ovs-if-br-ex; then
           echo "OVS successfully configured"
-          cp /etc/NetworkManager/system-connections-merged/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection /etc/NetworkManager/system-connections
+          copy_nm_conn_files
           ip a show br-ex
           ip route show
           configure_driver_options ${iface}
