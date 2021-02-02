@@ -278,8 +278,9 @@ contents:
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh.
       # Remove OVS bridge "br-ex". Use the default NIC for cluster network.
-
+      iface=""
       if nmcli connection show ovs-port-phys0 &> /dev/null; then
+        iface=$(nmcli --get-values connection.interface-name connection show ovs-port-phys0)
         nmcli c del ovs-port-phys0 
       fi
 
@@ -302,4 +303,8 @@ contents:
       rm -f /etc/NetworkManager/system-connections/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection
       # remove bridges created by ovn-kubernetes, try to delete br-ex again in case NM fail to talk to ovsdb
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local -- --if-exists del-br br-ex
+
+      if [[ -n "$iface" ]]; then
+        nmcli device connect $iface
+      fi
     fi
