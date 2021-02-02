@@ -537,90 +537,6 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "evictionSoft memory available cannot be negative",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionSoft: map[string]string{
-					"memory.available": "-1M",
-				},
-				EvictionSoftGracePeriod: map[string]string{
-					"memory.available": "1h",
-				},
-			},
-		},
-		{
-			name: "evictionSoft memory available must be positive",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionSoft: map[string]string{
-					"memory.available": "0M",
-				},
-				EvictionSoftGracePeriod: map[string]string{
-					"memory.available": "1h",
-				},
-			},
-		},
-		{
-			name: "evictionSoft field cannot be invalid",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionSoft: map[string]string{
-					"memory111.available": "500M",
-				},
-				EvictionSoftGracePeriod: map[string]string{
-					"memory.available": "1h",
-				},
-			},
-		},
-		{
-			name: "evictionSoft field value cannot be invalid",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionSoft: map[string]string{
-					"memory.available": "&#jk789",
-				},
-				EvictionSoftGracePeriod: map[string]string{
-					"memory.available": "1h",
-				},
-			},
-		},
-		{
-			name: "evictionHard memory available cannot be negative",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionHard: map[string]string{
-					"memory.available": "-1M",
-				},
-			},
-		},
-		{
-			name: "evictionHard memory available must be positive",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionHard: map[string]string{
-					"memory.available": "0M",
-				},
-			},
-		},
-		{
-			name: "evictionHard field cannot be invalid",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionHard: map[string]string{
-					"memory111.available": "500M",
-				},
-			},
-		},
-		{
-			name: "evictionHard field value cannot be invalid",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				EvictionHard: map[string]string{
-					"memory.available": "&#jk789",
-				},
-			},
-		},
-		{
-			name: "kubeReserved cpu value must be positive",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				KubeReserved: map[string]string{
-					v1.ResourceCPU.String(): "0",
-				},
-			},
-		},
-		{
 			name: "kubeReserved cpu value cannot be negative",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				KubeReserved: map[string]string{
@@ -637,14 +553,6 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "systemReserved cpu value must be positive",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				SystemReserved: map[string]string{
-					v1.ResourceCPU.String(): "0",
-				},
-			},
-		},
-		{
 			name: "kubeReserved memory value cannot be negative",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				KubeReserved: map[string]string{
@@ -653,26 +561,10 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			},
 		},
 		{
-			name: "kubeReserved memory value must be positive",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				KubeReserved: map[string]string{
-					v1.ResourceMemory.String(): "0M",
-				},
-			},
-		},
-		{
 			name: "systemReserved memory value cannot be negative",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				SystemReserved: map[string]string{
 					v1.ResourceMemory.String(): "-20M",
-				},
-			},
-		},
-		{
-			name: "systemReserved memory value must be positive",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				SystemReserved: map[string]string{
-					v1.ResourceMemory.String(): "0M",
 				},
 			},
 		},
