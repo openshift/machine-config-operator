@@ -52,7 +52,7 @@ contents:
             "{{ onPremPlatformIngressIP . }}")
         DOMAIN="{{.DNS.Spec.BaseDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
-            if [[ "$(systemctl is-enabled systemd-resolved)" == "enabled" ]]; then
+            if systemctl -q is-enabled systemd-resolved; then
                 >&2 echo "NM resolv-prepender: Setting up systemd-resolved for OKD domain and local IP"
                 if [[ ! -f /etc/systemd/resolved.conf.d/60-kni.conf ]]; then
                     >&2 echo "NM resolv-prepender: Creating /etc/systemd/resolved.conf.d/60-kni.conf"
