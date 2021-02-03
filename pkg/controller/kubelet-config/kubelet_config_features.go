@@ -10,6 +10,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/cloudprovider"
 	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,8 +24,11 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
-const (
-	clusterFeatureInstanceName = "cluster"
+var (
+	// openshiftOnlyFeatureGates contains selection of featureGates which will be rejected by native kubelet
+	openshiftOnlyFeatureGates = []string{
+		cloudprovider.ExternalCloudProviderFeature,
+	}
 )
 
 func (ctrl *Controller) featureWorker() {
@@ -52,7 +56,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	}()
 
 	// Fetch the Feature
-	features, err := ctrl.featLister.Get(clusterFeatureInstanceName)
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
 	if errors.IsNotFound(err) {
 		glog.V(2).Infof("FeatureSet %v is missing, using default", key)
 		features = &osev1.FeatureGate{
@@ -65,7 +69,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	} else if err != nil {
 		return err
 	}
-	featureGates, err := ctrl.generateFeatureMap(features)
+	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
 	if err != nil {
 		return err
 	}
@@ -97,7 +101,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 		// Generate the original KubeletConfig
-		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
+		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role, nil)
 		if err != nil {
 			return err
 		}
@@ -197,7 +201,8 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 }
 
 //nolint:gocritic
-func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[string]bool, error) {
+// generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
+func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map[string]bool, error) {
 	rv := make(map[string]bool)
 	set, ok := osev1.FeatureSets[features.Spec.FeatureSet]
 	if !ok {
@@ -218,6 +223,11 @@ func (ctrl *Controller) generateFeatureMap(features *osev1.FeatureGate) (*map[st
 		for _, featDisabled := range features.Spec.CustomNoUpgrade.Disabled {
 			rv[featDisabled] = false
 		}
+	}
+
+	// Remove features excluded due to being breaking for some reason
+	for _, excluded := range exclusions {
+		delete(rv, excluded)
 	}
 	return &rv, nil
 }

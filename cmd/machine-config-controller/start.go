@@ -99,6 +99,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.OpenShiftConfigKubeNamespacedInformerFactory.Core().V1().Secrets(),
+			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
 			ctx.ClientBuilder.KubeClientOrDie("template-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("template-controller"),
 		),

@@ -119,7 +119,7 @@ func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	return &osev1.FeatureGate{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: clusterFeatureInstanceName,
+			Name: ctrlcommon.ClusterFeatureInstanceName,
 		},
 		Spec: osev1.FeatureGateSpec{
 			FeatureGateSelection: osev1.FeatureGateSelection{
