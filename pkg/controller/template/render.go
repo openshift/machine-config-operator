@@ -15,6 +15,7 @@ import (
 	"github.com/Masterminds/sprig"
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/cloudprovider"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
@@ -25,7 +26,8 @@ import (
 // RenderConfig is wrapper around ControllerConfigSpec.
 type RenderConfig struct {
 	*mcfgv1.ControllerConfigSpec
-	PullSecret string
+	PullSecret  string
+	FeatureGate *configv1.FeatureGate
 
 	// no need to set this, will be automatically configured
 	Constants map[string]string
@@ -332,6 +334,13 @@ func skipMissing(key string) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
+		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus.Type, cfg.FeatureGate)
+		if err != nil {
+			glog.Error(err)
+		} else if external {
+			return "external", nil
+		}
+
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
 			return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
@@ -368,6 +377,13 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 		cfg.Infra.Status.PlatformStatus = &configv1.PlatformStatus{
 			Type: "",
 		}
+	}
+
+	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus.Type, cfg.FeatureGate)
+	if err != nil {
+		glog.Error(err)
+	} else if external {
+		return ""
 	}
 
 	flag := "--cloud-config=/etc/kubernetes/cloud.conf"
