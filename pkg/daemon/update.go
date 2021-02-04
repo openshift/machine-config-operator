@@ -828,6 +828,8 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
 					return nil, err
 				}
+			} else if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
+				return nil, errors.New("ignition passwd user section contains unsupported changes: user core may not be deleted")
 			}
 		}
 	}
