@@ -52,11 +52,18 @@ contents:
             "{{ onPremPlatformIngressIP . }}")
         DOMAIN="{{.DNS.Spec.BaseDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
-            source /etc/os-release
-            if [[ "$NAME" == "Fedora" ]]; then
-                echo "[Resolve]" > /etc/systemd/resolved.conf.d/60-kni.conf
-                echo "DNS=$NAMESERVER_IP" >> /etc/systemd/resolved.conf.d/60-kni.conf
-                echo "Domains=$DOMAIN" >> /etc/systemd/resolved.conf.d/60-kni.conf
+            if systemctl -q is-enabled systemd-resolved; then
+                >&2 echo "NM resolv-prepender: Setting up systemd-resolved for OKD domain and local IP"
+                if [[ ! -f /etc/systemd/resolved.conf.d/60-kni.conf ]]; then
+                    >&2 echo "NM resolv-prepender: Creating /etc/systemd/resolved.conf.d/60-kni.conf"
+                    echo "[Resolve]" > /etc/systemd/resolved.conf.d/60-kni.conf
+                    echo "DNS=$NAMESERVER_IP" >> /etc/systemd/resolved.conf.d/60-kni.conf
+                    echo "Domains=$DOMAIN" >> /etc/systemd/resolved.conf.d/60-kni.conf
+                    if systemctl -q is-active systemd-resolved; then
+                        >&2 echo "NM resolv-prepender: restarting systemd-resolved"
+                        systemctl restart systemd-resolved
+                    fi
+                fi
             else
                 >&2 echo "NM resolv-prepender: Prepending 'nameserver $NAMESERVER_IP' to /etc/resolv.conf (other nameservers from /var/run/NetworkManager/resolv.conf)"
                 sed -e "/^search/d" \
