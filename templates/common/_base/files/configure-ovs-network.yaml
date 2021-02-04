@@ -141,7 +141,7 @@ contents:
       if [ $(nmcli --get-values connection.type conn show ${old_conn}) == "vlan" ]; then
         iface_type=vlan
         vlan_id=$(nmcli --get-values vlan.id conn show ${old_conn})
-        if [ -z "$vlan_id"]; then
+        if [ -z "$vlan_id" ]; then
           echo "ERROR: unable to determine vlan_id for vlan connection: ${old_conn}"
           exit 1
         fi
