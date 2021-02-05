@@ -63,7 +63,7 @@ KubeletConfig
 
 ## VALIDATION
 
-It's importent to note that, since the fields of the kubelet configuration are directly fetched from upstream the validation 
+It's important to note that, since the fields of the kubelet configuration are directly fetched from upstream the validation 
 of those values is handled directly by the kubelet. Please refer to the upstream version of the relavent kubernetes for the 
 valid values of these fields. Invalid values of the kubelet configuration fields may render cluster nodes unusable.
 
