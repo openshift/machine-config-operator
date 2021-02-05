@@ -814,22 +814,19 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 			return nil, errors.New("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
-			// check if the prior config is empty and that this is the first time running.
-			// if so, the SSHKey from the cluster config and user "core" must be added to machine config.
-			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) >= 1 {
-				// there is an update to Users, we must verify that it is ONLY making an acceptable
-				// change to the SSHAuthorizedKeys for the user "core"
-				for _, user := range newIgn.Passwd.Users {
-					if user.Name != coreUserName {
-						return nil, errors.New("ignition passwd user section contains unsupported changes: non-core user")
-					}
-				}
-				glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
-				if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
-					return nil, err
-				}
-			} else if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
+			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
 				return nil, errors.New("ignition passwd user section contains unsupported changes: user core may not be deleted")
+			}
+			// there is an update to Users, we must verify that it is ONLY making an acceptable
+			// change to the SSHAuthorizedKeys for the user "core"
+			for _, user := range newIgn.Passwd.Users {
+				if user.Name != coreUserName {
+					return nil, errors.New("ignition passwd user section contains unsupported changes: non-core user")
+				}
+			}
+			glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
+			if err := verifyUserFields(newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1]); err != nil {
+				return nil, err
 			}
 		}
 	}
