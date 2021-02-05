@@ -56,7 +56,7 @@ spec:
               description: The fields of the kubelet configuration are defined in 
                 kubernetes upstream. Please refer to the types defined in the 
                 version/commit used by OpenShift of the upstream kubernetes.
-                It's importent to note that, since the fields of the kubelet
+                It's important to note that, since the fields of the kubelet
                 configuration are directly fetched from upstream the validation 
                 of those values is handled directly by the kubelet. Please refer 
                 to the upstream version of the relavent kubernetes for the 
