@@ -43,11 +43,9 @@ spec:
       - key: node.kubernetes.io/not-ready
         effect: NoExecute
         operator: Exists
-        tolerationSeconds: 120
       - key: node.kubernetes.io/unreachable
         effect: NoExecute
         operator: Exists
-        tolerationSeconds: 120
       - key: node-role.kubernetes.io/etcd
         operator: Exists
         effect: NoSchedule
