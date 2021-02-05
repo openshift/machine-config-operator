@@ -9,7 +9,6 @@ contents:
     {{ if .Infra.Status.PlatformStatus.VSphere -}}
     {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
     supersede domain-search "{{ .EtcdDiscoveryDomain }}";
-    prepend domain-name-servers {{ .Infra.Status.PlatformStatus.VSphere.NodeDNSIP }};
     {{ end -}}
     {{ end -}}
     {{ end -}}
