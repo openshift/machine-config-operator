@@ -325,11 +325,11 @@ func TestReconcilableSSH(t *testing.T) {
 	_, errMsg = reconcilable(oldMcfg, newMcfg)
 	checkIrreconcilableResults(t, "SSH", errMsg)
 
-	//check that empty Users does not generate error/degrade node
+	//check that empty Users does not cause panic
 	newIgnCfg.Passwd.Users = nil
 	newMcfg = helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 	_, errMsg = reconcilable(oldMcfg, newMcfg)
-	checkReconcilableResults(t, "SSH", errMsg)
+	checkIrreconcilableResults(t, "SSH", errMsg)
 }
 
 func TestUpdateSSHKeys(t *testing.T) {
