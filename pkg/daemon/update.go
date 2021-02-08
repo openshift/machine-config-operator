@@ -1228,6 +1228,11 @@ func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error 
 	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
+	// In OKD /var/home/core/.ssh/authorized_keys is not created during ignition.  Create
+	// from /var/home/core/.ssh/authorized_keys.d/ignition if missing
+	if err := dn.writeMissingAuthorizedKeys(); err != nil {
+		return err
+	}
 	if err := dn.deleteStaleData(&oldIgnConfig, &newIgnConfig); err != nil {
 		return err
 	}
@@ -1491,6 +1496,39 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 		return fmt.Errorf("error running preset on unit: %s", stdouterr)
 	}
 	glog.Infof("Preset systemd unit %s", unit.Name)
+	return nil
+}
+
+// writeMissingAuthorizedKeys: In OKD /var/home/core/.ssh/authorized_keys is not created during ignition.  Create
+// from /var/home/core/.ssh/authorized_keys.d/ignition if missing
+func (dn *Daemon) writeMissingAuthorizedKeys() error {
+	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+	authKeyFragPath := filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition")
+
+	// if authKeyFragPath doesn't exist return as the rest is unneeded
+	if _, err := os.Stat(authKeyFragPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	if _, err := os.Stat(authKeyPath); err != nil {
+		if os.IsNotExist(err) {
+			glog.Infof("Creating missing %s", authKeyPath)
+			key, err := ioutil.ReadFile(authKeyFragPath)
+			if err != nil {
+				glog.Infof("Unable to read %s", authKeyFragPath)
+				return err
+			}
+			if err := dn.atomicallyWriteSSHKey(string(key)); err != nil {
+				glog.Infof("Unable to create %s", authKeyPath)
+				return err
+			}
+		} else {
+			glog.Infof("exists, keys already written")
+		}
+	}
 	return nil
 }
 
