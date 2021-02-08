@@ -34,12 +34,12 @@ var (
 			Help: "logs failed drain",
 		})
 
-	// MCDPivotErr shows errors encountered during pivot
-	MCDPivotErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	// MCDPivotErr flags error encountered during pivot
+	MCDPivotErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Name: "mcd_pivot_err",
-			Help: "errors encountered during pivot",
-		}, []string{"node", "pivot_target", "err"})
+			Help: "error encountered during pivot",
+		}, []string{"pivot_target"})
 
 	// MCDState is state of mcd for indicated node (ex: degraded)
 	MCDState = prometheus.NewGaugeVec(
@@ -89,7 +89,6 @@ func registerMCDMetrics() error {
 	}
 
 	MCDDrainErr.Set(0)
-	MCDPivotErr.WithLabelValues("", "", "").Set(0)
 	KubeletHealthState.Set(0)
 	MCDRebootErr.WithLabelValues("", "", "").Set(0)
 	MCDUpdateState.WithLabelValues("", "").Set(0)
