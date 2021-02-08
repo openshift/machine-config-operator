@@ -30,8 +30,10 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
+	configv1 "github.com/openshift/api/config/v1"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/crypto"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
@@ -471,23 +473,29 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		var kubeletIgnition *ign3types.File
 		var logLevelIgnition *ign3types.File
 
+		// Generate the original KubeletConfig
+		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
+		}
+		if originalKubeletIgn.Contents.Source == nil {
+			return ctrl.syncStatusOnly(cfg, err, "the original Kubelet source string is empty: %v", err)
+		}
+		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
+		}
+		originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
+		}
+
+		// Inject TLS Options from Spec
+		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(cfg.Spec.TLSSecurityProfile)
+		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
+		originalKubeConfig.TLSCipherSuites = observedCipherSuites
+
 		if cfg.Spec.KubeletConfig != nil && cfg.Spec.KubeletConfig.Raw != nil {
-			// Generate the original KubeletConfig
-			originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
-			}
-			if originalKubeletIgn.Contents.Source == nil {
-				return ctrl.syncStatusOnly(cfg, err, "the original Kubelet source string is empty: %v", err)
-			}
-			dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
-			}
-			originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
-			}
 			specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
@@ -502,6 +510,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not merge FeatureGates: %v", err)
 			}
+			// Encode the new config into raw JSON
+			cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+			if err != nil {
+				return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
+			}
+			kubeletIgnition = createNewKubeletIgnition(cfgJSON)
+		} else {
 			// Encode the new config into raw JSON
 			cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 			if err != nil {
@@ -681,4 +696,33 @@ func (ctrl *Controller) getPoolsForKubeletConfig(config *mcfgv1.KubeletConfig) (
 	}
 
 	return pools, nil
+}
+
+// Extracts the minimum TLS version and cipher suites from TLSSecurityProfile object,
+// Converts the ciphers to IANA names as supported by Kube ServingInfo config.
+// If profile is nil, returns config defined by the Intermediate TLS Profile
+func getSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
+	var profileType configv1.TLSProfileType
+	if profile == nil {
+		profileType = configv1.TLSProfileIntermediateType
+	} else {
+		profileType = profile.Type
+	}
+
+	var profileSpec *configv1.TLSProfileSpec
+	if profileType == configv1.TLSProfileCustomType {
+		if profile.Custom != nil {
+			profileSpec = &profile.Custom.TLSProfileSpec
+		}
+	} else {
+		profileSpec = configv1.TLSProfiles[profileType]
+	}
+
+	// nothing found / custom type set but no actual custom spec
+	if profileSpec == nil {
+		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
+	}
+
+	// need to remap all Ciphers to their respective IANA names used by Go
+	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
 }
