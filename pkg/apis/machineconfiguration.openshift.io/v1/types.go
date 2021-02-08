@@ -354,6 +354,12 @@ type KubeletConfigSpec struct {
 	LogLevel                  *int32                `json:"logLevel,omitempty"`
 	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
 	KubeletConfig             *runtime.RawExtension `json:"kubeletConfig,omitempty"`
+
+	// If unset, a default (which may change between releases) is chosen. Note that only Old and
+	// Intermediate profiles are currently supported, and the maximum available MinTLSVersions
+	// is VersionTLS12.
+	// +optional
+	TLSSecurityProfile *configv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
 }
 
 // KubeletConfigStatus defines the observed state of a KubeletConfig

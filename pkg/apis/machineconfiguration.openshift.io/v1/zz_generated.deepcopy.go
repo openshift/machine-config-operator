@@ -417,6 +417,11 @@ func (in *KubeletConfigSpec) DeepCopyInto(out *KubeletConfigSpec) {
 		*out = new(runtime.RawExtension)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.TLSSecurityProfile != nil {
+		in, out := &in.TLSSecurityProfile, &out.TLSSecurityProfile
+		*out = new(configv1.TLSSecurityProfile)
+		(*in).DeepCopyInto(*out)
+	}
 	return
 }
 
