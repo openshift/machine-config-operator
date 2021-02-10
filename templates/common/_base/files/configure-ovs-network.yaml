@@ -43,8 +43,11 @@ contents:
           ifconfig "$intf" allmulti
         fi
       }
-
-      NM_CONN_PATH="/etc/NetworkManager/system-connections"
+      if [ -d "/etc/NetworkManager/system-connections-merged" ]; then
+        NM_CONN_PATH="/etc/NetworkManager/system-connections-merged"
+      else
+        NM_CONN_PATH="/etc/NetworkManager/system-connections"
+      fi
       iface=""
       counter=0
       # find default interface
@@ -196,6 +199,7 @@ contents:
             echo "WARN: existing br-ex interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
           fi
           cp -f ${old_conn_file} ${new_conn_file}
+          restorecon ${new_conn_file}
           if $cloned; then
             nmcli conn delete ${old_conn}-clone
             rm -f ${old_conn_file}
