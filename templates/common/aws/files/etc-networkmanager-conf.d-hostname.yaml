@@ -1,0 +1,10 @@
+mode: 0644
+path: "/etc/NetworkManager/conf.d/hostname.conf"
+contents:
+  inline: |
+    # The following configuration allows 90-long-hostname.sh
+    # to manage setting transient hostname instead of NetworkManager itself.
+    # See: https://developer.gnome.org/NetworkManager/stable/NetworkManager.conf.html
+    #      https://bugzilla.redhat.com/show_bug.cgi?id=1872885
+    [main]
+    hostname-mode=none
