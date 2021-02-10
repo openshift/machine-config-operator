@@ -779,6 +779,24 @@ func (BareMetalPlatformStatus) SwaggerDoc() map[string]string {
 	return map_BareMetalPlatformStatus
 }
 
+var map_EquinixMetalPlatformSpec = map[string]string{
+	"": "EquinixMetalPlatformSpec holds the desired state of the Equinix Metal infrastructure provider. This only includes fields that can be modified in the cluster.",
+}
+
+func (EquinixMetalPlatformSpec) SwaggerDoc() map[string]string {
+	return map_EquinixMetalPlatformSpec
+}
+
+var map_EquinixMetalPlatformStatus = map[string]string{
+	"":                    "EquinixMetalPlatformStatus holds the current status of the Equinix Metal infrastructure provider.",
+	"apiServerInternalIP": "apiServerInternalIP is an IP address to contact the Kubernetes API server that can be used by components inside the cluster, like kubelets using the infrastructure rather than Kubernetes networking. It is the IP that the Infrastructure.status.apiServerInternalURI points to. It is the IP for a self-hosted load balancer in front of the API servers.",
+	"ingressIP":           "ingressIP is an external IP which routes to the default ingress controller. The IP is a suitable target of a wildcard DNS record used to resolve default route host names.",
+}
+
+func (EquinixMetalPlatformStatus) SwaggerDoc() map[string]string {
+	return map_EquinixMetalPlatformStatus
+}
+
 var map_GCPPlatformSpec = map[string]string{
 	"": "GCPPlatformSpec holds the desired state of the Google Cloud Platform infrastructure provider. This only includes fields that can be modified in the cluster.",
 }
@@ -845,13 +863,15 @@ func (InfrastructureSpec) SwaggerDoc() map[string]string {
 }
 
 var map_InfrastructureStatus = map[string]string{
-	"":                     "InfrastructureStatus describes the infrastructure the cluster is leveraging.",
-	"infrastructureName":   "infrastructureName uniquely identifies a cluster with a human friendly name. Once set it should not be changed. Must be of max length 27 and must have only alphanumeric or hyphen characters.",
-	"platform":             "platform is the underlying infrastructure provider for the cluster.\n\nDeprecated: Use platformStatus.type instead.",
-	"platformStatus":       "platformStatus holds status information specific to the underlying infrastructure provider.",
-	"etcdDiscoveryDomain":  "etcdDiscoveryDomain is the domain used to fetch the SRV records for discovering etcd servers and clients. For more info: https://github.com/etcd-io/etcd/blob/329be66e8b3f9e2e6af83c123ff89297e49ebd15/Documentation/op-guide/clustering.md#dns-discovery deprecated: as of 4.7, this field is no longer set or honored.  It will be removed in a future release.",
-	"apiServerURL":         "apiServerURL is a valid URI with scheme 'https', address and optionally a port (defaulting to 443).  apiServerURL can be used by components like the web console to tell users where to find the Kubernetes API.",
-	"apiServerInternalURI": "apiServerInternalURL is a valid URI with scheme 'https', address and optionally a port (defaulting to 443).  apiServerInternalURL can be used by components like kubelets, to contact the Kubernetes API server using the infrastructure provider rather than Kubernetes networking.",
+	"":                       "InfrastructureStatus describes the infrastructure the cluster is leveraging.",
+	"infrastructureName":     "infrastructureName uniquely identifies a cluster with a human friendly name. Once set it should not be changed. Must be of max length 27 and must have only alphanumeric or hyphen characters.",
+	"platform":               "platform is the underlying infrastructure provider for the cluster.\n\nDeprecated: Use platformStatus.type instead.",
+	"platformStatus":         "platformStatus holds status information specific to the underlying infrastructure provider.",
+	"etcdDiscoveryDomain":    "etcdDiscoveryDomain is the domain used to fetch the SRV records for discovering etcd servers and clients. For more info: https://github.com/etcd-io/etcd/blob/329be66e8b3f9e2e6af83c123ff89297e49ebd15/Documentation/op-guide/clustering.md#dns-discovery deprecated: as of 4.7, this field is no longer set or honored.  It will be removed in a future release.",
+	"apiServerURL":           "apiServerURL is a valid URI with scheme 'https', address and optionally a port (defaulting to 443).  apiServerURL can be used by components like the web console to tell users where to find the Kubernetes API.",
+	"apiServerInternalURI":   "apiServerInternalURL is a valid URI with scheme 'https', address and optionally a port (defaulting to 443).  apiServerInternalURL can be used by components like kubelets, to contact the Kubernetes API server using the infrastructure provider rather than Kubernetes networking.",
+	"controlPlaneTopology":   "controlPlaneTopology expresses the expectations for operands that normally run on control nodes. The default is 'HighlyAvailable', which represents the behavior operators have in a \"normal\" cluster. The 'SingleReplica' mode will be used in single-node deployments and the operators should not configure the operand for highly-available operation",
+	"infrastructureTopology": "infrastructureTopology expresses the expectations for infrastructure services that do not run on control plane nodes, usually indicated by a node selector for a `role` value other than `master`. The default is 'HighlyAvailable', which represents the behavior operators have in a \"normal\" cluster. The 'SingleReplica' mode will be used in single-node deployments and the operators should not configure the operand for highly-available operation",
 }
 
 func (InfrastructureStatus) SwaggerDoc() map[string]string {
@@ -916,17 +936,18 @@ func (OvirtPlatformStatus) SwaggerDoc() map[string]string {
 }
 
 var map_PlatformSpec = map[string]string{
-	"":          "PlatformSpec holds the desired state specific to the underlying infrastructure provider of the current cluster. Since these are used at spec-level for the underlying cluster, it is supposed that only one of the spec structs is set.",
-	"type":      "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"KubeVirt\" and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.",
-	"aws":       "AWS contains settings specific to the Amazon Web Services infrastructure provider.",
-	"azure":     "Azure contains settings specific to the Azure infrastructure provider.",
-	"gcp":       "GCP contains settings specific to the Google Cloud Platform infrastructure provider.",
-	"baremetal": "BareMetal contains settings specific to the BareMetal platform.",
-	"openstack": "OpenStack contains settings specific to the OpenStack infrastructure provider.",
-	"ovirt":     "Ovirt contains settings specific to the oVirt infrastructure provider.",
-	"vsphere":   "VSphere contains settings specific to the VSphere infrastructure provider.",
-	"ibmcloud":  "IBMCloud contains settings specific to the IBMCloud infrastructure provider.",
-	"kubevirt":  "Kubevirt contains settings specific to the kubevirt infrastructure provider.",
+	"":             "PlatformSpec holds the desired state specific to the underlying infrastructure provider of the current cluster. Since these are used at spec-level for the underlying cluster, it is supposed that only one of the spec structs is set.",
+	"type":         "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"KubeVirt\", \"EquinixMetal\", and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.",
+	"aws":          "AWS contains settings specific to the Amazon Web Services infrastructure provider.",
+	"azure":        "Azure contains settings specific to the Azure infrastructure provider.",
+	"gcp":          "GCP contains settings specific to the Google Cloud Platform infrastructure provider.",
+	"baremetal":    "BareMetal contains settings specific to the BareMetal platform.",
+	"openstack":    "OpenStack contains settings specific to the OpenStack infrastructure provider.",
+	"ovirt":        "Ovirt contains settings specific to the oVirt infrastructure provider.",
+	"vsphere":      "VSphere contains settings specific to the VSphere infrastructure provider.",
+	"ibmcloud":     "IBMCloud contains settings specific to the IBMCloud infrastructure provider.",
+	"kubevirt":     "Kubevirt contains settings specific to the kubevirt infrastructure provider.",
+	"equinixMetal": "EquinixMetal contains settings specific to the Equinix Metal infrastructure provider.",
 }
 
 func (PlatformSpec) SwaggerDoc() map[string]string {
@@ -934,17 +955,18 @@ func (PlatformSpec) SwaggerDoc() map[string]string {
 }
 
 var map_PlatformStatus = map[string]string{
-	"":          "PlatformStatus holds the current status specific to the underlying infrastructure provider of the current cluster. Since these are used at status-level for the underlying cluster, it is supposed that only one of the status structs is set.",
-	"type":      "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.\n\nThis value will be synced with to the `status.platform` and `status.platformStatus.type`. Currently this value cannot be changed once set.",
-	"aws":       "AWS contains settings specific to the Amazon Web Services infrastructure provider.",
-	"azure":     "Azure contains settings specific to the Azure infrastructure provider.",
-	"gcp":       "GCP contains settings specific to the Google Cloud Platform infrastructure provider.",
-	"baremetal": "BareMetal contains settings specific to the BareMetal platform.",
-	"openstack": "OpenStack contains settings specific to the OpenStack infrastructure provider.",
-	"ovirt":     "Ovirt contains settings specific to the oVirt infrastructure provider.",
-	"vsphere":   "VSphere contains settings specific to the VSphere infrastructure provider.",
-	"ibmcloud":  "IBMCloud contains settings specific to the IBMCloud infrastructure provider.",
-	"kubevirt":  "Kubevirt contains settings specific to the kubevirt infrastructure provider.",
+	"":             "PlatformStatus holds the current status specific to the underlying infrastructure provider of the current cluster. Since these are used at status-level for the underlying cluster, it is supposed that only one of the status structs is set.",
+	"type":         "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"EquinixMetal\", and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.\n\nThis value will be synced with to the `status.platform` and `status.platformStatus.type`. Currently this value cannot be changed once set.",
+	"aws":          "AWS contains settings specific to the Amazon Web Services infrastructure provider.",
+	"azure":        "Azure contains settings specific to the Azure infrastructure provider.",
+	"gcp":          "GCP contains settings specific to the Google Cloud Platform infrastructure provider.",
+	"baremetal":    "BareMetal contains settings specific to the BareMetal platform.",
+	"openstack":    "OpenStack contains settings specific to the OpenStack infrastructure provider.",
+	"ovirt":        "Ovirt contains settings specific to the oVirt infrastructure provider.",
+	"vsphere":      "VSphere contains settings specific to the VSphere infrastructure provider.",
+	"ibmcloud":     "IBMCloud contains settings specific to the IBMCloud infrastructure provider.",
+	"kubevirt":     "Kubevirt contains settings specific to the kubevirt infrastructure provider.",
+	"equinixMetal": "EquinixMetal contains settings specific to the Equinix Metal infrastructure provider.",
 }
 
 func (PlatformStatus) SwaggerDoc() map[string]string {
