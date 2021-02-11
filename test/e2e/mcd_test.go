@@ -156,6 +156,12 @@ func TestKernelArguments(t *testing.T) {
 func TestKernelType(t *testing.T) {
 	cs := framework.NewClientSet("")
 
+	isOKD, err := isOKDCluster(cs)
+	require.Nil(t, err)
+	if isOKD {
+		t.Skip("skipping test on OKD")
+	}
+
 	unlabelFunc := labelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
 	oldInfraRenderedConfig := getMcName(t, cs, "infra")
@@ -174,7 +180,7 @@ func TestKernelType(t *testing.T) {
 		},
 	}
 
-	_, err := cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
+	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
 	require.Nil(t, err)
 	t.Logf("Created %s", kernelType.Name)
 	renderedConfig, err := waitForRenderedConfig(t, cs, "infra", kernelType.Name)
@@ -269,8 +275,19 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages := execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers")
-	expectedPackages := []string{"usbguard", "kernel-devel", "kernel-headers"}
+	isOKD, err := isOKDCluster(cs)
+	require.Nil(t, err)
+
+	var installedPackages string
+	var expectedPackages []string
+	if isOKD {
+		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
+		expectedPackages = []string{"usbguard", "kernel-devel"}
+	} else {
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers")
+		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers"}
+	}
 	for _, v := range expectedPackages {
 		if !strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
@@ -297,8 +314,12 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers")
-	expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers"}
+	if isOKD {
+		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
+	} else {
+		installedPackages = execCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers")
+	}
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s did not rollback successfully", infraNode.Name)

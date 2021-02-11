@@ -183,6 +183,18 @@ func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, args
 	return string(b)
 }
 
+// isOKDCluster checks whether the Upstream field on the CV spec references OKD's update server
+func isOKDCluster(cs *framework.ClientSet) (bool, error) {
+	cv, err := cs.ClusterVersions().Get(context.TODO(), "version", metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if cv.Spec.Upstream == "https://origin-release.svc.ci.openshift.org/graph" {
+		return true, nil
+	}
+	return false, nil
+}
+
 func mcLabelForRole(role string) map[string]string {
 	mcLabels := make(map[string]string)
 	mcLabels[mcfgv1.MachineConfigRoleLabelKey] = role
