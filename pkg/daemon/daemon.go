@@ -1308,6 +1308,9 @@ func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) er
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig) error {
+	glog.Info("WTK: entering triggerUpdateWithMachineConfig")
+	defer glog.Info("WTK: exiting triggerUpdateWithMachineConfig")
+
 	if currentConfig == nil {
 		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {

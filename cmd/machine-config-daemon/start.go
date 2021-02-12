@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"flag"
 	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/google/renameio"
 
@@ -202,6 +204,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx.KubeInformerFactory.Start(stopCh)
 	ctx.InformerFactory.Start(stopCh)
 	close(ctx.InformersStarted)
+
+	rand.Seed(time.Now().UnixNano())
 
 	if err := dn.Run(stopCh, exitCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)

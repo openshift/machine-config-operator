@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"os/user"
@@ -112,7 +113,12 @@ func reloadService(name string) error {
 // For non-reboot action, it applies configuration, updates node's config and state.
 // In the end uncordon node to schedule workload.
 // If at any point an error occurs, we reboot the node so that node has correct configuration.
-func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
+func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) (retErr error) {
+	glog.Infof("WTK: entering performPostConfigChangeAction: %v %v", postConfigChangeActions, configName)
+	defer func() {
+		glog.Infof("WTK: entering performPostConfigChangeAction: %v", retErr)
+	}()
+
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		dn.logSystem("Rebooting node")
 		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
@@ -235,6 +241,12 @@ func (dn *Daemon) drain() error {
 	dn.logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
+
+	if rand.Float32() < 0.1 { // fail 90% drains that did any work
+		glog.Info("WTK: but even though drain succeeded, I'm going to pretend it failed and error out")
+		return fmt.Errorf("WTK faking failed to drain node")
+	}
+
 	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 
 	return nil
@@ -585,17 +597,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}
 
+	oldConfigName := oldConfig.GetName()
+	newConfigName := newConfig.GetName()
+
 	dn.catchIgnoreSIGTERM()
 	defer func() {
 		if retErr != nil {
 			dn.cancelSIGTERM()
 		}
+		glog.Infof("WTK: exiting update for config %v to %v (active? %t, error: %v)", oldConfigName, newConfigName, dn.updateActive, retErr)
 	}()
 
-	oldConfigName := oldConfig.GetName()
-	newConfigName := newConfig.GetName()
-
-	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
+	glog.Infof("WTK: entering update| Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
