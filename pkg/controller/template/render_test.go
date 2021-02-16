@@ -374,3 +374,53 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 		t.Errorf("can't find expected file:\n%v", key)
 	}
 }
+
+func TestOKD(t *testing.T) {
+	cases := []struct {
+		name string
+		okd  bool
+		want string
+		data []byte
+	}{
+		{
+			data: []byte("{{if okd .}}okd{{else}}nope{{end}}"),
+			name: "expect okd",
+			okd:  true,
+			want: "okd",
+		},
+		{
+			data: []byte("{{if okd .}}okd{{else}}nope{{end}}"),
+			name: "not okd",
+			okd:  false,
+			want: "nope",
+		},
+	}
+
+	for idx, c := range cases {
+		name := fmt.Sprintf("case #%d", idx)
+		t.Run(name, func(t *testing.T) {
+			config := &mcfgv1.ControllerConfig{
+				Spec: mcfgv1.ControllerConfigSpec{
+					Infra: &configv1.Infrastructure{
+						Status: configv1.InfrastructureStatus{
+							PlatformStatus: &configv1.PlatformStatus{
+								Type: "aws",
+							},
+						},
+					},
+				},
+			}
+			isOkd = c.okd
+			defer func() { isOkd = false }()
+
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, nil}, name, c.data)
+			if err != nil {
+				t.Fatalf("expected nil error %v", err)
+			}
+
+			if string(got) != c.want {
+				t.Fatalf("mismatch got: %s want: %s", got, c.want)
+			}
+		})
+	}
+}

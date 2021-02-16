@@ -455,6 +455,9 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := upgradeHackFor44AndBelow(); err != nil {
 			return err
 		}
+		if err := okdBoot(); err != nil {
+			return err
+		}
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}

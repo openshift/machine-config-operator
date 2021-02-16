@@ -42,8 +42,9 @@ const (
 	defaultFilePermissions os.FileMode = 0644
 	// coreUser is "core" and currently the only permissible user name
 	coreUserName = "core"
-	// SSH Keys for user "core" will only be written at /home/core/.ssh
-	coreUserSSHPath = "/home/core/.ssh/"
+	// default location relative to the users homedir where we expect to find
+	// the coreUserNames' default SSH key
+	defaultCoreSSHKeyFilePath = ".ssh/authorized_keys"
 	// fipsFile is the file to check if FIPS is enabled
 	fipsFile              = "/proc/sys/crypto/fips_enabled"
 	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
@@ -58,6 +59,11 @@ const (
 	// Crio reload will happen when /etc/containers/registries.conf is changed. This will cause
 	// a "systemctl reload crio"
 	postConfigChangeActionReloadCrio = "reload crio"
+)
+
+// use RHCOS defaults. OKD may uses different paths.
+var (
+	coreSSHKeyFilePath = defaultCoreSSHKeyFilePath
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -1724,9 +1730,20 @@ func getFileOwnership(file ign3types.File) (int, int, error) {
 	return uid, gid, nil
 }
 
-func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
-	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+// getAuthorizedKeysPath returns the home dir.
+func getAuthorizedKeysPath() (string, error) {
+	u, err := userLookup(coreUserName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(u.HomeDir, coreSSHKeyFilePath), nil
+}
 
+func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
+	authKeyPath, err := getAuthorizedKeysPath()
+	if err != nil {
+		return err
+	}
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", authKeyPath)

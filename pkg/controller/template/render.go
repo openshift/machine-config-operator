@@ -19,6 +19,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -37,6 +38,18 @@ const (
 	platformBase   = "_base"
 	platformOnPrem = "on-prem"
 )
+
+// isOkd is used to determine if this is an OKD platform
+// When isOkd is true, special rendering rules exist.
+var isOkd = false
+
+func init() {
+	o := daemon.OperatingSystem{}
+	if o.IsFCOS() {
+		glog.Info("Enabling OKD renderning")
+		isOkd = true
+	}
+}
 
 // generateTemplateMachineConfigs returns MachineConfig objects from the templateDir and a config object
 // expected directory structure for correctly templating machine configs: <templatedir>/<role>/<name>/<platform>/<type>/<tmpl_file>
@@ -302,6 +315,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
+	funcs["okd"] = okd
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
@@ -522,4 +536,9 @@ func urlPort(u string) (interface{}, error) {
 	default:
 		return "", fmt.Errorf("unknown scheme in %s", u)
 	}
+}
+
+// okd is a template fuction that returns true if the node is OKD
+func okd(RenderConfig) bool {
+	return isOkd
 }
