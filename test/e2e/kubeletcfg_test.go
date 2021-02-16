@@ -53,7 +53,7 @@ func TestKubeletConfigMaxPods(t *testing.T) {
 // runTestWithKubeletCfg creates a kubelet config and checks whether the expected updates were applied, then deletes the kubelet config and makes
 // sure the node rolled back as expected
 // testName is a string to identify the objects created (MCP, MC, kubeletConfig)
-// regex key is the searching critera in the crio.conf. It is expected that a single field is in a capture group, and this field
+// regex key is the searching critera in the kubelet.conf. It is expected that a single field is in a capture group, and this field
 //   should equal expectedConfValue upon update
 // kc1 and kc2 are the kubelet configs to update to and rollback from
 func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, expectedConfVal2 string, kc1, kc2 *mcfgv1.KubeletConfig) {
@@ -88,8 +88,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	// cache the old configuration value to check against later
 	node := getSingleNodeByRole(t, cs, poolName)
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
-	defaultConfVal := getValueFromCrioConfig(t, cs, node, `maxPods: (\S+)`, kubeletPath) + ","
-	fmt.Println("---default conf val----:", defaultConfVal)
+	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `maxPods: (\S+)`, kubeletPath) + ","
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
 		t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVal)
 		return
@@ -117,7 +116,6 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	kc1Target := waitForConfigAndPoolComplete(t, cs, poolName, kcMCName1)
 	// verify value was changed to match that of the first kubelet config
 	firstConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
-	fmt.Println("---first conf value---:", firstConfValue)
 	require.Equal(t, firstConfValue, expectedConfVal1, "value in kubelet config not updated as expected")
 
 	// create our second kubelet config and attach it to our created node pool
@@ -213,7 +211,7 @@ func getMCFromKubeletCfg(t *testing.T, cs *framework.ClientSet, kcName string) (
 // find the value that is being searched for
 // regexKey is expected to be in the form `"key": (\S+)` to search for the value of key
 func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, confPath string) string {
-	// get the contents of the crio.conf on nodeName
+	// get the contents of the kubelet.conf on nodeName
 	out := execCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
 
 	// search based on the regex key. The output should have two members:
@@ -223,6 +221,5 @@ func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev
 	require.Len(t, matches, 2)
 
 	require.NotEmpty(t, matches[1], "regex %s attempted on kubelet config of node %s came back empty", node.Name, regexKey)
-	fmt.Println("------regex matching----:", matches)
 	return matches[1]
 }
