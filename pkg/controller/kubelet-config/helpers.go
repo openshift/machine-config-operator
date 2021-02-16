@@ -114,7 +114,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 		}
 		val, ok := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 		// If we find a matching kubelet config and it is the only one in the list, then return the default MC name with no suffix
-		if !ok && len(kcList.Items) < 9 {
+		if !ok && len(kcList.Items) < 2 {
 			return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 		}
 		// Otherwise if an MC name suffix exists, append it to the default MC name and return that as this kubelet config exists and
@@ -142,7 +142,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	// then if the user creates a kc-new it will map to mc-3. This is what we want as the latest kubelet config created should be higher in priority
 	// so that those changes can be rolled out to the nodes. But users will have to be mindful of how many kubelet config CRs they create. Don't think
 	// anyone should ever have the need to create 10 when they can simply update an existing kubelet config unless it is to apply to another pool.
-	if suffixNum+1 > 2 {
+	if suffixNum+1 > 9 {
 		return "", fmt.Errorf("max number of supported kubelet config (10) has been reached. Please delete old kubelet configs before retrying")
 	}
 	// Return the default MC name with the suffixNum+1 value appended to it
