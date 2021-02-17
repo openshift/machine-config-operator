@@ -116,7 +116,7 @@ When starting, MachineConfigDaemon verifies that contents and existence of the f
 
 ## Machine reboot
 
-MachineConfigDaemon reboots the machine after applying the updated machine configuration.
+MachineConfigDaemon reboots the machine in most cases after applying the updated machine configuration. For rebootless updates, see [Rebootless Updates](#rebootless-updates) section below.
 
 ### Node drain
 
@@ -143,6 +143,22 @@ The draining of pods on the only master node will not evict the control plane as
 ### Node drain etcd static pods on masters
 
 Etcd is co-located on master nodes as static pods. The draining behavior defined above prevents draining of static pods to prevent interference to etcd cluster by the daemon.
+
+### Rebootless Updates
+
+As of Openshift 4.7, the MCD gained the functionality to not reboot for select MachineConfig updates. The updated list and behaviour (as of Openshift 4.8) is as follows:
+
+"None" action: only performs the corresponding file write. This does NOT trigger a drain. Available for changes to:
+
+1. sshkeys (updating ignition/passwd/users/sshAuthorizedKeys section in a MachineConfig)
+2. kube-apiserver-to-kubelet-signer CA cert (located at /etc/kubernetes/kubelet-ca.crt, 1 year expiry autorotated by the openshift-kubeapiserver operator)
+3. pull secret (cluster-wide, located at /var/lib/kubelet/config.json)
+
+"Crio Reload" action: performs the file write, and runs a systemctl reload crio. This does trigger a drain. Available for changes to:
+
+1. registries.conf (/etc/containers/registries.conf, e.g. ICSP changes)
+
+The action is calculated as a diff between current and desired configurations. For any MachineConfig diff detected that is not listed above, or if a forcefile was set, the MCD will trigger the full reboot flow (drain -> update -> reboot).
 
 ## Annotating on SSH access
 
