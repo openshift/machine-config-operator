@@ -5,6 +5,7 @@ contents: |
   Description=Kubernetes Kubelet
   Wants=rpc-statd.service network-online.target crio.service
   After=network-online.target crio.service
+  After=ostree-finalize-staged.service
 
   [Service]
   Type=notify
