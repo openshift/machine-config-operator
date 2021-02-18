@@ -80,9 +80,11 @@ type Controller struct {
 	syncHandler              func(mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
+	ccLister   mcfglistersv1.ControllerConfigLister
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
 	nodeLister corelisterv1.NodeLister
 
+	ccListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 
@@ -94,6 +96,7 @@ type Controller struct {
 
 // New returns a new node controller.
 func New(
+	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -129,8 +132,10 @@ func New(
 	ctrl.syncHandler = ctrl.syncMachineConfigPool
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
+	ctrl.ccLister = ccInformer.Lister()
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
+	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 
@@ -145,7 +150,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
 
@@ -758,6 +763,10 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 
+	if err := ctrl.setClusterConfigAnnotation(nodes); err != nil {
+		return goerrs.Wrapf(err, "error setting clusterConfig Annotation for node in pool %q, error: %v", pool.Name, err)
+	}
+
 	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(candidates), capacity)
@@ -800,6 +809,30 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 	return nodes, nil
 }
 
+// setClusterConfigAnnotation reads cluster configs set into controllerConfig
+// and add/updates required annotation to node such as ControlPlaneTopology
+// from infrastrcture object.
+func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return err
+	}
+
+	for _, node := range nodes {
+		glog.Infof("Initiating controlPlaneTopology annotation %s\n", string(cc.Spec.Infra.Status.ControlPlaneTopology))
+		if node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] != string(cc.Spec.Infra.Status.ControlPlaneTopology) {
+			_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+				node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] = string(cc.Spec.Infra.Status.ControlPlaneTopology)
+				glog.Infof("Updated controlPlaneTopology annotations\n")
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
 	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
@@ -815,6 +848,7 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 		if newNode.Annotations == nil {
 			newNode.Annotations = map[string]string{}
 		}
+
 		if newNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == currentConfig {
 			return nil
 		}

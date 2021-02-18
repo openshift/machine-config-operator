@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
 
+	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -185,9 +186,26 @@ func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr 
 	return nil
 }
 
+func (dn *Daemon) drainRequired() bool {
+	controlPlaneTopology := dn.node.Annotations[constants.ClusterControlPlaneTopologyAnnotationKey]
+
+	switch configv1.TopologyMode(controlPlaneTopology) {
+	case configv1.SingleReplicaTopologyMode:
+		return false
+	default:
+		// for HighlyAvailableTopologyMode or any unhandled case, default to perform drain operation
+		return true
+	}
+}
+
 func (dn *Daemon) drain() error {
 	// Skip draining of the node when we're not cluster driven
 	if dn.kubeClient == nil {
+		return nil
+	}
+
+	if !dn.drainRequired() {
+		dn.logSystem("Skipping drain")
 		return nil
 	}
 	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
