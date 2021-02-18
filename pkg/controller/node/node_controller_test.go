@@ -454,30 +454,15 @@ func TestMaxUnavailable(t *testing.T) {
 			expected:   0,
 			err:        true,
 		}, {
-			poolName:   "master",
-			maxUnavail: intStrPtr(intstr.FromInt(1)),
-			nodes:      newNodeSet(5),
-			expected:   1,
-			err:        false,
+			maxUnavail: intStrPtr(intstr.FromString("60")),
+			nodes:      newNodeSet(4),
+			expected:   0,
+			err:        true,
 		}, {
-			poolName:   "master",
-			maxUnavail: intStrPtr(intstr.FromInt(2)),
-			nodes:      newNodeSet(3),
-			expected:   1,
-			err:        false,
-		}, {
-			poolName:   "master",
-			maxUnavail: intStrPtr(intstr.FromInt(2)),
-			nodes:      newNodeSet(5),
-			expected:   2,
-			err:        false,
-		},
-		{
-			poolName:   "master",
-			maxUnavail: intStrPtr(intstr.FromInt(4)),
-			nodes:      newNodeSet(7),
-			expected:   3,
-			err:        false,
+			maxUnavail: intStrPtr(intstr.FromString("40 %")),
+			nodes:      newNodeSet(4),
+			expected:   0,
+			err:        true,
 		},
 	}
 
