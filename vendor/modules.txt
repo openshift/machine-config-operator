@@ -450,7 +450,7 @@ github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.2-0.20190823105129-775207bd45b6
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20210112145312-790e0a84e3e0 => github.com/openshift/api v0.0.0-20210112145312-790e0a84e3e0
+# github.com/openshift/api v0.0.0-20210209175609-175513fcccbe => github.com/openshift/api v0.0.0-20210209175609-175513fcccbe
 ## explicit
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
@@ -1203,7 +1203,7 @@ sourcegraph.com/sqs/pbtypes
 # github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 # github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 # github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-# github.com/openshift/api => github.com/openshift/api v0.0.0-20210112145312-790e0a84e3e0
+# github.com/openshift/api => github.com/openshift/api v0.0.0-20210209175609-175513fcccbe
 # github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 # github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 # k8s.io/api => k8s.io/api v0.20.0
