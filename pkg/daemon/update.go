@@ -573,6 +573,10 @@ func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig)
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
+	// signal that an update is active
+	dn.updateActiveLock.Lock()
+	defer dn.updateActiveLock.Unlock()
+
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
@@ -584,13 +588,6 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 		}
 	}
-
-	dn.catchIgnoreSIGTERM()
-	defer func() {
-		if retErr != nil {
-			dn.cancelSIGTERM()
-		}
-	}()
 
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
@@ -1914,29 +1911,11 @@ func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	}
 }
 
-func (dn *Daemon) catchIgnoreSIGTERM() {
-	dn.updateActiveLock.Lock()
-	defer dn.updateActiveLock.Unlock()
-	if dn.updateActive {
-		return
-	}
-	dn.updateActive = true
-}
-
-func (dn *Daemon) cancelSIGTERM() {
-	dn.updateActiveLock.Lock()
-	defer dn.updateActiveLock.Unlock()
-	if dn.updateActive {
-		dn.updateActive = false
-	}
-}
-
 // reboot is the final step. it tells systemd-logind to reboot the machine,
 // cleans up the agent's connections, and then sleeps for 7 days. if it wakes up
 // and manages to return, it returns a scary error message.
 func (dn *Daemon) reboot(rationale string) error {
 	// Now that everything is done, avoid delaying shutdown.
-	dn.cancelSIGTERM()
 	dn.Close()
 
 	if dn.skipReboot {
