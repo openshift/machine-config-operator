@@ -93,6 +93,11 @@ contents:
                 ensure_rule nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
             fi
         done
+        sleep 5
+        for vip in "${!vips[@]}"; do
+            echo "Removing stale conntrack connections for ${vip}"
+            conntrack -D -r "${vip}" || echo "unable to run conntrack"
+        done
     }
 
     clear_rules() {
