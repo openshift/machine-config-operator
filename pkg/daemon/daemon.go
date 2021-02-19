@@ -685,11 +685,9 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 			}
 		}
 	}()
-	select {
-	case <-stopCh:
-		close(worker)
-		cmd.Process.Kill()
-	}
+	<-stopCh
+	close(worker)
+	cmd.Process.Kill()
 }
 
 func (dn *Daemon) applySSHAccessedAnnotation() error {
