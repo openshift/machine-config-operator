@@ -8,6 +8,4 @@ contents:
     [connection]
     ipv6.dhcp-duid=ll
     ipv6.dhcp-iaid=mac
-    [keyfile]
-    path=/etc/NetworkManager/system-connections-merged
     {{ end -}}
