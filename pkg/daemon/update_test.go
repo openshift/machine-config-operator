@@ -534,6 +534,26 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 				},
 			},
 		},
+		"kubeletCA1": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/etc/kubernetes/kubelet-ca.crt",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubeletCA1\n"))),
+				},
+			},
+		},
+		"kubeletCA2": ign3types.File{
+			Node: ign3types.Node{
+				Path: "/etc/kubernetes/kubelet-ca.crt",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubeletCA2\n"))),
+				},
+			},
+		},
 	}
 
 	tests := []struct {
@@ -566,6 +586,12 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 		{
+			// test that a kubelet CA change is none
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["kubeletCA1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["kubeletCA2"]}),
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
 			// test that a registries change (reload) overwrites pull secret (none)
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["registries1"], files["pullsecret1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["registries2"], files["pullsecret2"]}),
@@ -592,7 +618,7 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 		{
 			// mixed test - final should be reboot due to kargs changes
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
-			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
+			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"], files["kubeletCA1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
 	}

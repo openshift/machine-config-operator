@@ -129,7 +129,6 @@ func RenderBootstrap(
 	bundle = append(bundle, filesData[rootCAFile]...)
 	// Append the kube-ca if given.
 	if _, ok := filesData[kubeAPIServerServingCA]; ok {
-		bundle = append(bundle, filesData[kubeAPIServerServingCA]...)
 		spec.KubeAPIServerServingCAData = filesData[kubeAPIServerServingCA]
 	}
 	// Set the cloud-provider CA if given.
