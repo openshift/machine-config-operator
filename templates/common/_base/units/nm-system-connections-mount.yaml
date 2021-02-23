@@ -2,6 +2,7 @@ name: etc-NetworkManager-system\x2dconnections\x2dmerged.mount
 enabled: true
 contents: |
   [Unit]
+  Before=NetworkManager.service
   After=systemd-tmpfiles-setup.service
   [Mount]
   Where=/etc/NetworkManager/system-connections-merged
