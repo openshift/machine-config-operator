@@ -3,9 +3,7 @@ package daemon
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"strings"
 
 	// Enable sha256 in container image references
@@ -50,33 +48,14 @@ func isArgTunable(arg string) (bool, error) {
 	return false, nil
 }
 
-// isArgInUse checks to see if the argument is already in use by the system currently
-func isArgInUse(arg, cmdLinePath string) (bool, error) {
-	if cmdLinePath == "" {
-		cmdLinePath = CmdLineFile
-	}
-	content, err := ioutil.ReadFile(cmdLinePath)
-	if err != nil {
-		return false, err
-	}
-
-	checkable := string(content)
-	if strings.Contains(checkable, arg) {
-		return true, nil
-	}
-	return false, nil
-}
-
 // parseTuningFile parses the kernel argument tuning file
-func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, []types.TuneArgument, error) {
+func parseTuningFile(tuningFilePath string) ([]types.TuneArgument, []types.TuneArgument, error) {
 	addArguments := []types.TuneArgument{}
 	deleteArguments := []types.TuneArgument{}
 	if tuningFilePath == "" {
 		tuningFilePath = KernelTuningFile
 	}
-	if cmdLinePath == "" {
-		cmdLinePath = CmdLineFile
-	}
+
 	// Read and parse the file
 	file, err := os.Open(tuningFilePath)
 	if err != nil {
@@ -93,75 +72,58 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "ADD ") {
-			// NOTE: Today only specific bare kernel arguments are allowed so
-			// there is not a need to split on =.
-			key := strings.TrimSpace(line[len("ADD "):])
-			tuneableKarg, err := isArgTunable(key)
-			if err != nil {
-				return addArguments, deleteArguments, err
+
+		var key string
+		var operation string
+		for _, k := range []string{"ADD", "DELETE"} {
+			if strings.HasPrefix(line, k) {
+				key = strings.TrimPrefix(fmt.Sprintf("%s ", k), k)
+				operation = strings.TrimSpace(k)
+				glog.V(2).Infof("Requested to %s kernel argument %s", operation, key)
+				break
 			}
-			if tuneableKarg {
-				// Find out if the argument is in use
-				inUse, err := isArgInUse(key, cmdLinePath)
-				if err != nil {
-					return addArguments, deleteArguments, err
-				}
-				if !inUse {
-					addArguments = append(addArguments, types.TuneArgument{Key: key, Bare: true})
-				} else {
-					glog.Infof(`skipping "%s" as it is already in use`, key)
-				}
-			} else {
-				glog.Infof("%s not an allowlisted kernel argument", key)
-			}
-		} else if strings.HasPrefix(line, "DELETE ") {
-			// NOTE: Today only specific bare kernel arguments are allowed so
-			// there is not a need to split on =.
-			key := strings.TrimSpace(line[len("DELETE "):])
-			tuneableKarg, err := isArgTunable(key)
-			if err != nil {
-				return addArguments, deleteArguments, err
-			}
-			if tuneableKarg {
-				inUse, err := isArgInUse(key, cmdLinePath)
-				if err != nil {
-					return addArguments, deleteArguments, err
-				}
-				if inUse {
-					deleteArguments = append(deleteArguments, types.TuneArgument{Key: key, Bare: true})
-				} else {
-					glog.Infof(`skipping "%s" as it is not present in the current argument list`, key)
-				}
-			} else {
-				glog.Infof("%s not an allowlisted kernel argument", key)
-			}
-		} else {
-			glog.V(2).Infof(`skipping malformed line in %s: "%s"`, tuningFilePath, line)
+		}
+
+		if key == "" {
+			glog.Warningf("Malformed or unknown kernel arg directive %q, skipping", line)
+			continue
+		}
+
+		// NOTE: Today only specific bare kernel arguments are allowed so
+		// there is not a need to split on =.
+		tuneableKarg, err := isArgTunable(key)
+		if err != nil {
+			return addArguments, deleteArguments, err
+		}
+		if !tuneableKarg {
+			glog.Infof("Skipping unsupported kernel tunable %q", key)
+			continue
+		}
+
+		if operation == "ADD" {
+			addArguments = append(addArguments, types.TuneArgument{Key: key, Bare: true})
+		}
+		if operation == "DELETE" {
+			deleteArguments = append(deleteArguments, types.TuneArgument{Key: key, Bare: true})
 		}
 	}
 	return addArguments, deleteArguments, nil
 }
 
 // UpdateTuningArgs executes additions and removals of kernel tuning arguments
-func UpdateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
-	if cmdLinePath == "" {
-		cmdLinePath = CmdLineFile
-	}
+func UpdateTuningArgs(tuningFilePath string, nu NodeUpdaterClient) (bool, error) {
 	changed := false
-	additions, deletions, err := parseTuningFile(tuningFilePath, cmdLinePath)
+	additions, deletions, err := parseTuningFile(tuningFilePath)
 	if err != nil {
 		return changed, err
 	}
 
+	var args []KernelArgument
 	// Execute additions
 	for _, toAdd := range additions {
 		if toAdd.Bare {
 			changed = true
-			err := exec.Command("rpm-ostree", "kargs", fmt.Sprintf("--append=%s", toAdd.Key)).Run()
-			if err != nil {
-				return false, errors.Wrapf(err, "adding karg")
-			}
+			args = append(args, KernelArgument{Operation: kargAdd, Name: toAdd.Key})
 		} else {
 			panic("Not supported")
 		}
@@ -170,13 +132,12 @@ func UpdateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 	for _, toDelete := range deletions {
 		if toDelete.Bare {
 			changed = true
-			err := exec.Command("rpm-ostree", "kargs", fmt.Sprintf("--delete=%s", toDelete.Key)).Run()
-			if err != nil {
-				return false, errors.Wrapf(err, "deleting karg")
-			}
+			args = append(args, KernelArgument{Name: toDelete.Key})
 		} else {
 			panic("Not supported")
 		}
 	}
-	return changed, nil
+
+	_, err = nu.SetKernelArgs(args)
+	return changed, err
 }

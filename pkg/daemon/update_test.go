@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
+
+// testLoggerFunc is used to log testing
+func testLoggerFunc(format string, a ...interface{}) {
+	fmt.Sprintf(format, a...)
+}
 
 // TestUpdateOS verifies the return errors from attempting to update the OS follow expectations
 func TestUpdateOS(t *testing.T) {
@@ -223,42 +229,71 @@ func TestReconcilableDiff(t *testing.T) {
 
 func TestKernelAguments(t *testing.T) {
 	tests := []struct {
-		oldKargs []string
-		newKargs []string
-		out      []string
+		oldKargs  []string
+		newKargs  []string
+		realKargs []string
+		out       []string
 	}{
 		{
-			oldKargs: nil,
-			newKargs: []string{"hello=world"},
-			out:      []string{"--append=hello=world"},
+			oldKargs:  nil,
+			realKargs: nil,
+			newKargs:  []string{"hello=world"},
+			out:       []string{"kargs", "--append=hello=world"},
 		},
 		{
-			oldKargs: []string{"hello=world"},
-			newKargs: nil,
-			out:      []string{"--delete=hello=world"},
+			oldKargs:  []string{"hello=world"},
+			realKargs: []string{"hello=world"},
+			newKargs:  nil,
+			out:       []string{"kargs", "--delete=hello=world"},
 		},
 		{
-			oldKargs: []string{"foo", "bar=1", "hello=world"},
-			newKargs: []string{"hello=world"},
-			out:      []string{"--delete=foo", "--delete=bar=1", "--delete=hello=world", "--append=hello=world"},
+			oldKargs:  []string{"foo", "bar=1", "hello=world"},
+			realKargs: []string{"foo", "bar=1", "hello=world"},
+			newKargs:  []string{"hello=world"},
+			out:       []string{"kargs", "--delete=foo", "--delete=bar=1", "--delete=hello=world", "--append=hello=world"},
 		},
 		{
-			oldKargs: []string{"foo", "bar=1 hello=world", "baz"},
-			newKargs: []string{"foo", "bar=1", "hello=world"},
-			out: []string{"--delete=foo", "--delete=bar=1", "--delete=hello=world", "--delete=baz",
+			oldKargs:  []string{"foo", "bar=1 hello=world", "baz"},
+			realKargs: []string{"foo", "bar=1 hello=world", "baz"},
+			newKargs:  []string{"foo", "bar=1", "hello=world"},
+			out: []string{"kargs", "--delete=foo", "--delete=bar=1", "--delete=hello=world", "--delete=baz",
 				"--append=foo", "--append=bar=1", "--append=hello=world"},
 		},
 		{
-			oldKargs: []string{" baz=test bar=\"hello world\""},
-			newKargs: []string{" baz=test bar=\"hello world\"", "foo"},
-			out: []string{"--delete=baz=test", "--delete=bar=\"hello world\"",
+			oldKargs:  []string{" baz=test bar=\"hello world\""},
+			realKargs: []string{" baz=test bar=\"hello world\""},
+			newKargs:  []string{" baz=test bar=\"hello world\"", "foo"},
+			out: []string{"kargs", "--delete=baz=test", "--delete=bar=\"hello world\"",
 				"--append=baz=test", "--append=bar=\"hello world\"", "--append=foo"},
 		},
 		{
-			oldKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=4"},
-			newKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=6"},
-			out: []string{"--delete=hugepagesz=1G", "--delete=hugepages=4", "--delete=hugepagesz=2M", "--delete=hugepages=4",
+			oldKargs:  []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=4"},
+			realKargs: []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=4"},
+			newKargs:  []string{"hugepagesz=1G hugepages=4", "hugepagesz=2M hugepages=6"},
+			out: []string{"kargs", "--delete=hugepagesz=1G", "--delete=hugepages=4", "--delete=hugepagesz=2M", "--delete=hugepages=4",
 				"--append=hugepagesz=1G", "--append=hugepages=4", "--append=hugepagesz=2M", "--append=hugepages=6"},
+		},
+
+		// Test for removing expected but missing karg
+		// rpm-ostree kargs will not delete a karg that is missing
+		{
+			oldKargs:  []string{"missing", "found", "test=\"quoted string\""},
+			realKargs: []string{"found"},
+			newKargs:  []string{"found", "new", "test=\"quoted string\""},
+			out:       []string{"kargs", "--delete=found", "--append=found", "--append=new", "--append=test=\"quoted string\""},
+		},
+		{
+			oldKargs:  []string{"missing", "found", "test=\"quoted string\""},
+			realKargs: nil,
+			newKargs:  nil,
+			out:       []string{},
+		},
+		// Ensure that rpm-ostree leaves unmanaged kargs alone.
+		{
+			oldKargs:  []string{"missing", "found", "test=\"quoted string\""},
+			realKargs: []string{"root=/dev/disk/by-id/root", "will_remain"},
+			newKargs:  nil,
+			out:       []string{},
 		},
 	}
 
@@ -273,10 +308,27 @@ func TestKernelAguments(t *testing.T) {
 			newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
 			newMcfg.Spec.KernelArguments = test.newKargs
 
-			res := generateKargs(oldMcfg, newMcfg)
+			rMock := RpmOstreeClient{
+				// mock the 'rpm-ostree kargs' command
+				// if args is zero, rpm-ostree will return the current set,
+				// otherwise use the "echoCommand" to get the _resulting command
+				runRpmOstreeFunc: func(noun string, args ...string) ([]byte, error) {
+					if args == nil || len(args) == 0 {
+						return []byte(strings.Join(test.realKargs, " ")), nil
+					}
+					out := append([]string{noun}, args...)
+					// ensure that the command actually will validate
+					if err := validateRpmOstreeCommand(out[0], out[1:]...); err != nil && len(out) > 0 {
+						t.Errorf("%v failed to validate via rpm-ostree validation", err)
+					}
+					return []byte(strings.Join(out, " ")), nil
+				},
+			}
+			out, _ := rMock.SetKernelArgs(generateKargs(oldMcfg, newMcfg))
+			res := quoteSpaceSplit(out)
 
 			if !reflect.DeepEqual(test.out, res) {
-				t.Errorf("Failed kernel arguments processing: expected: %v but result is: %v", test.out, res)
+				t.Errorf("Failed kernel arguments processing:\n  want: %v\n   got: %v", test.out, res)
 			}
 		})
 	}
@@ -619,5 +671,31 @@ func checkReconcilableResults(t *testing.T, key string, reconcilableError error)
 func checkIrreconcilableResults(t *testing.T, key string, reconcilableError error) {
 	if reconcilableError == nil {
 		t.Errorf("Different %s values should not be reconcilable.", key)
+	}
+}
+
+func TestQuoteSplit(t *testing.T) {
+	testCase := []struct {
+		in  string
+		out []string
+	}{
+		{
+			in:  "foo bar baz",
+			out: []string{"foo", "bar", "baz"},
+		},
+		{
+			in:  `"this should not split"`,
+			out: []string{`"this should not split"`},
+		},
+		{
+			in:  `"this should split" "into two quotes"`,
+			out: []string{`"this should split"`, `"into two quotes"`},
+		},
+	}
+	for _, test := range testCase {
+		split := quoteSpaceSplit(test.in)
+		if !reflect.DeepEqual(split, test.out) {
+			t.Errorf("Different split results for %q:\n want: %v\n  got: %v", test.in, test.out, split)
+		}
 	}
 }
