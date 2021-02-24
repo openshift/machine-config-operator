@@ -438,7 +438,7 @@ type ContainerRuntimeConfigSpec struct {
 // ContainerRuntimeConfiguration defines the tuneables of the container runtime
 type ContainerRuntimeConfiguration struct {
 	// pidsLimit specifies the maximum number of processes allowed in a container
-	PidsLimit int64 `json:"pidsLimit,omitempty"`
+	PidsLimit *int64 `json:"pidsLimit,omitempty"`
 
 	// logLevel specifies the verbosity of the logs based on the level it is set to.
 	// Options are fatal, panic, error, warn, info, and debug.
