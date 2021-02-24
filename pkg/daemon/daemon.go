@@ -57,9 +57,6 @@ type Daemon struct {
 	// OperatingSystem the operating system the MCD is running on
 	OperatingSystem string
 
-	// IgnitionVersion is the version of the installed Ignition binary on the system
-	IgnitionVersion string
-
 	// mock is set if we're running as non-root, probably under unit tests
 	mock bool
 
@@ -128,8 +125,6 @@ type Daemon struct {
 }
 
 const (
-	// pathIgnition is the path where the ignition binary resides
-	pathIgnition = "/usr/lib/dracut/modules.d/30ignition/ignition"
 	// pathSystemd is the path systemd modifiable units, services, etc.. reside
 	pathSystemd = "/etc/systemd/system"
 	// wantsPathSystemd is the path where enabled units should be linked
@@ -204,7 +199,6 @@ func New(
 	var (
 		osImageURL string
 		osVersion  string
-		ignVersion string
 		err        error
 	)
 
@@ -224,13 +218,6 @@ func New(
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
 		}
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
-
-		ignVersionBytes, err := exec.Command(pathIgnition, "--version").Output()
-		if err != nil {
-			return nil, fmt.Errorf("error getting installed Ignition version: %v", err)
-		}
-		ignVersion = strings.SplitAfter(string(ignVersionBytes), " ")[1]
-		glog.Infof("Installed Ignition binary version: %s", ignVersion)
 	}
 
 	bootID := ""
@@ -259,7 +246,6 @@ func New(
 	return &Daemon{
 		mock:                  mock,
 		booting:               true,
-		IgnitionVersion:       ignVersion,
 		OperatingSystem:       operatingSystem,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
