@@ -34,6 +34,22 @@ func (optr *Operator) syncVersion() error {
 		return nil
 	}
 
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+
+	for _, pool := range pools {
+		_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
+		if hasRequiredPoolLabel {
+			updated := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated)
+			if !updated {
+				// Don't update version until master pool has settled.
+				return nil
+			}
+		}
+	}
+
 	if !optr.vStore.Equal(co.Status.Versions) {
 		mcoObjectRef := &corev1.ObjectReference{
 			Kind:      co.Kind,
