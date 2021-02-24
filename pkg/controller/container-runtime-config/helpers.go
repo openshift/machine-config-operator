@@ -447,9 +447,10 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 			"warn":  true,
 			"info":  true,
 			"debug": true,
+			"trace": true,
 		}
 		if !validLogLevels[ctrcfg.LogLevel] {
-			return fmt.Errorf("invalid LogLevel %q, must be one of error, fatal, panic, warn, info, or debug", ctrcfg.LogLevel)
+			return fmt.Errorf("invalid LogLevel %q, must be one of error, fatal, panic, warn, info, debug, or trace", ctrcfg.LogLevel)
 		}
 	}
 
