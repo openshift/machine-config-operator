@@ -60,14 +60,7 @@ func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 
 // Serve launches the API Server.
 func (a *APIServer) Serve() {
-	mcs := &http.Server{
-		Addr:    fmt.Sprintf(":%v", a.port),
-		Handler: a.handler,
-		// We don't want to allow 1.1 as that's old.  This was flagged in a security audit.
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
-	}
+	mcs := getHTTPServerCfg(fmt.Sprintf(":%v", a.port), a.handler)
 
 	glog.Infof("Launching server on %s", mcs.Addr)
 	if a.insecure {
@@ -339,4 +332,64 @@ func (h *defaultHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	return
+}
+
+// getHTTPServerCfg returns the basic HTTP Server
+func getHTTPServerCfg(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:    addr,
+		Handler: handler,
+		// CVE-2016-2183: disable http/2, which by definition, requires insecure ciphers
+		// Per https://golang.org/src/net/http/doc.go this is the runtime method of disabling HTTP/2
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+		// We don't want to allow 1.1 as that's old.  This was flagged in a security audit.
+		TLSConfig: &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			CipherSuites: cipherOrder(),
+		},
+	}
+
+}
+
+// Disable insecure cipher suites for CVE-2016-2183
+// cipherOrder returns an ordered list of Ciphers that are considered secure
+// Deprecated ciphers are not returned.
+func cipherOrder() []uint16 {
+	var first []uint16
+	var second []uint16
+
+	allowable := func(c *tls.CipherSuite) bool {
+		// Disallow block ciphers using straight SHA1
+		// See: https://tools.ietf.org/html/rfc7540#appendix-A
+		if strings.HasSuffix(c.Name, "CBC_SHA") {
+			return false
+		}
+		// 3DES is considered insecure
+		if strings.Contains(c.Name, "3DES") {
+			return false
+		}
+		return true
+	}
+
+	for _, c := range tls.CipherSuites() {
+		for _, v := range c.SupportedVersions {
+			if v == tls.VersionTLS13 {
+				first = append(first, c.ID)
+			}
+			if v == tls.VersionTLS12 && allowable(c) {
+				inFirst := false
+				for _, id := range first {
+					if c.ID == id {
+						inFirst = true
+						break
+					}
+				}
+				if !inFirst {
+					second = append(second, c.ID)
+				}
+			}
+		}
+	}
+
+	return append(first, second...)
 }
