@@ -3,7 +3,7 @@ enabled: true
 contents: |
   [Unit]
   Description=Kubernetes Kubelet
-  Wants=rpc-statd.service network-online.target crio.service
+  Wants=rpc-statd.service network-online.target crio.service kubelet-node-sizing.service
   After=network-online.target crio.service
 
   [Service]
@@ -16,6 +16,7 @@ contents: |
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
+  EnvironmentFile=/etc/node-sizing.env
 
   ExecStart=/usr/bin/hyperkube \
       kubelet \
@@ -36,6 +37,7 @@ contents: |
         --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
         --pod-infra-container-image={{.Images.infraImageKey}} \
+        --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY} \
         --v=${KUBELET_LOG_LEVEL}
 
   Restart=always

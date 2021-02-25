@@ -176,6 +176,9 @@ type PlatformSpec struct {
 	// +unionDiscriminator
 	Type PlatformType `json:"type"`
 
+	// Dynamic Sysystem Reserved will automatically scale the system reserved on nodes
+	DynamicSystemReserved bool `json:"dynamicsystemreserved"`
+
 	// AWS contains settings specific to the Amazon Web Services infrastructure provider.
 	// +optional
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`

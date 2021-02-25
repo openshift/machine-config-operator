@@ -115,9 +115,10 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		EtcdDiscoveryDomain: infra.Status.EtcdDiscoveryDomain,
 		// Platform is unused and deprecated in favour of using Infra.Status.PlatformStatus.Type directly
 		// Still populating it here for now until it will be removed eventually
-		Platform: platform,
-		Infra:    infra,
-		DNS:      dns,
+		Platform:              platform,
+		Infra:                 infra,
+		DNS:                   dns,
+		DynamicSystemReserved: infra.Spec.PlatformSpec.DynamicSystemReserved,
 	}
 	if network.Status.NetworkType == "" {
 		// At install time, when CNO has not started, status is unset, use the value in spec.

@@ -97,6 +97,8 @@ type ControllerConfigSpec struct {
 	// Nobody is also changing this once the cluster is up and running the first time, so, disallow
 	// regeneration if this changes.
 	NetworkType string `json:"networkType,omitempty"`
+
+	DynamicSystemReserved bool `json:"dynamicsystemreserved"`
 }
 
 // IPFamiliesType indicates whether the cluster network is IPv4-only, IPv6-only, or dual-stack
