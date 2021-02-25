@@ -445,6 +445,7 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 		ControllerConfigSpec: &config.Spec,
 		PullSecret:           string(buf.Bytes()),
 	}
+	rc.ControllerConfigSpec.DynamicSystemReserved = true
 	mcs, err := generateTemplateMachineConfigs(rc, templatesDir)
 	if err != nil {
 		return nil, err
