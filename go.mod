@@ -3,6 +3,7 @@ module github.com/openshift/machine-config-operator
 go 1.15
 
 require (
+	cloud.google.com/go v0.58.0
 	github.com/BurntSushi/toml v0.3.1
 	github.com/InVisionApp/go-health v2.1.0+incompatible
 	github.com/Masterminds/goutils v1.1.0 // indirect
@@ -16,6 +17,7 @@ require (
 	github.com/containers/image/v5 v5.5.1
 	github.com/containers/storage v1.20.2
 	github.com/coreos/fcct v0.5.0
+	github.com/coreos/go-iptables v0.5.0
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
@@ -50,7 +52,9 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
+	github.com/vishvananda/netlink v1.0.0
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	k8s.io/api v0.20.0
 	k8s.io/apiextensions-apiserver v0.20.0

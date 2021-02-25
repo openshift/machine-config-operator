@@ -1,3 +1,6 @@
+# cloud.google.com/go v0.58.0
+## explicit
+cloud.google.com/go/compute/metadata
 # github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78
 github.com/Azure/go-ansiterm
 github.com/Azure/go-ansiterm/winterm
@@ -89,6 +92,9 @@ github.com/containers/storage/pkg/homedir
 ## explicit
 github.com/coreos/fcct/base/v0_1
 github.com/coreos/fcct/translate
+# github.com/coreos/go-iptables v0.5.0
+## explicit
+github.com/coreos/go-iptables/iptables
 # github.com/coreos/go-semver v0.3.0
 ## explicit
 github.com/coreos/go-semver/semver
@@ -560,6 +566,12 @@ github.com/ultraware/funlen
 # github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 ## explicit
 github.com/vincent-petithory/dataurl
+# github.com/vishvananda/netlink v1.0.0
+## explicit
+github.com/vishvananda/netlink
+github.com/vishvananda/netlink/nl
+# github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df
+github.com/vishvananda/netns
 # github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb
 ## explicit
 # go4.org v0.0.0-20200104003542-c7e774b10ea0
@@ -579,6 +591,7 @@ golang.org/x/crypto/ssh/terminal
 golang.org/x/mod/module
 golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
+## explicit
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
 golang.org/x/net/http/httpguts

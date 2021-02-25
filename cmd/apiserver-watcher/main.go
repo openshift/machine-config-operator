@@ -8,13 +8,14 @@ import (
 )
 
 const (
-	componentName = "apisever-watcher"
+	componentName   = "apiserver-watcher"
+	iptablesTimeout = 5
 )
 
 var (
 	rootCmd = &cobra.Command{
 		Use:           componentName,
-		Short:         "Monitors the local apiserver and writes cloud-routes downfiles",
+		Short:         "Monitors the local apiserver and install apiserver redirection rules",
 		Long:          "",
 		SilenceErrors: true,
 		SilenceUsage:  true,

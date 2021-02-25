@@ -11,5 +11,7 @@ RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
 COPY install /manifests
 RUN if ! rpm -q util-linux; then yum install -y util-linux && yum clean all && rm -rf /var/cache/yum/*; fi
 COPY templates /etc/mcc/templates
+COPY ./cmd/apiserver-watcher/iptables /usr/sbin/
+COPY ./cmd/apiserver-watcher/ip6tables /usr/sbin/
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true

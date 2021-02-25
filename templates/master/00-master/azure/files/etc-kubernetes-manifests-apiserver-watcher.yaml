@@ -15,6 +15,7 @@ contents:
         args:
         - "run"
         - "--health-check-url={{.Infra.Status.APIServerInternalURL}}/readyz"
+        - "--platform=azure"
         resources:
           requests:
             cpu: 20m

@@ -39,7 +39,7 @@ it's down, or else the node (i.e. kubelet) loses access to the apiserver VIP
 and becomes unmanagable.
 
 
-See `templates/master/00-master/gcp/files/opt-libexec-openshift-gcp-routes-sh.yaml`
+See `machine-config-operator/cmd/apiserver-watcher/gcp_handler.go`
 
 ### Azure
 
@@ -61,15 +61,10 @@ a source IP of the VIP, not master1.
 So, when the apiserver is up, we want to direct all local traffic to ourselves.
 When it is down, we would like it to go over the load balancer.
 
-See `templates/master/00-master/azure/files/opt-libexec-openshift-azure-routes-sh.yaml`
+See `machine-config-operator/cmd/apiserver-watcher/azure_handler.go`
 
 ## Functionality
 
 The apiserver-watcher is installed on all the masters and monitors the
-apiserver process /readyz.
-
-When /readyz fails,  write `/run/cloud-routes/$VIP.down`, which tells the
-provider-specific service to update iptables rules. When it is up, write `$VIP.up`.
-
-Separately, a provider-specific process watches that directory and, as necessary,
-updates iptables rules accordingly.
+apiserver process /readyz, installing or removing the corresponding the
+iptables rules depending on the endpoint status.
