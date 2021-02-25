@@ -1,15 +1,19 @@
 package server
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/http2"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -556,6 +560,143 @@ func TestAPIServer(t *testing.T) {
 			resp := w.Result()
 			defer resp.Body.Close()
 			scenario.checkResponse(t, resp)
+		})
+	}
+}
+
+func TestAPIServerCiphers(t *testing.T) {
+	certData, err := tls.X509KeyPair(
+		[]byte(`-----BEGIN CERTIFICATE-----
+MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
+DgYDVQQKEwdBY21lIENvMB4XDTE3MTAyMDE5NDMwNloXDTE4MTAyMDE5NDMwNlow
+EjEQMA4GA1UEChMHQWNtZSBDbzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABD0d
+7VNhbWvZLWPuj/RtHFjvtJBEwOkhbN/BnnE8rnZR8+sbwnc/KhCk3FhnpHZnQz7B
+5aETbbIgmuvewdjvSBSjYzBhMA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggr
+BgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MCkGA1UdEQQiMCCCDmxvY2FsaG9zdDo1
+NDUzgg4xMjcuMC4wLjE6NTQ1MzAKBggqhkjOPQQDAgNIADBFAiEA2zpJEPQyz6/l
+Wf86aX6PepsntZv2GYlA5UpabfT2EZICICpJ5h/iI+i341gBmLiAFQOyTDT+/wQc
+6MF9+Yw1Yy0t
+-----END CERTIFICATE-----`),
+		[]byte(`-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49
+AwEHoUQDQgAEPR3tU2Fta9ktY+6P9G0cWO+0kETA6SFs38GecTyudlHz6xvCdz8q
+EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
+-----END EC PRIVATE KEY-----`),
+	)
+	if err != nil {
+		t.Fatalf("failed to create test x509 cert")
+	}
+
+	ts := getHTTPServerCfg(
+		fmt.Sprintf(":%d", 8088),
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, "Hello, client")
+		}),
+	)
+
+	// Configure the TLS testing to allow
+	ts.TLSConfig.Certificates = []tls.Certificate{certData}
+	ts.TLSConfig.InsecureSkipVerify = true
+
+	go func(t *testing.T) {
+		if err := ts.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			log.Fatal("error creating test server")
+		}
+	}(t)
+	defer ts.Close()
+
+	type testCase struct {
+		desc      string
+		wantErr   bool
+		errString string
+		client    *http.Client
+		ciphers   []uint16
+	}
+
+	tests := []testCase{
+		{
+			desc:    "ensure base TLS configuration",
+			wantErr: false,
+			client: &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						InsecureSkipVerify: true, // test server certificate is not trusted.
+					},
+				},
+			},
+		},
+		{
+			desc:      "http/2 should fail",
+			wantErr:   true,
+			errString: "http2: unexpected ALPN protocol",
+			client: &http.Client{
+				Transport: &http2.Transport{
+					TLSClientConfig: &tls.Config{
+						InsecureSkipVerify: true, // test server certificate is not trusted.
+					},
+				},
+			},
+		},
+		{
+			desc:      "TLS1.1 should fail",
+			wantErr:   true,
+			errString: "protocol version not supported",
+			client: &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						MaxVersion:         tls.VersionTLS11,
+						InsecureSkipVerify: true, // test server certificate is not trusted.
+					},
+				},
+			},
+		},
+		{
+			desc:    "TLS1.2 should work",
+			wantErr: false,
+			client: &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						MaxVersion:         tls.VersionTLS12,
+						InsecureSkipVerify: true, // test server certificate is not trusted.
+					},
+				},
+			},
+		},
+	}
+
+	// Test that all known insecure ciphers are straight up refused.
+	for _, c := range tls.CipherSuites() {
+		if c.Insecure || strings.HasSuffix(c.Name, "CBC_SHA") || strings.HasSuffix(c.Name, "DES") {
+			tests = append(
+				tests,
+				testCase{
+					desc:    fmt.Sprintf("refuse insecure ciphers %v", c.Name),
+					ciphers: []uint16{c.ID},
+					client: &http.Client{
+						Transport: &http.Transport{
+							TLSClientConfig: &tls.Config{
+								CipherSuites:       []uint16{c.ID},
+								InsecureSkipVerify: true, // test server certificate is not trusted.
+							},
+						},
+					},
+				})
+		}
+	}
+
+	for idx, c := range tests {
+		t.Run(fmt.Sprintf("case#%d: %s", idx, c.desc), func(t *testing.T) {
+			resp, err := c.client.Get("https://localhost:8088")
+			for _, insecure := range c.ciphers {
+				if insecure == resp.TLS.CipherSuite {
+					t.Fatalf("failed to %s:", c.desc)
+				}
+			}
+			if c.wantErr {
+				if !strings.Contains(fmt.Sprintf("%v", err), c.errString) {
+					t.Fatalf("want: %s\n got: %v", c.errString, err)
+				}
+			}
 		})
 	}
 }
