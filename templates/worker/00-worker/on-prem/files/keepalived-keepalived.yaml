@@ -21,9 +21,11 @@ contents:
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
         unicast_peer {
-            {{`{{range .IngressConfig.Peers}}
-            {{if ne $nonVirtualIP .}}{{.}}{{end}}
-            {{end}}`}}
+            {{`{{- range .IngressConfig.Peers}}
+            {{- if ne $nonVirtualIP .}}
+            {{.}}
+            {{- end}}
+            {{- end}}`}}
         }
         {{`{{end}}`}}
         authentication {
