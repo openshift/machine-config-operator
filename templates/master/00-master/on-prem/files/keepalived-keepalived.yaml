@@ -52,10 +52,12 @@ contents:
         advert_int 1
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
-        unicast_peer {            
-            {{`{{range .LBConfig.Backends -}}
-            {{if ne $nonVirtualIP .Address}}{{.Address}}{{end}}
-            {{end}}`}}
+        unicast_peer {
+            {{`{{- range .LBConfig.Backends -}}
+            {{- if ne $nonVirtualIP .Address}}
+            {{.Address}}
+            {{- end}}
+            {{- end}}`}}
         }
         {{`{{end}}`}}
         authentication {
@@ -80,9 +82,11 @@ contents:
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
         unicast_peer {
-            {{`{{range .IngressConfig.Peers -}}
-            {{if ne $nonVirtualIP .}}{{.}}{{end}}
-            {{end}}`}}
+            {{`{{- range .IngressConfig.Peers}}
+            {{- if ne $nonVirtualIP .}}
+            {{.}}
+            {{- end}}
+            {{- end}}`}}
         }
         {{`{{end}}`}}
         authentication {
