@@ -617,6 +617,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
 					continue
 				}
+				lastErr = fmt.Errorf("error required pool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+				return false, nil
 			}
 		}
 		syncstatuserr := optr.syncUpgradeableStatus()
