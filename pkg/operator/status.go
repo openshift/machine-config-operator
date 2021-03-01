@@ -391,6 +391,11 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 		if ok && v != version {
 			return fmt.Errorf("controller version mismatch for %s expected %s has %s: %v", mcName, version, v, machineConfigPoolStatus(pool))
 		}
+		if ok {
+			glog.Infof("pool %s references machine config %s at the expected %s", pool.GetName(), mcName, version)
+		} else {
+			glog.Infof("pool %s references machine config %s, which does not declare a version", pool.GetName(), mcName)
+		}
 	}
 	return nil
 }
