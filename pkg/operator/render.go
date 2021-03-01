@@ -245,7 +245,7 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 func onPremPlatformKeepalivedEnableUnicast(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType, configv1.KubevirtPlatformType:
+		case configv1.BareMetalPlatformType, configv1.KubevirtPlatformType, configv1.VSpherePlatformType:
 			return "yes", nil
 		default:
 			return "no", nil
