@@ -27,11 +27,13 @@
 // manifests/machineconfigserver/node-bootstrapper-sa.yaml
 // manifests/machineconfigserver/node-bootstrapper-token.yaml
 // manifests/machineconfigserver/sa.yaml
+// manifests/master.cgroupsv2.yaml
 // manifests/master.machineconfigpool.yaml
 // manifests/on-prem/coredns-corefile.tmpl
 // manifests/on-prem/coredns.yaml
 // manifests/on-prem/keepalived.conf.tmpl
 // manifests/on-prem/keepalived.yaml
+// manifests/worker.cgroupsv2.yaml
 // manifests/worker.machineconfigpool.yaml
 package assets
 
@@ -1578,6 +1580,34 @@ func manifestsMachineconfigserverSaYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsMasterCgroupsv2Yaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: 40-openshift-cgroupsv2-master-kargs
+spec:
+  kernelArguments:
+    - systemd.unified_cgroup_hierarchy=1
+    - cgroup_no_v1="all"
+    - psi=1 
+`)
+
+func manifestsMasterCgroupsv2YamlBytes() ([]byte, error) {
+	return _manifestsMasterCgroupsv2Yaml, nil
+}
+
+func manifestsMasterCgroupsv2Yaml() (*asset, error) {
+	bytes, err := manifestsMasterCgroupsv2YamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/master.cgroupsv2.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsMasterMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -1967,6 +1997,34 @@ func manifestsOnPremKeepalivedYaml() (*asset, error) {
 	return a, nil
 }
 
+var _manifestsWorkerCgroupsv2Yaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: 40-openshift-cgroupsv2-worker-kargs
+spec:
+  kernelArguments:
+    - systemd.unified_cgroup_hierarchy=1
+    - cgroup_no_v1="all"
+    - psi=1 
+`)
+
+func manifestsWorkerCgroupsv2YamlBytes() ([]byte, error) {
+	return _manifestsWorkerCgroupsv2Yaml, nil
+}
+
+func manifestsWorkerCgroupsv2Yaml() (*asset, error) {
+	bytes, err := manifestsWorkerCgroupsv2YamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "manifests/worker.cgroupsv2.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _manifestsWorkerMachineconfigpoolYaml = []byte(`apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfigPool
 metadata:
@@ -2076,11 +2134,13 @@ var _bindata = map[string]func() (*asset, error){
 	"manifests/machineconfigserver/node-bootstrapper-sa.yaml":                manifestsMachineconfigserverNodeBootstrapperSaYaml,
 	"manifests/machineconfigserver/node-bootstrapper-token.yaml":             manifestsMachineconfigserverNodeBootstrapperTokenYaml,
 	"manifests/machineconfigserver/sa.yaml":                                  manifestsMachineconfigserverSaYaml,
+	"manifests/master.cgroupsv2.yaml":                                        manifestsMasterCgroupsv2Yaml,
 	"manifests/master.machineconfigpool.yaml":                                manifestsMasterMachineconfigpoolYaml,
 	"manifests/on-prem/coredns-corefile.tmpl":                                manifestsOnPremCorednsCorefileTmpl,
 	"manifests/on-prem/coredns.yaml":                                         manifestsOnPremCorednsYaml,
 	"manifests/on-prem/keepalived.conf.tmpl":                                 manifestsOnPremKeepalivedConfTmpl,
 	"manifests/on-prem/keepalived.yaml":                                      manifestsOnPremKeepalivedYaml,
+	"manifests/worker.cgroupsv2.yaml":                                        manifestsWorkerCgroupsv2Yaml,
 	"manifests/worker.machineconfigpool.yaml":                                manifestsWorkerMachineconfigpoolYaml,
 }
 
@@ -2159,6 +2219,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"node-bootstrapper-token.yaml":             &bintree{manifestsMachineconfigserverNodeBootstrapperTokenYaml, map[string]*bintree{}},
 			"sa.yaml":                                  &bintree{manifestsMachineconfigserverSaYaml, map[string]*bintree{}},
 		}},
+		"master.cgroupsv2.yaml":         &bintree{manifestsMasterCgroupsv2Yaml, map[string]*bintree{}},
 		"master.machineconfigpool.yaml": &bintree{manifestsMasterMachineconfigpoolYaml, map[string]*bintree{}},
 		"on-prem": &bintree{nil, map[string]*bintree{
 			"coredns-corefile.tmpl": &bintree{manifestsOnPremCorednsCorefileTmpl, map[string]*bintree{}},
@@ -2166,6 +2227,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"keepalived.conf.tmpl":  &bintree{manifestsOnPremKeepalivedConfTmpl, map[string]*bintree{}},
 			"keepalived.yaml":       &bintree{manifestsOnPremKeepalivedYaml, map[string]*bintree{}},
 		}},
+		"worker.cgroupsv2.yaml":         &bintree{manifestsWorkerCgroupsv2Yaml, map[string]*bintree{}},
 		"worker.machineconfigpool.yaml": &bintree{manifestsWorkerMachineconfigpoolYaml, map[string]*bintree{}},
 	}},
 }}
