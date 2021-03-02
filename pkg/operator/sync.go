@@ -610,14 +610,17 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			if hasRequiredPoolLabel {
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
+					glog.Info(lastErr.Error())
 					return false, nil
 				}
 
 				if pool.Generation <= pool.Status.ObservedGeneration &&
 					isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdated) {
+					glog.Infof("pool %s is up to date", pool.Name)
 					continue
 				}
 				lastErr = fmt.Errorf("error required pool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
+				glog.Info(lastErr.Error())
 				return false, nil
 			}
 		}
@@ -625,6 +628,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 		if syncstatuserr != nil {
 			glog.Errorf("Error syncingUpgradeableStatus: %q", syncstatuserr)
 		}
+		glog.Info("required machine-config pools synchronized")
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
