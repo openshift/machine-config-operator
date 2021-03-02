@@ -642,6 +642,8 @@ github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901 h1:UQkY3zDJG4
 github.com/openshift/library-go v0.0.0-20191003152030-97c62d8a2901/go.mod h1:NBttNjZpWwup/nthuLbPAPSYC8Qyo+BBK5bCtFoyYjo=
 github.com/openshift/library-go v0.0.0-20210113192829-cfbb3f4c80c2 h1:UAzyFzukxe6zvQKbORXtY3C3hyRkXYfPkDeJXV89DpU=
 github.com/openshift/library-go v0.0.0-20210113192829-cfbb3f4c80c2/go.mod h1:udseDnqxn5ON8i+NBjDp00fBTK0JRu1/6Y6tf6EivDE=
+github.com/openshift/library-go v0.0.0-20210205203934-9eb0d970f2f4 h1:B3OtzVVHaoKGon69vGK0tPBHcb8LlNNkqHkHhcFHT9g=
+github.com/openshift/library-go v0.0.0-20210205203934-9eb0d970f2f4/go.mod h1:udseDnqxn5ON8i+NBjDp00fBTK0JRu1/6Y6tf6EivDE=
 github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912 h1:zPJYcr+2g68K+pEqw7crr0vLSVsYb3B82LS3y7/kxpc=
 github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912/go.mod h1:0OXNy7VoqFexkxKqyQbHJLPwn1MFp1/CxRJAgKHM+/o=
 github.com/ostreedev/ostree-go v0.0.0-20190702140239-759a8c1ac913 h1:TnbXhKzrTOyuvWrjI8W6pcoI9XPbLHFXCdN2dtUw7Rw=
@@ -1224,6 +1226,7 @@ k8s.io/apiextensions-apiserver v0.20.0 h1:HmeP9mLET/HlIQ5gjP+1c20tgJrlshY5nUyIan
 k8s.io/apiextensions-apiserver v0.20.0/go.mod h1:ZH+C33L2Bh1LY1+HphoRmN1IQVLTShVcTojivK3N9xg=
 k8s.io/apimachinery v0.20.0 h1:jjzbTJRXk0unNS71L7h3lxGDH/2HPxMPaQY+MjECKL8=
 k8s.io/apimachinery v0.20.0/go.mod h1:WlLqWAHZGg07AeltaI0MV5uk1Omp8xaN0JGLY6gkRpU=
+k8s.io/apiserver v0.20.0 h1:0MwO4xCoqZwhoLbFyyBSJdu55CScp4V4sAgX6z4oPBY=
 k8s.io/apiserver v0.20.0/go.mod h1:6gRIWiOkvGvQt12WTYmsiYoUyYW0FXSiMdNl4m+sxY8=
 k8s.io/cli-runtime v0.20.0 h1:UfTR9vGUWshJpwuekl7MqRmWumNs5tvqPj20qnmOns8=
 k8s.io/cli-runtime v0.20.0/go.mod h1:C5tewU1SC1t09D7pmkk83FT4lMAw+bvMDuRxA7f0t2s=

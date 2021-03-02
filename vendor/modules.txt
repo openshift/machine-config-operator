@@ -481,9 +481,10 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/library-go v0.0.0-20210113192829-cfbb3f4c80c2
+# github.com/openshift/library-go v0.0.0-20210205203934-9eb0d970f2f4
 ## explicit
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
+github.com/openshift/library-go/pkg/crypto
 github.com/openshift/library-go/pkg/operator/v1helpers
 # github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
 ## explicit
@@ -831,6 +832,8 @@ k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/netutil
 k8s.io/apimachinery/third_party/forked/golang/reflect
+# k8s.io/apiserver v0.20.0 => k8s.io/apiserver v0.20.0
+k8s.io/apiserver/pkg/authentication/user
 # k8s.io/cli-runtime v0.20.0 => k8s.io/cli-runtime v0.20.0
 k8s.io/cli-runtime/pkg/genericclioptions
 k8s.io/cli-runtime/pkg/kustomize
