@@ -428,7 +428,11 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 
 	// Update OS
 	if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
-		MCDPivotErr.WithLabelValues(dn.node.Name, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
+		nodeName := ""
+		if dn.node != nil {
+			nodeName = dn.node.Name
+		}
+		MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
 		return err
 	}
 
