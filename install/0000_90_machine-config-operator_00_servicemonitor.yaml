@@ -15,6 +15,15 @@ spec:
     port: metrics
     scheme: https
     path: /metrics
+    relabelings:
+    - action: replace
+      regex: ;(.*)
+      replacement: $1
+      separator: ";"
+      sourceLabels:
+      - node
+      - __meta_kubernetes_pod_node_name
+      targetLabel: node
     tlsConfig:
       caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
       serverName: machine-config-daemon.openshift-machine-config-operator.svc
