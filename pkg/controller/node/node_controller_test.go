@@ -22,14 +22,18 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
+	configv1 "github.com/openshift/api/config/v1"
 	fakeconfigv1client "github.com/openshift/client-go/config/clientset/versioned/fake"
 	configv1informer "github.com/openshift/client-go/config/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
+	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 var (
@@ -44,6 +48,7 @@ type fixture struct {
 	kubeclient      *k8sfake.Clientset
 	schedulerClient *fakeconfigv1client.Clientset
 
+	ccLister   []*mcfgv1.ControllerConfig
 	mcpLister  []*mcfgv1.MachineConfigPool
 	nodeLister []*corev1.Node
 
@@ -72,9 +77,10 @@ func (f *fixture) newController() *Controller {
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.schedulerClient, noResyncPeriodFunc())
-	c := New(i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
+	c := New(i.Machineconfiguration().V1().ControllerConfigs(), i.Machineconfiguration().V1().MachineConfigPools(), k8sI.Core().V1().Nodes(),
 		ci.Config().V1().Schedulers(), f.kubeclient, f.client)
 
+	c.ccListerSynced = alwaysReady
 	c.mcpListerSynced = alwaysReady
 	c.nodeListerSynced = alwaysReady
 	c.schedulerListerSynced = alwaysReady
@@ -87,6 +93,9 @@ func (f *fixture) newController() *Controller {
 	k8sI.Start(stopCh)
 	k8sI.WaitForCacheSync(stopCh)
 
+	for _, c := range f.ccLister {
+		i.Machineconfiguration().V1().ControllerConfigs().Informer().GetIndexer().Add(c)
+	}
 	for _, c := range f.mcpLister {
 		i.Machineconfiguration().V1().MachineConfigPools().Informer().GetIndexer().Add(c)
 	}
@@ -97,6 +106,7 @@ func (f *fixture) newController() *Controller {
 	for _, c := range f.schedulerLister {
 		ci.Config().V1().Schedulers().Informer().GetIndexer().Add(c)
 	}
+
 	return c
 }
 
@@ -148,6 +158,20 @@ func (f *fixture) runController(pool string, expectError bool) {
 	}
 }
 
+func newControllerConfig(name string, topology configv1.TopologyMode) *mcfgv1.ControllerConfig {
+	return &mcfgv1.ControllerConfig{
+		TypeMeta:   metav1.TypeMeta{APIVersion: mcfgv1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{daemonconsts.GeneratedByVersionAnnotationKey: version.Raw}, Name: name, UID: types.UID(utilrand.String(5))},
+		Spec: mcfgv1.ControllerConfigSpec{
+			Infra: &configv1.Infrastructure{
+				Status: configv1.InfrastructureStatus{
+					ControlPlaneTopology: topology,
+				},
+			},
+		},
+	}
+}
+
 // checkAction verifies that expected and actual actions are equal and both have
 // same attached resources
 func checkAction(expected, actual core.Action, t *testing.T) {
@@ -188,6 +212,8 @@ func filterInformerActions(actions []core.Action) []core.Action {
 		if len(action.GetNamespace()) == 0 &&
 			(action.Matches("list", "machineconfigpools") ||
 				action.Matches("watch", "machineconfigpools") ||
+				action.Matches("list", "controllerconfigs") ||
+				action.Matches("watch", "controllerconfigs") ||
 				action.Matches("list", "nodes") ||
 				action.Matches("watch", "nodes")) {
 			continue
@@ -758,14 +784,17 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 func TestShouldMakeProgress(t *testing.T) {
 	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+
 	nodes := []*corev1.Node{
 		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
 	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
@@ -799,8 +828,11 @@ func TestShouldMakeProgress(t *testing.T) {
 
 func TestEmptyCurrentMachineConfig(t *testing.T) {
 	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", nil, helpers.MasterSelector, "")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp)
 	f.objects = append(f.objects, mcp)
 	f.run(getKey(mcp, t))
@@ -834,6 +866,7 @@ func TestPaused(t *testing.T) {
 
 func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -842,6 +875,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
 	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
@@ -859,6 +893,7 @@ func TestShouldUpdateStatusOnlyUpdated(t *testing.T) {
 
 func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -867,6 +902,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 		newNodeWithLabel("node-1", "v0", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 	}
 
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
 	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
@@ -884,6 +920,7 @@ func TestShouldUpdateStatusOnlyNoProgress(t *testing.T) {
 
 func TestShouldDoNothing(t *testing.T) {
 	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
 	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
@@ -894,6 +931,7 @@ func TestShouldDoNothing(t *testing.T) {
 	status := calculateStatus(mcp, nodes)
 	mcp.Status = status
 
+	f.ccLister = append(f.ccLister, cc)
 	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
 	f.objects = append(f.objects, mcp, mcpWorker)
 	f.nodeLister = append(f.nodeLister, nodes...)
@@ -902,6 +940,46 @@ func TestShouldDoNothing(t *testing.T) {
 	}
 
 	f.run(getKey(mcp, t))
+}
+
+func TestControlPlaneTopology(t *testing.T) {
+	f := newFixture(t)
+	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.SingleReplicaTopologyMode)
+	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+	annotations := map[string]string{daemonconsts.ClusterControlPlaneTopologyAnnotationKey: "SingleReplica"}
+
+	nodes := []*corev1.Node{
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+	}
+
+	for _, node := range nodes {
+		addNodeAnnotations(node, annotations)
+	}
+	status := calculateStatus(mcp, nodes)
+	mcp.Status = status
+
+	f.ccLister = append(f.ccLister, cc)
+	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+	f.objects = append(f.objects, mcp, mcpWorker)
+	f.nodeLister = append(f.nodeLister, nodes...)
+	for idx := range nodes {
+		f.kubeobjects = append(f.kubeobjects, nodes[idx])
+	}
+
+	f.run(getKey(mcp, t))
+}
+
+// adds annotation to the node
+func addNodeAnnotations(node *corev1.Node, annotations map[string]string) {
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
+	}
+	for k, v := range annotations {
+		node.Annotations[k] = v
+	}
 }
 
 func getKey(config *mcfgv1.MachineConfigPool, t *testing.T) string {
