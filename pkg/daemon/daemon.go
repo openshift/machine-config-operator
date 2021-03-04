@@ -1381,7 +1381,24 @@ func checkV3Units(units []ign3types.Unit) error {
 	for _, u := range units {
 		for j := range u.Dropins {
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if err := checkFileContentsAndMode(path, []byte(*u.Dropins[j].Contents), defaultFilePermissions); err != nil {
+
+			var content string
+			if u.Dropins[j].Contents == nil {
+				content = ""
+			} else {
+				content = *u.Dropins[j].Contents
+			}
+
+			if _, err := os.Stat(path); content == "" && err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+
+			// To maintain backwards compatibility, we allow existing zero length files to exist.
+			// Thus we are also ok if the dropin exists but has no content
+			if err := checkFileContentsAndMode(path, []byte(content), defaultFilePermissions); err != nil {
 				return err
 			}
 		}

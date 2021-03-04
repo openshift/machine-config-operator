@@ -1304,8 +1304,23 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	for _, u := range units {
 		// write the dropin to disk
 		for i := range u.Dropins {
-			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+			if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
+				glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
+				if _, err := os.Stat(dpath); err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					return err
+				}
+				glog.Infof("Removing %q, updated file has zero length", dpath)
+				if err := os.Remove(dpath); err != nil {
+					return err
+				}
+				continue
+			}
+
+			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
 			if _, err := os.Stat("/usr" + dpath); err == nil &&
 				(operatingSystem == MachineConfigDaemonOSRHCOS || operatingSystem == MachineConfigDaemonOSFCOS) {
 				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
