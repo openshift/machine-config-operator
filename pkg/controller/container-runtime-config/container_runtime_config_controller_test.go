@@ -863,6 +863,12 @@ func TestRegistriesValidation(t *testing.T) {
 // TestContainerRuntimeConfigOptions tests the validity of allowed and not allowed values
 // for the options in containerruntime config
 func TestContainerRuntimeConfigOptions(t *testing.T) {
+	var (
+		invalidPidsLimit int64 = 10
+		validPidsLimit   int64 = 2048
+		validZerolimit   int64 = 0
+		invalidNegLimit  int64 = -10
+	)
 	failureTests := []struct {
 		name   string
 		config *mcfgv1.ContainerRuntimeConfiguration
@@ -870,7 +876,13 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		{
 			name: "invalid value of pids limit",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
-				PidsLimit: 10,
+				PidsLimit: &invalidPidsLimit,
+			},
+		},
+		{
+			name: "invalid negative pids limit",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				PidsLimit: &invalidNegLimit,
 			},
 		},
 		{
@@ -894,7 +906,13 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 		{
 			name: "valid pids limit",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
-				PidsLimit: 2048,
+				PidsLimit: &validPidsLimit,
+			},
+		},
+		{
+			name: "valid 0 pids limit",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				PidsLimit: &validZerolimit,
 			},
 		},
 		{
