@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -1010,7 +1011,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	// take a stab at that and re-run the drain+reboot routine
 	if state.pendingConfig != nil && bootID == dn.bootID {
 		dn.logSystem("drain interrupted, retrying")
-		if err := dn.drain(); err != nil {
+		if err := dn.performDrain(); err != nil {
 			return err
 		}
 		if err := dn.finalizeBeforeReboot(state.pendingConfig); err != nil {
@@ -1150,7 +1151,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			// Great, we've successfully rebooted for the desired config,
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
-			if err := dn.completeUpdate(dn.node, state.pendingConfig.GetName()); err != nil {
+			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
 				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return inDesiredConfig, err
 			}
@@ -1282,8 +1283,8 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // completeUpdate marks the node as schedulable again, then deletes the
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
-func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
-	if err := drain.RunCordonOrUncordon(dn.drainer, node, false); err != nil {
+func (dn *Daemon) completeUpdate(desiredConfigName string) error {
+	if err := dn.cordonOrUncordonNode(false); err != nil {
 		return err
 	}
 
@@ -1616,4 +1617,24 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	}
 
 	return nil, onceFromUnknownConfig, fmt.Errorf("unable to decipher onceFrom config type: %v", err)
+}
+
+func isSingleNodeTopology(topology configv1.TopologyMode) bool {
+	return topology == configv1.SingleReplicaTopologyMode
+}
+
+// getControlPlaneTopology reads from node annotation and returns
+// controlPlaneTopology value set in the cluster. If annotation value
+// is unrecognized, we considere it as highly available cluster.
+func (dn *Daemon) getControlPlaneTopology() configv1.TopologyMode {
+	controlPlaneTopology := dn.node.Annotations[constants.ClusterControlPlaneTopologyAnnotationKey]
+	switch configv1.TopologyMode(controlPlaneTopology) {
+	case configv1.SingleReplicaTopologyMode:
+		return configv1.SingleReplicaTopologyMode
+	case configv1.HighlyAvailableTopologyMode:
+		return configv1.HighlyAvailableTopologyMode
+	default:
+		// for any unhandled case, default to HighlyAvailableTopologyMode
+		return configv1.HighlyAvailableTopologyMode
+	}
 }

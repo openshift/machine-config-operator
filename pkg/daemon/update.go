@@ -25,10 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/kubectl/pkg/drain"
 
-	configv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -182,75 +179,6 @@ func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr 
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
 	}
-
-	return nil
-}
-
-func (dn *Daemon) drainRequired() bool {
-	controlPlaneTopology := dn.node.Annotations[constants.ClusterControlPlaneTopologyAnnotationKey]
-
-	switch configv1.TopologyMode(controlPlaneTopology) {
-	case configv1.SingleReplicaTopologyMode:
-		return false
-	default:
-		// for HighlyAvailableTopologyMode or any unhandled case, default to perform drain operation
-		return true
-	}
-}
-
-func (dn *Daemon) drain() error {
-	// Skip draining of the node when we're not cluster driven
-	if dn.kubeClient == nil {
-		return nil
-	}
-
-	if !dn.drainRequired() {
-		dn.logSystem("Skipping drain")
-		return nil
-	}
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
-
-	dn.logSystem("Update prepared; beginning drain")
-	startTime := time.Now()
-
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
-
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 10 * time.Second,
-		Factor:   2,
-	}
-	var lastErr error
-	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, true)
-		if err != nil {
-			lastErr = err
-			glog.Infof("Cordon failed with: %v, retrying", err)
-			return false, nil
-		}
-		err = drain.RunNodeDrain(dn.drainer, dn.node.Name)
-		if err == nil {
-			return true, nil
-		}
-		lastErr = err
-		glog.Infof("Draining failed with: %v, retrying", err)
-		return false, nil
-	}); err != nil {
-		if err == wait.ErrWaitTimeout {
-			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
-			MCDDrainErr.WithLabelValues(dn.node.Name, "WaitTimeout").Set(float64(backoff.Steps))
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
-			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
-		}
-		MCDDrainErr.WithLabelValues(dn.node.Name, "UnknownError").Set(float64(backoff.Steps))
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", err.Error())
-		return errors.Wrap(err, "failed to drain node")
-	}
-
-	dn.logSystem("drain complete")
-	t := time.Since(startTime).Seconds()
-	glog.Infof("Successful drain took %v seconds", t)
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 
 	return nil
 }
@@ -639,7 +567,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	// Drain if we need to reboot or reload crio configuration
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) || ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
-		if err := dn.drain(); err != nil {
+		if err := dn.performDrain(); err != nil {
 			return err
 		}
 	} else {
