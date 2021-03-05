@@ -245,10 +245,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	args := []string{"rebase", "--experimental", fmt.Sprintf("%s:%s", repo, ostreeCsum),
 		"--custom-origin-url", customURL, "--custom-origin-description", "Managed by machine-config-operator"}
 
-	var out []byte
-	if out, err = runGetOut("rpm-ostree", args...); err != nil {
-		// capture stdout output as well in case of error
-		err = errors.Wrapf(err, "with stdout output: %v", string(out))
+	if _, err = runGetOut("rpm-ostree", args...); err != nil {
 		return
 	}
 
