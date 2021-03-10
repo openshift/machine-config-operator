@@ -126,15 +126,18 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 
 	// If we are here, this means that a new kubelet config was created, so we have to calculate the suffix value for its MC name
 	suffixNum := 0
-	// Get the suffix value of the second to last item in the kubelet config list. We use the second to last item because
-	// the most recent kubelet config being created has already been added to the list and is the kubelet config object that we are
-	// trying to figure out the suffix value for
-	val, ok := kcList.Items[len(kcList.Items)-2].GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
-	if ok {
-		// Convert the suffix value to int so we can add 1 to it for the MC name for the latest kubelet config object
-		suffixNum, err = strconv.Atoi(val)
-		if err != nil {
-			return "", fmt.Errorf("error converting %s to int: %v", val, err)
+	// Go through the list of kubelet config objects created and get the max suffix value currently created
+	for _, item := range kcList.Items {
+		val, ok := item.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		if ok {
+			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
+			intVal, err := strconv.Atoi(val)
+			if err != nil {
+				return "", fmt.Errorf("error converting %s to int: %v", val, err)
+			}
+			if intVal > suffixNum {
+				suffixNum = intVal
+			}
 		}
 	}
 	// The max suffix value that we can go till with this logic is 9 - this means that a user can create up to 10 different kubelet config CRs.
