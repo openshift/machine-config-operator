@@ -12,8 +12,10 @@ import (
 )
 
 func (dn *Daemon) drainRequired() bool {
-	// Drain operation is not useful on single node cluster, save time by skipping drain.
-	// These cluster can take advantage of graceful node shutdown feature.
+	// Drain operation is not useful on a single node cluster as there
+	// is no other node in the cluster where workload with PDB set
+	// can be rescheduled. It can lead to node being stuck at drain indefinitely.
+	// These clusters can take advantage of graceful node shutdown feature.
 	// https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown
 	return !isSingleNodeTopology(dn.getControlPlaneTopology())
 }
@@ -79,26 +81,19 @@ func (dn *Daemon) performDrain() error {
 		return nil
 	}
 
+	if err := dn.cordonOrUncordonNode(true); err != nil {
+		return err
+	}
+	dn.logSystem("Node has been successfully cordoned")
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
+
 	if !dn.drainRequired() {
-		if isSingleNodeTopology(dn.getControlPlaneTopology()) {
-			if err := dn.cordonOrUncordonNode(false); err != nil {
-				return err
-			}
-			dn.logSystem("Node has been successfully cordoned")
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
-		}
 		dn.logSystem("Drain not required, skipping")
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
 		return nil
 	}
 
 	// We are here, that means we need to cordon and drain node
-	if err := dn.cordonOrUncordonNode(true); err != nil {
-		return err
-	}
-	dn.logSystem("Node has been successfully cordoned")
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Cordon", "Cordoned node to perform drain")
-
 	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()

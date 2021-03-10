@@ -811,7 +811,7 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 
 // setClusterConfigAnnotation reads cluster configs set into controllerConfig
 // and add/updates required annotation to node such as ControlPlaneTopology
-// from infrastrcture object.
+// from infrastructure object.
 func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -819,15 +819,15 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	}
 
 	for _, node := range nodes {
-		glog.Infof("Initiating controlPlaneTopology annotation %s\n", string(cc.Spec.Infra.Status.ControlPlaneTopology))
 		if node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] != string(cc.Spec.Infra.Status.ControlPlaneTopology) {
+			oldAnn := node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey]
 			_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 				node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] = string(cc.Spec.Infra.Status.ControlPlaneTopology)
-				glog.Infof("Updated controlPlaneTopology annotations\n")
 			})
 			if err != nil {
 				return err
 			}
+			glog.Infof("Updated controlPlaneTopology annotation of node %s from %s to %s", node.Name, oldAnn, node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey])
 		}
 	}
 	return nil

@@ -14,8 +14,8 @@ const (
 	DesiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
 	// MachineConfigDaemonStateAnnotationKey is used to fetch the state of the daemon on the machine.
 	MachineConfigDaemonStateAnnotationKey = "machineconfiguration.openshift.io/state"
-	// ClusterControlPlaneTopologyAnnotationKey is set by node controller by reading value from
-	// controllerConfig. MCD uses the annotation value to decide drain action on node.
+	// ClusterControlPlaneTopologyAnnotationKey is set by the node controller by reading value from
+	// controllerConfig. MCD uses the annotation value to decide drain action on the node.
 	ClusterControlPlaneTopologyAnnotationKey = "machineconfiguration.openshift.io/controlPlaneTopology"
 	// OpenShiftOperatorManagedLabel is used to filter out kube objects that don't need to be synced by the MCO
 	OpenShiftOperatorManagedLabel = "openshift.io/operator-managed"
