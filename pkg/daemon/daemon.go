@@ -1625,7 +1625,7 @@ func isSingleNodeTopology(topology configv1.TopologyMode) bool {
 
 // getControlPlaneTopology reads from node annotation and returns
 // controlPlaneTopology value set in the cluster. If annotation value
-// is unrecognized, we considere it as highly available cluster.
+// is unrecognized, we consider it as a highly available cluster.
 func (dn *Daemon) getControlPlaneTopology() configv1.TopologyMode {
 	controlPlaneTopology := dn.node.Annotations[constants.ClusterControlPlaneTopologyAnnotationKey]
 	switch configv1.TopologyMode(controlPlaneTopology) {
