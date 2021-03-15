@@ -19,6 +19,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
+	utilnet "k8s.io/utils/net"
+
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -34,6 +36,7 @@ var (
 		rootMount      string
 		healthCheckURL string
 		vip            string
+		ipv6           bool
 	}
 )
 
@@ -46,6 +49,7 @@ func init() {
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for writing down files or chrooting.")
 	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
 	runCmd.PersistentFlags().StringVar(&runOpts.vip, "vip", "", "The VIP to remove if the health check fails. Determined from URL if not provided")
+	runCmd.PersistentFlags().BoolVar(&runOpts.ipv6, "ipv6", false, "The VIP IP family (default to IPv4)")
 }
 
 type handler struct {
@@ -144,10 +148,11 @@ func newHandler(uri *url.URL) (*handler, error) {
 	if runOpts.vip != "" {
 		h.vip = runOpts.vip
 	} else {
-		addrs, err := net.LookupHost(uri.Hostname())
+		addrsList, err := net.LookupHost(uri.Hostname())
 		if err != nil {
 			return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
 		}
+		addrs := filterAddrList(addrsList, runOpts.ipv6)
 		if len(addrs) != 1 {
 			return nil, fmt.Errorf("hostname %s has %d addresses, expected 1 - aborting", uri.Hostname(), len(addrs))
 		}
@@ -266,4 +271,15 @@ func (sl *healthTracker) OnComplete(state *health.State) {
 			sl.state = failedTrackerState
 		}
 	}
+}
+
+// filterAddrList filter a list of IP addresses by IP family
+func filterAddrList(ips []string, isIPv6 bool) []string {
+	addrList := []string{}
+	for _, ip := range ips {
+		if utilnet.IsIPv6String(ip) == isIPv6 {
+			addrList = append(addrList, ip)
+		}
+	}
+	return addrList
 }
