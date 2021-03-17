@@ -132,8 +132,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			if dn.recorder != nil {
 				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
-			dn.logSystem("Reloading %s configuration failed, node will reboot instead. Error: %v", serviceName, err)
-			dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+			return fmt.Errorf("Could not apply update: reloading %s configuration failed. Error: %v", serviceName, err)
 		}
 
 		if dn.recorder != nil {
@@ -147,14 +146,12 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	// Get current state of node, in case of an error reboot
 	state, err := dn.getStateAndConfigs(configName)
 	if err != nil {
-		glog.Errorf("Error processing state and configs, node will reboot instead. Error: %v", err)
-		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+		return fmt.Errorf("Could not apply update: error processing state and configs. Error: %v", err)
 	}
 
 	var inDesiredConfig bool
 	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
-		glog.Errorf("Setting node's state to Done failed, node will reboot instead. Error: %v", err)
-		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", configName))
+		return fmt.Errorf("Could not apply update: setting node's state to Done failed. Error: %v", err)
 	}
 	if inDesiredConfig {
 		return nil
@@ -476,6 +473,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 
 func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign3types.Config) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
+		"/etc/kubernetes/kubelet-ca.crt",
 		"/var/lib/kubelet/config.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
@@ -620,8 +618,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	if err := dn.drain(); err != nil {
-		return err
+	// Drain if we need to reboot or reload crio configuration
+	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) || ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
+		if err := dn.drain(); err != nil {
+			return err
+		}
+	} else {
+		glog.Info("Changes do not require drain, skipping.")
 	}
 
 	// update files on disk that need updating
