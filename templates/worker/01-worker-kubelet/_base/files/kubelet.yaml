@@ -23,8 +23,6 @@ contents:
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
     systemReserved:
-      cpu: 500m
-      memory: 1Gi
       ephemeral-storage: 1Gi
     featureGates:
       APIPriorityAndFairness: true

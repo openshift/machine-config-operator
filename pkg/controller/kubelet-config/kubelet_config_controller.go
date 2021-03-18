@@ -472,6 +472,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 		var kubeletIgnition *ign3types.File
 		var logLevelIgnition *ign3types.File
+		var autoSizingReservedIgnition *ign3types.File
 
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
@@ -547,7 +548,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			logLevelIgnition = createNewKubeletLogLevelIgnition(*cfg.Spec.LogLevel)
 		}
 
+		if cfg.Spec.AutoSizingReserved != nil {
+			autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(*cfg.Spec.AutoSizingReserved)
+		}
+
 		tempIgnConfig := ctrlcommon.NewIgnConfig()
+		if autoSizingReservedIgnition != nil {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *autoSizingReservedIgnition)
+		}
 		if logLevelIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *logLevelIgnition)
 		}
