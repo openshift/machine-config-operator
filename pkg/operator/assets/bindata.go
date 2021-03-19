@@ -343,6 +343,14 @@ spec:
                         like the web console to tell users where to find the Kubernetes
                         API.
                       type: string
+                    controlPlaneTopology:
+                      description: controlPlaneTopology expresses the expectations for
+                        operands that normally run on control nodes. The default is
+                        HighlyAvailable, which represents the behavior operators have
+                        in a normal cluster. The SingleReplica mode will be used in
+                        single-node deployments and the operators should not configure
+                        the operand for highly-available operation.
+                      type: string
                     etcdDiscoveryDomain:
                       description: 'etcdDiscoveryDomain is the domain used to fetch
                         the SRV records for discovering etcd servers and clients.

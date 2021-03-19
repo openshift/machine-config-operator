@@ -135,6 +135,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		),
 		// The node controller consumes data written by the above
 		node.New(
+			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
