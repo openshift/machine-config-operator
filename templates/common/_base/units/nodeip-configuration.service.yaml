@@ -25,6 +25,7 @@ contents: |
     do \
     sleep 5; \
     done"
+  ExecStart=/bin/systemctl daemon-reload
 
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
