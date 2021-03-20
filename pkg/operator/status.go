@@ -266,7 +266,8 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
 		if degraded {
 			coStatus.Status = configv1.ConditionFalse
-			coStatus.Reason = "One or more machine config pool is degraded, please see `oc get mcp` for further details and resolve before upgrading"
+			coStatus.Reason = "DegradedPool"
+			coStatus.Message = "One or more machine config pool is degraded, please see `oc get mcp` for further details and resolve before upgrading"
 		}
 	}
 
