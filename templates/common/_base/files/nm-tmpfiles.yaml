@@ -1,5 +1,5 @@
 mode: 0644
-path: "/etc/tmpfiles.d/kni.conf"
+path: "/etc/tmpfiles.d/nm.conf"
 contents:
   inline: |
     D /run/nm-system-connections 0755 root root - -

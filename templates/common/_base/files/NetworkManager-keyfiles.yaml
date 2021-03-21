@@ -1,0 +1,7 @@
+mode: 0644
+path: "/etc/NetworkManager/conf.d/99-keyfiles.conf"
+contents:
+  inline: |
+    [keyfile]
+    path=/etc/NetworkManager/system-connections-merged
+
