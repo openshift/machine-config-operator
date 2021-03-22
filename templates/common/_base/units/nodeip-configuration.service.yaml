@@ -21,7 +21,11 @@ contents: |
     --volume /etc/systemd/system:/etc/systemd/system:z \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
-    set --retry-on-failure; \
+    set \
+    {{if eq .IPFamilies "IPv6" -}}
+    --prefer-ipv6 \
+    {{end -}}
+    --retry-on-failure; \
     do \
     sleep 5; \
     done"
