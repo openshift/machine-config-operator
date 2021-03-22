@@ -5,6 +5,9 @@ contents:
     #!/usr/bin/env bash
     set -e
 
+    # only run if the hostname is not set
+    test -f /etc/hostname && exit 0 || :
+
     if vm_name=$(/bin/vmtoolsd --cmd 'info-get guestinfo.hostname'); then
-        /usr/bin/hostnamectl --transient set-hostname ${vm_name}
+        /usr/bin/hostnamectl set-hostname --static ${vm_name}
     fi
