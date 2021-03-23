@@ -163,8 +163,8 @@ contents:
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
           echo "Static IP addressing detected on default gateway connection: ${old_conn}"
           # find and copy the old connection to get the address settings
-          if egrep -l --include=*.nmconnection $old_conn ${NM_CONN_PATH}/*; then
-            old_conn_file=$(egrep -l --include=*.nmconnection $old_conn ${NM_CONN_PATH}/*)
+          if egrep -l --include=*.nmconnection uuid=$old_conn ${NM_CONN_PATH}/*; then
+            old_conn_file=$(egrep -l --include=*.nmconnection uuid=$old_conn ${NM_CONN_PATH}/*)
             cloned=false
           else
             echo "WARN: unable to find NM configuration file for conn: ${old_conn}. Attempting to clone conn"
