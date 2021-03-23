@@ -1,9 +1,14 @@
 filesystem: "root"
 mode: 0744
-path: "/etc/NetworkManager/dispatcher.d/pre-up.d/disable-tx-checksum-offload.sh"
+path: "/etc/NetworkManager/dispatcher.d/99-vsphere-disable-tx-udp-tnl"
 contents:
     inline: |
       #!/bin/bash
-      #    # This is a workaround for BZ#1935539
-      nmcli con modify ${CONNECTION_UUID} ethtool.feature-tx-udp_tnl-segmentation off;
-      nmcli con modify ${CONNECTION_UUID} ethtool.feature-tx-udp_tnl-csum-segmentation off;
+      # Workaround:
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1941714
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1935539
+      if [ "$2" == "up" ]; then
+        logger -s "99-vsphere-disable-tx-udp-tnl triggered by ${2}."
+        ethtool -K ${DEVICE_IFACE} tx-udp_tnl-segmentation off
+        ethtool -K ${DEVICE_IFACE} tx-udp_tnl-csum-segmentation off
+      fi
