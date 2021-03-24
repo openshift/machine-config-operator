@@ -439,7 +439,7 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 
 	ctrcfg := cfg.Spec.ContainerRuntimeConfig
 	if ctrcfg.PidsLimit != nil && *ctrcfg.PidsLimit != 0 && *ctrcfg.PidsLimit < minPidsLimit {
-		return fmt.Errorf("invalid PidsLimit %q", *ctrcfg.PidsLimit)
+		return fmt.Errorf("invalid PidsLimit %v", *ctrcfg.PidsLimit)
 	}
 
 	if ctrcfg.LogSizeMax.Value() > 0 && ctrcfg.LogSizeMax.Value() <= minLogSize {
