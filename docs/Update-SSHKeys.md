@@ -100,7 +100,7 @@ spec:
 Export the `99-worker-ssh` to edit the `SSHAuthorizedKeys`.
 
 ```sh
-oc get machineconfigs 99-worker-ssh -oyaml --export > update-ssh-worker.yaml
+oc get machineconfigs 99-worker-ssh -oyaml > update-ssh-worker.yaml
 ```
 
 Update the `sshAuthorizedKeys` for `core` user in `update-ssh-worker.yaml`.
