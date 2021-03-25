@@ -104,13 +104,15 @@ contents:
         extra_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
       fi
 
-      # create bridge
+      # create bridge; use NM's ethernet device default route metric (100)
       if ! nmcli connection show br-ex &> /dev/null; then
         nmcli c add type ovs-bridge \
             con-name br-ex \
             conn.interface br-ex \
             802-3-ethernet.mtu ${iface_mtu} \
             802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric 100 \
+            ipv6.route-metric 100 \
             ${extra_brex_args}
       fi
 
@@ -219,7 +221,8 @@ contents:
           echo "Loaded new ovs-if-br-ex connection file: ${new_conn_file}"
         else
           nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
-            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac}
+            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric 100 ipv6.route-metric 100
         fi
       fi
 
@@ -231,6 +234,7 @@ contents:
         if nmcli --fields GENERAL.STATE conn show ovs-if-br-ex | grep -i "activated"; then
           echo "OVS successfully configured"
           ip a show br-ex
+          ip route show
           configure_driver_options ${iface}
           exit 0
         fi
@@ -243,6 +247,7 @@ contents:
         if nmcli conn up ovs-if-br-ex; then
           echo "OVS successfully configured"
           ip a show br-ex
+          ip route show
           configure_driver_options ${iface}
           exit 0
         fi
