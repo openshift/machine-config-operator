@@ -6,8 +6,6 @@ contents: |
   Requires=vmtoolsd.service
   After=vmtoolsd.service
 
-  # Only run on first boot and only if the host does not have a name yet
-  ConditionPathExists=/etc/ignition-machine-config-encapsulated.json
   ConditionPathExists=!/etc/hostname
   ConditionVirtualization=vmware
   
