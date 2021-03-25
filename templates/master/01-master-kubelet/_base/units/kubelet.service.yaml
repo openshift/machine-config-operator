@@ -3,7 +3,8 @@ enabled: true
 contents: |
   [Unit]
   Description=Kubernetes Kubelet
-  Wants=rpc-statd.service network-online.target crio.service
+  Wants=rpc-statd.service network-online.target
+  Requires=crio.service
   After=network-online.target crio.service
   After=ostree-finalize-staged.service
 
