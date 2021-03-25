@@ -1947,10 +1947,15 @@ func (dn *Daemon) reboot(rationale string) error {
 		MCDRebootErr.WithLabelValues(dn.node.Name, "failed to run reboot", err.Error()).SetToCurrentTime()
 	}
 
-	// wait to be killed via SIGTERM from the kubelet shutting down
-	time.Sleep(defaultRebootTimeout)
-
-	// if everything went well, this should be unreachable.
-	MCDRebootErr.WithLabelValues(dn.node.Name, "reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
-	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
+	select {
+	case <-dn.stopCh:
+		// the CLI is watching for the sigterm and will send the stop signal
+		// causing the daemon to shutdown.
+		dn.logSystem("reboot proceeding")
+		return nil
+	case <-time.After(defaultRebootTimeout):
+		// if everything went well, this should be unreachable.
+		MCDRebootErr.WithLabelValues(dn.node.Name, "reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
+		return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
+	}
 }

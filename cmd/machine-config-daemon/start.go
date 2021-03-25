@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"syscall"
 
@@ -180,6 +181,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// This channel is used to ensure all spawned goroutines exit when we exit.
 	stopCh := make(chan struct{})
 	defer close(stopCh)
+
+	// Signal the stopCh when a signal is received
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		stopCh <- struct{}{}
+	}()
 
 	// Start local metrics listener
 	go daemon.StartMetricsListener(startOpts.promMetricsURL, stopCh)

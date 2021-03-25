@@ -11,11 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
@@ -332,25 +330,19 @@ func (w writer) Write(p []byte) (n int, err error) {
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
 func (dn *Daemon) worker() {
-	for dn.processNextWorkItem() {
-	}
-}
-
-func (dn *Daemon) processNextWorkItem() bool {
 	select {
 	case <-dn.stopCh:
-		return false
+		return
 	default:
 		key, quit := dn.queue.Get()
 		if quit {
-			return false
+			dn.exitCh <- errors.New("workqueue sent shtudown signal")
+			return
 		}
 		defer dn.queue.Done(key)
-
 		err := dn.syncHandler(key.(string))
 		dn.handleErr(err, key)
 	}
-	return true
 }
 
 func (dn *Daemon) handleErr(err error, key interface{}) {
@@ -570,30 +562,19 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	return dn.reboot(fmt.Sprintf("Completing firstboot provisioning to %s", mc.GetName()))
 }
 
-// InterruptHandler ensures that shutdown operations are blocked until an
-// an update operation is finished.
-func (dn *Daemon) InterruptHandler(signaled chan int) {
-	glog.Info("Guarding against sigterm signal")
-
-	// Catch SIGTERM - if we're actively updating, we should avoid
-	// having the process be killed.
-	// https://github.com/openshift/machine-config-operator/issues/407
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-
+// logWatch the exitCh for errors and logs them until a the stopCh is signalled
+func (dn *Daemon) logWatch(stopCh <-chan struct{}, exitCh <-chan error) {
+	for {
 		select {
-		case <-dn.stopCh:
-			glog.Info("sigterm handler function stopped")
-			dn.updateActiveLock.Lock()
+		case <-stopCh:
 			return
-		case <-sig:
-			glog.Warningf("sigterm received waiting to claim update lock")
-			dn.updateActiveLock.Lock()
-			glog.Info("lock obtained, proceeding to shutdown")
-			signaled <- 15
+		case err, ok := <-exitCh:
+			if !ok {
+				return
+			}
+			glog.Warningf("Got an error from auxiliary tools: %v", err)
 		}
-	}()
+	}
 }
 
 // Run finishes informer setup and then blocks, and the informer will be
@@ -605,9 +586,6 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
-
-	signaled := make(chan int)
-	dn.InterruptHandler(signaled)
 
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
@@ -621,19 +599,18 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		return errors.New("failed to sync initial listers cache")
 	}
 
+	go dn.logWatch(stopCh, exitCh)
 	go wait.Until(dn.worker, time.Second, stopCh)
 
-	select {
-	case <-stopCh:
-		return nil
-	case sig := <-signaled:
-		glog.Infof("shutdown of machine-config-daemon triggered via signal %d", sig)
-		return nil
-	case err := <-exitCh:
-		// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
-		glog.Warningf("Got an error from auxiliary tools: %v", err)
-		return err
-	}
+	<-stopCh
+
+	// Before exiting, wait until any updates are finished. Updates
+	// will hold the mutex until done; by waiting for the lock we
+	// we ensure that the update has completed.
+	glog.Info("waiting for update lock before shutting down")
+	dn.updateActiveLock.Lock()
+	glog.Info("lock obtained, proceeding to shutdown")
+	return nil
 }
 
 func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
