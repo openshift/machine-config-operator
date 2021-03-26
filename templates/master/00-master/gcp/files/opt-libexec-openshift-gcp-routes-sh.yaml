@@ -78,18 +78,21 @@ contents:
         # balanced, even if the DNAT entry is removed
         ensure_rule filter INPUT -m comment --comment 'gcp LB vip existing' -m addrtype ! --dst-type LOCAL -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-        # bz1925698: GCP LBs can create stale entries causing apiservers disruption
-        # The GCP LB Health Check polls continuously the LB VIP assigned to the VM
-        # but, if the LB VIP is down, we are not handling the VIP traffic and
-        # the traffic can hairpin, leaving stale conntrack entries on the host.
-        # xref: https://bugzilla.redhat.com/show_bug.cgi?id=1925698#c29
-        # Deleting conntrack entries solves the problem, but it also affects other connections
-        # directed to the LB vips, causing unexpected networks disruptions.
-        # The solution is to not FORWARD GCP HealthCheckers traffic, because that traffic 
-        # is only directed to the host, and it must go to the INPUT chain.
-        # xref: https://bugzilla.redhat.com/show_bug.cgi?id=1930457#c8
-        # The HealthCheck origin ip-ranges are documented: 130.211.0.0/22 and 35.191.0.0/16
-        # xref: https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
+        # If a connection for a VIP comes in while we have no rewrite rule for that VIP,
+        # we would think the VIP is an external host and so forward the connection back
+        # off the node. In the specific case of connections from the GCP LB health
+        # checkers to the VIP, this would result in a bad conntrack entry being created
+        # and then never deleted even after the VIP rule was installed, because the health
+        # checker only uses a small range of source ports, so newer health checks would
+        # keep refreshing the bad conntrack entry created by the first failed health
+        # check. As a result, we would end up persistently failing some percentage of
+        # health checks. See https://bugzilla.redhat.com/show_bug.cgi?id=1925698,
+        # https://bugzilla.redhat.com/show_bug.cgi?id=1930457.
+        #
+        # The fix here is a rule that drops health check probes if we notice that we're
+        # about to forward them off-node, which then prevents the bad conntrack entries
+        # from being created. The HealthCheck origin ip-ranges are documented:
+        # https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
         ensure_rule filter FORWARD -m comment --comment 'gcp HealthCheck traffic' -s 35.191.0.0/16 -j DROP
         ensure_rule filter FORWARD -m comment --comment 'gcp HealthCheck traffic' -s 130.211.0.0/22 -j DROP
 
