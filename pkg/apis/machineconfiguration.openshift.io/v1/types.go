@@ -351,6 +351,7 @@ type KubeletConfig struct {
 
 // KubeletConfigSpec defines the desired state of KubeletConfig
 type KubeletConfigSpec struct {
+	AutoSizingReserved        *bool                 `json:"autoSizingReserved,omitempty"`
 	LogLevel                  *int32                `json:"logLevel,omitempty"`
 	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
 	KubeletConfig             *runtime.RawExtension `json:"kubeletConfig,omitempty"`
