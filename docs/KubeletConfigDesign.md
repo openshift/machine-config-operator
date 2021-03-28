@@ -63,11 +63,11 @@ KubeletConfig
 
 ## VALIDATION
 
-It's important to note that, since the fields of the kubelet configuration are directly fetched from upstream the validation 
-of those values is handled directly by the kubelet. Please refer to the upstream version of the relavent kubernetes for the 
+It's important to note that, since the fields of the kubelet configuration are directly fetched from upstream the validation
+of those values is handled directly by the kubelet. Please refer to the upstream version of the relavent kubernetes for the
 valid values of these fields. Invalid values of the kubelet configuration fields may render cluster nodes unusable.
 
-## Example
+## Example - Setting the Kubelet Log Level
 This is what an example `kubelet config` CR looks like. Note: you must make sure to add a label under `matchLabels` in the KubeletConfig CR:
 
 ```
@@ -106,7 +106,7 @@ spec:
     maxPods: 100
 ```
 
-To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-kubelet: small-pods` under labels in the machineConfigPool config: 
+To roll out the pods limit changes to all the worker nodes (can switch this to master for the master nodes), add the label that you created, here: `custom-kubelet: small-pods` under labels in the machineConfigPool config:
 
 ```
 oc edit machineconfigpool worker
@@ -152,7 +152,7 @@ rendered-worker-45678XYZ             fc45f8b73b2fc61e567f2111181d3e802f2565d7   
 ...
 ```
 
-The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking 
+The changes should now be rolled out to each node in the worker pool via that new rendered-worker machine config. You can verify by checking
 that the latest rendered-worker machine-config has been rolled out to the pools successfully:
 
 ```
@@ -162,6 +162,27 @@ NAME     CONFIG                     UPDATED   UPDATING   DEGRADED   MACHINECOUNT
 worker   rendered-worker-45678XYZ   True      False      False      3              3                   3                     0                      5m
 ...
 ```
+
+## Example - Setting the optimal system reserved
+You can also use `KubeletConfig` to set the optimal system reserved values for memory and cpu.
+
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: dynamic-node
+spec:
+  autoSizingReserved: true
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+```
+
+The `autoSizingReserved` attribute is optional and will default to the value `false`.
+
+Save your `KubeletConfig` locally say, kubelet-dynamic-node.yaml
+
+The label in the above example corresponds to the worker MachineConfigPool. Similar approach can be take to apply the `KubeletConfig` to the master or custom pool.
 
 ## Implementation Details
 

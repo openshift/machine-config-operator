@@ -23,6 +23,29 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
+func createNewKubeletDynamicSystemReservedIgnition(dynamicSystemReserved bool) *ign3types.File {
+	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\n", strconv.FormatBool(dynamicSystemReserved))
+
+	mode := 0644
+	overwrite := true
+	du := dataurl.New([]byte(config), "text/plain")
+	du.Encoding = dataurl.EncodingASCII
+	duStr := du.String()
+
+	return &ign3types.File{
+		Node: ign3types.Node{
+			Path:      "/etc/node-sizing-enabled.env",
+			Overwrite: &overwrite,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Mode: &mode,
+			Contents: ign3types.Resource{
+				Source: &(duStr),
+			},
+		},
+	}
+}
+
 func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
 

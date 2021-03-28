@@ -4,8 +4,8 @@ contents: |
   [Unit]
   Description=Kubernetes Kubelet
   Wants=rpc-statd.service network-online.target
-  Requires=crio.service
-  After=network-online.target crio.service
+  Requires=crio.service kubelet-auto-node-size.service
+  After=network-online.target crio.service kubelet-auto-node-size.service
   After=ostree-finalize-staged.service
 
   [Service]
@@ -15,6 +15,7 @@ contents: |
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
+  EnvironmentFile=/etc/node-sizing.env
 
   ExecStart=/usr/bin/hyperkube \
       kubelet \
@@ -37,6 +38,7 @@ contents: |
         {{cloudConfigFlag . }} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
         --pod-infra-container-image={{.Images.infraImageKey}} \
+        --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY} \
         --v=${KUBELET_LOG_LEVEL}
 
   Restart=always

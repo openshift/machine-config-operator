@@ -1,0 +1,16 @@
+name: kubelet-auto-node-size.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Dynamically sets the system reserved for the kubelet
+  Wants=network-online.target
+  After=network-online.target ignition-firstboot-complete.service
+  Before=kubelet.service crio.service
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  RemainAfterExit=yes
+  EnvironmentFile=/etc/node-sizing-enabled.env
+  ExecStart=/bin/bash /usr/local/sbin/dynamic-system-reserved-calc.sh ${NODE_SIZING_ENABLED}
+  [Install]
+  RequiredBy=kubelet.service
