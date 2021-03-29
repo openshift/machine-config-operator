@@ -448,11 +448,11 @@ type ContainerRuntimeConfiguration struct {
 	// logSizeMax specifies the Maximum size allowed for the container log file.
 	// Negative numbers indicate that no size limit is imposed.
 	// If it is positive, it must be >= 8192 to match/exceed conmon's read buffer.
-	LogSizeMax resource.Quantity `json:"logSizeMax"`
+	LogSizeMax resource.Quantity `json:"logSizeMax,omitempty"`
 
 	// overlaySize specifies the maximum size of a container image.
 	// This flag can be used to set quota on the size of container images. (default: 10GB)
-	OverlaySize resource.Quantity `json:"overlaySize"`
+	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
 }
 
 // ContainerRuntimeConfigStatus defines the observed state of a ContainerRuntimeConfig
