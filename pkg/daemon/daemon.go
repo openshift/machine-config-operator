@@ -89,7 +89,7 @@ type Daemon struct {
 	kubeletHealthzEnabled  bool
 	kubeletHealthzEndpoint string
 
-	// updateActiveLock is used to signal that an update operation is in progress
+	updateActive     bool
 	updateActiveLock sync.Mutex
 
 	nodeWriter NodeWriter
@@ -338,19 +338,15 @@ func (dn *Daemon) worker() {
 }
 
 func (dn *Daemon) processNextWorkItem() bool {
-	select {
-	case <-dn.stopCh:
+	key, quit := dn.queue.Get()
+	if quit {
 		return false
-	default:
-		key, quit := dn.queue.Get()
-		if quit {
-			return false
-		}
-		defer dn.queue.Done(key)
-
-		err := dn.syncHandler(key.(string))
-		dn.handleErr(err, key)
 	}
+	defer dn.queue.Done(key)
+
+	err := dn.syncHandler(key.(string))
+	dn.handleErr(err, key)
+
 	return true
 }
 
@@ -571,28 +567,29 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	return dn.reboot(fmt.Sprintf("Completing firstboot provisioning to %s", mc.GetName()))
 }
 
-// InterruptHandler ensures that shutdown operations are blocked until an
-// an update operation is finished.
-func (dn *Daemon) InterruptHandler(signaled chan int) {
-	glog.Info("Guarding against sigterm signal")
+// InstallSignalHandler installs the handler for the signals the daemon should act on
+func (dn *Daemon) InstallSignalHandler(signaled chan struct{}) {
+	termChan := make(chan os.Signal, 2048)
+	signal.Notify(termChan, syscall.SIGTERM)
 
 	// Catch SIGTERM - if we're actively updating, we should avoid
 	// having the process be killed.
 	// https://github.com/openshift/machine-config-operator/issues/407
 	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-
-		select {
-		case <-dn.stopCh:
-			glog.Info("sigterm handler function stopped")
-			dn.updateActiveLock.Lock()
-			return
-		case <-sig:
-			glog.Warningf("sigterm received waiting to claim update lock")
-			dn.updateActiveLock.Lock()
-			glog.Info("lock obtained, proceeding to shutdown")
-			signaled <- 15
+		for sig := range termChan {
+			//nolint:gocritic
+			switch sig {
+			case syscall.SIGTERM:
+				dn.updateActiveLock.Lock()
+				updateActive := dn.updateActive
+				dn.updateActiveLock.Unlock()
+				if updateActive {
+					glog.Info("Got SIGTERM, but actively updating")
+				} else {
+					close(signaled)
+					return
+				}
+			}
 		}
 	}()
 }
@@ -607,8 +604,8 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	glog.Info("Starting MachineConfigDaemon")
 	defer glog.Info("Shutting down MachineConfigDaemon")
 
-	signaled := make(chan int)
-	dn.InterruptHandler(signaled)
+	signaled := make(chan struct{})
+	dn.InstallSignalHandler(signaled)
 
 	if dn.kubeletHealthzEnabled {
 		glog.Info("Enabling Kubelet Healthz Monitor")
@@ -624,16 +621,16 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 
 	go wait.Until(dn.worker, time.Second, stopCh)
 
-	select {
-	case <-stopCh:
-		return nil
-	case sig := <-signaled:
-		glog.Infof("shutdown of machine-config-daemon triggered via signal %d", sig)
-		return nil
-	case err := <-exitCh:
-		// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
-		glog.Warningf("Got an error from auxiliary tools: %v", err)
-		return err
+	for {
+		select {
+		case <-stopCh:
+			return nil
+		case <-signaled:
+			return nil
+		case err := <-exitCh:
+			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
+			glog.Warningf("Got an error from auxiliary tools: %v", err)
+		}
 	}
 }
 
