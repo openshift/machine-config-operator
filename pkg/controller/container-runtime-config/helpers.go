@@ -446,8 +446,8 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 		return fmt.Errorf("invalid LogSizeMax %q, cannot be less than 8kB", ctrcfg.LogSizeMax.String())
 	}
 
-	if ctrcfg.OverlaySize.Value() < 0 {
-		return fmt.Errorf("invalid overlaySize %q, cannot be less than 0", ctrcfg.OverlaySize.String())
+	if ctrcfg.OverlaySize.Sign() == -1 {
+		return fmt.Errorf("invalid overlaySize %q %+v", ctrcfg.OverlaySize.String(), ctrcfg.OverlaySize.Value())
 	}
 
 	if ctrcfg.LogLevel != "" {
