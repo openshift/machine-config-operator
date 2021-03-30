@@ -1445,6 +1445,7 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 }
 
 // writeUnits writes the systemd units to disk
+//nolint:gocyclo
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var enabledUnits []string
 	var disabledUnits []string
@@ -1531,14 +1532,25 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 
 		if u.Enabled != nil {
 			if *u.Enabled {
-				enabledUnits = append(enabledUnits, u.Name)
+				if u.Contents != nil && *u.Contents != "" {
+					enabledUnits = append(enabledUnits, u.Name)
+				} else if err := dn.enableUnits([]string{u.Name}); err != nil {
+					// In the case of an empty unit content definition, try to enable/disable it
+					// in case it's a service shipped in the base system, but do not hard fail
+					// if the enable/disable doesn't succeed.
+					glog.Warningf("Could not enable unit %s, no content provided - unit may not exist. Skipping. (Reason: %v)", u.Name, err)
+				}
 			} else {
-				disabledUnits = append(disabledUnits, u.Name)
+				if u.Contents != nil && *u.Contents != "" {
+					disabledUnits = append(disabledUnits, u.Name)
+				} else if err := dn.disableUnits([]string{u.Name}); err != nil {
+					glog.Warningf("Could not disable unit %s, no content provided - unit may not exist. Skipping. (Reason: %v)", u.Name, err)
+				}
 			}
 		} else {
 			if err := dn.presetUnit(u); err != nil {
 				// Don't fail here, since a unit may have a dropin referencing a nonexisting actual unit
-				glog.Infof("Could not reset unit preset for %s, skipping. (Error msg: %v)", u.Name, err)
+				glog.Infof("Could not reset unit preset for %s, skipping. This is not an error. (Reason: %v)", u.Name, err)
 			}
 		}
 	}
