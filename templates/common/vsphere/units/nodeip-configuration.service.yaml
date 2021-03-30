@@ -1,11 +1,26 @@
 name: nodeip-configuration.service
-enabled: true
+enabled: {{if .Infra -}}
+         {{if .Infra.Status -}}
+         {{if .Infra.Status.PlatformStatus -}}
+         {{if .Infra.Status.PlatformStatus.VSphere -}}
+         {{if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
+         true
+         {{- else -}}
+         false
+         {{- end -}}
+         {{- else -}}
+         false
+         {{- end -}}
+         {{- else -}}
+         false
+         {{- end -}}
+         {{- else -}}
+         false
+         {{- end -}}
+         {{- else -}}
+         false
+         {{- end }}
 contents: |
-  {{ if .Infra -}}
-  {{ if .Infra.Status -}}
-  {{ if .Infra.Status.PlatformStatus -}}
-  {{ if .Infra.Status.PlatformStatus.VSphere -}}
-  {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
   # This only applies to VIP managing environments where the kubelet and crio IP
@@ -18,6 +33,11 @@ contents: |
   [Service]
   # Need oneshot to delay kubelet
   Type=oneshot
+  {{ if .Infra -}}
+  {{ if .Infra.Status -}}
+  {{ if .Infra.Status.PlatformStatus -}}
+  {{ if .Infra.Status.PlatformStatus.VSphere -}}
+  {{ if .Infra.Status.PlatformStatus.VSphere.APIServerInternalIP -}}
   # Would prefer to do Restart=on-failure instead of this bash retry loop, but
   # the version of systemd we have right now doesn't support it. It should be
   # available in systemd v244 and higher.
@@ -34,6 +54,11 @@ contents: |
     do \
     sleep 5; \
     done"
+  {{ end -}}
+  {{ end -}}
+  {{ end -}}
+  {{ end -}}
+  {{ end -}}
   ExecStart=/bin/systemctl daemon-reload
 
   {{if .Proxy -}}
@@ -50,8 +75,3 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
-  {{ end -}}
