@@ -85,7 +85,7 @@ contents:
     }
     function static_node_sizing {
         rm -f ${NODE_SIZES_ENV}
-        echo "SYSTEM_RESERVED_MEMORY=1Gi" >> ${NODE_SIZES_ENV}
+        echo "SYSTEM_RESERVED_MEMORY=1.8Gi" >> ${NODE_SIZES_ENV}
         echo "SYSTEM_RESERVED_CPU=500m" >> ${NODE_SIZES_ENV}
     }
 
