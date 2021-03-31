@@ -70,6 +70,13 @@ contents:
         - -c
         - |
           #/bin/bash
+          sigterm_handler()
+          {
+            if pid=$(pgrep -o keepalived); then
+              kill -s SIGTERM "$pid"
+            fi
+          }
+
           reload_keepalived()
           {
             if pid=$(pgrep -o keepalived); then
@@ -94,6 +101,9 @@ contents:
           declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
           export -f msg_handler
           export -f reload_keepalived
+          export -f sigterm_handler
+
+          trap sigterm_handler SIGTERM
           if [ -s "/etc/keepalived/keepalived.conf" ]; then
               /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
           fi
