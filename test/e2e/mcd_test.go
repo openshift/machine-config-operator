@@ -55,7 +55,7 @@ func TestMCDeployed(t *testing.T) {
 	// TODO: bring this back to 10
 	for i := 0; i < 3; i++ {
 		startTime := time.Now()
-		mcadd := helpers.CreateMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
+		mcadd := createMCToAddFile("add-a-file", fmt.Sprintf("/etc/mytestconf%d", i), "test")
 
 		// create the dummy MC now
 		_, err := cs.MachineConfigs().Create(context.TODO(), mcadd, metav1.CreateOptions{})
@@ -475,7 +475,7 @@ func TestNoReboot(t *testing.T) {
 func TestPoolDegradedOnFailToRender(t *testing.T) {
 	cs := framework.NewClientSet("")
 
-	mcadd := helpers.CreateMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Ignition.Version = "" // invalid, won't render
@@ -524,7 +524,7 @@ func TestReconcileAfterBadMC(t *testing.T) {
 	cs := framework.NewClientSet("")
 
 	// create a MC that contains a valid ignition config but is not reconcilable
-	mcadd := helpers.CreateMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
+	mcadd := createMCToAddFile("add-a-file", "/etc/mytestconfs", "test")
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mcadd.Spec.Config.Raw)
 	require.Nil(t, err, "failed to parse ignition config")
 	ignCfg.Storage.Disks = []ign3types.Disk{
@@ -629,7 +629,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 
 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
 
-	mcHostFile := helpers.CreateMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
+	mcHostFile := createMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
 
 	// create the dummy MC now
 	_, err := cs.MachineConfigs().Create(context.TODO(), mcHostFile, metav1.CreateOptions{})
@@ -749,4 +749,19 @@ func TestIgn3Cfg(t *testing.T) {
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
 	require.Nil(t, err)
 
+}
+
+func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
+	mcadd := helpers.CreateMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
+
+	ignConfig := ctrlcommon.NewIgnConfig()
+	ignFile := helpers.CreateIgn3File(filename, "data:,"+data, 420)
+	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
+	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
+	mcadd.Spec.Config.Raw = rawIgnConfig
+	return mcadd
+}
+
+func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
+	return createMCToAddFileForRole(name, "worker", filename, data)
 }
