@@ -9,7 +9,7 @@ import (
 	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

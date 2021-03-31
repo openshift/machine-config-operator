@@ -11,7 +11,8 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	kcfg "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -74,19 +75,19 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	}()
 
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, labelRandomNodeFromPool(t, cs, "worker", mcpNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
 		time.Sleep(time.Second * 5)
 		// wait until worker pool updates the node we labelled before we delete the test specific mc and mcp
-		if err := waitForPoolComplete(t, cs, "worker", getMcName(t, cs, "worker")); err != nil {
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", helpers.GetMcName(t, cs, "worker")); err != nil {
 			t.Logf("failed to wait for pool %v", err)
 		}
 	})
 
 	// cache the old configuration value to check against later
-	node := getSingleNodeByRole(t, cs, poolName)
+	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	// the kubelet.conf format is yaml when in the default state and becomes a json when we apply a kubelet config CR
 	defaultConfVal := getValueFromKubeletConfig(t, cs, node, `maxPods: (\S+)`, kubeletPath) + ","
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
@@ -95,17 +96,17 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	}
 
 	// create an MCP to match the node we tagged
-	cleanupFuncs = append(cleanupFuncs, createMCP(t, cs, poolName))
+	cleanupFuncs = append(cleanupFuncs, helpers.CreateMCP(t, cs, poolName))
 
 	// create default mc to have something to verify we successfully rolled back
-	defaultMCConfig := createMC(mcName, poolName)
+	defaultMCConfig := helpers.CreateMC(mcName, poolName)
 	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
 		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})
 		require.Nil(t, err, "machine config deletion failed")
 	})
-	defaultTarget := waitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
+	defaultTarget := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
 
 	// create our first kubelet config and attach it to our created node pool
 	cleanupKcFunc1 := createKcWithConfig(t, cs, kcName1, poolName, &kc1.Spec, "")
@@ -113,7 +114,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	kcMCName1, err := getMCFromKubeletCfg(t, cs, kcName1)
 	require.Nil(t, err, "failed to render machine config from first container runtime config")
 	// ensure the first kubelet config update rolls out to the pool
-	kc1Target := waitForConfigAndPoolComplete(t, cs, poolName, kcMCName1)
+	kc1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName1)
 	// verify value was changed to match that of the first kubelet config
 	firstConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
 	require.Equal(t, firstConfValue, expectedConfVal1, "value in kubelet config not updated as expected")
@@ -124,7 +125,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	kcMCName2, err := getMCFromKubeletCfg(t, cs, kcName2)
 	require.Nil(t, err, "failed to render machine config from second container runtime config")
 	// ensure the second kubelet config update rolls out to the pool
-	waitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
+	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, kcMCName2)
 	// verify value was changed to match that of the first kubelet config
 	secondConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
 	require.Equal(t, secondConfValue, expectedConfVal2, "value in kubelet config not updated as expected")
@@ -134,7 +135,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	require.Nil(t, err)
 	t.Logf("Deleted KubeletConfig %s", kcName2)
 	// ensure config rolls back to the previous kubelet config as expected
-	waitForPoolComplete(t, cs, poolName, kc1Target)
+	helpers.WaitForPoolComplete(t, cs, poolName, kc1Target)
 	// verify that the config value rolled back to that from the first kubelet config
 	rollbackConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
 	require.Equal(t, rollbackConfValue, expectedConfVal1, "kubelet config deletion didn't cause node to roll back to previous kubelet config")
@@ -144,7 +145,7 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	require.Nil(t, err)
 	t.Logf("Deleted KubeletConfig %s", kcName1)
 	// ensure config rolls back as expected
-	waitForPoolComplete(t, cs, poolName, defaultTarget)
+	helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
 	// verify that the config value rolled back to the default value
 	restoredConfValue := getValueFromKubeletConfig(t, cs, node, `maxPods: (\S+)`, kubeletPath) + ","
 	require.Equal(t, restoredConfValue, defaultConfVal, "kubelet config deletion didn't cause node to roll back to default config")
@@ -212,7 +213,7 @@ func getMCFromKubeletCfg(t *testing.T, cs *framework.ClientSet, kcName string) (
 // regexKey is expected to be in the form `"key": (\S+)` to search for the value of key
 func getValueFromKubeletConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, confPath string) string {
 	// get the contents of the kubelet.conf on nodeName
-	out := execCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
+	out := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
 
 	// search based on the regex key. The output should have two members:
 	// one with the entire line `value = key` and one with just the key, in that order
