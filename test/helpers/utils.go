@@ -11,7 +11,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -227,7 +225,7 @@ func MCLabelForWorkers() map[string]string {
 // 	}
 // }
 
-func createIgn3File(path, content string, mode int) ign3types.File {
+func CreateIgn3File(path, content string, mode int) ign3types.File {
 	return ign3types.File{
 		FileEmbedded1: ign3types.FileEmbedded1{
 			Contents: ign3types.Resource{
@@ -242,21 +240,6 @@ func createIgn3File(path, content string, mode int) ign3types.File {
 			},
 		},
 	}
-}
-
-func CreateMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
-	mcadd := CreateMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
-
-	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := createIgn3File(filename, "data:,"+data, 420)
-	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
-	rawIgnConfig := MarshalOrDie(ignConfig)
-	mcadd.Spec.Config.Raw = rawIgnConfig
-	return mcadd
-}
-
-func CreateMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
-	return CreateMCToAddFileForRole(name, "worker", filename, data)
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
