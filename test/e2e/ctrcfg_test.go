@@ -12,7 +12,8 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -69,19 +70,19 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	}()
 
 	// label one node from the pool to specify which worker to update
-	cleanupFuncs = append(cleanupFuncs, labelRandomNodeFromPool(t, cs, "worker", mcpNameToRole(poolName)))
+	cleanupFuncs = append(cleanupFuncs, helpers.LabelRandomNodeFromPool(t, cs, "worker", helpers.MCPNameToRole(poolName)))
 	// upon cleaning up, we need to wait for the pool to reconcile after unlabelling
 	cleanupFuncs = append(cleanupFuncs, func() {
 		// the sleep allows the unlabelling to take effect
 		time.Sleep(time.Second * 5)
 		// wait until worker pool updates the node we labelled before we delete the test specific mc and mcp
-		if err := waitForPoolComplete(t, cs, "worker", getMcName(t, cs, "worker")); err != nil {
+		if err := helpers.WaitForPoolComplete(t, cs, "worker", helpers.GetMcName(t, cs, "worker")); err != nil {
 			t.Logf("failed to wait for pool %v", err)
 		}
 	})
 
 	// cache the old configuration value to check against later
-	node := getSingleNodeByRole(t, cs, poolName)
+	node := helpers.GetSingleNodeByRole(t, cs, poolName)
 	defaultConfVal := getValueFromCrioConfig(t, cs, node, regexKey, defaultPath)
 	if defaultConfVal == expectedConfVal1 || defaultConfVal == expectedConfVal2 {
 		t.Logf("default configuration value %s same as values being tested against. Consider updating the test", defaultConfVal)
@@ -89,17 +90,17 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	}
 
 	// create an MCP to match the node we tagged
-	cleanupFuncs = append(cleanupFuncs, createMCP(t, cs, poolName))
+	cleanupFuncs = append(cleanupFuncs, helpers.CreateMCP(t, cs, poolName))
 
 	// create default mc to have something to verify we successfully rolled back
-	defaultMCConfig := createMC(mcName, poolName)
+	defaultMCConfig := helpers.CreateMC(mcName, poolName)
 	_, err := cs.MachineConfigs().Create(context.TODO(), defaultMCConfig, metav1.CreateOptions{})
 	require.Nil(t, err)
 	cleanupFuncs = append(cleanupFuncs, func() {
 		err := cs.MachineConfigs().Delete(context.TODO(), defaultMCConfig.Name, metav1.DeleteOptions{})
 		require.Nil(t, err, "machine config deletion failed")
 	})
-	defaultTarget := waitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
+	defaultTarget := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, defaultMCConfig.Name)
 
 	// create our first ctrcfg and attach it to our created node pool
 	cleanupCtrcfgFunc1 := createCtrcfgWithConfig(t, cs, ctrcfgName1, poolName, cfg1.Spec.ContainerRuntimeConfig, "")
@@ -107,7 +108,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	ctrcfgMCName1, err := getMCFromCtrcfg(t, cs, ctrcfgName1)
 	require.Nil(t, err, "failed to render machine config from first container runtime config")
 	// ensure the first ctrcfg update rolls out to the pool
-	ctrcfg1Target := waitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName1)
+	ctrcfg1Target := helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName1)
 	// verify value was changed to match that of the first ctrcfg
 	firstConfValue := getValueFromCrioConfig(t, cs, node, regexKey, ctrcfg.CRIODropInFilePathLogLevel)
 	require.Equal(t, firstConfValue, expectedConfVal1, "value in crio config not updated as expected")
@@ -118,7 +119,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	ctrcfgMCName2, err := getMCFromCtrcfg(t, cs, ctrcfgName2)
 	require.Nil(t, err, "failed to render machine config from second container runtime config")
 	// ensure the second ctrcfg update rolls out to the pool
-	waitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName2)
+	helpers.WaitForConfigAndPoolComplete(t, cs, poolName, ctrcfgMCName2)
 	// verify value was changed to match that of the first ctrcfg
 	secondConfValue := getValueFromCrioConfig(t, cs, node, regexKey, ctrcfg.CRIODropInFilePathLogLevel)
 	require.Equal(t, secondConfValue, expectedConfVal2, "value in crio config not updated as expected")
@@ -128,7 +129,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	require.Nil(t, err)
 	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName2)
 	// ensure config rolls back to the previous ctrcfg as expected
-	waitForPoolComplete(t, cs, poolName, ctrcfg1Target)
+	helpers.WaitForPoolComplete(t, cs, poolName, ctrcfg1Target)
 	// verify that the config value rolled back to that from the first ctrcfg
 	rollbackConfValue := getValueFromCrioConfig(t, cs, node, regexKey, ctrcfg.CRIODropInFilePathLogLevel)
 	require.Equal(t, rollbackConfValue, expectedConfVal1, "ctrcfg deletion didn't cause node to roll back to previous ctrcfg config")
@@ -138,7 +139,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	require.Nil(t, err)
 	t.Logf("Deleted ContainerRuntimeConfig %s", ctrcfgName1)
 	// ensure config rolls back as expected
-	waitForPoolComplete(t, cs, poolName, defaultTarget)
+	helpers.WaitForPoolComplete(t, cs, poolName, defaultTarget)
 
 	restoredConfValue := getValueFromCrioConfig(t, cs, node, regexKey, defaultPath)
 	require.Equal(t, restoredConfValue, defaultConfVal, "ctrcfg deletion didn't cause node to roll back to default config")
@@ -213,7 +214,7 @@ func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (
 // regexKey is expected to be in the form `key = (\S+)` to search for the value of key
 func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.Node, regexKey, confPath string) string {
 	// get the contents of the crio.conf on nodeName
-	out := execCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
+	out := helpers.ExecCmdOnNode(t, cs, node, "cat", filepath.Join("/rootfs", confPath))
 
 	// search based on the regex key. The output should have two members:
 	// one with the entire line `value = key` and one with just the key, in that order
@@ -228,7 +229,7 @@ func getValueFromCrioConfig(t *testing.T, cs *framework.ClientSet, node corev1.N
 // fileExists checks whether overrideFile exists in /etc/crio/crio.conf.d
 func fileExists(t *testing.T, cs *framework.ClientSet, node corev1.Node, overrideFile string) bool {
 	// get the contents of the crio drop in directory
-	out := execCmdOnNode(t, cs, node, "ls", filepath.Join("/rootfs", crioDropinDir))
+	out := helpers.ExecCmdOnNode(t, cs, node, "ls", filepath.Join("/rootfs", crioDropinDir))
 
 	// Check if the overrideFile name exists in the output
 	return strings.Contains(string(out), overrideFile)
