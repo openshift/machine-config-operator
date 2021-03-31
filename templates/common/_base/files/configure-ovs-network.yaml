@@ -4,6 +4,11 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
+    
+    # This file is not needed anymore in 4.7+, but when rolling back to 4.6
+    # the ovs pod needs it to know ovs is running on the host.
+    touch /var/run/ovs-config-executed
+
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
