@@ -38,6 +38,10 @@ aliases:
   vsphere-approvers:
     - jcpowermac
     - patrickdillon
+    - rvanderp3
+    - jstuever
   vsphere-reviewers:
     - jcpowermac
     - patrickdillon
+    - rvanderp3
+    - jstuever
