@@ -62,7 +62,7 @@ It's important to note that, since the fields of the ContainerRuntimeConfig are 
 
 ### Troubleshooting Validation Issues
 
-If the specified field values of the ContainerRuntimeConfig cannot be converted to their inteded types then errors related validation maybe be visible on the ContainerRuntimeConfig CR, this is becaues such errors occur outside the coverage of the controller responsible for ContainerRuntimeConfig. In such case, users may need to look into the logs of the `machine-config-controller` container to get more information.
+If the specified field values of the ContainerRuntimeConfig cannot be converted to their intended types, validation errors related may be visible on the ContainerRuntimeConfig CR. This is because such errors occur outside the coverage of the controller responsible for ContainerRuntimeConfig. In such case, users may need to look into the logs of the `machine-config-controller` container to get more information.
 
 e.g.
 
