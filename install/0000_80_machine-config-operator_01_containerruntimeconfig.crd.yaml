@@ -53,7 +53,7 @@ spec:
           properties:
             containerRuntimeConfig:
               description: ContainerRuntimeConfiguration defines the tuneables of
-                the container runtime. It's importent to note that, since the fields
+                the container runtime. It's important to note that, since the fields
                 of the ContainerRuntimeConfiguration are directly read by the
                 upstream kubernetes golang client, the validation of those values
                 is handled directly by that golang client which is outside of the
