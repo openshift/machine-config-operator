@@ -58,7 +58,7 @@ ContainerRuntimeConfig
 
 ## VALIDATION
 
-It's importent to note that, since the fields of the ContainerRuntimeConfig are directly read by the upstream kubernetes golang client, the validation of those values is handled directly by that golang client which is outside of the controller for ContainerRuntimeConfig. Please ensure the valid values are used for those fields as invalid values may render cluster nodes unusable.
+It's important to note that, since the fields of the ContainerRuntimeConfig are directly read by the upstream kubernetes golang client, the validation of those values is handled directly by that golang client which is outside of the controller for ContainerRuntimeConfig. Please ensure the valid values are used for those fields as invalid values may render cluster nodes unusable.
 
 ### Troubleshooting Validation Issues
 
