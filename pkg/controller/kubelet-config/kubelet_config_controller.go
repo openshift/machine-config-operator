@@ -473,6 +473,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		var kubeletIgnition *ign3types.File
 		var logLevelIgnition *ign3types.File
 		var autoSizingReservedIgnition *ign3types.File
+		userDefinedSystemReserved := make(map[string]string, 2)
 
 		// Generate the original KubeletConfig
 		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
@@ -501,6 +502,17 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
 			}
+
+			if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
+				userDefinedSystemReserved["memory"] = val
+				delete(specKubeletConfig.SystemReserved, "memory")
+			}
+
+			if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
+				userDefinedSystemReserved["cpu"] = val
+				delete(specKubeletConfig.SystemReserved, "cpu")
+			}
+
 			// Merge the Old and New
 			err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 			if err != nil {
@@ -548,8 +560,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			logLevelIgnition = createNewKubeletLogLevelIgnition(*cfg.Spec.LogLevel)
 		}
 
-		if cfg.Spec.AutoSizingReserved != nil {
-			autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(*cfg.Spec.AutoSizingReserved)
+		if cfg.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
+			autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(cfg.Spec.AutoSizingReserved, userDefinedSystemReserved)
+		}
+
+		if len(userDefinedSystemReserved) > 0 {
+			autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 		}
 
 		tempIgnConfig := ctrlcommon.NewIgnConfig()
