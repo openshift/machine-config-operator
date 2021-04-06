@@ -85,14 +85,14 @@ contents:
     }
     function static_node_sizing {
         rm -f ${NODE_SIZES_ENV}
-        echo "SYSTEM_RESERVED_MEMORY=1Gi" >> ${NODE_SIZES_ENV}
-        echo "SYSTEM_RESERVED_CPU=500m" >> ${NODE_SIZES_ENV}
+        echo "SYSTEM_RESERVED_MEMORY=$1" >> ${NODE_SIZES_ENV}
+        echo "SYSTEM_RESERVED_CPU=$2" >> ${NODE_SIZES_ENV}
     }
 
     if [ $1 == "true" ]; then
         dynamic_node_sizing
     elif [ $1 == "false" ]; then
-        static_node_sizing
+        static_node_sizing $2 $3
     else
         echo "Unrecongnized command line option. Valid options are \"true\" or \"false\""
     fi
