@@ -8,6 +8,8 @@ metadata:
   deletionGracePeriodSeconds: 65
   labels:
     app: {{ onPremPlatformShortName .ControllerConfig }}-infra-vrrp
+  annotations:
+    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   volumes:
   - name: resource-dir
