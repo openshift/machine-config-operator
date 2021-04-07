@@ -3,6 +3,11 @@ enabled: true
 contents: |
   [Unit]
   Description=Afterburn Hostname
+  # Block services relying on Networking being up.
+  Before=network-online.target
+  # Wait for NetworkManager to report its online
+  After=NetworkManager-wait-online.service
+  # Run before hostname checks
   Before=node-valid-hostname.service
 
   [Service]
