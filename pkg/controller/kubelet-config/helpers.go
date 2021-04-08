@@ -23,8 +23,30 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
-func createNewKubeletDynamicSystemReservedIgnition(dynamicSystemReserved bool) *ign3types.File {
-	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\n", strconv.FormatBool(dynamicSystemReserved))
+func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
+	var autoNodeSizing string
+	var systemReservedMemory string
+	var systemReservedCPU string
+
+	if autoSystemReserved == nil {
+		autoNodeSizing = "false"
+	} else {
+		autoNodeSizing = strconv.FormatBool(*autoSystemReserved)
+	}
+
+	if val, ok := userDefinedSystemReserved["memory"]; ok {
+		systemReservedMemory = val
+	} else {
+		systemReservedMemory = "1Gi"
+	}
+
+	if val, ok := userDefinedSystemReserved["cpu"]; ok {
+		systemReservedCPU = val
+	} else {
+		systemReservedCPU = "500m"
+	}
+
+	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\n", autoNodeSizing, systemReservedMemory, systemReservedCPU)
 
 	mode := 0644
 	overwrite := true
@@ -226,7 +248,10 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if kcDecoded.StaticPodPath != "" {
 		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
 	}
-
+	if kcDecoded.SystemReserved != nil && len(kcDecoded.SystemReserved) > 0 &&
+		cfg.Spec.AutoSizingReserved != nil && *cfg.Spec.AutoSizingReserved {
+		return fmt.Errorf("KubeletConfiguration: autoSizingReserved and systemdReserved cannot be set together")
+	}
 	return nil
 }
 
