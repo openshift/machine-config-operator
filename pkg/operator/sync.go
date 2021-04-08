@@ -624,10 +624,6 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				return false, nil
 			}
 		}
-		syncstatuserr := optr.syncUpgradeableStatus()
-		if syncstatuserr != nil {
-			glog.Errorf("Error syncingUpgradeableStatus: %q", syncstatuserr)
-		}
 		glog.Info("required machine-config pools synchronized")
 		return true, nil
 	}); err != nil {
