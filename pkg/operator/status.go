@@ -262,13 +262,26 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		Status: configv1.ConditionTrue,
 		Reason: asExpectedReason,
 	}
+	var updating, degraded bool
 	for _, pool := range pools {
-		degraded := isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+		// collect updating status but continue to check each pool to see if any pool is degraded
+		if isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolUpdating) {
+			updating = true
+		}
+		degraded = isPoolStatusConditionTrue(pool, mcfgv1.MachineConfigPoolDegraded)
+		// degraded should get top billing in the clusteroperator status, if we find this, set it and update
 		if degraded {
 			coStatus.Status = configv1.ConditionFalse
 			coStatus.Reason = "DegradedPool"
-			coStatus.Message = "One or more machine config pool is degraded, please see `oc get mcp` for further details and resolve before upgrading"
+			coStatus.Message = "One or more machine config pools are degraded, please see `oc get mcp` for further details and resolve before upgrading"
+			break
 		}
+	}
+	// updating and degraded can occur together, in that case defer to the degraded Reason that is already set above
+	if updating && !degraded {
+		coStatus.Status = configv1.ConditionFalse
+		coStatus.Reason = "PoolUpdating"
+		coStatus.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
 	}
 
 	return optr.updateStatus(co, coStatus)
