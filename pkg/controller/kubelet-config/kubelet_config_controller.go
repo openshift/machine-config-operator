@@ -49,8 +49,8 @@ const (
 	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
 	// a machineconfig pool is going to be requeued:
 	//
-	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
-	maxRetries = 15
+	// 18 allows for retries up to about 10 minutes to allow for slower machines to catchup.
+	maxRetries = 18
 )
 
 var (
@@ -394,6 +394,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		glog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
 	}()
 
+	// Wait to apply a kubelet config if the controller config is not completed
+	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
+		return err
+	}
+
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -458,6 +463,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	for _, pool := range mcpPools {
+		if pool.Spec.Configuration.Name == "" {
+			updateDelay := 5 * time.Second
+			// Previously we spammed the logs about empty pools.
+			// Let's just pause for a bit here to let the renderer
+			// initialize them.
+			time.Sleep(updateDelay)
+			return fmt.Errorf("Pool %s is unconfigured, pausing %v for renderer to initialize", pool.Name, updateDelay)
+		}
 		role := pool.Name
 		// Get MachineConfig
 		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)

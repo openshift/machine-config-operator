@@ -11,6 +11,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -108,6 +109,25 @@ func newControllerConfig(name string, platform osev1.PlatformType) *mcfgv1.Contr
 					},
 					APIServerURL:         fmt.Sprintf("https://api.%s.tt.testing:6443", name),
 					APIServerInternalURL: fmt.Sprintf("https://api-int.%s.tt.testing:6443", name),
+				},
+			},
+		},
+		Status: mcfgv1.ControllerConfigStatus{
+			Conditions: []mcfgv1.ControllerConfigStatusCondition{
+				{
+					Type:    mcfgv1.TemplateControllerCompleted,
+					Status:  corev1.ConditionTrue,
+					Message: "",
+				},
+				{
+					Type:    mcfgv1.TemplateControllerRunning,
+					Status:  corev1.ConditionFalse,
+					Message: "",
+				},
+				{
+					Type:    mcfgv1.TemplateControllerFailing,
+					Status:  corev1.ConditionFalse,
+					Message: "",
 				},
 			},
 		},
