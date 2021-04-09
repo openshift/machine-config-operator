@@ -37,7 +37,7 @@ require (
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.9
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20210209175609-175513fcccbe
+	github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67
 	github.com/openshift/client-go v0.0.0-20210112165513-ebc401615f47
 	github.com/openshift/library-go v0.0.0-20210205203934-9eb0d970f2f4
 	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
@@ -51,12 +51,13 @@ require (
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
-	k8s.io/api v0.20.0
+	k8s.io/api v0.21.0-rc.0
 	k8s.io/apiextensions-apiserver v0.20.0
-	k8s.io/apimachinery v0.20.0
+	k8s.io/apimachinery v0.21.0-rc.0
 	k8s.io/client-go v0.20.0
-	k8s.io/code-generator v0.20.0
+	k8s.io/code-generator v0.21.0-rc.0
 	k8s.io/kubectl v0.20.0
 	k8s.io/kubelet v0.20.0
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
@@ -68,7 +69,7 @@ replace (
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20210209175609-175513fcccbe
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.20.0
