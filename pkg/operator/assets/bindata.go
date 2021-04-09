@@ -1166,7 +1166,7 @@ spec:
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
-      terminationGracePeriodSeconds: 3600
+      terminationGracePeriodSeconds: 600
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: "system-node-critical"
