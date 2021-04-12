@@ -172,6 +172,15 @@ contents:
           connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args}
       fi
 
+      # Update connections with master property set to use the new device name
+      new_device=$(nmcli --get-values connection.interface-name conn show ovs-if-phys0)
+      for conn_uuid in $(nmcli -g UUID connection show) ; do
+        if [ "$(nmcli -g connection.master connection show uuid "$conn_uuid")" != "$old_conn" ]; then
+          continue
+        fi
+        nmcli conn mod uuid ${conn_uuid} connection.master ${new_device}
+      done
+
       nmcli conn up ovs-if-phys0
 
       if ! nmcli connection show ovs-if-br-ex &> /dev/null; then
