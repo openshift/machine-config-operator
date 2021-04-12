@@ -225,6 +225,8 @@ spec:
 
 This allows to enable/disable [FIPS mode](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/security_guide/chap-federal_standards_and_regulations). If any of the configuration has FIPS enabled, it'll be set.  A similar restriction applies to this as for `KernelArguments` above.
 
+Enabling FIPS mode is a Day 1 operation, set at install time.  You cannot enable FIPS via a MachineConfig as a Day2 operation.
+
 ### OSImageURL
 
 You should not attempt to set this field; it is controlled by the operator and injected directly into the final `rendered-` config.
