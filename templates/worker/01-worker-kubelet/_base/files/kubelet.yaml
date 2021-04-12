@@ -19,6 +19,8 @@ contents:
     kubeAPIQPS: 50
     kubeAPIBurst: 100
     rotateCertificates: true
+    shutdownGracePeriod: 100 
+    shutdownGracePeriodCriticalPods: 100
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
