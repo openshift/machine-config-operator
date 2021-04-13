@@ -16,6 +16,9 @@ endif
 export GOPATH=$(shell echo $${GOPATH:-$$HOME/go})
 export GO111MODULE
 export GOPROXY=https://proxy.golang.org
+# set golangci lint cache dir to an accessible location
+# this is necessary for running golangci-lint in a container
+export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
@@ -55,26 +58,18 @@ go-deps:
 	go mod tidy
 	go mod vendor
 	go mod verify
-	# make scripts executable
-	chmod +x ./vendor/k8s.io/code-generator/generate-groups.sh
-	chmod +x ./vendor/k8s.io/code-generator/generate-internal-groups.sh
 
 install-tools:
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
-	GO111MODULE=on go build -o $(GOPATH)/bin/gosec ./vendor/github.com/securego/gosec/cmd/gosec
 
 # Run verification steps
 # Example:
 #    make verify
 verify: install-tools
 	golangci-lint run --build-tags=$(GOTAGS)
-	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
-	# addressed
-	gosec -severity high --confidence medium -exclude G204 -quiet ./...
 	# Remove the vendor/k8s.io/code-generator vendor hack
 	# once code-generator plays nice with go modules, see
-	# https://github.com/kubernetes/kubernetes/issues/82531 and
-	# https://github.com/kubernetes/kubernetes/pull/85559
+	# https://github.com/kubernetes/kubernetes/issues/82531
 	pushd vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
 	hack/verify-codegen.sh
 	hack/verify-generated-bindata.sh

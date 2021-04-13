@@ -5,10 +5,7 @@ go 1.15
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/InVisionApp/go-health v2.1.0+incompatible
-	github.com/Masterminds/goutils v1.1.0 // indirect
-	github.com/Masterminds/semver v1.4.2 // indirect
-	github.com/Masterminds/sprig v2.20.0+incompatible
-	github.com/OpenPeeDeeP/depguard v1.0.1 // indirect
+	github.com/Masterminds/sprig v2.22.0+incompatible
 	github.com/apparentlymart/go-cidr v1.0.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/clarketm/json v1.14.1
@@ -29,12 +26,9 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
-	github.com/golangci/golangci-lint v1.18.0
-	github.com/google/go-cmp v0.5.2
+	github.com/golangci/golangci-lint v1.39.0
+	github.com/google/go-cmp v0.5.4
 	github.com/google/renameio v0.1.0
-	github.com/gostaticanalysis/analysisutil v0.0.3 // indirect
-	github.com/hashicorp/golang-lru v0.5.3 // indirect
-	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.9
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20210209175609-175513fcccbe
@@ -43,14 +37,13 @@ require (
 	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
-	github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d
-	github.com/spf13/cobra v1.1.1
+	github.com/spf13/cobra v1.1.3
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.6.1
-	github.com/ultraware/funlen v0.0.2 // indirect
+	github.com/stretchr/testify v1.7.0
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
+	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	k8s.io/api v0.20.0
 	k8s.io/apiextensions-apiserver v0.20.0
