@@ -992,6 +992,33 @@ func (VSpherePlatformStatus) SwaggerDoc() map[string]string {
 	return map_VSpherePlatformStatus
 }
 
+var map_ComponentRouteSpec = map[string]string{
+	"":                         "ComponentRouteSpec allows for configuration of a route's hostname and serving certificate.",
+	"namespace":                "namespace is the namespace of the route to customize.\n\nThe namespace and name of this componentRoute must match a corresponding entry in the list of status.componentRoutes if the route is to be customized.",
+	"name":                     "name is the logical name of the route to customize.\n\nThe namespace and name of this componentRoute must match a corresponding entry in the list of status.componentRoutes if the route is to be customized.",
+	"hostname":                 "hostname is the hostname that should be used by the route.",
+	"servingCertKeyPairSecret": "servingCertKeyPairSecret is a reference to a secret of type `kubernetes.io/tls` in the openshift-config namespace. The serving cert/key pair must match and will be used by the operator to fulfill the intent of serving with this name. If the custom hostname uses the default routing suffix of the cluster, the Secret specification for a serving certificate will not be needed.",
+}
+
+func (ComponentRouteSpec) SwaggerDoc() map[string]string {
+	return map_ComponentRouteSpec
+}
+
+var map_ComponentRouteStatus = map[string]string{
+	"":                 "ComponentRouteStatus contains information allowing configuration of a route's hostname and serving certificate.",
+	"namespace":        "namespace is the namespace of the route to customize. It must be a real namespace. Using an actual namespace ensures that no two components will conflict and the same component can be installed multiple times.\n\nThe namespace and name of this componentRoute must match a corresponding entry in the list of spec.componentRoutes if the route is to be customized.",
+	"name":             "name is the logical name of the route to customize. It does not have to be the actual name of a route resource but it cannot be renamed.\n\nThe namespace and name of this componentRoute must match a corresponding entry in the list of spec.componentRoutes if the route is to be customized.",
+	"defaultHostname":  "defaultHostname is the hostname of this route prior to customization.",
+	"consumingUsers":   "consumingUsers is a slice of ServiceAccounts that need to have read permission on the servingCertKeyPairSecret secret.",
+	"currentHostnames": "currentHostnames is the list of current names used by the route. Typically, this list should consist of a single hostname, but if multiple hostnames are supported by the route the operator may write multiple entries to this list.",
+	"conditions":       "conditions are used to communicate the state of the componentRoutes entry.\n\nSupported conditions include Available, Degraded and Progressing.\n\nIf available is true, the content served by the route can be accessed by users. This includes cases where a default may continue to serve content while the customized route specified by the cluster-admin is being configured.\n\nIf Degraded is true, that means something has gone wrong trying to handle the componentRoutes entry. The currentHostnames field may or may not be in effect.\n\nIf Progressing is true, that means the component is taking some action related to the componentRoutes entry.",
+	"relatedObjects":   "relatedObjects is a list of resources which are useful when debugging or inspecting how spec.componentRoutes is applied.",
+}
+
+func (ComponentRouteStatus) SwaggerDoc() map[string]string {
+	return map_ComponentRouteStatus
+}
+
 var map_Ingress = map[string]string{
 	"":       "Ingress holds cluster-wide information about ingress, including the default ingress domain used for routes. The canonical name is `cluster`.",
 	"spec":   "spec holds user settable values for configuration",
@@ -1003,12 +1030,21 @@ func (Ingress) SwaggerDoc() map[string]string {
 }
 
 var map_IngressSpec = map[string]string{
-	"domain":     "domain is used to generate a default host name for a route when the route's host name is empty. The generated host name will follow this pattern: \"<route-name>.<route-namespace>.<domain>\".\n\nIt is also used as the default wildcard domain suffix for ingress. The default ingresscontroller domain will follow this pattern: \"*.<domain>\".\n\nOnce set, changing domain is not currently supported.",
-	"appsDomain": "appsDomain is an optional domain to use instead of the one specified in the domain field when a Route is created without specifying an explicit host. If appsDomain is nonempty, this value is used to generate default host values for Route. Unlike domain, appsDomain may be modified after installation. This assumes a new ingresscontroller has been setup with a wildcard certificate.",
+	"domain":          "domain is used to generate a default host name for a route when the route's host name is empty. The generated host name will follow this pattern: \"<route-name>.<route-namespace>.<domain>\".\n\nIt is also used as the default wildcard domain suffix for ingress. The default ingresscontroller domain will follow this pattern: \"*.<domain>\".\n\nOnce set, changing domain is not currently supported.",
+	"appsDomain":      "appsDomain is an optional domain to use instead of the one specified in the domain field when a Route is created without specifying an explicit host. If appsDomain is nonempty, this value is used to generate default host values for Route. Unlike domain, appsDomain may be modified after installation. This assumes a new ingresscontroller has been setup with a wildcard certificate.",
+	"componentRoutes": "componentRoutes is an optional list of routes that are managed by OpenShift components that a cluster-admin is able to configure the hostname and serving certificate for. The namespace and name of each route in this list should match an existing entry in the status.componentRoutes list.\n\nTo determine the set of configurable Routes, look at namespace and name of entries in the .status.componentRoutes list, where participating operators write the status of configurable routes.",
 }
 
 func (IngressSpec) SwaggerDoc() map[string]string {
 	return map_IngressSpec
+}
+
+var map_IngressStatus = map[string]string{
+	"componentRoutes": "componentRoutes is where participating operators place the current route status for routes whose hostnames and serving certificates can be customized by the cluster-admin.",
+}
+
+func (IngressStatus) SwaggerDoc() map[string]string {
+	return map_IngressStatus
 }
 
 var map_ClusterNetworkEntry = map[string]string{
@@ -1051,6 +1087,15 @@ func (Network) SwaggerDoc() map[string]string {
 	return map_Network
 }
 
+var map_NetworkMigration = map[string]string{
+	"":            "NetworkMigration represents the cluster network configuration.",
+	"networkType": "NetworkType is the target plugin that is to be deployed. Currently supported values are: OpenShiftSDN, OVNKubernetes",
+}
+
+func (NetworkMigration) SwaggerDoc() map[string]string {
+	return map_NetworkMigration
+}
+
 var map_NetworkSpec = map[string]string{
 	"":                     "NetworkSpec is the desired network configuration. As a general rule, this SHOULD NOT be read directly. Instead, you should consume the NetworkStatus, as it indicates the currently deployed configuration. Currently, most spec fields are immutable after installation. Please view the individual ones for further details on each.",
 	"clusterNetwork":       "IP address pool to use for pod IPs. This field is immutable after installation.",
@@ -1070,6 +1115,7 @@ var map_NetworkStatus = map[string]string{
 	"serviceNetwork":    "IP address pool for services. Currently, we only support a single entry here.",
 	"networkType":       "NetworkType is the plugin that is deployed (e.g. OpenShiftSDN).",
 	"clusterNetworkMTU": "ClusterNetworkMTU is the MTU for inter-pod networking.",
+	"migration":         "Migration contains the cluster network migration configuration.",
 }
 
 func (NetworkStatus) SwaggerDoc() map[string]string {
