@@ -22,7 +22,6 @@ require (
 	github.com/coreos/ignition v0.35.0
 	github.com/coreos/ignition/v2 v2.7.0
 	github.com/davecgh/go-spew v1.1.1
-	github.com/docker/spdystream v0.0.0-20181023171402-6480d4af844c // indirect
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/elazarl/goproxy/ext v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
@@ -51,15 +50,15 @@ require (
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
-	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
-	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
+	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
+	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	k8s.io/api v0.21.0-rc.0
-	k8s.io/apiextensions-apiserver v0.20.0
+	k8s.io/apiextensions-apiserver v0.21.0-rc.0
 	k8s.io/apimachinery v0.21.0-rc.0
-	k8s.io/client-go v0.20.0
+	k8s.io/client-go v0.21.0-rc.0
 	k8s.io/code-generator v0.21.0-rc.0
-	k8s.io/kubectl v0.20.0
-	k8s.io/kubelet v0.20.0
+	k8s.io/kubectl v0.21.0-rc.0
+	k8s.io/kubelet v0.21.0-rc.0
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
 )
 
@@ -72,26 +71,26 @@ replace (
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
-	k8s.io/api => k8s.io/api v0.20.0
-	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.20.0
-	k8s.io/apimachinery => k8s.io/apimachinery v0.20.0
-	k8s.io/apiserver => k8s.io/apiserver v0.20.0
-	k8s.io/cli-runtime => k8s.io/cli-runtime v0.20.0
-	k8s.io/client-go => k8s.io/client-go v0.20.0
-	k8s.io/cloud-provider => k8s.io/cloud-provider v0.20.0
-	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.20.0
-	k8s.io/code-generator => k8s.io/code-generator v0.20.0
-	k8s.io/component-base => k8s.io/component-base v0.20.0
-	k8s.io/cri-api => k8s.io/cri-api v0.20.0
-	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.20.0
-	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.20.0
-	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.20.0
-	k8s.io/kube-proxy => k8s.io/kube-proxy v0.20.0
-	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.20.0
-	k8s.io/kubectl => k8s.io/kubectl v0.20.0
-	k8s.io/kubelet => k8s.io/kubelet v0.20.0
-	k8s.io/kubernetes => k8s.io/kubernetes v1.20.0
-	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.20.0
-	k8s.io/metrics => k8s.io/metrics v0.20.0
-	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.20.0
+	k8s.io/api => k8s.io/api v0.21.0-rc.0
+	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.0-rc.0
+	k8s.io/apimachinery => k8s.io/apimachinery v0.21.0-rc.0
+	k8s.io/apiserver => k8s.io/apiserver v0.21.0-rc.0
+	k8s.io/cli-runtime => k8s.io/cli-runtime v0.21.0-rc.0
+	k8s.io/client-go => k8s.io/client-go v0.21.0-rc.0
+	k8s.io/cloud-provider => k8s.io/cloud-provider v0.21.0-rc.0
+	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.21.0-rc.0
+	k8s.io/code-generator => k8s.io/code-generator v0.21.0-rc.0
+	k8s.io/component-base => k8s.io/component-base v0.21.0-rc.0
+	k8s.io/cri-api => k8s.io/cri-api v0.21.0-rc.0
+	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.21.0-rc.0
+	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.21.0-rc.0
+	k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.21.0-rc.0
+	k8s.io/kube-proxy => k8s.io/kube-proxy v0.21.0-rc.0
+	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.21.0-rc.0
+	k8s.io/kubectl => k8s.io/kubectl v0.21.0-rc.0
+	k8s.io/kubelet => k8s.io/kubelet v0.21.0-rc.0
+	k8s.io/kubernetes => k8s.io/kubernetes v1.21.0-rc.0
+	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.21.0-rc.0
+	k8s.io/metrics => k8s.io/metrics v0.21.0-rc.0
+	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.21.0-rc.0
 )
