@@ -122,6 +122,9 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	if network.Status.NetworkType == "" {
 		// At install time, when CNO has not started, status is unset, use the value in spec.
 		ccSpec.NetworkType = network.Spec.NetworkType
+	} else if network.Status.Migration != nil {
+		// At sdn migration prepare phase, use the value in status.migration to prepare the node.
+		ccSpec.NetworkType = network.Status.Migration.NetworkType
 	} else {
 		// After installation, the MCO should not assume the network is changing just because the spec changed, it needs to wait until CNO updates the status.
 		ccSpec.NetworkType = network.Status.NetworkType
