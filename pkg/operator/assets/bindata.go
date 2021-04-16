@@ -90,6 +90,8 @@ kind: Pod
 metadata:
   name: bootstrap-machine-config-operator
   namespace: {{.TargetNamespace}}
+  annotations:
+    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   initContainers:
   - name: machine-config-controller
@@ -808,6 +810,8 @@ spec:
     metadata:
       labels:
         k8s-app: machine-config-controller
+      annotations:
+        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-controller
@@ -1102,6 +1106,8 @@ spec:
       name: machine-config-daemon
       labels:
         k8s-app: machine-config-daemon
+      annotations:
+        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-daemon
@@ -1182,7 +1188,8 @@ spec:
             secretName: cookie-secret
       tolerations:
       # MCD needs to run everywhere. Tolerate all taints.
-      - operator: Exists`)
+      - operator: Exists
+`)
 
 func manifestsMachineconfigdaemonDaemonsetYamlBytes() ([]byte, error) {
 	return _manifestsMachineconfigdaemonDaemonsetYaml, nil
@@ -1438,6 +1445,8 @@ spec:
       name: machine-config-server
       labels:
         k8s-app: machine-config-server
+      annotations:
+        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-server
@@ -1681,6 +1690,8 @@ metadata:
   deletionGracePeriodSeconds: 65
   labels:
     app: {{ onPremPlatformShortName .ControllerConfig }}-infra-mdns
+  annotations:
+    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   volumes:
   - name: resource-dir
@@ -1824,6 +1835,8 @@ metadata:
   deletionGracePeriodSeconds: 65
   labels:
     app: {{ onPremPlatformShortName .ControllerConfig }}-infra-vrrp
+  annotations:
+    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   volumes:
   - name: resource-dir
