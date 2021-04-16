@@ -11,6 +11,8 @@ spec:
     metadata:
       labels:
         k8s-app: machine-config-controller
+      annotations:
+        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-controller
