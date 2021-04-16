@@ -270,6 +270,9 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	cid := strings.TrimSpace(string(cidBuf))
 	args = []string{"cp", fmt.Sprintf("%s:/", cid), osImageContentDir}
 	_, err = pivotutils.RunExtBackground(numRetriesNetCommands, "podman", args...)
+	if err != nil {
+		return
+	}
 
 	// Set selinux context to var_run_t to avoid selinux denial
 	args = []string{"-R", "-t", "var_run_t", osImageContentDir}
