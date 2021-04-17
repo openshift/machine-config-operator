@@ -33,7 +33,6 @@ var (
 	runOpts struct {
 		rootMount      string
 		healthCheckURL string
-		vip            string
 	}
 )
 
@@ -44,12 +43,11 @@ const downFileDir = "/run/cloud-routes"
 func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for writing down files or chrooting.")
-	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check")
-	runCmd.PersistentFlags().StringVar(&runOpts.vip, "vip", "", "The VIP to remove if the health check fails. Determined from URL if not provided")
+	runCmd.PersistentFlags().StringVar(&runOpts.healthCheckURL, "health-check-url", "", "HTTP(s) URL for the health check. The hostname is also used to determine the virtual IPs")
 }
 
 type handler struct {
-	vip string
+	vips []string
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -139,45 +137,45 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 }
 
 func newHandler(uri *url.URL) (*handler, error) {
-	h := handler{}
-
-	if runOpts.vip != "" {
-		h.vip = runOpts.vip
-	} else {
-		addrs, err := net.LookupHost(uri.Hostname())
-		if err != nil {
-			return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
-		}
-		if len(addrs) != 1 {
-			return nil, fmt.Errorf("hostname %s has %d addresses, expected 1 - aborting", uri.Hostname(), len(addrs))
-		}
-		h.vip = addrs[0]
-		glog.Infof("Using VIP %s", h.vip)
+	addrs, err := net.LookupHost(uri.Hostname())
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("hostname %s has no addresses, expected at least 1 - aborting", uri.Hostname())
 	}
 
+	h := handler{
+		vips: addrs,
+	}
+	glog.Infof("Using VIPs %v", h.vips)
 	return &h, nil
 }
 
 // onFailure: either stop the routes service, or write downfile
 func (h *handler) onFailure() error {
-	if err := writeVipStateFile(h.vip, "down"); err != nil {
-		return err
-	}
-	glog.Infof("healthcheck failed, created downfile %s.down", h.vip)
-	if err := removeVipStateFile(h.vip, "up"); err != nil {
-		return err
+	for _, vip := range h.vips {
+		if err := writeVipStateFile(vip, "down"); err != nil {
+			return err
+		}
+		glog.Infof("healthcheck failed, created downfile %s.down", vip)
+		if err := removeVipStateFile(vip, "up"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // onSuccess: either start routes service, or remove down file
 func (h *handler) onSuccess() error {
-	if err := removeVipStateFile(h.vip, "down"); err != nil {
-		return err
-	}
-	glog.Infof("healthcheck succeeded, removed downfile %s.down", h.vip)
-	if err := writeVipStateFile(h.vip, "up"); err != nil {
-		return err
+	for _, vip := range h.vips {
+		if err := removeVipStateFile(vip, "down"); err != nil {
+			return err
+		}
+		glog.Infof("healthcheck succeeded, removed downfile %s.down", vip)
+		if err := writeVipStateFile(vip, "up"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
