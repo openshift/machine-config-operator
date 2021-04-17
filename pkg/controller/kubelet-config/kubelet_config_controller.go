@@ -346,16 +346,13 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		if getErr != nil {
 			return getErr
 		}
-		// To avoid a long list of same statuses, only append a status if it is the first status
+		// Keeps a list of three status to avoid a long list of same statuses,
+		// only append a status if it is the first status
 		// or if the status message is different from the message of the last status recorded
 		// If the last status message is the same as the new one, then update the last status to
 		// reflect the latest time stamp from the new status message.
 		newStatusCondition := wrapErrorWithCondition(err, args...)
-		if len(newcfg.Status.Conditions) == 0 || newStatusCondition.Message != newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message {
-			newcfg.Status.Conditions = append(newcfg.Status.Conditions, newStatusCondition)
-		} else if newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message == newStatusCondition.Message {
-			newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1] = newStatusCondition
-		}
+		cleanUpStatusConditions(&newcfg.Status.Conditions, newStatusCondition)
 		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
 		return lerr
 	})
@@ -363,6 +360,20 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		glog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
 	}
 	return err
+}
+
+// cleanUpStatusConditions keeps at most three conditions of different timestamps for the kubelet config object
+func cleanUpStatusConditions(statusConditions *[]mcfgv1.KubeletConfigCondition, newStatusCondition mcfgv1.KubeletConfigCondition) {
+	statusLimit := 3
+	statusLen := len(*statusConditions)
+	if statusLen > 0 && (*statusConditions)[statusLen-1].Message == newStatusCondition.Message {
+		(*statusConditions)[statusLen-1].LastTransitionTime = newStatusCondition.LastTransitionTime
+	} else {
+		*statusConditions = append(*statusConditions, newStatusCondition)
+	}
+	if len(*statusConditions) > statusLimit {
+		*statusConditions = (*statusConditions)[len(*statusConditions)-statusLimit:]
+	}
 }
 
 // addAnnotation adds the annotions for a kubeletconfig object with the given annotationKey and annotationVal
