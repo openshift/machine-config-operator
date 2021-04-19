@@ -16,4 +16,4 @@ result in the new pull secret being laid down on nodes.
 
 Note that the `.dockerconfigjson` field is a base64 encoded JSON.
 
-The pull secret in `openshift-config` is rendered into a `MachineConfig` object by the MCO which applies to all pools.  Therefore, like all `MachineConfig` changes, it will currently cause a drain and reboot for all affected machines.
+The pull secret in `openshift-config` is rendered into a `MachineConfig` object by the MCO which applies to all pools. As of OpenShift 4.7, this [no longer requires](./MachineConfigDaemon.md#drainless-and-rebootless-updates) a drain and reboot.
