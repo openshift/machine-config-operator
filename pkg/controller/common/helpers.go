@@ -422,7 +422,8 @@ func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Co
 				outUser.SSHAuthorizedKeys = append(outUser.SSHAuthorizedKeys, users[i].SSHAuthorizedKeys[j])
 			}
 		}
-		ignConfig.Passwd.Users = []ign2types.PasswdUser{outUser}
+		// Ensure SSH key uniqueness
+		ignConfig.Passwd.Users = []ign2types.PasswdUser{dedupePasswdUserSSHKeys(outUser)}
 	}
 
 	// outFiles and outUnits should now have all duplication removed
@@ -533,4 +534,31 @@ func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interfac
 	}
 	err = client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), deprecatedKey, metav1.DeleteOptions{})
 	return managedKey, err
+}
+
+// Ensures SSH keys are unique for a given Ign 2 PasswdUser
+// See: https://bugzilla.redhat.com/show_bug.cgi?id=1934176
+func dedupePasswdUserSSHKeys(passwdUser ign2types.PasswdUser) ign2types.PasswdUser {
+	// Map for checking for duplicates.
+	knownSSHKeys := map[ign2types.SSHAuthorizedKey]bool{}
+
+	// Preserve ordering of SSH keys.
+	dedupedSSHKeys := []ign2types.SSHAuthorizedKey{}
+
+	for _, sshKey := range passwdUser.SSHAuthorizedKeys {
+		if _, isKnown := knownSSHKeys[sshKey]; isKnown {
+			// We've seen this key before warn and move on.
+			glog.Warningf("duplicate SSH public key found: %s", sshKey)
+			continue
+		}
+
+		// We haven't seen this key before, add it.
+		dedupedSSHKeys = append(dedupedSSHKeys, sshKey)
+		knownSSHKeys[sshKey] = true
+	}
+
+	// Overwrite the keys with the deduped list.
+	passwdUser.SSHAuthorizedKeys = dedupedSSHKeys
+
+	return passwdUser
 }
