@@ -1,4 +1,4 @@
-package e2e_test
+package helpers
 
 import (
 	"context"
@@ -11,21 +11,18 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
-	"github.com/openshift/machine-config-operator/test/helpers"
+	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// getMcName returns the current configuration name of the machine config pool poolName
-func getMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
+// GetMcName returns the current configuration name of the machine config pool poolName
+func GetMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
 	// grab the initial machineconfig used by the worker pool
 	// this MC is gonna be the one which is going to be reapplied once the previous MC is deleted
 	mcp, err := cs.MachineConfigPools().Get(context.TODO(), poolName, metav1.GetOptions{})
@@ -33,20 +30,20 @@ func getMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
 	return mcp.Status.Configuration.Name
 }
 
-// waitForConfigAndPoolComplete is a helper function that gets a renderedConfig and waits for its pool to complete.
+// WaitForConfigAndPoolComplete is a helper function that gets a renderedConfig and waits for its pool to complete.
 // The return value is the final rendered config.
-func waitForConfigAndPoolComplete(t *testing.T, cs *framework.ClientSet, pool, mcName string) string {
-	config, err := waitForRenderedConfig(t, cs, pool, mcName)
+func WaitForConfigAndPoolComplete(t *testing.T, cs *framework.ClientSet, pool, mcName string) string {
+	config, err := WaitForRenderedConfig(t, cs, pool, mcName)
 	require.Nil(t, err, "failed to render machine config %s from pool %s", mcName, pool)
-	err = waitForPoolComplete(t, cs, pool, config)
+	err = WaitForPoolComplete(t, cs, pool, config)
 	require.Nil(t, err, "pool %s did not update to config %s", pool, config)
 	return config
 }
 
-// waitForRenderedConfig polls a MachineConfigPool until it has
+// WaitForRenderedConfig polls a MachineConfigPool until it has
 // included the given mcName in its config, and returns the new
 // rendered config name.
-func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName string) (string, error) {
+func WaitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName string) (string, error) {
 	var renderedConfig string
 	startTime := time.Now()
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
@@ -68,8 +65,8 @@ func waitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 	return renderedConfig, nil
 }
 
-// waitForPoolComplete polls a pool until it has completed an update to target
-func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
+// WaitForPoolComplete polls a pool until it has completed an update to target
+func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {
 	startTime := time.Now()
 	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
 		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
@@ -90,9 +87,9 @@ func waitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	return nil
 }
 
-// labelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
-func labelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
-	nodes, err := getNodesByRole(cs, pool)
+// LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
+func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
+	nodes, err := GetNodesByRole(cs, pool)
 	require.Nil(t, err)
 	require.NotEmpty(t, nodes)
 
@@ -106,16 +103,16 @@ func labelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	}
 }
 
-// getSingleNodeByRoll gets all nodes by role pool, and asserts there should only be one
-func getSingleNodeByRole(t *testing.T, cs *framework.ClientSet, role string) corev1.Node {
-	nodes, err := getNodesByRole(cs, role)
+// GetSingleNodeByRoll gets all nodes by role pool, and asserts there should only be one
+func GetSingleNodeByRole(t *testing.T, cs *framework.ClientSet, role string) corev1.Node {
+	nodes, err := GetNodesByRole(cs, role)
 	require.Nil(t, err)
 	require.Len(t, nodes, 1)
 	return nodes[0]
 }
 
-// getNodesByRole gets all nodes labeled with role role
-func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error) {
+// GetNodesByRole gets all nodes labeled with role role
+func GetNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error) {
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
 	}
@@ -126,16 +123,16 @@ func getNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error)
 	return nodes.Items, nil
 }
 
-// createMCP create a machine config pool with name mcpName
+// CreateMCP create a machine config pool with name mcpName
 // it will also use mcpName as the label selector, so any node you want to be included
 // in the pool should have a label node-role.kubernetes.io/mcpName = ""
-func createMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
+func CreateMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	infraMCP := &mcfgv1.MachineConfigPool{}
 	infraMCP.Name = mcpName
 	nodeSelector := metav1.LabelSelector{}
 	infraMCP.Spec.NodeSelector = &nodeSelector
 	infraMCP.Spec.NodeSelector.MatchLabels = make(map[string]string)
-	infraMCP.Spec.NodeSelector.MatchLabels[mcpNameToRole(mcpName)] = ""
+	infraMCP.Spec.NodeSelector.MatchLabels[MCPNameToRole(mcpName)] = ""
 	mcSelector := metav1.LabelSelector{}
 	infraMCP.Spec.MachineConfigSelector = &mcSelector
 	infraMCP.Spec.MachineConfigSelector.MatchExpressions = []metav1.LabelSelectorRequirement{
@@ -155,19 +152,19 @@ func createMCP(t *testing.T, cs *framework.ClientSet, mcpName string) func() {
 	}
 }
 
-// mcpNameToRole converts a mcpName to a node role label
-func mcpNameToRole(mcpName string) string {
+// MCPNameToRole converts a mcpName to a node role label
+func MCPNameToRole(mcpName string) string {
 	return fmt.Sprintf("node-role.kubernetes.io/%s", mcpName)
 }
 
-// createMC creates a machine config object with name and role
-func createMC(name, role string) *mcfgv1.MachineConfig {
-	return helpers.NewMachineConfig(name, mcLabelForRole(role), "", nil)
+// CreateMC creates a machine config object with name and role
+func CreateMC(name, role string) *mcfgv1.MachineConfig {
+	return NewMachineConfig(name, MCLabelForRole(role), "", nil)
 }
 
-// execCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
+// ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
-func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
+func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
 	mcd, err := mcdForNode(cs, &node)
 	require.Nil(t, err)
 	mcdName := mcd.ObjectMeta.Name
@@ -187,8 +184,8 @@ func execCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	return string(out)
 }
 
-// isOKDCluster checks whether the Upstream field on the CV spec references OKD's update server
-func isOKDCluster(cs *framework.ClientSet) (bool, error) {
+// IsOKDCluster checks whether the Upstream field on the CV spec references OKD's update server
+func IsOKDCluster(cs *framework.ClientSet) (bool, error) {
 	cv, err := cs.ClusterVersions().Get(context.TODO(), "version", metav1.GetOptions{})
 	if err != nil {
 		return false, err
@@ -199,14 +196,14 @@ func isOKDCluster(cs *framework.ClientSet) (bool, error) {
 	return false, nil
 }
 
-func mcLabelForRole(role string) map[string]string {
+func MCLabelForRole(role string) map[string]string {
 	mcLabels := make(map[string]string)
 	mcLabels[mcfgv1.MachineConfigRoleLabelKey] = role
 	return mcLabels
 }
 
-func mcLabelForWorkers() map[string]string {
-	return mcLabelForRole("worker")
+func MCLabelForWorkers() map[string]string {
+	return MCLabelForRole("worker")
 }
 
 // TODO consider also testing for Ign2
@@ -228,7 +225,7 @@ func mcLabelForWorkers() map[string]string {
 // 	}
 // }
 
-func createIgn3File(path, content string, mode int) ign3types.File {
+func CreateIgn3File(path, content string, mode int) ign3types.File {
 	return ign3types.File{
 		FileEmbedded1: ign3types.FileEmbedded1{
 			Contents: ign3types.Resource{
@@ -239,25 +236,10 @@ func createIgn3File(path, content string, mode int) ign3types.File {
 		Node: ign3types.Node{
 			Path: path,
 			User: ign3types.NodeUser{
-				Name: helpers.StrToPtr("root"),
+				Name: StrToPtr("root"),
 			},
 		},
 	}
-}
-
-func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
-	mcadd := createMC(fmt.Sprintf("%s-%s", name, uuid.NewUUID()), role)
-
-	ignConfig := ctrlcommon.NewIgnConfig()
-	ignFile := createIgn3File(filename, "data:,"+data, 420)
-	ignConfig.Storage.Files = append(ignConfig.Storage.Files, ignFile)
-	rawIgnConfig := helpers.MarshalOrDie(ignConfig)
-	mcadd.Spec.Config.Raw = rawIgnConfig
-	return mcadd
-}
-
-func createMCToAddFile(name, filename, data string) *mcfgv1.MachineConfig {
-	return createMCToAddFileForRole(name, "worker", filename, data)
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
@@ -273,9 +255,9 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 	}
 	if len(mcdList.Items) != 1 {
 		if len(mcdList.Items) == 0 {
-			return nil, fmt.Errorf("Failed to find MCD for node %s", node.Name)
+			return nil, fmt.Errorf("failed to find MCD for node %s", node.Name)
 		}
-		return nil, fmt.Errorf("Too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
+		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
 	}
 	return &mcdList.Items[0], nil
 }
