@@ -2,10 +2,16 @@ package v1
 
 import (
 	"fmt"
+	"os/exec"
+	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// proxyPullTestImage will be pulled down through http proxy if set for proxy validation
+const proxyPullTestImage = "registry-proxy.engineering.redhat.com/rh-osbs/openshift-ose-openshift-proxy-pull-test:latest"
 
 // NewMachineConfigPoolCondition creates a new MachineConfigPool condition.
 func NewMachineConfigPoolCondition(condType MachineConfigPoolConditionType, status corev1.ConditionStatus, reason, message string) *MachineConfigPoolCondition {
@@ -195,4 +201,38 @@ func IsControllerConfigCompleted(ccName string, ccGetter func(string) (*Controll
 		return nil
 	}
 	return fmt.Errorf("ControllerConfig has not completed: completed(%v) running(%v) failing(%v)", completed, running, failing)
+}
+
+// ProxyPullTest pulls down the proxyPullTestImage to test if the http proxy is valide.
+func ProxyPullTest(proxy *configv1.ProxyStatus) error {
+	if proxy == nil {
+		return nil
+	}
+	if err := podmanPullUseProxy(proxyPullTestImage, proxy.HTTPProxy, proxy.HTTPSProxy); err != nil {
+		return err
+	}
+	return nil
+}
+
+func podmanPullUseProxy(imageURL, httpProxy, httpsProxy string) error {
+	_, err := exec.LookPath("podman")
+	if err != nil {
+		return err
+	}
+	var envs []string
+	if httpProxy != "" {
+		envs = append(envs, fmt.Sprintf("HTTP_PROXY=%s", httpProxy))
+	}
+	if httpsProxy != "" {
+		envs = append(envs, fmt.Sprintf("HTTPS_PROXY=%s", httpsProxy))
+	}
+	command := "podman"
+	args := []string{"pull", imageURL}
+	cmd := exec.Command(command, args...)
+	cmd.Env = envs
+	rawOut, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: error running %s %s: %s", err, command, strings.Join(args, " "), string(rawOut))
+	}
+	return nil
 }
