@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openshift/machine-config-operator/test/e2e/framework"
+	"github.com/openshift/machine-config-operator/test/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
