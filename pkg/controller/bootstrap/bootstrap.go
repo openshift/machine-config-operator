@@ -182,6 +182,9 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, kconfigs...)
 	}
+	if err := mcfgv1.ProxyValidation(cconfig.Spec.Proxy); err != nil {
+		return err
+	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {

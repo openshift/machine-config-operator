@@ -3,9 +3,11 @@ package v1
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -178,4 +180,15 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSkopeoInspectUseProxy tests the proxyTestImage can be inspected by skopeo successfully without a proxy
+// This does not test some proxy. If skopeoInspectUseProxy failed, it would caused by the proxy not the function itself.
+func TestInspectUseProxy(t *testing.T) {
+	_, err := exec.LookPath("skopeo")
+	if err != nil {
+		t.Skip("skip the test since skopeo not available")
+	}
+	err = skopeoInspectUseProxy(proxyTestImage, "", "")
+	require.NoError(t, err)
 }
