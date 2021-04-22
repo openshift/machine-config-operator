@@ -12,7 +12,7 @@ contents:
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
-      src_path="/etc/NetworkManager/system-connections-merged"
+      src_path="/etc/NetworkManager/systemConnectionsMerged"
       dst_path="/etc/NetworkManager/system-connections"
       if [ -d $src_path ]; then
         echo "$src_path exists"
@@ -49,8 +49,8 @@ contents:
           ifconfig "$intf" allmulti
         fi
       }
-      if [ -d "/etc/NetworkManager/system-connections-merged" ]; then
-        NM_CONN_PATH="/etc/NetworkManager/system-connections-merged"
+      if [ -d "/etc/NetworkManager/systemConnectionsMerged" ]; then
+        NM_CONN_PATH="/etc/NetworkManager/systemConnectionsMerged"
       else
         NM_CONN_PATH="/etc/NetworkManager/system-connections"
       fi
