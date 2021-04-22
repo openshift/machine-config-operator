@@ -63,7 +63,7 @@ contents:
     nmcli con up "$STATIC_INT_NAME"
 
     # Copy it from the OverlayFS mount to the persistent lowerdir
-    cp "/etc/NetworkManager/system-connections-merged/${STATIC_INT_NAME}.nmconnection" /etc/NetworkManager/system-connections
+    cp "/etc/NetworkManager/systemConnectionsMerged/${STATIC_INT_NAME}.nmconnection" /etc/NetworkManager/system-connections
 
     if [ -n "${DHCP4_HOST_NAME:-}" ]
     then
