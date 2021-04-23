@@ -972,12 +972,14 @@ func generateKargs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 
 // updateKernelArguments adjusts the kernel args
 func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	if !dn.os.IsCoreOSVariant() {
+		glog.Info("updating kargs on non-CoreOS nodes is not supported")
+		return nil
+	}
+
 	kargs := generateKargs(oldConfig, newConfig)
 	if len(kargs) == 0 {
 		return nil
-	}
-	if !dn.os.IsCoreOSVariant() {
-		return fmt.Errorf("updating kargs on non-CoreOS nodes is not supported: %v", kargs)
 	}
 
 	args := append([]string{"kargs"}, kargs...)
@@ -1076,14 +1078,16 @@ func validateExtensions(exts []string) error {
 }
 
 func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	// Right now, we support extensions only on CoreOS nodes
+	if !dn.os.IsCoreOSVariant() {
+		glog.Info("applying extensions on non-CoreOS nodes is not supported")
+		return nil
+	}
+
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
 		return nil
-	}
-	// Right now, we support extensions only on CoreOS nodes
-	if !dn.os.IsCoreOSVariant() {
-		return fmt.Errorf("extensions is not supported on non-CoreOS nodes ")
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
@@ -1101,14 +1105,15 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
 // Right now it supports default (traditional) and realtime kernel
 func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	// Do nothing if both old and new KernelType are of type default
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+	// We support Kernel update only on RHCOS nodes
+	if !dn.os.IsRHCOS() {
+		glog.Info("updating kernel on non-RHCOS nodes is not supported")
 		return nil
 	}
 
-	// We support Kernel update only on RHCOS nodes
-	if !dn.os.IsRHCOS() {
-		return fmt.Errorf("updating kernel on non-RHCOS nodes is not supported")
+	// Do nothing if both old and new KernelType are of type default
+	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+		return nil
 	}
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
@@ -1724,7 +1729,7 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 // updateOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	if !dn.os.IsCoreOSVariant() {
-		glog.V(2).Info("Updating of non-CoreOS nodes are not supported")
+		glog.Info("Updating of non-CoreOS nodes are not supported")
 		return nil
 	}
 
