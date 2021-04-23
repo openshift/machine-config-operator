@@ -664,3 +664,82 @@ func getKeyFromFeatureGate(gate *osev1.FeatureGate, t *testing.T) string {
 	}
 	return key
 }
+
+func TestCleanUpStatusConditions(t *testing.T) {
+	type status struct {
+		curtStatus   []mcfgv1.KubeletConfigCondition
+		newStatus    mcfgv1.KubeletConfigCondition
+		expectStatus []mcfgv1.KubeletConfigCondition
+	}
+
+	newDiffCondition := mcfgv1.KubeletConfigCondition{
+		LastTransitionTime: metav1.Now(),
+		Message:            "Status: new",
+	}
+	newSameCondition := mcfgv1.KubeletConfigCondition{
+		LastTransitionTime: metav1.Now(),
+		Message:            "same status",
+	}
+	conditionsTest := []status{
+		// append new status to current conditions
+		{
+			curtStatus: []mcfgv1.KubeletConfigCondition{},
+			newStatus:  newDiffCondition,
+			expectStatus: []mcfgv1.KubeletConfigCondition{{
+				LastTransitionTime: newDiffCondition.LastTransitionTime,
+				Message:            newDiffCondition.Message,
+			}},
+		},
+		// update only timestamp
+		{
+			curtStatus: []mcfgv1.KubeletConfigCondition{
+				{
+					Message: "same status",
+				},
+				{
+					Message: "same status",
+				},
+			},
+			newStatus: newSameCondition,
+			expectStatus: []mcfgv1.KubeletConfigCondition{
+				{
+					Message: "same status",
+				},
+				newSameCondition,
+			},
+		},
+		// append new condition keeps status limit to 3
+		{
+			curtStatus: []mcfgv1.KubeletConfigCondition{
+				{
+					Message: "status 1",
+				},
+				{
+					Message: "status 2",
+				},
+				{
+					Message: "status 3",
+				},
+			},
+			newStatus: newDiffCondition,
+			expectStatus: []mcfgv1.KubeletConfigCondition{
+				{
+					Message: "status 2",
+				},
+				{
+					Message: "status 3",
+				},
+				newDiffCondition,
+			},
+		},
+	}
+
+	for _, tc := range conditionsTest {
+		cleanUpStatusConditions(&tc.curtStatus, tc.newStatus)
+		for i := 0; i < len(tc.expectStatus); i++ {
+			if tc.curtStatus[i].Message != tc.expectStatus[i].Message {
+				t.Fatal("expect: ", tc.expectStatus, "actual: ", tc.curtStatus[i])
+			}
+		}
+	}
+}
