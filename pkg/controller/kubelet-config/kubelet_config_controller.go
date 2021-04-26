@@ -529,9 +529,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		isNotFound := macherrors.IsNotFound(err)
 
-		var kubeletIgnition *ign3types.File
-		var logLevelIgnition *ign3types.File
-		var autoSizingReservedIgnition *ign3types.File
 		userDefinedSystemReserved := make(map[string]string, 2)
 
 		// Generate the original KubeletConfig
@@ -562,37 +559,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 		originalKubeConfig.TLSCipherSuites = observedCipherSuites
 
-		if cfg.Spec.KubeletConfig != nil && cfg.Spec.KubeletConfig.Raw != nil {
-			specKubeletConfig, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not deserialize the new Kubelet config: %v", err)
-			}
-
-			if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
-				userDefinedSystemReserved["memory"] = val
-				delete(specKubeletConfig.SystemReserved, "memory")
-			}
-
-			if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
-				userDefinedSystemReserved["cpu"] = val
-				delete(specKubeletConfig.SystemReserved, "cpu")
-			}
-
-			// FeatureGates must be set from the FeatureGate.
-			// Remove them here to prevent the specKubeletConfig merge overwriting them.
-			specKubeletConfig.FeatureGates = nil
-
-			// Merge the Old and New
-			err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
-			}
-		}
-
-		// Encode the new config into an Ignition File
-		kubeletIgnition, err = kubeletConfigToIgnFile(originalKubeConfig)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig, userDefinedSystemReserved)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
+			return ctrl.syncStatusOnly(cfg, err)
 		}
 
 		if isNotFound {
@@ -614,18 +583,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 					}
 				}
 			}
-		}
-
-		if cfg.Spec.LogLevel != nil {
-			logLevelIgnition = createNewKubeletLogLevelIgnition(*cfg.Spec.LogLevel)
-		}
-
-		if cfg.Spec.AutoSizingReserved != nil && len(userDefinedSystemReserved) == 0 {
-			autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(cfg.Spec.AutoSizingReserved, userDefinedSystemReserved)
-		}
-
-		if len(userDefinedSystemReserved) > 0 {
-			autoSizingReservedIgnition = createNewKubeletDynamicSystemReservedIgnition(nil, userDefinedSystemReserved)
 		}
 
 		tempIgnConfig := ctrlcommon.NewIgnConfig()
