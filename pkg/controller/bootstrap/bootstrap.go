@@ -74,6 +74,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
+	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
@@ -112,6 +113,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				configs = append(configs, obj)
 			case *mcfgv1.ControllerConfig:
 				cconfig = obj
+			case *mcfgv1.KubeletConfig:
+				kconfigs = append(kconfigs, obj)
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 				icspRules = append(icspRules, obj)
 			case *apicfgv1.Image:
@@ -139,6 +142,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	if err != nil {
 		return err
 	}
+
 	configs = append(configs, rconfigs...)
 
 	if featureGate != nil {
@@ -147,6 +151,13 @@ func (b *Bootstrap) Run(destDir string) error {
 			return err
 		}
 		configs = append(configs, kConfigs...)
+	}
+	if len(kconfigs) > 0 {
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, pools)
+		if err != nil {
+			return err
+		}
+		configs = append(configs, kconfigs...)
 	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
