@@ -163,6 +163,9 @@ func (d *Helper) EvictPod(pod corev1.Pod, policyGroupVersion string) error {
 	}
 
 	delOpts := d.makeDeleteOptions()
+	if delOpts.GracePeriodSeconds != nil && *delOpts.GracePeriodSeconds == 0 {
+		panic(fmt.Sprintf("attempted to evict pod %s/%s with a grace period of zero, drainer had %d", pod.Namespace, pod.Name, d.GracePeriodSeconds))
+	}
 	eviction := &policyv1beta1.Eviction{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: policyGroupVersion,
