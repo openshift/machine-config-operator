@@ -29,9 +29,11 @@ const (
 func TestKubeletConfigMaxPods(t *testing.T) {
 	kcRaw1, err := kcfg.EncodeKubeletConfig(&kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, kubeletconfigv1beta1.SchemeGroupVersion)
 	require.Nil(t, err, "failed to encode kubelet config")
+	autoNodeSizing := true
 	kc1 := &mcfgv1.KubeletConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-100"},
 		Spec: mcfgv1.KubeletConfigSpec{
+			AutoSizingReserved: &autoNodeSizing,
 			KubeletConfig: &runtime.RawExtension{
 				Raw: kcRaw1,
 			},
@@ -118,6 +120,13 @@ func runTestWithKubeletCfg(t *testing.T, testName, regexKey, expectedConfVal1, e
 	// verify value was changed to match that of the first kubelet config
 	firstConfValue := getValueFromKubeletConfig(t, cs, node, regexKey, kubeletPath)
 	require.Equal(t, firstConfValue, expectedConfVal1, "value in kubelet config not updated as expected")
+	// Get the new node object which should reflect new values for the allocatables
+	refreshedNode := helpers.GetSingleNodeByRole(t, cs, poolName)
+
+	// The value for the allocatable should have changed because of the auto node sizing.
+	// We cannot predict if the values of the allocatables will increase or decrease,
+	// as it depends on the configuration of the system under test.
+	require.NotEqual(t, refreshedNode.Status.Allocatable.Memory().Value(), node.Status.Allocatable.Memory().Value(), "value of the allocatable should have changed")
 
 	// create our second kubelet config and attach it to our created node pool
 	cleanupKcFunc2 := createKcWithConfig(t, cs, kcName2, poolName, &kc2.Spec, "1")
@@ -159,7 +168,9 @@ func createKcWithConfig(t *testing.T, cs *framework.ClientSet, name, key string,
 	kc.ObjectMeta = metav1.ObjectMeta{
 		Name: name,
 	}
+
 	spec := mcfgv1.KubeletConfigSpec{
+		AutoSizingReserved: config.AutoSizingReserved,
 		MachineConfigPoolSelector: &metav1.LabelSelector{
 			MatchLabels: make(map[string]string),
 		},
