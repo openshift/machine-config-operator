@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+
+	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
@@ -289,7 +293,81 @@ func (optr *Operator) syncUpgradeableStatus() error {
 		coStatus.Message = "One or more machine config pools are updating, please see `oc get mcp` for further details"
 	}
 
+	// don't overwrite status if we didn't run
+	if ran, err := optr.isKubeletSkewTooFar(); ran && err != nil {
+		if coStatus.Status != configv1.ConditionFalse {
+			coStatus.Status = configv1.ConditionFalse
+			coStatus.Reason = "KubeletSkewTooFar"
+			coStatus.Message = err.Error()
+		} else {
+			coStatus.Reason = coStatus.Reason + "::" + "KubeletSkewTooFar"
+			coStatus.Message = coStatus.Message + "\n" + err.Error()
+		}
+	}
+
 	return optr.updateStatus(co, coStatus)
+}
+
+func (optr *Operator) isKubeletSkewTooFar() (bool, error) {
+	nodes, err := optr.nodeLister.List(labels.Everything())
+	if err != nil {
+		return true, err
+	}
+	kubeAPIServerStatus, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "kube-apiserver", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, err
+	}
+	if err != nil {
+		return true, err
+	}
+
+	// looks like
+	//   - name: kube-apiserver
+	//     version: 1.21.0-rc.0
+	kubeAPIServerVersion := ""
+	for _, version := range kubeAPIServerStatus.Status.Versions {
+		if version.Name != "kube-apiserver" {
+			continue
+		}
+		kubeAPIServerVersion = version.Version
+		break
+	}
+	if len(kubeAPIServerVersion) == 0 {
+		return false, fmt.Errorf("kube-apiserver does not yet have a version")
+	}
+	kubeAPIServerMinorVersion, err := getMinorVersion(kubeAPIServerVersion)
+	if err != nil {
+		return true, err
+	}
+
+	skewedNodeErrors := []error{}
+	for _, node := range nodes {
+		// looks like kubeletVersion: v1.21.0-rc.0+6143dea
+		kubeletVersion := node.Status.NodeInfo.KubeletVersion
+		if len(kubeletVersion) == 0 {
+			continue
+		}
+		nodeMinorVersion, err := getMinorVersion(kubeletVersion)
+		if err != nil {
+			skewedNodeErrors = append(skewedNodeErrors, fmt.Errorf("node/%v has malformed version %q: %v", node.Name, kubeletVersion, err))
+		}
+		if nodeMinorVersion+2 <= kubeAPIServerMinorVersion {
+			skewedNodeErrors = append(skewedNodeErrors, fmt.Errorf("node/%v must be updated or removed before the cluster can upgrade, current version %v", node.Name, kubeletVersion))
+		}
+	}
+	return true, errors.NewAggregate(skewedNodeErrors)
+}
+
+func getMinorVersion(version string) (int, error) {
+	if strings.HasPrefix(version, "v") {
+		version = version[1:]
+	}
+	tokens := strings.Split(version, ".")
+	minorVersion, err := strconv.ParseInt(tokens[1], 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int(minorVersion), nil
 }
 
 func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {

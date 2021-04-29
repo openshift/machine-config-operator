@@ -7,6 +7,10 @@ import (
 	"reflect"
 	"testing"
 
+	corelisterv1 "k8s.io/client-go/listers/core/v1"
+	clientgotesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -530,6 +534,10 @@ func TestOperatorSyncStatus(t *testing.T) {
 		}
 		optr.vStore = newVersionStore()
 		optr.mcpLister = &mockMCPLister{}
+
+		nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
+
 		coName := fmt.Sprintf("test-%s", uuid.NewUUID())
 		co := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: coName}}
 		cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
@@ -577,6 +585,8 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.vStore = newVersionStore()
 	optr.vStore.Set("operator", "test-version")
 	optr.mcpLister = &mockMCPLister{}
+	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
 	co := &configv1.ClusterOperator{}
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
@@ -599,4 +609,85 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)
+}
+
+func TestKubeletSkewUpgradeable(t *testing.T) {
+	kasOperator := &configv1.ClusterOperator{
+		ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver"},
+		Status: configv1.ClusterOperatorStatus{
+			Versions: []configv1.OperandVersion{
+				{Name: "kube-apiserver", Version: "1.20"},
+			},
+		},
+	}
+	optr := &Operator{
+		eventRecorder: &record.FakeRecorder{},
+	}
+	optr.vStore = newVersionStore()
+	optr.vStore.Set("operator", "test-version")
+	optr.mcpLister = &mockMCPLister{}
+	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	optr.nodeLister = corelisterv1.NewNodeLister(nodeIndexer)
+	nodeIndexer.Add(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "first-node"},
+		Status: corev1.NodeStatus{
+			NodeInfo: corev1.NodeSystemInfo{
+				KubeletVersion: "v1.18",
+			},
+		},
+	})
+
+	co := &configv1.ClusterOperator{}
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorAvailable, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorProgressing, Status: configv1.ConditionFalse})
+	cov1helpers.SetStatusCondition(&co.Status.Conditions, configv1.ClusterOperatorStatusCondition{Type: configv1.OperatorDegraded, Status: configv1.ConditionFalse})
+	fakeClient := fakeconfigclientset.NewSimpleClientset(co, kasOperator)
+	optr.configClient = fakeClient
+	optr.inClusterBringup = true
+
+	fn1 := func(config *renderConfig) error {
+		return errors.New("mocked fn1")
+	}
+	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	assert.NotNil(t, err, "expected syncAll to fail")
+
+	assert.True(t, optr.inClusterBringup)
+
+	fn1 = func(config *renderConfig) error {
+		return nil
+	}
+	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	assert.Nil(t, err, "expected syncAll to pass")
+
+	assert.False(t, optr.inClusterBringup)
+
+	var lastUpdate clientgotesting.UpdateAction
+	for _, action := range fakeClient.Actions() {
+		if action.GetVerb() == "update" {
+			lastUpdate = action.(clientgotesting.UpdateAction)
+		}
+	}
+	if lastUpdate == nil {
+		t.Fatal("missing update")
+	}
+	operatorStatus := lastUpdate.GetObject().(*configv1.ClusterOperator)
+	var upgradeable *configv1.ClusterOperatorStatusCondition
+	for _, condition := range operatorStatus.Status.Conditions {
+		if condition.Type == configv1.OperatorUpgradeable {
+			upgradeable = &condition
+			break
+		}
+	}
+	if upgradeable == nil {
+		t.Fatal("missing condition")
+	}
+	if upgradeable.Status != configv1.ConditionFalse {
+		t.Fatal(upgradeable)
+	}
+	if upgradeable.Message != "node/first-node must be updated or removed before the cluster can upgrade, current version v1.18" {
+		t.Fatal(upgradeable)
+	}
+	if upgradeable.Reason != "KubeletSkewTooFar" {
+		t.Fatal(upgradeable)
+	}
 }
