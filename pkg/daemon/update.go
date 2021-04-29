@@ -242,6 +242,13 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	// make sure that osImageContentDir doesn't exist
 	os.RemoveAll(osImageContentDir)
 
+	// recreate the folder to prevent podman to copy the files into the parent directory
+	// https://github.com/containers/podman/pull/9630/commits/31b11b5cd62093d86891d32e0912661814d6b78b
+	if err = os.MkdirAll(osImageContentDir, 0755); err != nil {
+		err = fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
+		return
+	}
+
 	// Pull the container image
 	var authArgs []string
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
