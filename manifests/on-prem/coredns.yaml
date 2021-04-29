@@ -9,7 +9,7 @@ metadata:
   labels:
     app: {{ onPremPlatformShortName .ControllerConfig }}-infra-mdns
   annotations:
-    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   volumes:
   - name: resource-dir

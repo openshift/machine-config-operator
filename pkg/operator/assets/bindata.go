@@ -91,7 +91,7 @@ metadata:
   name: bootstrap-machine-config-operator
   namespace: {{.TargetNamespace}}
   annotations:
-    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   initContainers:
   - name: machine-config-controller
@@ -811,7 +811,7 @@ spec:
       labels:
         k8s-app: machine-config-controller
       annotations:
-        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-controller
@@ -1107,7 +1107,7 @@ spec:
       labels:
         k8s-app: machine-config-daemon
       annotations:
-        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-daemon
@@ -1446,7 +1446,7 @@ spec:
       labels:
         k8s-app: machine-config-server
       annotations:
-        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-server
@@ -1691,7 +1691,7 @@ metadata:
   labels:
     app: {{ onPremPlatformShortName .ControllerConfig }}-infra-mdns
   annotations:
-    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   volumes:
   - name: resource-dir
@@ -1836,7 +1836,7 @@ metadata:
   labels:
     app: {{ onPremPlatformShortName .ControllerConfig }}-infra-vrrp
   annotations:
-    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   volumes:
   - name: resource-dir

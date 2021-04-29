@@ -4,7 +4,7 @@ metadata:
   name: bootstrap-machine-config-operator
   namespace: {{.TargetNamespace}}
   annotations:
-    workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
   initContainers:
   - name: machine-config-controller
