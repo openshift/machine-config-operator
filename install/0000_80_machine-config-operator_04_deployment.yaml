@@ -19,7 +19,7 @@ spec:
       labels:
         k8s-app: machine-config-operator
       annotations:
-        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-operator

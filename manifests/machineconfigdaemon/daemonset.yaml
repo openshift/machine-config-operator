@@ -16,7 +16,7 @@ spec:
       labels:
         k8s-app: machine-config-daemon
       annotations:
-        workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       containers:
       - name: machine-config-daemon
