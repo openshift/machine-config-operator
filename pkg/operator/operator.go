@@ -81,6 +81,7 @@ type Operator struct {
 	clusterCmLister  corelisterv1.ConfigMapLister
 	proxyLister      configlistersv1.ProxyLister
 	oseKubeAPILister corelisterv1.ConfigMapLister
+	nodeLister       corelisterv1.NodeLister
 	dnsLister        configlistersv1.DNSLister
 
 	crdListerSynced                  cache.InformerSynced
@@ -98,6 +99,7 @@ type Operator struct {
 	clusterRoleBindingInformerSynced cache.InformerSynced
 	proxyListerSynced                cache.InformerSynced
 	oseKubeAPIListerSynced           cache.InformerSynced
+	nodeListerSynced                 cache.InformerSynced
 	dnsListerSynced                  cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
@@ -131,6 +133,7 @@ func New(
 	apiExtClient apiextclientset.Interface,
 	configClient configclientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
+	nodeInformer coreinformersv1.NodeInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -163,6 +166,7 @@ func New(
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
 		oseKubeAPIInformer.Informer(),
+		nodeInformer.Informer(),
 		dnsInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
@@ -182,6 +186,8 @@ func New(
 	optr.proxyListerSynced = proxyInformer.Informer().HasSynced
 	optr.oseKubeAPILister = oseKubeAPIInformer.Lister()
 	optr.oseKubeAPIListerSynced = oseKubeAPIInformer.Informer().HasSynced
+	optr.nodeLister = nodeInformer.Lister()
+	optr.nodeListerSynced = nodeInformer.Informer().HasSynced
 
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
@@ -235,6 +241,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.networkListerSynced,
 		optr.proxyListerSynced,
 		optr.oseKubeAPIListerSynced,
+		optr.nodeListerSynced,
 		optr.mcpListerSynced,
 		optr.mcListerSynced,
 		optr.dnsListerSynced) {
