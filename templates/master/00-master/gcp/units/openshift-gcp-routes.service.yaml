@@ -7,6 +7,7 @@ contents: |
   ConditionKernelCommandLine=|ignition.platform.id=gcp
   Wants=network-online.target
   After=network-online.target
+  PartOf=network.target
 
   [Service]
   Type=simple
