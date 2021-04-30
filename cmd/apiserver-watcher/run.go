@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
-	health "github.com/InVisionApp/go-health"
-	"github.com/InVisionApp/go-health/checkers"
+	health "github.com/InVisionApp/go-health/v2"
+	"github.com/InVisionApp/go-health/v2/checkers"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
@@ -95,7 +97,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	tracker := &healthTracker{
 		state:            unknownTrackerState,
 		ErrCh:            errCh,
-		SuccessThreshold: 1,
+		SuccessThreshold: 2,
 		FailureThreshold: 8, // LB = 6 seconds, plus 10 seconds for propagation
 		OnFailure:        handler.onFailure,
 		OnSuccess:        handler.onSuccess,
@@ -105,7 +107,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	h.AddChecks([]*health.Config{{
 		Name:       "dependency-check",
 		Checker:    httpCheck,
-		Interval:   time.Duration(2) * time.Second,
+		Interval:   time.Duration(5) * time.Second,
 		Fatal:      true,
 		OnComplete: tracker.OnComplete,
 	}})
@@ -115,14 +117,24 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		for sig := range c {
+		sig := <-c
+		// flush iptables rules on exit
+		// (it writes a file in a mounted folder, is this racy?????)
+		defer func() {
 			glog.Infof("Signal %s received: treating service as down", sig)
 			if err := handler.onFailure(); err != nil {
 				glog.Infof("Failed to mark service down on signal: %s", err)
 			}
 			os.Exit(0)
+		}()
+		// wait for the apiserver or until we are killed
+		if sig == syscall.SIGTERM {
+			// wait if apiserver still accept connections
+			for tracker.Status() {
+				time.Sleep(5 * time.Second)
+			}
 		}
 	}()
 
@@ -238,6 +250,21 @@ func (sl *healthTracker) OnComplete(state *health.State) {
 	sl.Lock()
 	defer sl.Unlock()
 
+	// short circuit if connection is refused
+	// that means that the apiserver is not even listening
+	if strings.Contains(state.Err, "connection refused") {
+		sl.succeeded = 0
+		sl.failed++
+		if sl.state == succeededTrackerState {
+			glog.Info("Running OnFailure trigger")
+			if err := sl.OnFailure(); err != nil {
+				sl.ErrCh <- err
+			}
+			sl.state = failedTrackerState
+		}
+		return
+	}
+
 	switch state.Status {
 	case "ok":
 		sl.failed = 0
@@ -264,4 +291,9 @@ func (sl *healthTracker) OnComplete(state *health.State) {
 			sl.state = failedTrackerState
 		}
 	}
+}
+
+// Status return true if state is succeededTrackerState
+func (sl *healthTracker) Status() bool {
+	return sl.state == succeededTrackerState
 }
