@@ -28,6 +28,7 @@ contents:
       hostNetwork: true
       hostPID: true
       priorityClassName: system-node-critical
+      terminationGracePeriodSeconds: 60
       tolerations:
       - operator: "Exists"
       restartPolicy: Always
