@@ -5,8 +5,7 @@ contents: |
   Description=Update GCP routes for forwarded IPs.
   ConditionKernelCommandLine=|ignition.platform.id=gce
   ConditionKernelCommandLine=|ignition.platform.id=gcp
-  Wants=network-online.target
-  After=network-online.target
+  Before=network-online.target
 
   [Service]
   Type=simple
@@ -18,3 +17,5 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
+  # Ensure that network-online.target will not complete until the node has working external LBs.
+  RequiredBy=network-online.target
