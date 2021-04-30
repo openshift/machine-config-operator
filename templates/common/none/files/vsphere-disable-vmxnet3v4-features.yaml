@@ -1,0 +1,17 @@
+filesystem: "root"
+mode: 0744
+path: "/etc/NetworkManager/dispatcher.d/99-vsphere-disable-tx-udp-tnl"
+contents:
+    inline: |
+      #!/bin/bash
+      # Workaround:
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1941714
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1935539
+
+      driver=$(nmcli -t -m tabular -f general.driver dev show "${DEVICE_IFACE}")
+
+      if [[ "$2" == "up" && "${driver}" == "vmxnet3" ]]; then
+        logger -s "99-vsphere-disable-tx-udp-tnl triggered by ${2} on device ${DEVICE_IFACE}."
+        ethtool -K ${DEVICE_IFACE} tx-udp_tnl-segmentation off
+        ethtool -K ${DEVICE_IFACE} tx-udp_tnl-csum-segmentation off
+      fi
