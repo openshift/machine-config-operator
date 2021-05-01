@@ -61,12 +61,6 @@ var (
 	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ContainerRuntimeConfig")
 )
 
-var updateBackoff = wait.Backoff{
-	Steps:    5,
-	Duration: 100 * time.Millisecond,
-	Jitter:   1.0,
-}
-
 // Controller defines the container runtime config controller.
 type Controller struct {
 	templatesDir string
@@ -417,7 +411,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
-	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+	statusUpdateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
 		if getErr != nil {
 			return getErr
@@ -449,7 +443,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 
 // addAnnotation adds the annotions for a ctrcfg object with the given annotationKey and annotationVal
 func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annotationKey, annotationVal string) error {
-	annotationUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
+	annotationUpdateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
 		if getErr != nil {
 			return getErr
@@ -599,7 +593,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
 
 		// Create or Update, on conflict retry
-		if err := retry.RetryOnConflict(updateBackoff, func() error {
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var err error
 			if isNotFound {
 				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
@@ -710,7 +704,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err != nil {
 			return err
 		}
-		if err := retry.RetryOnConflict(updateBackoff, func() error {
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries,
 				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules)
@@ -880,7 +874,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 }
 
 func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig) error {
-	return retry.RetryOnConflict(updateBackoff, func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		newcfg, err := ctrl.mccrLister.Get(ctrCfg.Name)
 		if errors.IsNotFound(err) {
 			return nil
@@ -916,7 +910,7 @@ func (ctrl *Controller) patchContainerRuntimeConfigs(name string, patch []byte) 
 }
 
 func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig) error {
-	return retry.RetryOnConflict(updateBackoff, func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		newcfg, err := ctrl.mccrLister.Get(ctrCfg.Name)
 		if errors.IsNotFound(err) {
 			return nil

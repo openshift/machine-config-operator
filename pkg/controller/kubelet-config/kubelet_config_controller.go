@@ -341,7 +341,7 @@ func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ign3types.F
 }
 
 func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
-	statusUpdateError := retry.RetryOnConflict(updateBackoff, func() error {
+	statusUpdateError := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
 		if getErr != nil {
 			return getErr
