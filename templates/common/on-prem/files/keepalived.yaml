@@ -100,8 +100,8 @@ contents:
           remove_vip()
           {
             address=$1
-            interface=$(ip -o a | grep '\s${address}/' | awk '{print $2}')
-            cidr=$(ip -o a | grep '\s${address}/' | awk '{print $4}')
+            interface=$(ip -o a | awk "/\s${address}\// {print \$2}")
+            cidr=$(ip -o a | awk "/\s${address}\// {print \$4}")
             if [ -n "$interface" ]; then
                 ip a del $cidr dev $interface
             fi
