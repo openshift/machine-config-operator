@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClusterDNSIP(t *testing.T) {
@@ -81,7 +83,7 @@ func TestRenderAsset(t *testing.T) {
 	tests := []struct {
 		Path         string
 		RenderConfig *renderConfig
-		FindExpected string
+		FindExpected []string
 		Error        bool
 	}{{
 		// Simple test
@@ -89,17 +91,17 @@ func TestRenderAsset(t *testing.T) {
 		RenderConfig: &renderConfig{
 			TargetNamespace: "testing-namespace",
 		},
-		FindExpected: "namespace: testing-namespace",
+		FindExpected: []string{"namespace: testing-namespace"},
 	}, {
 		// Nested field test
 		Path: "manifests/machineconfigcontroller/deployment.yaml",
 		RenderConfig: &renderConfig{
 			TargetNamespace: "testing-namespace",
 			Images: &RenderConfigImages{
-				MachineConfigOperator: "{MCO: PLACEHOLDER}",
+				MachineConfigOperator: "mco-operator-image",
 			},
 		},
-		FindExpected: "image: {MCO: PLACEHOLDER}",
+		FindExpected: []string{"image: mco-operator-image"},
 	}, {
 		// Render same template as previous test
 		// But with a template field missing
@@ -109,10 +111,44 @@ func TestRenderAsset(t *testing.T) {
 		},
 		Error: true,
 	}, {
+		// Test that machineconfigdaemon DaemonSets are rendered correctly with proxy config
+		Path: "manifests/machineconfigdaemon/daemonset.yaml",
+		RenderConfig: &renderConfig{
+			TargetNamespace: "testing-namespace",
+			Images: &RenderConfigImages{
+				MachineConfigOperator: "mco-operator-image",
+				OauthProxy:            "oauth-proxy-image",
+			},
+			ControllerConfig: mcfgv1.ControllerConfigSpec{
+				Proxy: &configv1.ProxyStatus{
+					HTTPSProxy: "https://i.am.a.proxy.server",
+					NoProxy:    "*", // See: https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+				},
+			},
+		},
+		FindExpected: []string{
+			"image: mco-operator-image",
+			"image: oauth-proxy-image",
+			"- name: HTTPS_PROXY\n            value: https://i.am.a.proxy.server",
+			"- name: NO_PROXY\n            value: \"*\"", // Ensure the * is quoted: "*": https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+		},
+	}, {
 		// Bad path, will cause asset error
 		Path:  "BAD PATH",
 		Error: true,
 	}}
+
+	readers := map[string]func([]byte){
+		"manifests/machineconfigcontroller/deployment.yaml": func(objBytes []byte) {
+			resourceread.ReadDeploymentV1OrDie(objBytes)
+		},
+		"manifests/machineconfigcontroller/clusterrolebinding.yaml": func(objBytes []byte) {
+			resourceread.ReadClusterRoleBindingV1OrDie(objBytes)
+		},
+		"manifests/machineconfigdaemon/daemonset.yaml": func(objBytes []byte) {
+			resourceread.ReadDaemonSetV1OrDie(objBytes)
+		},
+	}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
@@ -134,12 +170,19 @@ func TestRenderAsset(t *testing.T) {
 			if str == "" || len(str) == 0 {
 				t.Fatalf("Buffer is not a valid string!")
 			}
-			// Verify that any FindExpected values are actually in the string
-			if test.FindExpected != "" {
-				if !strings.Contains(str, test.FindExpected) {
-					t.Fatalf("Rendered template does not contain expected values: %s, \nGot: %s", test.FindExpected, str)
+			// Verify that all FindExpected values are actually in the string
+			if len(test.FindExpected) > 0 {
+				for _, itemToFind := range test.FindExpected {
+					if !strings.Contains(str, itemToFind) {
+						t.Fatalf("Rendered template does not contain expected values: %s, \nGot: %s", itemToFind, str)
+					}
 				}
 			}
+			// Verify that the rendered template can be read.
+			// This aims to prevent bugs similar to https://bugzilla.redhat.com/show_bug.cgi?id=1947066
+			assert.NotPanics(t, func() {
+				readers[test.Path](buf)
+			})
 		})
 	}
 }
