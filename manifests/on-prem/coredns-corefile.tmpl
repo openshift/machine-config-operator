@@ -1,7 +1,6 @@
 . {
     errors
     health :18080
-    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`{{.Cluster.MasterAmount}}`}} {{`{{.Cluster.Name}}`}} {{`{{.NonVirtualIP}}`}}
     forward . {{`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`}} {
         policy sequential
     }

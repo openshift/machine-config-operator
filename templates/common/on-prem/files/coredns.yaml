@@ -19,7 +19,7 @@ contents:
           path: "/etc/kubernetes/static-pod-resources/coredns"
       - name: kubeconfig
         hostPath:
-          path: "/etc/kubernetes/kubeconfig"
+          path: "/var/lib/kubelet"
       - name: conf-dir
         hostPath:
           path: "/etc/coredns"
@@ -32,7 +32,7 @@ contents:
         command:
         - runtimecfg
         - render
-        - "/etc/kubernetes/kubeconfig"
+        - "/var/lib/kubelet/kubeconfig"
         - "--api-vip"
         - "{{ onPremPlatformAPIServerInternalIP . }}"
         - "--ingress-vip"
@@ -43,7 +43,7 @@ contents:
         resources: {}
         volumeMounts:
         - name: kubeconfig
-          mountPath: "/etc/kubernetes/kubeconfig"
+          mountPath: "/var/lib/kubelet"
         - name: resource-dir
           mountPath: "/config"
         - name: conf-dir
@@ -81,7 +81,7 @@ contents:
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
         - corednsmonitor
-        - "/etc/kubernetes/kubeconfig"
+        - "/var/lib/kubelet/kubeconfig"
         - "/config/Corefile.tmpl"
         - "/etc/coredns/Corefile"
         - "--api-vip"
@@ -94,7 +94,7 @@ contents:
             memory: 200Mi          
         volumeMounts:
         - name: kubeconfig
-          mountPath: "/etc/kubernetes/kubeconfig"
+          mountPath: "/var/lib/kubelet"
         - name: resource-dir
           mountPath: "/config"
         - name: conf-dir
