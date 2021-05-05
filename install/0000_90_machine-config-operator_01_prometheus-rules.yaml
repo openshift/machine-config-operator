@@ -29,7 +29,7 @@ spec:
             severity: warning
           for: 15m
           annotations:
-            message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details:  oc logs -f -n openshift-machine-config-operator machine-config-daemon-<hash> -c machine-config-daemon"
+            message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon"
     - name: mcd-pivot-error
       rules:
         - alert: MCDPivotError
