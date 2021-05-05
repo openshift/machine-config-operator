@@ -1629,7 +1629,6 @@ func manifestsMasterMachineconfigpoolYaml() (*asset, error) {
 var _manifestsOnPremCorednsCorefileTmpl = []byte(`. {
     errors
     health :18080
-    mdns {{ .ControllerConfig.DNS.Spec.BaseDomain }} {{`+"`"+`{{.Cluster.MasterAmount}}`+"`"+`}} {{`+"`"+`{{.Cluster.Name}}`+"`"+`}} {{`+"`"+`{{.NonVirtualIP}}`+"`"+`}}
     forward . {{`+"`"+`{{- range $upstream := .DNSUpstreams}} {{$upstream}}{{- end}}`+"`"+`}} {
         policy sequential
     }
