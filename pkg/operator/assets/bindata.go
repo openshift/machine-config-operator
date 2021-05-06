@@ -1856,7 +1856,7 @@ spec:
   - name: keepalived
     securityContext:
       privileged: true
-    image: {{.Images.KeepalivedBootstrap}}
+    image: quay.io/yboaron/origin-keepalived-ipfailover:latest
     env:
       - name: NSS_SDB_USE_CACHE
         value: "no"
