@@ -90,7 +90,21 @@ contents:
             done
           }
 
+          remove_vip()
+          {
+            address=$1
+            interface=$(ip -o a | awk "/\s${address}\// {print \$2}")
+            cidr=$(ip -o a | awk "/\s${address}\// {print \$4}")
+            if [ -n "$interface" ]; then
+                ip a del $cidr dev $interface
+            fi
+          }
+
           set -ex
+          # Ensure that we don't have stale VIPs configured
+          # See https://bugzilla.redhat.com/show_bug.cgi?id=1931505
+          remove_vip "{{ onPremPlatformAPIServerInternalIP . }}"
+          remove_vip "{{ onPremPlatformIngressIP . }}"
           declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
           export -f msg_handler
           export -f reload_keepalived
