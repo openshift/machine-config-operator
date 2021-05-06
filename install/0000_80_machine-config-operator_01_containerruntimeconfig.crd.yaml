@@ -1,4 +1,4 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: containerruntimeconfigs.machineconfiguration.openshift.io
@@ -49,17 +49,17 @@ spec:
           description: ContainerRuntimeConfigSpec defines the desired state of ContainerRuntimeConfig
           type: object
           required:
-            - containerRuntimeConfig
+          - containerRuntimeConfig
           properties:
             containerRuntimeConfig:
               description: ContainerRuntimeConfiguration defines the tuneables of
                 the container runtime. It's important to note that, since the fields
-                of the ContainerRuntimeConfiguration are directly read by the
-                upstream kubernetes golang client, the validation of those values
-                is handled directly by that golang client which is outside of the
-                controller for ContainerRuntimeConfiguration. Please ensure
-                the valid values are used for those fields as invalid values
-                may render cluster nodes unusable.
+                of the ContainerRuntimeConfiguration are directly read by the upstream
+                kubernetes golang client, the validation of those values is handled
+                directly by that golang client which is outside of the controller
+                for ContainerRuntimeConfiguration. Please ensure the valid values
+                are used for those fields as invalid values may render cluster nodes
+                unusable.
               type: object
               properties:
                 logLevel:
