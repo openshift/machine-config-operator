@@ -633,8 +633,35 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		glog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
+	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
+		return err
+	}
 
 	return ctrl.syncStatusOnly(cfg, nil)
+}
+
+// cleanUpDuplicatedMC removes the MC of uncorrected version if format of its name contains 'generated-xxx'.
+// BZ 1955517: upgrade when there are more than one configs, these generated MC will be duplicated
+// by upgraded MC with number suffixed name (func getManagedKubeletConfigKey()) and fails the upgrade.
+func (ctrl *Controller) cleanUpDuplicatedMC() error {
+	generatedKubeletCfg := "generated-kubelet"
+	// Get all machine configs
+	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("error listing kubelet machine configs: %v", err)
+	}
+	for _, mc := range mcList.Items {
+		if !strings.Contains(mc.Name, generatedKubeletCfg) {
+			continue
+		}
+		// delete the mc if its degraded
+		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
+			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
+				return fmt.Errorf("error deleting degraded kubelet machine config %s: %v", mc.Name, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
