@@ -59,7 +59,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ServiceAccounts(),
-			ctrlctx.APIExtInformerFactory.Apiextensions().V1beta1().CustomResourceDefinitions(),
+			ctrlctx.APIExtInformerFactory.Apiextensions().V1().CustomResourceDefinitions(),
 			ctrlctx.KubeNamespacedInformerFactory.Apps().V1().Deployments(),
 			ctrlctx.KubeNamespacedInformerFactory.Apps().V1().DaemonSets(),
 			ctrlctx.KubeNamespacedInformerFactory.Rbac().V1().ClusterRoles(),
