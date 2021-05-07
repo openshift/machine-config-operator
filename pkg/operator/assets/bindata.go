@@ -718,7 +718,7 @@ rules:
   resources: ["images", "clusterversions", "featuregates"]
   verbs: ["*"]
 - apiGroups: ["config.openshift.io"]
-  resources: ["schedulers"]
+  resources: ["schedulers", "apiservers"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["operator.openshift.io"]
   resources: ["imagecontentsourcepolicies"]
