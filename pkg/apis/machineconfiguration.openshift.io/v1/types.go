@@ -356,9 +356,9 @@ type KubeletConfigSpec struct {
 	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
 	KubeletConfig             *runtime.RawExtension `json:"kubeletConfig,omitempty"`
 
-	// If unset, a default (which may change between releases) is chosen. Note that only Old and
-	// Intermediate profiles are currently supported, and the maximum available MinTLSVersions
-	// is VersionTLS12.
+	// If unset, the default is based on the apiservers.config.openshift.io/cluster resource.
+	// Note that only Old and Intermediate profiles are currently supported, and
+	// the maximum available MinTLSVersions is VersionTLS12.
 	// +optional
 	TLSSecurityProfile *configv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
 }

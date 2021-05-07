@@ -47,10 +47,11 @@ type fixture struct {
 	client    *fake.Clientset
 	oseclient *oseconfigfake.Clientset
 
-	ccLister   []*mcfgv1.ControllerConfig
-	mcpLister  []*mcfgv1.MachineConfigPool
-	mckLister  []*mcfgv1.KubeletConfig
-	featLister []*osev1.FeatureGate
+	ccLister        []*mcfgv1.ControllerConfig
+	mcpLister       []*mcfgv1.MachineConfigPool
+	mckLister       []*mcfgv1.KubeletConfig
+	featLister      []*osev1.FeatureGate
+	apiserverLister []*osev1.APIServer
 
 	actions []core.Action
 
@@ -63,6 +64,13 @@ func newFixture(t *testing.T) *fixture {
 	f.t = t
 	f.objects = []runtime.Object{}
 	f.oseobjects = []runtime.Object{}
+	f.apiserverLister = []*osev1.APIServer{
+		&osev1.APIServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: defaultOpenshiftTLSSecurityProfileConfig,
+			},
+		},
+	}
 	return f
 }
 
@@ -167,6 +175,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
 		featinformer.Config().V1().FeatureGates(),
+		featinformer.Config().V1().APIServers(),
 		k8sfake.NewSimpleClientset(),
 		f.client,
 	)
@@ -174,6 +183,7 @@ func (f *fixture) newController() *Controller {
 	c.mckListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.featListerSynced = alwaysReady
+	c.apiserverListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
@@ -192,6 +202,9 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, c := range f.featLister {
 		featinformer.Config().V1().FeatureGates().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.apiserverLister {
+		featinformer.Config().V1().APIServers().Informer().GetIndexer().Add(c)
 	}
 
 	return c
