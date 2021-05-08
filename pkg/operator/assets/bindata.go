@@ -1141,7 +1141,7 @@ spec:
           {{end}}
           {{if .ControllerConfig.Proxy.NoProxy}}
           - name: NO_PROXY
-            value: {{.ControllerConfig.Proxy.NoProxy}}
+            value: "{{.ControllerConfig.Proxy.NoProxy}}"
           {{end}}
           {{end}}
       - name: oauth-proxy
