@@ -53,6 +53,11 @@ contents:
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
         unicast_peer {
+            # Hard-code localhost so we never have an empty unicast peer list,
+            # even if there are no peers. An empty peer list causes keepalived
+            # to fall back to multicast and ignore unicast messages, which can
+            # cause problems during bootstrapping.
+            {{ onPremPlatformLocalhostIP . }}
             {{`{{- range .LBConfig.Backends -}}
             {{- if ne $nonVirtualIP .Address}}
             {{.Address}}

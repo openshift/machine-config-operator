@@ -300,6 +300,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
+	funcs["onPremPlatformLocalhostIP"] = onPremPlatformLocalhostIP
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
@@ -463,6 +464,18 @@ func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 	} else {
 		return nil, fmt.Errorf("")
 	}
+}
+
+// Provide an IP for localhost that matches the IP version of the API VIP
+func onPremPlatformLocalhostIP(cfg RenderConfig) (interface{}, error) {
+	apiIP, err := onPremPlatformAPIServerInternalIP(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Index(apiIP.(string), ":") != -1 {
+		return "::1", nil
+	}
+	return "127.0.0.1", nil
 }
 
 // existsDir returns true if path exists and is a directory, false if the path
