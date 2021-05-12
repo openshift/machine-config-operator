@@ -27,7 +27,7 @@ Extend the Machine Config Operator to include a ContainerRuntimeConfig CRD and C
 ## CRD
 
 ```
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
  name: containerruntimeconfigs.machineconfiguration.openshift.io
