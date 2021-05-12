@@ -678,6 +678,11 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		}
 	}
 
+	// append the internalRegistryHostname to allowedRegistries list
+	allowedRegs := imgcfg.Spec.RegistrySources.AllowedRegistries
+	if len(imgcfg.Status.InternalRegistryHostname) > 0 {
+		allowedRegs = append(allowedRegs, imgcfg.Status.InternalRegistryHostname)
+	}
 	// Get ControllerConfig
 	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -712,7 +717,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		}
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
-				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries,
+				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, allowedRegs,
 				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules)
 			if err != nil {
 				return err
@@ -839,7 +844,11 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	// Read the search, insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
 	if imgCfg != nil {
 		insecureRegs = imgCfg.Spec.RegistrySources.InsecureRegistries
+		// append the internalRegistryHostname to allowedRegistries list
 		allowedRegs = imgCfg.Spec.RegistrySources.AllowedRegistries
+		if len(imgCfg.Status.InternalRegistryHostname) > 0 {
+			allowedRegs = append(allowedRegs, imgCfg.Status.InternalRegistryHostname)
+		}
 		searchRegs = imgCfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries
 		blockedRegs, err = getValidBlockedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec)
 		if err != nil && err != errParsingReference {
