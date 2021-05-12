@@ -33,7 +33,7 @@ Extend the Machine Config Operator to include a KubetletConfig CRD and KubeletCo
 ## CRD
 
 ```
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: kubeletconfigs.machineconfiguration.openshift.io
