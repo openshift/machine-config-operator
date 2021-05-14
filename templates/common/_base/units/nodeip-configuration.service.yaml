@@ -3,8 +3,8 @@ enabled: {{if eq .Infra.Status.PlatformStatus.Type "None"}}true{{else}}false{{en
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
-  Wants=network-online.target
-  After=network-online.target ignition-firstboot-complete.service
+  Wants=network-online.target crio-wipe.service
+  After=network-online.target ignition-firstboot-complete.service crio-wipe.service
   Before=kubelet.service crio.service
 
   [Service]
