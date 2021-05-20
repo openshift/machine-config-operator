@@ -26,6 +26,7 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 		Duration: 10 * time.Second,
 		Factor:   2,
 	}
+
 	var lastErr error
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, desired)
@@ -41,6 +42,7 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 		}
 		return errors.Wrap(err, "failed to cordon/uncordon node")
 	}
+
 	return nil
 }
 
@@ -50,14 +52,42 @@ func (dn *Daemon) drain() error {
 		Duration: 10 * time.Second,
 		Factor:   2,
 	}
+
+	// fetch our CRD
+	// if not timeExpired, checkSkipPods = True
+	// do we need to set an Expired time?  If we are willing to release locks
+	// early to let others do work if we find ourselves in a wedged situation,
+	// we might be able to avoid this timeout.
+
 	var lastErr error
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		podsNotDrained := []corev1.Pod{}
+
+		skipDrainFn := func(pod corev1.Pod) drain.PodDeleteStatus {
+			glog.Infof("Calling skipDrainFn %v", pod)
+			if _, exists := pod.ObjectMeta.Annotations["michaelgugino.github.com/skip-drain"]; exists {
+				// We need to not skip some pods here such as Pending, Failed,
+				// and possibly other states/conditions, or we might wedge later.
+				glog.Infof("Found skip drain annotation on pod %v/%v", pod.Namespace, pod.Name)
+				podsNotDrained = append(podsNotDrained, pod)
+				return drain.MakePodDeleteStatusSkip()
+			}
+			return drain.MakePodDeleteStatusOkay()
+		}
+		// if checkSkipPods
+		dn.drainer.AdditionalFilters = []drain.PodFilter{skipDrainFn}
+		// endif
 		err := drain.RunNodeDrain(dn.drainer, dn.node.Name)
 		if err != nil {
 			lastErr = err
 			glog.Infof("Draining failed with: %v, retrying", err)
 			return false, nil
 		}
+		for _, p := range(podsNotDrained) {
+			glog.Infof("Pod with annotation to skip draining: %v/%v", p.Name, p.Namespace)
+		}
+		dn.drainer.AdditionalFilters = []drain.PodFilter{}
+		// copy podsNotDrained to outerPodsNotDrained
 		return true, nil
 
 	}); err != nil {
@@ -72,6 +102,42 @@ func (dn *Daemon) drain() error {
 		return errors.Wrap(err, "failed to drain node")
 	}
 
+	// err := nil
+	// if checkSkipPods && len(outerPodsNotDrained) > 0
+		// sleep 10 seconds so we don't jump the line
+		// acquire global drain lock or return err
+			// put a retry-backoff here of a few minutes so we don't jump the line
+		// fetch PDBs needed
+		// update CRD with timestamp, list of pods, PDBs
+			// make sure we only append to the PDB list here so we can unlock
+			// any PDBs even if the corresponding pod goes missing during a
+			// retry loop
+		// evaluate PDBs
+			// if (all PDBs are unlocked, or locked by us), and all healthy
+				// lock PDBs that need our lock
+				// update CRD to note which PDBs were successfully locked
+				// capture any errors
+			// else if (some PDBs locked by me and some by others) or not all healthy
+				// release global drain lock
+					// release the global lock early as we're only unlocking our
+					// own locks at this point.  This will allow us to put
+					// retry timeout on the lock operation to avoid having to
+					// get the global lock again to complete in case of temporary
+					// network/api issue.
+				// unlock my PDBs, retry backoff, if timeout, send warning
+				// accross all available channels
+					// as somebody might have read stale mutex and
+					// we'll both be wedged potentially, or some application/admin
+					// lock an app, but we should unlock other apps so other nodes
+					// will be unimpeded.
+					// Similarly, if there is one unhealthy PDB in our group, we
+					// don't want to lock the others indefinitely and cause a
+					// traffic jam.  Unlocking will potentially let others have a
+					// shot at proceeding
+			// else capture any errors
+		// release global drain lock
+
+	// return err
 	return nil
 }
 
