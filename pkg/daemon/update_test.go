@@ -647,3 +647,25 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 		t.Errorf("Different %s values should not be reconcilable.", key)
 	}
 }
+
+func TestRunGetOut(t *testing.T) {
+	o, err := runGetOut("true")
+	assert.Nil(t, err)
+	assert.Equal(t, len(o), 0)
+
+	o, err = runGetOut("false")
+	assert.NotNil(t, err)
+
+	o, err = runGetOut("echo", "hello")
+	assert.Nil(t, err)
+	assert.Equal(t, string(o), "hello\n")
+
+	// base64 encode "oops" so we can't match on the command arguments
+	o, err = runGetOut("/bin/sh", "-c", "echo hello; echo b29wcwo= | base64 -d 1>&2; exit 1")
+	assert.Error(t, err)
+	errtext := err.Error()
+	assert.Contains(t, errtext, "exit status 1\noops\n")
+
+	o, err = runGetOut("/usr/bin/test-failure-to-exec-this-should-not-exist", "arg")
+	assert.Error(t, err)
+}
