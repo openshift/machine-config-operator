@@ -4,8 +4,8 @@ OpenShift 4 is an [operator-focused platform](https://blog.openshift.com/openshi
 and the Machine Config operator extends that to the operating system itself,
 managing updates and configuration changes to essentially everything between the kernel and kubelet.
 
-To repeat for emphasis, this operator manages updates to systemd, cri-o/kubelet, kernel, NetworkManager,
-etc.  It also offers a new `MachineConfig` CRD that can write configuration files onto the host.
+To repeat for emphasis, this operator manages updates to systemd, cri-o/kubelet, kernel, NetworkManager, etc.
+It also offers a new `MachineConfig` CRD that can write configuration files onto the host.
 
 The approach here is a "fusion" of code from the original CoreOS
 Tectonic as well as some components of Red Hat Enterprise Linux Atomic Host,
