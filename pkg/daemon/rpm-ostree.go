@@ -256,13 +256,28 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	return
 }
 
+func truncate(input string, length int) string {
+	asRunes := []rune(input)
+
+	if length > len(asRunes) {
+		length = len(asRunes)
+	}
+
+	return string(asRunes[:length])
+}
+
 // runGetOut executes a command, logging it, and return the stdout output.
 func runGetOut(command string, args ...string) ([]byte, error) {
 	glog.Infof("Running captured: %s %s", command, strings.Join(args, " "))
 	cmd := exec.Command(command, args...)
-	rawOut, err := cmd.CombinedOutput()
+	rawOut, err := cmd.Output()
 	if err != nil {
-		return nil, errors.Wrapf(err, "error running %s %s: %s", command, strings.Join(args, " "), string(rawOut))
+		errtext := ""
+		if e, ok := err.(*exec.ExitError); ok {
+			// Trim to max of 256 characters
+			errtext = fmt.Sprintf("\n%s", truncate(string(e.Stderr), 256))
+		}
+		return nil, fmt.Errorf("error running %s %s: %s%s", command, strings.Join(args, " "), err, errtext)
 	}
 	return rawOut, nil
 }
