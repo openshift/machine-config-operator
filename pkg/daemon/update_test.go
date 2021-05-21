@@ -27,6 +27,14 @@ func TestTruncate(t *testing.T) {
 	assert.Equal(t, truncate("abcde", 5), "abcde")
 }
 
+func TestRunCmdSync(t *testing.T) {
+	err := runCmdSync("echo", "hello", "world")
+	assert.Nil(t, err)
+
+	err = runCmdSync("false", "something")
+	assert.NotNil(t, err)
+}
+
 // TestUpdateOS verifies the return errors from attempting to update the OS follow expectations
 func TestUpdateOS(t *testing.T) {
 	// expectedError is the error we will use when expecting an error to return
