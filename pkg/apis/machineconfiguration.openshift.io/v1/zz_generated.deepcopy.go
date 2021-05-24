@@ -417,6 +417,11 @@ func (in *KubeletConfigSpec) DeepCopyInto(out *KubeletConfigSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.ProtectKernelDefaults != nil {
+		in, out := &in.ProtectKernelDefaults, &out.ProtectKernelDefaults
+		*out = new(bool)
+		**out = **in
+	}
 	if in.MachineConfigPoolSelector != nil {
 		in, out := &in.MachineConfigPoolSelector, &out.MachineConfigPoolSelector
 		*out = new(metav1.LabelSelector)

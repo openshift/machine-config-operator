@@ -539,6 +539,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if cfg.Spec.TLSSecurityProfile != nil {
 			profile = cfg.Spec.TLSSecurityProfile
 		}
+
+		// mixin ProtectKernelDefaults
+		if cfg.Spec.ProtectKernelDefaults != nil && *cfg.Spec.ProtectKernelDefaults == true {
+			originalKubeConfig.ProtectKernelDefaults = true
+		}
+
 		// Inject TLS Options from Spec
 		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(profile)
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
@@ -624,6 +630,9 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		if kubeletIgnition != nil {
 			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
+		}
+		if originalKubeConfig.ProtectKernelDefaults {
+			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *createNewSysctlIgnition())
 		}
 
 		rawIgn, err := json.Marshal(tempIgnConfig)

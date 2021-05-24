@@ -152,6 +152,11 @@ spec:
                 format: int64
                 minimum: 1
                 maximum: 10
+              protectKernelDefaults:
+                description: protectKernelDefaults enforces certain sysctls on
+                  the system. When enabled, this option may cause the Kubelet
+                  to error on invalid sysctl values.
+                type: boolean
               kubeletConfig:
                 description: The fields of the kubelet configuration are defined in
                   kubernetes upstream. Please refer to the types defined in the version/commit
