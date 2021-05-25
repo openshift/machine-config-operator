@@ -51,6 +51,10 @@ const (
 	//
 	// 18 allows for retries up to about 10 minutes to allow for slower machines to catchup.
 	maxRetries = 18
+
+	// defaultOpenshiftTLSSecurityProfileConfig is the singleton object in
+	// Openshift containing the config for the tls security settings.
+	defaultOpenshiftTLSSecurityProfileConfig = "apiserver.v1.config.openshift.io"
 )
 
 var (
@@ -88,6 +92,9 @@ type Controller struct {
 	featLister       oselistersv1.FeatureGateLister
 	featListerSynced cache.InformerSynced
 
+	apiserverLister       oselistersv1.APIServerLister
+	apiserverListerSynced cache.InformerSynced
+
 	queue        workqueue.RateLimitingInterface
 	featureQueue workqueue.RateLimitingInterface
 }
@@ -99,6 +106,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mkuInformer mcfginformersv1.KubeletConfigInformer,
 	featInformer oseinformersv1.FeatureGateInformer,
+	apiserverInformer oseinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -141,6 +149,9 @@ func New(
 	ctrl.featLister = featInformer.Lister()
 	ctrl.featListerSynced = featInformer.Informer().HasSynced
 
+	ctrl.apiserverLister = apiserverInformer.Lister()
+	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
+
 	return ctrl
 }
 
@@ -150,7 +161,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -516,8 +527,20 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
 		}
 
+		// Get the default API Server Security Profile
+		var profile *configv1.TLSSecurityProfile
+		if apiServerSettings, err := ctrl.apiserverLister.Get(defaultOpenshiftTLSSecurityProfileConfig); err != nil {
+			if !macherrors.IsNotFound(err) {
+				return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", defaultOpenshiftTLSSecurityProfileConfig, err)
+			}
+		} else {
+			profile = apiServerSettings.Spec.TLSSecurityProfile
+		}
+		if cfg.Spec.TLSSecurityProfile != nil {
+			profile = cfg.Spec.TLSSecurityProfile
+		}
 		// Inject TLS Options from Spec
-		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(cfg.Spec.TLSSecurityProfile)
+		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(profile)
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 		originalKubeConfig.TLSCipherSuites = observedCipherSuites
 
