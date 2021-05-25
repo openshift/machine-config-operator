@@ -412,7 +412,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	pool := machineconfigpool.DeepCopy()
 	everything := metav1.LabelSelector{}
 	if reflect.DeepEqual(pool.Spec.MachineConfigSelector, &everything) {
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machineconfigs. A non-empty selector is require.")
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeWarning, "SelectingAll", "This machineconfigpool is selecting all machineconfigs. A non-empty selector is required.")
 		return nil
 	}
 
@@ -495,7 +495,11 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
 		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), generated, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
 		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "RenderedConfigGenerated", "%s successfully generated", generated.Name)
 	}
 	if err != nil {
 		return err
