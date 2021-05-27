@@ -114,6 +114,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 		}
 		val, ok := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 		// If we find a matching kubelet config and it is the only one in the list, then return the default MC name with no suffix
+		// add check len(kcList.Items) < 2, mc name should not suffixed if cfg is the first kubelet config to be updated/created
 		if !ok && len(kcList.Items) < 2 {
 			return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 		}
