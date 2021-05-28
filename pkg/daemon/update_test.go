@@ -17,6 +17,16 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
+func TestTruncate(t *testing.T) {
+	assert.Equal(t, truncate("", 10), "")
+	assert.Equal(t, truncate("", 1), "")
+	assert.Equal(t, truncate("a", 1), "a")
+	assert.Equal(t, truncate("abcde", 1), "a [4 more chars]")
+	assert.Equal(t, truncate("abcde", 4), "abcd [1 more chars]")
+	assert.Equal(t, truncate("abcde", 7), "abcde")
+	assert.Equal(t, truncate("abcde", 5), "abcde")
+}
+
 // TestUpdateOS verifies the return errors from attempting to update the OS follow expectations
 func TestUpdateOS(t *testing.T) {
 	// expectedError is the error we will use when expecting an error to return

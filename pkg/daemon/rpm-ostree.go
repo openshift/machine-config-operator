@@ -86,7 +86,7 @@ func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	}
 
 	if err := json.Unmarshal(output, &rosState); err != nil {
-		return nil, fmt.Errorf("failed to parse `rpm-ostree status --json` output: %v", err)
+		return nil, errors.Wrapf(err, "failed to parse `rpm-ostree status --json` output (%s)", truncate(string(output), 30))
 	}
 
 	for _, deployment := range rosState.Deployments {
@@ -253,14 +253,17 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	return
 }
 
-func truncate(input string, length int) string {
+// truncate a string using runes/codepoints as limits.
+// This specifically will avoid breaking a UTF-8 value.
+func truncate(input string, limit int) string {
 	asRunes := []rune(input)
+	l := len(asRunes)
 
-	if length > len(asRunes) {
-		length = len(asRunes)
+	if limit >= l {
+		return input
 	}
 
-	return string(asRunes[:length])
+	return fmt.Sprintf("%s [%d more chars]", string(asRunes[:limit]), l-limit)
 }
 
 // runGetOut executes a command, logging it, and return the stdout output.
