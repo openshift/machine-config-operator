@@ -133,6 +133,8 @@ contents:
           mountPath: "/etc/keepalived"
         - name: run-dir
           mountPath: "/var/run/keepalived"
+        - name: chroot-host
+          mountPath: "/host"
         livenessProbe:
           exec:
             command:
