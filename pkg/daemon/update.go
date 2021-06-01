@@ -571,8 +571,12 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	// Drain if we need to reboot or reload crio configuration
-	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) || ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
+	// Check and perform node drain if required
+	drain, err := isDrainRequired(actions, oldConfig, newConfig)
+	if err != nil {
+		return err
+	}
+	if drain {
 		if err := dn.performDrain(); err != nil {
 			return err
 		}
