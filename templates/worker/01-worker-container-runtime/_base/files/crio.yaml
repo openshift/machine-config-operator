@@ -25,6 +25,9 @@ contents:
         "/run/containers/oci/hooks.d",
     ]
     manage_ns_lifecycle = true
+    absent_mount_sources_to_reject = [
+        "/etc/hostname",
+    ]
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"
