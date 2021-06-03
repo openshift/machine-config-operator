@@ -73,6 +73,7 @@ func (dn *Daemon) drain() error {
 		done <- true
 		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
+		MCDDrainErr.Set(1)
 		return errors.New(failMsg)
 	case <-drainer():
 		return nil
@@ -98,7 +99,6 @@ func (dn *Daemon) performDrain() error {
 	}
 
 	// We are here, that means we need to cordon and drain node
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
 
@@ -111,7 +111,7 @@ func (dn *Daemon) performDrain() error {
 	dn.logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
+	MCDDrainErr.Set(0)
 
 	return nil
 }
