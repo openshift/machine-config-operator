@@ -46,9 +46,10 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 
 func (dn *Daemon) drain() error {
 	backoff := wait.Backoff{
-		Steps:    5,
+		Steps:    8,
 		Duration: 10 * time.Second,
 		Factor:   2,
+		Cap:      15 * time.Minute,
 	}
 	var lastErr error
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
