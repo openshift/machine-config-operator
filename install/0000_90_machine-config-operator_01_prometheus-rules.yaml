@@ -27,7 +27,6 @@ spec:
             mcd_drain_err > 0
           labels:
             severity: warning
-          for: 15m
           annotations:
             message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon"
     - name: mcd-pivot-error
