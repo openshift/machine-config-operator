@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -579,8 +580,11 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
 			// suffix annotation and suffix value to the ctrcfg object
 			if len(arr) > 4 && !ok {
-				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
-					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerRuntimeConfig")
+				_, err := strconv.Atoi(arr[len(arr)-1])
+				if err == nil {
+					if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+						return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerRuntimeConfig")
+					}
 				}
 			}
 		}
