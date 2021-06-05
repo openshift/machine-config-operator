@@ -1797,7 +1797,6 @@ var _manifestsOnPremKeepalivedConfTmpl = []byte(`# Configuration template for Ke
     virtual_router_id {{.Cluster.APIVirtualRouterID }}
     priority 70
     advert_int 1
-    nopreempt
     {{ if .EnableUnicast }}
     unicast_src_ip {{.NonVirtualIP}}
     unicast_peer {
