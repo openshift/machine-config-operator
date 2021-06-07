@@ -45,34 +45,39 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 }
 
 func (dn *Daemon) drain() error {
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 10 * time.Second,
-		Factor:   2,
-	}
-	var lastErr error
-	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		err := drain.RunNodeDrain(dn.drainer, dn.node.Name)
-		if err != nil {
-			lastErr = err
-			glog.Infof("Draining failed with: %v, retrying", err)
-			return false, nil
-		}
-		return true, nil
+	done := make(chan bool, 1)
 
-	}); err != nil {
-		if err == wait.ErrWaitTimeout {
-			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
-			MCDDrainErr.WithLabelValues(dn.node.Name, "WaitTimeout").Set(float64(backoff.Steps))
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
-			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
-		}
-		MCDDrainErr.WithLabelValues(dn.node.Name, "UnknownError").Set(float64(backoff.Steps))
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", err.Error())
-		return errors.Wrap(err, "failed to drain node")
+	drainer := func() chan error {
+		ret := make(chan error)
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					if err := drain.RunNodeDrain(dn.drainer, dn.node.Name); err != nil {
+						glog.Infof("Draining failed with: %v, retrying", err)
+						time.Sleep(5 * time.Minute)
+						continue
+					}
+					close(ret)
+					return
+				}
+			}
+		}()
+		return ret
 	}
 
-	return nil
+	select {
+	case <-time.After(1 * time.Hour):
+		done <- true
+		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
+		MCDDrainErr.Set(1)
+		return errors.New(failMsg)
+	case <-drainer():
+		return nil
+	}
 }
 
 func (dn *Daemon) performDrain() error {
@@ -94,7 +99,6 @@ func (dn *Daemon) performDrain() error {
 	}
 
 	// We are here, that means we need to cordon and drain node
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
 
@@ -107,7 +111,7 @@ func (dn *Daemon) performDrain() error {
 	dn.logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
+	MCDDrainErr.Set(0)
 
 	return nil
 }
