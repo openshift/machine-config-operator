@@ -25,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -130,44 +129,42 @@ func (dn *Daemon) drain() error {
 
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 10 * time.Second,
-		Factor:   2,
-	}
-	var lastErr error
-	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, true)
-		if err != nil {
-			lastErr = err
-			glog.Infof("Cordon failed with: %v, retrying", err)
-			return false, nil
-		}
-		err = drain.RunNodeDrain(dn.drainer, dn.node.Name)
-		if err == nil {
-			return true, nil
-		}
-		lastErr = err
-		glog.Infof("Draining failed with: %v, retrying", err)
-		return false, nil
-	}); err != nil {
-		if err == wait.ErrWaitTimeout {
-			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
-			MCDDrainErr.WithLabelValues(dn.node.Name, "WaitTimeout").Set(float64(backoff.Steps))
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
-			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
-		}
-		MCDDrainErr.WithLabelValues(dn.node.Name, "UnknownError").Set(float64(backoff.Steps))
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", err.Error())
-		return errors.Wrap(err, "failed to drain node")
+	done := make(chan bool, 1)
+
+	drainer := func() chan error {
+		ret := make(chan error)
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					if err := drain.RunNodeDrain(dn.drainer, dn.node.Name); err != nil {
+						glog.Infof("Draining failed with: %v, retrying", err)
+						time.Sleep(5 * time.Minute)
+						continue
+					}
+					close(ret)
+					return
+				}
+			}
+		}()
+		return ret
 	}
 
-	dn.logSystem("drain complete")
-	t := time.Since(startTime).Seconds()
-	glog.Infof("Successful drain took %v seconds", t)
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
-
-	return nil
+	select {
+	case <-time.After(1 * time.Hour):
+		done <- true
+		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
+		return errors.New(failMsg)
+	case <-drainer():
+		dn.logSystem("drain complete")
+		t := time.Since(startTime).Seconds()
+		glog.Infof("Successful drain took %v seconds", t)
+		MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
+		return nil
+	}
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
