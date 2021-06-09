@@ -342,7 +342,9 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 		}
 
 		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
+		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType:
+			return "external", nil
+		case configv1.VSpherePlatformType:
 			return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
 		case configv1.GCPPlatformType:
 			return "gce", nil
@@ -363,7 +365,7 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 //
 // [1]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#options
 func cloudConfigFlag(cfg RenderConfig) interface{} {
-	if cfg.CloudProviderConfig == "" {
+	if cfg.CloudProviderConfig == "" || cfg.CloudProviderConfig == "external" {
 		return ""
 	}
 
