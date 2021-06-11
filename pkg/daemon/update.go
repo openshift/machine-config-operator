@@ -102,8 +102,7 @@ func getNodeRef(node *corev1.Node) *corev1.ObjectReference {
 }
 
 func reloadService(name string) error {
-	_, err := runGetOut("systemctl", "reload", name)
-	return err
+	return runCmdSync("systemctl", "reload", name)
 }
 
 // performPostConfigChangeAction takes action based on what postConfigChangeAction has been asked.
@@ -276,9 +275,9 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 
 	// Set selinux context to var_run_t to avoid selinux denial
 	args = []string{"-R", "-t", "var_run_t", osImageContentDir}
-	_, err = runGetOut("chcon", args...)
+	err = runCmdSync("chcon", args...)
 	if err != nil {
-		glog.Infof("Error changing selinux context on path %s  %v", osImageContentDir, err)
+		err = errors.Wrapf(err, "changing selinux context on path %s", osImageContentDir)
 		return
 	}
 	return
@@ -325,9 +324,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 
 // Remove pending deployment on OSTree based system
 func removePendingDeployment() error {
-	args := []string{"cleanup", "-p"}
-	_, err := runGetOut("rpm-ostree", args...)
-	return err
+	return runRpmOstree("cleanup", "-p")
 }
 
 func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
@@ -988,8 +985,7 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 
 	args := append([]string{"kargs"}, kargs...)
 	dn.logSystem("Running rpm-ostree %v", args)
-	_, err := runGetOut("rpm-ostree", args...)
-	return err
+	return runRpmOstree(args...)
 }
 
 func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
@@ -1101,9 +1097,7 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 
 	args := dn.generateExtensionsArgs(oldConfig, newConfig)
 	glog.Infof("Applying extensions : %+q", args)
-	_, err := runGetOut("rpm-ostree", args...)
-
-	return err
+	return runRpmOstree(args...)
 }
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
@@ -1132,8 +1126,7 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 			args = append(args, "--uninstall", pkg)
 		}
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
-		_, err := runGetOut("rpm-ostree", args...)
-		return err
+		return runRpmOstree(args...)
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
@@ -1145,16 +1138,14 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 		}
 
 		dn.logSystem("Switching to kernelType=%s, invoking rpm-ostree %+q", newConfig.Spec.KernelType, args)
-		_, err := runGetOut("rpm-ostree", args...)
-		return err
+		return runRpmOstree(args...)
 	}
 
 	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			args := []string{"update"}
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
-			_, err := runGetOut("rpm-ostree", args...)
-			return err
+			return runRpmOstree(args...)
 		}
 	}
 
@@ -1859,6 +1850,22 @@ PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
 
 	logger.Stdin = &pendingState
 	return logger.CombinedOutput()
+}
+
+// Synchronously invoke a command, writing its stdout to our stdout,
+// and gathering stderr into a buffer which will be returned in err
+// in case of error.
+func runCmdSync(cmdName string, args ...string) error {
+	glog.Infof("Running: %s %s", cmdName, strings.Join(args, " "))
+	cmd := exec.Command(cmdName, args...)
+	var stderr bytes.Buffer
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return errors.Wrapf(err, "error running %s %s: %s", cmdName, strings.Join(args, " "), string(stderr.Bytes()))
+	}
+
+	return nil
 }
 
 // Log a message to the systemd journal as well as our stdout

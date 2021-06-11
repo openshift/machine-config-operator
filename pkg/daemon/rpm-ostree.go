@@ -77,6 +77,13 @@ func NewNodeUpdaterClient() NodeUpdaterClient {
 	return &RpmOstreeClient{}
 }
 
+// Synchronously invoke rpm-ostree, writing its stdout to our stdout,
+// and gathering stderr into a buffer which will be returned in err
+// in case of error.
+func runRpmOstree(args ...string) error {
+	return runCmdSync("rpm-ostree", args...)
+}
+
 // GetBootedDeployment returns the current deployment found
 func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	var rosState rpmOstreeState
@@ -245,7 +252,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	args := []string{"rebase", "--experimental", fmt.Sprintf("%s:%s", repo, ostreeCsum),
 		"--custom-origin-url", customURL, "--custom-origin-description", "Managed by machine-config-operator"}
 
-	if _, err = runGetOut("rpm-ostree", args...); err != nil {
+	if err = runRpmOstree(args...); err != nil {
 		return
 	}
 
