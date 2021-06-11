@@ -381,20 +381,7 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 
 func onPremPlatformShortName(cfg RenderConfig) interface{} {
 	if cfg.Infra.Status.PlatformStatus != nil {
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
-			return "kni"
-		case configv1.OvirtPlatformType:
-			return "ovirt"
-		case configv1.OpenStackPlatformType:
-			return "openstack"
-		case configv1.VSpherePlatformType:
-			return "vsphere"
-		case configv1.KubevirtPlatformType:
-			return "kubevirt"
-		default:
-			return ""
-		}
+		return "on-prem"
 	} else {
 		return ""
 	}
