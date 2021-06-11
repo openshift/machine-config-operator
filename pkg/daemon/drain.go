@@ -52,6 +52,7 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 }
 
 func (dn *Daemon) drain() error {
+	failedDrains := 0
 	done := make(chan bool, 1)
 
 	drainer := func() chan error {
@@ -64,7 +65,12 @@ func (dn *Daemon) drain() error {
 				default:
 					if err := drain.RunNodeDrain(dn.drainer, dn.node.Name); err != nil {
 						glog.Infof("Draining failed with: %v, retrying", err)
-						time.Sleep(5 * time.Minute)
+						failedDrains++
+						if failedDrains > 5 {
+							time.Sleep(5 * time.Minute)
+						} else {
+							time.Sleep(1 * time.Minute)
+						}
 						continue
 					}
 					close(ret)
