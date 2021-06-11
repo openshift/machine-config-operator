@@ -27,12 +27,12 @@ var (
 			Help: "indicates a successful SSH login",
 		})
 
-	// MCDDrainErr logs errors received during failed drain
-	MCDDrainErr = prometheus.NewGaugeVec(
+	// MCDDrainErr logs failed drain
+	MCDDrainErr = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "mcd_drain_err",
-			Help: "errors from failed drain",
-		}, []string{"node", "err"})
+			Help: "logs failed drain",
+		})
 
 	// MCDPivotErr shows errors encountered during pivot
 	MCDPivotErr = prometheus.NewGaugeVec(
@@ -88,6 +88,7 @@ func registerMCDMetrics() error {
 		}
 	}
 
+	MCDDrainErr.Set(0)
 	MCDPivotErr.WithLabelValues("", "", "").Set(0)
 	KubeletHealthState.Set(0)
 	MCDRebootErr.WithLabelValues("", "", "").Set(0)
