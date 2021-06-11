@@ -32,6 +32,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 	tests := []struct {
 		knownConfigs []config
 		source       []string
+		testurl      string
 		generated    string
 
 		err error
@@ -43,6 +44,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 	}, {
 		knownConfigs: nil,
 		source:       []string{"c-0", "u-0"},
+		testurl:      "myurl",
 		generated:    "g",
 		err:          configNotFound,
 	}, {
@@ -50,6 +52,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 			name: "g",
 		}},
 		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
 		generated: "g",
 		err:       errors.New("g must be created by controller version v2: <unknown>"),
 	}, {
@@ -58,6 +61,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 			version: "v1",
 		}},
 		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
 		generated: "g",
 		err:       errors.New("controller version mismatch for g expected v2 has v1: <unknown>"),
 	}, {
@@ -71,6 +75,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 			name: "u-0",
 		}},
 		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
 		generated: "g",
 		err:       errors.New("controller version mismatch for c-0 expected v2 has v1: <unknown>"),
 	}, {
@@ -84,8 +89,23 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 			name: "u-0",
 		}},
 		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
 		generated: "g",
 		err:       nil,
+	}, {
+		knownConfigs: []config{{
+			name:    "g",
+			version: "v2",
+		}, {
+			name:    "c-0",
+			version: "v2",
+		}, {
+			name: "u-0",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "wrongurl",
+		generated: "g",
+		err:       errors.New("osImageURL mismatch for dummy-pool in g expected: myurl got: wrongurl"),
 	}}
 
 	for idx, test := range tests {
@@ -102,6 +122,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 								Name:        c.name,
 								Annotations: annos,
 							},
+							Spec: mcfgv1.MachineConfigSpec{OSImageURL: test.testurl},
 						}, nil
 					}
 				}
@@ -123,7 +144,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 				Status: mcfgv1.MachineConfigPoolStatus{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.generated}, Source: source},
 				},
-			}, "v2", getter)
+			}, "v2", "myurl", getter)
 			if !reflect.DeepEqual(err, test.err) {
 				t.Fatalf("expected %v got %v", test.err, err)
 			}
