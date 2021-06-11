@@ -22,10 +22,15 @@ import (
 
 type mockServer struct {
 	GetConfigFn func(poolRequest) (*runtime.RawExtension, error)
+	GetKernelArgumentsFn func(poolRequest) ([]string, error)
 }
 
 func (ms *mockServer) GetConfig(pr poolRequest) (*runtime.RawExtension, error) {
 	return ms.GetConfigFn(pr)
+}
+
+func (ms *mockServer) GetKernelArguments(pr poolRequest) ([]string, error) {
+	return ms.GetKernelArgumentsFn(pr)
 }
 
 type checkResponse func(t *testing.T, response *http.Response)

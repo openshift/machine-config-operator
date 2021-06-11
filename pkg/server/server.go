@@ -41,6 +41,7 @@ type appenderFunc func(*igntypes.Config, *mcfgv1.MachineConfig) error
 // machine config server implementations.
 type Server interface {
 	GetConfig(poolRequest) (*runtime.RawExtension, error)
+	GetKernelArguments(poolRequest) ([]string, error)
 }
 
 func getAppenders(currMachineConfig string, version *semver.Version, f kubeconfigFunc) []appenderFunc {

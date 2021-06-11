@@ -15,8 +15,10 @@ import (
 	rest "k8s.io/client-go/rest"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 
 	v1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 const (
@@ -59,12 +61,12 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	}, nil
 }
 
-// GetConfig fetches the machine config(type - Ignition) from the cluster,
+// getMachineConfig fetches the machine config from the cluster,
 // based on the pool request.
-func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
+func (cs *clusterServer) getMachineConfig(cr poolRequest) (*mcfgv1.MachineConfig, *igntypes.Config, error) {
 	mp, err := cs.machineClient.MachineConfigPools().Get(context.TODO(), cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
+		return nil, nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}
 
 	// For new nodes, we roll out the latest if at least one node has successfully updated.
@@ -80,25 +82,51 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	mc, err := cs.machineClient.MachineConfigs().Get(context.TODO(), currConf, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
+		return nil, nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}
 	ignConf, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
+		return nil, nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
 	}
 
 	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc)
 	for _, a := range appenders {
 		if err := a(&ignConf, mc); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	rawConf, err := json.Marshal(ignConf)
+	return mc, &ignConf, nil
+}
+
+// GetConfig fetches the machine config(type - Ignition) from the cluster,
+// based on the pool request.
+func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
+	_, ignConf, err := cs.getMachineConfig(cr)
+	if err != nil {
+		return nil, err
+	}
+	// shouldn't be possible, but do this to avoid chance of nil pointer dereference
+	if ignConf == nil {
+		return nil, fmt.Errorf("fetched empty Ignition config")
+	}
+
+	rawConf, err := json.Marshal(*ignConf)
 	if err != nil {
 		return nil, err
 	}
 	return &runtime.RawExtension{Raw: rawConf}, nil
+}
+
+// GetKernelArguments fetches the machine config kernel arguments from the cluster,
+// based on the pool request.
+func (cs *clusterServer) GetKernelArguments(cr poolRequest) ([]string, error) {
+	mc, _, err := cs.getMachineConfig(cr)
+	if err != nil {
+		return nil, err
+	}
+
+	return mc.Spec.KernelArguments, nil
 }
 
 // getClientConfig returns a Kubernetes client Config.
