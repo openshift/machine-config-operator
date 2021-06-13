@@ -24,6 +24,8 @@ import (
 	ign3_1types "github.com/coreos/ignition/v2/config/v3_1/types"
 	ign3 "github.com/coreos/ignition/v2/config/v3_2"
 	translate3 "github.com/coreos/ignition/v2/config/v3_2/translate"
+	ign3_3 "github.com/coreos/ignition/v2/config/v3_3"
+	ign3_3types "github.com/coreos/ignition/v2/config/v3_3/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
@@ -276,6 +278,28 @@ func convertIgnition32to31(ign3config ign3types.Config) (ign3_1types.Config, err
 	glog.V(4).Infof("Successfully translated Ignition spec v3_2 config to Ignition spec v3_1 config: %v", converted31)
 
 	return converted31, nil
+}
+
+// AddIgnitionKernelArguments adds the given kernel arguments to the Ignition configs
+// kernelArguments.shouldExist field
+func AddIgnitionKernelArguments(inRawExtIgn *runtime.RawExtension, kargs []string) (runtime.RawExtension, error) {
+	ignCfg, rptV3, errV3 := ign3_3.ParseCompatibleVersion(inRawExtIgn.Raw)
+	if errV3 != nil || rptV3.IsFatal() {
+		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
+	}
+
+	for _, karg := range kargs {
+		ignCfg.KernelArguments.ShouldExist = append(ignCfg.KernelArguments.ShouldExist, ign3_3types.KernelArgument(karg))
+	}
+
+	outIgn, err := json.Marshal(ignCfg)
+	if err != nil {
+		return runtime.RawExtension{}, errors.Errorf("failed to marshal converted config: %v", err)
+	}
+
+	outRawExt := runtime.RawExtension{}
+	outRawExt.Raw = outIgn
+	return outRawExt, nil
 }
 
 // ValidateIgnition wraps the underlying Ignition V2/V3 validation, but explicitly supports
