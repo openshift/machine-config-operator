@@ -2,23 +2,20 @@ name: node-valid-hostname.service
 enabled: true
 contents: |
   [Unit]
-  Description=Ensure the node hostname is valid for the cluster
+  Description=Wait for a non-localhost hostname
   Before=network-online.target
 
   [Service]
   Type=oneshot
   RemainAfterExit=yes
   User=root
+  ExecStart=/usr/local/bin/mco-hostname --wait
 
-  # SystemD prevents direct execution of the script in /usr/local/sbin,
-  # so it is sourced. See the script for functionality.
-  ExecStart=/bin/bash -c "source /usr/local/sbin/set-valid-hostname.sh; wait_localhost; set_valid_hostname `hostname`"
-
-  # Wait up to 5min for the node to get a real hostname.
+  # Wait up to 5min for the node to get a non-localhost name
   TimeoutSec=300
 
   [Install]
   WantedBy=multi-user.target
-  # Ensure that network-online.target will not complete until the node has a real hostname.
+  # Ensure that network-online.target will not complete until the node has a non-localhost hostname.
   RequiredBy=network-online.target
 

@@ -1,0 +1,64 @@
+mode: 0755
+path: "/usr/local/bin/mco-hostname"
+contents:
+  inline: |
+    #!/bin/bash
+    # First, we need to wait until DHCP finishes and the node has a non-`localhost`
+    # hostname before `kubelet.service` starts.
+    # That's the `--wait` argument as used by `node-valid-hostname.service`.
+    #
+    # Second, on GCP specifically we truncate the hostname if it's >63 characters.
+    # That's `gcp-hostname.service`.
+
+    # Block indefinitely until the host gets a non-localhost name.
+    # Note node-valid-hostname.service uses systemd to abort if this takes too long.
+    wait_localhost() {
+        echo "waiting for non-localhost hostname to be assigned"
+        while [[ "$(< /proc/sys/kernel/hostname)" =~ (localhost|localhost.localdomain) ]];
+        do
+            sleep 1
+        done
+        echo "node identified as $(</proc/sys/kernel/hostname)"
+        exit 0
+    }
+
+    set_gcp_hostname() {
+        /usr/bin/afterburn --provider gcp --hostname=/run/afterburn.hostname
+
+        local host_name=$(cat /run/afterburn.hostname)
+        local type_arg="transient"
+
+        # /etc/hostname is used for static hostnames and is authoritative.
+        # This will check to make sure that the static hostname is the
+        # less than or equal to 63 characters in length.
+        if [ -f /etc/hostname ] && [ "$(cat /etc/hostname | wc -m)" -gt 0 ]; then
+            etc_name="$(< /etc/hostname)"
+            type_arg="static"
+            if [ "${etc_name}" != "${host_name}" ]; then
+                echo "/etc/hostname is set to ${etc_name} but does not match ${host_name}"
+                echo "using /etc/hostname as the authoritative name"
+                host_name="${etc_name}"
+            fi
+        fi
+
+        # Only mutate the hostname if the length is longer than 63 characters. The
+        # hostname will be the lesser of 63 characters after the first dot in the
+        # FQDN.  This algorithm is only known to work in GCP, and hence is only
+        # executed in GCP.
+        if [ "${#host_name}" -gt 63 ]; then
+            alt_name=$(printf "${host_name}" | cut -f1 -d'.' | cut -c -63)
+            echo "${host_name} is longer than 63 characters, using truncated hostname"
+            host_name="${alt_name}"
+        fi
+        echo "setting ${type_arg} hostname to ${host_name}"
+        /bin/hostnamectl "--${type_arg}" set-hostname "${host_name}"
+        exit 0
+    }
+
+    arg=${1}; shift;
+    case "${arg}" in
+        --wait) wait_localhost;;
+        --gcp) set_gcp_hostname;;
+        *) echo "Unhandled arg $arg"; exit 1
+    esac
+
