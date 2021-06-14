@@ -20,7 +20,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
 	github.com/coreos/ignition v0.35.0
-	github.com/coreos/ignition/v2 v2.7.0
+	github.com/coreos/ignition/v2 v2.11.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
@@ -63,6 +63,8 @@ require (
 
 replace (
 	github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
+
+	github.com/coreos/ign-converter => /home/stephenlowrie/work/ign-converter
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1

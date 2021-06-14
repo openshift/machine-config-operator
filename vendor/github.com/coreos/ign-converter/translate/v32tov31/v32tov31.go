@@ -95,6 +95,7 @@ func translateConfig(old old_types.Config) (ret types.Config) {
 	tr.Translate(&old, &ret)
 	return
 }
+
 // end copied Ignition v3_2/translate block
 
 // Translate translates Ignition spec config v3.2 to spec v3.1
