@@ -1725,8 +1725,8 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", authKeyPath)
-
-	if err := writeFileAtomicallyWithDefaults(authKeyPath, []byte(keys)); err != nil {
+	// write the file and ensure it's owned by the core user (uid: 1000, gid: 1000)
+	if err := writeFileAtomically(authKeyPath, []byte(keys), defaultDirectoryPermissions, defaultFilePermissions, 1000, 1000); err != nil {
 		return err
 	}
 
