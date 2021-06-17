@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -117,11 +118,41 @@ func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
 }
 
+func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 10 * time.Second,
+		Factor:   2,
+	}
+	var lastErr error
+	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, desired)
+		if err != nil {
+			lastErr = err
+			glog.Infof("cordon/uncordon failed with: %v, retrying", err)
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			return errors.Wrapf(lastErr, "failed to cordon/uncordon node (%d tries): %v", backoff.Steps, err)
+		}
+		return errors.Wrap(err, "failed to cordon/uncordon node")
+	}
+	return nil
+}
+
 func (dn *Daemon) drain() error {
 	// Skip draining of the node when we're not cluster driven
 	if dn.kubeClient == nil {
 		return nil
 	}
+
+	if err := dn.cordonOrUncordonNode(true); err != nil {
+		return err
+	}
+	dn.logSystem("Node has been successfully cordoned")
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
 
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
