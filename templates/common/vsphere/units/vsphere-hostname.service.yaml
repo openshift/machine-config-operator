@@ -3,7 +3,12 @@ enabled: true
 contents: |
   [Unit]
   Description=vSphere hostname
+  Requires=vmtoolsd.service
   After=vmtoolsd.service
+
+  ConditionPathExists=!/etc/hostname
+  ConditionVirtualization=vmware
+
   Before=kubelet.service
   Before=node-valid-hostname.service
   Before=NetworkManager.service
@@ -15,4 +20,3 @@ contents: |
 
   [Install]
   WantedBy=multi-user.target
-
