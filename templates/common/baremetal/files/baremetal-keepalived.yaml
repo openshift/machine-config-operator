@@ -151,16 +151,6 @@ contents:
           mountPath: "/var/run/keepalived"
         - name: chroot-host
           mountPath: "/host"
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 6443
-            scheme: HTTPS
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          successThreshold: 1
-          failureThreshold: 3
-          timeoutSeconds: 10
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
