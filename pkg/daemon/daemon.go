@@ -1149,7 +1149,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			// Great, we've successfully rebooted for the desired config,
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
-			if err := dn.completeUpdate(dn.node, state.pendingConfig.GetName()); err != nil {
+			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
 				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return inDesiredConfig, err
 			}
@@ -1281,8 +1281,8 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // completeUpdate marks the node as schedulable again, then deletes the
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
-func (dn *Daemon) completeUpdate(node *corev1.Node, desiredConfigName string) error {
-	if err := drain.RunCordonOrUncordon(dn.drainer, node, false); err != nil {
+func (dn *Daemon) completeUpdate(desiredConfigName string) error {
+	if err := dn.cordonOrUncordonNode(false); err != nil {
 		return err
 	}
 
