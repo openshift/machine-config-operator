@@ -10,7 +10,7 @@ and the image builds rely on `podman`.
 
 Most changes you'll want to test live against a real cluster.  Use [the installer](https://github.com/openshift/installer/), and in particular you'll want to use the "latest CI" release of the installer.  As of the time of this writing, that's 4.5.  More information on the [release page](https://openshift-release.svc.ci.openshift.org/).
 
-Go v1.13 is used for development of the MCO.
+Go v1.16 is used for development of the MCO.
 
 These instructions will be kept up to date generally against the leading edge of the installer.  Make sure you have set `KUBECONFIG` per the output of the installer.
 
@@ -65,7 +65,7 @@ All tests (unit and e2e) can be executed with:
 
 Dependencies are managed with [go modules](https://github.com/golang/go/wiki/Modules) but committed directly to the repository.
 
-Please ensure that you are using Go v1.13.  Using a different version may result in unexpected behavior.
+Please ensure that you are using Go v1.16.  Using a different version may result in unexpected behavior.
 
 After updating the go code using `import` statements to reference the desired new packages, add the new dependencies by running:
 
