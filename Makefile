@@ -20,6 +20,8 @@ export GOPROXY=https://proxy.golang.org
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
 .PHONY: clean test test-unit test-e2e verify update install-tools
+.DEFAULT_GOAL = binaries
+
 # Remove build artifaces
 # Example:
 #    make clean
