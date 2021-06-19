@@ -5,6 +5,7 @@ contents:
     global_defs {
         enable_script_security
         script_user root
+        max_auto_priority -1
     }
 
     # These are separate checks to provide the following behavior:
