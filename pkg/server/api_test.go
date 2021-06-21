@@ -554,7 +554,7 @@ func TestAPIServer(t *testing.T) {
 			ms := &mockServer{
 				GetConfigFn: scenario.serverFunc,
 			}
-			server := NewAPIServer(NewServerAPIHandler(ms), 0, false, "", "")
+			server := NewAPIServer(NewServerAPIHandler(ms), "0.0.0.0", 0, false, "", "")
 			server.handler.ServeHTTP(w, scenario.request)
 
 			resp := w.Result()
