@@ -535,9 +535,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	dn.catchIgnoreSIGTERM()
 	defer func() {
-		if retErr != nil {
-			dn.cancelSIGTERM()
-		}
+		// now that we do rebootless updates, we need to turn off our SIGTERM protection
+		// regardless of how we leave the "update loop"
+		dn.cancelSIGTERM()
 	}()
 
 	oldConfigName := oldConfig.GetName()
@@ -1893,6 +1893,7 @@ func (dn *Daemon) catchIgnoreSIGTERM() {
 	if dn.updateActive {
 		return
 	}
+	glog.Info("Adding SIGTERM protection")
 	dn.updateActive = true
 }
 
@@ -1900,6 +1901,7 @@ func (dn *Daemon) cancelSIGTERM() {
 	dn.updateActiveLock.Lock()
 	defer dn.updateActiveLock.Unlock()
 	if dn.updateActive {
+		glog.Info("Removing SIGTERM protection")
 		dn.updateActive = false
 	}
 }
