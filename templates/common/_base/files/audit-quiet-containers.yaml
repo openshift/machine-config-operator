@@ -1,0 +1,14 @@
+mode: 0644
+path: "/etc/audit/rules.d/mco-audit-quiet-containers.rules"
+contents:
+  inline: |
+    # This file is managed by machine-config-operator.
+    # Suppress audit rules which always trigger for container
+    # workloads, as they spam the audit log.  Workloads are expected
+    # to be dynamic, and the networking stack uses iptables.
+    -a exclude,always -F msgtype=NETFILTER_CFG
+    # The default bridged networking enables promiscuous on the veth
+    # device.  Ideally, we'd teach audit to ignore only veth devices,
+    # since one might legitimately care about promiscuous on real physical
+    # devices.  But we can't currently differentiate.
+    -a exclude,always -F msgtype=ANOM_PROMISCUOUS
