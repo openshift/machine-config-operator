@@ -2,16 +2,7 @@ name: pivot.service
 dropins:
   - name: 10-mco-default-env.conf
     contents: |
-      [Unit]
       {{if .Proxy -}}
       [Service]
-      {{if .Proxy.HTTPProxy -}}
-      Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
-      {{end -}}
-      {{if .Proxy.HTTPSProxy -}}
-      Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
-      {{end -}}
-      {{if .Proxy.NoProxy -}}
-      Environment=NO_PROXY={{.Proxy.NoProxy}}
-      {{end -}}
+      EnvironmentFile=/etc/mco/proxy.env
       {{end -}}

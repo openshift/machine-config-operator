@@ -19,17 +19,8 @@ contents: |
   ExecStart=/bin/sh -c "while ! /usr/bin/podman pull --authfile=/var/lib/kubelet/config.json --quiet '{{ .Images.machineConfigOperator }}'; do sleep 1; done"
   ExecStart=/bin/sh -c "/usr/bin/podman run --rm --quiet --net=host --entrypoint=cat '{{ .Images.machineConfigOperator }}' /usr/bin/machine-config-daemon > /run/bin/machine-config-daemon.tmp"
   ExecStart=/bin/sh -c '/usr/bin/chmod a+x /run/bin/machine-config-daemon.tmp && mv /run/bin/machine-config-daemon.tmp /run/bin/machine-config-daemon'
-
   {{if .Proxy -}}
-  {{if .Proxy.HTTPProxy -}}
-  Environment=HTTP_PROXY={{.Proxy.HTTPProxy}}
-  {{end -}}
-  {{if .Proxy.HTTPSProxy -}}
-  Environment=HTTPS_PROXY={{.Proxy.HTTPSProxy}}
-  {{end -}}
-  {{if .Proxy.NoProxy -}}
-  Environment=NO_PROXY={{.Proxy.NoProxy}}
-  {{end -}}
+  EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
 
   [Install]
