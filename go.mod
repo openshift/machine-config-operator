@@ -37,7 +37,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67
 	github.com/openshift/client-go v0.0.0-20210112165513-ebc401615f47
-	github.com/openshift/library-go v0.0.0-20210205203934-9eb0d970f2f4
+	github.com/openshift/library-go v0.0.0-20210301154249-aa29957b8a9c
 	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1

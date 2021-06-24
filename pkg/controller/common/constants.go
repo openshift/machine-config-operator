@@ -18,4 +18,7 @@ const (
 
 	// MCNameSuffixAnnotationKey is used to keep track of the machine config name associated with a CR
 	MCNameSuffixAnnotationKey = "machineconfiguration.openshift.io/mc-name-suffix"
+
+	// ClusterFeatureInstanceName is a singleton name for featureGate configuration
+	ClusterFeatureInstanceName = "cluster"
 )

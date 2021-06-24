@@ -11,6 +11,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/cloudprovider"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -26,11 +27,28 @@ func TestCloudProvider(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudProvider .}}`)
 
 	cases := []struct {
-		platform configv1.PlatformType
-		res      string
+		platform    configv1.PlatformType
+		featureGate *configv1.FeatureGate
+		res         string
 	}{{
 		platform: configv1.AWSPlatformType,
 		res:      "aws",
+	}, {
+		platform:    configv1.AWSPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "external",
+	}, {
+		platform:    configv1.OpenStackPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "external",
+	}, {
+		platform:    configv1.GCPPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "gce",
+	}, {
+		platform:    configv1.OpenStackPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
+		res:         "openstack",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		res:      "openstack",
@@ -60,6 +78,7 @@ func TestCloudProvider(t *testing.T) {
 				Spec: mcfgv1.ControllerConfigSpec{
 					Infra: &configv1.Infrastructure{
 						Status: configv1.InfrastructureStatus{
+							Platform: c.platform,
 							PlatformStatus: &configv1.PlatformStatus{
 								Type: c.platform,
 							},
@@ -67,7 +86,7 @@ func TestCloudProvider(t *testing.T) {
 					},
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -83,9 +102,10 @@ func TestCloudConfigFlag(t *testing.T) {
 	dummyTemplate := []byte(`{{cloudConfigFlag .}}`)
 
 	cases := []struct {
-		platform configv1.PlatformType
-		content  string
-		res      string
+		platform    configv1.PlatformType
+		content     string
+		featureGate *configv1.FeatureGate
+		res         string
 	}{{
 		platform: configv1.AWSPlatformType,
 		content:  "",
@@ -119,7 +139,55 @@ func TestCloudConfigFlag(t *testing.T) {
     option = a
 `,
 		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: configv1.OpenStackPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: configv1.GCPPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: configv1.AzurePlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: configv1.OpenStackPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "",
+	}, {
+		platform: configv1.OpenStackPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
+		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: configv1.AWSPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
+		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
 	}}
+
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
 		t.Run(name, func(t *testing.T) {
@@ -127,6 +195,7 @@ func TestCloudConfigFlag(t *testing.T) {
 				Spec: mcfgv1.ControllerConfigSpec{
 					Infra: &configv1.Infrastructure{
 						Status: configv1.InfrastructureStatus{
+							Platform: c.platform,
 							PlatformStatus: &configv1.PlatformStatus{
 								Type: c.platform,
 							},
@@ -135,7 +204,7 @@ func TestCloudConfigFlag(t *testing.T) {
 					CloudProviderConfig: c.content,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -222,14 +291,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -240,7 +309,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
