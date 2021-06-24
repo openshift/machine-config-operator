@@ -330,13 +330,13 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) generateOriginalKubeletConfig(role string) (*ign3types.File, error) {
+func (ctrl *Controller) generateOriginalKubeletConfig(role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 	// Render the default templates
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
+	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGate: featureGate}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, ctrl.templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error %s", err)
@@ -470,7 +470,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
-	features, err := ctrl.featLister.Get(clusterFeatureInstanceName)
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
 	if macherrors.IsNotFound(err) {
 		features = createNewDefaultFeatureGate()
 	} else if err != nil {
@@ -478,7 +478,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
-	featureGates, err := ctrl.generateFeatureMap(features)
+	featureGates, err := generateFeatureMap(features)
 	if err != nil {
 		err := fmt.Errorf("could not generate FeatureMap: %v", err)
 		glog.V(2).Infof("%v", err)
@@ -512,7 +512,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		userDefinedSystemReserved := make(map[string]string, 2)
 
 		// Generate the original KubeletConfig
-		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role)
+		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role, features)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
 		}
