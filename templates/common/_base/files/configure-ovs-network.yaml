@@ -4,28 +4,59 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
-    
+
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
+
+    if [ -d "/etc/NetworkManager/systemConnectionsMerged" ]; then
+      NM_CONN_PATH="/etc/NetworkManager/systemConnectionsMerged"
+    else
+      NM_CONN_PATH="/etc/NetworkManager/system-connections"
+    fi
+
+    # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
+    managed_nm_conn_files=($(echo {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0} {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection))
 
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
       src_path="/etc/NetworkManager/systemConnectionsMerged"
       dst_path="/etc/NetworkManager/system-connections"
-      if [ -d $src_path ]; then
+      if [ -d "$src_path" ]; then
         echo "$src_path exists"
-        # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
-        fileList=$(echo {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0} {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection)
-        for file in ${fileList[*]}; do
-          if [ ! -f $dst_path/$file ] && [ -f $src_path/$file ]; then
-            cp $src_path/$file $dst_path/$file
+        for file in "${managed_nm_conn_files[@]}"; do
+          if [ -f "$src_path/$file" ]; then
+            if [ ! -f "$dst_path/$file" ]; then
+              echo "Persisting new configuration $file"
+              cp "$src_path/$file" "$dst_path/$file"
+            elif ! cmp --silent "$src_path/$file" "$dst_path/$file"; then
+              echo "Persisting updated configuration $file"
+              cp "$src_path/$file" "$dst_path/$file"
+            fi
           else
-            echo "Skipping $file since it exists in $dst_path"
+            echo "Skipping $file since its status is current"
           fi
         done
       fi
+    }
+
+    # Used to replace an old master connection uuid with a new one on all connections
+    replace_connection_master() {
+      local old="$1"
+      local new="$2"
+      for conn_uuid in $(nmcli -g UUID connection show) ; do
+        if [ "$(nmcli -g connection.master connection show uuid "$conn_uuid")" != "$old" ]; then
+          continue
+        fi
+
+        nmcli conn mod uuid $conn_uuid connection.master "$new"
+        # make sure we persist this modification
+        conn_file="$(egrep -l uuid=$conn_uuid ${NM_CONN_PATH}/* | xargs basename)"
+        if [[ -n "$conn_file" && ! " ${managed_nm_conn_files[@]} " =~ " ${conn_file} " ]]; then
+          managed_nm_conn_files+=($conn_file)
+        fi
+      done
     }
     
     if ! rpm -qa | grep -q openvswitch; then
@@ -49,11 +80,7 @@ contents:
           ifconfig "$intf" allmulti
         fi
       }
-      if [ -d "/etc/NetworkManager/systemConnectionsMerged" ]; then
-        NM_CONN_PATH="/etc/NetworkManager/systemConnectionsMerged"
-      else
-        NM_CONN_PATH="/etc/NetworkManager/system-connections"
-      fi
+
       iface=""
       counter=0
       # find default interface
@@ -177,9 +204,6 @@ contents:
         iface_type=802-3-ethernet
       fi
 
-      # bring down any old iface
-      nmcli device disconnect $iface
-
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
       extra_args=${extra_phys_args[@]+"${extra_phys_args[@]}"}
       if ! nmcli connection show ovs-if-phys0 &> /dev/null; then
@@ -187,15 +211,31 @@ contents:
           connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_args}
       fi
 
-      # Update connections with master property set to use the new device name
-      new_device=$(nmcli --get-values connection.interface-name conn show ovs-if-phys0)
-      for conn_uuid in $(nmcli -g UUID connection show) ; do
-        if [ "$(nmcli -g connection.master connection show uuid "$conn_uuid")" != "$old_conn" ]; then
-          continue
-        fi
-        nmcli conn mod uuid ${conn_uuid} connection.master ${new_device}
-      done
+      # Get the new connection uuid
+      new_conn=$(nmcli -g connection.uuid conn show ovs-if-phys0)
 
+      # Setup an exit trap to restore any modifications going further
+      handle_exit_error() {
+        e=$?
+        [ $e -eq 0 ] && exit 0
+        # if there was a problem network isn't coming up, revert for debugging
+        set +e
+        replace_connection_master $new_conn $old_conn
+        nmcli conn down ovs-if-br-ex
+        nmcli conn down ovs-if-phys0
+        nmcli conn up $old_conn
+        exit $e
+      }
+      trap "handle_exit_error" EXIT
+
+      # Update connections with master property set to use the new connection
+      replace_connection_master $old_conn $new_conn
+      replace_connection_master $iface $new_conn
+
+      # bring down old iface
+      nmcli device disconnect $iface
+
+      # bring up new connection 
       nmcli conn up ovs-if-phys0
 
       if ! nmcli connection show ovs-if-br-ex &> /dev/null; then
@@ -296,11 +336,6 @@ contents:
       done
 
       echo "ERROR: Failed to activate ovs-if-br-ex NM connection"
-      # if we made it here networking isnt coming up, revert for debugging
-      set +e
-      nmcli conn down ovs-if-br-ex
-      nmcli conn down ovs-if-phys0
-      nmcli conn up $old_conn
       exit 1
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh.
@@ -311,7 +346,9 @@ contents:
         nmcli c del ovs-port-phys0 
       fi
 
+      old_conn=""
       if nmcli connection show ovs-if-phys0 &> /dev/null; then
+        old_conn=$(nmcli -g connection.uuid conn show ovs-if-phys0)
         nmcli c del ovs-if-phys0
       fi
 
@@ -333,5 +370,12 @@ contents:
 
       if [[ -n "$iface" ]]; then
         nmcli device connect $iface
+        if [ -n "$old_conn" ]; then
+          new_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
+          replace_connection_master $old_conn $new_conn
+          # re-activate the profile so that it picks the master changes
+          nmcli c up $new_conn
+          copy_nm_conn_files
+        fi
       fi
     fi
