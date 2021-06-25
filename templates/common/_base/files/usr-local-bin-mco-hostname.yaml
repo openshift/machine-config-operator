@@ -22,6 +22,16 @@ contents:
         exit 0
     }
 
+    set_aws_hostname() {
+        /usr/bin/afterburn --provider aws --hostname=/run/afterburn.hostname
+
+        local host_name=$(cat /run/afterburn.hostname)
+
+        echo "setting transient hostname to ${host_name}"
+        /bin/hostnamectl --transient set-hostname "${host_name}"
+        exit 0
+    }
+
     set_gcp_hostname() {
         /usr/bin/afterburn --provider gcp --hostname=/run/afterburn.hostname
 
@@ -59,6 +69,7 @@ contents:
     case "${arg}" in
         --wait) wait_localhost;;
         --gcp) set_gcp_hostname;;
+        --aws) set_aws_hostname;;
         *) echo "Unhandled arg $arg"; exit 1
     esac
 
