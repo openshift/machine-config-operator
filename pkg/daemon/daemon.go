@@ -201,9 +201,9 @@ func New(
 		err        error
 	)
 
-	os := OperatingSystem{}
+	hostos := OperatingSystem{}
 	if !mock {
-		os, err = GetHostRunningOS()
+		hostos, err = GetHostRunningOS()
 		if err != nil {
 			HostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, errors.Wrapf(err, "checking operating system")
@@ -211,7 +211,7 @@ func New(
 	}
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
-	if os.IsCoreOSVariant() {
+	if hostos.IsCoreOSVariant() {
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
@@ -230,7 +230,7 @@ func New(
 	// RHEL 7.6/Centos 7 logger (util-linux) doesn't have the --journald flag
 	loggerSupportsJournal := true
 	if !mock {
-		if os.IsLikeTraditionalRHEL7() {
+		if hostos.IsLikeTraditionalRHEL7() {
 			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
 			if err != nil {
 				return nil, errors.Wrapf(err, "running logger --help")
@@ -240,12 +240,12 @@ func New(
 	}
 
 	// report OS & version (if RHCOS or FCOS) to prometheus
-	HostOS.WithLabelValues(os.ToPrometheusLabel(), osVersion).Set(1)
+	HostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
 
 	return &Daemon{
 		mock:                  mock,
 		booting:               true,
-		os:                    os,
+		os:                    hostos,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
 		bootID:                bootID,
