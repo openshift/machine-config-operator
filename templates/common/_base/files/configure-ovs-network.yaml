@@ -9,36 +9,81 @@ contents:
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
 
-    if [ -d "/etc/NetworkManager/systemConnectionsMerged" ]; then
-      NM_CONN_PATH="/etc/NetworkManager/systemConnectionsMerged"
+    NM_CONN_OVERLAY="/etc/NetworkManager/systemConnectionsMerged"
+    NM_CONN_UNDERLAY="/etc/NetworkManager/system-connections"
+    if [ -d "$NM_CONN_OVERLAY" ]; then
+      NM_CONN_PATH="$NM_CONN_OVERLAY"
     else
-      NM_CONN_PATH="/etc/NetworkManager/system-connections"
+      NM_CONN_PATH="$NM_CONN_UNDERLAY"
     fi
 
     # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
-    managed_nm_conn_files=($(echo {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0} {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection))
+    MANAGED_NM_CONN_FILES=($(echo {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0} {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection))
+    MANAGED_NM_CONN_SUFFIX="-slave-ovs-clone"
 
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
-      src_path="/etc/NetworkManager/systemConnectionsMerged"
-      dst_path="/etc/NetworkManager/system-connections"
+      local src_path="$NM_CONN_PATH"
+      local dst_path="$NM_CONN_UNDERLAY"
+      if [ "$src_path" = "$dst_path" ]; then
+        echo "No need to persist configuration files"
+        return
+      fi
       if [ -d "$src_path" ]; then
         echo "$src_path exists"
-        for file in "${managed_nm_conn_files[@]}"; do
+        local files=("${MANAGED_NM_CONN_FILES[@]}")
+        shopt -s nullglob
+        files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection)
+        shopt -u nullglob
+        for file in "${files[@]}"; do
+          file="$(basename $file)"
           if [ -f "$src_path/$file" ]; then
             if [ ! -f "$dst_path/$file" ]; then
               echo "Persisting new configuration $file"
               cp "$src_path/$file" "$dst_path/$file"
             elif ! cmp --silent "$src_path/$file" "$dst_path/$file"; then
               echo "Persisting updated configuration $file"
-              cp "$src_path/$file" "$dst_path/$file"
+              cp -f "$src_path/$file" "$dst_path/$file"
             fi
           else
             echo "Skipping $file since its status is current"
           fi
         done
       fi
+    }
+
+    # Used to remove files managed by configure-ovs
+    rm_nm_conn_files() {
+      local files=("${MANAGED_NM_CONN_FILES[@]}")
+      shopt -s nullglob
+      files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection)
+      shopt -u nullglob
+      for file in "${files[@]}"; do
+        file="$(basename $file)"
+        # Also remove files in underlay
+        for path in "${NM_CONN_PATH}" "${NM_CONN_UNDERLAY}"; do
+          file_path="${path}/$file"
+          if [ -f "$file_path" ]; then
+            rm -f "$file_path"
+            echo "Removed nmconnection file $file_path"
+          fi
+        done
+      done
+    }
+
+    # Used to clone a slave connection by uuid, returns new uuid
+    clone_slave_connection() {
+      local uuid="$1"
+      local old_name
+      old_name="$(nmcli -g connection.id connection show uuid "$uuid")"
+      local new_name="${old_name}${MANAGED_NM_CONN_SUFFIX}"
+      if nmcli connection show id "${new_name}" &> /dev/null; then
+        echo "WARN: existing ovs slave ${new_name} connection profile file found, overwriting..."
+        nmcli connection delete id "${new_name}" &> /dev/null
+      fi
+      nmcli connection clone $uuid "${new_name}" &> /dev/null
+      nmcli -g connection.uuid connection show "${new_name}"
     }
 
     # Used to replace an old master connection uuid with a new one on all connections
@@ -50,12 +95,13 @@ contents:
           continue
         fi
 
-        nmcli conn mod uuid $conn_uuid connection.master "$new"
-        # make sure we persist this modification
-        conn_file="$(egrep -l uuid=$conn_uuid ${NM_CONN_PATH}/* | xargs basename)"
-        if [[ -n "$conn_file" && ! " ${managed_nm_conn_files[@]} " =~ " ${conn_file} " ]]; then
-          managed_nm_conn_files+=($conn_file)
-        fi
+        # make changes for slave profiles in a new clone
+        local new_uuid
+        new_uuid=$(clone_slave_connection $conn_uuid)
+
+        nmcli conn mod uuid $new_uuid connection.master "$new"
+        nmcli conn mod $new_uuid connection.autoconnect-priority 100
+        echo "Replaced master $old with $new for slave profile $new_uuid"
       done
     }
     
@@ -63,6 +109,10 @@ contents:
       echo "Warning: Openvswitch package is not installed!"
       exit 1
     fi
+
+    echo "Current routing and connection state:"
+    ip route show
+    nmcli c show
 
     if [ "$1" == "OVNKubernetes" ]; then
       # Configures NICs onto OVS bridge "br-ex"
@@ -198,7 +248,8 @@ contents:
         # check team config options
         team_config_opts=$(nmcli --get-values team.config -e no conn show ${old_conn})
         if [ -n "$team_config_opts" ]; then
-          extra_phys_args+=( team.config "${team_config_opts}" )
+          # team.config is json, remove spaces to avoid problems later on
+          extra_phys_args+=( team.config "${team_config_opts//[[:space:]]/}" )
         fi
       else
         iface_type=802-3-ethernet
@@ -219,9 +270,7 @@ contents:
         [ $e -eq 0 ] && exit 0
         # if there was a problem network isn't coming up, revert for debugging
         set +e
-        replace_connection_master $new_conn $old_conn
-        nmcli conn down ovs-if-br-ex
-        nmcli conn down ovs-if-phys0
+        nmcli c show
         nmcli conn up $old_conn
         exit $e
       }
@@ -230,9 +279,6 @@ contents:
       # Update connections with master property set to use the new connection
       replace_connection_master $old_conn $new_conn
       replace_connection_master $iface $new_conn
-
-      # bring down old iface
-      nmcli device disconnect $iface
 
       # bring up new connection 
       nmcli conn up ovs-if-phys0
@@ -260,11 +306,11 @@ contents:
           if [ -f "$new_conn_file" ]; then
             echo "WARN: existing br-ex interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
           fi
-          cp -f ${old_conn_file} ${new_conn_file}
+          cp -f "${old_conn_file}" ${new_conn_file}
           restorecon ${new_conn_file}
           if $cloned; then
             nmcli conn delete ${old_conn}-clone
-            rm -f ${old_conn_file}
+            rm -f "${old_conn_file}"
           fi
           ovs_port_conn=$(nmcli --fields connection.uuid conn show ovs-port-br-ex | awk '{print $2}')
           br_iface_uuid=$(cat /proc/sys/kernel/random/uuid)
@@ -313,6 +359,7 @@ contents:
           copy_nm_conn_files
           ip a show br-ex
           ip route show
+          nmcli c show
           configure_driver_options ${iface}
           exit 0
         fi
@@ -327,6 +374,7 @@ contents:
           copy_nm_conn_files
           ip a show br-ex
           ip route show
+          nmcli c show
           configure_driver_options ${iface}
           exit 0
         fi
@@ -338,43 +386,13 @@ contents:
       exit 1
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh.
-      # Remove OVS bridge "br-ex". Use the default NIC for cluster network.
-      iface=""
-      if nmcli connection show ovs-port-phys0 &> /dev/null; then
-        iface=$(nmcli --get-values connection.interface-name connection show ovs-port-phys0)
-        nmcli c del ovs-port-phys0 
-      fi
+      rm_nm_conn_files
 
-      old_conn=""
-      if nmcli connection show ovs-if-phys0 &> /dev/null; then
-        old_conn=$(nmcli -g connection.uuid conn show ovs-if-phys0)
-        nmcli c del ovs-if-phys0
-      fi
+      # Reload configuration, after reload the preferred connection profile
+      # should be auto-activated
+      nmcli c reload
+      sleep 5
 
-      if nmcli connection show ovs-port-br-ex &> /dev/null; then
-        nmcli c del ovs-port-br-ex
-      fi
-
-      if nmcli connection show ovs-if-br-ex &> /dev/null; then
-        nmcli c del ovs-if-br-ex
-      fi
-
-      if nmcli connection show br-ex &> /dev/null; then
-        nmcli c del br-ex
-      fi
-
-      rm -f /etc/NetworkManager/system-connections/{br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection
-      # remove bridges created by ovn-kubernetes, try to delete br-ex again in case NM fail to talk to ovsdb
-      ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local -- --if-exists del-br br-ex
-
-      if [[ -n "$iface" ]]; then
-        nmcli device connect $iface
-        if [ -n "$old_conn" ]; then
-          new_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
-          replace_connection_master $old_conn $new_conn
-          # re-activate the profile so that it picks the master changes
-          nmcli c up $new_conn
-          copy_nm_conn_files
-        fi
-      fi
+      echo "OVS configuration successfully reverted"
+      nmcli c show
     fi
