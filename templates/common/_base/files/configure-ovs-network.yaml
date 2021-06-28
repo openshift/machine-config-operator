@@ -251,7 +251,8 @@ contents:
         # check team config options
         team_config_opts=$(nmcli --get-values team.config -e no conn show ${old_conn})
         if [ -n "$team_config_opts" ]; then
-          extra_phys_args+=( team.config "${team_config_opts}" )
+          # team.config is json, remove spaces to avoid problems later on
+          extra_phys_args+=( team.config "${team_config_opts//[[:space:]]/}" )
         fi
       else
         iface_type=802-3-ethernet
