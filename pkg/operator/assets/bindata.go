@@ -1391,6 +1391,10 @@ rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs"]
   verbs: ["*"]
+- apiGroups: ["security.openshift.io"]
+  resourceNames: ["privileged"]
+  resources: ["securitycontextconstraints"]
+  verbs: ["use"]
 - apiGroups:
   - authentication.k8s.io
   resources:
@@ -1722,6 +1726,10 @@ rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
   verbs: ["*"]
+- apiGroups: ["security.openshift.io"]
+  resourceNames: ["hostnetwork"]
+  resources: ["securitycontextconstraints"]
+  verbs: ["use"]
 `)
 
 func manifestsMachineconfigserverClusterroleYamlBytes() ([]byte, error) {

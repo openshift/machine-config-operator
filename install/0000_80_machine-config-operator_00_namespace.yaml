@@ -10,7 +10,7 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-machine-config-operator
-    openshift.io/run-level: "1"
+    openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
     openshift.io/cluster-monitoring: "true"
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: privileged
