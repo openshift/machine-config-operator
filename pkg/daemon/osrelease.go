@@ -44,6 +44,15 @@ func (os OperatingSystem) IsLikeTraditionalRHEL7() bool {
 	return os.VersionID == "7"
 }
 
+// IsLikeTraditionalRHEL8 is true if the OS is traditional RHEL8 or CentOS8:
+func (os OperatingSystem) IsLikeTraditionalRHEL8() bool {
+
+	if len(os.VersionID) > 2 {
+		return strings.HasPrefix(os.VersionID, "8.")
+	}
+	return os.VersionID == "8"
+}
+
 // ToPrometheusLabel returns a value we historically fed to Prometheus
 func (os OperatingSystem) ToPrometheusLabel() string {
 	// We historically upper cased this
