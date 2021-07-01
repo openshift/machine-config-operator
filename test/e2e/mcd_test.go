@@ -119,14 +119,20 @@ func TestKernelArguments(t *testing.T) {
 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/cmdline")
-	expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
-	for _, v := range expectedKernelArgs {
-		if !strings.Contains(kargs, v) {
-			t.Fatalf("Missing %q in kargs: %q", v, kargs)
+
+	// Non-CoreOS nodes don't support kernel/args today, we need to make sure they survive this test
+	if helpers.IsCoreOSNode(&infraNode) {
+		kargs := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/cmdline")
+		expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
+		for _, v := range expectedKernelArgs {
+			if !strings.Contains(kargs, v) {
+				t.Fatalf("Missing %q in kargs: %q", v, kargs)
+			}
 		}
+		t.Logf("Node %s has expected kargs", infraNode.Name)
+	} else {
+		t.Logf("Non-CoreOS node %s does not support kernel and argument changes (expected) ", infraNode.Name)
 	}
-	t.Logf("Node %s has expected kargs", infraNode.Name)
 
 	// cleanup - delete karg mc and rollback
 	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
@@ -195,10 +201,16 @@ func TestKernelType(t *testing.T) {
 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
 	kernelInfo := helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
-	if !strings.Contains(kernelInfo, "kernel-rt-core") {
-		t.Fatalf("Node %s doesn't have expected kernel", infraNode.Name)
+
+	// Non-CoreOS nodes don't support kernel updates
+	if helpers.IsCoreOSNode(&infraNode) {
+		if !strings.Contains(kernelInfo, "kernel-rt-core") {
+			t.Fatalf("Node %s doesn't have expected kernel", infraNode.Name)
+		}
+		t.Logf("Node %s has expected kernel", infraNode.Name)
+	} else {
+		t.Logf("Non-CoreOS node %s does not support kernel changes (expected) ", infraNode.Name)
 	}
-	t.Logf("Node %s has expected kernel", infraNode.Name)
 
 	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
 	if err := cs.MachineConfigs().Delete(context.TODO(), kernelType.Name, metav1.DeleteOptions{}); err != nil {
@@ -281,23 +293,33 @@ func TestExtensions(t *testing.T) {
 
 	var installedPackages string
 	var expectedPackages []string
-	if isOKD {
-		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
-		// "sandboxed-containers" extension is not available on OKD
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
-		expectedPackages = []string{"usbguard", "kernel-devel"}
-	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers")
-		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers"}
 
-	}
-	for _, v := range expectedPackages {
-		if !strings.Contains(installedPackages, v) {
-			t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
+	// Extensions are not currently supported on non-CoreOS variants
+	// but people may still apply them to mixed pools, so we still want this test to happen, but the non-CoreOS
+	// nodes aren't going to do anything with them
+	if helpers.IsCoreOSNode(&infraNode) {
+
+		if isOKD {
+			// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+			// "sandboxed-containers" extension is not available on OKD
+			installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
+			expectedPackages = []string{"usbguard", "kernel-devel"}
+		} else {
+			installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers")
+			expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers"}
+
 		}
-	}
 
-	t.Logf("Node %s has expected extensions installed", infraNode.Name)
+		for _, v := range expectedPackages {
+			if !strings.Contains(installedPackages, v) {
+				t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
+			}
+		}
+
+		t.Logf("Node %s has expected extensions installed", infraNode.Name)
+	} else {
+		t.Logf("Node %s is not a CoreOS node and does not support extensions", infraNode.Name)
+	}
 
 	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
 	if err := cs.MachineConfigs().Delete(context.TODO(), extensions.Name, metav1.DeleteOptions{}); err != nil {

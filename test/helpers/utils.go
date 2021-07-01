@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,4 +261,9 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
 	}
 	return &mcdList.Items[0], nil
+}
+
+// IsCoreOSNode determines if the node is a CoreOS variant
+func IsCoreOSNode(n *corev1.Node) bool {
+	return strings.Contains(n.Status.NodeInfo.OSImage, "CoreOS")
 }
