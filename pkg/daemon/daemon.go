@@ -1292,7 +1292,8 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return err
 	}
 
-	dn.logSystem("completed update for config %s", desiredConfigName)
+	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
 }
