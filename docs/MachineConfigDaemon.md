@@ -157,12 +157,16 @@ The updated list of optimized updates and behaviour (as of Openshift 4.8) is as 
 1. [SSH Keys](./Update-SSHKeys.md) (updating ignition/passwd/users/sshAuthorizedKeys section in a MachineConfig)
 2. kube-apiserver-to-kubelet-signer CA cert (located at `/etc/kubernetes/kubelet-ca.crt`, 1 year expiry autorotated by the openshift-kubeapiserver operator)
 3. [Pull Secret](./PullSecret.md) (cluster-wide, located at `/var/lib/kubelet/config.json`).
+4. **Selected registries.conf changes(/etc/containers/registries.conf)**  This file is generally changed via ICSP object changes. Only the following changes will cause no-drain and no-reboot updates:
+   - addition of a registry with mirror-by-digest-only=true
+   - addition of a mirror in a registry with mirror-by-digest-only=true
+   - appending items in unqualified-search-registries list
 
 ### Rebootless Updates
 
 "Crio Reload" action: performs the file write, and runs a `systemctl reload crio`. The following changes will trigger a drain, but not a reboot:
 
-1. registries.conf (`/etc/containers/registries.conf`, e.g. ICSP changes)
+1. **registries.conf (/etc/containers/registries.conf)**: This file is generally changed via ICSP object changes. Node drain will take place except for changes specified in [Drainless and Rebootless Updates](#Drainless-and-Rebootless-Updates).
 
 ## Annotating on SSH access
 
