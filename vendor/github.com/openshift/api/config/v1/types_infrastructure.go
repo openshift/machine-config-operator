@@ -82,6 +82,8 @@ type InfrastructureStatus struct {
 	// The default is 'HighlyAvailable', which represents the behavior operators have in a "normal" cluster.
 	// The 'SingleReplica' mode will be used in single-node deployments
 	// and the operators should not configure the operand for highly-available operation
+	// The 'External' mode indicates that the control plane is hosted externally to the cluster and that
+	// its components are not visible within the cluster.
 	// +kubebuilder:default=HighlyAvailable
 	ControlPlaneTopology TopologyMode `json:"controlPlaneTopology"`
 
@@ -96,7 +98,7 @@ type InfrastructureStatus struct {
 }
 
 // TopologyMode defines the topology mode of the control/infra nodes.
-// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
+// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica;External
 type TopologyMode string
 
 const (
@@ -105,6 +107,12 @@ const (
 
 	// "SingleReplica" is for operators to avoid spending resources for high-availability purpose.
 	SingleReplicaTopologyMode TopologyMode = "SingleReplica"
+
+	// "External" indicates that the component is running externally to the cluster. When specified
+	// as the control plane topology, operators should avoid scheduling workloads to masters or assume
+	// that any of the control plane components such as kubernetes API server or etcd are visible within
+	// the cluster.
+	ExternalTopologyMode TopologyMode = "External"
 )
 
 // PlatformType is a specific supported infrastructure provider.
@@ -313,6 +321,34 @@ type AWSPlatformStatus struct {
 	// There must be only one ServiceEndpoint for a service.
 	// +optional
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
+
+	// resourceTags is a list of additional tags to apply to AWS resources created for the cluster.
+	// See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for information on tagging AWS resources.
+	// AWS supports a maximum of 50 tags per resource. OpenShift reserves 25 tags for its use, leaving 25 tags
+	// available for the user.
+	// +kubebuilder:validation:MaxItems=25
+	// +optional
+	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
+}
+
+// AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+type AWSResourceTag struct {
+	// key is the key of the tag
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.:/=+-@]+$`
+	// +required
+	Key string `json:"key"`
+	// value is the value of the tag.
+	// Some AWS service do not support empty values. Since tags are added to resources in many services, the
+	// length of the tag value must meet the requirements of all services.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.:/=+-@]+$`
+	// +required
+	Value string `json:"value"`
 }
 
 // AzurePlatformSpec holds the desired state of the Azure infrastructure provider.
@@ -334,10 +370,14 @@ type AzurePlatformStatus struct {
 	// If empty, the value is equal to `AzurePublicCloud`.
 	// +optional
 	CloudName AzureCloudEnvironment `json:"cloudName,omitempty"`
+
+	// armEndpoint specifies a URL to use for resource management in non-soverign clouds such as Azure Stack.
+	// +optional
+	ARMEndpoint string `json:"armEndpoint,omitempty"`
 }
 
 // AzureCloudEnvironment is the name of the Azure cloud environment
-// +kubebuilder:validation:Enum="";AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud
+// +kubebuilder:validation:Enum="";AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud;AzureStackCloud
 type AzureCloudEnvironment string
 
 const (
@@ -352,6 +392,9 @@ const (
 
 	// AzureGermanCloud is the Azure cloud environment used in Germany.
 	AzureGermanCloud AzureCloudEnvironment = "AzureGermanCloud"
+
+	// AzureStackCloud is the Azure cloud environment used at the edge and on premises.
+	AzureStackCloud AzureCloudEnvironment = "AzureStackCloud"
 )
 
 // GCPPlatformSpec holds the desired state of the Google Cloud Platform infrastructure provider.
@@ -482,6 +525,10 @@ type IBMCloudPlatformStatus struct {
 
 	// ProviderType indicates the type of cluster that was created
 	ProviderType IBMCloudProviderType `json:"providerType,omitempty"`
+
+	// CISInstanceCRN is the CRN of the Cloud Internet Services instance managing
+	// the DNS zone for the cluster's base domain
+	CISInstanceCRN string `json:"cisInstanceCRN,omitempty"`
 }
 
 // KubevirtPlatformSpec holds the desired state of the kubevirt infrastructure provider.
