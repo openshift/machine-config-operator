@@ -61,6 +61,7 @@ func TestValidateIgnition(t *testing.T) {
 func TestConvertIgnition2to3(t *testing.T) {
 	// Make a new Ign spec v2 config
 	testIgn2Config := ign2types.Config{}
+
 	tempUser := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser}
 	testIgn2Config.Ignition.Version = "2.2.0"
@@ -99,7 +100,12 @@ func TestParseAndConvert(t *testing.T) {
 
 	// Make a Ign2 comp config
 	testIgn2Config := ign2types.Config{}
-	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign2types.SSHAuthorizedKey{"5678", "abc"}}
+	tempUser2SSHKeys := []ign2types.SSHAuthorizedKey{
+		"5678",
+		"5678", // Purposely duplicated.
+		"abc",
+	}
+	tempUser2 := ign2types.PasswdUser{Name: "core", SSHAuthorizedKeys: tempUser2SSHKeys}
 	testIgn2Config.Passwd.Users = []ign2types.PasswdUser{tempUser2}
 	testIgn2Config.Ignition.Version = "2.2.0"
 
