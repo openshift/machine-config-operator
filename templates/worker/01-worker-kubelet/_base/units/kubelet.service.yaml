@@ -27,6 +27,8 @@ contents: |
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
+        --housekeeping-interval=30s \
+        --max-housekeeping-interval=60s \
         --runtime-cgroups=/system.slice/crio.service \
         --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
 {{- if eq .IPFamilies "DualStack"}}
