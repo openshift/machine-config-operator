@@ -24,8 +24,18 @@ With the exception of [optimized updates](./MachineConfigDaemon.md#optimized-upd
 
 ## Supported Functionalities
 
-All functionalities provided by the [MachineConfig API](./MachineConfiguration.md) and [MachineConfigDaemon](./MachineConfigDaemon) are currently supported, except for [upgrades](#upgrades).
+All functionalities provided by the [MachineConfig API](./MachineConfiguration.md) and [MachineConfigDaemon](./MachineConfigDaemon) are currently supported.
 
 ## Upgrades
 
-Upgrading to a new version of OpenShift using the in-cluster upgrade mechanism (e.g., `oc adm upgrade`) is not supported.
+With 4.9, Single Node OpenShift upgrades-in-place is supported with the exception of [post reboot cluster safety](#Post-reboot-cluster-safety) issue.
+
+## Post reboot cluster safety
+Any configuration applied using MCO on node including upgrades requires node reboot with the exception of [optimized updates](./MachineConfigDaemon.md#optimized-updates). MCO doesn't provide guarantee for post-reboot cluster safety. This implies that MCO will try its best to keep feature parity and behavior on SNO similar to regular OCP cluster. But due to the nature of SNO (single control plane node), when control plane node reboots during update/upgrade, node may not come up or join cluster due to multiple reasons that is not related to MCO, such as:
+
+- Bug in one of the package that was updated
+- Faulty config applied on node by user
+- Manual ssh into node by user and performing config change
+- Bug in another OCP component causing cluster not being fully available
+
+In these scenarios it is harder to find the exact cause of a problematic node post-reboot, and as a consequence it is harder to debug and recover from these cases. For the MCO to help debug, we would need easily reproducible steps, or system logging that points to MCO being the cause of the issue.
