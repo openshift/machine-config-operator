@@ -22,6 +22,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
+	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 )
@@ -138,6 +139,14 @@ func (b *Bootstrap) Run(destDir string) error {
 		return err
 	}
 	configs = append(configs, rconfigs...)
+
+	if featureGate != nil {
+		kConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, cconfig, pools)
+		if err != nil {
+			return err
+		}
+		configs = append(configs, kConfigs...)
+	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {

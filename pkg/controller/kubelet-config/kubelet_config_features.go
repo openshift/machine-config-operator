@@ -252,3 +252,44 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	}
 	return rawCfgIgn, nil
 }
+
+func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	machineConfigs := []*mcfgv1.MachineConfig{}
+
+	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pool := range mcpPools {
+		role := pool.Name
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, *featureGates)
+		if err != nil {
+			return nil, err
+		}
+		if rawCfgIgn == nil {
+			continue
+		}
+
+		// Get MachineConfig
+		managedKey, err := getManagedFeaturesKey(pool, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		ignConfig := ctrlcommon.NewIgnConfig()
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		mc.Spec.Config.Raw = rawCfgIgn
+		mc.ObjectMeta.Annotations = map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		}
+
+		machineConfigs = append(machineConfigs, mc)
+	}
+
+	return machineConfigs, nil
+}
