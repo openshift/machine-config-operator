@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -74,6 +75,11 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		return err
 	}
 
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return fmt.Errorf("could not get ControllerConfig %v", err)
+	}
+
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -100,43 +106,15 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 				return err
 			}
 		}
-		// Generate the original KubeletConfig
-		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role, nil)
+
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, *featureGates)
 		if err != nil {
 			return err
 		}
-		if originalKubeletIgn.Contents.Source == nil {
-			return fmt.Errorf("could not find original Kubelet config to decode")
-		}
-		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
-		if err != nil {
-			return err
-		}
-		originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-		if err != nil {
-			return err
-		}
-		// Check to see if FeatureGates are equal
-		if reflect.DeepEqual(originalKubeConfig.FeatureGates, *featureGates) {
+		if rawCfgIgn == nil {
 			continue
 		}
-		// Merge in Feature Gates
-		err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
-		if err != nil {
-			return err
-		}
-		// Encode the new config into raw JSON
-		cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
-		if err != nil {
-			return err
-		}
-		tempIgnConfig := ctrlcommon.NewIgnConfig()
-		cfgIgn := createNewKubeletIgnition(cfgJSON)
-		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
-		rawCfgIgn, err := json.Marshal(tempIgnConfig)
-		if err != nil {
-			return err
-		}
+
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
@@ -230,4 +208,47 @@ func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map
 		delete(rv, excluded)
 	}
 	return &rv, nil
+}
+
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGates map[string]bool) ([]byte, error) {
+	// Generate the original KubeletConfig
+	originalKubeletIgn, err := generateOriginalKubeletConfig(cc, templatesDir, role, nil)
+	if err != nil {
+		return nil, err
+	}
+	if originalKubeletIgn.Contents.Source == nil {
+		return nil, fmt.Errorf("could not find original Kubelet config to decode")
+	}
+	dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
+	if err != nil {
+		return nil, err
+	}
+	originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
+	if err != nil {
+		return nil, err
+	}
+	// Check to see if FeatureGates are equal
+	if reflect.DeepEqual(originalKubeConfig.FeatureGates, featureGates) {
+		// When there is no difference, this isn't an error, but no machine config should be created
+		return nil, nil
+	}
+
+	// Merge in Feature Gates
+	err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
+	if err != nil {
+		return nil, err
+	}
+	// Encode the new config into raw JSON
+	cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+	tempIgnConfig := ctrlcommon.NewIgnConfig()
+	cfgIgn := createNewKubeletIgnition(cfgJSON)
+	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+	rawCfgIgn, err := json.Marshal(tempIgnConfig)
+	if err != nil {
+		return nil, err
+	}
+	return rawCfgIgn, nil
 }

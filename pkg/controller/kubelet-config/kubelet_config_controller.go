@@ -330,14 +330,10 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) generateOriginalKubeletConfig(role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
-	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-	if err != nil {
-		return nil, fmt.Errorf("could not get ControllerConfig %v", err)
-	}
+func generateOriginalKubeletConfig(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGate: featureGate}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, ctrl.templatesDir)
+	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error %s", err)
 	}
@@ -512,7 +508,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		userDefinedSystemReserved := make(map[string]string, 2)
 
 		// Generate the original KubeletConfig
-		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role, features)
+		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
+		if err != nil {
+			return fmt.Errorf("could not get ControllerConfig %v", err)
+		}
+		originalKubeletIgn, err := generateOriginalKubeletConfig(cc, ctrl.templatesDir, role, features)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
 		}
