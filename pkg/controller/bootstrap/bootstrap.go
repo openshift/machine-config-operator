@@ -48,6 +48,7 @@ func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 
 // Run runs boostrap for Machine Config Controller
 // It writes all the assets to destDir
+// nolint:gocyclo
 func (b *Bootstrap) Run(destDir string) error {
 	infos, err := ioutil.ReadDir(b.manifestDir)
 	if err != nil {
