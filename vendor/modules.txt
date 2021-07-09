@@ -451,12 +451,12 @@ github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.0.2-0.20190823105129-775207bd45b6
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67 => github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67
+# github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8 => github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
 ## explicit
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
-# github.com/openshift/client-go v0.0.0-20210112165513-ebc401615f47
+# github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
 ## explicit
 github.com/openshift/client-go/config/clientset/versioned
 github.com/openshift/client-go/config/clientset/versioned/fake
@@ -482,7 +482,7 @@ github.com/openshift/client-go/operator/informers/externalversions/operator/v1
 github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1
 github.com/openshift/client-go/operator/listers/operator/v1
 github.com/openshift/client-go/operator/listers/operator/v1alpha1
-# github.com/openshift/library-go v0.0.0-20210301154249-aa29957b8a9c
+# github.com/openshift/library-go v0.0.0-20210702104503-39570b4a2ae8
 ## explicit
 github.com/openshift/library-go/pkg/cloudprovider
 github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers
@@ -728,7 +728,7 @@ gopkg.in/ini.v1
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 gopkg.in/yaml.v3
-# k8s.io/api v0.21.0-rc.0 => k8s.io/api v0.21.0-rc.0
+# k8s.io/api v0.21.1 => k8s.io/api v0.21.0-rc.0
 ## explicit
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
@@ -776,7 +776,7 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apiextensions-apiserver v0.21.0-rc.0 => k8s.io/apiextensions-apiserver v0.21.0-rc.0
+# k8s.io/apiextensions-apiserver v0.21.1 => k8s.io/apiextensions-apiserver v0.21.0-rc.0
 ## explicit
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
@@ -792,7 +792,7 @@ k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensio
 k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/internalinterfaces
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1
-# k8s.io/apimachinery v0.21.0-rc.0 => k8s.io/apimachinery v0.21.0-rc.0
+# k8s.io/apimachinery v0.21.1 => k8s.io/apimachinery v0.21.0-rc.0
 ## explicit
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -847,13 +847,13 @@ k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/netutil
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/apiserver v0.21.0-rc.0 => k8s.io/apiserver v0.21.0-rc.0
+# k8s.io/apiserver v0.21.1 => k8s.io/apiserver v0.21.0-rc.0
 k8s.io/apiserver/pkg/authentication/user
 # k8s.io/cli-runtime v0.21.0-rc.0 => k8s.io/cli-runtime v0.21.0-rc.0
 k8s.io/cli-runtime/pkg/genericclioptions
 k8s.io/cli-runtime/pkg/printers
 k8s.io/cli-runtime/pkg/resource
-# k8s.io/client-go v0.21.0-rc.0 => k8s.io/client-go v0.21.0-rc.0
+# k8s.io/client-go v0.21.1 => k8s.io/client-go v0.21.0-rc.0
 ## explicit
 k8s.io/client-go/applyconfigurations/admissionregistration/v1
 k8s.io/client-go/applyconfigurations/admissionregistration/v1beta1
@@ -1131,7 +1131,7 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/code-generator v0.21.0-rc.0 => k8s.io/code-generator v0.21.0-rc.0
+# k8s.io/code-generator v0.21.1 => k8s.io/code-generator v0.21.0-rc.0
 ## explicit
 k8s.io/code-generator
 k8s.io/code-generator/cmd/client-gen
@@ -1166,7 +1166,7 @@ k8s.io/code-generator/cmd/set-gen
 k8s.io/code-generator/pkg/namer
 k8s.io/code-generator/pkg/util
 k8s.io/code-generator/third_party/forked/golang/reflect
-# k8s.io/component-base v0.21.0-rc.0 => k8s.io/component-base v0.21.0-rc.0
+# k8s.io/component-base v0.21.1 => k8s.io/component-base v0.21.0-rc.0
 k8s.io/component-base/config
 k8s.io/component-base/config/v1alpha1
 k8s.io/component-base/version
@@ -1310,7 +1310,7 @@ sourcegraph.com/sqs/pbtypes
 # github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 # github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 # github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-# github.com/openshift/api => github.com/openshift/api v0.0.0-20210409143810-a99ffa1cac67
+# github.com/openshift/api => github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
 # github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 # github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 # k8s.io/api => k8s.io/api v0.21.0-rc.0
