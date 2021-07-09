@@ -36,8 +36,8 @@ require (
 	github.com/imdario/mergo v0.3.9
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
-	github.com/openshift/client-go v0.0.0-20210112165513-ebc401615f47
-	github.com/openshift/library-go v0.0.0-20210301154249-aa29957b8a9c
+	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
+	github.com/openshift/library-go v0.0.0-20210702104503-39570b4a2ae8
 	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
@@ -52,9 +52,9 @@ require (
 	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	k8s.io/api v0.21.1
-	k8s.io/apiextensions-apiserver v0.21.0-rc.0
+	k8s.io/apiextensions-apiserver v0.21.1
 	k8s.io/apimachinery v0.21.1
-	k8s.io/client-go v0.21.0-rc.0
+	k8s.io/client-go v0.21.1
 	k8s.io/code-generator v0.21.1
 	k8s.io/kubectl v0.21.0-rc.0
 	k8s.io/kubelet v0.21.0-rc.0
