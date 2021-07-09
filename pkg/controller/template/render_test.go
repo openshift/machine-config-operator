@@ -42,6 +42,10 @@ func TestCloudProvider(t *testing.T) {
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
 		res:         "external",
 	}, {
+		platform:    configv1.AzurePlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "external",
+	}, {
 		platform:    configv1.GCPPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
 		res:         "gce",
@@ -161,7 +165,7 @@ func TestCloudConfigFlag(t *testing.T) {
     option = a
 `,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+		res:         "",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		content: `
