@@ -27,6 +27,22 @@ contents:
       - name: chroot-host
         hostPath:
           path: "/"
+      initContainers:
+      - name: verify-api-int-resolvable
+        image: {{ .Images.baremetalRuntimeCfgImage }}
+        command:
+        - "/bin/bash"
+        - "-c"
+        - |
+          #/bin/bash
+          /host/bin/oc --kubeconfig /var/lib/kubelet/kubeconfig get nodes
+        resources: {}
+        volumeMounts:
+        - name: chroot-host
+          mountPath: "/host"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
+        imagePullPolicy: IfNotPresent
       containers:
       - name: haproxy
         image: {{.Images.haproxyImage}}
@@ -109,11 +125,12 @@ contents:
           privileged: true
         image: {{ .Images.baremetalRuntimeCfgImage }}
         command:
-          - "/bin/bash"
-          - "-c"
-          - |            
-            cp /host/etc/resolv.conf /etc/resolv.conf
-            monitor /var/lib/kubelet/kubeconfig  /config/haproxy.cfg.tmpl  /etc/haproxy/haproxy.cfg  --api-vip {{ onPremPlatformAPIServerInternalIP . }}
+        - monitor
+        - "/var/lib/kubelet/kubeconfig"
+        - "/config/haproxy.cfg.tmpl"
+        - "/etc/haproxy/haproxy.cfg"
+        - "--api-vip"
+        - "{{ onPremPlatformAPIServerInternalIP . }}"
         resources:
           requests:
             cpu: 100m
@@ -129,14 +146,6 @@ contents:
           mountPath: "/host"
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
-        livenessProbe:
-          initialDelaySeconds: 10
-          exec:
-            command:
-              - /bin/bash
-              - -c
-              - |
-                cmp /host/etc/resolv.conf /etc/resolv.conf
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       hostNetwork: true
