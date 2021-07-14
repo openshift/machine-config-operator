@@ -7,11 +7,11 @@ import (
 	"os"
 	"path"
 
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientcmd "k8s.io/client-go/tools/clientcmd/api/v1"
-	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -114,7 +114,8 @@ func (bsc *bootstrapServer) getMachineConfig(cr poolRequest) (*mcfgv1.MachineCon
 	return mc, &ignConf, nil
 }
 
-// GetConfig fetches the machine conf(type - Ignition) based on the pool request
+// GetConfig fetches the machine config(type - Ignition) from the cluster,
+// based on the pool request.
 func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
 	_, ignConf, err := bsc.getMachineConfig(cr)
 	if err != nil {

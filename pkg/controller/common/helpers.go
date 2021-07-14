@@ -280,26 +280,30 @@ func convertIgnition32to31(ign3config ign3types.Config) (ign3_1types.Config, err
 	return converted31, nil
 }
 
-// AddIgnitionKernelArguments adds the given kernel arguments to the Ignition configs
-// kernelArguments.shouldExist field
-func AddIgnitionKernelArguments(inRawExtIgn *runtime.RawExtension, kargs []string) (runtime.RawExtension, error) {
-	ignCfg, rptV3, errV3 := ign3_3.ParseCompatibleVersion(inRawExtIgn.Raw)
+// AddV33IgnitionKernelArguments adds the given kernel arguments to the Ignition configs
+// kernelArguments.shouldExist field. Starting with Ignition v3.3.0 kernel arguments
+// can be set by Ignition.
+func AddV33IgnitionKernelArguments(raw *runtime.RawExtension, kargs []string) error {
+	ignCfg, rptV3, errV3 := ign3_3.ParseCompatibleVersion(raw.Raw)
 	if errV3 != nil || rptV3.IsFatal() {
-		return runtime.RawExtension{}, errors.Errorf("parsing Ignition config failed with error: %v\nReport: %v", errV3, rptV3)
+		return errors.Errorf("parsing Ignition v3.3.0 or later config failed with error: %v\nReport: %v", errV3, rptV3)
 	}
 
 	for _, karg := range kargs {
 		ignCfg.KernelArguments.ShouldExist = append(ignCfg.KernelArguments.ShouldExist, ign3_3types.KernelArgument(karg))
 	}
 
-	outIgn, err := json.Marshal(ignCfg)
+	newRaw, err := json.Marshal(ignCfg)
 	if err != nil {
-		return runtime.RawExtension{}, errors.Errorf("failed to marshal converted config: %v", err)
+		return errors.Errorf("failed to marshal converted v3.3.0 Ignition config: %v", err)
 	}
 
-	outRawExt := runtime.RawExtension{}
-	outRawExt.Raw = outIgn
-	return outRawExt, nil
+	if _, _, err := ign3_3.ParseCompatibleVersion(newRaw); err != nil {
+		return errors.Errorf("failed to parse Ignition configuration after appending kernel arguments")
+	}
+	raw.Raw = newRaw
+
+	return nil
 }
 
 // ValidateIgnition wraps the underlying Ignition V2/V3 validation, but explicitly supports

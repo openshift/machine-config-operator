@@ -21,7 +21,7 @@ import (
 )
 
 type mockServer struct {
-	GetConfigFn func(poolRequest) (*runtime.RawExtension, error)
+	GetConfigFn          func(poolRequest) (*runtime.RawExtension, error)
 	GetKernelArgumentsFn func(poolRequest) ([]string, error)
 }
 
@@ -60,6 +60,7 @@ func TestAcceptHeaders(t *testing.T) {
 	v2_4 := semver.New("2.4.0")
 	v3_1 := semver.New("3.1.0")
 	v3_2 := semver.New("3.2.0")
+	v3_3 := semver.New("3.3.0")
 	headers := []acceptHeaderScenario{
 		{
 			name:  "IgnV0",
@@ -87,8 +88,27 @@ func TestAcceptHeaders(t *testing.T) {
 			versionOut: v2_2,
 		},
 		{
-			name:  "IgnV2",
-			input: "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1",
+			name:  "IgnV2_31",
+			input: getNewIgnitionV3AcceptHeaderStr(1),
+			headerVals: []acceptHeaderValue{
+				{
+					MIMEType:    "application",
+					MIMESubtype: "vnd.coreos.ignition+json",
+					SemVer:      v3_1,
+					QValue:      float32ToPtr(1.0),
+				},
+				{
+					MIMEType:    "*",
+					MIMESubtype: "*",
+					SemVer:      nil,
+					QValue:      float32ToPtr(0.1),
+				},
+			},
+			versionOut: v3_1,
+		},
+		{
+			name:  "IgnV2_32",
+			input: getNewIgnitionV3AcceptHeaderStr(2),
 			headerVals: []acceptHeaderValue{
 				{
 					MIMEType:    "application",
@@ -106,13 +126,13 @@ func TestAcceptHeaders(t *testing.T) {
 			versionOut: v3_2,
 		},
 		{
-			name:  "IgnV2_31",
-			input: "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1",
+			name:  "IgnV2_3_33",
+			input: getNewIgnitionV3AcceptHeaderStr(3),
 			headerVals: []acceptHeaderValue{
 				{
 					MIMEType:    "application",
 					MIMESubtype: "vnd.coreos.ignition+json",
-					SemVer:      v3_1,
+					SemVer:      v3_3,
 					QValue:      float32ToPtr(1.0),
 				},
 				{
@@ -122,7 +142,7 @@ func TestAcceptHeaders(t *testing.T) {
 					QValue:      float32ToPtr(0.1),
 				},
 			},
-			versionOut: v3_1,
+			versionOut: v3_3,
 		},
 		{
 			name:  "IgnNoVersion",
@@ -174,16 +194,26 @@ func setAcceptHeaderOnReq(req *http.Request) *http.Request {
 	return req
 }
 
+func getNewIgnitionV3AcceptHeaderStr(minor int) string {
+	return fmt.Sprintf("application/vnd.coreos.ignition+json;version=3.%d.0, */*;q=0.1", minor)
+}
+
+func setV3_XAcceptHeaderOnReq(req *http.Request, minor int) *http.Request {
+	req.Header.Set("Accept", getNewIgnitionV3AcceptHeaderStr(minor))
+	return req
+}
+
 func setV3_1AcceptHeaderOnReq(req *http.Request) *http.Request {
-	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.1.0, */*;q=0.1")
-	return req
+	return setV3_XAcceptHeaderOnReq(req, 1)
 }
 
-func setV3AcceptHeaderOnReq(req *http.Request) *http.Request {
-	req.Header.Set("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
-	return req
+func setV3_2AcceptHeaderOnReq(req *http.Request) *http.Request {
+	return setV3_XAcceptHeaderOnReq(req, 2)
 }
 
+func setV3_3AcceptHeaderOnReq(req *http.Request) *http.Request {
+	return setV3_XAcceptHeaderOnReq(req, 2)
+}
 func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
@@ -260,8 +290,23 @@ func TestAPIHandler(t *testing.T) {
 			},
 		},
 		{
-			name:    "get spec v3 config path that exists",
-			request: setV3AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			name:    "get spec v3_2 config path that exists",
+			request: setV3_2AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
+			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
+				return &runtime.RawExtension{
+					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+				}, nil
+			},
+			checkResponse: func(t *testing.T, response *http.Response) {
+				checkStatus(t, response, http.StatusOK)
+				checkContentType(t, response, "application/json")
+				checkContentLength(t, response, expectedContentLength)
+				checkBodyLength(t, response, expectedContentLength)
+			},
+		},
+		{
+			name:    "get spec v3_1 config path that exists",
+			request: setV3_3AcceptHeaderOnReq(httptest.NewRequest(http.MethodGet, "http://testrequest/config/master", nil)),
 			serverFunc: func(poolRequest) (*runtime.RawExtension, error) {
 				return &runtime.RawExtension{
 					Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
