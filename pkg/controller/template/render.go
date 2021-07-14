@@ -334,7 +334,7 @@ func skipMissing(key string) (interface{}, error) {
 
 func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
-		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus.Type, cfg.FeatureGate)
+		external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
 		if err != nil {
 			glog.Error(err)
 		} else if external {
@@ -379,7 +379,7 @@ func cloudConfigFlag(cfg RenderConfig) interface{} {
 		}
 	}
 
-	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus.Type, cfg.FeatureGate)
+	external, err := cloudprovider.IsCloudProviderExternal(cfg.Infra.Status.PlatformStatus, cfg.FeatureGate)
 	if err != nil {
 		glog.Error(err)
 	} else if external {
