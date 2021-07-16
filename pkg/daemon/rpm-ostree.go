@@ -27,6 +27,7 @@ const (
 // https://github.com/projectatomic/rpm-ostree/blob/bce966a9812df141d38e3290f845171ec745aa4e/src/daemon/rpmostreed-deployment-utils.c#L227
 type rpmOstreeState struct {
 	Deployments []RpmOstreeDeployment
+	Transaction *[]string
 }
 
 // RpmOstreeDeployment represents a single deployment on a node
@@ -60,6 +61,7 @@ type imageInspection struct {
 // NodeUpdaterClient is an interface describing how to interact with the host
 // around content deployment
 type NodeUpdaterClient interface {
+	Initialize() error
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
 	Rebase(string, string) (bool, error)
@@ -84,8 +86,7 @@ func runRpmOstree(args ...string) error {
 	return runCmdSync("rpm-ostree", args...)
 }
 
-// GetBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
+func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
 	var rosState rpmOstreeState
 	output, err := runGetOut("rpm-ostree", "status", "--json")
 	if err != nil {
@@ -96,7 +97,53 @@ func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 		return nil, errors.Wrapf(err, "failed to parse `rpm-ostree status --json` output (%s)", truncate(string(output), 30))
 	}
 
-	for _, deployment := range rosState.Deployments {
+	return &rosState, nil
+}
+
+func (r *RpmOstreeClient) Initialize() error {
+	// This replicates https://github.com/coreos/rpm-ostree/pull/2945
+	// and can be removed when we have a new enough rpm-ostree with
+	// that PR.
+	err := runCmdSync("systemctl", "start", "rpm-ostreed")
+	if err != nil {
+		// If this fails for some reason, let's dump the unit status
+		// into our logs to aid future debugging.
+		cmd := exec.Command("systemctl", "status", "rpm-ostreed")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		_ = cmd.Run()
+		return err
+	}
+
+	status, err := r.loadStatus()
+	if err != nil {
+		return err
+	}
+
+	// If there's an active transaction when the MCD starts up,
+	// it's possible that we hit
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1982389
+	// This is fixed upstream, but we need a newer RHEL for that,
+	// so let's just restart the service as a workaround.
+	if status.Transaction != nil {
+		glog.Warningf("Detected active transaction during daemon startup, restarting to clear it")
+		err := runCmdSync("systemctl", "restart", "rpm-ostreed")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetBootedDeployment returns the current deployment found
+func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
+	status, err := r.loadStatus()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, deployment := range status.Deployments {
 		if deployment.Booted {
 			deployment := deployment
 			return &deployment, nil

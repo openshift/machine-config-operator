@@ -212,14 +212,12 @@ func New(
 
 	// Only pull the osImageURL from OSTree when we are on RHCOS or FCOS
 	if hostos.IsCoreOSVariant() {
+		err := nodeUpdaterClient.Initialize()
+		if err != nil {
+			return nil, fmt.Errorf("error initializing rpm-ostree: %v", err)
+		}
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
-			// If this fails for some reason, let's dump the unit status
-			// into our logs to aid future debugging.
-			cmd := exec.Command("systemctl", "status", "rpm-ostreed")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
 		}
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
