@@ -74,10 +74,14 @@ contents:
       # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
       function configure_driver_options {
         intf=$1
-        driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
-        echo "Driver name is" $driver
-        if [ "$driver" = "vmxnet3" ]; then
-          ifconfig "$intf" allmulti
+        if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
+          echo "Device file doesn't exist, skipping setting multicast mode"
+        else
+          driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
+          echo "Driver name is" $driver
+          if [ "$driver" = "vmxnet3" ]; then
+            ifconfig "$intf" allmulti
+          fi
         fi
       }
 
