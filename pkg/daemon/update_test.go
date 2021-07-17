@@ -2,7 +2,10 @@ package daemon
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -686,4 +689,75 @@ func TestRunGetOut(t *testing.T) {
 
 	o, err = runGetOut("/usr/bin/test-failure-to-exec-this-should-not-exist", "arg")
 	assert.Error(t, err)
+}
+
+// TestOriginalFileBackupRestore tests backikg up and restoring original files (files that are present in the base image and
+// get overwritten by a machine configuration)
+func TestOriginalFileBackupRestore(t *testing.T) {
+
+	// Make a temp dir to put the testing files in, and make sure we clean it up
+	testDir, err := ioutil.TempDir("", "mco-test")
+	assert.Nil(t, err)
+	defer os.RemoveAll(testDir)
+
+	// Stub out a test directory structure -- we need to create /etc so createOrigFile can use it
+	etcDir := filepath.Join(testDir, "etc")
+	err = os.MkdirAll(etcDir, 0755)
+	assert.Nil(t, err)
+
+	// Make sure path variables get put back for other tests
+	defer func(o string) { origParentDirPath = o }(origParentDirPath)
+	defer func(o string) { noOrigParentDirPath = o }(noOrigParentDirPath)
+
+	// Override these package variables so files get written to our testing location
+	origParentDirPath = filepath.Join(testDir, origParentDirPath)
+	noOrigParentDirPath = filepath.Join(testDir, noOrigParentDirPath)
+
+	// Write a normal file as a control to make sure normal case works
+	controlFile := filepath.Join(testDir, "control-file")
+	err = ioutil.WriteFile(controlFile, []byte("control file contents"), 0755)
+	assert.Nil(t, err)
+
+	// Back up that normal file
+	err = createOrigFile(controlFile, controlFile)
+	assert.Nil(t, err)
+
+	// Now try again and make sure it knows it's already backed up
+	err = createOrigFile(controlFile, controlFile)
+	assert.Nil(t, err)
+
+	// Restore the normal file
+	err = restorePath(controlFile)
+	assert.Nil(t, err)
+
+	// The normal file worked, try it with a symlink
+	// Write a file we can point a symlink at
+	err = ioutil.WriteFile(filepath.Join(testDir, "target-file"), []byte("target file contents"), 0755)
+	assert.Nil(t, err)
+
+	// Make a relative symlink
+	relativeSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
+	relativeSymlinkTarget := filepath.Join("..", "target-file")
+	err = os.Symlink(relativeSymlinkTarget, relativeSymlink)
+	assert.Nil(t, err)
+
+	// Back up the relative symlink
+	err = createOrigFile(relativeSymlink, relativeSymlink)
+	assert.Nil(t, err)
+
+	// Remove the symlink and write a file over it
+	fileOverSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
+	err = os.Remove(fileOverSymlink)
+	assert.Nil(t, err)
+	err = ioutil.WriteFile(fileOverSymlink, []byte("replacement contents"), 0755)
+	assert.Nil(t, err)
+
+	// Try to back it up again make sure it knows it's already backed up
+	err = createOrigFile(relativeSymlink, relativeSymlink)
+	assert.Nil(t, err)
+
+	// Finally, make sure we can restore the relative symlink if we rollback
+	err = restorePath(relativeSymlink)
+	assert.Nil(t, err)
+
 }
