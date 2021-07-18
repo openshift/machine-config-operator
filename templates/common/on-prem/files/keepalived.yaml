@@ -134,6 +134,8 @@ contents:
           mountPath: "/var/run/keepalived"
         - name: chroot-host
           mountPath: "/host"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
         livenessProbe:
           exec:
             command:
