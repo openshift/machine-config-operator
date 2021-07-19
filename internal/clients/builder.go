@@ -80,3 +80,10 @@ func NewBuilder(kubeconfig string) (*Builder, error) {
 		config: config,
 	}, nil
 }
+
+// BuilderFromConfig creates a *Builder with the given rest config.
+func BuilderFromConfig(config *rest.Config) *Builder {
+	return &Builder{
+		config: config,
+	}
+}
