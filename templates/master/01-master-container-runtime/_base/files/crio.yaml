@@ -28,6 +28,7 @@ contents:
     absent_mount_sources_to_reject = [
         "/etc/hostname",
     ]
+    drop_infra_ctr = true
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"
