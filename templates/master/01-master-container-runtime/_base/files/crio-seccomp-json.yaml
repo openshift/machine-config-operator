@@ -1,0 +1,241 @@
+mode: 0644
+path: "/etc/crio/crio-seccomp.json"
+contents:
+  inline: |
+      {
+        "defaultAction": "SCMP_ACT_ALLOW",
+        "archMap": [
+            {
+                "architecture": "SCMP_ARCH_X86_64",
+                "subArchitectures": [
+                    "SCMP_ARCH_X86",
+                    "SCMP_ARCH_X32"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_AARCH64",
+                "subArchitectures": [
+                    "SCMP_ARCH_ARM"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPS64",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPS",
+                    "SCMP_ARCH_MIPS64N32"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPS64N32",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPS",
+                    "SCMP_ARCH_MIPS64"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPSEL64",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPSEL",
+                    "SCMP_ARCH_MIPSEL64N32"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPSEL64N32",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPSEL",
+                    "SCMP_ARCH_MIPSEL64"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_S390X",
+                "subArchitectures": [
+                    "SCMP_ARCH_S390"
+                ]
+            }
+        ],
+        "syscalls": [
+            {
+                "names": [
+                    "acct",
+                    "add_key",
+                    "clock_adjtime",
+                    "clock_settime",
+                    "create_module",
+                    "delete_module",
+                    "finit_module",
+                    "get_kernel_syms",
+                    "get_mempolicy",
+                    "init_module",
+                    "ioperm",
+                    "iopl",
+                    "kcmp",
+                    "kexec_file_load",
+                    "kexec_load",
+                    "keyctl",
+                    "mbind",
+                    "move_pages",
+                    "nfsservctl",
+                    "open_by_handle_at",
+                    "personality",
+                    "pivot_root",
+                    "process_vm_readv",
+                    "process_vm_writev",
+                    "ptrace",
+                    "query_module",
+                    "reboot",
+                    "request_key",
+                    "set_mempolicy",
+                    "settimeofday",
+                    "stime",
+                    "swapon",
+                    "swapoff",
+                    "sysfs",
+                    "_sysctl",
+                    "uselib",
+                    "userfaultfd",
+                    "ustat",
+                    "vm86",
+                    "vm86old"
+                ],
+                "action": "SCMP_ACT_ERRNO",
+                "args": [],
+                "comment": "Default prohibitions equivalent to the default seccomp.json (no one can do these)",
+                "includes": {},
+                "excludes": {}
+            },
+            {
+                "names": [
+                    "bpf",
+                    "mount",
+                    "name_to_handle_at",
+                    "perf_event_open",
+                    "quotactl",
+                    "setns",
+                    "umount",
+                    "umount2",
+                    "unshare"
+                ],
+                "action": "SCMP_ACT_ERRNO",
+                "args": [],
+                "comment": "Default prohibitions equivalent to the default seccomp.json (only CAP_SYS_ADMIN can do these)",
+                "includes": {},
+                "excludes": {
+                    "caps": [
+                        "CAP_SYS_ADMIN"
+                    ]
+                }
+            },
+            {
+                "names": [
+                    "clone"
+                ],
+                "action": "SCMP_ACT_ERRNO",
+                "args": [
+                    {
+                        "index": 0,
+                        "value": 131072,
+                        "valueTwo": 131072,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 0,
+                        "value": 67108864,
+                        "valueTwo": 67108864,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 0,
+                        "value": 134217728,
+                        "valueTwo": 134217728,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 0,
+                        "value": 268435456,
+                        "valueTwo": 268435456,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 0,
+                        "value": 536870912,
+                        "valueTwo": 536870912,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 0,
+                        "value": 1073741824,
+                        "valueTwo": 1073741824,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    }
+                ],
+                "comment": "Prevent clone with any of CLONE_NEWNS CLONE_NEWUTS CLONE_NEWIPC CLONE_NEWUSER CLONE_NEWPID CLONE_NEWNET, except for CAP_SYS_ADMIN who can do any clone (non-s390 variant)",
+                "includes": {},
+                "excludes": {
+                    "caps": [
+                        "CAP_SYS_ADMIN"
+                    ],
+                        "arches": [
+                            "s390",
+                            "s390x"
+                        ]
+                }
+            },
+            {
+                "names": [
+                    "clone"
+                ],
+                "action": "SCMP_ACT_ERRNO",
+                "args": [
+                    {
+                        "index": 1,
+                        "value": 131072,
+                        "valueTwo": 131072,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 1,
+                        "value": 67108864,
+                        "valueTwo": 67108864,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 1,
+                        "value": 134217728,
+                        "valueTwo": 134217728,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 1,
+                        "value": 268435456,
+                        "valueTwo": 268435456,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 1,
+                        "value": 536870912,
+                        "valueTwo": 536870912,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    },
+                    {
+                        "index": 1,
+                        "value": 1073741824,
+                        "valueTwo": 1073741824,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    }
+                ],
+                "comment": "Prevent clone with any of CLONE_NEWNS CLONE_NEWUTS CLONE_NEWIPC CLONE_NEWUSER CLONE_NEWPID CLONE_NEWNET, except for CAP_SYS_ADMIN who can do any clone (s390 variant)",
+                "includes": {
+                    "arches": [
+                        "s390",
+                        "s390x"
+                    ]
+                },
+                "excludes": {
+                    "caps": [
+                        "CAP_SYS_ADMIN"
+                    ]
+                }
+            }
+        ]
+    }
+
