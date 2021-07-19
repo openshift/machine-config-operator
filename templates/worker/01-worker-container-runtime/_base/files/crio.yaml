@@ -45,3 +45,19 @@ contents:
     [crio.metrics]
     enable_metrics = true
     metrics_port = 9537
+    metrics_collectors = [
+      "operations",
+      "operations_latency_microseconds_total",
+      "operations_latency_microseconds",
+      "operations_errors",
+      "image_pulls_layer_size",
+      "containers_oom_total",
+      "containers_oom",
+      # Drop metrics with excessive label cardinality.
+      # "image_pulls_by_digest",
+      # "image_pulls_by_name",
+      # "image_pulls_by_name_skipped",
+      # "image_pulls_failures",
+      # "image_pulls_successes",
+      # "image_layer_reuse",
+    ]
