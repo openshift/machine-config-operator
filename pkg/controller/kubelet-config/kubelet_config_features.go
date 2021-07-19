@@ -8,10 +8,8 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/golang/glog"
-	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
-	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -70,10 +68,6 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	} else if err != nil {
 		return err
 	}
-	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
-	if err != nil {
-		return err
-	}
 
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
@@ -107,7 +101,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, *featureGates)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, features)
 		if err != nil {
 			return err
 		}
@@ -210,34 +204,22 @@ func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map
 	return &rv, nil
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGates map[string]bool) ([]byte, error) {
-	// Generate the original KubeletConfig
-	originalKubeletIgn, err := generateOriginalKubeletConfig(cc, templatesDir, role, nil)
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *osev1.FeatureGate) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, features)
 	if err != nil {
 		return nil, err
 	}
-	if originalKubeletIgn.Contents.Source == nil {
-		return nil, fmt.Errorf("could not find original Kubelet config to decode")
-	}
-	dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
+	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGate(), openshiftOnlyFeatureGates...)
 	if err != nil {
 		return nil, err
 	}
-	originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-	if err != nil {
-		return nil, err
-	}
-	// Check to see if FeatureGates are equal
-	if reflect.DeepEqual(originalKubeConfig.FeatureGates, featureGates) {
+
+	// Check to see if configured FeatureGates are equivalent to the Default FeatureSet.
+	if reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatures) {
 		// When there is no difference, this isn't an error, but no machine config should be created
 		return nil, nil
 	}
 
-	// Merge in Feature Gates
-	err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
-	if err != nil {
-		return nil, err
-	}
 	// Encode the new config into raw JSON
 	cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
 	if err != nil {
@@ -256,14 +238,9 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
-	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
-	if err != nil {
-		return nil, err
-	}
-
 	for _, pool := range mcpPools {
 		role := pool.Name
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, *featureGates)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, features)
 		if err != nil {
 			return nil, err
 		}

@@ -330,7 +330,40 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
 }
 
-func generateOriginalKubeletConfig(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
+// generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
+// based on the given FeatureGate.
+func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *configv1.FeatureGate) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
+	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, features)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %v", err)
+	}
+	if originalKubeletIgn.Contents.Source == nil {
+		return nil, fmt.Errorf("the original Kubelet source string is empty: %v", err)
+	}
+	dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
+	if err != nil {
+		return nil, fmt.Errorf("could not decode the original Kubelet source string: %v", err)
+	}
+	originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
+	if err != nil {
+		return nil, fmt.Errorf("could not deserialize the Kubelet source: %v", err)
+	}
+
+	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate features map: %v", err)
+	}
+
+	// Merge in Feature Gates.
+	// If they are the same, this will be a no-op
+	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
+		return nil, fmt.Errorf("could not merge feature gates: %v", err)
+	}
+
+	return originalKubeConfig, nil
+}
+
+func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
 	// Render the default templates
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGate: featureGate}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
@@ -474,12 +507,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
-	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
-	if err != nil {
-		err := fmt.Errorf("could not generate FeatureMap: %v", err)
-		glog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
-	}
 
 	for _, pool := range mcpPools {
 		if pool.Spec.Configuration.Name == "" {
@@ -512,20 +539,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err != nil {
 			return fmt.Errorf("could not get ControllerConfig %v", err)
 		}
-		originalKubeletIgn, err := generateOriginalKubeletConfig(cc, ctrl.templatesDir, role, features)
+
+		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not generate the original Kubelet config: %v", err)
-		}
-		if originalKubeletIgn.Contents.Source == nil {
-			return ctrl.syncStatusOnly(cfg, err, "the original Kubelet source string is empty: %v", err)
-		}
-		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not decode the original Kubelet source string: %v", err)
-		}
-		originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not deserialize the Kubelet source: %v", err)
+			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
 		}
 
 		// Get the default API Server Security Profile
@@ -561,15 +578,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 				delete(specKubeletConfig.SystemReserved, "cpu")
 			}
 
+			// FeatureGates must be set from the FeatureGate.
+			// Remove them here to prevent the specKubeletConfig merge overwriting them.
+			specKubeletConfig.FeatureGates = nil
+
 			// Merge the Old and New
 			err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
-			}
-			// Merge in Feature Gates
-			err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not merge FeatureGates: %v", err)
 			}
 			// Encode the new config into raw JSON
 			cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)

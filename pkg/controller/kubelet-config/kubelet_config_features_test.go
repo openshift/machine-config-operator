@@ -25,7 +25,7 @@ func TestFeatureGateDrift(t *testing.T) {
 			f.ccLister = append(f.ccLister, cc)
 
 			ctrl := f.newController()
-			kubeletConfig, err := generateOriginalKubeletConfig(cc, ctrl.templatesDir, "master", nil)
+			kubeletConfig, err := generateOriginalKubeletConfigIgn(cc, ctrl.templatesDir, "master", nil)
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
