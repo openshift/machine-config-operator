@@ -16,7 +16,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
-	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -221,12 +220,12 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	}
 
 	// Encode the new config into raw JSON
-	cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
+	cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
 		return nil, err
 	}
+
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
-	cfgIgn := createNewKubeletIgnition(cfgJSON)
 	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
 	rawCfgIgn, err := json.Marshal(tempIgnConfig)
 	if err != nil {
