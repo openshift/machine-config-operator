@@ -587,19 +587,12 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			if err != nil {
 				return ctrl.syncStatusOnly(cfg, err, "could not merge original config and new config: %v", err)
 			}
-			// Encode the new config into raw JSON
-			cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
-			}
-			kubeletIgnition = createNewKubeletIgnition(cfgJSON)
-		} else {
-			// Encode the new config into raw JSON
-			cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
-			}
-			kubeletIgnition = createNewKubeletIgnition(cfgJSON)
+		}
+
+		// Encode the new config into an Ignition File
+		kubeletIgnition, err = kubeletConfigToIgnFile(originalKubeConfig)
+		if err != nil {
+			return ctrl.syncStatusOnly(cfg, err, "could not encode JSON: %v", err)
 		}
 
 		if isNotFound {
