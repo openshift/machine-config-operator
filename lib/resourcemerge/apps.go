@@ -36,5 +36,10 @@ func EnsureDaemonSet(modified *bool, existing *appsv1.DaemonSet, required appsv1
 		existing.Spec.Selector = required.Spec.Selector
 	}
 
+	if !equality.Semantic.DeepEqual(existing.Spec.UpdateStrategy, required.Spec.UpdateStrategy) {
+		*modified = true
+		existing.Spec.UpdateStrategy = required.Spec.UpdateStrategy
+	}
+
 	ensurePodTemplateSpec(modified, &existing.Spec.Template, required.Spec.Template)
 }
