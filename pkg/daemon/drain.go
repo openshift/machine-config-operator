@@ -28,6 +28,11 @@ func (dn *Daemon) drainRequired() bool {
 }
 
 func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
+	verb := "cordon"
+	if !desired {
+		verb = "uncordon"
+	}
+
 	backoff := wait.Backoff{
 		Steps:    5,
 		Duration: 10 * time.Second,
@@ -38,16 +43,17 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, desired)
 		if err != nil {
 			lastErr = err
-			glog.Infof("cordon/uncordon failed with: %v, retrying", err)
+			glog.Infof("%s failed with: %v, retrying", verb, err)
 			return false, nil
 		}
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return errors.Wrapf(lastErr, "failed to cordon/uncordon node (%d tries): %v", backoff.Steps, err)
+			return errors.Wrapf(lastErr, "failed to %s node (%d tries): %v", verb, backoff.Steps, err)
 		}
-		return errors.Wrap(err, "failed to cordon/uncordon node")
+		return errors.Wrapf(err, "failed to %s node", verb)
 	}
+
 	return nil
 }
 
