@@ -1,0 +1,109 @@
+mode: 0644
+path: "/etc/crio/crio-seccomp.json"
+contents:
+  inline: |
+    {
+        "defaultAction": "SCMP_ACT_ALLOW",
+        "archMap": [
+            {
+                "architecture": "SCMP_ARCH_X86_64",
+                "subArchitectures": [
+                    "SCMP_ARCH_X86",
+                    "SCMP_ARCH_X32"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_AARCH64",
+                "subArchitectures": [
+                    "SCMP_ARCH_ARM"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPS64",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPS",
+                    "SCMP_ARCH_MIPS64N32"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPS64N32",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPS",
+                    "SCMP_ARCH_MIPS64"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPSEL64",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPSEL",
+                    "SCMP_ARCH_MIPSEL64N32"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_MIPSEL64N32",
+                "subArchitectures": [
+                    "SCMP_ARCH_MIPSEL",
+                    "SCMP_ARCH_MIPSEL64"
+                ]
+            },
+            {
+                "architecture": "SCMP_ARCH_S390X",
+                "subArchitectures": [
+                    "SCMP_ARCH_S390"
+                ]
+            }
+        ],
+            "syscalls": [
+            {
+                "names": [
+                    "clone"
+                ],
+                "action": "SCMP_ACT_ERRNO",
+                "args": [
+                    {
+                        "index": 0,
+                        "value": 268435456,
+                        "valueTwo": 0,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    }
+                ],
+                "comment": "Prevent clone with any of CLONE_NEWUSER, except for CAP_SYS_ADMIN who can do any clone (non-s390 variant)",
+                "includes": {},
+                "excludes": {
+                    "caps": [
+                        "CAP_SYS_ADMIN"
+                    ],
+                    "arches": [
+                        "s390",
+                        "s390x"
+                    ]
+                }
+            },
+            {
+                "names": [
+                    "clone"
+                ],
+                "action": "SCMP_ACT_ERRNO",
+                "args": [
+                    {
+                        "index": 1,
+                        "value": 268435456,
+                        "valueTwo": 0,
+                        "op": "SCMP_CMP_MASKED_EQ"
+                    }
+                ],
+                "comment": "s390 parameter ordering for clone is different",
+                "includes": {
+                    "arches": [
+                        "s390",
+                        "s390x"
+                    ]
+                },
+                "excludes": {
+                    "caps": [
+                        "CAP_SYS_ADMIN"
+                    ]
+                }
+            }
+        ]
+    }

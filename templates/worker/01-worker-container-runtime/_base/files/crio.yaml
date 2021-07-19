@@ -29,6 +29,8 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    seccomp_use_default_when_empty = true
+    seccomp_profile = "/etc/crio/crio-seccomp.json"
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"
