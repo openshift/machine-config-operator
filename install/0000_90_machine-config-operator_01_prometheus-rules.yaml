@@ -66,7 +66,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            message: "Memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds by 90%. Master nodes starved of memory could result in degraded performance of the control plane."
+            message: "Memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 90%. Master nodes starved of memory could result in degraded performance of the control plane."
     - name: master-nodes-high-cpu-usage
       rules:
         - alert: MasterNodesHighCPUUsage
@@ -76,5 +76,5 @@ spec:
           labels:
             severity: warning
           annotations:
-            message: "Cumulative load of {{ $value | humanize }} on {{ $labels.node }} is very high. Master nodes starved of cpu could result in degraded performance of the control pane."
+            message: "Cumulative load of {{ $value | humanize }} on {{ $labels.node }} is very high. Master nodes starved of cpu could result in degraded performance of the control plane."
 
