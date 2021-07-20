@@ -478,7 +478,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
-	featureGates, err := generateFeatureMap(features)
+	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
 	if err != nil {
 		err := fmt.Errorf("could not generate FeatureMap: %v", err)
 		glog.V(2).Infof("%v", err)

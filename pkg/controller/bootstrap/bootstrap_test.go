@@ -45,6 +45,19 @@ spec:
 			Raw: []byte(`{"apiVersion":"extensions/v1beta1","kind":"Ingress","metadata":{"name":"test-ingress","namespace":"test-namespace"},"spec":{"rules":[{"http":{"paths":[{"backend":{"serviceName":"test","servicePort":80},"path":"/testpath"}]}}]}}`),
 		}},
 	}, {
+		name: "feature gate",
+		raw: `
+apiVersion: config.openshift.io/v1
+kind: FeatureGate
+metadata:
+  name: cluster
+spec:
+  featureSet: TechPreviewNoUpgrade
+`,
+		want: []manifest{{
+			Raw: []byte(`{"apiVersion":"config.openshift.io/v1","kind":"FeatureGate","metadata":{"name":"cluster"},"spec":{"featureSet":"TechPreviewNoUpgrade"}}`),
+		}},
+	}, {
 		name: "two-resources",
 		raw: `
 apiVersion: extensions/v1beta1
