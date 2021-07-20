@@ -311,3 +311,13 @@ func newKubeletconfigJSONEncoder(targetVersion schema.GroupVersion) (runtime.Enc
 	}
 	return codecs.EncoderForVersion(info.Serializer, targetVersion), nil
 }
+
+// kubeletConfigToIgnFile converts a KubeletConfiguration to an Ignition File
+func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, error) {
+	cfgJSON, err := EncodeKubeletConfig(cfg, kubeletconfigv1beta1.SchemeGroupVersion)
+	if err != nil {
+		return nil, fmt.Errorf("could not encode kubelet configuration: %v", err)
+	}
+	cfgIgn := createNewKubeletIgnition(cfgJSON)
+	return cfgIgn, nil
+}

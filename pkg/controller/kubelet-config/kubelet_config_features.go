@@ -8,18 +8,16 @@ import (
 
 	"github.com/clarketm/json"
 	"github.com/golang/glog"
-	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
-	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
-	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
+	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -69,9 +67,10 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	} else if err != nil {
 		return err
 	}
-	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
+
+	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 
 	// Find all MachineConfigPools
@@ -100,43 +99,15 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 				return err
 			}
 		}
-		// Generate the original KubeletConfig
-		originalKubeletIgn, err := ctrl.generateOriginalKubeletConfig(role, nil)
+
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, features)
 		if err != nil {
 			return err
 		}
-		if originalKubeletIgn.Contents.Source == nil {
-			return fmt.Errorf("could not find original Kubelet config to decode")
-		}
-		dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
-		if err != nil {
-			return err
-		}
-		originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-		if err != nil {
-			return err
-		}
-		// Check to see if FeatureGates are equal
-		if reflect.DeepEqual(originalKubeConfig.FeatureGates, *featureGates) {
+		if rawCfgIgn == nil {
 			continue
 		}
-		// Merge in Feature Gates
-		err = mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride)
-		if err != nil {
-			return err
-		}
-		// Encode the new config into raw JSON
-		cfgJSON, err := EncodeKubeletConfig(originalKubeConfig, kubeletconfigv1beta1.SchemeGroupVersion)
-		if err != nil {
-			return err
-		}
-		tempIgnConfig := ctrlcommon.NewIgnConfig()
-		cfgIgn := createNewKubeletIgnition(cfgJSON)
-		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
-		rawCfgIgn, err := json.Marshal(tempIgnConfig)
-		if err != nil {
-			return err
-		}
+
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
@@ -230,4 +201,71 @@ func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map
 		delete(rv, excluded)
 	}
 	return &rv, nil
+}
+
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *osev1.FeatureGate) ([]byte, error) {
+	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, features)
+	if err != nil {
+		return nil, err
+	}
+	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGate(), openshiftOnlyFeatureGates...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check to see if configured FeatureGates are equivalent to the Default FeatureSet.
+	if reflect.DeepEqual(originalKubeConfig.FeatureGates, *defaultFeatures) {
+		// When there is no difference, this isn't an error, but no machine config should be created
+		return nil, nil
+	}
+
+	// Encode the new config into raw JSON
+	cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	tempIgnConfig := ctrlcommon.NewIgnConfig()
+	tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *cfgIgn)
+	rawCfgIgn, err := json.Marshal(tempIgnConfig)
+	if err != nil {
+		return nil, err
+	}
+	return rawCfgIgn, nil
+}
+
+func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	machineConfigs := []*mcfgv1.MachineConfig{}
+
+	for _, pool := range mcpPools {
+		role := pool.Name
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, features)
+		if err != nil {
+			return nil, err
+		}
+		if rawCfgIgn == nil {
+			continue
+		}
+
+		// Get MachineConfig
+		managedKey, err := getManagedFeaturesKey(pool, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		ignConfig := ctrlcommon.NewIgnConfig()
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		mc.Spec.Config.Raw = rawCfgIgn
+		mc.ObjectMeta.Annotations = map[string]string{
+			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
+		}
+
+		machineConfigs = append(machineConfigs, mc)
+	}
+
+	return machineConfigs, nil
 }
