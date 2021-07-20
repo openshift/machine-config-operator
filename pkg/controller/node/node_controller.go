@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -64,12 +65,6 @@ const (
 	// masterPoolName is the control plane MachineConfigPool name
 	masterPoolName = "master"
 )
-
-var nodeUpdateBackoff = wait.Backoff{
-	Steps:    5,
-	Duration: 100 * time.Millisecond,
-	Jitter:   1.0,
-}
 
 // Controller defines the node controller.
 type Controller struct {
@@ -488,6 +483,10 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 			ctrl.logPoolNode(pool, curNode, "changed labels")
 			changed = true
 		}
+		if !reflect.DeepEqual(oldNode.Spec.Taints, curNode.Spec.Taints) {
+			ctrl.logPoolNode(pool, curNode, "changed taints")
+			changed = true
+		}
 	}
 
 	if !changed {
@@ -766,7 +765,18 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	if err := ctrl.setClusterConfigAnnotation(nodes); err != nil {
 		return goerrs.Wrapf(err, "error setting clusterConfig Annotation for node in pool %q, error: %v", pool.Name, err)
 	}
-
+	// Taint all the nodes in the node pool, irrespective of their upgrade status.
+	ctx := context.TODO()
+	for _, node := range nodes {
+		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
+		// to be chosen during the scheduling cycle.
+		targetConfig := pool.Spec.Configuration.Name
+		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != targetConfig {
+			if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
+				return goerrs.Wrapf(err, "failed applying %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
+			}
+		}
+	}
 	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
 	if len(candidates) > 0 {
 		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(candidates), capacity)
@@ -834,7 +844,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 }
 
 func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
-	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
+	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
 		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -871,7 +881,6 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 // capacity.  It is the reponsibility of the caller to choose a subset of the nodes given the capacity.
 func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*corev1.Node, maxUnavailable int) ([]*corev1.Node, uint) {
 	targetConfig := pool.Spec.Configuration.Name
-
 	unavail := getUnavailableMachines(nodesInPool)
 	// If we're at capacity, there's nothing to do.
 	if len(unavail) >= maxUnavailable {
@@ -888,10 +897,8 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 			}
 			continue
 		}
-
 		nodes = append(nodes, node)
 	}
-
 	// Nodes which are failing to target this config also count against
 	// availability - it might be a transient issue, and if the issue
 	// clears we don't want multiple to update at once.
@@ -899,7 +906,6 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 		return nil, 0
 	}
 	capacity -= failingThisConfig
-
 	return nodes, uint(capacity)
 }
 
@@ -971,6 +977,47 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Set target for %d nodes to config %s", targetConfig)
 	}
 	return nil
+}
+
+// setUpdateInProgressTaint applies in progress taint to all the nodes that are to be updated.
+// The taint on the individual node is removed by MCD once the update of the node is complete.
+// This is to ensure that the updated nodes are being preferred to non-updated nodes there by
+// reducing the number of reschedules.
+func (ctrl *Controller) setUpdateInProgressTaint(ctx context.Context, nodeName string) error {
+	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
+		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+		if newNode.Spec.Taints == nil {
+			newNode.Spec.Taints = []corev1.Taint{}
+		}
+
+		for _, taint := range newNode.Spec.Taints {
+			if taint.MatchTaint(constants.NodeUpdateInProgressTaint) {
+				return nil
+			}
+		}
+
+		newNode.Spec.Taints = append(newNode.Spec.Taints, *constants.NodeUpdateInProgressTaint)
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+		}
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	})
 }
 
 func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
