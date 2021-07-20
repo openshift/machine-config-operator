@@ -48,6 +48,8 @@ Links | NO
 Disks | NO
 RAID | NO
 
+See [Ignition Support in MachineConfigs][./IgnitionSupport.md] for more details and examples.
+
 \* At this time only updates to `sshAuthorizedKeys` for user `core` are permitted. Please see [Update-SSHKeys](./Update-SSHKeys.md) for details.
 
 ## Coordinating updates
