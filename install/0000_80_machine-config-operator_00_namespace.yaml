@@ -10,7 +10,6 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-machine-config-operator
-    openshift.io/run-level: "1"
     openshift.io/cluster-monitoring: "true"
 ---
 apiVersion: v1
@@ -24,7 +23,6 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-openstack-infra
-    openshift.io/run-level: "1"
 ---
 apiVersion: v1
 kind: Namespace
@@ -37,7 +35,6 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-kni-infra
-    openshift.io/run-level: "1"
 ---
 apiVersion: v1
 kind: Namespace
@@ -50,7 +47,6 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-ovirt-infra
-    openshift.io/run-level: "1"
 ---
 apiVersion: v1
 kind: Namespace
@@ -63,4 +59,3 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-vsphere-infra
-    openshift.io/run-level: "1"
