@@ -7,3 +7,5 @@ dropins:
       ExecStartPre=-/bin/sh -c '/usr/bin/chown -R :$${OVS_USER_ID##*:} /var/lib/openvswitch'
       ExecStartPre=-/bin/sh -c '/usr/bin/chown -R :$${OVS_USER_ID##*:} /etc/openvswitch'
       ExecStartPre=-/bin/sh -c '/usr/bin/chown -R :$${OVS_USER_ID##*:} /run/openvswitch'
+      ExecStartPost=-/usr/bin/ovs-appctl vlog/set syslog:info
+      ExecReload=-/usr/bin/ovs-appctl vlog/set syslog:info
