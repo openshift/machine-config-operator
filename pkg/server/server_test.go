@@ -195,6 +195,12 @@ func TestBootstrapServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
+	resKargs, err := bs.GetKernelArguments(poolRequest{
+		machineConfigPool: "master",
+	})
+	if err != nil {
+		t.Fatalf("expected err to be nil, received: %v", err)
+	}
 
 	// assert on the output.
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
@@ -207,6 +213,7 @@ func TestBootstrapServer(t *testing.T) {
 	}
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
+	assert.Equal(t, mc.Spec.KernelArguments, resKargs)
 
 	// verify bootstrap cannot serve ignition to other pool than master
 	res, err = bs.GetConfig(poolRequest{
@@ -296,6 +303,12 @@ func TestClusterServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected err to be nil, received: %v", err)
 	}
+	resKargs, err := csc.GetKernelArguments(poolRequest{
+		machineConfigPool: testPool,
+	})
+	if err != nil {
+		t.Fatalf("expected err to be nil, received: %v", err)
+	}
 
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
@@ -307,6 +320,7 @@ func TestClusterServer(t *testing.T) {
 	}
 	validateIgnitionFiles(t, ignCfg.Storage.Files, resCfg.Storage.Files)
 	validateIgnitionSystemd(t, ignCfg.Systemd.Units, resCfg.Systemd.Units)
+	assert.Equal(t, mc.Spec.KernelArguments, resKargs)
 
 	foundEncapsulated := false
 	for _, f := range resCfg.Storage.Files {

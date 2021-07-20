@@ -31,7 +31,7 @@ github.com/OpenPeeDeeP/depguard
 github.com/PuerkitoBio/purell
 # github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
 github.com/PuerkitoBio/urlesc
-# github.com/ajeddeloh/go-json v0.0.0-20170920214419-6a2fe990e083
+# github.com/ajeddeloh/go-json v0.0.0-20200220154158-5ae607161559
 github.com/ajeddeloh/go-json
 # github.com/apparentlymart/go-cidr v1.0.0
 ## explicit
@@ -89,6 +89,8 @@ github.com/containers/storage/pkg/homedir
 ## explicit
 github.com/coreos/fcct/base/v0_1
 github.com/coreos/fcct/translate
+# github.com/coreos/go-json v0.0.0-20170920214419-6a2fe990e083
+github.com/coreos/go-json
 # github.com/coreos/go-semver v0.3.0
 ## explicit
 github.com/coreos/go-semver/semver
@@ -97,11 +99,12 @@ github.com/coreos/go-semver/semver
 github.com/coreos/go-systemd/unit
 # github.com/coreos/go-systemd/v22 v22.0.0
 github.com/coreos/go-systemd/v22/unit
-# github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
+# github.com/coreos/ign-converter v0.0.0-20210702054104-d7bbcbd8997c
 ## explicit
 github.com/coreos/ign-converter/translate/v23tov30
 github.com/coreos/ign-converter/translate/v32tov22
 github.com/coreos/ign-converter/translate/v32tov31
+github.com/coreos/ign-converter/translate/v33tov32
 github.com/coreos/ign-converter/util
 # github.com/coreos/ignition v0.35.0
 ## explicit
@@ -123,7 +126,7 @@ github.com/coreos/ignition/config/validate
 github.com/coreos/ignition/config/validate/astjson
 github.com/coreos/ignition/config/validate/astnode
 github.com/coreos/ignition/config/validate/report
-# github.com/coreos/ignition/v2 v2.7.0
+# github.com/coreos/ignition/v2 v2.11.0
 ## explicit
 github.com/coreos/ignition/v2/config/merge
 github.com/coreos/ignition/v2/config/shared/errors
@@ -138,8 +141,11 @@ github.com/coreos/ignition/v2/config/v3_1/types
 github.com/coreos/ignition/v2/config/v3_2
 github.com/coreos/ignition/v2/config/v3_2/translate
 github.com/coreos/ignition/v2/config/v3_2/types
+github.com/coreos/ignition/v2/config/v3_3
+github.com/coreos/ignition/v2/config/v3_3/translate
+github.com/coreos/ignition/v2/config/v3_3/types
 github.com/coreos/ignition/v2/config/validate
-# github.com/coreos/vcontext v0.0.0-20191017033345-260217907eb5
+# github.com/coreos/vcontext v0.0.0-20210407161507-4ee6c745c8bd
 github.com/coreos/vcontext/json
 github.com/coreos/vcontext/path
 github.com/coreos/vcontext/report

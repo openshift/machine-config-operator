@@ -100,7 +100,7 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Disk changes react as expected
 	oldIgnCfg.Storage.Disks = []ign3types.Disk{
-		ign3types.Disk{
+		{
 			Device: "/one",
 		},
 	}
@@ -116,7 +116,7 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Filesystems changes react as expected
 	oldIgnCfg.Storage.Filesystems = []ign3types.Filesystem{
-		ign3types.Filesystem{
+		{
 			Device: "/dev/sda1",
 			Format: helpers.StrToPtr("ext4"),
 			Path:   helpers.StrToPtr("/foo/bar"),
@@ -134,7 +134,10 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Raid changes react as expected
 	oldIgnCfg.Storage.Raid = []ign3types.Raid{
-		ign3types.Raid{
+		{
+			Devices: []ign3types.Device{
+				"/dev/nvme0n1",
+			},
 			Name:  "data",
 			Level: "stripe",
 		},

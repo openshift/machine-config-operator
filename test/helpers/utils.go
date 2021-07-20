@@ -3,12 +3,15 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"testing"
 	"time"
 
+	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -260,4 +263,115 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
 	}
 	return &mcdList.Items[0], nil
+}
+
+type httpHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+}
+
+// fakeIgnitionHeader returns a header suitable for mocking an Ignition Client
+func fakeIgnitionHeaders(ver *semver.Version) []httpHeader {
+	headers := []httpHeader{
+		{
+			Name:  "Accept-Encoding",
+			Value: "identity",
+		},
+		{
+			Name:  "User-Agent",
+			Value: fmt.Sprintf("mock-Ignition/%s", ver.String()),
+		},
+	}
+	if ver.Major >= 3 {
+		headers = append(headers,
+			httpHeader{
+				Name: "Accept",
+				Value: fmt.Sprintf(
+					"application/vnd.coreos.ignition+json;version=%d.%d.%d, */*;q=0.1",
+					ver.Major, ver.Minor, ver.Patch,
+				),
+			},
+		)
+	} else {
+		headers = append(headers,
+			httpHeader{
+				Name:  "Accept",
+				Value: "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1",
+			},
+		)
+	}
+	return headers
+}
+
+// GetIgntionFromMCS reads from the insecure port to get the Ignition Configuration.
+func GetIgntionFromMCS(cs *framework.ClientSet, ignVersion *semver.Version, poolName string) ([]byte, error) {
+	var url string
+	var err error
+
+	errChan := make(chan error, 1)
+	urlGet := func() <-chan string {
+		ret := make(chan string, 1)
+		go func() {
+			for {
+				listOptions := metav1.ListOptions{
+					LabelSelector: labels.SelectorFromSet(
+						labels.Set{
+							"k8s-app": "machine-config-server",
+						},
+					).String(),
+				}
+
+				// Locate a machine config server endpoint
+				services, err := cs.Services("openshift-machine-config-operator").List(context.TODO(), listOptions)
+				if err != nil {
+					errChan <- err
+					continue
+				}
+
+				// Use the first endpoint
+				// Unable to use server.Insecure port for the port name due to an import cycle
+				for _, service := range services.Items {
+					if service.Name != "machine-config-server" {
+						continue
+					}
+					if service.Spec.ClusterIP != "" {
+						ret <- fmt.Sprintf("http://%s:22624/config/%s", service.Spec.ClusterIP, poolName)
+						errChan <- nil
+						// Bail the go-routine
+						return
+					}
+				}
+			}
+		}()
+		return ret
+	}
+
+	// Wait for either a minute or when we have an URL
+	select {
+	case <-time.After(60 * time.Second):
+		errTimeOut := errors.New("timed out waiting on machine config server")
+		select {
+		case err := <-errChan:
+			return nil, fmt.Errorf("%w: %v", errTimeOut, err)
+		default:
+			return nil, errTimeOut
+		}
+	case u := <-urlGet():
+		if u != "" {
+			url = u
+		}
+	}
+
+	// Read the endpoint
+	client, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Body.Close()
+
+	for _, header := range fakeIgnitionHeaders(ignVersion) {
+		client.Header.Add(header.Name, header.Value)
+	}
+
+	return ioutil.ReadAll(client.Body)
 }

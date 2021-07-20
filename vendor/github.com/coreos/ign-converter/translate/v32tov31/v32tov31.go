@@ -95,6 +95,7 @@ func translateConfig(old old_types.Config) (ret types.Config) {
 	tr.Translate(&old, &ret)
 	return
 }
+
 // end copied Ignition v3_2/translate block
 
 // Translate translates Ignition spec config v3.2 to spec v3.1
@@ -133,7 +134,7 @@ func Translate(cfg old_types.Config) (types.Config, error) {
 	res := translateConfig(cfg)
 
 	// Sanity check the returned config
-	oldrpt := validate.ValidateWithContext(cfg, nil)
+	oldrpt := validate.ValidateWithContext(res, nil)
 	if oldrpt.IsFatal() {
 		return types.Config{}, fmt.Errorf("Converted spec has unexpected fatal error:\n%s", oldrpt.String())
 	}

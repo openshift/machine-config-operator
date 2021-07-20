@@ -134,20 +134,37 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	// we know we're at 3.2 in code.. serve directly, parsing is expensive...
-	// we're doing it during an HTTP request, and most notably before we write the HTTP headers
+
 	var serveConf *runtime.RawExtension
-	if reqConfigVer.Equal(*semver.New("3.2.0")) {
+	if reqConfigVer.Equal(*semver.New("3.3.0")) {
+		// If the config version is greater or equal to 3.3.0 we can add the kargs from the
+		// MachineConfig into the returned config
+		kargs, err := sh.server.GetKernelArguments(cr)
+		if err != nil {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't get kernel arguments for v3.3.0 req: %v, error: %v", cr, err)
+			return
+		}
+		if err := ctrlcommon.AddV33IgnitionKernelArguments(conf, kargs); err != nil {
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			glog.Errorf("couldn't modify config kernel arguments for v3.3.0 req: %v, error: %v", cr, err)
+			return
+		}
+		serveConf = conf
+	} else if !reqConfigVer.LessThan(*semver.New("3.2.0")) {
+		// We know we're at 3.2 (3.3 if kargs are specified and the reqConfigVer >= 3.3)
+		// Since parsing is expensive, serve the existing config directly.
 		serveConf = conf
 	} else if reqConfigVer.Equal(*semver.New("3.1.0")) {
 		converted31, err := ctrlcommon.ConvertRawExtIgnitionToV3_1(conf)
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			glog.Errorf("couldn't convert config for req v3.1.0: %v, error: %v", cr, err)
 			return
 		}
-
 		serveConf = &converted31
 	} else {
 		// Can only be 2.2 here
@@ -155,10 +172,9 @@ func (sh *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.Header().Set("Content-Length", "0")
 			w.WriteHeader(http.StatusInternalServerError)
-			glog.Errorf("couldn't convert config for req: %v, error: %v", cr, err)
+			glog.Errorf("couldn't convert config for req v2.2: %v, error: %v", cr, err)
 			return
 		}
-
 		serveConf = &converted2
 	}
 
@@ -277,6 +293,7 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 	v2_2 := semver.New("2.2.0")
 	v3_1 := semver.New("3.1.0")
 	v3_2 := semver.New("3.2.0")
+	v3_3 := semver.New("3.3.0")
 
 	var ignVersionError error
 	headers, err := parseAcceptHeader(acceptHeader)
@@ -287,7 +304,9 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 
 	for _, header := range headers {
 		if header.MIMESubtype == "vnd.coreos.ignition+json" && header.SemVer != nil {
-			if !header.SemVer.LessThan(*v3_2) && header.SemVer.LessThan(*semver.New("4.0.0")) {
+			if !header.SemVer.LessThan(*v3_3) && header.SemVer.LessThan(*semver.New("4.0.0")) {
+				return v3_3, nil
+			} else if !header.SemVer.LessThan(*v3_2) && header.SemVer.LessThan(*v3_3) {
 				return v3_2, nil
 			} else if !header.SemVer.LessThan(*v3_1) && header.SemVer.LessThan(*v3_2) {
 				return v3_1, nil

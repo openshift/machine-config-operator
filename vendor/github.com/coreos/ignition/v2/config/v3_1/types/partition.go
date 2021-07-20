@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/coreos/ignition/v2/config/shared/errors"
+	"github.com/coreos/ignition/v2/config/util"
 
 	"github.com/coreos/vcontext/path"
 	"github.com/coreos/vcontext/report"
@@ -36,14 +37,16 @@ var (
 func (p Partition) Key() string {
 	if p.Number != 0 {
 		return fmt.Sprintf("number:%d", p.Number)
-	} else {
+	} else if p.Label != nil {
 		return fmt.Sprintf("label:%s", *p.Label)
+	} else {
+		return ""
 	}
 }
 
 func (p Partition) Validate(c path.ContextPath) (r report.Report) {
-	if p.ShouldExist != nil && !*p.ShouldExist &&
-		(p.Label != nil || (p.TypeGUID != nil && *p.TypeGUID != "") || (p.GUID != nil && *p.GUID != "") || p.StartMiB != nil || p.SizeMiB != nil) {
+	if util.IsFalse(p.ShouldExist) &&
+		(p.Label != nil || util.NotEmpty(p.TypeGUID) || util.NotEmpty(p.GUID) || p.StartMiB != nil || p.SizeMiB != nil) {
 		r.AddOnError(c, errors.ErrShouldNotExistWithOthers)
 	}
 	if p.Number == 0 && p.Label == nil {
