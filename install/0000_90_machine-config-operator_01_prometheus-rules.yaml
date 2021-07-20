@@ -57,3 +57,23 @@ spec:
             severity: warning
           annotations:
             message: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 90% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
+    - name: containers-oom-killed-warning
+      rules:
+        - alert: ContainersOOMKilledWarning
+          expr: |
+            sum by (node) (container_runtime_crio_containers_oom_total) > 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            message: "{{ $value | humanize }} containers have been killed on {{ $labels.node }} because they ran out of memory (OOM). Please make sure to limit the memory for the containers to not overcommit the node or try to reduce the total number of pods per node."
+    - name: containers-oom-killed-critical
+      rules:
+        - alert: ContainersOOMKilledCritical
+          expr: |
+            sum by (node) (container_runtime_crio_containers_oom_total) > 5
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            message: "{{ $value | humanize }} containers have been killed on {{ $labels.node }} because they ran out of memory (OOM). Please make sure to limit the memory for the containers to not overcommit the node or try to reduce the total number of pods per node."
