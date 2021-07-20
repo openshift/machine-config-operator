@@ -214,6 +214,7 @@ func setV3_2AcceptHeaderOnReq(req *http.Request) *http.Request {
 func setV3_3AcceptHeaderOnReq(req *http.Request) *http.Request {
 	return setV3_XAcceptHeaderOnReq(req, 2)
 }
+
 func TestAPIHandler(t *testing.T) {
 	scenarios := []scenario{
 		{
