@@ -14,12 +14,16 @@ contents:
         script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
         interval 1
         weight 20
+        rise 3
+        fall 2
     }
 
     vrrp_script chk_default_ingress {
         script "/usr/bin/timeout 4.9 /host/bin/oc --kubeconfig /var/lib/kubelet/kubeconfig get ep -n openshift-ingress router-internal-default -o yaml  | grep 'ip:' | grep {{`{{.NonVirtualIP}}`}} "
         interval 5
         weight 50
+        rise 3
+        fall 2
     }
 
     {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
