@@ -28,14 +28,16 @@ require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golangci/golangci-lint v1.18.0
-	github.com/google/go-cmp v0.5.2
+	github.com/google/go-cmp v0.5.6
+	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/renameio v0.1.0
 	github.com/gostaticanalysis/analysisutil v0.0.3 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.9
+	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
+	github.com/openshift/api v0.0.0-20210720160326-96bb0f993a66
 	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
 	github.com/openshift/library-go v0.0.0-20210702104503-39570b4a2ae8
 	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
@@ -49,16 +51,18 @@ require (
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
-	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
+	golang.org/x/net v0.0.0-20210716203947-853a461950ff
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
-	k8s.io/api v0.21.1
+	k8s.io/api v0.21.3
 	k8s.io/apiextensions-apiserver v0.21.1
-	k8s.io/apimachinery v0.21.1
+	k8s.io/apimachinery v0.21.3
 	k8s.io/client-go v0.21.1
 	k8s.io/code-generator v0.21.1
+	k8s.io/klog/v2 v2.10.0 // indirect
 	k8s.io/kubectl v0.21.0-rc.0
 	k8s.io/kubelet v0.21.0-rc.0
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
+	sigs.k8s.io/structured-merge-diff/v4 v4.1.2 // indirect
 )
 
 replace (
@@ -93,3 +97,7 @@ replace (
 	k8s.io/metrics => k8s.io/metrics v0.21.0-rc.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.21.0-rc.0
 )
+
+// Workaround to deal with https://github.com/kubernetes/klog/issues/253
+// Should be deleted when https://github.com/kubernetes/klog/pull/242 is merged
+exclude github.com/go-logr/logr v1.0.0
