@@ -255,6 +255,10 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	}
 	spec.AdditionalTrustBundle = trustBundle
 
+	if err := mcfgv1.ProxyPullTest(&proxy.Status); err != nil {
+		return err
+	}
+
 	if err := optr.syncCloudConfig(spec, infra); err != nil {
 		return err
 	}

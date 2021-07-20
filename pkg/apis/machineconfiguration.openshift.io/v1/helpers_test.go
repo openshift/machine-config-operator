@@ -3,9 +3,11 @@ package v1
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -178,4 +180,15 @@ func TestIsControllerConfigCompleted(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPodmanPullUseProxy tests the proxyPullTestImage can be pulled by podman successfully
+// This does not test the proxy
+func TestPodmanPullUseProxy(t *testing.T) {
+	_, err := exec.LookPath("podman")
+	if err != nil {
+		t.Skip("skipping test since podman does not available.")
+	}
+	err = podmanPullUseProxy(proxyPullTestImage, "", "")
+	require.NoError(t, err)
 }

@@ -133,6 +133,10 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, rconfigs...)
 
+	if err := mcfgv1.ProxyPullTest(cconfig.Spec.Proxy); err != nil {
+		return err
+	}
+
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {
 		return err
