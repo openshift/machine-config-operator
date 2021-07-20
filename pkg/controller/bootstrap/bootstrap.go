@@ -21,6 +21,7 @@ import (
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
+	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 )
@@ -46,6 +47,7 @@ func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 
 // Run runs boostrap for Machine Config Controller
 // It writes all the assets to destDir
+// nolint:gocyclo
 func (b *Bootstrap) Run(destDir string) error {
 	infos, err := ioutil.ReadDir(b.manifestDir)
 	if err != nil {
@@ -70,6 +72,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	decoder := codecFactory.UniversalDecoder(mcfgv1.GroupVersion, apioperatorsv1alpha1.GroupVersion, apicfgv1.GroupVersion)
 
 	var cconfig *mcfgv1.ControllerConfig
+	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
@@ -108,6 +111,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				configs = append(configs, obj)
 			case *mcfgv1.ControllerConfig:
 				cconfig = obj
+			case *mcfgv1.KubeletConfig:
+				kconfigs = append(kconfigs, obj)
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 				icspRules = append(icspRules, obj)
 			case *apicfgv1.Image:
@@ -131,7 +136,16 @@ func (b *Bootstrap) Run(destDir string) error {
 	if err != nil {
 		return err
 	}
+
 	configs = append(configs, rconfigs...)
+
+	if len(kconfigs) != 0 {
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, pools)
+		if err != nil {
+			return err
+		}
+		configs = append(configs, kconfigs...)
+	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
 	if err != nil {

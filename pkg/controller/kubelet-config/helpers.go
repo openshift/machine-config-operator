@@ -212,6 +212,10 @@ func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string
 	return fmt.Sprintf("99-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
 }
 
+func getManagedKeyKubelet(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+}
+
 // validates a KubeletConfig and returns an error if invalid
 // nolint:gocyclo
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
