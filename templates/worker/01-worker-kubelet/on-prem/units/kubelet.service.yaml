@@ -12,6 +12,7 @@ contents: |
   Type=notify
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
+  Environment="KUBELET_NODE_LABELS=node-role.kubernetes.io/worker"
   EnvironmentFile=/etc/os-release
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
@@ -25,13 +26,14 @@ contents: |
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
         --runtime-cgroups=/system.slice/crio.service \
-        --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
+        --address=${KUBELET_NODE_IP} \
 {{- if eq .IPFamilies "DualStack"}}
         --node-ip=${KUBELET_NODE_IPS} \
 {{- else}}
         --node-ip=${KUBELET_NODE_IP} \
 {{- end}}
-        --address=${KUBELET_NODE_IP} \
+        --node-labels=node.openshift.io/os_id=${ID},${KUBELET_NODE_LABELS} \
+        --register-with-taints=${KUBELET_NODE_TAINTS} \
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
