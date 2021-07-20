@@ -91,6 +91,36 @@ func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	}
 }
 
+func createNewSysctlIgnition() *ign3types.File {
+	sysctlData := `
+# kubelet expects the following defaults when protectKernelDefaults is enabled
+vm.overcommit_memory=1
+vm.panic_on_oom=0
+kernel.panic=10
+kernel.panic_on_oops=1
+kernel.keys.root_maxkeys=1000000
+kernel.keys.root_maxbytes=25000000
+`
+	mode := 0644
+	overwrite := true
+	du := dataurl.New([]byte(sysctlData), "text/plain")
+	du.Encoding = dataurl.EncodingASCII
+	duStr := du.String()
+
+	return &ign3types.File{
+		Node: ign3types.Node{
+			Path:      "/etc/sysctl.d/10-default-kubelet-sysctls.conf",
+			Overwrite: &overwrite,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Mode: &mode,
+			Contents: ign3types.Resource{
+				Source: &(duStr),
+			},
+		},
+	}
+}
+
 func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
 	// Want the kubelet.conf file to have the pretty JSON formatting
 	buf := new(bytes.Buffer)

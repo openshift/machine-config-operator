@@ -353,6 +353,7 @@ type KubeletConfig struct {
 type KubeletConfigSpec struct {
 	AutoSizingReserved        *bool                 `json:"autoSizingReserved,omitempty"`
 	LogLevel                  *int32                `json:"logLevel,omitempty"`
+	ProtectKernelDefaults     *bool                 `json:"protectKernelDefaults,omitempty"`
 	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
 	KubeletConfig             *runtime.RawExtension `json:"kubeletConfig,omitempty"`
 
