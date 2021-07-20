@@ -19,6 +19,8 @@ import (
 )
 
 const (
+	// Addr is the default bind address for the server to run
+	BindAddr = "0.0.0.0"
 	// SecurePort is the tls secured port to serve ignition configs
 	SecurePort = 22623
 	// InsecurePort is the port to serve ignition configs w/o tls
@@ -33,6 +35,7 @@ type poolRequest struct {
 // APIServer provides the HTTP(s) endpoint
 // for providing the machine configs.
 type APIServer struct {
+	bindAddr string
 	handler  http.Handler
 	port     int
 	insecure bool
@@ -43,13 +46,14 @@ type APIServer struct {
 // NewAPIServer initializes a new API server
 // that runs the Machine Config Server as a
 // handler.
-func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
+func NewAPIServer(a *APIHandler, bindAddr string, p int, is bool, c, k string) *APIServer {
 	mux := http.NewServeMux()
 	mux.Handle("/config/", a)
 	mux.Handle("/healthz", &healthHandler{})
 	mux.Handle("/", &defaultHandler{})
 
 	return &APIServer{
+		bindAddr: bindAddr,
 		handler:  mux,
 		port:     p,
 		insecure: is,
@@ -60,7 +64,7 @@ func NewAPIServer(a *APIHandler, p int, is bool, c, k string) *APIServer {
 
 // Serve launches the API Server.
 func (a *APIServer) Serve() {
-	mcs := getHTTPServerCfg(fmt.Sprintf(":%v", a.port), a.handler)
+	mcs := getHTTPServerCfg(fmt.Sprintf("%s:%v", a.bindAddr, a.port), a.handler)
 
 	glog.Infof("Launching server on %s", mcs.Addr)
 	if a.insecure {

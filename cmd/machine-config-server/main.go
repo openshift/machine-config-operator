@@ -20,15 +20,17 @@ var (
 	}
 
 	rootOpts struct {
-		sport  int
-		isport int
-		cert   string
-		key    string
+		BindAddr string
+		sport    int
+		isport   int
+		cert     string
+		key      string
 	}
 )
 
 func init() {
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
+	rootCmd.PersistentFlags().StringVar(&rootOpts.BindAddr, "bind-address", server.BindAddr, "the bind address for the server to run")
 	rootCmd.PersistentFlags().IntVar(&rootOpts.sport, "secure-port", server.SecurePort, "secure port to serve ignition configs")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.cert, "cert", "/etc/ssl/mcs/tls.crt", "cert file for TLS")
 	rootCmd.PersistentFlags().StringVar(&rootOpts.key, "key", "/etc/ssl/mcs/tls.key", "key file for TLS")
