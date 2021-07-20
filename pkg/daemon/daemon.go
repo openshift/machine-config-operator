@@ -8,6 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	clientretry "k8s.io/client-go/util/retry"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1290,10 +1294,65 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return err
 	}
 
+	if err := dn.removeUpdateInProgressTaint(); err != nil {
+		return err
+	}
+
 	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
+}
+
+func (dn *Daemon) removeUpdateInProgressTaint() error {
+	// TODO: Move these 2 vars to common location to be shared with
+	var (
+		nodeUpdateBackoff = wait.Backoff{
+			Steps:    5,
+			Duration: 100 * time.Millisecond,
+			Jitter:   1.0,
+		}
+		// NodeUpdateTaint is a taint applied by MCC when the update of node starts.
+		NodeUpdateTaint = &corev1.Taint{
+			Key:    "UpdateInProgress",
+			Effect: corev1.TaintEffectPreferNoSchedule,
+		}
+	)
+	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
+		oldNode, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+		if newNode.Spec.Taints == nil {
+			newNode.Spec.Taints = []corev1.Taint{}
+		}
+
+		taintIndex := 0
+		for i, taint := range newNode.Spec.Taints {
+			if taint.MatchTaint(NodeUpdateTaint) {
+				taintIndex = i
+			}
+		}
+
+		newNode.Spec.Taints = append(newNode.Spec.Taints[:taintIndex], newNode.Spec.Taints[taintIndex+1:]...)
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", dn.name, err)
+		}
+		_, err = dn.kubeClient.CoreV1().Nodes().Patch(context.TODO(), dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	})
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for

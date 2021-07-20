@@ -65,11 +65,18 @@ const (
 	masterPoolName = "master"
 )
 
-var nodeUpdateBackoff = wait.Backoff{
-	Steps:    5,
-	Duration: 100 * time.Millisecond,
-	Jitter:   1.0,
-}
+var (
+	nodeUpdateBackoff = wait.Backoff{
+		Steps:    5,
+		Duration: 100 * time.Millisecond,
+		Jitter:   1.0,
+	}
+	// NodeUpdateTaint is a taint applied by MCC when the update of node starts.
+	NodeUpdateTaint = &corev1.Taint{
+		Key:    "UpdateInProgress",
+		Effect: corev1.TaintEffectPreferNoSchedule,
+	}
+)
 
 // Controller defines the node controller.
 type Controller struct {
@@ -486,6 +493,10 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		}
 		if !reflect.DeepEqual(oldNode.Labels, curNode.Labels) {
 			ctrl.logPoolNode(pool, curNode, "changed labels")
+			changed = true
+		}
+		if !reflect.DeepEqual(oldNode.Spec.Taints, curNode.Spec.Taints) {
+			ctrl.logPoolNode(pool, curNode, "changed taints")
 			changed = true
 		}
 	}
@@ -963,6 +974,10 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, targetConfig); err != nil {
 			return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
 		}
+		ctrl.logPool(pool, "Apply UpdateInProgress taint %s target to %s", node.Name, targetConfig)
+		if err := ctrl.setUpdateInProgressTaint(node.Name); err != nil {
+			return goerrs.Wrapf(err, "failed applying updateinprogress taint for node %s", node.Name)
+		}
 	}
 	if len(candidates) == 1 {
 		candidate := candidates[0]
@@ -971,6 +986,47 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Set target for %d nodes to config %s", targetConfig)
 	}
 	return nil
+}
+
+// setUpdateInPrgressTaint applies in progress taint to all the nodes that are to be updated.
+// The taint on the individual node is removed by MCD once the update of the node is complete.
+// This is to ensure that the updated nodes are being preferred to non-updated nodes there by
+// reducing the number of reschedules.
+func (ctrl *Controller) setUpdateInProgressTaint(nodeName string) error {
+	return clientretry.RetryOnConflict(nodeUpdateBackoff, func() error {
+		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+		if newNode.Spec.Taints == nil {
+			newNode.Spec.Taints = []corev1.Taint{}
+		}
+
+		for _, taint := range newNode.Spec.Taints {
+			if taint.MatchTaint(NodeUpdateTaint) {
+				return nil
+			}
+		}
+
+		newNode.Spec.Taints = append(newNode.Spec.Taints, *NodeUpdateTaint)
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+		}
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	})
 }
 
 func maxUnavailable(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) (int, error) {
