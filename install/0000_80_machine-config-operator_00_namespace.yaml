@@ -16,7 +16,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: openshift-openstack-infra
+  name: openshift-on-prem-infra
   annotations:
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
@@ -24,43 +24,4 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-openstack-infra
-    openshift.io/run-level: "1"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: openshift-kni-infra
-  annotations:
-    include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
-    openshift.io/node-selector: ""
-    workload.openshift.io/allowed: "management"
-  labels:
-    name: openshift-kni-infra
-    openshift.io/run-level: "1"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: openshift-ovirt-infra
-  annotations:
-    include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
-    openshift.io/node-selector: ""
-    workload.openshift.io/allowed: "management"
-  labels:
-    name: openshift-ovirt-infra
-    openshift.io/run-level: "1"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: openshift-vsphere-infra
-  annotations:
-    include.release.openshift.io/self-managed-high-availability: "true"
-    include.release.openshift.io/single-node-developer: "true"
-    openshift.io/node-selector: ""
-    workload.openshift.io/allowed: "management"
-  labels:
-    name: openshift-vsphere-infra
     openshift.io/run-level: "1"

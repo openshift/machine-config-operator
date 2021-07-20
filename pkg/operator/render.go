@@ -183,20 +183,7 @@ func (rc renderConfig) GenerateProxyCookieSecret() string {
 
 func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 	if cfg.Infra.Status.PlatformStatus != nil {
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
-			return "kni"
-		case configv1.OvirtPlatformType:
-			return "ovirt"
-		case configv1.OpenStackPlatformType:
-			return "openstack"
-		case configv1.VSpherePlatformType:
-			return "vsphere"
-		case configv1.KubevirtPlatformType:
-			return "kubevirt"
-		default:
-			return ""
-		}
+		return "on-prem"
 	} else {
 		return ""
 	}
