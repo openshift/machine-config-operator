@@ -34,6 +34,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.9
+	github.com/nightlyone/lockfile v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
 	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142

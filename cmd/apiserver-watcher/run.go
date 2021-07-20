@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
 	health "github.com/InVisionApp/go-health"
 	"github.com/InVisionApp/go-health/checkers"
 	"github.com/golang/glog"
+	"github.com/nightlyone/lockfile"
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
@@ -40,6 +42,10 @@ var (
 // indicates the route to the VIP should be withdrawn.
 const downFileDir = "/run/cloud-routes"
 
+// try to get the lock for 5 minutes
+const lockRetries = 30
+const lockRetryInterval = 10 * time.Second
+
 func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.PersistentFlags().StringVar(&runOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for writing down files or chrooting.")
@@ -48,6 +54,8 @@ func init() {
 
 type handler struct {
 	vips []string
+
+	lockfile lockfile.Lockfile
 }
 
 func runRunCmd(cmd *cobra.Command, args []string) error {
@@ -65,8 +73,12 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid URI %q (no scheme)", uri)
 	}
 
-	handler, err := newHandler(uri)
+	handler, err := newHandler(uri, filepath.Join(runOpts.rootMount, downFileDir, "apiserver-watcher.lock"))
 	if err != nil {
+		return err
+	}
+
+	if err := handler.getLock(); err != nil {
 		return err
 	}
 
@@ -122,6 +134,9 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 			if err := handler.onFailure(); err != nil {
 				glog.Infof("Failed to mark service down on signal: %s", err)
 			}
+			if err := handler.lockfile.Unlock(); err != nil {
+				glog.Warningf("Failed to relase lockfile: %v", err)
+			}
 			os.Exit(0)
 		}
 	}()
@@ -136,7 +151,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func newHandler(uri *url.URL) (*handler, error) {
+func newHandler(uri *url.URL, lockpath string) (*handler, error) {
 	addrs, err := net.LookupHost(uri.Hostname())
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup host %s: %v", uri.Hostname(), err)
@@ -149,7 +164,37 @@ func newHandler(uri *url.URL) (*handler, error) {
 		vips: addrs,
 	}
 	glog.Infof("Using VIPs %v", h.vips)
+
+	if err := os.MkdirAll(filepath.Dir(lockpath), 0755); err != nil {
+		return nil, fmt.Errorf("could not create run directory %s: %w", filepath.Dir(lockpath), err)
+	}
+
+	h.lockfile, err = lockfile.New(lockpath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize (not lock) lockfile %s: %w", lockpath, err)
+	}
 	return &h, nil
+}
+
+// getLock returns when we obtain the file lock
+func (h *handler) getLock() error {
+	for retries := lockRetries; retries > 0; retries-- {
+		err := h.lockfile.TryLock()
+		if err != nil {
+			if te, ok := err.(interface{ Temporary() bool }); ok {
+				glog.Warningf("Failed to obtain lock at %s: %v, retrying...", h.lockfile, te)
+				time.Sleep(lockRetryInterval)
+			} else {
+				return fmt.Errorf("could not get lockfile: %w", err)
+			}
+
+		} else {
+			glog.Infof("Wrote lockfile at %s", h.lockfile)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("timed out getting lockfile at %s", h.lockfile)
 }
 
 // onFailure: either stop the routes service, or write downfile
