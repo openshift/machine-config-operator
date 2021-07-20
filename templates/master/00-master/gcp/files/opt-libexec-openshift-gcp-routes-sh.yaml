@@ -27,7 +27,21 @@ contents:
     declare -A vips
 
     curler() {
-      curl --silent -L -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/${1}"
+      # if the curl succeeds, write the body to stdout for the caller
+      # to consume.
+      #
+      # if the curl fails, write the body to stderr so its in the
+      # logs, but do not write anything to stdout.  The loop that the
+      # curler call was feeding will bail with no results, and we'll
+      # come back in on the next loop and try again.
+      RESPONSE="$(curl --silent --show-error -L -H "Metadata-Flavor: Google" -w '\n%{response_code}' "http://metadata.google.internal/computeMetadata/v1/instance/${1}")" &&
+        RESPONSE_CODE="$(echo "${RESPONSE}" | tail -n 1)" &&
+        BODY="$(echo "${RESPONSE}" | head -n -1)" &&
+        if test 0 -eq "${RESPONSE_CODE}" -o 400 -le "${RESPONSE_CODE}"; then
+          printf "%s" "${BODY}" >&2
+        else
+          printf "%s" "${BODY}"
+        fi
     }
 
     CHAIN_NAME="gcp-vips"
