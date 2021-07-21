@@ -95,15 +95,15 @@ func TestE2EBootstrap(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := []struct {
-		name            string
-		manifests       [][]byte
-		waitForMasterMC string
-		waitForWorkerMC string
+		name             string
+		manifests        [][]byte
+		waitForMasterMCs []string
+		waitForWorkerMCs []string
 	}{
 		{
-			name:            "With no additional manifests",
-			waitForMasterMC: "99-master-ssh",
-			waitForWorkerMC: "99-worker-ssh",
+			name:             "With no additional manifests",
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
 		},
 		{
 			name: "With a featuregate manifest",
@@ -115,8 +115,8 @@ metadata:
 spec:
   featureSet: TechPreviewNoUpgrade`),
 			},
-			waitForMasterMC: "98-master-generated-kubelet",
-			waitForWorkerMC: "98-worker-generated-kubelet",
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
 	}
 
@@ -131,11 +131,11 @@ spec:
 			defer fixture.stop()
 
 			// Fetch the controller rendered configurations
-			controllerRenderedMasterConfigName, err := helpers.WaitForRenderedConfig(t, clientSet, "master", tc.waitForMasterMC)
+			controllerRenderedMasterConfigName, err := helpers.WaitForRenderedConfigs(t, clientSet, "master", tc.waitForMasterMCs...)
 			require.NoError(t, err)
 			t.Logf("Controller rendered master config as %q", controllerRenderedMasterConfigName)
 
-			controllerRenderedWorkerConfigName, err := helpers.WaitForRenderedConfig(t, clientSet, "worker", tc.waitForWorkerMC)
+			controllerRenderedWorkerConfigName, err := helpers.WaitForRenderedConfigs(t, clientSet, "worker", tc.waitForWorkerMCs...)
 			require.NoError(t, err)
 			t.Logf("Controller rendered worker config as %q", controllerRenderedWorkerConfigName)
 
