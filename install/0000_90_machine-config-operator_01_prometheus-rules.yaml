@@ -67,14 +67,3 @@ spec:
             severity: warning
           annotations:
             message: "Memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 90%. Master nodes starved of memory could result in degraded performance of the control plane."
-    - name: master-nodes-high-cpu-usage
-      rules:
-        - alert: MasterNodesHighCPUUsage
-          expr: |
-            sum(node_load1 AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )) > (count(node_load1 AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )) * 2)
-          for: 15m
-          labels:
-            severity: warning
-          annotations:
-            message: "Cumulative load of {{ $value | humanize }} on {{ $labels.node }} is very high. Master nodes starved of cpu could result in degraded performance of the control plane."
-
