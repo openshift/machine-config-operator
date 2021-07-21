@@ -30,6 +30,7 @@ contents: |
         --housekeeping-interval=30s \
         --max-housekeeping-interval=60s \
         --runtime-cgroups=/system.slice/crio.service \
+        --runtime-request-timeout=3m \
         --node-labels=node-role.kubernetes.io/worker,node.openshift.io/os_id=${ID} \
 {{- if eq .IPFamilies "DualStack"}}
         --node-ip=${KUBELET_NODE_IPS} \
