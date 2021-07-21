@@ -118,6 +118,62 @@ spec:
 			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
+		{
+			name: "With a featuregate manifest and master kubelet config manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: FeatureGate
+metadata:
+  name: cluster
+spec:
+  featureSet: TechPreviewNoUpgrade`),
+				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: master-kubelet-config
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ""
+  kubeletConfig:
+    podsPerCore: 10
+    maxPods: 250
+    systemReserved:
+      cpu: 1000m
+      memory: 500Mi
+    kubeReserved:
+      cpu: 1000m
+      memory: 500Mi
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+		},
+		{
+			name: "With a worker kubelet config manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: worker-kubelet-config
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  kubeletConfig:
+    podsPerCore: 10
+    maxPods: 250
+    systemReserved:
+      cpu: 1000m
+      memory: 500Mi
+    kubeReserved:
+      cpu: 1000m
+      memory: 500Mi
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
+		},
 	}
 
 	for _, tc := range testCases {
