@@ -3,12 +3,15 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"testing"
 	"time"
 
+	"github.com/coreos/go-semver/semver"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/framework"
@@ -260,4 +263,80 @@ func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error)
 		return nil, fmt.Errorf("too many (%d) MCDs for node %s", len(mcdList.Items), node.Name)
 	}
 	return &mcdList.Items[0], nil
+}
+
+type httpHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+}
+
+// fakeIgnitionHeader returns a header suitable for mocking an Ignition Client
+func fakeIgnitionHeaders(ver *semver.Version) []httpHeader {
+	headers := []httpHeader{
+		{
+			Name:  "Accept-Encoding",
+			Value: "identity",
+		},
+		{
+			Name:  "User-Agent",
+			Value: fmt.Sprintf("mock-Ignition/%s", ver.String()),
+		},
+	}
+	if ver.Major >= 3 {
+		headers = append(headers,
+			httpHeader{
+				Name: "Accept",
+				Value: fmt.Sprintf(
+					"application/vnd.coreos.ignition+json;version=%d.%d.%d, */*;q=0.1",
+					ver.Major, ver.Minor, ver.Patch,
+				),
+			},
+		)
+	} else {
+		headers = append(headers,
+			httpHeader{
+				Name:  "Accept",
+				Value: "application/vnd.coreos.ignition+json; version=2.4.0, application/vnd.coreos.ignition+json; version=1; q=0.5, */*; q=0.1",
+			},
+		)
+	}
+	return headers
+}
+
+// GetIgntionFromMCS reads from the insecure port to get the Ignition Configuration.
+func GetIgntionFromMCS(cs *framework.ClientSet, t *testing.T, ignVersion *semver.Version, poolName string) ([]byte, error) {
+	pods, err := cs.Pods("openshift-machine-config-operator").Get(context.TODO(), "machine-config-server", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Iterate over the containers and select the first one that responds
+	for _, containers := range pods.Spec.Containers {
+		t.Logf("Checking container %s for machine config server", containers.Name)
+		for _, endpoint := range containers.Ports {
+			url := fmt.Sprintf("http://%s:22624/config/%s", endpoint.HostIP, poolName)
+
+			// Read the endpoint
+			t.Logf("  - checking %s for pool configuration", url)
+			client, err := http.Get(url)
+			if err != nil {
+				t.Logf("    error: %v", err)
+				continue
+			}
+			defer client.Body.Close()
+			for _, header := range fakeIgnitionHeaders(ignVersion) {
+				client.Header.Add(header.Name, header.Value)
+			}
+
+			data, err := ioutil.ReadAll(client.Body)
+			if err == nil {
+				t.Logf("  - returning response from %s", url)
+				return data, nil
+			}
+			t.Logf("    error: %v", err)
+		}
+	}
+
+	t.Log("  - failed to find a machine config server to query")
+	return nil, fmt.Errorf("failed to find a machine-config-server to query")
 }
