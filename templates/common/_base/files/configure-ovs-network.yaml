@@ -4,7 +4,6 @@ contents:
   inline: |
     #!/bin/bash
     set -eux
-
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
@@ -17,10 +16,7 @@ contents:
       NM_CONN_PATH="$NM_CONN_UNDERLAY"
     fi
 
-    # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
-    MANAGED_NM_CONN_FILES=($(echo {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0} {br-ex,ovs-if-br-ex,ovs-port-br-ex,ovs-if-phys0,ovs-port-phys0}.nmconnection))
     MANAGED_NM_CONN_SUFFIX="-slave-ovs-clone"
-
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
@@ -51,6 +47,16 @@ contents:
           fi
         done
       fi
+    }
+    update_nm_conn_files() {
+      bridge_name=${1}
+      port_name=${2}
+      ovs_port="ovs-port-${bridge_name}"
+      ovs_interface="ovs-if-${bridge_name}"
+      default_port_name="ovs-port-${port_name}" # ovs-port-phys0
+      bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
+    # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
+      MANAGED_NM_CONN_FILES=($(echo {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"} {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}.nmconnection))
     }
 
     # Used to remove files managed by configure-ovs
@@ -104,74 +110,29 @@ contents:
         echo "Replaced master $old with $new for slave profile $new_uuid"
       done
     }
-    
-    if ! rpm -qa | grep -q openvswitch; then
-      echo "Warning: Openvswitch package is not installed!"
-      exit 1
-    fi
 
-    echo "Current routing and connection state:"
-    ip route show
-    nmcli c show
+    convert_to_bridge() {
+      iface=${1}
+      bridge_name=${2}
+      port_name=${3}
+      ovs_port="ovs-port-${bridge_name}"
+      ovs_interface="ovs-if-${bridge_name}"
+      default_port_name="ovs-port-${port_name}" # ovs-port-phys0
+      bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
 
-    if [ "$1" == "OVNKubernetes" ]; then
-      # Configures NICs onto OVS bridge "br-ex"
-      # Configuration is either auto-detected or provided through a config file written already in Network Manager
-      # key files under /etc/NetworkManager/system-connections/
-      # Managing key files is outside of the scope of this script
-
-      # if the interface is of type vmxnet3 add multicast capability for that driver
-      # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
-      function configure_driver_options {
-        intf=$1
-        if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
-          echo "Device file doesn't exist, skipping setting multicast mode"
-        else
-          driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
-          echo "Driver name is" $driver
-          if [ "$driver" = "vmxnet3" ]; then
-            ifconfig "$intf" allmulti
-          fi
-        fi
-      }
-
-      iface=""
-      counter=0
-      # find default interface
-      while [ $counter -lt 12 ]; do
-        # check ipv4
-        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -n "$iface" ]]; then
-          echo "IPv4 Default gateway interface found: ${iface}"
-          break
-        fi
-        # check ipv6
-        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -n "$iface" ]]; then
-          echo "IPv6 Default gateway interface found: ${iface}"
-          break
-        fi
-        counter=$((counter+1))
-        echo "No default route found on attempt: ${counter}"
-        sleep 5
-      done
-
-      if [ "$iface" = "br-ex" ]; then
+      if [ "$iface" = "$bridge_name" ]; then
         # handle vlans and bonds etc if they have already been
         # configured via nm key files and br-ex is already up
         ifaces=$(ovs-vsctl list-ifaces ${iface})
         for intf in $ifaces; do configure_driver_options $intf; done
-        echo "Networking already configured and up for br-ex!"
-        # remove bridges created by openshift-sdn
-        ovs-vsctl --timeout=30 --if-exists del-br br0
-        exit 0
+        echo "Networking already configured and up for ${bridge-name}!"
+        return
       fi
 
       if [ -z "$iface" ]; then
         echo "ERROR: Unable to find default gateway interface"
         exit 1
       fi
-
       # find the MAC from OVS config or the default interface to use for OVS internal port
       # this prevents us from getting a different DHCP lease and dropping connection
       if ! iface_mac=$(<"/sys/class/net/${iface}/address"); then
@@ -206,10 +167,10 @@ contents:
       fi
 
       # create bridge; use NM's ethernet device default route metric (100)
-      if ! nmcli connection show br-ex &> /dev/null; then
+      if ! nmcli connection show "$bridge_name" &> /dev/null; then
         nmcli c add type ovs-bridge \
-            con-name br-ex \
-            conn.interface br-ex \
+            con-name "$bridge_name" \
+            conn.interface "$bridge_name" \
             802-3-ethernet.mtu ${iface_mtu} \
             ipv4.route-metric 100 \
             ipv6.route-metric 100 \
@@ -217,12 +178,12 @@ contents:
       fi
 
       # find default port to add to bridge
-      if ! nmcli connection show ovs-port-phys0 &> /dev/null; then
-        nmcli c add type ovs-port conn.interface ${iface} master br-ex con-name ovs-port-phys0
+      if ! nmcli connection show "$default_port_name" &> /dev/null; then
+        nmcli c add type ovs-port conn.interface ${iface} master "$bridge_name" con-name "$default_port_name"
       fi
 
-      if ! nmcli connection show ovs-port-br-ex &> /dev/null; then
-        nmcli c add type ovs-port conn.interface br-ex master br-ex con-name ovs-port-br-ex
+      if ! nmcli connection show "$ovs_port" &> /dev/null; then
+        nmcli c add type ovs-port conn.interface "$bridge_name" master "$bridge_name" con-name "$ovs_port"
       fi
 
       extra_phys_args=()
@@ -260,13 +221,13 @@ contents:
       fi
 
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
-      if ! nmcli connection show ovs-if-phys0 &> /dev/null; then
-        nmcli c add type ${iface_type} conn.interface ${iface} master ovs-port-phys0 con-name ovs-if-phys0 \
+      if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
+        nmcli c add type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
         connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuid
-      new_conn=$(nmcli -g connection.uuid conn show ovs-if-phys0)
+      new_conn=$(nmcli -g connection.uuid conn show "$bridge_interface_name")
 
       # Setup an exit trap to restore any modifications going further
       handle_exit_error() {
@@ -285,9 +246,9 @@ contents:
       replace_connection_master $iface $new_conn
 
       # bring up new connection 
-      nmcli conn up ovs-if-phys0
+      nmcli conn up "$bridge_interface_name"
 
-      if ! nmcli connection show ovs-if-br-ex &> /dev/null; then
+      if ! nmcli connection show "$ovs_interface" &> /dev/null; then
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
           echo "Static IP addressing detected on default gateway connection: ${old_conn}"
           # find and copy the old connection to get the address settings
@@ -306,9 +267,9 @@ contents:
             echo "Successfully cloned conn to ${old_conn_file}"
           fi
           echo "old connection file found at: ${old_conn_file}"
-          new_conn_file=${NM_CONN_PATH}/ovs-if-br-ex.nmconnection
+          new_conn_file=${NM_CONN_PATH}/"$ovs_interface".nmconnection
           if [ -f "$new_conn_file" ]; then
-            echo "WARN: existing br-ex interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
+            echo "WARN: existing $bridge_name interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
           fi
           cp -f "${old_conn_file}" ${new_conn_file}
           restorecon ${new_conn_file}
@@ -316,19 +277,19 @@ contents:
             nmcli conn delete ${old_conn}-clone
             rm -f "${old_conn_file}"
           fi
-          ovs_port_conn=$(nmcli --fields connection.uuid conn show ovs-port-br-ex | awk '{print $2}')
+          ovs_port_conn=$(nmcli --fields connection.uuid conn show "$ovs_port" | awk '{print $2}')
           br_iface_uuid=$(cat /proc/sys/kernel/random/uuid)
           # modify file to work with OVS and have unique settings
           sed -i '/^\[connection\]$/,/^\[/ s/^uuid=.*$/uuid='"$br_iface_uuid"'/' ${new_conn_file}
           sed -i '/^multi-connect=.*$/d' ${new_conn_file}
           sed -i '/^\[connection\]$/,/^\[/ s/^type=.*$/type=ovs-interface/' ${new_conn_file}
-          sed -i '/^\[connection\]$/,/^\[/ s/^id=.*$/id=ovs-if-br-ex/' ${new_conn_file}
+          sed -i '/^\[connection\]$/,/^\[/ s/^id=.*$/id='"$ovs_interface"'/' ${new_conn_file}
           sed -i '/^\[connection\]$/a slave-type=ovs-port' ${new_conn_file}
           sed -i '/^\[connection\]$/a master='"$ovs_port_conn" ${new_conn_file}
           if grep 'interface-name=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[connection\]$/,/^\[/ s/^interface-name=.*$/interface-name=br-ex/' ${new_conn_file}
+            sed -i '/^\[connection\]$/,/^\[/ s/^interface-name=.*$/interface-name='"$bridge_name"'/' ${new_conn_file}
           else
-            sed -i '/^\[connection\]$/a interface-name=br-ex' ${new_conn_file}
+            sed -i '/^\[connection\]$/a interface-name='"$bridge_name" ${new_conn_file}
           fi
           if ! grep 'cloned-mac-address=' ${new_conn_file} &> /dev/null; then
             sed -i '/^\[ethernet\]$/a cloned-mac-address='"$iface_mac" ${new_conn_file}
@@ -345,52 +306,144 @@ contents:
     type=internal
     EOF
           nmcli c load ${new_conn_file}
-          echo "Loaded new ovs-if-br-ex connection file: ${new_conn_file}"
+          echo "Loaded new $ovs_interface connection file: ${new_conn_file}"
         else
-          nmcli c add type ovs-interface slave-type ovs-port conn.interface br-ex master ovs-port-br-ex con-name \
-            ovs-if-br-ex 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
+          nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
+            "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
             ipv4.route-metric 100 ipv6.route-metric 100
         fi
       fi
 
       # wait for DHCP to finish, verify connection is up
       counter=0
+      configured=false
+
       while [ $counter -lt 5 ]; do
         sleep 5
         # check if connection is active
-        if nmcli --fields GENERAL.STATE conn show ovs-if-br-ex | grep -i "activated"; then
+        if nmcli --fields GENERAL.STATE conn show "$ovs_interface" | grep -i "activated"; then
           echo "OVS successfully configured"
+          update_nm_conn_files "$bridge_name" "$port_name"
           copy_nm_conn_files
-          ip a show br-ex
+          ip a show "$bridge_name"
           ip route show
           nmcli c show
           configure_driver_options ${iface}
-          exit 0
+          configured=true
+          break
         fi
         counter=$((counter+1))
       done
+      if [ $configured != true ]; then
+        echo "WARN: OVS did not succesfully activate NM connection. Attempting to bring up connections"
+        counter=0
+        while [ $counter -lt 5 ]; do
+          if nmcli conn up "$ovs_interface"; then
+            echo "OVS successfully configured"
+            update_nm_conn_files "$bridge_name" "$port_name"
+            copy_nm_conn_files
+            ip a show "$bridge_name"
+            ip route show
+            nmcli c show
+            configure_driver_options ${iface}
+            configured=true
+            break
+          fi
+          sleep 5
+          counter=$((counter+1))
+        done
+      fi
+      if [ $configured != true ]; then
+        echo "ERROR: Failed to activate $ovs_interface NM connection"
+        exit 1
+      fi
+    }
 
-      echo "WARN: OVS did not succesfully activate NM connection. Attempting to bring up connections"
-      counter=0
-      while [ $counter -lt 5 ]; do
-        if nmcli conn up ovs-if-br-ex; then
-          echo "OVS successfully configured"
-          copy_nm_conn_files
-          ip a show br-ex
-          ip route show
-          nmcli c show
-          configure_driver_options ${iface}
-          exit 0
-        fi
-        sleep 5
-        counter=$((counter+1))
-      done
-
-      echo "ERROR: Failed to activate ovs-if-br-ex NM connection"
+    if ! rpm -qa | grep -q openvswitch; then
+      echo "Warning: Openvswitch package is not installed!"
       exit 1
+    fi
+
+    echo "Current routing and connection state:"
+    ip route show
+    nmcli c show
+
+    if [ "$1" == "OVNKubernetes" ]; then
+      # Configures NICs onto OVS bridge "br-ex"
+      # Configuration is either auto-detected or provided through a config file written already in Network Manager
+      # key files under /etc/NetworkManager/system-connections/
+      # Managing key files is outside of the scope of this script
+
+      # if the interface is of type vmxnet3 add multicast capability for that driver
+      # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
+      function configure_driver_options {
+        intf=$1
+        if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
+          echo "Device file doesn't exist, skipping setting multicast mode"
+        else
+          driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
+          echo "Driver name is" $driver
+          if [ "$driver" = "vmxnet3" ]; then
+            ifconfig "$intf" allmulti
+          fi
+        fi
+      }
+      iface=""
+      counter=0
+      # find default interface
+      while [ $counter -lt 12 ]; do
+        # check ipv4
+        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        if [[ -n "$iface" ]]; then
+          echo "IPv4 Default gateway interface found: ${iface}"
+          break
+        fi
+        # check ipv6
+        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        if [[ -n "$iface" ]]; then
+          echo "IPv6 Default gateway interface found: ${iface}"
+          break
+        fi
+        counter=$((counter+1))
+        echo "No default route found on attempt: ${counter}"
+        sleep 5
+      done
+
+      extra_bridge_file='/etc/ovnk/extra_bridge'
+
+      # Some deployments uses a temporary solution where br-ex is moved out from the default gateway interface
+      # and bound to a different nic. If that is the case, we rollback (https://github.com/trozet/openshift-ovn-migration).
+      if [ "$iface" != "br-ex" ] && [  -f "$extra_bridge_file" ] && nmcli connection show br-ex &> /dev/null; then
+        echo "default gateway is not bridge but bridge exists, reverting"
+        update_nm_conn_files br-ex phys0
+        rm_nm_conn_files
+        nmcli c reload
+        sleep 5
+      fi
+
+      convert_to_bridge "$iface" "br-ex" "phys0"
+      if [ -f "$extra_bridge_file" ] && (! nmcli connection show br-ex1 &> /dev/null || ! nmcli connection show ovs-if-phys1 &> /dev/null); then
+        interface=$(head -n 1 $extra_bridge_file)
+        convert_to_bridge "$interface" "br-ex1" "phys1"
+      fi
+      if [ ! -f "$extra_bridge_file" ] && (nmcli connection show br-ex1 &> /dev/null || nmcli connection show ovs-if-phys1 &> /dev/null); then # the file was removed
+        update_nm_conn_files br-ex1 phys1
+        rm_nm_conn_files
+        nmcli c reload
+        sleep 5
+      fi
+
+      # remove bridges created by openshift-sdn
+      ovs-vsctl --timeout=30 --if-exists del-br br0
+      exit 0
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh.
+      update_nm_conn_files br-ex phys0
       rm_nm_conn_files
+      if [ -d "/sys/class/net/br-ex1" ]; then
+        update_nm_conn_files br-ex1 phys1
+        rm_nm_conn_files
+      fi
 
       # Reload configuration, after reload the preferred connection profile
       # should be auto-activated
