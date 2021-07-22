@@ -12,9 +12,8 @@ require (
 	github.com/apparentlymart/go-cidr v1.0.0
 	github.com/ashcrow/osrelease v0.0.0-20180626175927-9b292693c55c
 	github.com/clarketm/json v1.14.1
-	github.com/containers/image v3.0.2+incompatible
-	github.com/containers/image/v5 v5.5.1
-	github.com/containers/storage v1.20.2
+	github.com/containers/image/v5 v5.14.0
+	github.com/containers/storage v1.32.6
 	github.com/coreos/fcct v0.5.0
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
@@ -28,28 +27,28 @@ require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golangci/golangci-lint v1.18.0
-	github.com/google/go-cmp v0.5.2
+	github.com/google/go-cmp v0.5.5
 	github.com/google/renameio v0.1.0
 	github.com/gostaticanalysis/analysisutil v0.0.3 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
-	github.com/imdario/mergo v0.3.9
+	github.com/imdario/mergo v0.3.12
+	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
 	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
 	github.com/openshift/library-go v0.0.0-20210702104503-39570b4a2ae8
-	github.com/openshift/runtime-utils v0.0.0-20200415173359-c45d4ff3f912
+	github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
 	github.com/securego/gosec v0.0.0-20191002120514-e680875ea14d
 	github.com/spf13/cobra v1.1.1
-	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.0
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
-	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
+	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	k8s.io/api v0.21.1
 	k8s.io/apiextensions-apiserver v0.21.1
@@ -58,7 +57,7 @@ require (
 	k8s.io/code-generator v0.21.1
 	k8s.io/kubectl v0.21.0-rc.0
 	k8s.io/kubelet v0.21.0-rc.0
-	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
+	k8s.io/utils v0.0.0-20210707171843-4b05e18ac7d9
 )
 
 replace (
@@ -80,6 +79,8 @@ replace (
 	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.21.0-rc.0
 	k8s.io/code-generator => k8s.io/code-generator v0.21.0-rc.0
 	k8s.io/component-base => k8s.io/component-base v0.21.0-rc.0
+	k8s.io/component-helpers => k8s.io/component-helpers v0.20.0-alpha.2.0.20210708095128-55a3896515e9
+	k8s.io/controller-manager => k8s.io/controller-manager v0.20.0-alpha.1.0.20210712075914-83508d18fce2
 	k8s.io/cri-api => k8s.io/cri-api v0.21.0-rc.0
 	k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.21.0-rc.0
 	k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.21.0-rc.0
@@ -91,5 +92,6 @@ replace (
 	k8s.io/kubernetes => k8s.io/kubernetes v1.21.0-rc.0
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.21.0-rc.0
 	k8s.io/metrics => k8s.io/metrics v0.21.0-rc.0
+	k8s.io/mount-utils => k8s.io/mount-utils v0.23.0-alpha.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.21.0-rc.0
 )
