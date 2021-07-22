@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/containers/image/pkg/sysregistriesv2"
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -223,12 +223,20 @@ func isSafeContainerRegistryConfChanges(oldConfig, newConfig *mcfgv1.MachineConf
 
 	oldRegHashMap := make(map[string]sysregistriesv2.Registry)
 	for _, reg := range tomlConfOldReg.Registries {
-		oldRegHashMap[reg.Location] = reg
+		scope := reg.Location
+		if reg.Prefix != "" {
+			scope = reg.Prefix
+		}
+		oldRegHashMap[scope] = reg
 	}
 
 	newRegHashMap := make(map[string]sysregistriesv2.Registry)
 	for _, reg := range tomlConfNewReg.Registries {
-		newRegHashMap[reg.Location] = reg
+		scope := reg.Location
+		if reg.Prefix != "" {
+			scope = reg.Prefix
+		}
+		newRegHashMap[scope] = reg
 	}
 
 	// Check for removed registry
@@ -249,6 +257,11 @@ func isSafeContainerRegistryConfChanges(oldConfig, newConfig *mcfgv1.MachineConf
 			if oldReg.Prefix != newReg.Prefix {
 				glog.Infof("%s: prefix value for registry %s has changed from %s to %s",
 					containerRegistryConfPath, regLoc, oldReg.Prefix, newReg.Prefix)
+				return false, nil
+			}
+			if oldReg.Location != newReg.Location {
+				glog.Infof("%s: location value for registry %s has changed from %s to %s",
+					containerRegistryConfPath, regLoc, oldReg.Location, newReg.Location)
 				return false, nil
 			}
 			if oldReg.Blocked != newReg.Blocked {
