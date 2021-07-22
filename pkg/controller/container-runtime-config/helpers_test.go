@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
-	"github.com/containers/image/pkg/sysregistriesv2"
-	signature "github.com/containers/image/signature"
-	"github.com/containers/image/types"
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
+	signature "github.com/containers/image/v5/signature"
+	"github.com/containers/image/v5/types"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,15 +46,9 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 				Registries: []sysregistriesv2.Registry{
 					{
 						Endpoint: sysregistriesv2.Endpoint{
-							Location: "registry.access.redhat.com",
-							Insecure: true,
+							Location: "blocked.com",
 						},
-					},
-					{
-						Endpoint: sysregistriesv2.Endpoint{
-							Location: "insecure.com",
-							Insecure: true,
-						},
+						Blocked: true,
 					},
 					{
 						Endpoint: sysregistriesv2.Endpoint{
@@ -65,30 +59,36 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 					},
 					{
 						Endpoint: sysregistriesv2.Endpoint{
-							Location: "blocked.com",
+							Location: "docker.io",
 						},
 						Blocked: true,
 					},
 					{
 						Endpoint: sysregistriesv2.Endpoint{
-							Location: "docker.io",
+							Location: "registry.access.redhat.com",
+							Insecure: true,
 						},
-						Blocked: true,
+					},
+					{
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "insecure.com",
+							Insecure: true,
+						},
 					},
 				},
 			},
 		},
 		{
-			name:     "insecure+blocked prefixes",
-			insecure: []string{"insecure.com"},
-			blocked:  []string{"blocked.com"},
+			name:     "insecure+blocked prefixes with wildcard entries",
+			insecure: []string{"insecure.com", "*.insecure-example.com", "*.insecure.blocked-example.com"},
+			blocked:  []string{"blocked.com", "*.blocked.insecure-example.com", "*.blocked-example.com"},
 			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
 				{
 					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
 						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
 							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
 							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []string{"other.com/ns-o2", "insecure.com/ns-i2"}},
-							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
 						},
 					},
 				},
@@ -128,13 +128,7 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 						Mirrors: []sysregistriesv2.Endpoint{
 							{Location: "insecure.com/ns-i2", Insecure: true},
 							{Location: "blocked.com/ns-b/ns3-b"},
-						},
-					},
-
-					{
-						Endpoint: sysregistriesv2.Endpoint{
-							Location: "insecure.com",
-							Insecure: true,
+							{Location: "foo.insecure-example.com/bar", Insecure: true},
 						},
 					},
 					{
@@ -142,6 +136,42 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 							Location: "blocked.com",
 						},
 						Blocked: true,
+					},
+					{
+						Prefix:  "*.blocked.insecure-example.com",
+						Blocked: true,
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "",
+							Insecure: true,
+						},
+					},
+					{
+						Prefix: "*.blocked-example.com",
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "",
+						},
+						Blocked: true,
+					},
+					{
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "insecure.com",
+							Insecure: true,
+						},
+					},
+					{
+						Prefix: "*.insecure-example.com",
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "",
+							Insecure: true,
+						},
+					},
+					{
+						Prefix:  "*.insecure.blocked-example.com",
+						Blocked: true,
+						Endpoint: sysregistriesv2.Endpoint{
+							Location: "",
+							Insecure: true,
+						},
 					},
 				},
 			},
@@ -203,15 +233,17 @@ func TestUpdatePolicyJSON(t *testing.T) {
 		},
 		{
 			name:    "allowed",
-			allowed: []string{"allow.io"},
+			allowed: []string{"allow.io", "*.allowed-example.com"},
 			want: signature.Policy{
 				Default: signature.PolicyRequirements{signature.NewPRReject()},
 				Transports: map[string]signature.PolicyTransportScopes{
 					"atomic": map[string]signature.PolicyRequirements{
-						"allow.io": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"allow.io":              signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"*.allowed-example.com": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 					},
 					"docker": map[string]signature.PolicyRequirements{
-						"allow.io": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"allow.io":              signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"*.allowed-example.com": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 					},
 					"docker-daemon": map[string]signature.PolicyRequirements{
 						"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
@@ -221,15 +253,17 @@ func TestUpdatePolicyJSON(t *testing.T) {
 		},
 		{
 			name:    "blocked",
-			blocked: []string{"block.com"},
+			blocked: []string{"block.com", "*.blocked-example.com"},
 			want: signature.Policy{
 				Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 				Transports: map[string]signature.PolicyTransportScopes{
 					"atomic": map[string]signature.PolicyRequirements{
-						"block.com": signature.PolicyRequirements{signature.NewPRReject()},
+						"block.com":             signature.PolicyRequirements{signature.NewPRReject()},
+						"*.blocked-example.com": signature.PolicyRequirements{signature.NewPRReject()},
 					},
 					"docker": map[string]signature.PolicyRequirements{
-						"block.com": signature.PolicyRequirements{signature.NewPRReject()},
+						"block.com":             signature.PolicyRequirements{signature.NewPRReject()},
+						"*.blocked-example.com": signature.PolicyRequirements{signature.NewPRReject()},
 					},
 					"docker-daemon": map[string]signature.PolicyRequirements{
 						"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
