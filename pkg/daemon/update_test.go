@@ -17,6 +17,16 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
+func TestTruncate(t *testing.T) {
+	assert.Equal(t, truncate("", 10), "")
+	assert.Equal(t, truncate("", 1), "")
+	assert.Equal(t, truncate("a", 1), "a")
+	assert.Equal(t, truncate("abcde", 1), "a [4 more chars]")
+	assert.Equal(t, truncate("abcde", 4), "abcd [1 more chars]")
+	assert.Equal(t, truncate("abcde", 7), "abcde")
+	assert.Equal(t, truncate("abcde", 5), "abcde")
+}
+
 // TestUpdateOS verifies the return errors from attempting to update the OS follow expectations
 func TestUpdateOS(t *testing.T) {
 	// expectedError is the error we will use when expecting an error to return
@@ -646,4 +656,26 @@ func checkIrreconcilableResults(t *testing.T, key string, reconcilableError erro
 	if reconcilableError == nil {
 		t.Errorf("Different %s values should not be reconcilable.", key)
 	}
+}
+
+func TestRunGetOut(t *testing.T) {
+	o, err := runGetOut("true")
+	assert.Nil(t, err)
+	assert.Equal(t, len(o), 0)
+
+	o, err = runGetOut("false")
+	assert.NotNil(t, err)
+
+	o, err = runGetOut("echo", "hello")
+	assert.Nil(t, err)
+	assert.Equal(t, string(o), "hello\n")
+
+	// base64 encode "oops" so we can't match on the command arguments
+	o, err = runGetOut("/bin/sh", "-c", "echo hello; echo b29wcwo= | base64 -d 1>&2; exit 1")
+	assert.Error(t, err)
+	errtext := err.Error()
+	assert.Contains(t, errtext, "exit status 1\noops\n")
+
+	o, err = runGetOut("/usr/bin/test-failure-to-exec-this-should-not-exist", "arg")
+	assert.Error(t, err)
 }
