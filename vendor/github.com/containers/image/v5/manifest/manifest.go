@@ -30,7 +30,7 @@ const (
 	DockerV2ListMediaType = "application/vnd.docker.distribution.manifest.list.v2+json"
 	// DockerV2Schema2ForeignLayerMediaType is the MIME type used for schema 2 foreign layers.
 	DockerV2Schema2ForeignLayerMediaType = "application/vnd.docker.image.rootfs.foreign.diff.tar"
-	// DockerV2Schema2ForeignLayerMediaType is the MIME type used for gzippped schema 2 foreign layers.
+	// DockerV2Schema2ForeignLayerMediaType is the MIME type used for gzipped schema 2 foreign layers.
 	DockerV2Schema2ForeignLayerMediaTypeGzip = "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"
 )
 
@@ -132,9 +132,16 @@ func GuessMIMEType(manifest []byte) string {
 		if err := json.Unmarshal(manifest, &ociMan); err != nil {
 			return ""
 		}
-		if ociMan.Config.MediaType == imgspecv1.MediaTypeImageConfig {
+		switch ociMan.Config.MediaType {
+		case imgspecv1.MediaTypeImageConfig:
 			return imgspecv1.MediaTypeImageManifest
+		case DockerV2Schema2ConfigMediaType:
+			// This case should not happen since a Docker image
+			// must declare a top-level media type and
+			// `meta.MediaType` has already been checked.
+			return DockerV2Schema2MediaType
 		}
+		// Maybe an image index or an OCI artifact.
 		ociIndex := struct {
 			Manifests []imgspecv1.Descriptor `json:"manifests"`
 		}{}
@@ -145,9 +152,13 @@ func GuessMIMEType(manifest []byte) string {
 			if ociMan.Config.MediaType == "" {
 				return imgspecv1.MediaTypeImageIndex
 			}
+			// FIXME: this is mixing media types of manifests and configs.
 			return ociMan.Config.MediaType
 		}
-		return DockerV2Schema2MediaType
+		// It's most likely an OCI artifact with a custom config media
+		// type which is not (and cannot) be covered by the media-type
+		// checks cabove.
+		return imgspecv1.MediaTypeImageManifest
 	}
 	return ""
 }
@@ -184,7 +195,7 @@ func MatchesDigest(manifest []byte, expectedDigest digest.Digest) (bool, error) 
 }
 
 // AddDummyV2S1Signature adds an JWS signature with a temporary key (i.e. useless) to a v2s1 manifest.
-// This is useful to make the manifest acceptable to a Docker Registry (even though nothing needs or wants the JWS signature).
+// This is useful to make the manifest acceptable to a docker/distribution registry (even though nothing needs or wants the JWS signature).
 func AddDummyV2S1Signature(manifest []byte) ([]byte, error) {
 	key, err := libtrust.GenerateECP256PrivateKey()
 	if err != nil {
