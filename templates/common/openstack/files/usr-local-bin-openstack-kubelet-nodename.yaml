@@ -1,0 +1,23 @@
+mode: 0755
+path: "/usr/local/bin/openstack-kubelet-nodename"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e -o pipefail
+
+    NODECONF=/etc/systemd/system/kubelet.service.d/20-openstack-node-name.conf
+
+    if [ -e "${NODECONF}" ]; then
+        echo "Not replacing existing ${NODECONF}"
+        exit 0
+    fi
+
+    # For compatibility with the OpenStack in-tree provider
+    # Set node name to be instance name instead of the default FQDN hostname
+    #
+    # https://docs.openstack.org/nova/victoria/user/metadata.html#metadata-openstack-format
+    name=$(curl -s http://169.254.169.254/openstack/2012-08-10/meta_data.json | jq -re .name)
+    cat > "${NODECONF}" <<EOF
+    [Service]
+    Environment="KUBELET_NODE_NAME=${name}"
+    EOF
