@@ -75,6 +75,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.ClientBuilder.APIExtClientOrDie(componentName),
 			ctrlctx.ClientBuilder.ConfigClientOrDie(componentName),
 			ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
+			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
