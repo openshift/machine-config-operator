@@ -63,6 +63,9 @@ require (
 replace (
 	github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
+	// Workaround to deal with https://github.com/kubernetes/klog/issues/253
+	// Should be deleted when https://github.com/kubernetes/klog/pull/242 is merged and released
+	github.com/go-logr/logr =>  github.com/go-logr/logr v0.4.0
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
