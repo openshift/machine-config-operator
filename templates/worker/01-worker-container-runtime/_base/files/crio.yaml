@@ -2,6 +2,9 @@ mode: 0644
 path: "/etc/crio/crio.conf.d/00-default"
 contents:
   inline: |
+    [crio]
+    internal_wipe = true
+
     [crio.api]
     stream_address = ""
     stream_port = "10010"
