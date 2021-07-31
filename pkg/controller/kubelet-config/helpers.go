@@ -79,7 +79,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool) string {
 
 // validates a KubeletConfig and returns an error if invalid
 func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
-	if cfg.Spec.KubeletConfig.Raw == nil {
+	if cfg.Spec.KubeletConfig == nil || cfg.Spec.KubeletConfig.Raw == nil {
 		return nil
 	}
 	kcDecoded, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
