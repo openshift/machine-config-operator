@@ -123,6 +123,10 @@ contents:
           mountPath: "/etc/keepalived"
         - name: run-dir
           mountPath: "/var/run/keepalived"
+        - name: chroot-host
+          mountPath: "/host"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
         livenessProbe:
           exec:
             command:
