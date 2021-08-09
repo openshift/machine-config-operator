@@ -359,6 +359,33 @@ contents:
       fi
     }
 
+    remove_ovn_bridges() {
+      bridge_name=${1}
+      port_name=${2}
+      iface=""
+      if nmcli connection show ovs-port-${port_name} &> /dev/null; then
+        iface=$(nmcli --get-values connection.interface-name connection show ovs-port-${port_name})
+      fi
+
+      # Reload configuration, after reload the preferred connection profile
+      # should be auto-activated
+      update_nm_conn_files ${bridge_name} ${port_name}
+      rm_nm_conn_files
+      nmcli c reload
+      sleep 5
+
+      # NetworkManager will not remove ${bridge_name} if it has the patch port created by ovn-kubernetes
+      # so remove explicitly
+      ovs-vsctl --timeout=30 --if-exists del-br ${bridge_name}
+
+      # In some cases the preferred connection profile is not auto-activated
+      # (maybe due to differences in NM versions) so try to activate it
+      # explicitly.
+      if [ -n "$iface" ]; then
+        nmcli device connect $iface
+      fi
+    }
+
     if ! rpm -qa | grep -q openvswitch; then
       echo "Warning: Openvswitch package is not installed!"
       exit 1
@@ -437,19 +464,15 @@ contents:
       ovs-vsctl --timeout=30 --if-exists del-br br0
       exit 0
     elif [ "$1" == "OpenShiftSDN" ]; then
-      # Revert changes made by /usr/local/bin/configure-ovs.sh.
-      update_nm_conn_files br-ex phys0
-      rm_nm_conn_files
+      # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
+      remove_ovn_bridges br-ex phys0
       if [ -d "/sys/class/net/br-ex1" ]; then
-        update_nm_conn_files br-ex1 phys1
-        rm_nm_conn_files
+        remove_ovn_bridges br-ex1 phys1
       fi
-
-      # Reload configuration, after reload the preferred connection profile
-      # should be auto-activated
-      nmcli c reload
-      sleep 5
+      ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
 
       echo "OVS configuration successfully reverted"
       nmcli c show
+      ovs-vsctl show
+      ip route
     fi
