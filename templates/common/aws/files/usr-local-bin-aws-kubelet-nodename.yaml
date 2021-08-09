@@ -1,0 +1,23 @@
+mode: 0755
+path: "/usr/local/bin/aws-kubelet-nodename"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e -o pipefail
+
+    NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-node-name.conf
+
+    if [ -e "${NODECONF}" ]; then
+        echo "Not replacing existing ${NODECONF}"
+        exit 0
+    fi
+
+    # For compatibility with the AWS in-tree provider
+    # Set node name to be instance name instead of the default FQDN hostname
+    #
+    # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html
+    name=$(curl -s http://169.254.169.254/2016-09-02/meta-data/local-hostname)
+    cat > "${NODECONF}" <<EOF
+    [Service]
+    Environment="KUBELET_NODE_NAME=${name}"
+    EOF
