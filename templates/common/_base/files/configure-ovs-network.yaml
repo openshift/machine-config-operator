@@ -384,6 +384,11 @@ contents:
       echo "ERROR: Failed to activate ovs-if-br-ex NM connection"
       exit 1
     elif [ "$1" == "OpenShiftSDN" ]; then
+      iface=""
+      if nmcli connection show ovs-port-phys0 &> /dev/null; then
+        iface=$(nmcli --get-values connection.interface-name connection show ovs-port-phys0)
+      fi
+
       # Revert changes made by /usr/local/bin/configure-ovs.sh.
       rm_nm_conn_files
 
@@ -392,6 +397,22 @@ contents:
       nmcli c reload
       sleep 5
 
+      # NetworkManager will not remove br-ex if it has the patch port created by ovn-kubernetes
+      # so remove explicitly
+      ovs-vsctl --timeout=30 --if-exists del-br br-ex
+
+      # Remove bridges created by OVN-Kubernetes
+      ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
+
+      # In some cases the preferred connection profile is not auto-activated
+      # (maybe due to differences in NM versions) so try to activate it
+      # explicitly.
+      if [ -n "$iface" ]; then
+        nmcli device connect $iface
+      fi
+
       echo "OVS configuration successfully reverted"
       nmcli c show
+      ovs-vsctl show
+      ip route
     fi
