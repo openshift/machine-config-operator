@@ -10,7 +10,6 @@ contents:
     stream_port = "10010"
 
     [crio.runtime]
-    conmon = "/usr/libexec/crio/conmon"
     conmon_cgroup = "pod"
     default_env = [
         "NSS_SDB_USE_CACHE=no",
