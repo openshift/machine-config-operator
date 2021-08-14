@@ -27,7 +27,8 @@ require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golangci/golangci-lint v1.18.0
-	github.com/google/go-cmp v0.5.5
+	github.com/google/go-cmp v0.5.6
+	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/renameio v0.1.0
 	github.com/gostaticanalysis/analysisutil v0.0.3 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
@@ -35,7 +36,7 @@ require (
 	github.com/imdario/mergo v0.3.12
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
+	github.com/openshift/api v0.0.0-20210730095913-85e1d547cdee
 	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
 	github.com/openshift/library-go v0.0.0-20210702104503-39570b4a2ae8
 	github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d
@@ -48,25 +49,30 @@ require (
 	github.com/ultraware/funlen v0.0.2 // indirect
 	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
-	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
+	golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
-	k8s.io/api v0.21.1
+	k8s.io/api v0.22.0-rc.0
 	k8s.io/apiextensions-apiserver v0.21.1
-	k8s.io/apimachinery v0.21.1
+	k8s.io/apimachinery v0.22.0-rc.0
 	k8s.io/client-go v0.21.1
-	k8s.io/code-generator v0.21.1
+	k8s.io/code-generator v0.22.0-rc.0
+	k8s.io/klog/v2 v2.10.0 // indirect
 	k8s.io/kubectl v0.21.0-rc.0
 	k8s.io/kubelet v0.21.0-rc.0
 	k8s.io/utils v0.0.0-20210707171843-4b05e18ac7d9
+	sigs.k8s.io/structured-merge-diff/v4 v4.1.2 // indirect
 )
 
 replace (
 	github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
+	// Workaround to deal with https://github.com/kubernetes/klog/issues/253
+	// Should be deleted when https://github.com/kubernetes/klog/pull/242 is merged and released
+	github.com/go-logr/logr => github.com/go-logr/logr v0.4.0
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20210730095913-85e1d547cdee
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.21.0-rc.0
