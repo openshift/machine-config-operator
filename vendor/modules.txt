@@ -264,7 +264,7 @@ github.com/go-errors/errors
 # github.com/go-lintpack/lintpack v0.5.2
 github.com/go-lintpack/lintpack
 github.com/go-lintpack/lintpack/astwalk
-# github.com/go-logr/logr v0.4.0
+# github.com/go-logr/logr v0.4.0 => github.com/go-logr/logr v0.4.0
 github.com/go-logr/logr
 # github.com/go-openapi/jsonpointer v0.19.3
 github.com/go-openapi/jsonpointer
@@ -402,7 +402,7 @@ github.com/golangci/revgrep
 github.com/golangci/unconvert
 # github.com/google/btree v1.0.0
 github.com/google/btree
-# github.com/google/go-cmp v0.5.5
+# github.com/google/go-cmp v0.5.6
 ## explicit
 github.com/google/go-cmp/cmp
 github.com/google/go-cmp/cmp/internal/diff
@@ -411,8 +411,10 @@ github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
 # github.com/google/go-intervals v0.0.2
 github.com/google/go-intervals/intervalset
-# github.com/google/gofuzz v1.1.0
+# github.com/google/gofuzz v1.2.0
+## explicit
 github.com/google/gofuzz
+github.com/google/gofuzz/bytesource
 # github.com/google/renameio v0.1.0
 ## explicit
 github.com/google/renameio
@@ -538,7 +540,7 @@ github.com/opencontainers/runtime-spec/specs-go
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/go-selinux/label
 github.com/opencontainers/selinux/pkg/pwalk
-# github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8 => github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
+# github.com/openshift/api v0.0.0-20210730095913-85e1d547cdee => github.com/openshift/api v0.0.0-20210730095913-85e1d547cdee
 ## explicit
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
@@ -685,10 +687,10 @@ golang.org/x/crypto/openpgp/packet
 golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/scrypt
-# golang.org/x/mod v0.3.1-0.20200828183125-ce943fd02449
+# golang.org/x/mod v0.4.2
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
+# golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985
 ## explicit
 golang.org/x/net/context
 golang.org/x/net/context/ctxhttp
@@ -709,7 +711,7 @@ golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d
 golang.org/x/term
-# golang.org/x/text v0.3.4
+# golang.org/x/text v0.3.6
 golang.org/x/text/encoding
 golang.org/x/text/encoding/internal
 golang.org/x/text/encoding/internal/identifier
@@ -724,7 +726,7 @@ golang.org/x/text/width
 # golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 ## explicit
 golang.org/x/time/rate
-# golang.org/x/tools v0.1.0
+# golang.org/x/tools v0.1.2
 golang.org/x/tools/go/analysis
 golang.org/x/tools/go/analysis/passes/asmdecl
 golang.org/x/tools/go/analysis/passes/assign
@@ -829,7 +831,7 @@ gopkg.in/ini.v1
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 gopkg.in/yaml.v3
-# k8s.io/api v0.21.1 => k8s.io/api v0.21.0-rc.0
+# k8s.io/api v0.22.0-rc.0 => k8s.io/api v0.21.0-rc.0
 ## explicit
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
@@ -893,7 +895,7 @@ k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/apiextensio
 k8s.io/apiextensions-apiserver/pkg/client/informers/externalversions/internalinterfaces
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1beta1
-# k8s.io/apimachinery v0.21.1 => k8s.io/apimachinery v0.21.0-rc.0
+# k8s.io/apimachinery v0.22.0-rc.0 => k8s.io/apimachinery v0.21.0-rc.0
 ## explicit
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -1232,7 +1234,7 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/code-generator v0.21.1 => k8s.io/code-generator v0.21.0-rc.0
+# k8s.io/code-generator v0.22.0-rc.0 => k8s.io/code-generator v0.21.0-rc.0
 ## explicit
 k8s.io/code-generator
 k8s.io/code-generator/cmd/client-gen
@@ -1282,7 +1284,8 @@ k8s.io/gengo/generator
 k8s.io/gengo/namer
 k8s.io/gengo/parser
 k8s.io/gengo/types
-# k8s.io/klog/v2 v2.9.0
+# k8s.io/klog/v2 v2.10.0
+## explicit
 k8s.io/klog/v2
 # k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 k8s.io/kube-openapi/cmd/openapi-gen/args
@@ -1398,7 +1401,8 @@ sigs.k8s.io/kustomize/kyaml/yaml/merge2
 sigs.k8s.io/kustomize/kyaml/yaml/merge3
 sigs.k8s.io/kustomize/kyaml/yaml/schema
 sigs.k8s.io/kustomize/kyaml/yaml/walk
-# sigs.k8s.io/structured-merge-diff/v4 v4.1.0
+# sigs.k8s.io/structured-merge-diff/v4 v4.1.2
+## explicit
 sigs.k8s.io/structured-merge-diff/v4/fieldpath
 sigs.k8s.io/structured-merge-diff/v4/schema
 sigs.k8s.io/structured-merge-diff/v4/typed
@@ -1409,10 +1413,11 @@ sigs.k8s.io/yaml
 sourcegraph.com/sqs/pbtypes
 # github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 # github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
+# github.com/go-logr/logr => github.com/go-logr/logr v0.4.0
 # github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 # github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 # github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-# github.com/openshift/api => github.com/openshift/api v0.0.0-20210629145910-15a1cae1fca8
+# github.com/openshift/api => github.com/openshift/api v0.0.0-20210730095913-85e1d547cdee
 # github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 # github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 # k8s.io/api => k8s.io/api v0.21.0-rc.0
