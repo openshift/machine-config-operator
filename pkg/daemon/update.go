@@ -381,8 +381,10 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 	}()
 
 	// Apply kargs
-	if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
-		return err
+	if mcDiff.kargs {
+		if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
+			return err
+		}
 	}
 
 	// Switch to real time kernel
@@ -816,12 +818,12 @@ func parseKernelArguments(kargs []string) []string {
 	return parsed
 }
 
-// generateKargsCommand performs a diff between the old/new MC kernelArguments,
-// and generates the command line arguments suitable for `rpm-ostree kargs`.
+// generateKargs generates command line arguments suitable for `rpm-ostree kargs`.
+// It deletes kargs present in oldMC and appends kargs present in newMC.
 // Note what we really should be doing though is also looking at the *current*
 // kernel arguments in case there was drift.  But doing that requires us knowing
 // what the "base" arguments are. See https://github.com/ostreedev/ostree/issues/479
-func generateKargsCommand(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
+func generateKargs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 	oldKargs := parseKernelArguments(oldConfig.Spec.KernelArguments)
 	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
 	cmdArgs := []string{}
@@ -845,12 +847,12 @@ func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConf
 		glog.Info("updating kargs on non-CoreOS nodes is not supported")
 		return nil
 	}
-	diff := generateKargsCommand(oldConfig, newConfig)
-	if len(diff) == 0 {
+	kargs := generateKargs(oldConfig, newConfig)
+	if len(kargs) == 0 {
 		return nil
 	}
 
-	args := append([]string{"kargs"}, diff...)
+	args := append([]string{"kargs"}, kargs...)
 	dn.logSystem("Running rpm-ostree %v", args)
 	return exec.Command("rpm-ostree", args...).Run()
 }
