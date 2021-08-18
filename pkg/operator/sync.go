@@ -84,7 +84,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		return fmt.Errorf("error syncing degraded status: %v", err)
 	}
 
-	if err := optr.syncAvailableStatus(); err != nil {
+	if err := optr.syncAvailableStatus(syncErr); err != nil {
 		return fmt.Errorf("error syncing available status: %v", err)
 	}
 
