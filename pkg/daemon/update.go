@@ -118,18 +118,7 @@ func (dn *Daemon) finalizeAndReboot(newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %v", newConfig.GetName()))
 }
 
-func (dn *Daemon) drain() error {
-	// Skip draining of the node when we're not cluster driven
-	if dn.kubeClient == nil {
-		return nil
-	}
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
-
-	dn.logSystem("Update prepared; beginning drain")
-	startTime := time.Now()
-
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
-
+func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 	backoff := wait.Backoff{
 		Steps:    5,
 		Duration: 10 * time.Second,
@@ -137,37 +126,82 @@ func (dn *Daemon) drain() error {
 	}
 	var lastErr error
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, true)
+		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, desired)
 		if err != nil {
 			lastErr = err
-			glog.Infof("Cordon failed with: %v, retrying", err)
+			glog.Infof("cordon/uncordon failed with: %v, retrying", err)
 			return false, nil
 		}
-		err = drain.RunNodeDrain(dn.drainer, dn.node.Name)
-		if err == nil {
-			return true, nil
-		}
-		lastErr = err
-		glog.Infof("Draining failed with: %v, retrying", err)
-		return false, nil
+		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			failMsg := fmt.Sprintf("%d tries: %v", backoff.Steps, lastErr)
-			MCDDrainErr.WithLabelValues(dn.node.Name, "WaitTimeout").Set(float64(backoff.Steps))
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
-			return errors.Wrapf(lastErr, "failed to drain node (%d tries): %v", backoff.Steps, err)
+			return errors.Wrapf(lastErr, "failed to cordon/uncordon node (%d tries): %v", backoff.Steps, err)
 		}
-		MCDDrainErr.WithLabelValues(dn.node.Name, "UnknownError").Set(float64(backoff.Steps))
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", err.Error())
-		return errors.Wrap(err, "failed to drain node")
+		return errors.Wrap(err, "failed to cordon/uncordon node")
+	}
+	return nil
+}
+
+func (dn *Daemon) drain() error {
+	// Skip draining of the node when we're not cluster driven
+	if dn.kubeClient == nil {
+		return nil
 	}
 
-	dn.logSystem("drain complete")
-	t := time.Since(startTime).Seconds()
-	glog.Infof("Successful drain took %v seconds", t)
-	MCDDrainErr.WithLabelValues(dn.node.Name, "").Set(0)
+	if err := dn.cordonOrUncordonNode(true); err != nil {
+		return err
+	}
+	dn.logSystem("Node has been successfully cordoned")
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
 
-	return nil
+	dn.logSystem("Update prepared; beginning drain")
+	failedDrains := 0
+	startTime := time.Now()
+
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+
+	done := make(chan bool, 1)
+
+	drainer := func() chan error {
+		ret := make(chan error)
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					if err := drain.RunNodeDrain(dn.drainer, dn.node.Name); err != nil {
+						glog.Infof("Draining failed with: %v, retrying", err)
+						failedDrains++
+						if failedDrains > 5 {
+							time.Sleep(5 * time.Minute)
+						} else {
+							time.Sleep(1 * time.Minute)
+						}
+						continue
+					}
+					close(ret)
+					return
+				}
+			}
+		}()
+		return ret
+	}
+
+	select {
+	case <-time.After(1 * time.Hour):
+		done <- true
+		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
+		MCDDrainErr.Set(1)
+		return errors.New(failMsg)
+	case <-drainer():
+		dn.logSystem("drain complete")
+		t := time.Since(startTime).Seconds()
+		glog.Infof("Successful drain took %v seconds", t)
+		MCDDrainErr.Set(0)
+		return nil
+	}
 }
 
 var errUnreconcilable = errors.New("unreconcilable")
