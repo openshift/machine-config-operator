@@ -4,12 +4,18 @@ contents:
   inline: |
     [crio]
     internal_wipe = true
+    storage_driver = "overlay"
+    storage_option = [
+        "overlay.override_kernel_check=1",
+    ]
 
     [crio.api]
     stream_address = ""
     stream_port = "10010"
 
     [crio.runtime]
+    selinux = true
+    conmon = ""
     conmon_cgroup = "pod"
     default_env = [
         "NSS_SDB_USE_CACHE=no",
