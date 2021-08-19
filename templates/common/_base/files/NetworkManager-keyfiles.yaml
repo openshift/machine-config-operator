@@ -5,5 +5,5 @@ contents:
     [main]
     plugins=keyfile,ifcfg-rh
     [keyfile]
-    path=/etc/NetworkManager/system-connections-merged
+    path=/etc/NetworkManager/systemConnectionsMerged
 
