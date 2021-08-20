@@ -109,6 +109,14 @@ func (optr *Operator) syncAvailableStatus() error {
 	if degraded {
 		available = configv1.ConditionFalse
 		message = fmt.Sprintf("Cluster not available for %s", optrVersion)
+		mcoObjectRef := &corev1.ObjectReference{
+			Kind:      co.Kind,
+			Name:      co.Name,
+			Namespace: co.Namespace,
+			UID:       co.GetUID(),
+		}
+
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, "OperatorNotAvailable", message)
 	}
 
 	coStatus := configv1.ClusterOperatorStatusCondition{
@@ -219,6 +227,14 @@ func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.err.Error())
 		}
 		reason = ierr.task + "Failed"
+		mcoObjectRef := &corev1.ObjectReference{
+			Kind:      co.Kind,
+			Name:      co.Name,
+			Namespace: co.Namespace,
+			UID:       co.GetUID(),
+		}
+		degradedReason := fmt.Sprintf("OperatorDegraded: %s", reason)
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, degradedReason, message)
 
 		// set progressing
 		if cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorProgressing) {
