@@ -56,7 +56,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            message: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 90% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
+            message: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
     - name: master-nodes-high-memory-usage
       rules:
         - alert: MasterNodesHighMemoryUsage
