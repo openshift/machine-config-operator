@@ -9,6 +9,65 @@ contents:
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
 
+    # find default interface
+    get_default_interface() {
+      local counter=0
+      local iface=""
+      while [ $counter -lt 12 ]; do
+        # check ipv4
+        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        if [[ -n "$iface" ]]; then
+          break
+        fi
+        # check ipv6
+        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        if [[ -n "$iface" ]]; then
+          break
+        fi
+        counter=$((counter+1))
+        sleep 5
+      done
+      echo "$iface"
+    }
+
+    # get interface driver
+    is_vmxnet3_interface() {
+      local intf=$1
+      if [ ! -f "/sys/class/net/${intf}/device/uevent" ]; then
+        echo "Device file doesn't exist, assuming interface driver is not vmxnet3"
+      else
+        driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
+        echo "Driver name is $driver"
+        if [ "$driver" = "vmxnet3" ]; then
+          return 0
+        fi
+      fi
+      return 1
+    }
+
+    # if the interface is of type vmxnet3, do workarounds for sdn
+    configure_vmxnet3_driver_ovn_options() {
+      local intf=$1
+      if is_vmxnet3_interface "$intf"; then
+        # add multicast capability for that driver
+        # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
+        ifconfig "$intf" allmulti
+        # disable checksum offload
+        # REMOVEME: Once BZ:XXXXXXX is fixed, this needs to get removed.
+        ethtool -K "$intf" tx-checksum-ip-generic off
+      fi
+    }
+
+    # if the interface is of type vmxnet3, do workarounds for ovn
+    configure_vmxnet3_driver_sdn_options() {
+      local intf=$1
+      if is_vmxnet3_interface "$intf"; then
+        # disable checksum offload
+        # REMOVEME: Once BZ:XXXXXXX is fixed, this needs to get removed.
+        ethtool -K "$intf" tx-checksum-ip-generic off
+      fi
+    }
+
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
@@ -39,56 +98,26 @@ contents:
       # key files under /etc/NetworkManager/system-connections/
       # Managing key files is outside of the scope of this script
 
-      # if the interface is of type vmxnet3 add multicast capability for that driver
-      # REMOVEME: Once BZ:1854355 is fixed, this needs to get removed.
-      function configure_driver_options {
-        intf=$1
-        driver=$(cat "/sys/class/net/${intf}/device/uevent" | grep DRIVER | awk -F "=" '{print $2}')
-        echo "Driver name is" $driver
-        if [ "$driver" = "vmxnet3" ]; then
-          ifconfig "$intf" allmulti
-        fi
-      }
       if [ -d "/etc/NetworkManager/systemConnectionsMerged" ]; then
         NM_CONN_PATH="/etc/NetworkManager/systemConnectionsMerged"
       else
         NM_CONN_PATH="/etc/NetworkManager/system-connections"
       fi
-      iface=""
-      counter=0
-      # find default interface
-      while [ $counter -lt 12 ]; do
-        # check ipv4
-        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -n "$iface" ]]; then
-          echo "IPv4 Default gateway interface found: ${iface}"
-          break
-        fi
-        # check ipv6
-        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -n "$iface" ]]; then
-          echo "IPv6 Default gateway interface found: ${iface}"
-          break
-        fi
-        counter=$((counter+1))
-        echo "No default route found on attempt: ${counter}"
-        sleep 5
-      done
+
+      iface=$(get_default_interface)
+      if [ -z "$iface" ]; then
+        echo "ERROR: Unable to find default gateway interface"
+        exit 1
+      fi
+      echo "Default gateway interface found: ${iface}"
 
       if [ "$iface" = "br-ex" ]; then
         # handle vlans and bonds etc if they have already been
         # configured via nm key files and br-ex is already up
         ifaces=$(ovs-vsctl list-ifaces ${iface})
-        for intf in $ifaces; do configure_driver_options $intf; done
-        echo "Networking already configured and up for br-ex!"
-        # remove bridges created by openshift-sdn
-        ovs-vsctl --timeout=30 --if-exists del-br br0
-        exit 0
-      fi
-
-      if [ -z "$iface" ]; then
-        echo "ERROR: Unable to find default gateway interface"
-        exit 1
+        for intf in $ifaces; do configure_vmxnet3_driver_ovn_options $intf; done
+        echo "Networking already configured and up for ${bridge-name}!"
+        return
       fi
 
       # find the MAC from OVS config or the default interface to use for OVS internal port
@@ -273,7 +302,7 @@ contents:
           copy_nm_conn_files
           ip a show br-ex
           ip route show
-          configure_driver_options ${iface}
+          configure_vmxnet3_driver_ovn_options ${iface}
           exit 0
         fi
         counter=$((counter+1))
@@ -287,7 +316,7 @@ contents:
           copy_nm_conn_files
           ip a show br-ex
           ip route show
-          configure_driver_options ${iface}
+          configure_vmxnet3_driver_ovn_options ${iface}
           exit 0
         fi
         sleep 5
@@ -332,5 +361,20 @@ contents:
 
       if [[ -n "$iface" ]]; then
         nmcli device connect $iface
+        sleep 5
       fi
+
+      # need to apply vmxnet3 workarounds for sdn as well
+      iface=$(get_default_interface)
+      if [ -z "$iface" ]; then
+        echo "ERROR: Unable to find default gateway interface"
+        exit 1
+      fi
+      echo "Default gateway interface found: ${iface}"
+      configure_vmxnet3_driver_sdn_options "$iface"
+
+      echo "OVS configuration successfully reverted"
+      nmcli c show
+      ovs-vsctl show
+      ip route
     fi
