@@ -7,6 +7,7 @@ contents:
       # Workaround:
       # https://bugzilla.redhat.com/show_bug.cgi?id=1941714
       # https://bugzilla.redhat.com/show_bug.cgi?id=1935539
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1987108
 
       driver=$(nmcli -t -m tabular -f general.driver dev show "${DEVICE_IFACE}")
 
@@ -14,4 +15,5 @@ contents:
         logger -s "99-vsphere-disable-tx-udp-tnl triggered by ${2} on device ${DEVICE_IFACE}."
         ethtool -K ${DEVICE_IFACE} tx-udp_tnl-segmentation off
         ethtool -K ${DEVICE_IFACE} tx-udp_tnl-csum-segmentation off
+        ethtool -K ${DEVICE_IFACE} tx-checksum-ip-generic off
       fi
