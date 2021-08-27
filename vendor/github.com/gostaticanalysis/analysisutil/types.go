@@ -16,7 +16,14 @@ func ImplementsError(t types.Type) bool {
 
 // ObjectOf returns types.Object by given name in the package.
 func ObjectOf(pass *analysis.Pass, pkg, name string) types.Object {
-	return LookupFromImports(pass.Pkg.Imports(), pkg, name)
+	obj := LookupFromImports(pass.Pkg.Imports(), pkg, name)
+	if obj != nil {
+		return obj
+	}
+	if RemoveVendor(pass.Pkg.Name()) != RemoveVendor(pkg) {
+		return nil
+	}
+	return pass.Pkg.Scope().Lookup(name)
 }
 
 // TypeOf returns types.Type by given name in the package.
@@ -27,7 +34,11 @@ func TypeOf(pass *analysis.Pass, pkg, name string) types.Type {
 	}
 
 	if name[0] == '*' {
-		return types.NewPointer(TypeOf(pass, pkg, name[1:]))
+		obj := TypeOf(pass, pkg, name[1:])
+		if obj == nil {
+			return nil
+		}
+		return types.NewPointer(obj)
 	}
 
 	obj := ObjectOf(pass, pkg, name)
@@ -43,7 +54,7 @@ func MethodOf(typ types.Type, name string) *types.Func {
 	switch typ := typ.(type) {
 	case *types.Named:
 		for i := 0; i < typ.NumMethods(); i++ {
-			if f := typ.Method(i); f.Id() == name {
+			if f := typ.Method(i); f.Name() == name {
 				return f
 			}
 		}
@@ -184,4 +195,14 @@ func mergeTypesInfo(i1, i2 *types.Info) {
 
 	// InitOrder
 	i1.InitOrder = append(i1.InitOrder, i2.InitOrder...)
+}
+
+// Under returns the most bottom underlying type.
+func Under(t types.Type) types.Type {
+	switch t := t.(type) {
+	case *types.Named:
+		return Under(t.Underlying())
+	default:
+		return t
+	}
 }
