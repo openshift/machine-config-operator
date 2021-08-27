@@ -200,6 +200,9 @@ func RenderBootstrap(
 		if err := os.MkdirAll(dirname, 0655); err != nil {
 			return err
 		}
+		// Disable gosec here to avoid throwing
+		// G306: Expect WriteFile permissions to be 0600 or less
+		// #nosec
 		if err := ioutil.WriteFile(path, b, 0644); err != nil {
 			return err
 		}
