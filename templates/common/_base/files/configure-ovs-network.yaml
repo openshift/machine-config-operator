@@ -30,7 +30,7 @@ contents:
         echo "$src_path exists"
         local files=("${MANAGED_NM_CONN_FILES[@]}")
         shopt -s nullglob
-        files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection $src_path/*${MANAGED_NM_CONN_SUFFIX})
+        files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection)
         shopt -u nullglob
         for file in "${files[@]}"; do
           file="$(basename $file)"
@@ -63,7 +63,7 @@ contents:
     rm_nm_conn_files() {
       local files=("${MANAGED_NM_CONN_FILES[@]}")
       shopt -s nullglob
-      files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
+      files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection)
       shopt -u nullglob
       for file in "${files[@]}"; do
         file="$(basename $file)"
@@ -236,8 +236,6 @@ contents:
         # if there was a problem network isn't coming up, revert for debugging
         set +e
         nmcli c show
-        # For some reason RHEL7 requires the interface connection to be brought down explicitly whereas RHCOS does not
-        nmcli conn down "$bridge_interface_name"
         nmcli conn up $old_conn
         exit $e
       }
@@ -247,35 +245,29 @@ contents:
       replace_connection_master $old_conn $new_conn
       replace_connection_master $iface $new_conn
 
-      # For some reason RHEL7 requires the ovs bridge to be brought up explicitly whereas RHCOS does not
-      nmcli conn up "$bridge_name"
-      # Bring up the new interface connection
+      # bring up new connection
       nmcli conn up "$bridge_interface_name"
 
       if ! nmcli connection show "$ovs_interface" &> /dev/null; then
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
           echo "Static IP addressing detected on default gateway connection: ${old_conn}"
           # find and copy the old connection to get the address settings
-          if egrep -l "^uuid=$old_conn" ${NM_CONN_PATH}/*; then
-            old_conn_file=$(egrep -l "^uuid=$old_conn" ${NM_CONN_PATH}/*)
+          if egrep -l --include=*.nmconnection uuid=$old_conn ${NM_CONN_PATH}/*; then
+            old_conn_file=$(egrep -l --include=*.nmconnection uuid=$old_conn ${NM_CONN_PATH}/*)
             cloned=false
           else
             echo "WARN: unable to find NM configuration file for conn: ${old_conn}. Attempting to clone conn"
+            old_conn_file=${NM_CONN_PATH}/${old_conn}-clone.nmconnection
             nmcli conn clone ${old_conn} ${old_conn}-clone
-            shopt -s nullglob
-            old_conn_files=(${NM_CONN_PATH}/"${old_conn}"-clone*)
-            shopt -u nullglob
-            if [ ${#old_conn_files[@]} -ne 1 ]; then
-              echo "ERROR: unable to locate cloned conn file for ${old_conn}-clone"
+            cloned=true
+            if [ ! -f "$old_conn_file" ]; then
+              echo "ERROR: unable to locate cloned conn file: ${old_conn_file}"
               exit 1
             fi
-            old_conn_file="${old_conn_files[0]}"
-            cloned=true
             echo "Successfully cloned conn to ${old_conn_file}"
           fi
           echo "old connection file found at: ${old_conn_file}"
-          old_basename=$(basename "${old_conn_file}" .nmconnection)
-          new_conn_file="${old_conn_file/${NM_CONN_PATH}\/$old_basename/${NM_CONN_PATH}/$ovs_interface}"
+          new_conn_file=${NM_CONN_PATH}/"$ovs_interface".nmconnection
           if [ -f "$new_conn_file" ]; then
             echo "WARN: existing $bridge_name interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
           fi
