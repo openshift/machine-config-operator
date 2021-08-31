@@ -114,6 +114,68 @@ func TestKernelArguments(t *testing.T) {
 
 }
 
+func TestKernelType(t *testing.T) {
+	cs := framework.NewClientSet("")
+
+	// Get initial MachineConfig used by the master pool so that we can rollback to it later on
+	mcp, err := cs.MachineConfigPools().Get(context.TODO(), "master", metav1.GetOptions{})
+	require.Nil(t, err)
+	oldMasterRenderedConfig := mcp.Status.Configuration.Name
+
+	// create kernel type MC and roll out
+	kernelType := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("kerneltype-%s", uuid.NewUUID()),
+			Labels: helpers.MCLabelForRole("master"),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			KernelType: "realtime",
+		},
+	}
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
+	require.Nil(t, err)
+	t.Logf("Created %s", kernelType.Name)
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "master", kernelType.Name)
+	require.Nil(t, err)
+	err = waitForSingleNodePoolComplete(t, cs, "master", renderedConfig)
+	require.Nil(t, err)
+
+	node := helpers.GetSingleNodeByRole(t, cs, "master")
+	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+	kernelInfo := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	if !strings.Contains(kernelInfo, "kernel-rt-core") {
+		t.Fatalf("Node %s doesn't have expected kernel", node.Name)
+	}
+	t.Logf("Node %s has expected kernel", node.Name)
+
+	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
+	if err := cs.MachineConfigs().Delete(context.TODO(), kernelType.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	t.Logf("Deleted MachineConfig %s", kernelType.Name)
+
+	// Wait for the mcp to rollback to previous config
+	err = waitForSingleNodePoolComplete(t, cs, "master", oldMasterRenderedConfig)
+	require.Nil(t, err)
+
+	node = helpers.GetSingleNodeByRole(t, cs, "master")
+	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
+	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+
+	kernelInfo = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+	if strings.Contains(kernelInfo, "kernel-rt-core") {
+		t.Fatalf("Node %s did not rollback successfully", node.Name)
+	}
+	t.Logf("Node %s has successfully rolled back", node.Name)
+}
+
 func TestExtensions(t *testing.T) {
 	cs := framework.NewClientSet("")
 
