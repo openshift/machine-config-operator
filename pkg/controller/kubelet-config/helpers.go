@@ -12,6 +12,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -145,22 +146,36 @@ func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 // nolint: dupl
 func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.KubeletConfig) (string, error) {
 	// Get all the kubelet config CRs
-	kcList, err := client.MachineconfigurationV1().KubeletConfigs().List(context.TODO(), metav1.ListOptions{})
+	kcListAll, err := client.MachineconfigurationV1().KubeletConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error listing kubelet configs: %v", err)
 	}
+
 	// If there is no kubelet config in the list, return the default MC name with no suffix
-	if kcList == nil || len(kcList.Items) == 0 {
+	if kcListAll == nil || len(kcListAll.Items) == 0 {
 		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
-	for _, kc := range kcList.Items {
+
+	var kcList []mcfgv1.KubeletConfig
+	for _, kc := range kcListAll.Items {
+		selector, err := metav1.LabelSelectorAsSelector(kc.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			return "", fmt.Errorf("invalid label selector: %v", err)
+		}
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+		kcList = append(kcList, kc)
+	}
+
+	for _, kc := range kcList {
 		if kc.Name != cfg.Name {
 			continue
 		}
 		val, ok := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 		// If we find a matching kubelet config and it is the only one in the list, then return the default MC name with no suffix
 		// add check len(kcList.Items) < 2, mc name should not suffixed if cfg is the first kubelet config to be updated/created
-		if !ok && len(kcList.Items) < 2 {
+		if !ok && len(kcList) < 2 {
 			return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 		}
 		// Otherwise if an MC name suffix exists, append it to the default MC name and return that as this kubelet config exists and
@@ -173,7 +188,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	// If we are here, this means that a new kubelet config was created, so we have to calculate the suffix value for its MC name
 	suffixNum := 0
 	// Go through the list of kubelet config objects created and get the max suffix value currently created
-	for _, item := range kcList.Items {
+	for _, item := range kcList {
 		val, ok := item.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 		if ok {
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
