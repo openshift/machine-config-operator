@@ -350,6 +350,54 @@ func TestKubeletConfigCreate(t *testing.T) {
 	}
 }
 
+func TestKubeletConfigMultiCreate(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			f.ccLister = append(f.ccLister, cc)
+
+			kcCount := 30
+			for i := 0; i < kcCount; i++ {
+				f.resetActions()
+
+				poolName := fmt.Sprintf("subpool%v", i)
+				poolLabelName := fmt.Sprintf("pools.operator.machineconfiguration.openshift.io/%s", poolName)
+				labelSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, poolLabelName, "")
+
+				mcp := helpers.NewMachineConfigPool(poolName, nil, labelSelector, "v0")
+				mcp.ObjectMeta.Labels[poolLabelName] = ""
+
+				kc := newKubeletConfig(poolName, &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, labelSelector)
+
+				f.mcpLister = append(f.mcpLister, mcp)
+				f.mckLister = append(f.mckLister, kc)
+				f.objects = append(f.objects, kc)
+
+				mcs := helpers.NewMachineConfig(generateManagedKey(kc, 1), labelSelector.MatchLabels, "dummy://", []ign3types.File{{}})
+				mcsDeprecated := mcs.DeepCopy()
+				mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+				expectedPatch := fmt.Sprintf("{\"metadata\":{\"finalizers\":[\"99-%v-generated-kubelet-1\"]}}", poolName)
+
+				f.expectGetMachineConfigAction(mcs)
+				f.expectGetMachineConfigAction(mcsDeprecated)
+				f.expectGetMachineConfigAction(mcs)
+				f.expectCreateMachineConfigAction(mcs)
+				f.expectPatchKubeletConfig(kc, []byte(expectedPatch))
+				f.expectUpdateKubeletConfig(kc)
+				f.run(poolName)
+			}
+		})
+	}
+}
+
+func generateManagedKey(kcfg *mcfgv1.KubeletConfig, generation uint64) string {
+	return fmt.Sprintf("99-%s-generated-kubelet-%v", kcfg.Name, generation)
+}
+
 func TestKubeletConfigLogFile(t *testing.T) {
 	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
