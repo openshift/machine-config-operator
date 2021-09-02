@@ -288,10 +288,6 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 // Note that since we do this in the MCD container, cluster proxy configuration must also be injected
 // into the container. See the MCD daemonset.
 func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
-	var registryConfig []string
-	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
-	}
 	if err = os.MkdirAll(osImageContentBaseDir, 0755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %v", osImageContentBaseDir, err)
 		return
@@ -301,24 +297,13 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		return
 	}
 
-	if err = os.MkdirAll(osImageContentDir, 0755); err != nil {
-		err = fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
+	// In 4.8 we were running `oc image extract` but that doesn't work yet
+	// in disconnected, so right now in order to avoid two ways to do it
+	// with potentially different bugs, let's always use podman.
+	// xref https://bugzilla.redhat.com/show_bug.cgi?id=2000195
+	if err = podmanCopy(imgURL, osImageContentDir); err != nil {
 		return
 	}
-
-	// Extract the image
-	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
-	args = append(args, registryConfig...)
-	args = append(args, imgURL)
-	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
-		// Workaround fixes for the environment where oc image extract fails.
-		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
-		glog.Infof("Falling back to using podman cp to fetch OS image content")
-		if err = podmanCopy(imgURL, osImageContentDir); err != nil {
-			return
-		}
-	}
-
 	return
 }
 
