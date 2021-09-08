@@ -2,13 +2,13 @@
 
 aliases:
   baremetal-approvers:
-    - bcrochet
+    - bfournie
     - celebdor
     - cybertron
     - hardys
     - yboaron
   baremetal-reviewers:
-    - bcrochet
+    - bfournie
     - celebdor
     - cybertron
     - hardys
