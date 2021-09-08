@@ -230,8 +230,17 @@ type MachineConfigPoolSpec struct {
 	// This includes generating new desiredMachineConfig and update of machines.
 	Paused bool `json:"paused"`
 
-	// maxUnavailable specifies the percentage or constant number of machines that can be updating at any given time.
-	// default is 1.
+	// maxUnavailable defines either an integer number or percentage
+	// of nodes in the pool that can go Unavailable during an update.
+	// This includes nodes Unavailable for any reason, including user
+	// initiated cordons, failing nodes, etc. The default value is 1.
+	//
+	// A value larger than 1 will mean multiple nodes going unavailable during
+	// the update, which may affect your workload stress on the remaining nodes.
+	// You cannot set this value to 0 to stop updates (it will default back to 1);
+	// to stop updates, use the 'paused' property instead. Drain will respect
+	// Pod Disruption Budgets (PDBs) such as etcd quorum guards, even if
+	// maxUnavailable is greater than one.
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 
 	// The targeted MachineConfig object for the machine config pool.
