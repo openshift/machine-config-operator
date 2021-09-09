@@ -133,7 +133,7 @@ contents:
             - /bin/bash
             - -c
             - |
-              echo "State = FAULT" > /tmp/keepalived.data && kill -s SIGUSR1 "$(pgrep -o keepalived)" && for i in $(seq 5); do grep -q "State = FAULT" /tmp/keepalived.data && sleep 1 || exit 0; done && exit 1
+              [ ! -s "/etc/keepalived/keepalived.conf" ] || (echo "State = FAULT" > /tmp/keepalived.data && kill -s SIGUSR1 "$(pgrep -o keepalived)" && for i in $(seq 5); do grep -q "State = FAULT" /tmp/keepalived.data && sleep 1 || exit 0; done && exit 1)
           initialDelaySeconds: 20
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
