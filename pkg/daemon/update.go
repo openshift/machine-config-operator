@@ -372,6 +372,13 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		}
 	}
 
+	// apply Override Image
+	if mcDiff.overrideImage {
+		if err := dn.applyOverrideImage(newConfig.Spec.OverrideImage); err != nil {
+			return err
+		}
+	}
+
 	// Update OS
 	if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
 		nodeName := ""
@@ -499,7 +506,7 @@ func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig)
 	if err != nil {
 		return []string{}, err
 	}
-	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
+	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions || diff.overrideImage {
 		// must reboot
 		return []string{postConfigChangeActionReboot}, nil
 	}
@@ -664,14 +671,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 // and the MCO would just operate on that.  For now we're just doing this to get
 // improved logging.
 type machineConfigDiff struct {
-	osUpdate   bool
-	kargs      bool
-	fips       bool
-	passwd     bool
-	files      bool
-	units      bool
-	kernelType bool
-	extensions bool
+	osUpdate      bool
+	kargs         bool
+	fips          bool
+	passwd        bool
+	files         bool
+	units         bool
+	kernelType    bool
+	extensions    bool
+	overrideImage bool
 }
 
 // isEmpty returns true if the machineConfigDiff has no changes, or
@@ -724,14 +732,15 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	return &machineConfigDiff{
-		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
-		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
-		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
-		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
-		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
-		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
-		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
-		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
+		osUpdate:      oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
+		kargs:         !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
+		fips:          oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
+		passwd:        !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
+		files:         !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
+		units:         !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
+		kernelType:    canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
+		extensions:    !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
+		overrideImage: oldConfig.Spec.OverrideImage != newConfig.Spec.OverrideImage,
 	}, nil
 }
 
@@ -830,6 +839,8 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	if err := checkFIPS(oldConfig, newConfig); err != nil {
 		return nil, err
 	}
+
+	// Presently assuming all changes are applicable via Overrides
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
@@ -1739,6 +1750,60 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 		return fmt.Errorf("failed to update OS to %s : %v", newURL, err)
 	}
 
+	return nil
+}
+
+// applyOverrideImage wipes the slate of rpm-ostree override and overlay,
+// and applies the changes specified in the newest container image.
+// Test only and does not work with extensions or other manual changes that
+// affect override/overlay
+func (dn *Daemon) applyOverrideImage(overrideImage string) error {
+	// extract the image to a temporary location
+	// TODO add a check for validity of pull location
+	overrideImageContentDir, err := ioutil.TempDir("/run", "mco-override-image-")
+	if err != nil {
+		return fmt.Errorf("Cannot create temporary directory for overrideImage: %v", err)
+	}
+	defer os.RemoveAll(overrideImageContentDir)
+
+	if err = podmanCopy(overrideImage, overrideImageContentDir); err != nil {
+		return fmt.Errorf("Cannot extract custom override image at location %s: %v", overrideImage, err)
+	}
+
+	var installFiles, overrideFiles []string
+	// Create list of packages to Install and Override
+	installFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "overlay"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("Cannot parse rpms to overlay: %v", err)
+	}
+	for _, f := range installFileInfo {
+		installFiles = append(installFiles, f.Name())
+	}
+	overrideFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "overrides"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("Cannot parse rpms to override: %v", err)
+	}
+	for _, f := range overrideFileInfo {
+		overrideFiles = append(overrideFiles, f.Name())
+	}
+
+	client := NewNodeUpdaterClient()
+	// clean out existing override/overlay
+	if err := client.CleanOverride(); err != nil {
+		return fmt.Errorf("Failed to clean up old overrides/installs: %v", err)
+	}
+
+	// write install section
+	if err := client.InstallPackages(installFiles); err != nil {
+		return fmt.Errorf("Failed to install new packages: %v", err)
+	}
+
+	// write override section
+	if err := client.OverridePackages(overrideFiles); err != nil {
+		return fmt.Errorf("Failed to overlay new packages: %v", err)
+	}
+
+	// good to go
 	return nil
 }
 

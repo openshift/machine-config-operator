@@ -66,6 +66,9 @@ type NodeUpdaterClient interface {
 	GetBootedOSImageURL() (string, string, error)
 	Rebase(string, string) (bool, error)
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
+	CleanOverride() error
+	InstallPackages([]string) error
+	OverridePackages([]string) error
 }
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
@@ -305,6 +308,44 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 
 	changed = true
 	return
+}
+
+// CleanOverride removes all override content from previous run,
+// including overrides and overlays
+func (r *RpmOstreeClient) CleanOverride() error {
+	overrideArgs := []string{"override", "reset", "--all"}
+	if err := runRpmOstree(overrideArgs...); err != nil {
+		return err
+	}
+
+	overlayArgs := []string{"uninstall", "--all"}
+	if err := runRpmOstree(overlayArgs...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// InstallPackages installs new packages from overlay container
+func (r *RpmOstreeClient) InstallPackages(packages []string) error {
+	// TODO check if this is just the location?
+	args := append([]string{"install"}, packages...)
+	if err := runRpmOstree(args...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// OverridePackages overrides existing packages from overlay container
+func (r *RpmOstreeClient) OverridePackages(packages []string) error {
+	// TODO check if this is just the location?
+	args := append([]string{"override", "replace"}, packages...)
+	if err := runRpmOstree(args...); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // truncate a string using runes/codepoints as limits.

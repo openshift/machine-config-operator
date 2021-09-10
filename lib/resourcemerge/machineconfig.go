@@ -63,6 +63,10 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 		*modified = true
 		(*existing).Extensions = required.Extensions
 	}
+	if !equality.Semantic.DeepEqual(existing.OverrideImage, required.OverrideImage) {
+		*modified = true
+		(*existing).OverrideImage = required.OverrideImage
+	}
 }
 
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {

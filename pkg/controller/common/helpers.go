@@ -95,6 +95,15 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 		}
 	}
 
+	// for OverrideImage, take the latest one
+	overrideImage := ""
+	for i := len(configs) - 1; i >= 0; i-- {
+		if configs[i].Spec.OverrideImage != "" {
+			overrideImage = configs[i].Spec.OverrideImage
+			break
+		}
+	}
+
 	// If no MC sets kerneType, then set it to 'default' since that's what it is using
 	if kernelType == "" {
 		kernelType = KernelTypeDefault
@@ -124,9 +133,10 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
 			},
-			FIPS:       fips,
-			KernelType: kernelType,
-			Extensions: extensions,
+			FIPS:          fips,
+			KernelType:    kernelType,
+			Extensions:    extensions,
+			OverrideImage: overrideImage,
 		},
 	}, nil
 }
