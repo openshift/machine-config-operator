@@ -1774,7 +1774,7 @@ func (dn *Daemon) applyOverrideImage(overrideImage string) error {
 
 	var installFiles, overrideFiles []string
 	// Create list of packages to Install and Override
-	installFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "overlay"))
+	installFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "install"))
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("Cannot parse rpms to overlay: %v", err)
 	}

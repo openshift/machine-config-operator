@@ -231,3 +231,19 @@ Enabling FIPS mode is a Day 1 operation, set at install time.  You cannot enable
 
 You should not attempt to set this field; it is controlled by the operator and injected directly into the final `rendered-` config.
 For more information, see [OSUpgrades.md](OSUpgrades.md).
+
+### Override Image
+
+Allows you to specify an arbitrary container image with corresponding install/override rpms to apply to system.
+
+Example usage:
+```
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: "worker"
+  name: 99-mcbs-override-image
+spec:
+  overrideImage: quay.io/skumari/rhcos-custom-content:latest
+```
