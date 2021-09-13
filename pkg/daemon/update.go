@@ -1774,21 +1774,23 @@ func (dn *Daemon) applyOverrideImage(overrideImage string) error {
 
 	var installFiles, overrideFiles []string
 	// Create list of packages to Install and Override
-	installFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "install"))
+	installDir := filepath.Join(overrideImageContentDir, "rpms", "install")
+	installFileInfo, err := ioutil.ReadDir(installDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("Cannot parse rpms to overlay: %v", err)
 	}
 	for _, f := range installFileInfo {
-		installFiles = append(installFiles, f.Name())
+		installFiles = append(installFiles, filepath.Join(installDir, f.Name()))
 	}
 	glog.Infof("Found rpms to install: %v", installFiles)
 
-	overrideFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "overrides"))
+	overrideDir := filepath.Join(overrideImageContentDir, "rpms", "overrides")
+	overrideFileInfo, err := ioutil.ReadDir(overrideDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("Cannot parse rpms to override: %v", err)
 	}
 	for _, f := range overrideFileInfo {
-		overrideFiles = append(overrideFiles, f.Name())
+		overrideFiles = append(overrideFiles, filepath.Join(overrideDir, f.Name()))
 	}
 	glog.Infof("Found rpms to override: %v", overrideFiles)
 
