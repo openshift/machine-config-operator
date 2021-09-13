@@ -374,6 +374,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 
 	// apply Override Image
 	if mcDiff.overrideImage {
+		glog.Infof("Found override image with location %s, applying...", newConfig.Spec.OverrideImage)
 		if err := dn.applyOverrideImage(newConfig.Spec.OverrideImage); err != nil {
 			return err
 		}
@@ -1766,6 +1767,7 @@ func (dn *Daemon) applyOverrideImage(overrideImage string) error {
 	}
 	defer os.RemoveAll(overrideImageContentDir)
 
+	glog.Infof("Copying the image at %s to %s", overrideImage, overrideImageContentDir)
 	if err = podmanCopy(overrideImage, overrideImageContentDir); err != nil {
 		return fmt.Errorf("Cannot extract custom override image at location %s: %v", overrideImage, err)
 	}
@@ -1779,6 +1781,8 @@ func (dn *Daemon) applyOverrideImage(overrideImage string) error {
 	for _, f := range installFileInfo {
 		installFiles = append(installFiles, f.Name())
 	}
+	glog.Infof("Found rpms to install: %v", installFiles)
+
 	overrideFileInfo, err := ioutil.ReadDir(filepath.Join(overrideImageContentDir, "rpms", "overrides"))
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("Cannot parse rpms to override: %v", err)
@@ -1786,6 +1790,7 @@ func (dn *Daemon) applyOverrideImage(overrideImage string) error {
 	for _, f := range overrideFileInfo {
 		overrideFiles = append(overrideFiles, f.Name())
 	}
+	glog.Infof("Found rpms to override: %v", overrideFiles)
 
 	client := NewNodeUpdaterClient()
 	// clean out existing override/overlay
@@ -1804,6 +1809,7 @@ func (dn *Daemon) applyOverrideImage(overrideImage string) error {
 	}
 
 	// good to go
+	glog.Infof("Successfully applied override image!")
 	return nil
 }
 
