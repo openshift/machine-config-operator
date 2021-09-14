@@ -49,7 +49,6 @@ test-unit:
 #    make update
 update:
 	hack/update-codegen.sh
-	hack/update-generated-bindata.sh
 
 go-deps:
 	go mod tidy
@@ -77,7 +76,6 @@ verify: install-tools
 	# https://github.com/kubernetes/kubernetes/pull/85559
 	pushd vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
 	hack/verify-codegen.sh
-	hack/verify-generated-bindata.sh
 	rm -f vendor/k8s.io/code-generator/go.mod
 	mv vendor/k8s.io/code-generator/go.mod.bak vendor/k8s.io/code-generator/go.mod
 	rm -rf vendor/k8s.io/code-generator/vendor
