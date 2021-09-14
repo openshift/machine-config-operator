@@ -46,7 +46,7 @@ contents:
     }
 
     vrrp_script chk_default_ingress {
-        script "/usr/bin/timeout 4.9 /host/bin/oc --kubeconfig /var/lib/kubelet/kubeconfig get ep -n openshift-ingress router-internal-default -o yaml  | grep 'ip:' | grep {{`{{.NonVirtualIP}}`}} "
+        script "/usr/bin/timeout 4.9 /etc/keepalived/chk_default_ingress.sh"
         interval 5
         weight 50
         rise 3
