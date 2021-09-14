@@ -15,9 +15,9 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
-	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	utilnet "k8s.io/utils/net"
 )
@@ -34,7 +34,7 @@ type renderConfig struct {
 }
 
 func renderAsset(config *renderConfig, path string) ([]byte, error) {
-	objBytes, err := assets.Asset(path)
+	objBytes, err := manifests.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("error getting asset %s: %v", path, err)
 	}
