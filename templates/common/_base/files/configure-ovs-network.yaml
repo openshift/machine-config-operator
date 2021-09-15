@@ -203,6 +203,11 @@ contents:
         extra_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
       fi
 
+      ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
+      if [ -n "$ipv6_addr_gen_mode" ]; then
+        extra_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
+      fi
+
       # create bridge
       if ! nmcli connection show br-ex &> /dev/null; then
         nmcli c add type ovs-bridge \
