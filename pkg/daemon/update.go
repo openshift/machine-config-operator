@@ -1759,6 +1759,18 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 // Test only and does not work with extensions or other manual changes that
 // affect override/overlay
 func (dn *Daemon) applyOverrideImage(overrideImage string) error {
+	// First check if this is empty. We should only get here if an overrideImage was deleted,
+	// In which case we should just reset the system.
+	if overrideImage == "" {
+		glog.Info("Found empty new overrideImage, reverting all existing changes...")
+		client := NewNodeUpdaterClient()
+		// clean out existing override/overlay
+		if err := client.CleanOverride(); err != nil {
+			return fmt.Errorf("Failed to clean up old overrides/installs: %v", err)
+		}
+		return nil
+	}
+
 	// extract the image to a temporary location
 	// TODO add a check for validity of pull location
 	overrideImageContentDir, err := ioutil.TempDir("/run", "mco-override-image-")
