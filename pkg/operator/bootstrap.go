@@ -147,7 +147,6 @@ func RenderBootstrap(
 		templatectrl.InfraImageKey:          imgs.InfraImage,
 		templatectrl.KeepalivedKey:          imgs.Keepalived,
 		templatectrl.CorednsKey:             imgs.Coredns,
-		templatectrl.MdnsPublisherKey:       imgs.MdnsPublisher,
 		templatectrl.HaproxyKey:             imgs.Haproxy,
 		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
 	}
