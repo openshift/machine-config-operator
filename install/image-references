@@ -31,10 +31,6 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:coredns
-  - name: mdns-publisher
-    from:
-      kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:mdns-publisher
   - name: haproxy-router
     from:
       kind: DockerImage

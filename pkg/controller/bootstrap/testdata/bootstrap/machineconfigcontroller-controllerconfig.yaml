@@ -15,7 +15,6 @@ spec:
     infraImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     keepalivedImage: ""
     kubeClientAgentImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-    mdnsPublisherImage: ""
   infra:
     apiVersion: config.openshift.io/v1
     kind: Infrastructure

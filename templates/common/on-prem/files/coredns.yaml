@@ -10,7 +10,7 @@ contents:
       creationTimestamp:
       deletionGracePeriodSeconds: 65
       labels:
-        app: {{ onPremPlatformShortName . }}-infra-mdns
+        app: {{ onPremPlatformShortName . }}-infra-coredns
     spec:
       volumes:
       - name: resource-dir

@@ -34,7 +34,6 @@ type ControllerConfigImages struct {
 	ClusterEtcdOperator string `json:"clusterEtcdOperatorImage"`
 	Keepalived          string `json:"keepalivedImage"`
 	Coredns             string `json:"corednsImage"`
-	MdnsPublisher       string `json:"mdnsPublisherImage"`
 	Haproxy             string `json:"haproxyImage"`
 	BaremetalRuntimeCfg string `json:"baremetalRuntimeCfgImage"`
 }
