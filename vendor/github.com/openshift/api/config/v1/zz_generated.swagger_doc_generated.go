@@ -841,6 +841,35 @@ func (AWSServiceEndpoint) SwaggerDoc() map[string]string {
 	return map_AWSServiceEndpoint
 }
 
+var map_AlibabaCloudPlatformSpec = map[string]string{
+	"": "AlibabaCloudPlatformSpec holds the desired state of the Alibaba Cloud infrastructure provider. This only includes fields that can be modified in the cluster.",
+}
+
+func (AlibabaCloudPlatformSpec) SwaggerDoc() map[string]string {
+	return map_AlibabaCloudPlatformSpec
+}
+
+var map_AlibabaCloudPlatformStatus = map[string]string{
+	"":                "AlibabaCloudPlatformStatus holds the current status of the Alibaba Cloud infrastructure provider.",
+	"region":          "region specifies the region for Alibaba Cloud resources created for the cluster.",
+	"resourceGroupID": "resourceGroupID is the ID of the resource group for the cluster.",
+	"resourceTags":    "resourceTags is a list of additional tags to apply to Alibaba Cloud resources created for the cluster.",
+}
+
+func (AlibabaCloudPlatformStatus) SwaggerDoc() map[string]string {
+	return map_AlibabaCloudPlatformStatus
+}
+
+var map_AlibabaCloudResourceTag = map[string]string{
+	"":      "AlibabaCloudResourceTag is the set of tags to add to apply to resources.",
+	"key":   "key is the key of the tag.",
+	"value": "value is the value of the tag.",
+}
+
+func (AlibabaCloudResourceTag) SwaggerDoc() map[string]string {
+	return map_AlibabaCloudResourceTag
+}
+
 var map_AzurePlatformSpec = map[string]string{
 	"": "AzurePlatformSpec holds the desired state of the Azure infrastructure provider. This only includes fields that can be modified in the cluster.",
 }
@@ -1039,7 +1068,7 @@ func (OvirtPlatformStatus) SwaggerDoc() map[string]string {
 
 var map_PlatformSpec = map[string]string{
 	"":             "PlatformSpec holds the desired state specific to the underlying infrastructure provider of the current cluster. Since these are used at spec-level for the underlying cluster, it is supposed that only one of the spec structs is set.",
-	"type":         "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"KubeVirt\", \"EquinixMetal\", \"PowerVS\", and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.",
+	"type":         "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"KubeVirt\", \"EquinixMetal\", \"PowerVS\", \"AlibabaCloud\" and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.",
 	"aws":          "AWS contains settings specific to the Amazon Web Services infrastructure provider.",
 	"azure":        "Azure contains settings specific to the Azure infrastructure provider.",
 	"gcp":          "GCP contains settings specific to the Google Cloud Platform infrastructure provider.",
@@ -1051,6 +1080,7 @@ var map_PlatformSpec = map[string]string{
 	"kubevirt":     "Kubevirt contains settings specific to the kubevirt infrastructure provider.",
 	"equinixMetal": "EquinixMetal contains settings specific to the Equinix Metal infrastructure provider.",
 	"powervs":      "PowerVS contains settings specific to the IBM Power Systems Virtual Servers infrastructure provider.",
+	"alibabaCloud": "AlibabaCloud contains settings specific to the Alibaba Cloud infrastructure provider.",
 }
 
 func (PlatformSpec) SwaggerDoc() map[string]string {
@@ -1059,7 +1089,7 @@ func (PlatformSpec) SwaggerDoc() map[string]string {
 
 var map_PlatformStatus = map[string]string{
 	"":             "PlatformStatus holds the current status specific to the underlying infrastructure provider of the current cluster. Since these are used at status-level for the underlying cluster, it is supposed that only one of the status structs is set.",
-	"type":         "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"EquinixMetal\", \"PowerVS\", and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.\n\nThis value will be synced with to the `status.platform` and `status.platformStatus.type`. Currently this value cannot be changed once set.",
+	"type":         "type is the underlying infrastructure provider for the cluster. This value controls whether infrastructure automation such as service load balancers, dynamic volume provisioning, machine creation and deletion, and other integrations are enabled. If None, no infrastructure automation is enabled. Allowed values are \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\", \"VSphere\", \"oVirt\", \"EquinixMetal\", \"PowerVS\", \"AlibabaCloud\" and \"None\". Individual components may not support all platforms, and must handle unrecognized platforms as None if they do not support that platform.\n\nThis value will be synced with to the `status.platform` and `status.platformStatus.type`. Currently this value cannot be changed once set.",
 	"aws":          "AWS contains settings specific to the Amazon Web Services infrastructure provider.",
 	"azure":        "Azure contains settings specific to the Azure infrastructure provider.",
 	"gcp":          "GCP contains settings specific to the Google Cloud Platform infrastructure provider.",
@@ -1071,6 +1101,7 @@ var map_PlatformStatus = map[string]string{
 	"kubevirt":     "Kubevirt contains settings specific to the kubevirt infrastructure provider.",
 	"equinixMetal": "EquinixMetal contains settings specific to the Equinix Metal infrastructure provider.",
 	"powervs":      "PowerVS contains settings specific to the Power Systems Virtual Servers infrastructure provider.",
+	"alibabaCloud": "AlibabaCloud contains settings specific to the Alibaba Cloud infrastructure provider.",
 }
 
 func (PlatformStatus) SwaggerDoc() map[string]string {
@@ -1496,7 +1527,7 @@ var map_TokenConfig = map[string]string{
 	"":                                    "TokenConfig holds the necessary configuration options for authorization and access tokens",
 	"accessTokenMaxAgeSeconds":            "accessTokenMaxAgeSeconds defines the maximum age of access tokens",
 	"accessTokenInactivityTimeoutSeconds": "accessTokenInactivityTimeoutSeconds - DEPRECATED: setting this field has no effect.",
-	"accessTokenInactivityTimeout":        "accessTokenInactivityTimeout defines the token inactivity timeout for tokens granted by any client. The value represents the maximum amount of time that can occur between consecutive uses of the token. Tokens become invalid if they are not used within this temporal window. The user will need to acquire a new token to regain access once a token times out. Takes valid time duration string such as \"5m\", \"1.5h\" or \"2h45m\". The minimum allowed value for duration is 300s (5 minutes). If the timeout is configured per client, then that value takes precedence. If the timeout value is not specified and the client does not override the value, then tokens are valid until their lifetime.",
+	"accessTokenInactivityTimeout":        "accessTokenInactivityTimeout defines the token inactivity timeout for tokens granted by any client. The value represents the maximum amount of time that can occur between consecutive uses of the token. Tokens become invalid if they are not used within this temporal window. The user will need to acquire a new token to regain access once a token times out. Takes valid time duration string such as \"5m\", \"1.5h\" or \"2h45m\". The minimum allowed value for duration is 300s (5 minutes). If the timeout is configured per client, then that value takes precedence. If the timeout value is not specified and the client does not override the value, then tokens are valid until their lifetime.\n\nWARNING: existing tokens' timeout will not be affected (lowered) by changing this value",
 }
 
 func (TokenConfig) SwaggerDoc() map[string]string {
