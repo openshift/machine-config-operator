@@ -117,8 +117,11 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with("CSIMigrationOpenStack").      // sig-storage, jsafrane, Kubernetes feature gate
 		with("CSIMigrationGCE").            // sig-storage, fbertina, Kubernetes feature gate
 		with("CSIMigrationAzureDisk").      // sig-storage, fbertina, Kubernetes feature gate
+		with("CSIMigrationAzureFile").      // sig-storage, fbertina, Kubernetes feature gate
+		with("CSIMigrationVSphere").        // sig-storage, fbertina, Kubernetes feature gate
 		with("ExternalCloudProvider").      // sig-cloud-provider, jspeed, OCP specific
 		with("InsightsOperatorPullingSCA"). // insights-operator/ccx, tremes, OCP specific
+		with("CSIDriverSharedResource").    // sig-build, adkaplan, OCP specific
 		toFeatures(),
 	LatencySensitive: newDefaultFeatures().
 		with(
@@ -140,6 +143,7 @@ var defaultFeatures = &FeatureGateEnabledDisabled{
 		"NodeDisruptionExclusion",        // sig-scheduling, ccoleman
 		"ServiceNodeExclusion",           // sig-scheduling, ccoleman
 		"DownwardAPIHugePages",           // sig-node, rphillips
+		"PodSecurity",                    // sig-auth, s-urbaniak
 	},
 	Disabled: []string{
 		"LegacyNodeRoleBehavior", // sig-scheduling, ccoleman

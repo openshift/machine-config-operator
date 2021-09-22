@@ -32,6 +32,7 @@ contents:
       ServiceNodeExclusion: true
       SupportPodPidsLimit: true
       DownwardAPIHugePages: true
+      PodSecurity: true
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
