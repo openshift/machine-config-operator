@@ -43,3 +43,11 @@ aliases:
     - patrickdillon
     - rvanderp3
     - jstuever
+  alibaba-reviewers:
+    - kwoodson
+    - fabianofranz
+    - rvanderp3
+  alibaba-approvers:
+    - kwoodson
+    - fabianofranz
+    - rvanderp3
