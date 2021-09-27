@@ -36,8 +36,8 @@ require (
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20210924154557-a4f696157341
-	github.com/openshift/client-go v0.0.0-20210916133943-9acee1a0fb83
-	github.com/openshift/library-go v0.0.0-20210930103404-8911cacccb05
+	github.com/openshift/client-go v0.0.0-20210927134410-067cd720e52a
+	github.com/openshift/library-go v0.0.0-20210906100234-6754cfd64cb5
 	github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
