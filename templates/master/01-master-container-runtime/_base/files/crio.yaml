@@ -8,6 +8,7 @@ contents:
     storage_option = [
         "overlay.override_kernel_check=1",
     ]
+    version_file_persist = "/var/lib/crio/version"
 
     [crio.api]
     stream_address = ""
