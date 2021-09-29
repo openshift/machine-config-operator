@@ -85,7 +85,7 @@ contents:
       old_name="$(nmcli -g connection.id connection show uuid "$uuid")"
       local new_name="${old_name}${MANAGED_NM_CONN_SUFFIX}"
       if nmcli connection show id "${new_name}" &> /dev/null; then
-        echo "WARN: existing ovs slave ${new_name} connection profile file found, overwriting..."
+        echo "WARN: existing ovs slave ${new_name} connection profile file found, overwriting..." >&2
         nmcli connection delete id "${new_name}" &> /dev/null
       fi
       nmcli connection clone $uuid "${new_name}" &> /dev/null
