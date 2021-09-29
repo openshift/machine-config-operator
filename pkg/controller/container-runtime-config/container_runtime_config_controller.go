@@ -89,6 +89,9 @@ type Controller struct {
 	imgLister       cligolistersv1.ImageLister
 	imgListerSynced cache.InformerSynced
 
+	icpLister       cligolistersv1.ImageContentPolicyLister
+	icpListerSynced cache.InformerSynced
+
 	icspLister       operatorlistersv1alpha1.ImageContentSourcePolicyLister
 	icspListerSynced cache.InformerSynced
 
@@ -109,6 +112,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
+	icpInformer cligoinformersv1.ImageContentPolicyInformer,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
@@ -140,6 +144,12 @@ func New(
 		DeleteFunc: ctrl.imageConfDeleted,
 	})
 
+	icpInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.icpConfAdded,
+		UpdateFunc: ctrl.icpConfUpdated,
+		DeleteFunc: ctrl.icpConfDeleted,
+	})
+
 	icspInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.icspConfAdded,
 		UpdateFunc: ctrl.icspConfUpdated,
@@ -162,6 +172,9 @@ func New(
 	ctrl.imgLister = imgInformer.Lister()
 	ctrl.imgListerSynced = imgInformer.Informer().HasSynced
 
+	ctrl.icpLister = icpInformer.Lister()
+	ctrl.icpListerSynced = icpInformer.Informer().HasSynced
+
 	ctrl.icspLister = icspInformer.Lister()
 	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
 
@@ -178,7 +191,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.imgQueue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.clusterVersionListerSynced) {
+		ctrl.imgListerSynced, ctrl.icpListerSynced, ctrl.icspListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -214,6 +227,18 @@ func (ctrl *Controller) imageConfUpdated(oldObj, newObj interface{}) {
 }
 
 func (ctrl *Controller) imageConfDeleted(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) icpConfAdded(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) icpConfUpdated(oldObj, newObj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) icpConfDeleted(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -669,6 +694,7 @@ func (ctrl *Controller) mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1
 	return cfgTOML, ctrl.syncStatusOnly(cfg, nil)
 }
 
+// nolint:gocyclo
 func (ctrl *Controller) syncImageConfig(key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing ImageConfig %q (%v)", key, startTime)
@@ -716,6 +742,14 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return fmt.Errorf("could not get ControllerConfig %v", err)
 	}
 
+	// Find all ImageContentPolicy objects
+	icpRules, err := ctrl.icpLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		icpRules = []*apicfgv1.ImageContentPolicy{}
+	} else if err != nil {
+		return err
+	}
+
 	// Find all ImageContentSourcePolicy objects
 	icspRules, err := ctrl.icspLister.List(labels.Everything())
 	if err != nil && errors.IsNotFound(err) {
@@ -723,6 +757,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	} else if err != nil {
 		return err
 	}
+	icpRules = mergeToICPRules(icspRules, icpRules)
 
 	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
 	if err != nil {
@@ -745,7 +780,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icpRules)
 			if err != nil {
 				return err
 			}
@@ -806,7 +841,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs, allowedRegs, searchRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
+	insecureRegs, blockedRegs, allowedRegs, searchRegs []string, icpRules []*apicfgv1.ImageContentPolicy) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -819,7 +854,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
 	}
 
-	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
+	if insecureRegs != nil || blockedRegs != nil || len(icpRules) != 0 {
 		if originalRegistriesIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original registries config is empty")
 		}
@@ -827,7 +862,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
 		}
-		registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs, icspRules)
+		registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs, icpRules)
 		if err != nil {
 			return nil, fmt.Errorf("could not update registries config with new changes: %v", err)
 		}
@@ -881,6 +916,9 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		}
 	}
 
+	icpRules := []*apicfgv1.ImageContentPolicy{}
+	icpRules = mergeToICPRules(icspRules, icpRules)
+
 	var res []*mcfgv1.MachineConfig
 	for _, pool := range mcpPools {
 		role := pool.Name
@@ -889,7 +927,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role,
-			insecureRegs, blockedRegs, allowedRegs, searchRegs, icspRules)
+			insecureRegs, blockedRegs, allowedRegs, searchRegs, icpRules)
 		if err != nil {
 			return nil, err
 		}

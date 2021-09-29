@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
-	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	apicfgv1 "github.com/openshift/api/config/v1"
 )
 
 // scopeIsNestedInsideScope returns true if a subScope value (as in sysregistriesv2.Registry.Prefix / sysregistriesv2.Endpoint.Location)
@@ -35,29 +35,29 @@ func scopeIsNestedInsideScope(subScope, superScope string) bool {
 }
 
 // rdmContainsARealMirror returns true if set.Mirrors contains at least one entry that is not set.Source.
-func rdmContainsARealMirror(set *apioperatorsv1alpha1.RepositoryDigestMirrors) bool {
+func rdmContainsARealMirror(set *apicfgv1.RepositoryDigestMirrors) bool {
 	for _, mirror := range set.Mirrors {
-		if mirror != set.Source {
+		if string(mirror) != set.Source {
 			return true
 		}
 	}
 	return false
 }
 
-// mergedMirrorSets processes icspRules and returns a set of RepositoryDigestMirrors, one for each Source value,
+// mergedMirrorSets processes icpRules and returns a set of RepositoryDigestMirrors, one for each Source value,
 // ordered consistently with the preference order of the individual entries (if possible)
 // E.g. given mirror sets (B, C) and (A, B), it will combine them into a single (A, B, C) set.
-func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]apioperatorsv1alpha1.RepositoryDigestMirrors, error) {
-	disjointSets := map[string]*[]*apioperatorsv1alpha1.RepositoryDigestMirrors{} // Key == Source
-	for _, icsp := range icspRules {
-		for i := range icsp.Spec.RepositoryDigestMirrors {
-			set := &icsp.Spec.RepositoryDigestMirrors[i]
+func mergedMirrorSets(icpRules []*apicfgv1.ImageContentPolicy) ([]apicfgv1.RepositoryDigestMirrors, error) {
+	disjointSets := map[string]*[]*apicfgv1.RepositoryDigestMirrors{} // Key == Source
+	for _, icp := range icpRules {
+		for i := range icp.Spec.RepositoryDigestMirrors {
+			set := &icp.Spec.RepositoryDigestMirrors[i]
 			if !rdmContainsARealMirror(set) {
 				continue // No mirrors (or mirrors that only repeat the authoritative source) is not really a mirror set.
 			}
 			ds, ok := disjointSets[set.Source]
 			if !ok {
-				ds = &[]*apioperatorsv1alpha1.RepositoryDigestMirrors{}
+				ds = &[]*apicfgv1.RepositoryDigestMirrors{}
 				disjointSets[set.Source] = ds
 			}
 			*ds = append(*ds, set)
@@ -71,24 +71,29 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	}
 	sort.Strings(sources)
 	// Convert the sets of mirrors
-	res := []apioperatorsv1alpha1.RepositoryDigestMirrors{}
+	res := []apicfgv1.RepositoryDigestMirrors{}
 	for _, source := range sources {
+		allowMirrorByTagsFlag := false
 		ds := disjointSets[source]
 		topoGraph := newTopoGraph()
 		for _, set := range *ds {
+			// AllowMirrorByTags is only set once for each source in imagecontentpolicies.config.openshift.io
+			if !allowMirrorByTagsFlag && set.AllowMirrorByTags {
+				allowMirrorByTagsFlag = true
+			}
 			for i := 0; i+1 < len(set.Mirrors); i++ {
-				topoGraph.AddEdge(set.Mirrors[i], set.Mirrors[i+1])
+				topoGraph.AddEdge(string(set.Mirrors[i]), string(set.Mirrors[i+1]))
 			}
 			sourceInGraph := false
 			for _, m := range set.Mirrors {
-				if m == source {
+				if string(m) == source {
 					sourceInGraph = true
 					break
 				}
 			}
 			if !sourceInGraph {
 				// The build of mirrorSets guarantees len(set.Mirrors) > 0.
-				topoGraph.AddEdge(set.Mirrors[len(set.Mirrors)-1], source)
+				topoGraph.AddEdge(string(set.Mirrors[len(set.Mirrors)-1]), source)
 			}
 			// Every node in topoGraph, including source, is implicitly added by topoGraph.AddEdge (every mirror set contains at least one non-source mirror,
 			// so there are no unconnected nodes that we would have to add separately from the edges).
@@ -101,9 +106,14 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 			// We don't need to explicitly include source in the list, it will be automatically tried last per the semantics of sysregistriesv2. Mirrors.
 			sortedRepos = sortedRepos[:len(sortedRepos)-1]
 		}
-		res = append(res, apioperatorsv1alpha1.RepositoryDigestMirrors{
-			Source:  source,
-			Mirrors: sortedRepos,
+		var mirrors []apicfgv1.Mirror
+		for _, repo := range sortedRepos {
+			mirrors = append(mirrors, apicfgv1.Mirror(repo))
+		}
+		res = append(res, apicfgv1.RepositoryDigestMirrors{
+			Source:            source,
+			Mirrors:           mirrors,
+			AllowMirrorByTags: allowMirrorByTagsFlag,
 		})
 	}
 	return res, nil
@@ -112,14 +122,14 @@ func mergedMirrorSets(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 // EditRegistriesConfig edits, IN PLACE, the /etc/containers/registries.conf configuration provided in config, to:
 // - Mark scope entries in insecureScopes as insecure (TLS is not required, and TLS certificate verification is not required when TLS is used)
 // - Mark scope entries in blockedScopes as blocked (any attempts to access them fail)
-// - Implement ImageContentSourcePolicy rules in icspRules.
+// - Implement ImageContentPolicy rules in icpRules.
 // "scopes" can be any of whole registries, which means that the configuration applies to everything on that registry, including any possible separately-configured
 // namespaces/repositories within that registry.
 // or can be wildcard entries, which means that we accept wildcards in the form of *.example.registry.com for insecure and blocked registries only. We do not
 // accept them for mirror configuration.
 // A valid scope is in the form of registry/namespace...[/repo] (can also refer to sysregistriesv2.Registry.Prefix)
 // NOTE: Validation of wildcard entries is done before EditRegistriesConfig is called in the MCO code.
-func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScopes, blockedScopes []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) error {
+func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScopes, blockedScopes []string, icpRules []*apicfgv1.ImageContentPolicy) error {
 
 	// addRegistryEntry creates a Registry object corresponding to scope.
 	// NOTE: The pointer is valid only until the next getRegistryEntry call.
@@ -153,15 +163,15 @@ func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScop
 		return addRegistryEntry(scope)
 	}
 
-	mirrorSets, err := mergedMirrorSets(icspRules)
+	mirrorSets, err := mergedMirrorSets(icpRules)
 	if err != nil {
 		return err
 	}
 	for _, mirrorSet := range mirrorSets {
 		reg := getRegistryEntry(mirrorSet.Source)
-		reg.MirrorByDigestOnly = true
+		reg.MirrorByDigestOnly = !mirrorSet.AllowMirrorByTags
 		for _, mirror := range mirrorSet.Mirrors {
-			reg.Mirrors = append(reg.Mirrors, sysregistriesv2.Endpoint{Location: mirror})
+			reg.Mirrors = append(reg.Mirrors, sysregistriesv2.Endpoint{Location: string(mirror)})
 		}
 	}
 

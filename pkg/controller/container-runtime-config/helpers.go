@@ -356,17 +356,66 @@ func updateSearchRegistriesConfig(searchRegs []string) []generatedConfigFile {
 	return generatedConfigFileList
 }
 
-func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
+// mergeToICPRules converts specs of ImageContentPolicy objects to ImageContentPolicy spec and adds it to the currnt icpRules
+// hornors the contents of ImageContentPolicy if there is confict between ImageContentPolicy and ImageContentPolicy on the source field
+func mergeToICPRules(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, icpRules []*apicfgv1.ImageContentPolicy) []*apicfgv1.ImageContentPolicy {
+
+	if len(icspRules) == 0 && len(icpRules) == 0 {
+		return icpRules
+	}
+	if len(icspRules) == 0 {
+		return icpRules
+	}
+	icpSourceSet := make(map[string]bool)
+	for _, icp := range icpRules {
+		for _, mirrorSet := range icp.Spec.RepositoryDigestMirrors {
+			if _, ok := icpSourceSet[mirrorSet.Source]; !ok {
+				icpSourceSet[mirrorSet.Source] = true
+			}
+		}
+	}
+
+	var icpRepoDigestMirrors []apicfgv1.RepositoryDigestMirrors
+	for _, icsp := range icspRules {
+		for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
+			if _, ok := icpSourceSet[mirrorSet.Source]; ok {
+				continue
+			}
+			var icpMirrors []apicfgv1.Mirror
+			for _, mirror := range mirrorSet.Mirrors {
+				icpMirrors = append(icpMirrors, apicfgv1.Mirror(mirror))
+			}
+			icpRepoDigestMirror := apicfgv1.RepositoryDigestMirrors{
+				Source:  mirrorSet.Source,
+				Mirrors: icpMirrors,
+			}
+			icpRepoDigestMirrors = append(icpRepoDigestMirrors, icpRepoDigestMirror)
+		}
+	}
+	icpRule := &apicfgv1.ImageContentPolicy{
+		Spec: apicfgv1.ImageContentPolicySpec{
+			RepositoryDigestMirrors: icpRepoDigestMirrors,
+		},
+	}
+	icpRules = append(icpRules, icpRule)
+	return icpRules
+}
+
+func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icpRules []*apicfgv1.ImageContentPolicy) ([]byte, error) {
 	tomlConf := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
 	}
 
-	if err := validateRegistriesConfScopes(internalInsecure, internalBlocked, []string{}, icspRules); err != nil {
+	if len(icpRules) != 0 {
+		glog.V(2).Infoln("icpRules configured: ", icpRules)
+	}
+
+	if err := validateRegistriesConfScopes(internalInsecure, internalBlocked, []string{}, icpRules); err != nil {
 		return nil, err
 	}
 
-	if err := registries.EditRegistriesConfig(&tomlConf, internalInsecure, internalBlocked, icspRules); err != nil {
+	if err := registries.EditRegistriesConfig(&tomlConf, internalInsecure, internalBlocked, icpRules); err != nil {
 		return nil, err
 	}
 
@@ -505,7 +554,7 @@ func getValidBlockedRegistries(releaseImage string, imgSpec *apicfgv1.ImageSpec)
 	return blockedRegs, nil
 }
 
-func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) error {
+func validateRegistriesConfScopes(insecure, blocked, allowed []string, icpRules []*apicfgv1.ImageContentPolicy) error {
 	for _, scope := range insecure {
 		if !registries.IsValidRegistriesConfScope(scope) {
 			return fmt.Errorf("invalid entry for insecure registries %q", scope)
@@ -524,13 +573,13 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 		}
 	}
 
-	for _, icsp := range icspRules {
+	for _, icsp := range icpRules {
 		for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
 			if strings.Contains(mirrorSet.Source, "*") {
 				return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirrorSet.Source)
 			}
 			for _, mirror := range mirrorSet.Mirrors {
-				if strings.Contains(mirror, "*") {
+				if strings.Contains(string(mirror), "*") {
 					return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirror)
 				}
 			}

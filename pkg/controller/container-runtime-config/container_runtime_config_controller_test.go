@@ -179,6 +179,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		ci.Config().V1().Images(),
+		ci.Config().V1().ImageContentPolicies(),
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
 		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
@@ -353,9 +354,10 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	// configuration file.
 	// First get the valid blocked registries to ensure we don't block the registry where the release image is from
 	blockedRegistries, _ := getValidBlockedRegistries(releaseImageReg, &imgcfg.Spec)
+	icps := mergeToICPRules(icsps, []*apicfgv1.ImageContentPolicy{})
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
-		blockedRegistries, icsps)
+		blockedRegistries, icps)
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 

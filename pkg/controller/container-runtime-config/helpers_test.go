@@ -12,6 +12,7 @@ import (
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	signature "github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
+	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,7 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 		name              string
 		insecure, blocked []string
 		icspRules         []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		icpRules          []*apicfgv1.ImageContentPolicy
 		want              sysregistriesv2.V2RegistriesConf
 	}{
 		{
@@ -179,7 +181,8 @@ func TestUpdateRegistriesConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := updateRegistriesConfig(templateBytes, tt.insecure, tt.blocked, tt.icspRules)
+			icpRules := mergeToICPRules(tt.icspRules, tt.icpRules)
+			got, err := updateRegistriesConfig(templateBytes, tt.insecure, tt.blocked, icpRules)
 			if err != nil {
 				t.Errorf("updateRegistriesConfig() error = %v", err)
 				return
@@ -291,5 +294,100 @@ func TestUpdatePolicyJSON(t *testing.T) {
 			_, err = signature.NewPolicyFromBytes(got)
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestMergeToICPRules(t *testing.T) {
+	for _, tc := range []struct {
+		icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		icpRules  []*apicfgv1.ImageContentPolicy
+		expected  []*apicfgv1.ImageContentPolicy
+	}{
+		{ // convert to icsp rules to icprules
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []string{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			icpRules: []*apicfgv1.ImageContentPolicy{},
+			expected: []*apicfgv1.ImageContentPolicy{
+				{
+					Spec: apicfgv1.ImageContentPolicySpec{
+						RepositoryDigestMirrors: []apicfgv1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []apicfgv1.Mirror{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []apicfgv1.Mirror{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []apicfgv1.Mirror{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+							{Source: "other.com/ns-o3", Mirrors: []apicfgv1.Mirror{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+		},
+		{
+			// convert and append the icsprules to icprules, except the conflic setting for the same source
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			icpRules: []*apicfgv1.ImageContentPolicy{
+				{
+					Spec: apicfgv1.ImageContentPolicySpec{
+						RepositoryDigestMirrors: []apicfgv1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []apicfgv1.Mirror{"blocked.com/ns-b1"}, AllowMirrorByTags: true},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []apicfgv1.Mirror{"other.com/ns-o2", "insecure.com/ns-i2"}},
+						},
+					},
+				},
+			},
+			expected: []*apicfgv1.ImageContentPolicy{
+				{
+					Spec: apicfgv1.ImageContentPolicySpec{
+						RepositoryDigestMirrors: []apicfgv1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []apicfgv1.Mirror{"blocked.com/ns-b1"}, AllowMirrorByTags: true},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []apicfgv1.Mirror{"other.com/ns-o2", "insecure.com/ns-i2"}},
+						},
+					},
+				},
+				{
+					Spec: apicfgv1.ImageContentPolicySpec{
+						RepositoryDigestMirrors: []apicfgv1.RepositoryDigestMirrors{
+							{Source: "other.com/ns-o3", Mirrors: []apicfgv1.Mirror{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+							{Source: "other.com/ns-o3", Mirrors: []apicfgv1.Mirror{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+		},
+	} {
+		res := mergeToICPRules(tc.icspRules, tc.icpRules)
+		if !reflect.DeepEqual(res, tc.expected) {
+			t.Errorf("mergeToICPRules() Diff:\n %s", diff.ObjectGoPrintDiff(tc.expected, res))
+		}
 	}
 }

@@ -35,7 +35,7 @@ require (
 	github.com/imdario/mergo v0.3.12
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20210924154557-a4f696157341
+	github.com/openshift/api v0.0.0-20210927171657-636513e97fda
 	github.com/openshift/client-go v0.0.0-20210927134410-067cd720e52a
 	github.com/openshift/library-go v0.0.0-20210906100234-6754cfd64cb5
 	github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d
@@ -70,7 +70,7 @@ replace (
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20210924154557-a4f696157341
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20210924152358-cda7121b2f52
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.22.1
@@ -100,3 +100,5 @@ replace (
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.22.1
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.22.1
 )
+
+replace github.com/openshift/runtime-utils => github.com/QiWang19/runtime-utils v0.0.0-20210930174628-6eb5b615b71d
