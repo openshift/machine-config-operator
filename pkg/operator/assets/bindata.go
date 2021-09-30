@@ -2043,7 +2043,7 @@ metadata:
   creationTimestamp:
   deletionGracePeriodSeconds: 65
   labels:
-    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-mdns
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-coredns
   annotations:
     target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
 spec:
