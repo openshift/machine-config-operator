@@ -50,7 +50,18 @@ contents:
             show \
             "{{ onPremPlatformAPIServerInternalIP . }}" \
             "{{ onPremPlatformIngressIP . }}")
-        DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
+            
+        # Ignore white space while creating /etc/resolv.conf between search and search domain names if the NM variables are empty.  
+        
+        if   [[ -z "$IP4_DOMAINS" && -z "$IP6_DOMAINS" ]] ; then 
+             DOMAINS="{{.DNS.Spec.BaseDomain}}" 
+        elif [[ -n "$IP4_DOMAINS" && -z "$IP6_DOMAINS" ]] ; then
+             DOMAINS="${IP4_DOMAINS} {{.DNS.Spec.BaseDomain}}" 
+        elif [[ -z "$IP4_DOMAINS" && -n "$IP6_DOMAINS" ]] ; then
+             DOMAINS="${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}" ; else 
+             DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
+        fi    
+        
         if [[ -n "$NAMESERVER_IP" ]]; then
             if systemctl -q is-enabled systemd-resolved; then
                 >&2 echo "NM resolv-prepender: Setting up systemd-resolved for OKD domain and local IP"
