@@ -56,6 +56,7 @@ contents:
                 >&2 echo "NM resolv-prepender: Setting up systemd-resolved for OKD domain and local IP"
                 if [[ ! -f /etc/systemd/resolved.conf.d/60-kni.conf ]]; then
                     >&2 echo "NM resolv-prepender: Creating /etc/systemd/resolved.conf.d/60-kni.conf"
+                    mkdir -p /etc/systemd/resolved.conf.d
                     echo "[Resolve]" > /etc/systemd/resolved.conf.d/60-kni.conf
                     echo "DNS=$NAMESERVER_IP" >> /etc/systemd/resolved.conf.d/60-kni.conf
                     echo "Domains=$DOMAINS" >> /etc/systemd/resolved.conf.d/60-kni.conf
