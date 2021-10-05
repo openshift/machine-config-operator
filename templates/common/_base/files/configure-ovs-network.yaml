@@ -254,8 +254,13 @@ contents:
 
       # For some reason RHEL7 requires the ovs bridge to be brought up explicitly whereas RHCOS does not
       nmcli conn up "$bridge_name"
-      # Bring up the new interface connection
-      nmcli conn up "$bridge_interface_name"
+      # Bring up the new interface connection; retry a few times to work around an NM dependency failure issue
+      for i in {0..3}; do
+        if nmcli conn up "$bridge_interface_name"; then
+          break
+        fi
+        sleep 2
+      done
 
       if ! nmcli connection show "$ovs_interface" &> /dev/null; then
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
