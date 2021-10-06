@@ -6,6 +6,7 @@ contents:
         enable_script_security
         script_user root
         max_auto_priority -1
+        vrrp_garp_master_refresh 60
     }
 
     # These are separate checks to provide the following behavior:
