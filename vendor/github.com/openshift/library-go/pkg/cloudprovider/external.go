@@ -23,6 +23,8 @@ func IsCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGat
 	}
 	switch platformStatus.Type {
 	case configv1.AWSPlatformType,
+		configv1.GCPPlatformType,
+		configv1.VSpherePlatformType,
 		configv1.OpenStackPlatformType:
 		// Platforms that are external based on feature gate presence
 		return isExternalFeatureGateEnabled(featureGate)

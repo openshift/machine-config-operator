@@ -122,6 +122,7 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with("ExternalCloudProvider").      // sig-cloud-provider, jspeed, OCP specific
 		with("InsightsOperatorPullingSCA"). // insights-operator/ccx, tremes, OCP specific
 		with("CSIDriverSharedResource").    // sig-build, adkaplan, OCP specific
+		with("BuildCSIVolumes").            // sig-build, adkaplan, OCP specific
 		toFeatures(),
 	LatencySensitive: newDefaultFeatures().
 		with(
