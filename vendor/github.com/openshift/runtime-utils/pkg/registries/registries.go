@@ -73,13 +73,13 @@ func mergedMirrorSets(icpRules []*apicfgv1.ImageContentPolicy) ([]apicfgv1.Repos
 	// Convert the sets of mirrors
 	res := []apicfgv1.RepositoryDigestMirrors{}
 	for _, source := range sources {
-		allowMirrorByTagsFlag := false
+		var allowMirrorByTags *bool
 		ds := disjointSets[source]
 		topoGraph := newTopoGraph()
 		for _, set := range *ds {
 			// AllowMirrorByTags is only set once for each source in imagecontentpolicies.config.openshift.io
-			if !allowMirrorByTagsFlag && set.AllowMirrorByTags {
-				allowMirrorByTagsFlag = true
+			if set.AllowMirrorByTags != nil {
+				allowMirrorByTags = set.AllowMirrorByTags
 			}
 			for i := 0; i+1 < len(set.Mirrors); i++ {
 				topoGraph.AddEdge(string(set.Mirrors[i]), string(set.Mirrors[i+1]))
@@ -113,7 +113,7 @@ func mergedMirrorSets(icpRules []*apicfgv1.ImageContentPolicy) ([]apicfgv1.Repos
 		res = append(res, apicfgv1.RepositoryDigestMirrors{
 			Source:            source,
 			Mirrors:           mirrors,
-			AllowMirrorByTags: allowMirrorByTagsFlag,
+			AllowMirrorByTags: allowMirrorByTags,
 		})
 	}
 	return res, nil
@@ -169,7 +169,12 @@ func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScop
 	}
 	for _, mirrorSet := range mirrorSets {
 		reg := getRegistryEntry(mirrorSet.Source)
-		reg.MirrorByDigestOnly = !mirrorSet.AllowMirrorByTags
+		if mirrorSet.AllowMirrorByTags != nil && *mirrorSet.AllowMirrorByTags {
+			reg.MirrorByDigestOnly = false
+		} else {
+			reg.MirrorByDigestOnly = true
+		}
+
 		for _, mirror := range mirrorSet.Mirrors {
 			reg.Mirrors = append(reg.Mirrors, sysregistriesv2.Endpoint{Location: string(mirror)})
 		}

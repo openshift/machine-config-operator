@@ -749,6 +749,10 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	} else if err != nil {
 		return err
 	}
+	if err = validateICPRules(icpRules); err != nil {
+		return err
+	}
+	glog.Info("getting all icpRules", icpRules)
 
 	// Find all ImageContentSourcePolicy objects
 	icspRules, err := ctrl.icspLister.List(labels.Everything())

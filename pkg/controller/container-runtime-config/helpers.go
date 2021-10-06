@@ -588,3 +588,21 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icpRules 
 	}
 	return nil
 }
+
+// validateICPRules validate that the user does not apply conlicting values of allowMirrorByTags among pre-existing and newly added ImageContentPolicy CR.
+// returns error if there the conflict exists
+func validateICPRules(icpRules []*apicfgv1.ImageContentPolicy) error {
+	allowMirror := make(map[string]bool)
+	for _, icp := range icpRules {
+		for _, repoMirror := range icp.Spec.RepositoryDigestMirrors {
+			v, ok := allowMirror[repoMirror.Source]
+			glog.Infof("source: %v, allowTag: %v, nil: %v", repoMirror.Source, repoMirror.AllowMirrorByTags, repoMirror.AllowMirrorByTags == nil)
+			if !ok {
+				allowMirror[repoMirror.Source] = *repoMirror.AllowMirrorByTags
+			} else if v != *repoMirror.AllowMirrorByTags {
+				return fmt.Errorf("conflicting value of allowMirrorByTags for the same souce %v", repoMirror.Source)
+			}
+		}
+	}
+	return nil
+}

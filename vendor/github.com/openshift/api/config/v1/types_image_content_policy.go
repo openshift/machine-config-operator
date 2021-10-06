@@ -71,7 +71,7 @@ type RepositoryDigestMirrors struct {
 	// Pulling images by tag can potentially yield different images, depending on which endpoint
 	// we pull from. Forcing digest-pulls for mirrors avoids that issue.
 	// +optional
-	AllowMirrorByTags bool `json:"allowMirrorByTags,omitempty"`
+	AllowMirrorByTags *bool `json:"allowMirrorByTags,omitempty"`
 	// mirrors is zero or more repositories that may also contain the same images.
 	// If the "mirrors" is not specified, the image will continue to be pulled from the specified
 	// repository in the pull spec. No mirror will be configured.
