@@ -62,6 +62,12 @@ contents:
              DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
         fi    
         
+        # If the connection is DHCP, the search list is provided in option 119 
+        
+        if [[ "$STATUS" == dhcp* ]]; then
+            DOMAINS="${DHCP4_DOMAIN_SEARCH} {{.DNS.Spec.BaseDomain}}"
+        fi 
+        
         if [[ -n "$NAMESERVER_IP" ]]; then
             if systemctl -q is-enabled systemd-resolved; then
                 >&2 echo "NM resolv-prepender: Setting up systemd-resolved for OKD domain and local IP"
