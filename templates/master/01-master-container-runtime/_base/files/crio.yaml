@@ -28,6 +28,7 @@ contents:
     hooks_dir = [
         "/etc/containers/oci/hooks.d",
         "/run/containers/oci/hooks.d",
+        "/usr/share/containers/oci/hooks.d",
     ]
     manage_ns_lifecycle = true
     absent_mount_sources_to_reject = [
