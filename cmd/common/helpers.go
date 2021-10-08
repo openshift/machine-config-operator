@@ -16,11 +16,11 @@ import (
 
 const (
 	// LeaseDuration is the default duration for the leader election lease.
-	LeaseDuration = 90 * time.Second
+	LeaseDuration = 137 * time.Second
 	// RenewDeadline is the default duration for the leader renewal.
-	RenewDeadline = 60 * time.Second
+	RenewDeadline = 107 * time.Second
 	// RetryPeriod is the default duration for the leader electrion retrial.
-	RetryPeriod = 30 * time.Second
+	RetryPeriod = 26 * time.Second
 )
 
 // CreateResourceLock returns an interface for the resource lock.
