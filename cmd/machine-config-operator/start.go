@@ -102,6 +102,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
 				glog.Fatalf("leaderelection lost")
+				runCancel()
 			},
 		},
 	})
