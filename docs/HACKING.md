@@ -36,12 +36,6 @@ To update the manifests applied by Machine Config Operator, edit the `yaml` file
 
 The `manifests` folder also contains global manifests at its root.
 
-Every time you modify any of the manifests in `manifests` please run the following command to update the `bindata` for Machine Config Operator.
-
-```sh
-make update
-```
-
 # Unit Tests
 
 Unit tests (that don't interact with a running cluster) can be executed on a per
