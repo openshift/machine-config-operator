@@ -27,10 +27,10 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/operator/assets"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -285,7 +285,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	}
 
 	for _, crd := range crds {
-		crdBytes, err := assets.Asset(crd)
+		crdBytes, err := manifests.ReadFile(crd)
 		if err != nil {
 			return fmt.Errorf("error getting asset %s: %v", crd, err)
 		}
