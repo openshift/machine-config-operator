@@ -20,7 +20,7 @@ contents:
       bind :::{{`{{ .LBConfig.LbPort }}`}} v4v6
       default_backend masters
     listen health_check_http_url
-      bind :::50936 v4v6
+      bind :::30936 v4v6
       mode http
       monitor-uri /haproxy_ready
       option dontlognull
