@@ -1,0 +1,13 @@
+path: "/etc/NetworkManager/dispatcher.d/30-override-azure-mtu"
+mode: 0755
+contents:
+  inline: |
+    #!/bin/sh
+
+    IFACE="$1"
+    STATUS="$2"
+
+    if [ "${IFACE}" = "eth0" -a "${STATUS}" = "up" ]; then
+        echo "Overriding default MTU on ${IFACE}"
+        ip link set "${IFACE}" mtu 1400
+    fi
