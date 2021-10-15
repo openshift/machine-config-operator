@@ -278,6 +278,10 @@ spec:
                             description: Ovirt contains settings specific to the oVirt
                               infrastructure provider.
                             type: object
+                          powervs:
+                            description: PowerVS contains settings specific to the
+                              IBM Power Systems Virtual Servers infrastructure provider.
+                            type: object
                           type:
                             description: type is the underlying infrastructure provider
                               for the cluster. This value controls whether infrastructure
@@ -286,8 +290,8 @@ spec:
                               integrations are enabled. If None, no infrastructure
                               automation is enabled. Allowed values are "AlibabaCloud", "AWS",
                               "Azure", "BareMetal", "GCP", "Libvirt", "OpenStack", "VSphere",
-                              "oVirt", "KubeVirt", "EquinixMetal", and "None". Individual
-                              components may not support all platforms, and must handle
+                              "oVirt", "KubeVirt", "EquinixMetal", "PowerVS" and "None".
+                              Individual components may not support all platforms, and must handle
                               unrecognized platforms as None if they do not support
                               that platform.
                             enum:
@@ -305,6 +309,7 @@ spec:
                             - IBMCloud
                             - KubeVirt
                             - EquinixMetal
+                            - PowerVS
                             type: string
                           vsphere:
                             description: VSphere contains settings specific to the
@@ -392,6 +397,7 @@ spec:
                         - IBMCloud
                         - KubeVirt
                         - EquinixMetal
+                        - PowerVS
                         type: string
                       platformStatus:
                         description: platformStatus holds status information specific
@@ -703,6 +709,52 @@ spec:
                                   a future release.'
                                 type: string
                             type: object
+                          powervs:
+                            description: PowerVS contains settings specific to the
+                              Power Systems Virtual Servers infrastructure provider.
+                            properties:
+                              cisInstanceCRN:
+                                description: CISInstanceCRN is the CRN of the Cloud
+                                  Internet Services instance managing the DNS zone
+                                  for the cluster's base domain
+                                type: string
+                              region:
+                                description: region holds the default Power VS region
+                                  for new Power VS resources created by the cluster.
+                                type: string
+                              serviceEndpoints:
+                                description: serviceEndpoints is a list of custom
+                                  endpoints which will override the default service
+                                  endpoints of a Power VS service.
+                                items:
+                                  description: PowervsServiceEndpoint stores the configuration
+                                    of a custom url to override existing defaults
+                                    of PowerVS Services.
+                                  properties:
+                                    name:
+                                      description: name is the name of the Power VS
+                                        service.
+                                      pattern: ^[a-z0-9-]+$
+                                      type: string
+                                    url:
+                                      description: url is fully qualified URI with
+                                        scheme https, that overrides the default generated
+                                        endpoint for a client. This must be provided
+                                        and cannot be empty.
+                                      format: uri
+                                      pattern: ^https://
+                                      type: string
+                                  required:
+                                  - name
+                                  - url
+                                  type: object
+                                type: array
+                              zone:
+                                description: 'zone holds the default zone for the
+                                  new Power VS resources created by the cluster. Note:
+                                  Currently only single-zone OCP clusters are supported'
+                                type: string
+                            type: object
                           type:
                             description: "type is the underlying infrastructure provider
                               for the cluster. This value controls whether infrastructure
@@ -711,8 +763,8 @@ spec:
                               integrations are enabled. If None, no infrastructure
                               automation is enabled. Allowed values are \"AlibabaCloud\",
                               \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\",
-                              \"OpenStack\", \"VSphere\", \"oVirt\", \"EquinixMetal\", and
-                              \"None\". Individual components may not support all platforms,
+                              \"OpenStack\", \"VSphere\", \"oVirt\", \"EquinixMetal\", \"PowerVS\"
+                              and \"None\". Individual components may not support all platforms,
                               and must handle unrecognized platforms as None if they
                               do not support that platform. \n This value will be
                               synced with to the `status.platform` and `status.platformStatus.type`.
@@ -732,6 +784,7 @@ spec:
                             - IBMCloud
                             - KubeVirt
                             - EquinixMetal
+                            - PowerVS
                             type: string
                           vsphere:
                             description: VSphere contains settings specific to the
