@@ -243,7 +243,9 @@ contents:
         nmcli c show
         # For some reason RHEL7 requires the interface connection to be brought down explicitly whereas RHCOS does not
         nmcli conn down "$bridge_interface_name"
-        nmcli conn up $old_conn
+        for connection in ${old_conn}; do
+          nmcli conn up $connection
+        done
         exit $e
       }
       trap "handle_exit_error" EXIT
