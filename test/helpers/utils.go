@@ -53,9 +53,9 @@ func WaitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName s
 func WaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, pool string, mcNames ...string) (string, error) {
 	var renderedConfig string
 	startTime := time.Now()
+	found := make(map[string]bool)
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
 		// Set up the list
-		found := make(map[string]bool)
 		for _, name := range mcNames {
 			found[name] = false
 		}
@@ -82,10 +82,20 @@ func WaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, pool string, 
 		renderedConfig = mcp.Spec.Configuration.Name
 		return true, nil
 	}); err != nil {
-		return "", errors.Wrapf(err, "machine configs %v hasn't been picked by pool %s (waited %s)", mcNames, pool, time.Since(startTime))
+		return "", errors.Wrapf(err, "machine configs %v hasn't been picked by pool %s (waited %s)", notFoundNames(found), pool, time.Since(startTime))
 	}
 	t.Logf("Pool %s has rendered configs %v with %s (waited %v)", pool, mcNames, renderedConfig, time.Since(startTime))
 	return renderedConfig, nil
+}
+
+func notFoundNames(foundNames map[string]bool) []string {
+	out := []string{}
+	for name, found := range foundNames {
+		if !found {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // WaitForPoolComplete polls a pool until it has completed an update to target
