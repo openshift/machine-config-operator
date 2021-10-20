@@ -82,6 +82,9 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform: configv1.VSpherePlatformType,
 		res:      "vsphere",
+	}, {
+		platform: configv1.AlibabaCloudPlatformType,
+		res:      "external",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
@@ -282,6 +285,7 @@ const templateDir = "../../../templates"
 
 var (
 	configs = map[string]string{
+		"alibaba":   "./test_data/controller_config_alibaba.yaml",
 		"aws":       "./test_data/controller_config_aws.yaml",
 		"baremetal": "./test_data/controller_config_baremetal.yaml",
 		"gcp":       "./test_data/controller_config_gcp.yaml",

@@ -211,6 +211,10 @@ spec:
                         description: platformSpec holds desired information specific
                           to the underlying infrastructure provider.
                         properties:
+                          alibabaCloud:
+                            description: AlibabaCloud contains settings specific to the
+                              AlibabaCloud infrastructure provider.
+                            type: object
                           aws:
                             description: AWS contains settings specific to the Amazon
                               Web Services infrastructure provider.
@@ -280,14 +284,15 @@ spec:
                               automation such as service load balancers, dynamic volume
                               provisioning, machine creation and deletion, and other
                               integrations are enabled. If None, no infrastructure
-                              automation is enabled. Allowed values are "AWS", "Azure",
-                              "BareMetal", "GCP", "Libvirt", "OpenStack", "VSphere",
+                              automation is enabled. Allowed values are "AlibabaCloud", "AWS",
+                              "Azure", "BareMetal", "GCP", "Libvirt", "OpenStack", "VSphere",
                               "oVirt", "KubeVirt", "EquinixMetal", and "None". Individual
                               components may not support all platforms, and must handle
                               unrecognized platforms as None if they do not support
                               that platform.
                             enum:
                             - ""
+                            - AlibabaCloud
                             - AWS
                             - Azure
                             - BareMetal
@@ -374,6 +379,7 @@ spec:
                           instead."
                         enum:
                         - ""
+                        - AlibabaCloud
                         - AWS
                         - Azure
                         - BareMetal
@@ -391,6 +397,45 @@ spec:
                         description: platformStatus holds status information specific
                           to the underlying infrastructure provider.
                         properties:
+                          alibabaCloud:
+                            description: AlibabaCloud contains settings specific to the Alibaba Cloud infrastructure provider.
+                            type: object
+                            required:
+                              - region
+                              - resourceGroupID
+                            properties:
+                              region:
+                                description: region specifies the region for Alibaba Cloud resources created for the cluster.
+                                type: string
+                                pattern: ^[0-9A-Za-z-]+$
+                              resourceGroupID:
+                                description: resourceGroupID is the ID of the resource group for the cluster.
+                                type: string
+                                pattern: ^rg-[0-9A-Za-z]+$
+                              resourceTags:
+                                description: resourceTags is a list of additional tags to apply to Alibaba Cloud resources created for the cluster.
+                                type: array
+                                maxItems: 20
+                                items:
+                                  description: AlibabaCloudResourceTag is the set of tags to add to apply to resources.
+                                  type: object
+                                  required:
+                                    - key
+                                    - value
+                                  properties:
+                                    key:
+                                      description: key is the key of the tag.
+                                      type: string
+                                      maxLength: 128
+                                      minLength: 1
+                                    value:
+                                      description: value is the value of the tag.
+                                      type: string
+                                      maxLength: 128
+                                      minLength: 1
+                                x-kubernetes-list-map-keys:
+                                  - key
+                                x-kubernetes-list-type: map
                           aws:
                             description: AWS contains settings specific to the Amazon
                               Web Services infrastructure provider.
@@ -664,16 +709,17 @@ spec:
                               automation such as service load balancers, dynamic volume
                               provisioning, machine creation and deletion, and other
                               integrations are enabled. If None, no infrastructure
-                              automation is enabled. Allowed values are \"AWS\", \"Azure\",
-                              \"BareMetal\", \"GCP\", \"Libvirt\", \"OpenStack\",
-                              \"VSphere\", \"oVirt\", \"EquinixMetal\", and \"None\".
-                              Individual components may not support all platforms,
+                              automation is enabled. Allowed values are \"AlibabaCloud\",
+                              \"AWS\", \"Azure\", \"BareMetal\", \"GCP\", \"Libvirt\",
+                              \"OpenStack\", \"VSphere\", \"oVirt\", \"EquinixMetal\", and
+                              \"None\". Individual components may not support all platforms,
                               and must handle unrecognized platforms as None if they
                               do not support that platform. \n This value will be
                               synced with to the `status.platform` and `status.platformStatus.type`.
                               Currently this value cannot be changed once set."
                             enum:
                             - ""
+                            - AlibabaCloud
                             - AWS
                             - Azure
                             - BareMetal

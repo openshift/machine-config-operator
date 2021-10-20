@@ -1,0 +1,26 @@
+mode: 0755
+path: "/usr/local/bin/alibaba-kubelet-nodename"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e -o pipefail
+
+    NODECONF=/etc/systemd/system/kubelet.service.d/20-alibaba-node-name.conf
+
+    if [ -e "${NODECONF}" ]; then
+        echo "Not replacing existing ${NODECONF}"
+        exit 0
+    fi
+    
+    # Set KUBE_NODE_NAME to be overridden by --hostname-override in the kubelet.
+    # Format required is "<REGIONID>.<INSTANCEID>"
+    # https://github.com/kubernetes/cloud-provider-alibaba-cloud/blob/master/docs/getting-started.md
+    META_EP=http://100.100.100.200/latest/meta-data
+    REGIONID=$(curl -s ${META_EP}/region-id)
+    INSTANCEID=$(curl -s ${META_EP}/instance-id)
+
+   
+    cat > "${NODECONF}" <<EOF
+    [Service]
+    Environment="KUBELET_NODE_NAME=${REGIONID}.${INSTANCEID}"
+    EOF
