@@ -1,0 +1,46 @@
+name: nodeip-configuration.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
+  # This is more effective in VIP managing environments where the kubelet and crio IP
+  # address picking logic is flawed and may end up selecting an address from a
+  # different subnet or a deprecated address
+  Wants=network-online.target crio-wipe.service
+  After=network-online.target ignition-firstboot-complete.service crio-wipe.service
+  Before=kubelet.service crio.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  # Would prefer to do Restart=on-failure instead of this bash retry loop, but
+  # the version of systemd we have right now doesn't support it. It should be
+  # available in systemd v244 and higher.
+  ExecStart=/bin/bash -c " \
+    until \
+    /usr/bin/podman run --rm \
+    --authfile /var/lib/kubelet/config.json \
+    --net=host \
+    --volume /etc/systemd/system:/etc/systemd/system:z \
+    {{ .Images.baremetalRuntimeCfgImage }} \
+    node-ip \
+    set --retry-on-failure \
+    {{if eq .IPFamilies "IPv6" -}}
+    --prefer-ipv6 \
+    {{end -}}
+    {{if (onPremPlatformAPIServerInternalIP .) -}}
+    {{ onPremPlatformAPIServerInternalIP . }}; \
+    {{- else -}}
+    ; \
+    {{end -}}
+    do \
+    sleep 5; \
+    done"
+  ExecStart=/bin/systemctl daemon-reload
+
+  {{if .Proxy -}}
+  EnvironmentFile=/etc/mco/proxy.env
+  {{end -}}
+
+  [Install]
+  RequiredBy=kubelet.service
