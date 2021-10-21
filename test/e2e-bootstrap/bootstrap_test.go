@@ -593,7 +593,7 @@ func cleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 // copyDir copies the contents of one directory to another,
 // both directories must exist, does not copy recursively
 func copyDir(src string, dest string) error {
-	if dest[:len(src)] == src {
+	if strings.HasPrefix(dest, src) {
 		return fmt.Errorf("Cannot copy a folder into the folder itself!")
 	}
 
