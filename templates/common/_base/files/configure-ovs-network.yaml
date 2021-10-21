@@ -8,46 +8,11 @@ contents:
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
 
-    NM_CONN_OVERLAY="/etc/NetworkManager/systemConnectionsMerged"
-    NM_CONN_UNDERLAY="/etc/NetworkManager/system-connections"
-    if [ -d "$NM_CONN_OVERLAY" ]; then
-      NM_CONN_PATH="$NM_CONN_OVERLAY"
-    else
-      NM_CONN_PATH="$NM_CONN_UNDERLAY"
-    fi
+    NM_CONN_PATH="/etc/NetworkManager/system-connections"
 
     MANAGED_NM_CONN_SUFFIX="-slave-ovs-clone"
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
-    copy_nm_conn_files() {
-      local src_path="$NM_CONN_PATH"
-      local dst_path="$NM_CONN_UNDERLAY"
-      if [ "$src_path" = "$dst_path" ]; then
-        echo "No need to persist configuration files"
-        return
-      fi
-      if [ -d "$src_path" ]; then
-        echo "$src_path exists"
-        local files=("${MANAGED_NM_CONN_FILES[@]}")
-        shopt -s nullglob
-        files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection $src_path/*${MANAGED_NM_CONN_SUFFIX})
-        shopt -u nullglob
-        for file in "${files[@]}"; do
-          file="$(basename $file)"
-          if [ -f "$src_path/$file" ]; then
-            if [ ! -f "$dst_path/$file" ]; then
-              echo "Persisting new configuration $file"
-              cp "$src_path/$file" "$dst_path/$file"
-            elif ! cmp --silent "$src_path/$file" "$dst_path/$file"; then
-              echo "Persisting updated configuration $file"
-              cp -f "$src_path/$file" "$dst_path/$file"
-            fi
-          else
-            echo "Skipping $file since its status is current"
-          fi
-        done
-      fi
-    }
     update_nm_conn_files() {
       bridge_name=${1}
       port_name=${2}
@@ -68,7 +33,7 @@ contents:
       for file in "${files[@]}"; do
         file="$(basename $file)"
         # Also remove files in underlay
-        for path in "${NM_CONN_PATH}" "${NM_CONN_UNDERLAY}"; do
+        for path in "${NM_CONN_PATH}"; do
           file_path="${path}/$file"
           if [ -f "$file_path" ]; then
             rm -f "$file_path"
@@ -342,7 +307,6 @@ contents:
         if nmcli --fields GENERAL.STATE conn show "$ovs_interface" | grep -i "activated"; then
           echo "OVS successfully configured"
           update_nm_conn_files "$bridge_name" "$port_name"
-          copy_nm_conn_files
           ip a show "$bridge_name"
           ip route show
           nmcli c show
@@ -359,7 +323,6 @@ contents:
           if nmcli conn up "$ovs_interface"; then
             echo "OVS successfully configured"
             update_nm_conn_files "$bridge_name" "$port_name"
-            copy_nm_conn_files
             ip a show "$bridge_name"
             ip route show
             nmcli c show
