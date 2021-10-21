@@ -19,6 +19,9 @@ const (
 	// MCNameSuffixAnnotationKey is used to keep track of the machine config name associated with a CR
 	MCNameSuffixAnnotationKey = "machineconfiguration.openshift.io/mc-name-suffix"
 
+	// MaxMCNameSuffix is the maximum value of the name suffix of the machine config associated with kubeletconfig and containerruntime objects
+	MaxMCNameSuffix int = 9
+
 	// ClusterFeatureInstanceName is a singleton name for featureGate configuration
 	ClusterFeatureInstanceName = "cluster"
 )

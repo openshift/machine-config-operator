@@ -175,6 +175,9 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 // generateFeatureMap returns a map of enabled/disabled feature gate selection with exclusion list
 func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map[string]bool, error) {
 	rv := make(map[string]bool)
+	if features == nil {
+		features = createNewDefaultFeatureGate()
+	}
 	set, ok := osev1.FeatureSets[features.Spec.FeatureSet]
 	if !ok {
 		return &rv, fmt.Errorf("enabled FeatureSet %v does not have a corresponding config", features.Spec.FeatureSet)
