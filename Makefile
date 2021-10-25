@@ -116,4 +116,6 @@ bootstrap-e2e:
 	./hack/bootstrap-e2e-test.sh
 
 bootstrap-e2e-local:
-	go test -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/
+	# Use GOTAGS to exclude the default CGO implementation of signatures, which is not used by MCO
+	# but dragged in by containers/image/signature
+	CGO_ENABLED=0 go test -tags=$(GOTAGS) -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-bootstrap/
