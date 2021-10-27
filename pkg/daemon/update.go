@@ -67,7 +67,7 @@ func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, uid, gid int) error {
 	dir := filepath.Dir(fpath)
 	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(fpath), err)
+		return fmt.Errorf("failed to create directory %q: %v", dir, err)
 	}
 	t, err := renameio.TempFile(dir, fpath)
 	if err != nil {
