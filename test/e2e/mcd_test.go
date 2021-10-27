@@ -400,6 +400,9 @@ func TestNoReboot(t *testing.T) {
 	}
 	t.Logf("Node %s has SSH key", infraNode.Name)
 
+	usernameAndGroup := strings.Split(strings.TrimSuffix(helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "stat", "--format=%U %G", "/home/core/.ssh/authorized_keys"), "\n"), " ")
+	assert.Equal(t, usernameAndGroup, []string{constants.CoreUserName, constants.CoreGroupName})
+
 	output = helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/uptime")
 	newTime := strings.Split(output, " ")[0]
 
