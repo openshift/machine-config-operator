@@ -228,7 +228,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 	// then if the user creates a ctrcfg-new it will map to mc-3. This is what we want as the latest ctrcfg created should be higher in priority
 	// so that those changes can be rolled out to the nodes. But users will have to be mindful of how many ctrcfg CRs they create. Don't think
 	// anyone should ever have the need to create 10 when they can simply update an existing ctrcfg unless it is to apply to another pool.
-	if suffixNum+1 > 9 {
+	if suffixNum+1 > ctrlcommon.MaxMCNameSuffix {
 		return "", fmt.Errorf("max number of supported ctrcfgs (10) has been reached. Please delete old ctrcfgs before retrying")
 	}
 	// Return the default MC name with the suffixNum+1 value appended to it
