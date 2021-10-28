@@ -17,7 +17,7 @@ linters:
     - gofmt
     - goimports
     - golint
-    #- gosec
+    - gosec
     - govet
     - ineffassign
     #- interfacer
@@ -107,3 +107,8 @@ linters-settings:
       #- importShadow
       - paramTypeCombine
       #- unnamedResult
+  gosec:
+    severity: high
+    confidence: medium
+    excludes:
+      - G204

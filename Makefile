@@ -67,9 +67,6 @@ install-tools:
 #    make verify
 verify: install-tools
 	golangci-lint run --build-tags=$(GOTAGS)
-	# Remove once https://github.com/golangci/golangci-lint/issues/597 is
-	# addressed
-	gosec -severity high --confidence medium -exclude G204 -quiet ./...
 	# Remove the vendor/k8s.io/code-generator vendor hack
 	# once code-generator plays nice with go modules, see
 	# https://github.com/kubernetes/kubernetes/issues/82531 and
