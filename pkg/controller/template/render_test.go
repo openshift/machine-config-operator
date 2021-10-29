@@ -80,6 +80,9 @@ func TestCloudProvider(t *testing.T) {
 		platform: configv1.NonePlatformType,
 		res:      "",
 	}, {
+		platform: configv1.PowerVSPlatformType,
+		res:      "",
+	}, {
 		platform: configv1.VSpherePlatformType,
 		res:      "vsphere",
 	}, {
@@ -294,6 +297,7 @@ var (
 		"none":      "./test_data/controller_config_none.yaml",
 		"vsphere":   "./test_data/controller_config_vsphere.yaml",
 		"kubevirt":  "./test_data/controller_config_kubevirt.yaml",
+		"powervs":   "./test_data/controller_config_powervs.yaml",
 	}
 )
 
