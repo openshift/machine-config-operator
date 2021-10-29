@@ -5,7 +5,7 @@ package tools
 
 import (
 	// Code generators built at runtime.
-	_ "k8s.io/code-generator" // TODO: Investigate why scripts in this directory are removed and not vendored by go mod.
+	_ "k8s.io/code-generator" // Imports non-go generator scripts for vendoring
 	_ "k8s.io/code-generator/cmd/client-gen"
 	_ "k8s.io/code-generator/cmd/conversion-gen"
 	_ "k8s.io/code-generator/cmd/deepcopy-gen"
