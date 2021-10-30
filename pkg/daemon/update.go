@@ -38,8 +38,6 @@ const (
 	defaultDirectoryPermissions os.FileMode = 0755
 	// defaultFilePermissions houses the default mode to use when no file permissions are provided
 	defaultFilePermissions os.FileMode = 0644
-	// coreUser is "core" and currently the only permissible user name
-	coreUserName = "core"
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
@@ -777,7 +775,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 			// there is an update to Users, we must verify that it is ONLY making an acceptable
 			// change to the SSHAuthorizedKeys for the user "core"
 			for _, user := range newIgn.Passwd.Users {
-				if user.Name != coreUserName {
+				if user.Name != constants.CoreUserName {
 					return nil, errors.New("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
@@ -848,7 +846,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 	emptyUser := ign3types.PasswdUser{}
 	tempUser := pwdUser
-	if tempUser.Name == coreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
+	if tempUser.Name == constants.CoreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
@@ -1654,41 +1652,67 @@ func createOrigFile(fromPath, fpath string) error {
 	return nil
 }
 
+func lookupUID(username string) (int, error) {
+	osUser, err := user.Lookup(username)
+	if err != nil {
+		return 0, fmt.Errorf("failed to retrieve UserID for username: %s", username)
+	}
+	glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, username)
+	uid, _ := strconv.Atoi(osUser.Uid)
+	return uid, nil
+}
+
+func lookupGID(group string) (int, error) {
+	osGroup, err := user.LookupGroup(group)
+	if err != nil {
+		return 0, fmt.Errorf("failed to retrieve GroupID for group: %v", group)
+	}
+	glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, group)
+	gid, _ := strconv.Atoi(osGroup.Gid)
+	return gid, nil
+}
+
 // This is essentially ResolveNodeUidAndGid() from Ignition; XXX should dedupe
 func getFileOwnership(file ign3types.File) (int, int, error) {
 	uid, gid := 0, 0 // default to root
 	if file.User.ID != nil {
 		uid = *file.User.ID
 	} else if file.User.Name != nil && *file.User.Name != "" {
-		osUser, err := user.Lookup(*file.User.Name)
+		uid, err := lookupUID(*file.User.Name)
 		if err != nil {
-			return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %s", *file.User.Name)
+			return uid, gid, err
 		}
-		glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, *file.User.Name)
-		uid, _ = strconv.Atoi(osUser.Uid)
 	}
 
 	if file.Group.ID != nil {
 		gid = *file.Group.ID
 	} else if file.Group.Name != nil && *file.Group.Name != "" {
-		osGroup, err := user.LookupGroup(*file.Group.Name)
+		gid, err := lookupGID(*file.Group.Name)
 		if err != nil {
-			return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %v", file.Group.Name)
+			return uid, gid, err
 		}
-		glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, *file.Group.Name)
-		gid, _ = strconv.Atoi(osGroup.Gid)
 	}
 	return uid, gid, nil
 }
 
 func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
+	uid, err := lookupUID(constants.CoreUserName)
+	if err != nil {
+		return err
+	}
+
+	gid, err := lookupGID(constants.CoreGroupName)
+	if err != nil {
+		return err
+	}
+
 	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", authKeyPath)
 
-	if err := writeFileAtomicallyWithDefaults(authKeyPath, []byte(keys)); err != nil {
+	if err := writeFileAtomically(authKeyPath, []byte(keys), os.FileMode(0700), os.FileMode(0600), uid, gid); err != nil {
 		return err
 	}
 
