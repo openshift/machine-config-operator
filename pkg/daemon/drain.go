@@ -9,7 +9,6 @@ import (
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
@@ -136,13 +135,13 @@ func (dn *Daemon) performDrain() error {
 }
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.
-func isDrainRequired(actions []string, oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
+func isDrainRequired(actions []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
 		// Drain may or may not be necessary in case of container registry config changes.
-		isSafe, err := isSafeContainerRegistryConfChanges(oldConfig, newConfig)
+		isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
 		if err != nil {
 			return false, err
 		}
@@ -163,24 +162,14 @@ func isDrainRequired(actions []string, oldConfig, newConfig *mcfgv1.MachineConfi
 // 2. A new registry has been added that has `mirror-by-digest-only=true`
 // See https://bugzilla.redhat.com/show_bug.cgi?id=1943315
 //nolint:gocyclo
-func isSafeContainerRegistryConfChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (bool, error) {
+func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	containerRegistryConfPath := "/etc/containers/registries.conf"
 	var oldContainerRegistryConf, newContainerRegistryConf ign3types.File
-
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return false, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
-	}
 
 	for _, f := range oldIgnConfig.Storage.Files {
 		if f.Path == containerRegistryConfPath {
 			oldContainerRegistryConf = f
 		}
-	}
-
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return false, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
 	}
 
 	for _, f := range newIgnConfig.Storage.Files {
