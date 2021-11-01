@@ -13,6 +13,7 @@ import (
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	signature "github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
+	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -226,11 +227,13 @@ func TestUpdatePolicyJSON(t *testing.T) {
 	tests := []struct {
 		name             string
 		allowed, blocked []string
+		errorExpected    bool
 		want             signature.Policy
 	}{
 		{
-			name: "unchanged",
-			want: templateConfig,
+			name:          "unchanged",
+			want:          templateConfig,
+			errorExpected: false,
 		},
 		{
 			name:    "allowed",
@@ -251,6 +254,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 					},
 				},
 			},
+			errorExpected: false,
 		},
 		{
 			name:    "blocked",
@@ -271,12 +275,72 @@ func TestUpdatePolicyJSON(t *testing.T) {
 					},
 				},
 			},
+			errorExpected: false,
+		},
+		{
+			name:    "block payload image",
+			blocked: []string{"block.com"},
+			allowed: []string{"release-reg.io/image/release"},
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"block.com":                    {signature.NewPRReject()},
+						"release-reg.io/image/release": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"block.com":                    {signature.NewPRReject()},
+						"release-reg.io/image/release": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": {signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+			errorExpected: false,
+		},
+		{
+			name:    "block registry of payload image",
+			blocked: []string{"block.com", "release-reg.io"},
+			allowed: []string{"release-reg.io/image/release"},
+			want: signature.Policy{
+				Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				Transports: map[string]signature.PolicyTransportScopes{
+					"atomic": map[string]signature.PolicyRequirements{
+						"block.com":                    {signature.NewPRReject()},
+						"release-reg.io":               {signature.NewPRReject()},
+						"release-reg.io/image/release": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker": map[string]signature.PolicyRequirements{
+						"block.com":                    {signature.NewPRReject()},
+						"release-reg.io":               {signature.NewPRReject()},
+						"release-reg.io/image/release": {signature.NewPRInsecureAcceptAnything()},
+					},
+					"docker-daemon": map[string]signature.PolicyRequirements{
+						"": {signature.NewPRInsecureAcceptAnything()},
+					},
+				},
+			},
+			errorExpected: false,
+		},
+		{
+			name:          "blocked list and allowed list is set but allowed list doesn't contain the payload repo",
+			blocked:       []string{"block.com", "another-block.io"},
+			allowed:       []string{"allow.io"},
+			errorExpected: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed)
+			got, err := updatePolicyJSON(templateBytes, tt.blocked, tt.allowed, "release-reg.io/image/release")
+			if err == nil && tt.errorExpected {
+				t.Errorf("updatePolicyJSON() error = %v", err)
+				return
+			}
 			if err != nil {
+				if tt.errorExpected {
+					return
+				}
 				t.Errorf("updatePolicyJSON() error = %v", err)
 				return
 			}
@@ -404,5 +468,146 @@ func TestValidateRegistriesConfScopes(t *testing.T) {
 	for _, tc := range tests {
 		res := validateRegistriesConfScopes(tc.insecure, tc.blocked, tc.allowed, tc.icspRules)
 		require.Equal(t, tc.expectedErr, res)
+	}
+}
+
+func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
+	tests := []struct {
+		name, releaseImg                                                  string
+		imgSpec                                                           *apicfgv1.ImageSpec
+		icspRules                                                         []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		expectedRegistriesBlocked, expectedPolicyBlocked, expectedAllowed []string
+		expectedErr                                                       bool
+	}{
+		{
+			name:       "regular blocked list with no mirror rules configured",
+			releaseImg: "payload-reg.io/release-image@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0",
+			imgSpec: &apicfgv1.ImageSpec{
+				RegistrySources: apicfgv1.RegistrySources{
+					BlockedRegistries: []string{"block.io", "block-2.io"},
+				},
+			},
+			expectedRegistriesBlocked: []string{"block.io", "block-2.io"},
+			expectedPolicyBlocked:     []string{"block.io", "block-2.io"},
+			expectedErr:               false,
+		},
+		{
+			name:       "regular blocked list with unrelated mirror rules configured",
+			releaseImg: "payload-reg.io/release-image@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0",
+			imgSpec: &apicfgv1.ImageSpec{
+				RegistrySources: apicfgv1.RegistrySources{
+					BlockedRegistries: []string{"block.io", "block-2.io"},
+				},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "src.io/payload", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"block.io", "block-2.io"},
+			expectedPolicyBlocked:     []string{"block.io", "block-2.io"},
+			expectedErr:               false,
+		},
+		{
+			name:       "payload reg does not have mirror configured and is in blocked list",
+			releaseImg: "payload-reg.io/release-image@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0",
+			imgSpec: &apicfgv1.ImageSpec{
+				RegistrySources: apicfgv1.RegistrySources{
+					BlockedRegistries: []string{"block.io", "payload-reg.io", "block-2.io"},
+				},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "src.io/payload", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"block.io", "block-2.io"},
+			expectedPolicyBlocked:     []string{"block.io", "block-2.io"},
+			expectedErr:               true,
+		},
+		{
+			name:       "payload reg has mirror configured and is in blocked list",
+			releaseImg: "payload-reg.io/release-image@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0",
+			imgSpec: &apicfgv1.ImageSpec{
+				RegistrySources: apicfgv1.RegistrySources{
+					BlockedRegistries: []string{"block.io", "payload-reg.io", "block-2.io"},
+				},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "payload-reg.io/release-image", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"block.io", "payload-reg.io", "block-2.io"},
+			expectedPolicyBlocked:     []string{"block.io", "payload-reg.io", "block-2.io"},
+			expectedAllowed:           []string{"payload-reg.io/release-image"},
+			expectedErr:               false,
+		},
+		{
+			name:       "payload is blocked; all of mirror is not blocked, but the mirror of the payload is blocked",
+			releaseImg: "quay.io/openshift-release-dev@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0",
+			imgSpec: &apicfgv1.ImageSpec{
+				RegistrySources: apicfgv1.RegistrySources{
+					BlockedRegistries: []string{"quay.io", "block.io/openshift-release-dev"},
+				},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "quay.io", Mirrors: []string{"block.io"}}, // quay.io/openshift-release-dev -> block.io/openshift-release-dev
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"block.io/openshift-release-dev"},
+			expectedPolicyBlocked:     []string{"block.io/openshift-release-dev"},
+			expectedErr:               true,
+		},
+		{
+			name:       "payload is blocked; parent of the mirror of the payload is blocked",
+			releaseImg: "quay.io/openshift-release-dev@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0",
+			imgSpec: &apicfgv1.ImageSpec{
+				RegistrySources: apicfgv1.RegistrySources{
+					BlockedRegistries: []string{"quay.io", "block.io"},
+				},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "quay.io/openshift-release-dev", Mirrors: []string{"block.io/openshift-release-dev"}}, // quay.io/openshift-release-dev -> block.io/openshift-release-dev
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"block.io"},
+			expectedPolicyBlocked:     []string{"block.io"},
+			expectedErr:               true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRegistries, gotPolicy, gotAllowed, err := getValidBlockedAndAllowedRegistries(tt.releaseImg, tt.imgSpec, tt.icspRules)
+			if (err != nil && !tt.expectedErr) || (err == nil && tt.expectedErr) {
+				t.Errorf("getValidBlockedRegistries() error = %v", err)
+				return
+			}
+			require.Equal(t, tt.expectedRegistriesBlocked, gotRegistries)
+			require.Equal(t, tt.expectedPolicyBlocked, gotPolicy)
+			require.Equal(t, tt.expectedAllowed, gotAllowed)
+		})
 	}
 }

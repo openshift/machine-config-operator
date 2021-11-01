@@ -367,10 +367,10 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
 	// configuration file.
 	// First get the valid blocked registries to ensure we don't block the registry where the release image is from
-	blockedRegistries, _ := getValidBlockedRegistries(releaseImageReg, &imgcfg.Spec)
+	registriesBlocked, policyBlocked, allowed, _ := getValidBlockedAndAllowedRegistries(releaseImageReg, &imgcfg.Spec, icsps)
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
-		blockedRegistries, icsps)
+		registriesBlocked, icsps)
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 
@@ -396,9 +396,10 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 
 	// Validate the policy.json contents if a change is expected from the tests
 	if verifyPolicyJSON {
+		allowed = append(allowed, imgcfg.Spec.RegistrySources.AllowedRegistries...)
 		expectedPolicyJSON, err := updatePolicyJSON(templatePolicyJSON,
-			blockedRegistries,
-			imgcfg.Spec.RegistrySources.AllowedRegistries)
+			policyBlocked,
+			allowed, releaseImageReg)
 		require.NoError(t, err)
 		policyfile := ignCfg.Storage.Files[1]
 		if policyfile.Node.Path != policyConfigPath {
@@ -820,8 +821,9 @@ func TestRunImageBootstrap(t *testing.T) {
 // under blocked registries
 func TestRegistriesValidation(t *testing.T) {
 	failureTests := []struct {
-		name   string
-		config *apicfgv1.RegistrySources
+		name      string
+		config    *apicfgv1.RegistrySources
+		icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	}{
 		{
 			name: "adding registry used by payload to blocked registries",
@@ -830,30 +832,88 @@ func TestRegistriesValidation(t *testing.T) {
 				InsecureRegistries: []string{"test.io"},
 			},
 		},
+		{
+			name: "adding registry used by payload to blocked registries with mirror rules configured for the a different repo in the reg",
+			config: &apicfgv1.RegistrySources{
+				BlockedRegistries:  []string{"blah.io", "docker.io"},
+				InsecureRegistries: []string{"test.io"},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "blah.io/myuser", Mirrors: []string{"mirror-1.io/myuser", "mirror-2.io/myuser"}},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	successTests := []struct {
-		name   string
-		config *apicfgv1.RegistrySources
+		name                                                              string
+		expectedRegistriesBlocked, expectedPolicyBlocked, expectedAllowed []string
+		config                                                            *apicfgv1.RegistrySources
+		icspRules                                                         []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	}{
 		{
-			name: "adding registry used by payload to blocked registries",
+			name: "adding registry used by payload to insecure registries",
 			config: &apicfgv1.RegistrySources{
 				BlockedRegistries:  []string{"docker.io"},
 				InsecureRegistries: []string{"blah.io"},
 			},
+			expectedRegistriesBlocked: []string{"docker.io"},
+			expectedPolicyBlocked:     []string{"docker.io"},
+		},
+		{
+			name: "adding registry used by payload to blocked registries with mirror rules configured for the payload reg",
+			config: &apicfgv1.RegistrySources{
+				BlockedRegistries:  []string{"blah.io", "docker.io"},
+				InsecureRegistries: []string{"test.io"},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "blah.io/payload", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"blah.io", "docker.io"},
+			expectedPolicyBlocked:     []string{"blah.io", "docker.io"},
+			expectedAllowed:           []string{"blah.io/payload/myimage"},
+		},
+		{
+			name: "adding payload repository to blocked registries with mirror rules configured for the payload registry",
+			config: &apicfgv1.RegistrySources{
+				BlockedRegistries:  []string{"blah.io/payload", "docker.io"},
+				InsecureRegistries: []string{"test.io"},
+			},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "blah.io/payload", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+						},
+					},
+				},
+			},
+			expectedRegistriesBlocked: []string{"blah.io/payload", "docker.io"},
+			expectedPolicyBlocked:     []string{"blah.io/payload", "docker.io"},
+			expectedAllowed:           []string{"blah.io/payload/myimage"},
 		},
 	}
 
 	// Failure Tests
 	for _, test := range failureTests {
 		imgcfg := newImageConfig(test.name, test.config)
-		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
-		blocked, err := getValidBlockedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec)
+		cvcfg := newClusterVersionConfig("version", "blah.io/payload/myimage@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0")
+		registriesBlocked, _, _, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules)
 		if err == nil {
 			t.Errorf("%s: failed", test.name)
 		}
-		for _, reg := range blocked {
+		for _, reg := range registriesBlocked {
 			if reg == "blah.io" {
 				t.Errorf("%s: failed to filter out registry being used by payload", test.name)
 			}
@@ -863,16 +923,14 @@ func TestRegistriesValidation(t *testing.T) {
 	// Successful Tests
 	for _, test := range successTests {
 		imgcfg := newImageConfig(test.name, test.config)
-		cvcfg := newClusterVersionConfig("version", "blah.io/myuser/myimage:test")
-		blocked, err := getValidBlockedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec)
+		cvcfg := newClusterVersionConfig("version", "blah.io/payload/myimage@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0")
+		registriesBlocked, policyBlocked, allowed, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules)
 		if err != nil {
 			t.Errorf("%s: failed", test.name)
 		}
-		for _, reg := range blocked {
-			if reg == "blah.io" {
-				t.Errorf("%s: failed to filter out registry being used by payload", test.name)
-			}
-		}
+		assert.Equal(t, test.expectedRegistriesBlocked, registriesBlocked)
+		assert.Equal(t, test.expectedPolicyBlocked, policyBlocked)
+		assert.Equal(t, test.expectedAllowed, allowed)
 	}
 }
 
