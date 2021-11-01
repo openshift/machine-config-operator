@@ -1474,11 +1474,11 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 			return err
 		}
 
+		// write (or cleanup) path in /etc/systemd/system
 		fpath := filepath.Join(pathSystemd, u.Name)
-
-		// check if the unit is masked. if it is, we write a symlink to
-		// /dev/null and continue
 		if u.Mask != nil && *u.Mask {
+			// if the unit is masked, symlink fpath to /dev/null and continue
+
 			glog.V(2).Info("Systemd unit masked")
 			if err := os.RemoveAll(fpath); err != nil {
 				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
@@ -1501,12 +1501,21 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 					return err
 				}
 			}
-			// write the unit to disk
 			if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 			}
 
 			glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
+		} else if u.Mask != nil && !*u.Mask {
+			// if mask is explicitly set to false, make sure to remove a previous mask
+			// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
+			// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
+			// Contents, and the current one does not, the previous content will not get cleaned up. For now we're ignoring some
+			// of those edge cases rather than introducing more complexity.
+			glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
+			if err := os.RemoveAll(fpath); err != nil {
+				return fmt.Errorf("failed to cleanup %s: %v", fpath, err)
+			}
 		}
 
 		// if the unit doesn't note if it should be enabled or disabled then
