@@ -24,6 +24,9 @@ const (
 
 func resyncPeriod() func() time.Duration {
 	return func() time.Duration {
+		// Disable gosec here to avoid throwing
+		// G404: Use of weak random number generator (math/rand instead of crypto/rand)
+		// #nosec
 		factor := rand.Float64() + 1
 		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
 	}

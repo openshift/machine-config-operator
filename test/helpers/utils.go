@@ -127,6 +127,9 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	require.NotEmpty(t, nodes)
 
 	rand.Seed(time.Now().UnixNano())
+	// Disable gosec here to avoid throwing
+	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
+	// #nosec
 	infraNode := nodes[rand.Intn(len(nodes))]
 	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=", "--overwrite=true").CombinedOutput()
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
