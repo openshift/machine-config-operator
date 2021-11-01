@@ -325,12 +325,8 @@ func removePendingDeployment() error {
 	return runRpmOstree("cleanup", "-p")
 }
 
-func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
-	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return err
-	}
 
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
@@ -356,6 +352,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		if dn.recorder != nil {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
+		var err error
 		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
 			return err
 		}
@@ -481,7 +478,7 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 	return
 }
 
-func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig) ([]string, error) {
+func calculatePostConfigChangeAction(diff *machineConfigDiff, oldIgnConfig, newIgnConfig ign3types.Config) ([]string, error) {
 	// If a machine-config-daemon-force file is present, it means the user wants to
 	// move to desired state without additional validation. We will reboot the node in
 	// this case regardless of what MachineConfig diff is.
@@ -493,22 +490,9 @@ func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
-	diff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return []string{}, err
-	}
 	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
 		// must reboot
 		return []string{postConfigChangeActionReboot}, nil
-	}
-
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return []string{}, err
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return []string{}, err
 	}
 
 	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
@@ -541,6 +525,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+	}
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+	}
+
 	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
@@ -561,13 +554,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
-	actions, err := calculatePostConfigChangeAction(oldConfig, newConfig)
+	actions, err := calculatePostConfigChangeAction(diff, oldIgnConfig, newIgnConfig)
 	if err != nil {
 		return err
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, oldConfig, newConfig)
+	drain, err := isDrainRequired(actions, oldIgnConfig, newIgnConfig)
 	if err != nil {
 		return err
 	}
@@ -580,27 +573,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newConfig, oldConfig); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back files writes %v", err)
 				return
 			}
 		}
 	}()
-
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing old Ignition config failed with error: %v", err)
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing new Ignition config failed with error: %v", err)
-	}
 
 	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
@@ -627,13 +611,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.applyOSChanges(oldConfig, newConfig); err != nil {
+	if err := dn.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.applyOSChanges(newConfig, oldConfig); err != nil {
+			if err := dn.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
 				return
 			}
@@ -1167,23 +1151,15 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Updating files")
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to update files. Parsing old Ignition config failed with error: %v", err)
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to update files. Parsing new Ignition config failed with error: %v", err)
-	}
 	if err := dn.writeFiles(newIgnConfig.Storage.Files); err != nil {
 		return err
 	}
 	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
-	if err := dn.deleteStaleData(&oldIgnConfig, &newIgnConfig); err != nil {
+	if err := dn.deleteStaleData(oldIgnConfig, newIgnConfig); err != nil {
 		return err
 	}
 	return nil
@@ -1240,7 +1216,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
 //nolint:gocyclo
-func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) error {
+func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newIgnConfig.Storage.Files {

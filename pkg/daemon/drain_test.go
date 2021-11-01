@@ -7,6 +7,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/vincent-petithory/dataurl"
 )
@@ -349,7 +350,15 @@ location = "example.com/repo/test-img"
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			drain, err := isDrainRequired(test.actions, test.oldConfig, test.newConfig)
+			oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.oldConfig.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("parsing old Ignition config failed: %v", err)
+			}
+			newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.newConfig.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("parsing new Ignition config failed: %v", err)
+			}
+			drain, err := isDrainRequired(test.actions, oldIgnConfig, newIgnConfig)
 			if !reflect.DeepEqual(test.expectedAction, drain) {
 				t.Errorf("Failed determining drain behavior: expected: %v but result is: %v. Error: %v", test.expectedAction, drain, err)
 			}
