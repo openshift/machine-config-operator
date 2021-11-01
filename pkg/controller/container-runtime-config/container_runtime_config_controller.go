@@ -701,10 +701,25 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
-	var blockedRegs []string
+	// Find all ImageContentSourcePolicy objects
+	icspRules, err := ctrl.icspLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
+	} else if err != nil {
+		return err
+	}
+
+	var (
+		registriesBlocked, policyBlocked, allowedRegs []string
+		releaseImage                                  string
+	)
 	if clusterVersionCfg != nil {
+		// The possibility of releaseImage being "" is very unlikely, will only happen if clusterVersionCfg is nil. If this happens
+		// then there is something very wrong with the cluster and in that situation it would be best to fail here till clusterVersionCfg
+		// has been recovered
+		releaseImage = clusterVersionCfg.Status.Desired.Image
 		// Go through the registries in the image spec to get and validate the blocked registries
-		blockedRegs, err = getValidBlockedRegistries(clusterVersionCfg.Status.Desired.Image, &imgcfg.Spec)
+		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(releaseImage, &imgcfg.Spec, icspRules)
 		if err != nil && err != errParsingReference {
 			glog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {
@@ -715,15 +730,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	// Get ControllerConfig
 	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig: %w", err)
-	}
-
-	// Find all ImageContentSourcePolicy objects
-	icspRules, err := ctrl.icspLister.List(labels.Everything())
-	if err != nil && errors.IsNotFound(err) {
-		icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
-	} else if err != nil {
-		return err
+		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
 	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
@@ -745,8 +752,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			return err
 		}
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role,
-				imgcfg.Spec.RegistrySources.InsecureRegistries, blockedRegs, imgcfg.Spec.RegistrySources.AllowedRegistries,
+			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
+				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
 				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules)
 			if err != nil {
 				return err
@@ -807,8 +814,8 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	return nil
 }
 
-func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role string,
-	insecureRegs, blockedRegs, allowedRegs, searchRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
+func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
+	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -818,10 +825,10 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	// Generate the original registries config
 	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
 	if err != nil {
-		return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %w", err)
+		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}
 
-	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
+	if insecureRegs != nil || registriesBlocked != nil || len(icspRules) != 0 {
 		if originalRegistriesIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original registries config is empty")
 		}
@@ -829,12 +836,12 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %w", err)
 		}
-		registriesTOML, err = updateRegistriesConfig(contents, insecureRegs, blockedRegs, icspRules)
+		registriesTOML, err = updateRegistriesConfig(contents, insecureRegs, registriesBlocked, icspRules)
 		if err != nil {
 			return nil, fmt.Errorf("could not update registries config with new changes: %w", err)
 		}
 	}
-	if blockedRegs != nil || allowedRegs != nil {
+	if policyBlocked != nil || allowedRegs != nil {
 		if originalPolicyIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original policy json is empty")
 		}
@@ -842,7 +849,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original policy json: %w", err)
 		}
-		policyJSON, err = updatePolicyJSON(contents, blockedRegs, allowedRegs)
+		policyJSON, err = updatePolicyJSON(contents, policyBlocked, allowedRegs, releaseImage)
 		if err != nil {
 			return nil, fmt.Errorf("could not update policy json with new changes: %w", err)
 		}
@@ -863,24 +870,21 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 // except that mcfgv1.Image is not available.
 func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgCfg *apicfgv1.Image) ([]*mcfgv1.MachineConfig, error) {
 	var (
-		insecureRegs []string
-		blockedRegs  []string
-		allowedRegs  []string
-		searchRegs   []string
-		err          error
+		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
+		err                                                                     error
 	)
 
 	// Read the search, insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
 	if imgCfg != nil {
 		insecureRegs = imgCfg.Spec.RegistrySources.InsecureRegistries
-		allowedRegs = imgCfg.Spec.RegistrySources.AllowedRegistries
 		searchRegs = imgCfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries
-		blockedRegs, err = getValidBlockedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec)
+		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec, icspRules)
 		if err != nil && err != errParsingReference {
 			glog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {
 			return nil, err
 		}
+		allowedRegs = append(allowedRegs, imgCfg.Spec.RegistrySources.AllowedRegistries...)
 	}
 
 	var res []*mcfgv1.MachineConfig
@@ -890,8 +894,8 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 		if err != nil {
 			return nil, err
 		}
-		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role,
-			insecureRegs, blockedRegs, allowedRegs, searchRegs, icspRules)
+		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules)
 		if err != nil {
 			return nil, err
 		}
