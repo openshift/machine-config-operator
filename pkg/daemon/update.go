@@ -56,6 +56,11 @@ const (
 	postConfigChangeActionReloadCrio = "reload crio"
 )
 
+var (
+	origParentDirPath   = filepath.Join("/etc", "machine-config-daemon", "orig")
+	noOrigParentDirPath = filepath.Join("/etc", "machine-config-daemon", "noorig")
+)
+
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
 }
@@ -1603,11 +1608,11 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 }
 
 func origParentDir() string {
-	return filepath.Join("/etc", "machine-config-daemon", "orig")
+	return origParentDirPath
 }
 
 func noOrigParentDir() string {
-	return filepath.Join("/etc", "machine-config-daemon", "noorig")
+	return noOrigParentDirPath
 }
 
 func origFileName(fpath string) string {
@@ -1638,6 +1643,14 @@ func createOrigFile(fromPath, fpath string) error {
 			return errors.Wrapf(err, "creating no orig parent dir: %v", err)
 		}
 		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
+	}
+
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1970959
+	// orig file might exist, but be a relative/dangling symlink
+	if symlinkTarget, err := os.Readlink(origFileName(fpath)); err == nil {
+		if symlinkTarget != "" {
+			return nil
+		}
 	}
 	if _, err := os.Stat(origFileName(fpath)); err == nil {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
