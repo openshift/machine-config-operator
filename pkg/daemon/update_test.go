@@ -646,7 +646,19 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			calculatedAction, err := calculatePostConfigChangeAction(test.oldConfig, test.newConfig)
+			oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.oldConfig.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("parsing old Ignition config failed: %v", err)
+			}
+			newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.newConfig.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("parsing new Ignition config failed: %v", err)
+			}
+			mcDiff, err := newMachineConfigDiff(test.oldConfig, test.newConfig)
+			if err != nil {
+				t.Errorf("error creating machineConfigDiff: %v", err)
+			}
+			calculatedAction, err := calculatePostConfigChangeAction(mcDiff, oldIgnConfig, newIgnConfig)
 
 			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
 				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
