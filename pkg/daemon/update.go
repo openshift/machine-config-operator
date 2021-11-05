@@ -1430,41 +1430,48 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	return nil
 }
 
+// write dropins to disk
+func (dn *Daemon) writeDropins(u ign3types.Unit) error {
+	for i := range u.Dropins {
+		dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
+			glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
+			if _, err := os.Stat(dpath); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			glog.Infof("Removing %q, updated file has zero length", dpath)
+			if err := os.Remove(dpath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
+		if _, err := os.Stat("/usr" + dpath); err == nil &&
+			dn.os.IsCoreOSVariant() {
+			if err := createOrigFile("/usr"+dpath, dpath); err != nil {
+				return err
+			}
+		}
+		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
+			return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
+		}
+
+		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+	}
+	return nil
+}
+
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var enabledUnits []string
 	var disabledUnits []string
 	for _, u := range units {
-		// write the dropin to disk
-		for i := range u.Dropins {
-			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
-				glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
-				if _, err := os.Stat(dpath); err != nil {
-					if os.IsNotExist(err) {
-						continue
-					}
-					return err
-				}
-				glog.Infof("Removing %q, updated file has zero length", dpath)
-				if err := os.Remove(dpath); err != nil {
-					return err
-				}
-				continue
-			}
-
-			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
-			if _, err := os.Stat("/usr" + dpath); err == nil &&
-				dn.os.IsCoreOSVariant() {
-				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
-					return err
-				}
-			}
-			if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
-				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
-			}
-
-			glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+		if err := dn.writeDropins(u); err != nil {
+			return err
 		}
 
 		fpath := filepath.Join(pathSystemd, u.Name)
