@@ -491,90 +491,35 @@ func TestDropinCheck(t *testing.T) {
 	}
 }
 
+func newFile(path, contents string) ign3types.File {
+	return ign3types.File{
+		Node: ign3types.Node{
+			Path: path,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(contents))),
+			},
+		},
+	}
+}
+
 // Test to see if the correct action is calculated given a machineconfig diff
 // i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
 func TestCalculatePostConfigChangeAction(t *testing.T) {
 	files := map[string]ign3types.File{
-		"pullsecret1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/var/lib/kubelet/config.json",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubelet conf 1\n"))),
-				},
-			},
-		},
-		"pullsecret2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/var/lib/kubelet/config.json",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubelet conf 2\n"))),
-				},
-			},
-		},
-		"registries1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/containers/registries.conf",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("registries content 1\n"))),
-				},
-			},
-		},
-		"registries2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/containers/registries.conf",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("registries content 2\n"))),
-				},
-			},
-		},
-		"randomfile1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/random-reboot-file",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("test\n"))),
-				},
-			},
-		},
-		"randomfile2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/random-reboot-file",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("test 2\n"))),
-				},
-			},
-		},
-		"kubeletCA1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/kubernetes/kubelet-ca.crt",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubeletCA1\n"))),
-				},
-			},
-		},
-		"kubeletCA2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/kubernetes/kubelet-ca.crt",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubeletCA2\n"))),
-				},
-			},
-		},
+		"pullsecret1":     newFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
+		"pullsecret2":     newFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
+		"registries1":     newFile("/etc/containers/registries.conf", "registries content 1\n"),
+		"registries2":     newFile("/etc/containers/registries.conf", "registries content 2\n"),
+		"randomfile1":     newFile("/etc/random-reboot-file", "test\n"),
+		"randomfile2":     newFile("/etc/random-reboot-file", "test 2\n"),
+		"kubeletCA1":      newFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
+		"kubeletCA2":      newFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
+		"policy1":         newFile("/etc/containers/policy.json", "policy1"),
+		"policy2":         newFile("/etc/containers/policy.json", "policy2"),
+		"containers-gpg1": newFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
+		"containers-gpg2": newFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
 	}
 
 	tests := []struct {
@@ -641,6 +586,18 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"], files["kubeletCA1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionReboot},
+		},
+		{
+			// test that updating policy.json is crio reload
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["policy1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["policy2"]}),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// test that updating containers-gpg.pub is crio reload
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["containers-gpg1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["containers-gpg2"]}),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 	}
 
