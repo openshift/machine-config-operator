@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/golang/glog"
@@ -21,6 +22,15 @@ type ClientSet struct {
 	clientmachineconfigv1.MachineconfigurationV1Interface
 	clientapiextensionsv1.ApiextensionsV1Interface
 	clientoperatorsv1alpha1.OperatorV1alpha1Interface
+	kubeconfig string
+}
+
+func (cs *ClientSet) GetKubeconfig() (string, error) {
+	if cs.kubeconfig != "" {
+		return cs.kubeconfig, nil
+	}
+
+	return "", fmt.Errorf("no kubeconfig found; are you running a custom config or in-cluster?")
 }
 
 // NewClientSet returns a *ClientBuilder with the given kubeconfig.
@@ -43,7 +53,9 @@ func NewClientSet(kubeconfig string) *ClientSet {
 		panic(err)
 	}
 
-	return NewClientSetFromConfig(config)
+	cs := NewClientSetFromConfig(config)
+	cs.kubeconfig = kubeconfig
+	return cs
 }
 
 // NewClientSetFromConfig returns a *ClientBuilder with the given rest config.
