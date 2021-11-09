@@ -131,11 +131,19 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
 	// #nosec
 	infraNode := nodes[rand.Intn(len(nodes))]
-	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=", "--overwrite=true").CombinedOutput()
-	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
+	infraNode.Labels[label] = ""
+
+	_, err = cs.Nodes().Update(context.TODO(), &infraNode, metav1.UpdateOptions{})
+
+	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
 	return func() {
-		out, err = exec.Command("oc", "label", "node", infraNode.Name, label+"-").CombinedOutput()
-		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, string(out))
+		updatedNode, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		require.Nil(t, err, "unable to get node to update: %s", err)
+
+		delete(updatedNode.Labels, label)
+
+		_, err = cs.Nodes().Update(context.TODO(), updatedNode, metav1.UpdateOptions{})
+		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, err)
 	}
 }
 
@@ -201,11 +209,23 @@ func CreateMC(name, role string) *mcfgv1.MachineConfig {
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
+	// Check for an oc binary in $PATH.
+	path, err := exec.LookPath("oc")
+	if err != nil {
+		t.Fatalf("could not locate oc command: %s", err)
+	}
+
+	// Get the kubeconfig file path
+	kubeconfig, err := cs.GetKubeconfig()
+	if err != nil {
+		t.Fatalf("could not get kubeconfig: %s", err)
+	}
+
 	mcd, err := mcdForNode(cs, &node)
 	require.Nil(t, err)
 	mcdName := mcd.ObjectMeta.Name
 
-	entryPoint := "oc"
+	entryPoint := path
 	args := []string{"rsh",
 		"-n", "openshift-machine-config-operator",
 		"-c", "machine-config-daemon",
@@ -213,6 +233,10 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	args = append(args, subArgs...)
 
 	cmd := exec.Command(entryPoint, args...)
+	// If one passes a path to a kubeconfig via NewClientSet instead of setting
+	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
+	// KUBECONFIG to the value held by the clientset.
+	cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
