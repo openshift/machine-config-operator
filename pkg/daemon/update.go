@@ -3,7 +3,9 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -1542,6 +1544,39 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	return nil
 }
 
+func decodeContents(source, compression *string) ([]byte, error) {
+	var contentsBytes []byte
+
+	// To allow writing of "empty" files we'll allow source to be nil
+	if source != nil {
+		source, err := dataurl.DecodeString(*source)
+		if err != nil {
+			return []byte{}, fmt.Errorf("could not decode file content string: %w", err)
+		}
+		if compression != nil {
+			switch *compression {
+			case "":
+				contentsBytes = source.Data
+			case "gzip":
+				reader, err := gzip.NewReader(bytes.NewReader(source.Data))
+				if err != nil {
+					return []byte{}, fmt.Errorf("could not create gzip reader: %w", err)
+				}
+				defer reader.Close()
+				contentsBytes, err = io.ReadAll(reader)
+				if err != nil {
+					return []byte{}, fmt.Errorf("failed decompressing: %w", err)
+				}
+			default:
+				return []byte{}, fmt.Errorf("unsupported compression type %q", *compression)
+			}
+		} else {
+			contentsBytes = source.Data
+		}
+	}
+	return contentsBytes, nil
+}
+
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ign3types.File) error {
@@ -1554,15 +1589,11 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 			return fmt.Errorf("found an append section when writing files. Append is not supported")
 		}
 
-		// To allow writing of "empty" files we'll allow source to be nil
-		contents := &dataurl.DataURL{}
-		if file.Contents.Source != nil {
-			var err error
-			contents, err = dataurl.DecodeString(*file.Contents.Source)
-			if err != nil {
-				return err
-			}
+		decodedContents, err := decodeContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return fmt.Errorf("could not decode file %q: %w", file.Path, err)
 		}
+
 		mode := defaultFilePermissions
 		if file.Mode != nil {
 			mode = os.FileMode(*file.Mode)
@@ -1576,7 +1607,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 		if err := createOrigFile(file.Path, file.Path); err != nil {
 			return err
 		}
-		if err := writeFileAtomically(file.Path, contents.Data, defaultDirectoryPermissions, mode, uid, gid); err != nil {
+		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
 			return err
 		}
 	}
