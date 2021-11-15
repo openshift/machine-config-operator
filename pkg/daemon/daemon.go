@@ -23,7 +23,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1487,15 +1486,12 @@ func checkV3Files(files []ign3types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents := &dataurl.DataURL{}
-		if f.Contents.Source != nil {
-			var err error
-			contents, err = dataurl.DecodeString(*f.Contents.Source)
-			if err != nil {
-				return errors.Wrapf(err, "couldn't parse file %q", f.Path)
-			}
+		decodedContents, err := decodeContents(f.Contents.Source, f.Contents.Compression)
+		if err != nil {
+			return fmt.Errorf("could not decode file %q: %w", f.Path, err)
 		}
-		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
+
+		if err := checkFileContentsAndMode(f.Path, decodedContents, mode); err != nil {
 			return err
 		}
 	}
@@ -1517,11 +1513,11 @@ func checkV2Files(files []ign2types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := dataurl.DecodeString(f.Contents.Source)
+		decodedContents, err := decodeContents(&f.Contents.Source, &f.Contents.Compression)
 		if err != nil {
-			return errors.Wrapf(err, "couldn't parse file %q", f.Path)
+			return fmt.Errorf("could not decode file %q: %w", f.Path, err)
 		}
-		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
+		if err := checkFileContentsAndMode(f.Path, decodedContents, mode); err != nil {
 			return err
 		}
 		checkedFiles[f.Path] = true
