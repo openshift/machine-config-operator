@@ -1716,6 +1716,16 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		return nil
 	}
 
+	var uErr user.UnknownUserError
+	switch _, err := user.Lookup(constants.CoreUserName); {
+	case err == nil:
+	case errors.As(err, &uErr):
+		glog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
+		return nil
+	default:
+		return fmt.Errorf("failed to check if user core exists: %w", err)
+	}
+
 	// we're also appending all keys for any user to core, so for now
 	// we pass this to atomicallyWriteSSHKeys to write.
 	// we know these users are "core" ones also cause this slice went through Reconcilable
