@@ -1695,7 +1695,12 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 		return err
 	}
 
-	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+	var authKeyPath string
+	if dn.os.IsFCOS() {
+		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition")
+	} else {
+		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys")
+	}
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
@@ -1726,6 +1731,44 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		}
 	}
 	if !dn.mock {
+		authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+		authKeyFragmentDirPath := filepath.Join(coreUserSSHPath, "authorized_keys.d")
+
+		if dn.os.IsFCOS() {
+			// In older versions of OKD, the keys were written to `/home/core/.ssh/authorized_keys`.
+			// Newer versions of OKD will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
+			// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
+			// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
+			// that is called right after.
+			_, err := os.Stat(authKeyPath)
+			if err == nil {
+				err := os.RemoveAll(authKeyPath)
+				if err != nil {
+					return fmt.Errorf("failed to remove path '%s': %v", authKeyPath, err)
+				}
+			} else if !os.IsNotExist(err) {
+				// This shouldn't ever happen
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyPath, err)
+			}
+
+			// Ensure authorized_keys.d/ignition is the only fragment that exists
+			keyFragmentsDir, err := ioutil.ReadDir(authKeyFragmentDirPath)
+			if err == nil {
+				for _, fragment := range keyFragmentsDir {
+					if fragment.Name() != "ignition" {
+						keyPath := filepath.Join(authKeyFragmentDirPath, fragment.Name())
+						err := os.RemoveAll(keyPath)
+						if err != nil {
+							return fmt.Errorf("failed to remove path '%s': %v", keyPath, err)
+						}
+					}
+				}
+			} else if !os.IsNotExist(err) {
+				// This shouldn't ever happen
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyFragmentDirPath, err)
+			}
+		}
+
 		// Note we write keys only for the core user and so this ignores the user list
 		if err := dn.atomicallyWriteSSHKey(concatSSHKeys); err != nil {
 			return err
