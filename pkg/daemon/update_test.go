@@ -1,12 +1,16 @@
 package daemon
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"os/user"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,10 +19,54 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
+
+func newMockDaemon() Daemon {
+	// testClient is the NodeUpdaterClient mock instance that will front
+	// calls to update the host.
+	testClient := RpmOstreeClientMock{
+		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+	}
+
+	// Create a Daemon instance with mocked clients
+	return Daemon{
+		mock:              true,
+		name:              "nodeName",
+		os:                OperatingSystem{},
+		NodeUpdaterClient: testClient,
+		kubeClient:        k8sfake.NewSimpleClientset(),
+		bootedOSImageURL:  "test",
+	}
+}
+
+func setupTempDirWithEtc(t *testing.T) (string, func()) {
+	t.Helper()
+
+	// Make a temp dir to put the testing files in, and make sure we clean it up
+	testDir := t.TempDir()
+
+	// Stub out a test directory structure -- we need to create /etc so createOrigFile can use it
+	etcDir := filepath.Join(testDir, "etc")
+	err := os.MkdirAll(etcDir, 0755)
+	require.Nil(t, err)
+
+	oldOrigParentDirPath := origParentDirPath
+	oldNoOrigParentDirPath := noOrigParentDirPath
+
+	// Override these package variables so files get written to our testing location
+	origParentDirPath = filepath.Join(testDir, origParentDirPath)
+	noOrigParentDirPath = filepath.Join(testDir, noOrigParentDirPath)
+
+	return testDir, func() {
+		// Make sure path variables get put back for other tests
+		origParentDirPath = oldOrigParentDirPath
+		noOrigParentDirPath = oldNoOrigParentDirPath
+	}
+}
 
 func TestTruncate(t *testing.T) {
 	assert.Equal(t, truncate("", 10), "")
@@ -43,21 +91,7 @@ func TestUpdateOS(t *testing.T) {
 	// expectedError is the error we will use when expecting an error to return
 	expectedError := fmt.Errorf("broken")
 
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-	}
-
-	// Create a Daemon instance with mocked clients
-	d := Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
+	d := newMockDaemon()
 
 	// Set up machineconfigs to pass to updateOS.
 	mcfg := &mcfgv1.MachineConfig{}
@@ -353,22 +387,90 @@ func TestReconcilableSSH(t *testing.T) {
 	checkIrreconcilableResults(t, "SSH", errMsg)
 }
 
-func TestUpdateSSHKeys(t *testing.T) {
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+func TestWriteFiles(t *testing.T) {
+	testDir, cleanup := setupTempDirWithEtc(t)
+	defer cleanup()
+
+	d := newMockDaemon()
+
+	contents := []byte("hello world\n")
+	encodedContents := dataurl.EncodeBytes(contents)
+
+	// gzip contents
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	_, err := writer.Write(contents)
+	assert.Nil(t, err)
+	err = writer.Close()
+	assert.Nil(t, err)
+	gzippedContents := dataurl.EncodeBytes(buffer.Bytes())
+
+	// use current user so test doesn't try to chown to root
+	currentUser, err := user.Current()
+	assert.Nil(t, err)
+	currentUid, err := strconv.Atoi(currentUser.Uid)
+	assert.Nil(t, err)
+	currentGid, err := strconv.Atoi(currentUser.Gid)
+	assert.Nil(t, err)
+
+	filePath := filepath.Join(testDir, "test")
+	node := ign3types.Node{
+		Path:  filePath,
+		User:  ign3types.NodeUser{ID: &currentUid},
+		Group: ign3types.NodeGroup{ID: &currentGid},
 	}
 
-	// Create a Daemon instance with mocked clients
-	d := Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
+	mode := 420
+
+	tests := []struct {
+		name             string
+		files            []ign3types.File
+		expectedErr      error
+		expectedContents []byte
+	}{
+		{
+			name: "basic file write",
+			files: []ign3types.File{{
+				Node:          node,
+				FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &encodedContents}, Mode: &mode},
+			}},
+			expectedContents: contents,
+		},
+		{
+			name: "write file with compressed contents",
+			files: []ign3types.File{{
+				Node:          node,
+				FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &gzippedContents, Compression: helpers.StrToPtr("gzip")}, Mode: &mode},
+			}},
+			expectedContents: contents,
+		},
+		{
+			name: "try to write file with unsupported compression type",
+			files: []ign3types.File{{
+				Node:          node,
+				FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &encodedContents, Compression: helpers.StrToPtr("xz")}, Mode: &mode},
+			}},
+			expectedErr: fmt.Errorf("could not decode file %q: %w", filePath, fmt.Errorf("unsupported compression type %q", "xz")),
+		},
 	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := d.writeFiles(test.files)
+			assert.Equal(t, test.expectedErr, err)
+			if test.expectedContents != nil {
+				fileContents, err := os.ReadFile(filePath)
+				assert.Nil(t, err)
+				assert.Equal(t, string(test.expectedContents), string(fileContents))
+			}
+			os.RemoveAll(filePath)
+		})
+	}
+}
+
+func TestUpdateSSHKeys(t *testing.T) {
+	d := newMockDaemon()
+
 	// Set up machineconfigs that are identical except for SSH keys
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}
 	newIgnCfg := ctrlcommon.NewIgnConfig()
@@ -447,18 +549,7 @@ func TestDropinCheck(t *testing.T) {
 		},
 	}
 
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-	}
-
-	d := Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
+	d := newMockDaemon()
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
@@ -706,28 +797,12 @@ func TestRunGetOut(t *testing.T) {
 // TestOriginalFileBackupRestore tests backikg up and restoring original files (files that are present in the base image and
 // get overwritten by a machine configuration)
 func TestOriginalFileBackupRestore(t *testing.T) {
-
-	// Make a temp dir to put the testing files in, and make sure we clean it up
-	testDir, err := ioutil.TempDir("", "mco-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(testDir)
-
-	// Stub out a test directory structure -- we need to create /etc so createOrigFile can use it
-	etcDir := filepath.Join(testDir, "etc")
-	err = os.MkdirAll(etcDir, 0755)
-	assert.Nil(t, err)
-
-	// Make sure path variables get put back for other tests
-	defer func(o string) { origParentDirPath = o }(origParentDirPath)
-	defer func(o string) { noOrigParentDirPath = o }(noOrigParentDirPath)
-
-	// Override these package variables so files get written to our testing location
-	origParentDirPath = filepath.Join(testDir, origParentDirPath)
-	noOrigParentDirPath = filepath.Join(testDir, noOrigParentDirPath)
+	testDir, cleanup := setupTempDirWithEtc(t)
+	defer cleanup()
 
 	// Write a normal file as a control to make sure normal case works
 	controlFile := filepath.Join(testDir, "control-file")
-	err = ioutil.WriteFile(controlFile, []byte("control file contents"), 0755)
+	err := ioutil.WriteFile(controlFile, []byte("control file contents"), 0755)
 	assert.Nil(t, err)
 
 	// Back up that normal file
