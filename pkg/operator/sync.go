@@ -47,6 +47,44 @@ var (
 	)
 )
 
+type manifestPaths struct {
+	clusterRoles        []string
+	roleBindings        []string
+	clusterRoleBindings []string
+	serviceAccounts     []string
+	secrets             []string
+	daemonset           string
+}
+
+const (
+	// Machine Config Controller manifest paths
+	mccClusterRoleManifestPath              = "manifests/machineconfigcontroller/clusterrole.yaml"
+	mccEventsClusterRoleManifestPath        = "manifests/machineconfigcontroller/events-clusterrole.yaml"
+	mccEventsRoleBindingDefaultManifestPath = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
+	mccEventsRoleBindingTargetManifestPath  = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
+	mccClusterRoleBindingManifestPath       = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
+	mccServiceAccountManifestPath           = "manifests/machineconfigcontroller/sa.yaml"
+
+	// Machine Config Daemon manifest paths
+	mcdClusterRoleManifestPath              = "manifests/machineconfigdaemon/clusterrole.yaml"
+	mcdEventsClusterRoleManifestPath        = "manifests/machineconfigdaemon/events-clusterrole.yaml"
+	mcdEventsRoleBindingDefaultManifestPath = "manifests/machineconfigdaemon/events-rolebinding-default.yaml"
+	mcdEventsRoleBindingTargetManifestPath  = "manifests/machineconfigdaemon/events-rolebinding-target.yaml"
+	mcdClusterRoleBindingManifestPath       = "manifests/machineconfigdaemon/clusterrolebinding.yaml"
+	mcdServiceAccountManifestPath           = "manifests/machineconfigdaemon/sa.yaml"
+	mcdDaemonsetManifestPath                = "manifests/machineconfigdaemon/daemonset.yaml"
+
+	// Machine Config Server manifest paths
+	mcsClusterRoleManifestPath                    = "manifests/machineconfigserver/clusterrole.yaml"
+	mcsClusterRoleBindingManifestPath             = "manifests/machineconfigserver/clusterrolebinding.yaml"
+	mcsCSRBootstrapRoleBindingManifestPath        = "manifests/machineconfigserver/csr-bootstrap-role-binding.yaml"
+	mcsCSRRenewalRoleBindingManifestPath          = "manifests/machineconfigserver/csr-renewal-role-binding.yaml"
+	mcsServiceAccountManifestPath                 = "manifests/machineconfigserver/sa.yaml"
+	mcsNodeBootstrapperServiceAccountManifestPath = "manifests/machineconfigserver/node-bootstrapper-sa.yaml"
+	mcsNodeBootstrapperTokenManifestPath          = "manifests/machineconfigserver/node-bootstrapper-token.yaml"
+	mcsDaemonsetManifestPath                      = "manifests/machineconfigserver/daemonset.yaml"
+)
+
 type syncFunc struct {
 	name string
 	fn   func(config *renderConfig) error
@@ -325,11 +363,8 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
-	for _, path := range []string{
-		"manifests/machineconfigcontroller/clusterrole.yaml",
-		"manifests/machineconfigcontroller/events-clusterrole.yaml",
-	} {
+func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) error {
+	for _, path := range paths.clusterRoles {
 		crBytes, err := renderAsset(config, path)
 		if err != nil {
 			return err
@@ -341,39 +376,91 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		}
 	}
 
-	for _, path := range []string{
-		"manifests/machineconfigcontroller/events-rolebinding-default.yaml",
-		"manifests/machineconfigcontroller/events-rolebinding-target.yaml",
-	} {
+	for _, path := range paths.roleBindings {
+		rbBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		rb := resourceread.ReadRoleBindingV1OrDie(rbBytes)
+		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), rb)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, path := range paths.clusterRoleBindings {
 		crbBytes, err := renderAsset(config, path)
 		if err != nil {
 			return err
 		}
-		crb := resourceread.ReadRoleBindingV1OrDie(crbBytes)
-		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), crb)
+		crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
+		_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), crb)
 		if err != nil {
 			return err
 		}
 	}
 
-	crbBytes, err := renderAsset(config, "manifests/machineconfigcontroller/clusterrolebinding.yaml")
-	if err != nil {
-		return err
-	}
-	crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-	_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), crb)
-	if err != nil {
-		return err
+	for _, path := range paths.serviceAccounts {
+		saBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
+		_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
+		if err != nil {
+			return err
+		}
 	}
 
-	saBytes, err := renderAsset(config, "manifests/machineconfigcontroller/sa.yaml")
-	if err != nil {
-		return err
+	for _, path := range paths.secrets {
+		sBytes, err := renderAsset(config, path)
+		if err != nil {
+			return err
+		}
+		s := resourceread.ReadSecretV1OrDie(sBytes)
+		_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), s)
+		if err != nil {
+			return err
+		}
 	}
-	sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
-	if err != nil {
-		return err
+
+	if paths.daemonset != "" {
+		dBytes, err := renderAsset(config, paths.daemonset)
+		if err != nil {
+			return err
+		}
+		d := resourceread.ReadDaemonSetV1OrDie(dBytes)
+		_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
+		if err != nil {
+			return err
+		}
+		if updated {
+			return optr.waitForDaemonsetRollout(d)
+		}
+	}
+
+	return nil
+}
+
+func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
+	paths := manifestPaths{
+		clusterRoles: []string{
+			mccClusterRoleManifestPath,
+			mccEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mccEventsRoleBindingDefaultManifestPath,
+			mccEventsRoleBindingTargetManifestPath,
+		},
+		clusterRoleBindings: []string{
+			mccClusterRoleBindingManifestPath,
+		},
+		serviceAccounts: []string{
+			mccServiceAccountManifestPath,
+		},
+	}
+	if err := optr.applyManifests(config, paths); err != nil {
+		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)
 	}
 
 	mccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/deployment.yaml")
@@ -409,156 +496,62 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
-	for _, path := range []string{
-		"manifests/machineconfigdaemon/clusterrole.yaml",
-		"manifests/machineconfigdaemon/events-clusterrole.yaml",
-	} {
-		crBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
-		}
-		cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-		_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, path := range []string{
-		"manifests/machineconfigdaemon/events-rolebinding-default.yaml",
-		"manifests/machineconfigdaemon/events-rolebinding-target.yaml",
-	} {
-		crbBytes, err := renderAsset(config, path)
-		if err != nil {
-			return err
-		}
-		crb := resourceread.ReadRoleBindingV1OrDie(crbBytes)
-		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), crb)
-		if err != nil {
-			return err
-		}
-	}
-
-	crbBytes, err := renderAsset(config, "manifests/machineconfigdaemon/clusterrolebinding.yaml")
-	if err != nil {
-		return err
-	}
-	crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-	_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), crb)
-	if err != nil {
-		return err
-	}
-
-	saBytes, err := renderAsset(config, "manifests/machineconfigdaemon/sa.yaml")
-	if err != nil {
-		return err
-	}
-	sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-	_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
-	if err != nil {
-		return err
+	paths := manifestPaths{
+		clusterRoles: []string{
+			mcdClusterRoleManifestPath,
+			mcdEventsClusterRoleManifestPath,
+		},
+		roleBindings: []string{
+			mcdEventsRoleBindingDefaultManifestPath,
+			mcdEventsRoleBindingTargetManifestPath,
+		},
+		clusterRoleBindings: []string{
+			mcdClusterRoleBindingManifestPath,
+		},
+		serviceAccounts: []string{
+			mcdServiceAccountManifestPath,
+		},
+		daemonset: mcdDaemonsetManifestPath,
 	}
 
 	// Only generate a new proxy cookie secret if the secret does not exist or if it has been deleted.
-	_, err = optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get(context.TODO(), "cookie-secret", metav1.GetOptions{})
+	_, err := optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get(context.TODO(), "cookie-secret", metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		cookieSecretBytes, err := renderAsset(config, "manifests/machineconfigdaemon/cookie-secret.yaml")
-		if err != nil {
-			return err
-		}
-		cookieSecret := resourceread.ReadSecretV1OrDie(cookieSecretBytes)
-		_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), cookieSecret)
-		if err != nil {
-			return err
-		}
+		paths.secrets = []string{"manifests/machineconfigdaemon/cookie-secret.yaml"}
 	} else if err != nil {
 		return err
 	}
 
-	mcdBytes, err := renderAsset(config, "manifests/machineconfigdaemon/daemonset.yaml")
-	if err != nil {
-		return err
+	if err := optr.applyManifests(config, paths); err != nil {
+		return fmt.Errorf("failed to apply machine config daemon manifests: %w", err)
 	}
-	mcd := resourceread.ReadDaemonSetV1OrDie(mcdBytes)
 
-	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcd)
-	if err != nil {
-		return err
-	}
-	if updated {
-		return optr.waitForDaemonsetRollout(mcd)
-	}
 	return nil
 }
 
 func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
-	crBytes, err := renderAsset(config, "manifests/machineconfigserver/clusterrole.yaml")
-	if err != nil {
-		return err
+	paths := manifestPaths{
+		clusterRoles: []string{
+			mcsClusterRoleManifestPath,
+		},
+		clusterRoleBindings: []string{
+			mcsClusterRoleBindingManifestPath,
+			mcsCSRBootstrapRoleBindingManifestPath,
+			mcsCSRRenewalRoleBindingManifestPath,
+		},
+		serviceAccounts: []string{
+			mcsServiceAccountManifestPath,
+			mcsNodeBootstrapperServiceAccountManifestPath,
+		},
+		secrets: []string{
+			mcsNodeBootstrapperTokenManifestPath,
+		},
+		daemonset: mcsDaemonsetManifestPath,
 	}
-	cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-	_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
-	if err != nil {
-		return err
-	}
-
-	crbs := []string{
-		"manifests/machineconfigserver/clusterrolebinding.yaml",
-		"manifests/machineconfigserver/csr-bootstrap-role-binding.yaml",
-		"manifests/machineconfigserver/csr-renewal-role-binding.yaml",
-	}
-	for _, crb := range crbs {
-		b, err := renderAsset(config, crb)
-		if err != nil {
-			return err
-		}
-		obj := resourceread.ReadClusterRoleBindingV1OrDie(b)
-		_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), obj)
-		if err != nil {
-			return err
-		}
+	if err := optr.applyManifests(config, paths); err != nil {
+		return fmt.Errorf("failed to apply machine config server manifests: %w", err)
 	}
 
-	sas := []string{
-		"manifests/machineconfigserver/sa.yaml",
-		"manifests/machineconfigserver/node-bootstrapper-sa.yaml",
-	}
-	for _, sa := range sas {
-		b, err := renderAsset(config, sa)
-		if err != nil {
-			return err
-		}
-		obj := resourceread.ReadServiceAccountV1OrDie(b)
-		_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), obj)
-		if err != nil {
-			return err
-		}
-	}
-
-	nbtBytes, err := renderAsset(config, "manifests/machineconfigserver/node-bootstrapper-token.yaml")
-	if err != nil {
-		return err
-	}
-	nbt := resourceread.ReadSecretV1OrDie(nbtBytes)
-	_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), nbt)
-	if err != nil {
-		return err
-	}
-
-	mcsBytes, err := renderAsset(config, "manifests/machineconfigserver/daemonset.yaml")
-	if err != nil {
-		return err
-	}
-
-	mcs := resourceread.ReadDaemonSetV1OrDie(mcsBytes)
-
-	_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), mcs)
-	if err != nil {
-		return err
-	}
-	if updated {
-		return optr.waitForDaemonsetRollout(mcs)
-	}
 	return nil
 }
 
