@@ -36,7 +36,7 @@ func TestValidateIgnition(t *testing.T) {
 	isValid2 := ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid2)
 
-	// Test that an invalid ignition config returns and error
+	// Test that an invalid ignition config returns an error
 	tempUser2 := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"5678", "abc"}}
 	testIgn3Config.Passwd.Users = []ign3types.PasswdUser{tempUser2}
 	isValid2 = ValidateIgnition(testIgn3Config)
