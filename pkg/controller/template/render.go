@@ -304,6 +304,8 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
+	funcs["clusterName"] = clusterName
+	funcs["clusterBaseDomain"] = clusterBaseDomain
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
@@ -538,4 +540,31 @@ func urlPort(u string) (interface{}, error) {
 	default:
 		return "", fmt.Errorf("unknown scheme in %s", u)
 	}
+}
+
+func clusterName(cfg RenderConfig) (interface{}, error) {
+	serverURL, err := url.Parse(cfg.Infra.Status.APIServerURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return clusterNameFromAPIServerHostname(serverURL.Hostname(), cfg.DNS.Spec.BaseDomain)
+}
+
+func clusterBaseDomain(cfg RenderConfig) (interface{}, error) {
+	return cfg.DNS.Spec.BaseDomain, nil
+}
+
+func clusterNameFromAPIServerHostname(apiHostname, baseDomain string) (string, error) {
+	clusterNameWithPrefix := strings.TrimSuffix(apiHostname, fmt.Sprintf(".%s", baseDomain))
+	if len(clusterNameWithPrefix) == len(apiHostname) {
+		return "", fmt.Errorf("could not remove base domain (%s) from api hostname (%s)", baseDomain, apiHostname)
+	}
+
+	clusterNameWithPrefixSlices := strings.SplitN(clusterNameWithPrefix, ".", 2)
+	if len(clusterNameWithPrefixSlices) != 2 {
+		return "", fmt.Errorf("couldn't split '%s' by '.' to remove prefix", clusterNameWithPrefix)
+	}
+
+	return clusterNameWithPrefixSlices[1], nil
 }

@@ -471,3 +471,54 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 		t.Errorf("can't find expected file:\n%v", key)
 	}
 }
+
+func Test_clusterNameFromAPIServerHostname(t *testing.T) {
+	tests := []struct {
+		name        string
+		apiHostname string
+		baseDomain  string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:        "Should return cluster name",
+			apiHostname: "api-int.my-clustername.ocp.redhat.com",
+			baseDomain:  "ocp.redhat.com",
+			want:        "my-clustername",
+			wantErr:     false,
+		},
+		{
+			name:        "Should be able to handle dots ('.') in cluster name",
+			apiHostname: "api-int.sub.sub.my-clustername.ocp.redhat.com",
+			baseDomain:  "ocp.redhat.com",
+			want:        "sub.sub.my-clustername",
+			wantErr:     false,
+		},
+		{
+			name:        "Should return error if clustername could not be found",
+			apiHostname: "api-int.ocp.redhat.com",
+			baseDomain:  "ocp.redhat.com",
+			want:        "",
+			wantErr:     true,
+		},
+		{
+			name:        "Should return error if base domain is not part of api hostname",
+			apiHostname: "api-int.my-cluster.ocp.redhat.com",
+			baseDomain:  "console.redhat.com",
+			want:        "",
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := clusterNameFromAPIServerHostname(tt.apiHostname, tt.baseDomain)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("clusterNameFromAPIServerHostname() error = \"%v\", wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("clusterNameFromAPIServerHostname() = \"%v\", want \"%v\"", got, tt.want)
+			}
+		})
+	}
+}

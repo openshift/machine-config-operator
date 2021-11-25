@@ -47,6 +47,11 @@ contents:
         - "/config"
         - "--out-dir"
         - "/etc/keepalived"
+        env:
+        - name: CLUSTER_NAME
+          value: "{{ clusterName . }}"
+        - name: CLUSTER_BASE_DOMAIN
+          value: "{{ clusterBaseDomain . }}"
         resources: {}
         volumeMounts:
         - name: kubeconfig
@@ -156,6 +161,10 @@ contents:
             value: "{{ onPremPlatformKeepalivedEnableUnicast . }}"
           - name: IS_BOOTSTRAP
             value: "no"
+          - name: CLUSTER_NAME
+            value: "{{ clusterName . }}"
+          - name: CLUSTER_BASE_DOMAIN
+            value: "{{ clusterBaseDomain . }}"
         command:
         - dynkeepalived
         - "/var/lib/kubelet/kubeconfig"
