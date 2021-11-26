@@ -1432,48 +1432,55 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	return nil
 }
 
+// write dropins to disk
+func (dn *Daemon) writeDropins(u ign3types.Unit) error {
+	for i := range u.Dropins {
+		dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
+			glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
+			if _, err := os.Stat(dpath); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			glog.Infof("Removing %q, updated file has zero length", dpath)
+			if err := os.Remove(dpath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
+		if _, err := os.Stat("/usr" + dpath); err == nil &&
+			dn.os.IsCoreOSVariant() {
+			if err := createOrigFile("/usr"+dpath, dpath); err != nil {
+				return err
+			}
+		}
+		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
+			return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
+		}
+
+		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+	}
+	return nil
+}
+
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var enabledUnits []string
 	var disabledUnits []string
 	for _, u := range units {
-		// write the dropin to disk
-		for i := range u.Dropins {
-			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
-				glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
-				if _, err := os.Stat(dpath); err != nil {
-					if os.IsNotExist(err) {
-						continue
-					}
-					return err
-				}
-				glog.Infof("Removing %q, updated file has zero length", dpath)
-				if err := os.Remove(dpath); err != nil {
-					return err
-				}
-				continue
-			}
-
-			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
-			if _, err := os.Stat("/usr" + dpath); err == nil &&
-				dn.os.IsCoreOSVariant() {
-				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
-					return err
-				}
-			}
-			if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
-				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
-			}
-
-			glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+		if err := dn.writeDropins(u); err != nil {
+			return err
 		}
 
+		// write (or cleanup) path in /etc/systemd/system
 		fpath := filepath.Join(pathSystemd, u.Name)
-
-		// check if the unit is masked. if it is, we write a symlink to
-		// /dev/null and continue
 		if u.Mask != nil && *u.Mask {
+			// if the unit is masked, symlink fpath to /dev/null and continue
+
 			glog.V(2).Info("Systemd unit masked")
 			if err := os.RemoveAll(fpath); err != nil {
 				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
@@ -1496,12 +1503,21 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 					return err
 				}
 			}
-			// write the unit to disk
 			if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 			}
 
 			glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
+		} else if u.Mask != nil && !*u.Mask {
+			// if mask is explicitly set to false, make sure to remove a previous mask
+			// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
+			// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
+			// Contents, and the current one does not, the previous content will not get cleaned up. For now we're ignoring some
+			// of those edge cases rather than introducing more complexity.
+			glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
+			if err := os.RemoveAll(fpath); err != nil {
+				return fmt.Errorf("failed to cleanup %s: %v", fpath, err)
+			}
 		}
 
 		// if the unit doesn't note if it should be enabled or disabled then
