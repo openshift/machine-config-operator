@@ -14,6 +14,12 @@ contents:
     vrrp_script chk_ingress {
         script "/usr/bin/timeout 0.9 /usr/bin/curl -o /dev/null -Lfs http://localhost:1936/healthz/ready"
         interval 1
+        weight 20
+    }
+
+    vrrp_script chk_default_ingress {
+        script "/usr/bin/timeout 4.9 /etc/keepalived/chk_default_ingress.sh"
+        interval 5
         weight 50
     }
 
@@ -23,7 +29,7 @@ contents:
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
         virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
-        priority {{`{{ .IngressConfig.Priority }}`}}
+        priority 20
         advert_int 1
         {{`{{if .EnableUnicast}}`}}
         unicast_src_ip {{`{{.NonVirtualIP}}`}}
@@ -44,5 +50,6 @@ contents:
         }
         track_script {
             chk_ingress
+            chk_default_ingress
         }
     }
