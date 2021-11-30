@@ -11,6 +11,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -18,8 +19,81 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+
 	"k8s.io/apimachinery/pkg/util/wait"
 )
+
+type CleanupFuncs struct {
+	funcs []func()
+}
+
+func (c *CleanupFuncs) Add(f func()) {
+	c.funcs = append(c.funcs, f)
+}
+
+func (c *CleanupFuncs) Run() {
+	for _, f := range c.funcs {
+		f()
+	}
+}
+
+func NewCleanupFuncs() CleanupFuncs {
+	return CleanupFuncs{
+		funcs: []func(){},
+	}
+}
+
+func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
+	_, err := cs.MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+	require.Nil(t, err)
+
+	return func() {
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}))
+	}
+}
+
+func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
+	workerMCPName := "worker"
+
+	t.Logf("Setting up pool %s", poolName)
+
+	unlabelFunc := LabelRandomNodeFromPool(t, cs, workerMCPName, MCPNameToRole(poolName))
+	deleteMCPFunc := CreateMCP(t, cs, poolName)
+
+	node := GetSingleNodeByRole(t, cs, poolName)
+
+	t.Logf("Target Node: %s", node.Name)
+
+	mcDeleteFunc := ApplyMC(t, cs, mc)
+
+	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+
+	mcpMCName := GetMcName(t, cs, poolName)
+	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
+
+	return func() {
+		t.Logf("Cleaning up MCP %s", poolName)
+		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
+		unlabelFunc()
+
+		workerMC := GetMcName(t, cs, workerMCPName)
+
+		// Wait for the worker pool to catch up with the deleted label
+		time.Sleep(5 * time.Second)
+
+		t.Logf("Waiting for %s pool to finish applying %s", workerMCPName, workerMC)
+		require.Nil(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
+
+		t.Logf("Ensuring node has %s pool config before deleting pool %s", workerMCPName, poolName)
+		require.Nil(t, WaitForNodeConfigChange(t, cs, node, workerMC))
+
+		t.Logf("Deleting MCP %s", poolName)
+		deleteMCPFunc()
+
+		t.Logf("Deleting MachineConfig %s", mc.Name)
+		mcDeleteFunc()
+	}
+}
 
 // GetMcName returns the current configuration name of the machine config pool poolName
 func GetMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
@@ -117,6 +191,30 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 		return errors.Wrapf(err, "pool %s didn't report %s to updated (waited %s)", pool, target, time.Since(startTime))
 	}
 	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
+	return nil
+}
+
+func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
+	startTime := time.Now()
+	err := wait.PollImmediate(2*time.Second, 20*time.Minute, func() (bool, error) {
+		n, err := cs.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		current := n.Annotations[constants.CurrentMachineConfigAnnotationKey]
+		desired := n.Annotations[constants.DesiredMachineConfigAnnotationKey]
+
+		state := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+
+		return current == desired && desired == mcName && state == constants.MachineConfigDaemonStateDone, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("node config change did not occur (waited %v): %w", time.Since(startTime), err)
+	}
+
+	t.Logf("Node %s changed config to %s (waited %v)", node.Name, mcName, time.Since(startTime))
 	return nil
 }
 
@@ -300,6 +398,10 @@ func CreateIgn3File(path, content string, mode int) ign3types.File {
 			},
 		},
 	}
+}
+
+func MCDForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
+	return mcdForNode(cs, node)
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
