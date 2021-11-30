@@ -31,9 +31,6 @@ contents:
     # certain container storage drivers.
     size = ""
 
-    # OverrideKernelCheck tells the driver to ignore kernel checks based on kernel version
-    override_kernel_check = "true"
-
     # Remap-UIDs/GIDs is the mapping from UIDs/GIDs as they should appear inside of
     # a container, to UIDs/GIDs as they should appear outside of the container, and
     # the length of the range of UIDs/GIDs.  Additional mapped sets can be listed
