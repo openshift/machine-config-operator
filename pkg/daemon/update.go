@@ -159,6 +159,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		return fmt.Errorf("Could not apply update: setting node's state to Done failed. Error: %v", err)
 	}
 	if inDesiredConfig {
+		// (re)start the config drift monitor since rebooting isn't needed.
+		dn.startConfigDriftMonitor()
 		return nil
 	}
 
