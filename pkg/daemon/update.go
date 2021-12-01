@@ -56,6 +56,9 @@ const (
 	// Crio reload will happen when /etc/containers/registries.conf is changed. This will cause
 	// a "systemctl reload crio"
 	postConfigChangeActionReloadCrio = "reload crio"
+	// GPGNoRebootPath is the path MCO expects will contain GPG key updates. MCO will attempt to only reload crio for
+	// changes to this path. Note that other files added to the parent directory will not be handled specially
+	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
 )
 
 var (
@@ -429,6 +432,8 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 		"/var/lib/kubelet/config.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
+		GPGNoRebootPath,
+		"/etc/containers/policy.json",
 		"/etc/containers/registries.conf",
 	}
 
