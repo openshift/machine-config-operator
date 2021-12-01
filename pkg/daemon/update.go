@@ -51,11 +51,11 @@ const (
 	// "None" means no special action needs to be taken
 	// This happens for example when ssh keys or the pull secret (/var/lib/kubelet/config.json) is changed
 	postConfigChangeActionNone = "none"
+	// The "reload crio" action will run "systemctl reload crio"
+	postConfigChangeActionReloadCrio = "reload crio"
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
-	// Crio reload will happen when /etc/containers/registries.conf is changed. This will cause
-	// a "systemctl reload crio"
-	postConfigChangeActionReloadCrio = "reload crio"
+
 	// GPGNoRebootPath is the path MCO expects will contain GPG key updates. MCO will attempt to only reload crio for
 	// changes to this path. Note that other files added to the parent directory will not be handled specially
 	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
@@ -434,60 +434,22 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 		"/var/lib/kubelet/config.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
+		constants.ContainerRegistryConfPath,
 		GPGNoRebootPath,
 		"/etc/containers/policy.json",
-		"/etc/containers/registries.conf",
 	}
 
-	oldFileSet := make(map[string]ign3types.File)
-	for _, f := range oldIgnConfig.Storage.Files {
-		oldFileSet[f.Path] = f
-	}
-	newFileSet := make(map[string]ign3types.File)
-	for _, f := range newIgnConfig.Storage.Files {
-		newFileSet[f.Path] = f
-	}
-	diffFileSet := []string{}
-
-	// First check if any files were removed
-	for path := range oldFileSet {
-		_, ok := newFileSet[path]
-		if !ok {
-			// debug: remove
-			glog.Infof("File diff: %v was deleted", path)
-			diffFileSet = append(diffFileSet, path)
-		}
-	}
-
-	// Now check if any files were added/changed
-	for path, newFile := range newFileSet {
-		oldFile, ok := oldFileSet[path]
-		if !ok {
-			// debug: remove
-			glog.Infof("File diff: %v was added", path)
-			diffFileSet = append(diffFileSet, path)
-		} else if !reflect.DeepEqual(oldFile, newFile) {
-			// debug: remove
-			glog.Infof("File diff: detected change to %v", newFile.Path)
-			diffFileSet = append(diffFileSet, path)
-		}
-	}
-
-	// Now calculate action
-	for _, k := range diffFileSet {
-		if ctrlcommon.InSlice(k, filesPostConfigChangeActionNone) {
+	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+	actions = []string{postConfigChangeActionNone}
+	for _, path := range diffFileSet {
+		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
 			continue
-		} else if ctrlcommon.InSlice(k, filesPostConfigChangeActionReloadCrio) {
+		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
 			actions = []string{postConfigChangeActionReloadCrio}
-			continue
 		} else {
 			actions = []string{postConfigChangeActionReboot}
-			break
+			return
 		}
-	}
-
-	if len(actions) == 0 {
-		actions = []string{postConfigChangeActionNone}
 	}
 	return
 }
