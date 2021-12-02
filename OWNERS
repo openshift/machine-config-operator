@@ -4,5 +4,12 @@ approvers:
   - kikisdeliveryservice
   - sinnykumari
   - yuqi-zhang
+reviewers:
+  - kikisdeliveryservice
+  - sinnykumari
+  - yuqi-zhang
+  - cheesesashimi
+  - jkyros
+  - mkenigs
 
 component: "Machine Config Operator"
