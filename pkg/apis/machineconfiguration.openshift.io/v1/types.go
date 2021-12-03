@@ -97,6 +97,10 @@ type ControllerConfigSpec struct {
 	// Nobody is also changing this once the cluster is up and running the first time, so, disallow
 	// regeneration if this changes.
 	NetworkType string `json:"networkType,omitempty"`
+
+	// Network contains additional network related information
+	// +nullable
+	Network *NetworkInfo `json:"network"`
 }
 
 // IPFamiliesType indicates whether the cluster network is IPv4-only, IPv6-only, or dual-stack
@@ -107,6 +111,13 @@ const (
 	IPFamiliesIPv6      IPFamiliesType = "IPv6"
 	IPFamiliesDualStack IPFamiliesType = "DualStack"
 )
+
+// Network contains network related configuration
+type NetworkInfo struct {
+	// MTUMigration contains the MTU migration configuration.
+	// +nullable
+	MTUMigration *configv1.MTUMigration `json:"mtuMigration"`
+}
 
 // ControllerConfigStatus is the status for ControllerConfig
 type ControllerConfigStatus struct {
