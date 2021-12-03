@@ -28,6 +28,11 @@ func (dn *Daemon) drainRequired() bool {
 }
 
 func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
+	verb := "cordon"
+	if !desired {
+		verb = "uncordon"
+	}
+
 	backoff := wait.Backoff{
 		Steps:    5,
 		Duration: 10 * time.Second,
@@ -35,19 +40,39 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 	}
 	var lastErr error
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		// Log has been added to ensure that MCO is correctly performing cordon/uncordon.
+		// This should help us with debugging bugs like https://bugzilla.redhat.com/show_bug.cgi?id=2022387
+		glog.Infof("Initiating %s on node (currently schedulable: %t)", verb, !dn.node.Spec.Unschedulable)
 		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, desired)
 		if err != nil {
 			lastErr = err
-			glog.Infof("cordon/uncordon failed with: %v, retrying", err)
+			glog.Infof("%s failed with: %v, retrying", verb, err)
 			return false, nil
 		}
+
+		// Re-fetch node so that we are not using cached information
+		var node *corev1.Node
+		if node, err = dn.nodeLister.Get(dn.node.GetName()); err != nil {
+			lastErr = err
+			glog.Errorf("Failed to fetch node %v, retrying", err)
+			return false, nil
+		}
+
+		if node.Spec.Unschedulable != desired {
+			// See https://bugzilla.redhat.com/show_bug.cgi?id=2022387
+			glog.Infof("RunCordonOrUncordon() succeeded but node is still not in %s state, retrying", verb)
+			return false, nil
+		}
+
+		glog.Infof("%s succeeded on node (currently schedulable: %t)", verb, !node.Spec.Unschedulable)
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return errors.Wrapf(lastErr, "failed to cordon/uncordon node (%d tries): %v", backoff.Steps, err)
+			return errors.Wrapf(lastErr, "failed to %s node (%d tries): %v", verb, backoff.Steps, err)
 		}
-		return errors.Wrap(err, "failed to cordon/uncordon node")
+		return errors.Wrapf(err, "failed to %s node", verb)
 	}
+
 	return nil
 }
 
