@@ -983,6 +983,10 @@ func (dn *Daemon) LogSystemData() {
 	} else {
 		glog.Info("systemd service state: OK")
 	}
+
+	if err := checkNodeRpmOstreeVersion(); err != nil {
+		glog.Errorf("Failed to check rpm-ostree version: %v", err)
+	}
 }
 
 const (

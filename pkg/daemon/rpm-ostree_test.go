@@ -1,5 +1,13 @@
 package daemon
 
+import (
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/yaml"
+)
+
 /*
  * This file contains test code for the rpm-ostree client. It is meant to be used when
  * testing the daemon and mocking the responses that would normally be executed by the
@@ -45,4 +53,40 @@ func (r RpmOstreeClientMock) GetStatus() (string, error) {
 
 func (r RpmOstreeClientMock) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	return &RpmOstreeDeployment{}, nil
+}
+
+func TestParseVersion(t *testing.T) {
+	s := `
+rpm-ostree:
+  Version: '2021.14'
+  Git: v2021.14
+  Features:
+   - bin-unit-tests
+   - compose
+   - rust
+   - fedora-integration
+   `
+	var outer rpmOstreeVersionOuter
+	assert.Nil(t, yaml.Unmarshal([]byte(s), &outer))
+	fmt.Printf("%v", outer)
+	assert.Equal(t, outer.Root.Version, "2021.14")
+}
+
+func TestValidateVersion(t *testing.T) {
+	for _, old := range []string{"2019.5", "2021.6"} {
+		v := rpmOstreeVersionOuter{
+			Root: rpmOstreeVersionData{
+				Version: old,
+			},
+		}
+		assert.NotNil(t, validateVersion(v))
+	}
+	for _, newver := range []string{"2021.14", "2021.15", "2022.1"} {
+		v := rpmOstreeVersionOuter{
+			Root: rpmOstreeVersionData{
+				Version: newver,
+			},
+		}
+		assert.Nil(t, validateVersion(v))
+	}
 }
