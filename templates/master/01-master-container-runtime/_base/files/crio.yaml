@@ -39,6 +39,7 @@ contents:
       "io.kubernetes.cri-o.userns-mode",
       "io.kubernetes.cri-o.Devices"
     ]
+    [crio.runtime.workloads.openshift-builder.resources]
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"
