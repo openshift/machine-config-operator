@@ -32,6 +32,8 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    minimum_mappable_uid = 1000000000
+    minimum_mappable_gid = 1000000000
 
     [crio.runtime.workloads.openshift-builder]
     activation_annotation = "io.openshift.builder"
