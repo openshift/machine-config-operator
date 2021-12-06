@@ -15,7 +15,6 @@ spec:
     infraImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     keepalivedImage: ""
     kubeClientAgentImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-    mdnsPublisherImage: ""
   infra:
     apiVersion: config.openshift.io/v1
     kind: Infrastructure
@@ -29,6 +28,8 @@ spec:
       apiServerInternalURI: https://api-int.domain.example.com:6443
       apiServerURL: https://api.domain.example.com:6443
       infrastructureName: lab-0aaaa
+      infrastructureTopology: HighlyAvailable
+      controlPlaneTopology: HighlyAvailable
       platformStatus:
         type: None
   kubeAPIServerServingCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCktVQkUgQVBJIFNFUlZFUiBTRVJWSU5HIENBIERBVEEKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
@@ -36,4 +37,3 @@ spec:
   releaseImage: release-registry.product.example.org/ocp/4.2-date-version@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
   proxy: null
   rootCAData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tClJPT1QgQ0EgREFUQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
-  

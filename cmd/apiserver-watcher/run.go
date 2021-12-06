@@ -182,6 +182,9 @@ func (h *handler) onSuccess() error {
 
 func writeVipStateFile(vip, state string) error {
 	file := path.Join(runOpts.rootMount, downFileDir, fmt.Sprintf("%s.%s", vip, state))
+	// Disable gosec here to avoid throwing
+	// G306: Expect WriteFile permissions to be 0600 or less
+	// #nosec
 	err := ioutil.WriteFile(file, nil, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create file (%s): %v", file, err)

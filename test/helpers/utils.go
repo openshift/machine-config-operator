@@ -44,25 +44,58 @@ func WaitForConfigAndPoolComplete(t *testing.T, cs *framework.ClientSet, pool, m
 // included the given mcName in its config, and returns the new
 // rendered config name.
 func WaitForRenderedConfig(t *testing.T, cs *framework.ClientSet, pool, mcName string) (string, error) {
+	return WaitForRenderedConfigs(t, cs, pool, mcName)
+}
+
+// WaitForRenderedConfigs polls a MachineConfigPool until it has
+// included the given mcNames in its config, and returns the new
+// rendered config name.
+func WaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, pool string, mcNames ...string) (string, error) {
 	var renderedConfig string
 	startTime := time.Now()
+	found := make(map[string]bool)
 	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		// Set up the list
+		for _, name := range mcNames {
+			found[name] = false
+		}
+
+		// Update found based on the MCP
 		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 		for _, mc := range mcp.Spec.Configuration.Source {
-			if mc.Name == mcName {
-				renderedConfig = mcp.Spec.Configuration.Name
-				return true, nil
+			if _, ok := found[mc.Name]; ok {
+				found[mc.Name] = true
 			}
 		}
-		return false, nil
+
+		// If any are still false, then they weren't included in the MCP
+		for _, nameFound := range found {
+			if !nameFound {
+				return false, nil
+			}
+		}
+
+		// All the required names were found
+		renderedConfig = mcp.Spec.Configuration.Name
+		return true, nil
 	}); err != nil {
-		return "", errors.Wrapf(err, "machine config %s hasn't been picked by pool %s (waited %s)", mcName, pool, time.Since(startTime))
+		return "", errors.Wrapf(err, "machine configs %v hasn't been picked by pool %s (waited %s)", notFoundNames(found), pool, time.Since(startTime))
 	}
-	t.Logf("Pool %s has rendered config %s with %s (waited %v)", pool, mcName, renderedConfig, time.Since(startTime))
+	t.Logf("Pool %s has rendered configs %v with %s (waited %v)", pool, mcNames, renderedConfig, time.Since(startTime))
 	return renderedConfig, nil
+}
+
+func notFoundNames(foundNames map[string]bool) []string {
+	out := []string{}
+	for name, found := range foundNames {
+		if !found {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // WaitForPoolComplete polls a pool until it has completed an update to target
@@ -94,6 +127,9 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	require.NotEmpty(t, nodes)
 
 	rand.Seed(time.Now().UnixNano())
+	// Disable gosec here to avoid throwing
+	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
+	// #nosec
 	infraNode := nodes[rand.Intn(len(nodes))]
 	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=", "--overwrite=true").CombinedOutput()
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))

@@ -7,3 +7,7 @@ rules:
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs", "machineconfigpools"]
   verbs: ["*"]
+- apiGroups: ["security.openshift.io"]
+  resourceNames: ["hostnetwork"]
+  resources: ["securitycontextconstraints"]
+  verbs: ["use"]

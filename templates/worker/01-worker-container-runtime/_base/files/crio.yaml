@@ -4,10 +4,7 @@ contents:
   inline: |
     [crio]
     internal_wipe = true
-    storage_driver = "overlay"
-    storage_option = [
-        "overlay.override_kernel_check=1",
-    ]
+    version_file_persist = "/var/lib/crio/version"
 
     [crio.api]
     stream_address = ""
@@ -28,12 +25,21 @@ contents:
     hooks_dir = [
         "/etc/containers/oci/hooks.d",
         "/run/containers/oci/hooks.d",
+        "/usr/share/containers/oci/hooks.d",
     ]
     manage_ns_lifecycle = true
     absent_mount_sources_to_reject = [
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+
+    [crio.runtime.workloads.openshift-builder]
+    activation_annotation = "io.openshift.builder"
+    allowed_annotations = [
+      "io.kubernetes.cri-o.userns-mode",
+      "io.kubernetes.cri-o.Devices"
+    ]
+    [crio.runtime.workloads.openshift-builder.resources]
 
     [crio.image]
     global_auth_file = "/var/lib/kubelet/config.json"

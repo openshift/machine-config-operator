@@ -31,9 +31,6 @@ func TestCloudProvider(t *testing.T) {
 		featureGate *configv1.FeatureGate
 		res         string
 	}{{
-		platform: configv1.AWSPlatformType,
-		res:      "aws",
-	}, {
 		platform:    configv1.AWSPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
 		res:         "external",
@@ -48,11 +45,22 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform:    configv1.GCPPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "gce",
+		res:         "external",
+	}, {
+		platform:    configv1.VSpherePlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "external",
+	}, {
+		platform:    configv1.OpenStackPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "external",
 	}, {
 		platform:    configv1.OpenStackPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
 		res:         "openstack",
+	}, {
+		platform: configv1.AWSPlatformType,
+		res:      "aws",
 	}, {
 		platform: configv1.OpenStackPlatformType,
 		res:      "openstack",
@@ -72,8 +80,14 @@ func TestCloudProvider(t *testing.T) {
 		platform: configv1.NonePlatformType,
 		res:      "",
 	}, {
+		platform: configv1.PowerVSPlatformType,
+		res:      "",
+	}, {
 		platform: configv1.VSpherePlatformType,
 		res:      "vsphere",
+	}, {
+		platform: configv1.AlibabaCloudPlatformType,
+		res:      "external",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
@@ -157,7 +171,15 @@ func TestCloudConfigFlag(t *testing.T) {
     option = a
 `,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
-		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+		res:         "",
+	}, {
+		platform: configv1.VSpherePlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "",
 	}, {
 		platform: configv1.AzurePlatformType,
 		content: `
@@ -266,6 +288,7 @@ const templateDir = "../../../templates"
 
 var (
 	configs = map[string]string{
+		"alibaba":   "./test_data/controller_config_alibaba.yaml",
 		"aws":       "./test_data/controller_config_aws.yaml",
 		"baremetal": "./test_data/controller_config_baremetal.yaml",
 		"gcp":       "./test_data/controller_config_gcp.yaml",
@@ -274,6 +297,7 @@ var (
 		"none":      "./test_data/controller_config_none.yaml",
 		"vsphere":   "./test_data/controller_config_vsphere.yaml",
 		"kubevirt":  "./test_data/controller_config_kubevirt.yaml",
+		"powervs":   "./test_data/controller_config_powervs.yaml",
 	}
 )
 

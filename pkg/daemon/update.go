@@ -3,7 +3,9 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -38,8 +40,6 @@ const (
 	defaultDirectoryPermissions os.FileMode = 0755
 	// defaultFilePermissions houses the default mode to use when no file permissions are provided
 	defaultFilePermissions os.FileMode = 0644
-	// coreUser is "core" and currently the only permissible user name
-	coreUserName = "core"
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
@@ -48,14 +48,22 @@ const (
 	osImageContentBaseDir = "/run/mco-machine-os-content/"
 
 	// These are the actions for a node to take after applying config changes. (e.g. a new machineconfig is applied)
-	// "None" means no special action needs to be taken. A drain will still happen.
-	// This currently happens when ssh keys or pull secret (/var/lib/kubelet/config.json) is changed
+	// "None" means no special action needs to be taken
+	// This happens for example when ssh keys or the pull secret (/var/lib/kubelet/config.json) is changed
 	postConfigChangeActionNone = "none"
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
 	// Crio reload will happen when /etc/containers/registries.conf is changed. This will cause
 	// a "systemctl reload crio"
 	postConfigChangeActionReloadCrio = "reload crio"
+	// GPGNoRebootPath is the path MCO expects will contain GPG key updates. MCO will attempt to only reload crio for
+	// changes to this path. Note that other files added to the parent directory will not be handled specially
+	GPGNoRebootPath = "/etc/machine-config-daemon/no-reboot/containers-gpg.pub"
+)
+
+var (
+	origParentDirPath   = filepath.Join("/etc", "machine-config-daemon", "orig")
+	noOrigParentDirPath = filepath.Join("/etc", "machine-config-daemon", "noorig")
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -67,7 +75,7 @@ func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, uid, gid int) error {
 	dir := filepath.Dir(fpath)
 	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return fmt.Errorf("failed to create directory %q: %v", filepath.Dir(fpath), err)
+		return fmt.Errorf("failed to create directory %q: %v", dir, err)
 	}
 	t, err := renameio.TempFile(dir, fpath)
 	if err != nil {
@@ -327,12 +335,8 @@ func removePendingDeployment() error {
 	return runRpmOstree("cleanup", "-p")
 }
 
-func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
-	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return err
-	}
 
 	if dn.recorder != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
@@ -358,6 +362,7 @@ func (dn *Daemon) applyOSChanges(oldConfig, newConfig *mcfgv1.MachineConfig) (re
 		if dn.recorder != nil {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
+		var err error
 		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
 			return err
 		}
@@ -427,6 +432,8 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 		"/var/lib/kubelet/config.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
+		GPGNoRebootPath,
+		"/etc/containers/policy.json",
 		"/etc/containers/registries.conf",
 	}
 
@@ -483,7 +490,7 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 	return
 }
 
-func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig) ([]string, error) {
+func calculatePostConfigChangeAction(diff *machineConfigDiff, oldIgnConfig, newIgnConfig ign3types.Config) ([]string, error) {
 	// If a machine-config-daemon-force file is present, it means the user wants to
 	// move to desired state without additional validation. We will reboot the node in
 	// this case regardless of what MachineConfig diff is.
@@ -495,22 +502,9 @@ func calculatePostConfigChangeAction(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
-	diff, err := newMachineConfigDiff(oldConfig, newConfig)
-	if err != nil {
-		return []string{}, err
-	}
 	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
 		// must reboot
 		return []string{postConfigChangeActionReboot}, nil
-	}
-
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return []string{}, err
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return []string{}, err
 	}
 
 	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
@@ -543,6 +537,15 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+	}
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+	}
+
 	glog.Infof("Checking Reconcilable for config %v to %v", oldConfigName, newConfigName)
 
 	// make sure we can actually reconcile this state
@@ -563,13 +566,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
-	actions, err := calculatePostConfigChangeAction(oldConfig, newConfig)
+	actions, err := calculatePostConfigChangeAction(diff, oldIgnConfig, newIgnConfig)
 	if err != nil {
 		return err
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, oldConfig, newConfig)
+	drain, err := isDrainRequired(actions, oldIgnConfig, newIgnConfig)
 	if err != nil {
 		return err
 	}
@@ -582,27 +585,18 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	// update files on disk that need updating
-	if err := dn.updateFiles(oldConfig, newConfig); err != nil {
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.updateFiles(newConfig, oldConfig); err != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back files writes %v", err)
 				return
 			}
 		}
 	}()
-
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing old Ignition config failed with error: %v", err)
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("parsing new Ignition config failed with error: %v", err)
-	}
 
 	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
 		return err
@@ -629,13 +623,13 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.applyOSChanges(oldConfig, newConfig); err != nil {
+	if err := dn.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
 		return err
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := dn.applyOSChanges(newConfig, oldConfig); err != nil {
+			if err := dn.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
 				retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
 				return
 			}
@@ -777,7 +771,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 			// there is an update to Users, we must verify that it is ONLY making an acceptable
 			// change to the SSHAuthorizedKeys for the user "core"
 			for _, user := range newIgn.Passwd.Users {
-				if user.Name != coreUserName {
+				if user.Name != constants.CoreUserName {
 					return nil, errors.New("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
@@ -848,7 +842,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 	emptyUser := ign3types.PasswdUser{}
 	tempUser := pwdUser
-	if tempUser.Name == coreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
+	if tempUser.Name == constants.CoreUserName && len(tempUser.SSHAuthorizedKeys) >= 1 {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
@@ -1169,23 +1163,15 @@ func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Updating files")
-	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to update files. Parsing old Ignition config failed with error: %v", err)
-	}
-	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to update files. Parsing new Ignition config failed with error: %v", err)
-	}
 	if err := dn.writeFiles(newIgnConfig.Storage.Files); err != nil {
 		return err
 	}
 	if err := dn.writeUnits(newIgnConfig.Systemd.Units); err != nil {
 		return err
 	}
-	if err := dn.deleteStaleData(&oldIgnConfig, &newIgnConfig); err != nil {
+	if err := dn.deleteStaleData(oldIgnConfig, newIgnConfig); err != nil {
 		return err
 	}
 	return nil
@@ -1242,7 +1228,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
 //nolint:gocyclo
-func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig *ign3types.Config) error {
+func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newIgnConfig.Storage.Files {
@@ -1451,48 +1437,55 @@ func (dn *Daemon) presetUnit(unit ign3types.Unit) error {
 	return nil
 }
 
+// write dropins to disk
+func (dn *Daemon) writeDropins(u ign3types.Unit) error {
+	for i := range u.Dropins {
+		dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
+		if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
+			glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
+			if _, err := os.Stat(dpath); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			glog.Infof("Removing %q, updated file has zero length", dpath)
+			if err := os.Remove(dpath); err != nil {
+				return err
+			}
+			continue
+		}
+
+		glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
+		if _, err := os.Stat("/usr" + dpath); err == nil &&
+			dn.os.IsCoreOSVariant() {
+			if err := createOrigFile("/usr"+dpath, dpath); err != nil {
+				return err
+			}
+		}
+		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
+			return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
+		}
+
+		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+	}
+	return nil
+}
+
 // writeUnits writes the systemd units to disk
 func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	var enabledUnits []string
 	var disabledUnits []string
 	for _, u := range units {
-		// write the dropin to disk
-		for i := range u.Dropins {
-			dpath := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[i].Name)
-			if u.Dropins[i].Contents == nil || *u.Dropins[i].Contents == "" {
-				glog.Infof("Dropin for %s has no content, skipping write", u.Dropins[i].Name)
-				if _, err := os.Stat(dpath); err != nil {
-					if os.IsNotExist(err) {
-						continue
-					}
-					return err
-				}
-				glog.Infof("Removing %q, updated file has zero length", dpath)
-				if err := os.Remove(dpath); err != nil {
-					return err
-				}
-				continue
-			}
-
-			glog.Infof("Writing systemd unit dropin %q", u.Dropins[i].Name)
-			if _, err := os.Stat("/usr" + dpath); err == nil &&
-				dn.os.IsCoreOSVariant() {
-				if err := createOrigFile("/usr"+dpath, dpath); err != nil {
-					return err
-				}
-			}
-			if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
-				return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
-			}
-
-			glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
+		if err := dn.writeDropins(u); err != nil {
+			return err
 		}
 
+		// write (or cleanup) path in /etc/systemd/system
 		fpath := filepath.Join(pathSystemd, u.Name)
-
-		// check if the unit is masked. if it is, we write a symlink to
-		// /dev/null and continue
 		if u.Mask != nil && *u.Mask {
+			// if the unit is masked, symlink fpath to /dev/null and continue
+
 			glog.V(2).Info("Systemd unit masked")
 			if err := os.RemoveAll(fpath); err != nil {
 				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
@@ -1515,12 +1508,21 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 					return err
 				}
 			}
-			// write the unit to disk
 			if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
 				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
 			}
 
 			glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
+		} else if u.Mask != nil && !*u.Mask {
+			// if mask is explicitly set to false, make sure to remove a previous mask
+			// see https://bugzilla.redhat.com/show_bug.cgi?id=1966445
+			// Note that this does not catch all cleanup cases; for example, if the previous machine config specified
+			// Contents, and the current one does not, the previous content will not get cleaned up. For now we're ignoring some
+			// of those edge cases rather than introducing more complexity.
+			glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
+			if err := os.RemoveAll(fpath); err != nil {
+				return fmt.Errorf("failed to cleanup %s: %v", fpath, err)
+			}
 		}
 
 		// if the unit doesn't note if it should be enabled or disabled then
@@ -1563,6 +1565,39 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	return nil
 }
 
+func decodeContents(source, compression *string) ([]byte, error) {
+	var contentsBytes []byte
+
+	// To allow writing of "empty" files we'll allow source to be nil
+	if source != nil {
+		source, err := dataurl.DecodeString(*source)
+		if err != nil {
+			return []byte{}, fmt.Errorf("could not decode file content string: %w", err)
+		}
+		if compression != nil {
+			switch *compression {
+			case "":
+				contentsBytes = source.Data
+			case "gzip":
+				reader, err := gzip.NewReader(bytes.NewReader(source.Data))
+				if err != nil {
+					return []byte{}, fmt.Errorf("could not create gzip reader: %w", err)
+				}
+				defer reader.Close()
+				contentsBytes, err = io.ReadAll(reader)
+				if err != nil {
+					return []byte{}, fmt.Errorf("failed decompressing: %w", err)
+				}
+			default:
+				return []byte{}, fmt.Errorf("unsupported compression type %q", *compression)
+			}
+		} else {
+			contentsBytes = source.Data
+		}
+	}
+	return contentsBytes, nil
+}
+
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ign3types.File) error {
@@ -1575,15 +1610,11 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 			return fmt.Errorf("found an append section when writing files. Append is not supported")
 		}
 
-		// To allow writing of "empty" files we'll allow source to be nil
-		contents := &dataurl.DataURL{}
-		if file.Contents.Source != nil {
-			var err error
-			contents, err = dataurl.DecodeString(*file.Contents.Source)
-			if err != nil {
-				return err
-			}
+		decodedContents, err := decodeContents(file.Contents.Source, file.Contents.Compression)
+		if err != nil {
+			return fmt.Errorf("could not decode file %q: %w", file.Path, err)
 		}
+
 		mode := defaultFilePermissions
 		if file.Mode != nil {
 			mode = os.FileMode(*file.Mode)
@@ -1597,7 +1628,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 		if err := createOrigFile(file.Path, file.Path); err != nil {
 			return err
 		}
-		if err := writeFileAtomically(file.Path, contents.Data, defaultDirectoryPermissions, mode, uid, gid); err != nil {
+		if err := writeFileAtomically(file.Path, decodedContents, defaultDirectoryPermissions, mode, uid, gid); err != nil {
 			return err
 		}
 	}
@@ -1605,11 +1636,11 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 }
 
 func origParentDir() string {
-	return filepath.Join("/etc", "machine-config-daemon", "orig")
+	return origParentDirPath
 }
 
 func noOrigParentDir() string {
-	return filepath.Join("/etc", "machine-config-daemon", "noorig")
+	return noOrigParentDirPath
 }
 
 func origFileName(fpath string) string {
@@ -1641,6 +1672,14 @@ func createOrigFile(fromPath, fpath string) error {
 		}
 		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
 	}
+
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1970959
+	// orig file might exist, but be a relative/dangling symlink
+	if symlinkTarget, err := os.Readlink(origFileName(fpath)); err == nil {
+		if symlinkTarget != "" {
+			return nil
+		}
+	}
 	if _, err := os.Stat(origFileName(fpath)); err == nil {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
 		return nil
@@ -1654,41 +1693,72 @@ func createOrigFile(fromPath, fpath string) error {
 	return nil
 }
 
+func lookupUID(username string) (int, error) {
+	osUser, err := user.Lookup(username)
+	if err != nil {
+		return 0, fmt.Errorf("failed to retrieve UserID for username: %s", username)
+	}
+	glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, username)
+	uid, _ := strconv.Atoi(osUser.Uid)
+	return uid, nil
+}
+
+func lookupGID(group string) (int, error) {
+	osGroup, err := user.LookupGroup(group)
+	if err != nil {
+		return 0, fmt.Errorf("failed to retrieve GroupID for group: %v", group)
+	}
+	glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, group)
+	gid, _ := strconv.Atoi(osGroup.Gid)
+	return gid, nil
+}
+
 // This is essentially ResolveNodeUidAndGid() from Ignition; XXX should dedupe
 func getFileOwnership(file ign3types.File) (int, int, error) {
 	uid, gid := 0, 0 // default to root
 	if file.User.ID != nil {
 		uid = *file.User.ID
 	} else if file.User.Name != nil && *file.User.Name != "" {
-		osUser, err := user.Lookup(*file.User.Name)
+		uid, err := lookupUID(*file.User.Name)
 		if err != nil {
-			return uid, gid, fmt.Errorf("failed to retrieve UserID for username: %s", *file.User.Name)
+			return uid, gid, err
 		}
-		glog.V(2).Infof("Retrieved UserId: %s for username: %s", osUser.Uid, *file.User.Name)
-		uid, _ = strconv.Atoi(osUser.Uid)
 	}
 
 	if file.Group.ID != nil {
 		gid = *file.Group.ID
 	} else if file.Group.Name != nil && *file.Group.Name != "" {
-		osGroup, err := user.LookupGroup(*file.Group.Name)
+		gid, err := lookupGID(*file.Group.Name)
 		if err != nil {
-			return uid, gid, fmt.Errorf("failed to retrieve GroupID for group: %v", file.Group.Name)
+			return uid, gid, err
 		}
-		glog.V(2).Infof("Retrieved GroupID: %s for group: %s", osGroup.Gid, *file.Group.Name)
-		gid, _ = strconv.Atoi(osGroup.Gid)
 	}
 	return uid, gid, nil
 }
 
 func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
-	authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+	uid, err := lookupUID(constants.CoreUserName)
+	if err != nil {
+		return err
+	}
+
+	gid, err := lookupGID(constants.CoreGroupName)
+	if err != nil {
+		return err
+	}
+
+	var authKeyPath string
+	if dn.os.IsFCOS() {
+		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition")
+	} else {
+		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys")
+	}
 
 	// Keys should only be written to "/home/core/.ssh"
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", authKeyPath)
 
-	if err := writeFileAtomicallyWithDefaults(authKeyPath, []byte(keys)); err != nil {
+	if err := writeFileAtomically(authKeyPath, []byte(keys), os.FileMode(0700), os.FileMode(0600), uid, gid); err != nil {
 		return err
 	}
 
@@ -1703,6 +1773,16 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		return nil
 	}
 
+	var uErr user.UnknownUserError
+	switch _, err := user.Lookup(constants.CoreUserName); {
+	case err == nil:
+	case errors.As(err, &uErr):
+		glog.Info("core user does not exist, and creating users is not supported, so ignoring configuration specified for core user")
+		return nil
+	default:
+		return fmt.Errorf("failed to check if user core exists: %w", err)
+	}
+
 	// we're also appending all keys for any user to core, so for now
 	// we pass this to atomicallyWriteSSHKeys to write.
 	// we know these users are "core" ones also cause this slice went through Reconcilable
@@ -1713,6 +1793,44 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		}
 	}
 	if !dn.mock {
+		authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
+		authKeyFragmentDirPath := filepath.Join(coreUserSSHPath, "authorized_keys.d")
+
+		if dn.os.IsFCOS() {
+			// In older versions of OKD, the keys were written to `/home/core/.ssh/authorized_keys`.
+			// Newer versions of OKD will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
+			// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
+			// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
+			// that is called right after.
+			_, err := os.Stat(authKeyPath)
+			if err == nil {
+				err := os.RemoveAll(authKeyPath)
+				if err != nil {
+					return fmt.Errorf("failed to remove path '%s': %v", authKeyPath, err)
+				}
+			} else if !os.IsNotExist(err) {
+				// This shouldn't ever happen
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyPath, err)
+			}
+
+			// Ensure authorized_keys.d/ignition is the only fragment that exists
+			keyFragmentsDir, err := ioutil.ReadDir(authKeyFragmentDirPath)
+			if err == nil {
+				for _, fragment := range keyFragmentsDir {
+					if fragment.Name() != "ignition" {
+						keyPath := filepath.Join(authKeyFragmentDirPath, fragment.Name())
+						err := os.RemoveAll(keyPath)
+						if err != nil {
+							return fmt.Errorf("failed to remove path '%s': %v", keyPath, err)
+						}
+					}
+				}
+			} else if !os.IsNotExist(err) {
+				// This shouldn't ever happen
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyFragmentDirPath, err)
+			}
+		}
+
 		// Note we write keys only for the core user and so this ignores the user list
 		if err := dn.atomicallyWriteSSHKey(concatSSHKeys); err != nil {
 			return err

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 import os, sys, json, subprocess
 # Wrapper for building the MCO image which is oriented
 # around the git hash, to only build if it changes.

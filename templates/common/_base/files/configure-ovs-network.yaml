@@ -85,7 +85,7 @@ contents:
       old_name="$(nmcli -g connection.id connection show uuid "$uuid")"
       local new_name="${old_name}${MANAGED_NM_CONN_SUFFIX}"
       if nmcli connection show id "${new_name}" &> /dev/null; then
-        echo "WARN: existing ovs slave ${new_name} connection profile file found, overwriting..."
+        echo "WARN: existing ovs slave ${new_name} connection profile file found, overwriting..." >&2
         nmcli connection delete id "${new_name}" &> /dev/null
       fi
       nmcli connection clone $uuid "${new_name}" &> /dev/null
@@ -164,6 +164,11 @@ contents:
       dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
       if [ -n "$dhcp6_client_id" ]; then
         extra_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
+      fi
+
+      ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
+      if [ -n "$ipv6_addr_gen_mode" ]; then
+        extra_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
       fi
 
       # create bridge; use NM's ethernet device default route metric (100)
@@ -249,8 +254,13 @@ contents:
 
       # For some reason RHEL7 requires the ovs bridge to be brought up explicitly whereas RHCOS does not
       nmcli conn up "$bridge_name"
-      # Bring up the new interface connection
-      nmcli conn up "$bridge_interface_name"
+      # Bring up the new interface connection; retry a few times to work around an NM dependency failure issue
+      for i in {0..3}; do
+        if nmcli conn up "$bridge_interface_name"; then
+          break
+        fi
+        sleep 2
+      done
 
       if ! nmcli connection show "$ovs_interface" &> /dev/null; then
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then

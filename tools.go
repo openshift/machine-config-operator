@@ -4,6 +4,7 @@
 package tools
 
 import (
+	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	// Code generators built at runtime.
 	_ "k8s.io/code-generator" // TODO: Investigate why scripts in this directory are removed and not vendored by go mod.
 	_ "k8s.io/code-generator/cmd/client-gen"
@@ -12,10 +13,6 @@ import (
 	_ "k8s.io/code-generator/cmd/defaulter-gen"
 	_ "k8s.io/code-generator/cmd/informer-gen"
 	_ "k8s.io/code-generator/cmd/lister-gen"
-	_ "github.com/go-bindata/go-bindata"
-	_ "github.com/go-bindata/go-bindata/go-bindata"
-	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
-	_ "github.com/securego/gosec/cmd/gosec"
 	// TODO: Investigate openapi-gen
 	// _ "k8s.io/code-generator/cmd/openapi-gen"
 )

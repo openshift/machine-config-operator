@@ -1,0 +1,16 @@
+name: alibaba-kubelet-nodename.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Fetch the region and isntance id from Alibaba Metadata
+  # Wait for NetworkManager to report it's online
+  After=NetworkManager-wait-online.service
+  # Run before kubelet
+  Before=kubelet.service
+
+  [Service]
+  ExecStart=/usr/local/bin/alibaba-kubelet-nodename
+  Type=oneshot
+
+  [Install]
+  WantedBy=network-online.target

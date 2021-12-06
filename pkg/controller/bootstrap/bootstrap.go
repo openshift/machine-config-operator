@@ -74,6 +74,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
+	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
@@ -112,6 +113,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				configs = append(configs, obj)
 			case *mcfgv1.ControllerConfig:
 				cconfig = obj
+			case *mcfgv1.KubeletConfig:
+				kconfigs = append(kconfigs, obj)
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 				icspRules = append(icspRules, obj)
 			case *apicfgv1.Image:
@@ -139,14 +142,22 @@ func (b *Bootstrap) Run(destDir string) error {
 	if err != nil {
 		return err
 	}
+
 	configs = append(configs, rconfigs...)
 
 	if featureGate != nil {
-		kConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, cconfig, pools)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, cconfig, pools)
 		if err != nil {
 			return err
 		}
-		configs = append(configs, kConfigs...)
+		configs = append(configs, featureConfigs...)
+	}
+	if len(kconfigs) > 0 {
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, pools)
+		if err != nil {
+			return err
+		}
+		configs = append(configs, kconfigs...)
 	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)
@@ -168,6 +179,9 @@ func (b *Bootstrap) Run(destDir string) error {
 			return err
 		}
 		path := filepath.Join(poolsdir, fmt.Sprintf("%s.yaml", p.Name))
+		// Disable gosec here to avoid throwing
+		// G306: Expect WriteFile permissions to be 0600 or less
+		// #nosec
 		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
 			return err
 		}
@@ -184,6 +198,9 @@ func (b *Bootstrap) Run(destDir string) error {
 			return err
 		}
 		path := filepath.Join(configdir, fmt.Sprintf("%s.yaml", c.Name))
+		// Disable gosec here to avoid throwing
+		// G306: Expect WriteFile permissions to be 0600 or less
+		// #nosec
 		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
 			return err
 		}

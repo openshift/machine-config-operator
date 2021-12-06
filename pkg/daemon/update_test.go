@@ -1,9 +1,16 @@
 package daemon
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"os"
+	"os/user"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -12,10 +19,54 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
+
+func newMockDaemon() Daemon {
+	// testClient is the NodeUpdaterClient mock instance that will front
+	// calls to update the host.
+	testClient := RpmOstreeClientMock{
+		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+	}
+
+	// Create a Daemon instance with mocked clients
+	return Daemon{
+		mock:              true,
+		name:              "nodeName",
+		os:                OperatingSystem{},
+		NodeUpdaterClient: testClient,
+		kubeClient:        k8sfake.NewSimpleClientset(),
+		bootedOSImageURL:  "test",
+	}
+}
+
+func setupTempDirWithEtc(t *testing.T) (string, func()) {
+	t.Helper()
+
+	// Make a temp dir to put the testing files in, and make sure we clean it up
+	testDir := t.TempDir()
+
+	// Stub out a test directory structure -- we need to create /etc so createOrigFile can use it
+	etcDir := filepath.Join(testDir, "etc")
+	err := os.MkdirAll(etcDir, 0755)
+	require.Nil(t, err)
+
+	oldOrigParentDirPath := origParentDirPath
+	oldNoOrigParentDirPath := noOrigParentDirPath
+
+	// Override these package variables so files get written to our testing location
+	origParentDirPath = filepath.Join(testDir, origParentDirPath)
+	noOrigParentDirPath = filepath.Join(testDir, noOrigParentDirPath)
+
+	return testDir, func() {
+		// Make sure path variables get put back for other tests
+		origParentDirPath = oldOrigParentDirPath
+		noOrigParentDirPath = oldNoOrigParentDirPath
+	}
+}
 
 func TestTruncate(t *testing.T) {
 	assert.Equal(t, truncate("", 10), "")
@@ -40,21 +91,7 @@ func TestUpdateOS(t *testing.T) {
 	// expectedError is the error we will use when expecting an error to return
 	expectedError := fmt.Errorf("broken")
 
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-	}
-
-	// Create a Daemon instance with mocked clients
-	d := Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
+	d := newMockDaemon()
 
 	// Set up machineconfigs to pass to updateOS.
 	mcfg := &mcfgv1.MachineConfig{}
@@ -350,22 +387,90 @@ func TestReconcilableSSH(t *testing.T) {
 	checkIrreconcilableResults(t, "SSH", errMsg)
 }
 
-func TestUpdateSSHKeys(t *testing.T) {
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
+func TestWriteFiles(t *testing.T) {
+	testDir, cleanup := setupTempDirWithEtc(t)
+	defer cleanup()
+
+	d := newMockDaemon()
+
+	contents := []byte("hello world\n")
+	encodedContents := dataurl.EncodeBytes(contents)
+
+	// gzip contents
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	_, err := writer.Write(contents)
+	assert.Nil(t, err)
+	err = writer.Close()
+	assert.Nil(t, err)
+	gzippedContents := dataurl.EncodeBytes(buffer.Bytes())
+
+	// use current user so test doesn't try to chown to root
+	currentUser, err := user.Current()
+	assert.Nil(t, err)
+	currentUid, err := strconv.Atoi(currentUser.Uid)
+	assert.Nil(t, err)
+	currentGid, err := strconv.Atoi(currentUser.Gid)
+	assert.Nil(t, err)
+
+	filePath := filepath.Join(testDir, "test")
+	node := ign3types.Node{
+		Path:  filePath,
+		User:  ign3types.NodeUser{ID: &currentUid},
+		Group: ign3types.NodeGroup{ID: &currentGid},
 	}
 
-	// Create a Daemon instance with mocked clients
-	d := Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
+	mode := 420
+
+	tests := []struct {
+		name             string
+		files            []ign3types.File
+		expectedErr      error
+		expectedContents []byte
+	}{
+		{
+			name: "basic file write",
+			files: []ign3types.File{{
+				Node:          node,
+				FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &encodedContents}, Mode: &mode},
+			}},
+			expectedContents: contents,
+		},
+		{
+			name: "write file with compressed contents",
+			files: []ign3types.File{{
+				Node:          node,
+				FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &gzippedContents, Compression: helpers.StrToPtr("gzip")}, Mode: &mode},
+			}},
+			expectedContents: contents,
+		},
+		{
+			name: "try to write file with unsupported compression type",
+			files: []ign3types.File{{
+				Node:          node,
+				FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &encodedContents, Compression: helpers.StrToPtr("xz")}, Mode: &mode},
+			}},
+			expectedErr: fmt.Errorf("could not decode file %q: %w", filePath, fmt.Errorf("unsupported compression type %q", "xz")),
+		},
 	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := d.writeFiles(test.files)
+			assert.Equal(t, test.expectedErr, err)
+			if test.expectedContents != nil {
+				fileContents, err := os.ReadFile(filePath)
+				assert.Nil(t, err)
+				assert.Equal(t, string(test.expectedContents), string(fileContents))
+			}
+			os.RemoveAll(filePath)
+		})
+	}
+}
+
+func TestUpdateSSHKeys(t *testing.T) {
+	d := newMockDaemon()
+
 	// Set up machineconfigs that are identical except for SSH keys
 	tempUser := ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234", "4567"}}
 	newIgnCfg := ctrlcommon.NewIgnConfig()
@@ -444,18 +549,7 @@ func TestDropinCheck(t *testing.T) {
 		},
 	}
 
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-	}
-
-	d := Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
+	d := newMockDaemon()
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
@@ -488,90 +582,35 @@ func TestDropinCheck(t *testing.T) {
 	}
 }
 
+func newFile(path, contents string) ign3types.File {
+	return ign3types.File{
+		Node: ign3types.Node{
+			Path: path,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(contents))),
+			},
+		},
+	}
+}
+
 // Test to see if the correct action is calculated given a machineconfig diff
 // i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
 func TestCalculatePostConfigChangeAction(t *testing.T) {
 	files := map[string]ign3types.File{
-		"pullsecret1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/var/lib/kubelet/config.json",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubelet conf 1\n"))),
-				},
-			},
-		},
-		"pullsecret2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/var/lib/kubelet/config.json",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubelet conf 2\n"))),
-				},
-			},
-		},
-		"registries1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/containers/registries.conf",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("registries content 1\n"))),
-				},
-			},
-		},
-		"registries2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/containers/registries.conf",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("registries content 2\n"))),
-				},
-			},
-		},
-		"randomfile1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/random-reboot-file",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("test\n"))),
-				},
-			},
-		},
-		"randomfile2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/random-reboot-file",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("test 2\n"))),
-				},
-			},
-		},
-		"kubeletCA1": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/kubernetes/kubelet-ca.crt",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubeletCA1\n"))),
-				},
-			},
-		},
-		"kubeletCA2": ign3types.File{
-			Node: ign3types.Node{
-				Path: "/etc/kubernetes/kubelet-ca.crt",
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Contents: ign3types.Resource{
-					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte("kubeletCA2\n"))),
-				},
-			},
-		},
+		"pullsecret1":     newFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
+		"pullsecret2":     newFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
+		"registries1":     newFile("/etc/containers/registries.conf", "registries content 1\n"),
+		"registries2":     newFile("/etc/containers/registries.conf", "registries content 2\n"),
+		"randomfile1":     newFile("/etc/random-reboot-file", "test\n"),
+		"randomfile2":     newFile("/etc/random-reboot-file", "test 2\n"),
+		"kubeletCA1":      newFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
+		"kubeletCA2":      newFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
+		"policy1":         newFile("/etc/containers/policy.json", "policy1"),
+		"policy2":         newFile("/etc/containers/policy.json", "policy2"),
+		"containers-gpg1": newFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
+		"containers-gpg2": newFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
 	}
 
 	tests := []struct {
@@ -639,11 +678,35 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"], files["kubeletCA1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
+		{
+			// test that updating policy.json is crio reload
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["policy1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["policy2"]}),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// test that updating containers-gpg.pub is crio reload
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["containers-gpg1"]}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["containers-gpg2"]}),
+			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
 	}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			calculatedAction, err := calculatePostConfigChangeAction(test.oldConfig, test.newConfig)
+			oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.oldConfig.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("parsing old Ignition config failed: %v", err)
+			}
+			newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(test.newConfig.Spec.Config.Raw)
+			if err != nil {
+				t.Errorf("parsing new Ignition config failed: %v", err)
+			}
+			mcDiff, err := newMachineConfigDiff(test.oldConfig, test.newConfig)
+			if err != nil {
+				t.Errorf("error creating machineConfigDiff: %v", err)
+			}
+			calculatedAction, err := calculatePostConfigChangeAction(mcDiff, oldIgnConfig, newIgnConfig)
 
 			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
 				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
@@ -686,4 +749,59 @@ func TestRunGetOut(t *testing.T) {
 
 	o, err = runGetOut("/usr/bin/test-failure-to-exec-this-should-not-exist", "arg")
 	assert.Error(t, err)
+}
+
+// TestOriginalFileBackupRestore tests backikg up and restoring original files (files that are present in the base image and
+// get overwritten by a machine configuration)
+func TestOriginalFileBackupRestore(t *testing.T) {
+	testDir, cleanup := setupTempDirWithEtc(t)
+	defer cleanup()
+
+	// Write a normal file as a control to make sure normal case works
+	controlFile := filepath.Join(testDir, "control-file")
+	err := ioutil.WriteFile(controlFile, []byte("control file contents"), 0755)
+	assert.Nil(t, err)
+
+	// Back up that normal file
+	err = createOrigFile(controlFile, controlFile)
+	assert.Nil(t, err)
+
+	// Now try again and make sure it knows it's already backed up
+	err = createOrigFile(controlFile, controlFile)
+	assert.Nil(t, err)
+
+	// Restore the normal file
+	err = restorePath(controlFile)
+	assert.Nil(t, err)
+
+	// The normal file worked, try it with a symlink
+	// Write a file we can point a symlink at
+	err = ioutil.WriteFile(filepath.Join(testDir, "target-file"), []byte("target file contents"), 0755)
+	assert.Nil(t, err)
+
+	// Make a relative symlink
+	relativeSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
+	relativeSymlinkTarget := filepath.Join("..", "target-file")
+	err = os.Symlink(relativeSymlinkTarget, relativeSymlink)
+	assert.Nil(t, err)
+
+	// Back up the relative symlink
+	err = createOrigFile(relativeSymlink, relativeSymlink)
+	assert.Nil(t, err)
+
+	// Remove the symlink and write a file over it
+	fileOverSymlink := filepath.Join(testDir, "etc", "relative-symlink-to-target-file")
+	err = os.Remove(fileOverSymlink)
+	assert.Nil(t, err)
+	err = ioutil.WriteFile(fileOverSymlink, []byte("replacement contents"), 0755)
+	assert.Nil(t, err)
+
+	// Try to back it up again make sure it knows it's already backed up
+	err = createOrigFile(relativeSymlink, relativeSymlink)
+	assert.Nil(t, err)
+
+	// Finally, make sure we can restore the relative symlink if we rollback
+	err = restorePath(relativeSymlink)
+	assert.Nil(t, err)
+
 }

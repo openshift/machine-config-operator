@@ -143,6 +143,9 @@ func NewIgnConfig() ign3types.Config {
 // WriteTerminationError writes to the Kubernetes termination log.
 func WriteTerminationError(err error) {
 	msg := err.Error()
+	// Disable gosec here to avoid throwing
+	// G306: Expect WriteFile permissions to be 0600 or less
+	// #nosec
 	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0644)
 	glog.Fatal(msg)
 }
