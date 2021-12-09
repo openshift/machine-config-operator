@@ -88,6 +88,9 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform: configv1.AlibabaCloudPlatformType,
 		res:      "external",
+	}, {
+		platform: configv1.IBMCloudPlatformType,
+		res:      "external",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
@@ -292,6 +295,7 @@ var (
 		"aws":       "./test_data/controller_config_aws.yaml",
 		"baremetal": "./test_data/controller_config_baremetal.yaml",
 		"gcp":       "./test_data/controller_config_gcp.yaml",
+		"ibmcloud":  "./test_data/controller_config_ibmcloud.yaml",
 		"openstack": "./test_data/controller_config_openstack.yaml",
 		"libvirt":   "./test_data/controller_config_libvirt.yaml",
 		"none":      "./test_data/controller_config_none.yaml",
