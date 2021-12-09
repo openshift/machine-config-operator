@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/containers/image/v5/types"
+	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
@@ -20,7 +22,20 @@ const (
 	numRetriesNetCommands = 5
 	// Pull secret.  Written by the machine-config-operator
 	kubeletAuthFile = "/var/lib/kubelet/config.json"
+
+	// rpmOstreeVersionMinimum is the minimum required version
+	rpmOstreeVersionMinimum = "2021.14"
 )
+
+// rpmOstreeVersionOuter is YAML output by `rpm-ostree --version`
+type rpmOstreeVersionOuter struct {
+	Root rpmOstreeVersionData `json:"rpm-ostree"`
+}
+
+type rpmOstreeVersionData struct {
+	Version  string   `json:"Version"`
+	Features []string `json:"Features"`
+}
 
 // rpmOstreeState houses zero or more RpmOstreeDeployments
 // Subset of `rpm-ostree status --json`
@@ -98,6 +113,60 @@ func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
 	}
 
 	return &rosState, nil
+}
+
+func parseVer(s string) ([]int, error) {
+	r := []int{}
+	for _, s := range strings.Split(s, ".") {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to parse %s: %v", s, err)
+		}
+		r = append(r, n)
+	}
+	return r, nil
+}
+
+func validateVersion(current rpmOstreeVersionOuter) error {
+	requiredVer, err := parseVer(rpmOstreeVersionMinimum)
+	if err != nil {
+		return err
+	}
+	curVer, err := parseVer(current.Root.Version)
+	if err != nil {
+		return err
+	}
+	if len(curVer) < len(requiredVer) {
+		return fmt.Errorf("Too few components in %s, expected to match %s", current.Root.Version, rpmOstreeVersionMinimum)
+	}
+	for i, v := range requiredVer {
+		if curVer[i] < v {
+			return fmt.Errorf("Too old %s, expected to match %s", current.Root.Version, rpmOstreeVersionMinimum)
+		}
+		// Shortcut for e.g. 2022 > 2021
+		if curVer[i] > v {
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func checkNodeRpmOstreeVersion() error {
+	versionBytes, err := runGetOut("rpm-ostree", "--version")
+	if err != nil {
+		return err
+	}
+	var versionData rpmOstreeVersionOuter
+	if err := yaml.Unmarshal(versionBytes, &versionData); err != nil {
+		return fmt.Errorf("failed to parse rpm-ostree --version as YAML: %v", err)
+	}
+
+	if err := validateVersion(versionData); err != nil {
+		return fmt.Errorf("Too old rpm-ostree: %v", err)
+	}
+
+	return nil
 }
 
 func (r *RpmOstreeClient) Initialize() error {
