@@ -6,3 +6,5 @@ contents:
     r /etc/kubernetes/cni/net.d/10-ovn-kubernetes.conf
     d /run/multus/cni/net.d/ 0755 root root - -
     D /var/lib/cni/networks/openshift-sdn/ 0755 root root - -
+    r /var/run/ovn/ovnsb_db.pid
+    r /var/run/ovn/ovnnb_db.pid
