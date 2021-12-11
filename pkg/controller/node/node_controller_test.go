@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	"reflect"
 	"testing"
 	"time"
@@ -789,9 +790,22 @@ func TestShouldMakeProgress(t *testing.T) {
 	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 
+	// Node2 is at desired config, so need to do a get on the node2 to check for the taint status
+	node2 := newNodeWithLabel("node-2", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""})
+	// Update node-2 to have the needed taint, this should still have no effect
+	node2.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
+	node3 := newNodeWithLabel("node-3", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""})
+	// Update node-3 to have the needed taint, this should result in taint being applied, however we won't see patch
+	// to the annotations as maxUnavailable is set to 1.
+	node3.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
 	nodes := []*corev1.Node{
+		// Since node-0 is at desired config, it shouldn't be tainted.
 		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+		// This node is at desiredConfig and has taint, no patch calls
+		node2,
+		// This node is not at desiredConfig and has taint, get call
+		node3,
 	}
 
 	f.ccLister = append(f.ccLister, cc)
@@ -801,10 +815,10 @@ func TestShouldMakeProgress(t *testing.T) {
 	for idx := range nodes {
 		f.kubeobjects = append(f.kubeobjects, nodes[idx])
 	}
-
+	// First patch to apply taint
 	f.expectGetNodeAction(nodes[1])
 	expNode := nodes[1].DeepCopy()
-	expNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = "v1"
+	expNode.Spec.Taints = append(expNode.Spec.Taints, *constants.NodeUpdateInProgressTaint)
 	oldData, err := json.Marshal(nodes[1])
 	if err != nil {
 		t.Fatal(err)
@@ -818,11 +832,30 @@ func TestShouldMakeProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.expectPatchNodeAction(expNode, exppatch)
+
+	// We'll get a get on the node object but no patch on the node object as taints are already present
+	f.expectGetNodeAction(node3)
+
+	// Patch the annotations on the node object now. Only doing it for node-1 as maxUnavailable is set 1
+	f.expectGetNodeAction(nodes[1])
+	oldData, err = json.Marshal(expNode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = "v1"
+	newData, err = json.Marshal(expNode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exppatch, err = strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.expectPatchNodeAction(expNode, exppatch)
 	expStatus := calculateStatus(mcp, nodes)
 	expMcp := mcp.DeepCopy()
 	expMcp.Status = expStatus
 	f.expectUpdateMachineConfigPoolStatus(expMcp)
-
 	f.run(getKey(mcp, t))
 }
 
