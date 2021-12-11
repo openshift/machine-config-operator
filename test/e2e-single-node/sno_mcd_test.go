@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/pkg/errors"
@@ -350,6 +351,47 @@ func TestNoReboot(t *testing.T) {
 	}
 
 	t.Logf("Node %s didn't reboot as expected during rollback, uptime increased from %f to %f ", node.Name, uptimeOld, uptimeNew)
+}
+
+func TestRunShared(t *testing.T) {
+	mcpName := "master"
+
+	cs := framework.NewClientSet("")
+
+	cleanupFuncs := helpers.NewCleanupFuncs()
+
+	oldWorkerMCName := helpers.GetMcName(t, cs, mcpName)
+
+	configOpts := e2eShared.ConfigDriftTestOpts{
+		MCPName:       mcpName,
+		ClientSet:     cs,
+		SkipForcefile: true,
+		SetupFunc: func(mc *mcfgv1.MachineConfig) {
+			// Apply our MachineConfig and store the returned cleanup func
+			cleanupFuncs.Add(helpers.ApplyMC(t, cs, mc))
+
+			// Wait for the config to be rendered
+			renderedConfigName, err := helpers.WaitForRenderedConfig(t, cs, mcpName, mc.Name)
+			require.Nil(t, err)
+
+			// Wait for the config to be rolled out
+			require.Nil(t, waitForSingleNodePoolComplete(t, cs, mcpName, renderedConfigName))
+
+			cleanupFuncs.Add(func() {
+				// Wait for the pool to catch up
+				require.Nil(t, waitForSingleNodePoolComplete(t, cs, mcpName, oldWorkerMCName))
+			})
+		},
+		TeardownFunc: func() {
+			cleanupFuncs.Run()
+		},
+	}
+
+	sharedOpts := e2eShared.SharedTestOpts{
+		ConfigDriftTestOpts: configOpts,
+	}
+
+	e2eShared.Run(t, sharedOpts)
 }
 
 func waitForSingleNodePoolComplete(t *testing.T, cs *framework.ClientSet, pool, target string) error {

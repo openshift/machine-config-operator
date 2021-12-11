@@ -275,6 +275,7 @@ github.com/fatih/color
 # github.com/fatih/structtag v1.2.0
 github.com/fatih/structtag
 # github.com/fsnotify/fsnotify v1.4.9
+## explicit
 github.com/fsnotify/fsnotify
 # github.com/fzipp/gocyclo v0.3.1
 github.com/fzipp/gocyclo

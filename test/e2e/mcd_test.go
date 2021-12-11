@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -21,6 +22,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
@@ -76,6 +78,30 @@ func TestMCDeployed(t *testing.T) {
 		}
 		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
 	}
+}
+
+func TestRunShared(t *testing.T) {
+	mcpName := "infra"
+
+	cleanupFuncs := helpers.NewCleanupFuncs()
+	cs := framework.NewClientSet("")
+
+	configOpts := e2eShared.ConfigDriftTestOpts{
+		ClientSet: cs,
+		MCPName:   mcpName,
+		SetupFunc: func(mc *mcfgv1.MachineConfig) {
+			cleanupFuncs.Add(helpers.CreatePoolAndApplyMC(t, cs, mcpName, mc))
+		},
+		TeardownFunc: func() {
+			cleanupFuncs.Run()
+		},
+	}
+
+	sharedOpts := e2eShared.SharedTestOpts{
+		ConfigDriftTestOpts: configOpts,
+	}
+
+	e2eShared.Run(t, sharedOpts)
 }
 
 func TestKernelArguments(t *testing.T) {
@@ -751,7 +777,6 @@ func TestIgn3Cfg(t *testing.T) {
 	}
 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
 	require.Nil(t, err)
-
 }
 
 func createMCToAddFileForRole(name, role, filename, data string) *mcfgv1.MachineConfig {
