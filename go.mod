@@ -19,6 +19,7 @@ require (
 	github.com/coreos/ignition/v2 v2.7.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
+	github.com/fsnotify/fsnotify v1.4.9
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golangci/golangci-lint v1.42.1

@@ -43,5 +43,5 @@ if [[ $WHAT == "machine-config-controller" ]]; then
     GOTAGS="containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 fi
 
-echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE}, ${HASH})"
+echo "Building ${REPO}/cmd/${WHAT} (${VERSION_OVERRIDE}, ${HASH}) for $GOOS/$GOARCH"
 CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} go build -mod=vendor -tags="${GOTAGS}" -ldflags "${GLDFLAGS} -s -w" -o ${BIN_PATH}/${WHAT} ${REPO}/cmd/${WHAT}
