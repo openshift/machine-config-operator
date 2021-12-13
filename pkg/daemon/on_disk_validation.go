@@ -14,7 +14,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	"github.com/pkg/errors"
 )
 
 // Validates that the on-disk state matches a given MachineConfig.
@@ -24,28 +23,28 @@ func validateOnDiskState(currentConfig *mcfgv1.MachineConfig, systemdPath string
 	// to remove possibilities of behaviour changes due to translation
 	ignconfigi, err := ctrlcommon.IgnParseWrapper(currentConfig.Spec.Config.Raw)
 	if err != nil {
-		return errors.Errorf("Failed to parse Ignition for validation: %s", err)
+		return fmt.Errorf("failed to parse Ignition for validation: %w", err)
 	}
 
 	switch typedConfig := ignconfigi.(type) {
 	case ign3types.Config:
 		if err := checkV3Files(ignconfigi.(ign3types.Config).Storage.Files); err != nil {
-			return fileConfigDriftErr(err)
+			return &fileConfigDriftErr{err}
 		}
 		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units, systemdPath); err != nil {
-			return unitConfigDriftErr(err)
+			return &unitConfigDriftErr{err}
 		}
 		return nil
 	case ign2types.Config:
 		if err := checkV2Files(ignconfigi.(ign2types.Config).Storage.Files); err != nil {
-			return fileConfigDriftErr(err)
+			return &fileConfigDriftErr{err}
 		}
 		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units, systemdPath); err != nil {
-			return unitConfigDriftErr(err)
+			return &unitConfigDriftErr{err}
 		}
 		return nil
 	default:
-		return errors.Errorf("unexpected type for ignition config: %v", typedConfig)
+		return fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
 	}
 }
 
@@ -91,10 +90,10 @@ func checkV3Units(units []ign3types.Unit, systemdPath string) error {
 		if unit.Mask != nil && *unit.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
-				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
+				return fmt.Errorf("state validation: error while evaluation symlink for path %q: %w", path, err)
 			}
 			if strings.Compare(pathDevNull, link) != 0 {
-				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
+				return fmt.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
 			}
 		}
 		if err := checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions); err != nil {
@@ -124,10 +123,10 @@ func checkV2Units(units []ign2types.Unit, systemdPath string) error {
 		if unit.Mask {
 			link, err := filepath.EvalSymlinks(path)
 			if err != nil {
-				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
+				return fmt.Errorf("state validation: error while evaluation symlink for path %q: %w", path, err)
 			}
 			if strings.Compare(pathDevNull, link) != 0 {
-				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
+				return fmt.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
 			}
 		}
 		if err := checkFileContentsAndMode(path, []byte(unit.Contents), defaultFilePermissions); err != nil {
@@ -196,18 +195,18 @@ func checkV2Files(files []ign2types.File) error {
 func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) error {
 	fi, err := os.Lstat(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "could not stat file %q", filePath)
+		return fmt.Errorf("could not stat file %q: %w", filePath, err)
 	}
 	if fi.Mode() != mode {
-		return errors.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
+		return fmt.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
 	}
 	contents, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "could not read file %q", filePath)
+		return fmt.Errorf("could not read file %q: %w", filePath, err)
 	}
 	if !bytes.Equal(contents, expectedContent) {
 		glog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
-		return errors.Errorf("content mismatch for file %q", filePath)
+		return fmt.Errorf("content mismatch for file %q", filePath)
 	}
 	return nil
 }

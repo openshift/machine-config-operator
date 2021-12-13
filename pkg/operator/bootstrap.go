@@ -120,7 +120,7 @@ func RenderBootstrap(
 	if infra.Spec.CloudConfig.Name != "" {
 		cloudConf, err := loadBootstrapCloudProviderConfig(infra, cloudConfigFile)
 		if err != nil {
-			return fmt.Errorf("failed to load the cloud provider config: %v", err)
+			return fmt.Errorf("failed to load the cloud provider config: %w", err)
 		}
 		spec.CloudProviderConfig = cloudConf
 	}

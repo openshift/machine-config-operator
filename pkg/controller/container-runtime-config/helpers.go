@@ -140,7 +140,7 @@ func createNewIgnition(configs []generatedConfigFile) ign3types.Config {
 func findStorageConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing Storage Ignition config failed with error: %w", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == storageConfigPath {
@@ -154,7 +154,7 @@ func findStorageConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing Registries Ignition config failed with error: %w", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == registriesConfigPath {
@@ -167,7 +167,7 @@ func findRegistriesConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 func findPolicyJSON(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Policy JSON Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing Policy JSON Ignition config failed with error: %w", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == policyConfigPath {
@@ -187,7 +187,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 	// Get all the ctrcfg CRs
 	ctrcfgListAll, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return "", fmt.Errorf("error listing container runtime configs: %v", err)
+		return "", fmt.Errorf("error listing container runtime configs: %w", err)
 	}
 	// If there is no ctrcfg in the list, return the default MC name with no suffix
 	if ctrcfgListAll == nil || len(ctrcfgListAll.Items) == 0 {
@@ -198,7 +198,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 	for _, ctrcfg := range ctrcfgListAll.Items {
 		selector, err := metav1.LabelSelectorAsSelector(ctrcfg.Spec.MachineConfigPoolSelector)
 		if err != nil {
-			return "", fmt.Errorf("invalid label selector: %v", err)
+			return "", fmt.Errorf("invalid label selector: %w", err)
 		}
 		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
 			continue
@@ -231,7 +231,7 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
 			intVal, err := strconv.Atoi(val)
 			if err != nil {
-				return "", fmt.Errorf("error converting %s to int: %v", val, err)
+				return "", fmt.Errorf("error converting %s to int: %w", val, err)
 			}
 			if intVal > suffixNum {
 				suffixNum = intVal
@@ -288,7 +288,7 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRunt
 func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
 	tomlConf := new(tomlConfigStorage)
 	if _, err := toml.DecodeReader(bytes.NewBuffer(data), tomlConf); err != nil {
-		return nil, fmt.Errorf("error decoding crio config: %v", err)
+		return nil, fmt.Errorf("error decoding crio config: %w", err)
 	}
 
 	if internal.OverlaySize.Value() < 0 {
@@ -312,7 +312,7 @@ func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path strin
 	var newData bytes.Buffer
 	encoder := toml.NewEncoder(&newData)
 	if err := encoder.Encode(tomlConf); err != nil {
-		return nil, fmt.Errorf("error encoding toml for CRIO drop-in files: %v", err)
+		return nil, fmt.Errorf("error encoding toml for CRIO drop-in files: %w", err)
 	}
 	configFileList = append(configFileList, generatedConfigFile{filePath: path, data: newData.Bytes()})
 	return configFileList, nil
@@ -374,7 +374,7 @@ func updateSearchRegistriesConfig(searchRegs []string) []generatedConfigFile {
 func updateRegistriesConfig(data []byte, internalInsecure, internalBlocked []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) ([]byte, error) {
 	tomlConf := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(data), &tomlConf); err != nil {
-		return nil, fmt.Errorf("error unmarshalling registries config: %v", err)
+		return nil, fmt.Errorf("error unmarshalling registries config: %w", err)
 	}
 
 	if err := validateRegistriesConfScopes(internalInsecure, internalBlocked, []string{}, icspRules); err != nil {
@@ -417,7 +417,7 @@ func updatePolicyJSON(data []byte, internalBlocked, internalAllowed []string) ([
 	decoder := json.NewDecoder(bytes.NewBuffer(data))
 	err := decoder.Decode(policyObj)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding policy json: %v", err)
+		return nil, fmt.Errorf("error decoding policy json: %w", err)
 	}
 	transportScopes := make(signature.PolicyTransportScopes)
 	if len(internalAllowed) > 0 {

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -9,7 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -26,7 +27,7 @@ func runImpl(command string, args ...string) ([]byte, error) {
 	cmd.Stdout = stdout
 	err := cmd.Run()
 	if err != nil {
-		return nil, errors.Wrapf(err, "running %s %s failed: %s", command, strings.Join(args, " "), b.String())
+		return nil, fmt.Errorf("running %s %s failed: %s: %w", command, strings.Join(args, " "), b.String(), err)
 	}
 	return b.Bytes(), nil
 }
@@ -48,9 +49,10 @@ func runExtBackoff(backoff wait.Backoff, command string, args ...string) (string
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return "", errors.Wrapf(lastErr, "failed to run command %s (%d tries): %v", command, backoff.Steps, err)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return "", fmt.Errorf("failed to run command %s (%d tries): %w", command, backoff.Steps, errs)
 		}
-		return "", errors.Wrap(err, "failed to run command %s (%d tries): %v")
+		return "", fmt.Errorf("failed to run command %s (%d tries): %w", command, backoff.Steps, err)
 	}
 	return output, nil
 }

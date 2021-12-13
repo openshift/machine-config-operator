@@ -17,13 +17,19 @@ import (
 )
 
 // Outermost error type for config drift errors
-type configDriftErr error
+type configDriftErr struct {
+	error
+}
 
 // Error type for file config drifts
-type fileConfigDriftErr error
+type fileConfigDriftErr struct {
+	error
+}
 
 // Error type for systemd unit config drifts
-type unitConfigDriftErr error
+type unitConfigDriftErr struct {
+	error
+}
 
 type ConfigDriftMonitor interface {
 	Start(ConfigDriftMonitorOpts) error
@@ -258,7 +264,7 @@ func (c *configDriftWatcher) handleFileEvent(event fsnotify.Event) error {
 		return nil
 	}
 
-	var cdErr configDriftErr
+	var cdErr *configDriftErr
 	if errors.As(err, &cdErr) {
 		c.OnDrift(cdErr)
 		// Don't bubble this error up further since it's handled by OnDrift.
@@ -276,7 +282,7 @@ func (c *configDriftWatcher) checkMachineConfigForEvent(event fsnotify.Event) er
 	}
 
 	if err := validateOnDiskState(c.MachineConfig, c.SystemdPath); err != nil {
-		return configDriftErr(err)
+		return &configDriftErr{err}
 	}
 
 	return nil

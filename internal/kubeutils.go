@@ -41,14 +41,14 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
 
 		node, err = client.Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return nil, fmt.Errorf("unable to update node %q: %v", node, err)
+		return nil, fmt.Errorf("unable to update node %q: %w", node, err)
 	}
 	return node, nil
 }

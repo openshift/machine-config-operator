@@ -391,7 +391,7 @@ func (optr *Operator) isKubeletSkewSupported(pools []*v1.MachineConfigPool) (ske
 	)
 	nodes, err := optr.GetAllManagedNodes(pools)
 	if err != nil {
-		err = fmt.Errorf("getting all managed nodes failed: %v", err)
+		err = fmt.Errorf("getting all managed nodes failed: %w", err)
 		coStatus.Reason = skewUnchecked
 		coStatus.Message = fmt.Sprintf("An error occurred when getting all the managed nodes: %v", err.Error())
 	}
@@ -441,7 +441,7 @@ func (optr *Operator) GetAllManagedNodes(pools []*v1.MachineConfigPool) ([]*core
 		}
 		poolNodes, err := optr.nodeLister.List(selector)
 		if err != nil {
-			return nil, fmt.Errorf("could not list nodes for pool %v with error %v", pool.Name, err)
+			return nil, fmt.Errorf("could not list nodes for pool %v with error %w", pool.Name, err)
 		}
 		nodes = append(nodes, poolNodes...)
 	}

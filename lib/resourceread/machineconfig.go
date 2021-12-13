@@ -28,7 +28,7 @@ func ReadMachineConfigV1(objBytes []byte) (*mcfgv1.MachineConfig, error) {
 
 	m, err := runtime.Decode(mcfgCodecs.UniversalDecoder(mcfgv1.SchemeGroupVersion), objBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode raw bytes to mcfgv1.SchemeGroupVersion: %v", err)
+		return nil, fmt.Errorf("failed to decode raw bytes to mcfgv1.SchemeGroupVersion: %w", err)
 	}
 	if m == nil {
 		return nil, fmt.Errorf("expected mcfgv1.SchemeGroupVersion but got nil")

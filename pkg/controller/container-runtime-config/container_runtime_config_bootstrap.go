@@ -22,7 +22,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 		// use selector since label matching part of a ContaineRuntimeConfig is not handled during the bootstrap
 		selector, err := metav1.LabelSelectorAsSelector(cfg.Spec.MachineConfigPoolSelector)
 		if err != nil {
-			return nil, fmt.Errorf("invalid label selector: %v", err)
+			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
 		for _, pool := range mcpPools {
 			// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
@@ -34,7 +34,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			// Generate the original ContainerRuntimeConfig
 			originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
 			if err != nil {
-				return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
+				return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %w", err)
 			}
 
 			var configFileList []generatedConfigFile
@@ -55,15 +55,15 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 
 			ctrRuntimeConfigIgn := createNewIgnition(configFileList)
 			if err != nil {
-				return nil, fmt.Errorf("could not marshal container runtime ignition: %v", err)
+				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
 			}
 			managedKey, err := generateBootstrapManagedKeyContainerConfig(pool, managedKeyExist)
 			if err != nil {
-				return nil, fmt.Errorf("could not marshal container runtime ignition: %v", err)
+				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
 			}
 			mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ctrRuntimeConfigIgn)
 			if err != nil {
-				return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
+				return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
 			}
 			mc.SetAnnotations(map[string]string{
 				ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,

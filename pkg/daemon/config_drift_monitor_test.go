@@ -23,8 +23,8 @@ func TestConfigDriftMonitor(t *testing.T) {
 	// Our errors. Their contents don't matter because we're not basing our
 	// assertions off of their contents. Instead, we're more concerned about
 	// their types.
-	fileErr := configDriftErr(fileConfigDriftErr(fmt.Errorf("file error")))
-	unitErr := configDriftErr(unitConfigDriftErr(fmt.Errorf("unit error")))
+	fileErr := &configDriftErr{&fileConfigDriftErr{fmt.Errorf("file error")}}
+	unitErr := &configDriftErr{&unitConfigDriftErr{fmt.Errorf("unit error")}}
 
 	// Filesystem Mutators
 	// These are closures to avoid namespace collisions and pollution since
@@ -446,17 +446,17 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 
 	// Make sure that we get specific error types based upon the expected
 	// values
-	var cdErr configDriftErr
+	var cdErr *configDriftErr
 	assert.ErrorAs(t, err, &cdErr)
 
 	// If the testcase asks for a fileConfigDriftErr, be sure we got one.
-	var fErr fileConfigDriftErr
+	var fErr *fileConfigDriftErr
 	if errors.As(tc.expectedErr, &fErr) {
 		assert.ErrorAs(t, err, &fErr)
 	}
 
 	// If the testcase asks for a unitConfigDriftErr, be sure we got one.
-	var uErr unitConfigDriftErr
+	var uErr *unitConfigDriftErr
 	if errors.As(tc.expectedErr, &uErr) {
 		assert.ErrorAs(t, err, &uErr)
 	}

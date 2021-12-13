@@ -386,12 +386,12 @@ func getTestMachineConfigPool() (*mcfgv1.MachineConfigPool, error) {
 	mpPath := path.Join(testDir, "machine-pools", testPool+".yaml")
 	mpData, err := ioutil.ReadFile(mpPath)
 	if err != nil {
-		return nil, fmt.Errorf("unexpected error while reading machine-pool: %s, err: %v", mpPath, err)
+		return nil, fmt.Errorf("unexpected error while reading machine-pool: %s, err: %w", mpPath, err)
 	}
 	mp := new(mcfgv1.MachineConfigPool)
 	err = yaml.Unmarshal(mpData, mp)
 	if err != nil {
-		return nil, fmt.Errorf("unexpected error while unmarshaling machine-pool: %s, err: %v", mpPath, err)
+		return nil, fmt.Errorf("unexpected error while unmarshaling machine-pool: %s, err: %w", mpPath, err)
 	}
 	return mp, nil
 }
