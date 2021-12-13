@@ -459,6 +459,17 @@ contents:
         fi
       }
 
+      # on every boot we rollback and generate the configuration again, to take
+      # in any changes that have possibly been applied in the standard
+      # configuration sources
+      if [ ! -f /run/configure-ovs-boot-done ]; then
+        echo "Running on boot, restoring to previous configuration..."
+        remove_all_ovn_bridges
+        reload_nm
+        print_state
+      fi
+      touch /run/configure-ovs-boot-done
+
       iface=""
       counter=0
       # find default interface
