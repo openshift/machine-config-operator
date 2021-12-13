@@ -5,6 +5,7 @@ import (
 
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -146,6 +147,19 @@ func NewMachineConfigPool(name string, mcSelector, nodeSelector *metav1.LabelSel
 					Message:            "",
 				},
 			},
+		},
+	}
+}
+
+// NewIgnFile returns a simple ignition3 file from just path and file contents
+func NewIgnFile(path, contents string) ign3types.File {
+	return ign3types.File{
+		Node: ign3types.Node{
+			Path: path,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source: StrToPtr(dataurl.EncodeBytes([]byte(contents)))},
 		},
 	}
 }
