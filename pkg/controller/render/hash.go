@@ -44,10 +44,10 @@ func hashData(data []byte) ([]byte, error) {
 	//nolint:gosec
 	hasher := md5.New()
 	if _, err := hasher.Write(salt); err != nil {
-		return nil, fmt.Errorf("error computing hash: %v", err)
+		return nil, fmt.Errorf("error computing hash: %w", err)
 	}
 	if _, err := hasher.Write(data); err != nil {
-		return nil, fmt.Errorf("error computing hash: %v", err)
+		return nil, fmt.Errorf("error computing hash: %w", err)
 	}
 	return hasher.Sum(nil), nil
 }

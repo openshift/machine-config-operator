@@ -13,7 +13,6 @@ import (
 	kcfg "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -214,7 +213,7 @@ func getMCFromKubeletCfg(t *testing.T, cs *framework.ClientSet, kcName string) (
 		}
 		return false, nil
 	}); err != nil {
-		return "", errors.Wrapf(err, "can't find machine config created by kubelet config %s", kcName)
+		return "", fmt.Errorf("can't find machine config created by kubelet config %s: %w", kcName, err)
 	}
 	return mcName, nil
 }

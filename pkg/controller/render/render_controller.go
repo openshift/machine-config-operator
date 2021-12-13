@@ -294,7 +294,7 @@ func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) (
 	for _, p := range pList {
 		selector, err := metav1.LabelSelectorAsSelector(p.Spec.MachineConfigSelector)
 		if err != nil {
-			return nil, fmt.Errorf("invalid label selector: %v", err)
+			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
 
 		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
@@ -314,7 +314,7 @@ func (ctrl *Controller) getPoolsForMachineConfig(config *mcfgv1.MachineConfig) (
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %w", pool, err))
 		return
 	}
 
@@ -324,7 +324,7 @@ func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %w", pool, err))
 		return
 	}
 
@@ -335,7 +335,7 @@ func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.Duration) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %w", pool, err))
 		return
 	}
 
@@ -611,7 +611,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) ([]*mcfgv1.MachineConfig, error) {
 	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.MachineConfigSelector)
 	if err != nil {
-		return nil, fmt.Errorf("invalid label selector: %v", err)
+		return nil, fmt.Errorf("invalid label selector: %w", err)
 	}
 
 	var out []*mcfgv1.MachineConfig

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -23,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -104,7 +104,7 @@ type syncError struct {
 
 func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 	if err := optr.syncProgressingStatus(); err != nil {
-		return fmt.Errorf("error syncing progressing status: %v", err)
+		return fmt.Errorf("error syncing progressing status: %w", err)
 	}
 
 	var syncErr syncError
@@ -121,28 +121,28 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 			break
 		}
 		if err := optr.clearDegradedStatus(sf.name); err != nil {
-			return fmt.Errorf("error clearing degraded status: %v", err)
+			return fmt.Errorf("error clearing degraded status: %w", err)
 		}
 	}
 
 	if err := optr.syncDegradedStatus(syncErr); err != nil {
-		return fmt.Errorf("error syncing degraded status: %v", err)
+		return fmt.Errorf("error syncing degraded status: %w", err)
 	}
 
 	if err := optr.syncAvailableStatus(syncErr); err != nil {
-		return fmt.Errorf("error syncing available status: %v", err)
+		return fmt.Errorf("error syncing available status: %w", err)
 	}
 
 	if err := optr.syncUpgradeableStatus(); err != nil {
-		return fmt.Errorf("error syncing upgradeble status: %v", err)
+		return fmt.Errorf("error syncing upgradeble status: %w", err)
 	}
 
 	if err := optr.syncVersion(); err != nil {
-		return fmt.Errorf("error syncing version: %v", err)
+		return fmt.Errorf("error syncing version: %w", err)
 	}
 
 	if err := optr.syncRelatedObjects(); err != nil {
-		return fmt.Errorf("error syncing relatedObjects: %v", err)
+		return fmt.Errorf("error syncing relatedObjects: %w", err)
 	}
 
 	if optr.inClusterBringup && syncErr.err == nil {
@@ -173,7 +173,7 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 		if apierrors.IsNotFound(err) {
 			if isKubeCloudConfigCMRequired(infra) {
 				// Return error only if the kube-cloud-config ConfigMap is required, otherwise proceeds further.
-				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %v",
+				return fmt.Errorf("%s/%s configmap is required on platform %s but not found: %w",
 					"openshift-config-managed", "kube-cloud-config", infra.Status.PlatformStatus.Type, err)
 			}
 			return nil
@@ -209,7 +209,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
 		if !cache.WaitForCacheSync(optr.stopCh, optr.ccListerSynced) {
-			return errors.New("failed to sync caches for informers")
+			return fmt.Errorf("failed to sync caches for informers")
 		}
 		glog.V(4).Info("Finished inClusterBringup informers cache sync")
 	}
@@ -376,7 +376,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	for _, crd := range crds {
 		crdBytes, err := manifests.ReadFile(crd)
 		if err != nil {
-			return fmt.Errorf("error getting asset %s: %v", crd, err)
+			return fmt.Errorf("error getting asset %s: %w", crd, err)
 		}
 		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
 		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(context.TODO(), optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
@@ -653,7 +653,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 		if lastErr != nil {
 			co, err := optr.fetchClusterOperator()
 			if err != nil {
-				lastErr = errors.Wrapf(lastErr, "failed to fetch clusteroperator: %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, lastErr})
+				lastErr = fmt.Errorf("failed to fetch clusteroperator: %w", errs)
 				return false, nil
 			}
 			if co == nil {
@@ -663,7 +664,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			optr.setOperatorStatusExtension(&co.Status, lastErr)
 			_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
 			if err != nil {
-				lastErr = errors.Wrapf(lastErr, "failed to update clusteroperator: %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, lastErr})
+				lastErr = fmt.Errorf("failed to update clusteroperator: %w", errs)
 				return false, nil
 			}
 		}
@@ -695,7 +697,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				}
 				releaseVersion, _ := optr.vStore.Get("operator")
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
-					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
+					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
 					syncerr := optr.syncUpgradeableStatus()
 					if syncerr != nil {
 						glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
@@ -719,7 +721,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
 			glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
-			return fmt.Errorf("%v during syncRequiredMachineConfigPools: %v", err, lastErr)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("error during syncRequiredMachineConfigPools: %w", errs)
 		}
 		return err
 	}
@@ -745,7 +748,7 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 	if err := wait.Poll(customResourceReadyInterval, customResourceReadyTimeout, func() (bool, error) {
 		crd, err := optr.crdLister.Get(resource.Name)
 		if err != nil {
-			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %v", resource.Name, err)
+			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %w", resource.Name, err)
 			return false, nil
 		}
 
@@ -758,7 +761,8 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 		return false, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("%v during syncCustomResourceDefinitions: %v", err, lastErr)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("error during syncCustomResourceDefinitions: %w", errs)
 		}
 		return err
 	}
@@ -777,22 +781,23 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
-			lastErr = fmt.Errorf("error getting Deployment %s during rollout: %v", resource.Name, err)
+			lastErr = fmt.Errorf("error getting Deployment %s during rollout: %w", resource.Name, err)
 			return false, nil
 		}
 
 		if d.DeletionTimestamp != nil {
-			return false, fmt.Errorf("Deployment %s is being deleted", resource.Name)
+			return false, fmt.Errorf("deployment %s is being deleted", resource.Name)
 		}
 
 		if d.Generation <= d.Status.ObservedGeneration && d.Status.UpdatedReplicas == d.Status.Replicas && d.Status.UnavailableReplicas == 0 {
 			return true, nil
 		}
-		lastErr = fmt.Errorf("Deployment %s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
+		lastErr = fmt.Errorf("deployment %s is not ready. status: (replicas: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.Replicas, d.Status.UpdatedReplicas, d.Status.ReadyReplicas, d.Status.UnavailableReplicas)
 		return false, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("%v during waitForDeploymentRollout: %v", err, lastErr)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("error during waitForDeploymentRollout: %w", errs)
 		}
 		return err
 	}
@@ -811,22 +816,23 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 		if err != nil {
 			// Do not return error here, as we could be updating the API Server itself, in which case we
 			// want to continue waiting.
-			lastErr = fmt.Errorf("error getting Daemonset %s during rollout: %v", resource.Name, err)
+			lastErr = fmt.Errorf("error getting Daemonset %s during rollout: %w", resource.Name, err)
 			return false, nil
 		}
 
 		if d.DeletionTimestamp != nil {
-			return false, fmt.Errorf("Deployment %s is being deleted", resource.Name)
+			return false, fmt.Errorf("deployment %s is being deleted", resource.Name)
 		}
 
 		if d.Generation <= d.Status.ObservedGeneration && d.Status.UpdatedNumberScheduled == d.Status.DesiredNumberScheduled && d.Status.NumberUnavailable == 0 {
 			return true, nil
 		}
-		lastErr = fmt.Errorf("Daemonset %s is not ready. status: (desired: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberReady, d.Status.NumberUnavailable)
+		lastErr = fmt.Errorf("daemonset %s is not ready. status: (desired: %d, updated: %d, ready: %d, unavailable: %d)", d.Name, d.Status.DesiredNumberScheduled, d.Status.UpdatedNumberScheduled, d.Status.NumberReady, d.Status.NumberUnavailable)
 		return false, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("%v during waitForDaemonsetRollout: %v", err, lastErr)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("error during waitForDaemonsetRollout: %w", errs)
 		}
 		return err
 	}
@@ -837,13 +843,14 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 	var lastErr error
 	if err := wait.Poll(controllerConfigCompletedInterval, controllerConfigCompletedTimeout, func() (bool, error) {
 		if err := mcfgv1.IsControllerConfigCompleted(resource.GetName(), optr.ccLister.Get); err != nil {
-			lastErr = fmt.Errorf("controllerconfig is not completed: %v", err)
+			lastErr = fmt.Errorf("controllerconfig is not completed: %w", err)
 			return false, nil
 		}
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("%v during waitForControllerConfigToBeCompleted: %v", err, lastErr)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("error during waitForControllerConfigToBeCompleted: %w", errs)
 		}
 		return err
 	}

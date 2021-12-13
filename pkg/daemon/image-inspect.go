@@ -10,7 +10,6 @@ import (
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/image"
 	"github.com/containers/image/v5/types"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -67,14 +66,14 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, error) {
 		src, err = newDockerImageSource(ctx, sys, imageName)
 		return err
 	}); err != nil {
-		return nil, errors.Wrapf(err, "Error parsing image name %q", imageName)
+		return nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
 	}
 
 	defer src.Close()
 
 	img, err := image.FromUnparsedImage(ctx, sys, image.UnparsedInstance(src, nil))
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing manifest for image: %v", err)
+		return nil, fmt.Errorf("error parsing manifest for image: %w", err)
 	}
 
 	if err := retryIfNecessary(ctx, func() error {

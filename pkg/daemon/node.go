@@ -25,7 +25,7 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 
 	d, err := ioutil.ReadFile(constants.InitialNodeAnnotationsFilePath)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("failed to read initial annotations from %q: %v", constants.InitialNodeAnnotationsFilePath, err)
+		return nil, fmt.Errorf("failed to read initial annotations from %q: %w", constants.InitialNodeAnnotationsFilePath, err)
 	}
 	if os.IsNotExist(err) {
 		// try currentConfig if, for whatever reason we lost annotations? this is super best effort.
@@ -39,13 +39,13 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 
 	var initial map[string]string
 	if err := json.Unmarshal(d, &initial); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal initial annotations: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal initial annotations: %w", err)
 	}
 
 	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
 	n, err := setNodeAnnotations(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, node.Name, initial)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set initial annotations: %v", err)
+		return nil, fmt.Errorf("failed to set initial annotations: %w", err)
 	}
 	return n, nil
 }

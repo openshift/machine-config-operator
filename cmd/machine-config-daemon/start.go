@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -19,7 +20,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -68,7 +68,7 @@ func bindPodMounts(rootMount string) error {
 	// This will only affect our mount namespace, not the host
 	output, err := exec.Command("mount", "--rbind", "/run/secrets", targetSecrets).CombinedOutput()
 	if err != nil {
-		return errors.Wrapf(err, "failed to mount /run/secrets to %s: %s", targetSecrets, string(output))
+		return fmt.Errorf("failed to mount /run/secrets to %s: %s: %w", targetSecrets, string(output), err)
 	}
 	return nil
 }
@@ -76,7 +76,7 @@ func bindPodMounts(rootMount string) error {
 func selfCopyToHost() error {
 	selfExecutableFd, err := os.Open("/proc/self/exe")
 	if err != nil {
-		return errors.Wrapf(err, "Opening our binary")
+		return fmt.Errorf("opening our binary: %w", err)
 	}
 	defer selfExecutableFd.Close()
 	if err := os.MkdirAll(filepath.Dir(daemonconsts.HostSelfBinary), 0755); err != nil {
@@ -167,7 +167,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	// In the cluster case, for now we copy our binary out to the host
 	// for SELinux reasons, see https://bugzilla.redhat.com/show_bug.cgi?id=1839065
 	if err := selfCopyToHost(); err != nil {
-		glog.Fatalf("%v", errors.Wrapf(err, "copying self to host"))
+		glog.Fatalf("%v", fmt.Errorf("copying self to host: %w", err))
 		return
 	}
 

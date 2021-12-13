@@ -57,7 +57,7 @@ const (
 func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ioutil.ReadDir(templateDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dir %q: %v", templateDir, err)
+		return nil, fmt.Errorf("failed to read dir %q: %w", templateDir, err)
 	}
 
 	cfgs := []*mcfgv1.MachineConfig{}
@@ -74,7 +74,7 @@ func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([
 
 		roleConfigs, err := GenerateMachineConfigsForRole(config, role, templateDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %v", role, err)
+			return nil, fmt.Errorf("failed to create MachineConfig for role %s: %w", role, err)
 		}
 		cfgs = append(cfgs, roleConfigs...)
 	}
@@ -103,7 +103,7 @@ func GenerateMachineConfigsForRole(config *RenderConfig, role, templateDir strin
 	path := filepath.Join(templateDir, rolePath)
 	infos, err := ioutil.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dir %q: %v", path, err)
+		return nil, fmt.Errorf("failed to read dir %q: %w", path, err)
 	}
 
 	cfgs := []*mcfgv1.MachineConfig{}
@@ -176,7 +176,7 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 
 		filedata, err := ioutil.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("failed to read file %q: %v", path, err)
+			return fmt.Errorf("failed to read file %q: %w", path, err)
 		}
 
 		// Render the template file
@@ -287,11 +287,11 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 
 	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(keySortVals(files), keySortVals(units))
 	if err != nil {
-		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %v", err)
+		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
 	}
 	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(role, name, ignCfg)
 	if err != nil {
-		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %v", err)
+		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
 	}
 	// And inject the osimageurl here
 	mcfg.Spec.OSImageURL = config.OSImageURL
@@ -314,7 +314,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["urlPort"] = urlPort
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse template %s: %v", path, err)
+		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
 	}
 
 	if config.Constants == nil {
@@ -323,7 +323,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 
 	buf := new(bytes.Buffer)
 	if err := tmpl.Execute(buf, config); err != nil {
-		return nil, fmt.Errorf("failed to execute template: %v", err)
+		return nil, fmt.Errorf("failed to execute template: %w", err)
 	}
 
 	return buf.Bytes(), nil
@@ -505,7 +505,7 @@ func existsDir(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to open dir %q: %v", path, err)
+		return false, fmt.Errorf("failed to open dir %q: %w", path, err)
 	}
 	if !info.IsDir() {
 		return false, fmt.Errorf("expected template directory, %q is not a directory", path)
