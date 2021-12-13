@@ -783,6 +783,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 	}
 }
 
+// is this test broken?
 func TestShouldMakeProgress(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
