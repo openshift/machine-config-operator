@@ -837,6 +837,52 @@ spec:
                   proper way. Nobody is also changing this once the cluster is up
                   and running the first time, so, disallow regeneration if this changes.'
                 type: string
+              network:
+                description: network contains additional network related information
+                nullable: true
+                properties:
+                  mtuMigration:
+                    description: mtuMigration contains the MTU migration configuration.
+                    nullable: true
+                    properties:
+                      machine:
+                        description: machine contains MTU migration configuration
+                          for the machine's uplink.
+                        nullable: true
+                        properties:
+                          from:
+                            description: from is the MTU to migrate from.
+                            nullable: true
+                            format: int32
+                            minimum: 0
+                            type: integer
+                          to:
+                            description: to is the MTU to migrate to.
+                            nullable: true
+                            format: int32
+                            minimum: 0
+                            type: integer
+                        type: object
+                      network:
+                        description: network contains information about MTU migration
+                          for the default network.
+                        nullable: true
+                        properties:
+                          from:
+                            description: from is the MTU to migrate from.
+                            nullable: true
+                            format: int32
+                            minimum: 0
+                            type: integer
+                          to:
+                            description: to is the MTU to migrate to.
+                            nullable: true
+                            format: int32
+                            minimum: 0
+                            type: integer
+                        type: object
+                    type: object
+                type: object
               osImageURL:
                 description: osImageURL is the location of the container image that
                   contains the OS update payload. Its value is taken from the data.osImageURL

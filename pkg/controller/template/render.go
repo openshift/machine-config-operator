@@ -184,7 +184,15 @@ func filterTemplates(toFilter map[string]string, path string, config *RenderConf
 		if err != nil {
 			return err
 		}
-		toFilter[info.Name()] = string(renderedData)
+
+		// A template may result in no data when rendered, for example if the
+		// whole template is conditioned to specific values in render config.
+		// The intention is there shouldn't be any resulting file or unit form
+		// this template and thus we filter it here.
+		if len(renderedData) > 0 {
+			toFilter[info.Name()] = string(renderedData)
+		}
+
 		return nil
 	}
 

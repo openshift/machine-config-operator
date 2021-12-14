@@ -288,16 +288,17 @@ const templateDir = "../../../templates"
 
 var (
 	configs = map[string]string{
-		"alibaba":   "./test_data/controller_config_alibaba.yaml",
-		"aws":       "./test_data/controller_config_aws.yaml",
-		"baremetal": "./test_data/controller_config_baremetal.yaml",
-		"gcp":       "./test_data/controller_config_gcp.yaml",
-		"openstack": "./test_data/controller_config_openstack.yaml",
-		"libvirt":   "./test_data/controller_config_libvirt.yaml",
-		"none":      "./test_data/controller_config_none.yaml",
-		"vsphere":   "./test_data/controller_config_vsphere.yaml",
-		"kubevirt":  "./test_data/controller_config_kubevirt.yaml",
-		"powervs":   "./test_data/controller_config_powervs.yaml",
+		"alibaba":       "./test_data/controller_config_alibaba.yaml",
+		"aws":           "./test_data/controller_config_aws.yaml",
+		"baremetal":     "./test_data/controller_config_baremetal.yaml",
+		"gcp":           "./test_data/controller_config_gcp.yaml",
+		"openstack":     "./test_data/controller_config_openstack.yaml",
+		"libvirt":       "./test_data/controller_config_libvirt.yaml",
+		"mtu-migration": "./test_data/controller_config_mtu_migration.yaml",
+		"none":          "./test_data/controller_config_none.yaml",
+		"vsphere":       "./test_data/controller_config_vsphere.yaml",
+		"kubevirt":      "./test_data/controller_config_kubevirt.yaml",
+		"powervs":       "./test_data/controller_config_powervs.yaml",
 	}
 )
 
@@ -331,7 +332,7 @@ func TestInvalidPlatform(t *testing.T) {
 }
 
 func TestGenerateMachineConfigs(t *testing.T) {
-	for _, config := range configs {
+	for test, config := range configs {
 		controllerConfig, err := controllerConfigFromFile(config)
 		if err != nil {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
@@ -346,6 +347,8 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		foundPullSecretWorker := false
 		foundKubeletUnitMaster := false
 		foundKubeletUnitWorker := false
+		foundMTUMigrationMaster := false
+		foundMTUMigrationWorker := false
 
 		for _, cfg := range cfgs {
 			if cfg.Labels == nil {
@@ -368,12 +371,18 @@ func TestGenerateMachineConfigs(t *testing.T) {
 				if !foundKubeletUnitMaster {
 					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
 				}
+				if !foundMTUMigrationMaster {
+					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/etc/cno/mtu-migration/config", t)
+				}
 			} else if role == "worker" {
 				if !foundPullSecretWorker {
 					foundPullSecretWorker = findIgnFile(ign.Storage.Files, "/var/lib/kubelet/config.json", t)
 				}
 				if !foundKubeletUnitWorker {
 					foundKubeletUnitWorker = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
+				}
+				if !foundMTUMigrationWorker {
+					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/etc/cno/mtu-migration/config", t)
 				}
 			} else {
 				t.Fatalf("Unknown role %s", role)
@@ -391,6 +400,21 @@ func TestGenerateMachineConfigs(t *testing.T) {
 		}
 		if !foundKubeletUnitWorker {
 			t.Errorf("Failed to find kubelet unit for worker")
+		}
+		if test == "mtu-migration" {
+			if !foundMTUMigrationMaster {
+				t.Errorf("Failed to find mtu-migration files for master")
+			}
+			if !foundMTUMigrationWorker {
+				t.Errorf("Failed to find mtu-migration files for worker")
+			}
+		} else {
+			if foundMTUMigrationMaster {
+				t.Errorf("Found mtu-migration files for master")
+			}
+			if foundMTUMigrationWorker {
+				t.Errorf("Found mtu-migration files for worker")
+			}
 		}
 	}
 }
