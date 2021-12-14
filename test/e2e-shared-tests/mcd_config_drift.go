@@ -23,6 +23,7 @@ const (
 	configDriftSystemdUnitFileContents   string = "unittest-service-unit-contents"
 	configDriftSystemdDropinFilename     string = "/etc/systemd/system/unittest.service.d/10-unittest-service.conf"
 	configDriftSystemdDropinFileContents string = "unittest-service-dropin-contents"
+	configDriftCompressedFilename        string = "/etc/compressed-file"
 	configDriftFilename                  string = "/etc/etc-file"
 	configDriftFileContents              string = "expected-file-data"
 	configDriftMCPrefix                  string = "mcd-config-drift"
@@ -100,11 +101,36 @@ func (c *configDriftTest) Setup(t *testing.T) {
 	}
 
 	// This is the Machine Config that we drift from
-	c.mc = helpers.NewMachineConfigExtended(
+	c.mc = c.getMachineConfig(t)
+
+	// Delegate to the attached Setup Func for MachineConfig, MachineConfigPool
+	// creation.
+	c.SetupFunc(c.mc)
+
+	mcp, err := c.ClientSet.MachineConfigPools().Get(context.TODO(), c.MCPName, metav1.GetOptions{})
+	require.Nil(t, err)
+	c.mcp = *mcp
+
+	// Get the target node
+	c.node = helpers.GetSingleNodeByRole(t, c.ClientSet, c.MCPName)
+
+	// Get the MCD pod
+	pod, err := helpers.MCDForNode(c.ClientSet, &c.node)
+	require.Nil(t, err)
+
+	c.pod = *pod
+}
+
+func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
+	compressedFile, err := helpers.CreateGzippedIgn3File(configDriftCompressedFilename, configDriftFileContents, 420)
+	require.Nil(t, err)
+
+	return helpers.NewMachineConfigExtended(
 		fmt.Sprintf("%s-%s", configDriftMCPrefix, string(uuid.NewUUID())),
 		helpers.MCLabelForRole(c.MCPName),
 		[]ign3types.File{
-			helpers.CreateIgn3File(configDriftFilename, "data:,"+configDriftFileContents, 420),
+			helpers.CreateEncodedIgn3File(configDriftFilename, configDriftFileContents, 420),
+			compressedFile,
 		},
 		[]ign3types.Unit{
 			{
@@ -128,23 +154,6 @@ func (c *configDriftTest) Setup(t *testing.T) {
 		"",
 		"",
 	)
-
-	// Delegate to the attached Setup Func for MachineConfig, MachineConfigPool
-	// creation.
-	c.SetupFunc(c.mc)
-
-	mcp, err := c.ClientSet.MachineConfigPools().Get(context.TODO(), c.MCPName, metav1.GetOptions{})
-	require.Nil(t, err)
-	c.mcp = *mcp
-
-	// Get the target node
-	c.node = helpers.GetSingleNodeByRole(t, c.ClientSet, c.MCPName)
-
-	// Get the MCD pod
-	pod, err := helpers.MCDForNode(c.ClientSet, &c.node)
-	require.Nil(t, err)
-
-	c.pod = *pod
 }
 
 // Tears down the test objects by delegating to the attached TeardownFunc
@@ -183,6 +192,14 @@ func (c configDriftTest) Run(t *testing.T) {
 			name: "revert file content recovery for systemd unit",
 			testFunc: func(t *testing.T) {
 				c.runDegradeAndRecoverContentRevert(t, configDriftSystemdUnitFilename, configDriftSystemdUnitFileContents)
+			},
+		},
+		// Targets a regression identified by:
+		// https://bugzilla.redhat.com/show_bug.cgi?id=2032565
+		{
+			name: "revert file content recovery for compressed file",
+			testFunc: func(t *testing.T) {
+				c.runDegradeAndRecoverContentRevert(t, configDriftCompressedFilename, configDriftFileContents)
 			},
 		},
 		// 1. Mutates a file on the node.

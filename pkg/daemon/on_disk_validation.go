@@ -15,7 +15,6 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/pkg/errors"
-	"github.com/vincent-petithory/dataurl"
 )
 
 // Validates that the on-disk state matches a given MachineConfig.
@@ -151,15 +150,11 @@ func checkV3Files(files []ign3types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents := &dataurl.DataURL{}
-		if f.Contents.Source != nil {
-			var err error
-			contents, err = dataurl.DecodeString(*f.Contents.Source)
-			if err != nil {
-				return errors.Wrapf(err, "couldn't parse file %q", f.Path)
-			}
+		contents, err := decodeContents(f.Contents.Source, f.Contents.Compression)
+		if err != nil {
+			return fmt.Errorf("couldn't decode file %q: %w", f.Path, err)
 		}
-		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
+		if err := checkFileContentsAndMode(f.Path, contents, mode); err != nil {
 			return err
 		}
 	}
@@ -182,11 +177,11 @@ func checkV2Files(files []ign2types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := dataurl.DecodeString(f.Contents.Source)
+		contents, err := decodeContents(&f.Contents.Source, &f.Contents.Compression)
 		if err != nil {
-			return errors.Wrapf(err, "couldn't parse file %q", f.Path)
+			return fmt.Errorf("couldn't decode file %q: %w", f.Path, err)
 		}
-		if err := checkFileContentsAndMode(f.Path, contents.Data, mode); err != nil {
+		if err := checkFileContentsAndMode(f.Path, contents, mode); err != nil {
 			return err
 		}
 		checkedFiles[f.Path] = true
