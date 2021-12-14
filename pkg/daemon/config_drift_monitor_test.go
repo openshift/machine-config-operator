@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -100,6 +99,40 @@ func TestConfigDriftMonitor(t *testing.T) {
 			name:        "ign file chmod",
 			expectedErr: fileErr,
 			mutateFile:  chmodFile,
+		},
+		// Compressed Ignition File
+		// These target the file called /etc/a-compressed-file defined by the test
+		// fixture.
+		// Targets a regression identified by:
+		// https://bugzilla.redhat.com/show_bug.cgi?id=2032565
+		{
+			name:                 "ign compressed file content drift",
+			expectedErr:          fileErr,
+			mutateCompressedFile: changeFileContent,
+		},
+		{
+			name:                 "ign compressed file touch",
+			mutateCompressedFile: touchFile,
+		},
+		{
+			name:                 "ign compressed file rename",
+			expectedErr:          fileErr,
+			mutateCompressedFile: renameFile,
+		},
+		{
+			name:                 "ign compressed file delete",
+			expectedErr:          fileErr,
+			mutateCompressedFile: os.Remove,
+		},
+		{
+			name:                 "ign compressed file overwrite",
+			expectedErr:          fileErr,
+			mutateCompressedFile: overwriteFile,
+		},
+		{
+			name:                 "ign compressed file chmod",
+			expectedErr:          fileErr,
+			mutateCompressedFile: chmodFile,
 		},
 		// Systemd Unit tests
 		// These target the systemd unit files in the test fixture:
@@ -196,6 +229,8 @@ type configDriftMonitorTestCase struct {
 	// Only one of these may be used per testcase:
 	// The mutation to apply to the Ignition file
 	mutateFile func(string) error
+	// The mutation to apply to the compressed Ignition file
+	mutateCompressedFile func(string) error
 	// The mutation to apply to the systemd unit file
 	mutateUnit func(string) error
 	// The mutation to apply to the systemd dropin file
@@ -314,14 +349,18 @@ func (tc configDriftMonitorTestCase) run(t *testing.T) {
 }
 
 // Creates the Ignition Config test fixture
-func (tc configDriftMonitorTestCase) getIgnConfig() ign3types.Config {
+func (tc configDriftMonitorTestCase) getIgnConfig(t *testing.T) ign3types.Config {
+	compressedFile, err := helpers.CreateGzippedIgn3File("/etc/a-compressed-file", "thefilecontents", int(defaultFilePermissions))
+	require.Nil(t, err)
+
 	return ign3types.Config{
 		Ignition: ign3types.Ignition{
 			Version: ign3types.MaxVersion.String(),
 		},
 		Storage: ign3types.Storage{
 			Files: []ign3types.File{
-				helpers.CreateIgn3File("/etc/a-config-file", "data:,theafilecontents", int(defaultFilePermissions)),
+				helpers.CreateEncodedIgn3File("/etc/a-config-file", "thefilecontents", int(defaultFilePermissions)),
+				compressedFile,
 			},
 		},
 		Systemd: ign3types.Systemd{
@@ -350,6 +389,10 @@ func (tc configDriftMonitorTestCase) mutate(ignConfig ign3types.Config) error {
 		return tc.mutateFile(ignConfig.Storage.Files[0].Path)
 	}
 
+	if tc.mutateCompressedFile != nil {
+		return tc.mutateCompressedFile(ignConfig.Storage.Files[1].Path)
+	}
+
 	if tc.mutateDropin != nil {
 		dropinPath := getIgn3SystemdDropinPath(tc.systemdPath, ignConfig.Systemd.Units[0], ignConfig.Systemd.Units[0].Dropins[0])
 		return tc.mutateDropin(dropinPath)
@@ -368,13 +411,13 @@ func (tc configDriftMonitorTestCase) mutate(ignConfig ign3types.Config) error {
 func (tc configDriftMonitorTestCase) getFixtures(t *testing.T) (ign3types.Config, *mcfgv1.MachineConfig) {
 	t.Helper()
 
-	ignConfig := tc.getIgnConfig()
+	ignConfig := tc.getIgnConfig(t)
 
-	// Prefix all the ignition files with the temp directory and write there.
+	// Prefix all the ignition files with the temp directory and write to disk.
 	for i, file := range ignConfig.Storage.Files {
 		file.Path = filepath.Join(tc.tmpDir, file.Path)
-		tc.writeFileForTest(t, file.Path, file.Contents.Source)
 		ignConfig.Storage.Files[i] = file
+		tc.writeIgn3FileForTest(t, file)
 	}
 
 	// Prefix all the systemd files with the temp dir and write them.
@@ -418,13 +461,22 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 	}
 }
 
+func (tc configDriftMonitorTestCase) writeIgn3FileForTest(t *testing.T, file ign3types.File) {
+	t.Helper()
+
+	decodedContents, err := decodeContents(file.Contents.Source, file.Contents.Compression)
+	require.Nil(t, err)
+
+	require.Nil(t, writeFileAtomicallyWithDefaults(file.Path, decodedContents))
+}
+
 func (tc configDriftMonitorTestCase) writeFileForTest(t *testing.T, path string, contents *string) {
 	t.Helper()
-	// writeFiles doesn't actually work like this. Writing files this way was
-	// done for the sake of simplicity.
+
 	out := ""
 	if contents != nil {
-		out = strings.TrimPrefix(*contents, "data:,")
+		out = *contents
 	}
+
 	require.Nil(t, writeFileAtomicallyWithDefaults(path, []byte(out)))
 }
