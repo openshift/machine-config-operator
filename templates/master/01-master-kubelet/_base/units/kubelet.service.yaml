@@ -28,6 +28,7 @@ contents: |
         --kubeconfig=/var/lib/kubelet/kubeconfig \
         --container-runtime=remote \
         --container-runtime-endpoint=/var/run/crio/crio.sock \
+        --runtime-request-timeout=4m \
         --runtime-cgroups=/system.slice/crio.service \
         --node-labels=node-role.kubernetes.io/master,node.openshift.io/os_id=${ID} \
 {{- if eq .IPFamilies "DualStack"}}
