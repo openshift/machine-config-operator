@@ -428,7 +428,7 @@ func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig 
 
 }
 
-func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign3types.Config) (actions []string) {
+func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
 	filesPostConfigChangeActionNone := []string{
 		"/etc/kubernetes/kubelet-ca.crt",
 		"/var/lib/kubelet/config.json",
@@ -439,7 +439,6 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 		"/etc/containers/policy.json",
 	}
 
-	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
@@ -454,7 +453,7 @@ func calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig ign
 	return
 }
 
-func calculatePostConfigChangeAction(diff *machineConfigDiff, oldIgnConfig, newIgnConfig ign3types.Config) ([]string, error) {
+func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
 	// If a machine-config-daemon-force file is present, it means the user wants to
 	// move to desired state without additional validation. We will reboot the node in
 	// this case regardless of what MachineConfig diff is.
@@ -472,7 +471,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, oldIgnConfig, newI
 	}
 
 	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
-	return calculatePostConfigChangeActionFromFileDiffs(oldIgnConfig, newIgnConfig), nil
+	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
 }
 
 // update the node to the provided node configuration.
@@ -530,13 +529,14 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
-	actions, err := calculatePostConfigChangeAction(diff, oldIgnConfig, newIgnConfig)
+	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
 	if err != nil {
 		return err
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, oldIgnConfig, newIgnConfig)
+	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig)
 	if err != nil {
 		return err
 	}

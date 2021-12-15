@@ -154,17 +154,20 @@ func (dn *Daemon) performDrain() error {
 }
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.
-func isDrainRequired(actions []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
+func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
 		// Drain may or may not be necessary in case of container registry config changes.
-		isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
-		if err != nil {
-			return false, err
+		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
+			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
+			if err != nil {
+				return false, err
+			}
+			return !isSafe, nil
 		}
-		return !isSafe, nil
+		return false, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionNone, actions) {
 		return false, nil
 	}
@@ -191,11 +194,6 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 	newData, err := ctrlcommon.GetIgnitionFileDataByPath(&newIgnConfig, constants.ContainerRegistryConfPath)
 	if err != nil {
 		return false, fmt.Errorf("Failed decoding Data URL scheme string %v", err)
-	}
-
-	if oldData == nil && newData == nil {
-		// these ignition configs don't touch registries.conf, so any change is safe
-		return true, nil
 	}
 
 	tomlConfOldReg := sysregistriesv2.V2RegistriesConf{}
