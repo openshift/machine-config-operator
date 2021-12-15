@@ -582,35 +582,22 @@ func TestDropinCheck(t *testing.T) {
 	}
 }
 
-func newFile(path, contents string) ign3types.File {
-	return ign3types.File{
-		Node: ign3types.Node{
-			Path: path,
-		},
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Contents: ign3types.Resource{
-				Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(contents))),
-			},
-		},
-	}
-}
-
 // Test to see if the correct action is calculated given a machineconfig diff
 // i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
 func TestCalculatePostConfigChangeAction(t *testing.T) {
 	files := map[string]ign3types.File{
-		"pullsecret1":     newFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
-		"pullsecret2":     newFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
-		"registries1":     newFile("/etc/containers/registries.conf", "registries content 1\n"),
-		"registries2":     newFile("/etc/containers/registries.conf", "registries content 2\n"),
-		"randomfile1":     newFile("/etc/random-reboot-file", "test\n"),
-		"randomfile2":     newFile("/etc/random-reboot-file", "test 2\n"),
-		"kubeletCA1":      newFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
-		"kubeletCA2":      newFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
-		"policy1":         newFile("/etc/containers/policy.json", "policy1"),
-		"policy2":         newFile("/etc/containers/policy.json", "policy2"),
-		"containers-gpg1": newFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
-		"containers-gpg2": newFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
+		"pullsecret1":     helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
+		"pullsecret2":     helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
+		"registries1":     helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 1\n"),
+		"registries2":     helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 2\n"),
+		"randomfile1":     helpers.NewIgnFile("/etc/random-reboot-file", "test\n"),
+		"randomfile2":     helpers.NewIgnFile("/etc/random-reboot-file", "test 2\n"),
+		"kubeletCA1":      helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
+		"kubeletCA2":      helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
+		"policy1":         helpers.NewIgnFile("/etc/containers/policy.json", "policy1"),
+		"policy2":         helpers.NewIgnFile("/etc/containers/policy.json", "policy2"),
+		"containers-gpg1": helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
+		"containers-gpg2": helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
 	}
 
 	tests := []struct {

@@ -658,3 +658,60 @@ func dedupePasswdUserSSHKeys(passwdUser ign2types.PasswdUser) ign2types.PasswdUs
 
 	return passwdUser
 }
+
+// CalculateConfigFileDiffs compares the files present in two ignition configurations and returns the list of files
+// that are different between them
+func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []string {
+	// Go through the files and see what is new or different
+	oldFileSet := make(map[string]ign3types.File)
+	for _, f := range oldIgnConfig.Storage.Files {
+		oldFileSet[f.Path] = f
+	}
+	newFileSet := make(map[string]ign3types.File)
+	for _, f := range newIgnConfig.Storage.Files {
+		newFileSet[f.Path] = f
+	}
+	diffFileSet := []string{}
+
+	// First check if any files were removed
+	for path := range oldFileSet {
+		_, ok := newFileSet[path]
+		if !ok {
+			// debug: remove
+			glog.Infof("File diff: %v was deleted", path)
+			diffFileSet = append(diffFileSet, path)
+		}
+	}
+
+	// Now check if any files were added/changed
+	for path, newFile := range newFileSet {
+		oldFile, ok := oldFileSet[path]
+		if !ok {
+			// debug: remove
+			glog.Infof("File diff: %v was added", path)
+			diffFileSet = append(diffFileSet, path)
+		} else if !reflect.DeepEqual(oldFile, newFile) {
+			// debug: remove
+			glog.Infof("File diff: detected change to %v", newFile.Path)
+			diffFileSet = append(diffFileSet, path)
+		}
+	}
+	return diffFileSet
+}
+
+// GetIgnitionFileDataByPath retrieves the file data for a specified path from a given ignition config
+func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, error) {
+	for _, f := range config.Storage.Files {
+		if path == f.Path {
+			// Convert whatever we have to the actual bytes so we can inspect them
+			if f.Contents.Source != nil {
+				contents, err := dataurl.DecodeString(*f.Contents.Source)
+				if err != nil {
+					return nil, err
+				}
+				return contents.Data, err
+			}
+		}
+	}
+	return nil, nil
+}
