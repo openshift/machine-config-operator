@@ -514,7 +514,14 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		d := resourceread.ReadDaemonSetV1OrDie(dBytes)
-		_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
+		// Pass existing generation until generation can be stored on an MCO CRD
+		ctx := context.TODO()
+		client := optr.kubeClient.AppsV1()
+		existing, err := client.DaemonSets(d.Namespace).Get(ctx, d.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		_, updated, err := resourceapply.ApplyDaemonSet(ctx, client, optr.libgoRecorder, d, existing.ObjectMeta.Generation)
 		if err != nil {
 			return err
 		}
@@ -553,7 +560,14 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	}
 	mcc := resourceread.ReadDeploymentV1OrDie(mccBytes)
 
-	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
+	// Pass existing generation until generation can be stored on an MCO CRD
+	ctx := context.TODO()
+	client := optr.kubeClient.AppsV1()
+	existing, err := client.Deployments(mcc.Namespace).Get(ctx, mcc.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	_, updated, err := resourceapply.ApplyDeployment(ctx, client, optr.libgoRecorder, mcc, existing.ObjectMeta.Generation)
 	if err != nil {
 		return err
 	}
