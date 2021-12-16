@@ -2,10 +2,11 @@ package main
 
 import (
 	"flag"
+	"os"
 
-	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/spf13/cobra"
+	"k8s.io/component-base/cli"
 )
 
 const (
@@ -36,7 +37,6 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing MCS: %v", err)
-	}
+	code := cli.Run(rootCmd)
+	os.Exit(code)
 }
