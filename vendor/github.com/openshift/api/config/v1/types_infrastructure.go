@@ -665,9 +665,10 @@ type AlibabaCloudPlatformStatus struct {
 	// +required
 	Region string `json:"region"`
 	// resourceGroupID is the ID of the resource group for the cluster.
-	// +kubebuilder:validation:Pattern=`^(rg-[0-9A-Za-z]+)?$`
-	// +optional
-	ResourceGroupID string `json:"resourceGroupID,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^rg-[0-9A-Za-z]+$`
+	// +required
+	ResourceGroupID string `json:"resourceGroupID"`
 	// resourceTags is a list of additional tags to apply to Alibaba Cloud resources created for the cluster.
 	// +kubebuilder:validation:MaxItems=20
 	// +listType=map

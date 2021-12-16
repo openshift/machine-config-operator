@@ -94,7 +94,7 @@ func (c *FakeStorages) UpdateStatus(ctx context.Context, storage *operatorv1.Sto
 // Delete takes name of the storage and deletes it. Returns an error if one occurs.
 func (c *FakeStorages) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(storagesResource, name), &operatorv1.Storage{})
+		Invokes(testing.NewRootDeleteActionWithOptions(storagesResource, name, opts), &operatorv1.Storage{})
 	return err
 }
 

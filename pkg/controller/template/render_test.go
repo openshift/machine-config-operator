@@ -55,6 +55,10 @@ func TestCloudProvider(t *testing.T) {
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
 		res:         "external",
 	}, {
+		platform:    configv1.PowerVSPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "external",
+	}, {
 		platform:    configv1.OpenStackPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
 		res:         "openstack",
@@ -78,9 +82,6 @@ func TestCloudProvider(t *testing.T) {
 		res:      "",
 	}, {
 		platform: configv1.NonePlatformType,
-		res:      "",
-	}, {
-		platform: configv1.PowerVSPlatformType,
 		res:      "",
 	}, {
 		platform: configv1.VSpherePlatformType,

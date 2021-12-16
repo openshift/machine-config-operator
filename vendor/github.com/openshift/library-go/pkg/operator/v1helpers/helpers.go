@@ -1,6 +1,7 @@
 package v1helpers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -115,7 +116,7 @@ func IsOperatorConditionPresentAndEqual(conditions []operatorv1.OperatorConditio
 type UpdateOperatorSpecFunc func(spec *operatorv1.OperatorSpec) error
 
 // UpdateSpec applies the update funcs to the oldStatus and tries to update via the client.
-func UpdateSpec(client OperatorClient, updateFuncs ...UpdateOperatorSpecFunc) (*operatorv1.OperatorSpec, bool, error) {
+func UpdateSpec(ctx context.Context, client OperatorClient, updateFuncs ...UpdateOperatorSpecFunc) (*operatorv1.OperatorSpec, bool, error) {
 	updated := false
 	var operatorSpec *operatorv1.OperatorSpec
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -135,7 +136,7 @@ func UpdateSpec(client OperatorClient, updateFuncs ...UpdateOperatorSpecFunc) (*
 			return nil
 		}
 
-		operatorSpec, _, err = client.UpdateOperatorSpec(resourceVersion, newSpec)
+		operatorSpec, _, err = client.UpdateOperatorSpec(ctx, resourceVersion, newSpec)
 		updated = err == nil
 		return err
 	})
@@ -155,7 +156,7 @@ func UpdateObservedConfigFn(config map[string]interface{}) UpdateOperatorSpecFun
 type UpdateStatusFunc func(status *operatorv1.OperatorStatus) error
 
 // UpdateStatus applies the update funcs to the oldStatus and tries to update via the client.
-func UpdateStatus(client OperatorClient, updateFuncs ...UpdateStatusFunc) (*operatorv1.OperatorStatus, bool, error) {
+func UpdateStatus(ctx context.Context, client OperatorClient, updateFuncs ...UpdateStatusFunc) (*operatorv1.OperatorStatus, bool, error) {
 	updated := false
 	var updatedOperatorStatus *operatorv1.OperatorStatus
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -177,7 +178,7 @@ func UpdateStatus(client OperatorClient, updateFuncs ...UpdateStatusFunc) (*oper
 			return nil
 		}
 
-		updatedOperatorStatus, err = client.UpdateOperatorStatus(resourceVersion, newStatus)
+		updatedOperatorStatus, err = client.UpdateOperatorStatus(ctx, resourceVersion, newStatus)
 		updated = err == nil
 		return err
 	})
@@ -197,7 +198,7 @@ func UpdateConditionFn(cond operatorv1.OperatorCondition) UpdateStatusFunc {
 type UpdateStaticPodStatusFunc func(status *operatorv1.StaticPodOperatorStatus) error
 
 // UpdateStaticPodStatus applies the update funcs to the oldStatus abd tries to update via the client.
-func UpdateStaticPodStatus(client StaticPodOperatorClient, updateFuncs ...UpdateStaticPodStatusFunc) (*operatorv1.StaticPodOperatorStatus, bool, error) {
+func UpdateStaticPodStatus(ctx context.Context, client StaticPodOperatorClient, updateFuncs ...UpdateStaticPodStatusFunc) (*operatorv1.StaticPodOperatorStatus, bool, error) {
 	updated := false
 	var updatedOperatorStatus *operatorv1.StaticPodOperatorStatus
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -219,7 +220,7 @@ func UpdateStaticPodStatus(client StaticPodOperatorClient, updateFuncs ...Update
 			return nil
 		}
 
-		updatedOperatorStatus, err = client.UpdateStaticPodOperatorStatus(resourceVersion, newStatus)
+		updatedOperatorStatus, err = client.UpdateStaticPodOperatorStatus(ctx, resourceVersion, newStatus)
 		updated = err == nil
 		return err
 	})
@@ -238,10 +239,10 @@ func UpdateStaticPodConditionFn(cond operatorv1.OperatorCondition) UpdateStaticP
 // EnsureFinalizer adds a new finalizer to the operator CR, if it does not exists. No-op otherwise.
 // The finalizer name is computed from the controller name and operator name ($OPERATOR_NAME or os.Args[0])
 // It re-tries on conflicts.
-func EnsureFinalizer(client OperatorClientWithFinalizers, controllerName string) error {
+func EnsureFinalizer(ctx context.Context, client OperatorClientWithFinalizers, controllerName string) error {
 	finalizer := getFinalizerName(controllerName)
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return client.EnsureFinalizer(finalizer)
+		return client.EnsureFinalizer(ctx, finalizer)
 	})
 	return err
 }
@@ -249,10 +250,10 @@ func EnsureFinalizer(client OperatorClientWithFinalizers, controllerName string)
 // RemoveFinalizer removes a finalizer from the operator CR, if it is there. No-op otherwise.
 // The finalizer name is computed from the controller name and operator name ($OPERATOR_NAME or os.Args[0])
 // It re-tries on conflicts.
-func RemoveFinalizer(client OperatorClientWithFinalizers, controllerName string) error {
+func RemoveFinalizer(ctx context.Context, client OperatorClientWithFinalizers, controllerName string) error {
 	finalizer := getFinalizerName(controllerName)
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return client.RemoveFinalizer(finalizer)
+		return client.RemoveFinalizer(ctx, finalizer)
 	})
 	return err
 }

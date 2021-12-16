@@ -33,8 +33,7 @@ func IsCloudProviderExternal(platformStatus *configv1.PlatformStatus, featureGat
 			return true, nil
 		}
 		return isExternalFeatureGateEnabled(featureGate)
-	case configv1.IBMCloudPlatformType,
-		configv1.AlibabaCloudPlatformType:
+	case configv1.IBMCloudPlatformType, configv1.AlibabaCloudPlatformType, configv1.PowerVSPlatformType:
 		return true, nil
 	default:
 		// Platforms that do not have external cloud providers implemented

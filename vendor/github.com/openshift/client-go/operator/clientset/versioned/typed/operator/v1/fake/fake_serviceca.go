@@ -94,7 +94,7 @@ func (c *FakeServiceCAs) UpdateStatus(ctx context.Context, serviceCA *operatorv1
 // Delete takes name of the serviceCA and deletes it. Returns an error if one occurs.
 func (c *FakeServiceCAs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(servicecasResource, name), &operatorv1.ServiceCA{})
+		Invokes(testing.NewRootDeleteActionWithOptions(servicecasResource, name, opts), &operatorv1.ServiceCA{})
 	return err
 }
 

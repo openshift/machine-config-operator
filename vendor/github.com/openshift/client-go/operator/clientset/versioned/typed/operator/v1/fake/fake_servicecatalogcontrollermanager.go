@@ -94,7 +94,7 @@ func (c *FakeServiceCatalogControllerManagers) UpdateStatus(ctx context.Context,
 // Delete takes name of the serviceCatalogControllerManager and deletes it. Returns an error if one occurs.
 func (c *FakeServiceCatalogControllerManagers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(servicecatalogcontrollermanagersResource, name), &operatorv1.ServiceCatalogControllerManager{})
+		Invokes(testing.NewRootDeleteActionWithOptions(servicecatalogcontrollermanagersResource, name, opts), &operatorv1.ServiceCatalogControllerManager{})
 	return err
 }
 
