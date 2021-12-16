@@ -94,7 +94,7 @@ func (c *FakeCloudCredentials) UpdateStatus(ctx context.Context, cloudCredential
 // Delete takes name of the cloudCredential and deletes it. Returns an error if one occurs.
 func (c *FakeCloudCredentials) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(cloudcredentialsResource, name), &operatorv1.CloudCredential{})
+		Invokes(testing.NewRootDeleteActionWithOptions(cloudcredentialsResource, name, opts), &operatorv1.CloudCredential{})
 	return err
 }
 

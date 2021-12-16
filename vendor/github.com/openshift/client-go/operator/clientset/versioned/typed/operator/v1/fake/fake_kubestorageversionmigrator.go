@@ -94,7 +94,7 @@ func (c *FakeKubeStorageVersionMigrators) UpdateStatus(ctx context.Context, kube
 // Delete takes name of the kubeStorageVersionMigrator and deletes it. Returns an error if one occurs.
 func (c *FakeKubeStorageVersionMigrators) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(kubestorageversionmigratorsResource, name), &operatorv1.KubeStorageVersionMigrator{})
+		Invokes(testing.NewRootDeleteActionWithOptions(kubestorageversionmigratorsResource, name, opts), &operatorv1.KubeStorageVersionMigrator{})
 	return err
 }
 
