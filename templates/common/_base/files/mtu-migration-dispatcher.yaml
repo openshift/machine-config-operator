@@ -1,0 +1,211 @@
+{{ if .Network }}{{ if .Network.MTUMigration }}{{ if .Network.MTUMigration.Machine }}{{ if .Network.MTUMigration.Machine.To -}}
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/pre-up.d/99-mtu-migration.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    set -ex
+
+    MTU_MIGRATION_DIR="/etc/cno/mtu-migration"
+    MTU_MIGRATION_CONFIG="${MTU_MIGRATION_DIR}/config"
+    MTU_MIGRATION_SAVE_DIR="${MTU_MIGRATION_DIR}/mtu"
+
+    # Network Manager (NM) will call this dispatcher script with:
+    # - two input arguments ($1 is the interface name, $2 is the event on this interface)
+    # - several environment variables about the interface and its NM connection,
+    #   among which we use CONNECTION_UUID (the UUID of the NM connection)
+    #   and CONNECTION_ID, the name of the NM connection.
+    #   (https://www.mankier.com/8/NetworkManager-dispatcher)
+
+    iface="$1"
+    event="$2"
+    if [ "$event" != "pre-up" ]; then
+        exit;
+    fi
+
+    if [ -z "$iface" ]; then
+        echo "$0: called with no interface" 1>&2
+        exit 1;
+    fi
+
+    echo "running on an pre-up event for host interface $iface"
+
+    get_mtu_on_dev(){
+        local dev=$1
+        mtu_path="/sys/class/net/${dev}/mtu"
+        if [ ! -f "$mtu_path" ]; then
+          echo "ERROR: no mtu file found at $mtu_path" >&2
+          exit 1
+        fi
+        cat $mtu_path
+    }
+
+    set_mtu_on_dev(){
+        local dev=$1
+        local c_type=$2
+        local new_mtu=$3
+        if [[ $c_type =~ .*ovs.* ]]; then
+            ovs-vsctl set int $dev mtu_request=$new_mtu
+        else
+            ip link set dev $dev mtu $new_mtu
+        fi
+    }
+
+    set_mtu_on_dev_routes() {
+        local dev=$1
+        local mtu=$2
+
+        dev_routes=$(ip route show dev $dev)
+
+        if [ -n "$dev_routes" ]; then
+            while IFS= read -r line; do
+                current_mtu=$(echo $line | sed -n -e 's/^.*mtu \([0-9]\+\).*/\1/p')
+                echo "mtu=$current_mtu in this route: $line"
+                if [ -z "$current_mtu" ] || [ $current_mtu -gt $mtu ]; then
+                    ip route change ${line} dev $dev mtu ${mtu}
+                fi
+            done <<< "$dev_routes"
+        fi
+    }
+
+    save_mtu_for_dev(){
+        local dev=$1
+        local mtu=$2
+
+        if [ -f "${MTU_MIGRATION_SAVE_DIR}/${dev}" ]; then
+            rm -f "${MTU_MIGRATION_SAVE_DIR}/${dev}"
+        fi
+        if [ ! -d "${MTU_MIGRATION_SAVE_DIR}" ]; then
+            mkdir "${MTU_MIGRATION_SAVE_DIR}"
+        fi
+        echo "ORIGINAL_MTU=$mtu" > "${MTU_MIGRATION_SAVE_DIR}/${dev}"
+    }
+
+    set_mtu(){
+        local dev=$1
+        local c_type=$2
+        local is_vlan_parent=$3
+
+        if [ -f "${MTU_MIGRATION_SAVE_DIR}/${dev}" ]; then
+            . "${MTU_MIGRATION_SAVE_DIR}/${dev}"
+        else
+            ORIGINAL_MTU=$(get_mtu_on_dev "$dev")
+            save_mtu_for_dev "$dev" "$ORIGINAL_MTU"
+        fi
+
+        echo "For ORIGINAL_MTU=$ORIGINAL_MTU and TARGET_MTU=$TARGET_MTU ..."
+        echo "with is_vlan_parent=$is_vlan_parent"
+        if [ $ORIGINAL_MTU -gt $TARGET_MTU ]; then
+            if [ $is_vlan_parent -eq 1 ]; then
+               echo "No need to set MTU as current is greater than target and is a vlan parent"
+               return 0
+            fi
+            routable_mtu=$TARGET_MTU
+            mtu=$ORIGINAL_MTU
+        elif [ $ORIGINAL_MTU -lt $TARGET_MTU ]; then
+            routable_mtu=$ORIGINAL_MTU
+            mtu=$TARGET_MTU
+        else
+             echo "No need to set MTU as current and target are equal"
+             return 0
+        fi
+
+        echo "set routable_mtu=$routable_mtu and mtu=$mtu"
+        set_mtu_on_dev "$dev" "$c_type" "$mtu"
+        set_mtu_on_dev_routes "$dev" "$routable_mtu"
+    }
+
+    if ! [ -f "$MTU_MIGRATION_CONFIG" ]; then
+        echo "no ongoing MTU migration. Nothing to do."
+        exit
+    fi
+
+    if [ -z "$CONNECTION_UUID" ]; then
+        echo "no CONNECTION_UUID set. Skipping $iface."
+        exit
+    fi
+
+    if [ -z "$CONNECTION_ID" ]; then
+        echo "no CONNECTION_ID set. Skipping $iface."
+        exit
+    fi
+
+    . $MTU_MIGRATION_CONFIG
+
+    if [[ -z "$NETWORK_TYPE" || -z "$TARGET_MTU" ]]; then
+        echo "error: no NETWORK_TYPE or TARGET_MTU"
+        echo "$MTU_MIGRATION_CONFIG :"
+        cat $MTU_MIGRATION_CONFIG
+        exit 1
+    fi
+
+    if ! [[ $NETWORK_TYPE == "OVNKubernetes" || $NETWORK_TYPE == "OpenShiftSDN" ]]; then
+        echo "error: NETWORK_TYPE=$NETWORK_TYPE not supported for MTU migration"
+        cat $MTU_MIGRATION_CONFIG
+        exit 1
+    fi
+
+    # is this interface worth processing? look up nm connections...
+    conn_type=$(nmcli -t -g connection.type connection show $CONNECTION_UUID)
+    echo "iface=$iface, conn_type=$conn_type"
+
+    if [ "$NETWORK_TYPE" == "OVNKubernetes" ]; then
+        ovs_if_prefix="^ovs-if-.*$"  # ovs-if-br-ex, ovs-if-phys0
+        if [[ ! $CONNECTION_ID =~ $ovs_if_prefix ]]; then
+            # we're only interested in setting the MTU on the host interfaces and their routes;
+            # skip everything else
+            echo "CONNECTION_ID=$CONNECTION_ID, iface=$iface not taken into consideration for MTU migration"
+            exit
+        fi
+    else
+        # in openshift-sdn, continue only if $iface is the default gateway interface
+        gw_iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        if [[ -z "$gw_iface" ]]; then
+            # no IPv4 Default gateway interface found, checking IPv6
+            gw_iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        fi
+        if [[ -z "$gw_iface" ]]; then
+            echo "mtu migration error: no gateway interface found, cannot continue (host interface: $iface)"
+            exit 1
+        fi
+        if [[ "$iface" != "$gw_iface" ]]; then
+            echo "Host interface $iface is not the default gateway interface ($gw_iface). Skipping it."
+            exit
+        fi
+    fi
+
+    # if it's a bond or team interface, we let the master propagate
+    # the new MTU when an UP event occurs on the master.
+
+    # In case of VLAN interface, we first set the MTU on the parent and then on the VLAN interface.
+    parent_conn=""
+    parent_dev=""
+    parent_conn_type=""
+    if [ "$conn_type" = "vlan" ]; then
+        parent=$(nmcli -t -g vlan.parent connection show $CONNECTION_UUID)
+        if [ -n "$parent" ]; then
+            # parent can be either a device name or a connection UUID
+            if [[ ${parent//-/} =~ ^[[:xdigit:]]{32}$ ]]; then
+                # parent is connection UUID, find the device name
+                parent_conn=$parent
+                parent_dev=$(nmcli -t -g connection.interface-name connection show $parent_conn)
+            else
+                # parent is device name, find the connection UUID
+                parent_dev=$parent
+                parent_conn_name=$(nmcli -t -g GENERAL.CONNECTION device show $parent_dev)
+                parent_conn=$(nmcli -t -g connection.uuid connection show "$parent_conn_name")
+            fi
+            parent_conn_type=$(nmcli -t -g connection.type connection show $parent_conn)
+        fi
+    fi
+
+    if [ -n "$parent_dev" ]; then
+        is_parent=1
+        set_mtu "$parent_dev" "$conn_type" $is_parent
+    fi
+
+    is_parent=0
+    set_mtu "$iface" "$conn_type" $is_parent
+
+{{ end }}{{ end }}{{ end }}{{ end -}}

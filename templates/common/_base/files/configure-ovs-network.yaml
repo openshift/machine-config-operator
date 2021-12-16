@@ -430,6 +430,12 @@ contents:
     }
     trap "handle_exit" EXIT
 
+    # Clean up old config on behalf of mtu-migration
+    if [ ! -f /etc/cno/mtu-migration/config ]; then
+      echo "Cleaning up left over mtu migration configuration"
+      rm -rf /etc/cno/mtu-migration
+    fi
+    
     if ! rpm -qa | grep -q openvswitch; then
       echo "Warning: Openvswitch package is not installed!"
       exit 1

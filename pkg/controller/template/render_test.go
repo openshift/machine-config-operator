@@ -372,7 +372,8 @@ func TestGenerateMachineConfigs(t *testing.T) {
 					foundKubeletUnitMaster = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
 				}
 				if !foundMTUMigrationMaster {
-					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/etc/cno/mtu-migration/config", t)
+					foundMTUMigrationMaster = findIgnFile(ign.Storage.Files, "/etc/NetworkManager/dispatcher.d/pre-up.d/99-mtu-migration.sh", t)
+					foundMTUMigrationMaster = foundMTUMigrationMaster || findIgnFile(ign.Storage.Files, "/etc/cno/mtu-migration/config", t)
 				}
 			} else if role == "worker" {
 				if !foundPullSecretWorker {
@@ -382,7 +383,8 @@ func TestGenerateMachineConfigs(t *testing.T) {
 					foundKubeletUnitWorker = findIgnUnit(ign.Systemd.Units, "kubelet.service", t)
 				}
 				if !foundMTUMigrationWorker {
-					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/etc/cno/mtu-migration/config", t)
+					foundMTUMigrationWorker = findIgnFile(ign.Storage.Files, "/etc/NetworkManager/dispatcher.d/pre-up.d/99-mtu-migration.sh", t)
+					foundMTUMigrationWorker = foundMTUMigrationWorker || findIgnFile(ign.Storage.Files, "/etc/cno/mtu-migration/config", t)
 				}
 			} else {
 				t.Fatalf("Unknown role %s", role)
