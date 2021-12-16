@@ -10,8 +10,8 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/pkg/errors"
-	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
@@ -154,17 +154,20 @@ func (dn *Daemon) performDrain() error {
 }
 
 // isDrainRequired determines whether node drain is required or not to apply config changes.
-func isDrainRequired(actions []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
+func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
 		// Drain may or may not be necessary in case of container registry config changes.
-		isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
-		if err != nil {
-			return false, err
+		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
+			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
+			if err != nil {
+				return false, err
+			}
+			return !isSafe, nil
 		}
-		return !isSafe, nil
+		return false, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionNone, actions) {
 		return false, nil
 	}
@@ -182,40 +185,25 @@ func isDrainRequired(actions []string, oldIgnConfig, newIgnConfig ign3types.Conf
 // See https://bugzilla.redhat.com/show_bug.cgi?id=1943315
 //nolint:gocyclo
 func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
-	containerRegistryConfPath := "/etc/containers/registries.conf"
-	var oldContainerRegistryConf, newContainerRegistryConf ign3types.File
-
-	for _, f := range oldIgnConfig.Storage.Files {
-		if f.Path == containerRegistryConfPath {
-			oldContainerRegistryConf = f
-		}
-	}
-
-	for _, f := range newIgnConfig.Storage.Files {
-		if f.Path == containerRegistryConfPath {
-			newContainerRegistryConf = f
-		}
-	}
-
-	// /etc/containers/registries.conf contains config in toml format. Parse the file and compare the content
-	oldDataURL, err := dataurl.DecodeString(*oldContainerRegistryConf.Contents.Source)
+	// /etc/containers/registries.conf contains config in toml format. Parse the file
+	oldData, err := ctrlcommon.GetIgnitionFileDataByPath(&oldIgnConfig, constants.ContainerRegistryConfPath)
 	if err != nil {
 		return false, fmt.Errorf("Failed decoding Data URL scheme string: %v", err)
 	}
 
-	newDataURL, err := dataurl.DecodeString(*newContainerRegistryConf.Contents.Source)
+	newData, err := ctrlcommon.GetIgnitionFileDataByPath(&newIgnConfig, constants.ContainerRegistryConfPath)
 	if err != nil {
 		return false, fmt.Errorf("Failed decoding Data URL scheme string %v", err)
 	}
 
 	tomlConfOldReg := sysregistriesv2.V2RegistriesConf{}
-	if _, err := toml.Decode(string(oldDataURL.Data), &tomlConfOldReg); err != nil {
-		return false, fmt.Errorf("Failed decoding TOML content from file %s: %v", oldContainerRegistryConf.Path, err)
+	if _, err := toml.Decode(string(oldData), &tomlConfOldReg); err != nil {
+		return false, fmt.Errorf("Failed decoding TOML content from file %s: %v", constants.ContainerRegistryConfPath, err)
 	}
 
 	tomlConfNewReg := sysregistriesv2.V2RegistriesConf{}
-	if _, err := toml.Decode(string(newDataURL.Data), &tomlConfNewReg); err != nil {
-		return false, fmt.Errorf("Failed decoding TOML content from file %s: %v", oldContainerRegistryConf.Path, err)
+	if _, err := toml.Decode(string(newData), &tomlConfNewReg); err != nil {
+		return false, fmt.Errorf("Failed decoding TOML content from file %s: %v", constants.ContainerRegistryConfPath, err)
 	}
 
 	// Ensure that any unqualified-search-registries has not been deleted
@@ -251,7 +239,7 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 	for regLoc := range oldRegHashMap {
 		_, ok := newRegHashMap[regLoc]
 		if !ok {
-			glog.Infof("%s: registry %s has been removed", containerRegistryConfPath, regLoc)
+			glog.Infof("%s: registry %s has been removed", constants.ContainerRegistryConfPath, regLoc)
 			return false, nil
 		}
 	}
@@ -264,22 +252,22 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 			// Check that changes made are safe or not.
 			if oldReg.Prefix != newReg.Prefix {
 				glog.Infof("%s: prefix value for registry %s has changed from %s to %s",
-					containerRegistryConfPath, regLoc, oldReg.Prefix, newReg.Prefix)
+					constants.ContainerRegistryConfPath, regLoc, oldReg.Prefix, newReg.Prefix)
 				return false, nil
 			}
 			if oldReg.Location != newReg.Location {
 				glog.Infof("%s: location value for registry %s has changed from %s to %s",
-					containerRegistryConfPath, regLoc, oldReg.Location, newReg.Location)
+					constants.ContainerRegistryConfPath, regLoc, oldReg.Location, newReg.Location)
 				return false, nil
 			}
 			if oldReg.Blocked != newReg.Blocked {
 				glog.Infof("%s: blocked value for registry %s has changed from %t to %t",
-					containerRegistryConfPath, regLoc, oldReg.Blocked, newReg.Blocked)
+					constants.ContainerRegistryConfPath, regLoc, oldReg.Blocked, newReg.Blocked)
 				return false, nil
 			}
 			if oldReg.Insecure != newReg.Insecure {
 				glog.Infof("%s: insecure value for registry %s has changed from %t to %t",
-					containerRegistryConfPath, regLoc, oldReg.Insecure, newReg.Insecure)
+					constants.ContainerRegistryConfPath, regLoc, oldReg.Insecure, newReg.Insecure)
 				return false, nil
 			}
 			if oldReg.MirrorByDigestOnly == newReg.MirrorByDigestOnly {
@@ -287,7 +275,7 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 				for _, m := range oldReg.Mirrors {
 					if !searchRegistryMirror(m.Location, newReg.Mirrors) {
 						glog.Infof("%s: mirror %s has been removed in registry %s",
-							containerRegistryConfPath, m.Location, regLoc)
+							constants.ContainerRegistryConfPath, m.Location, regLoc)
 						return false, nil
 					}
 				}
@@ -295,24 +283,24 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 				for _, m := range newReg.Mirrors {
 					if !searchRegistryMirror(m.Location, oldReg.Mirrors) && !newReg.MirrorByDigestOnly {
 						glog.Infof("%s: mirror %s has been added in registry %s that has mirror-by-digest-only set to %t ",
-							containerRegistryConfPath, m.Location, regLoc, newReg.MirrorByDigestOnly)
+							constants.ContainerRegistryConfPath, m.Location, regLoc, newReg.MirrorByDigestOnly)
 						return false, nil
 					}
 				}
 			} else {
 				glog.Infof("%s: mirror-by-digest-only value for registry %s has changed from %t to %t",
-					containerRegistryConfPath, regLoc, oldReg.MirrorByDigestOnly, newReg.MirrorByDigestOnly)
+					constants.ContainerRegistryConfPath, regLoc, oldReg.MirrorByDigestOnly, newReg.MirrorByDigestOnly)
 				return false, nil
 			}
 		} else if !newReg.MirrorByDigestOnly {
 			// New mirrors added into registry but mirror-by-digest-only has been set to false
 			glog.Infof("%s: registry %s has been added with mirror-by-digest-only set to %t",
-				containerRegistryConfPath, regLoc, newReg.MirrorByDigestOnly)
+				constants.ContainerRegistryConfPath, regLoc, newReg.MirrorByDigestOnly)
 			return false, nil
 		}
 	}
 
-	glog.Infof("%s: changes made are safe to skip drain", containerRegistryConfPath)
+	glog.Infof("%s: changes made are safe to skip drain", constants.ContainerRegistryConfPath)
 	return true, nil
 }
 

@@ -71,4 +71,7 @@ const (
 	// coreUser is "core" and currently the only permissible user name
 	CoreUserName  = "core"
 	CoreGroupName = "core"
+
+	// changes to registries.conf will cause a crio reload and require extra logic about whether to drain
+	ContainerRegistryConfPath = "/etc/containers/registries.conf"
 )
