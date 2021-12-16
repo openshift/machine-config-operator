@@ -693,7 +693,8 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			if err != nil {
 				t.Errorf("error creating machineConfigDiff: %v", err)
 			}
-			calculatedAction, err := calculatePostConfigChangeAction(mcDiff, oldIgnConfig, newIgnConfig)
+			diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+			calculatedAction, err := calculatePostConfigChangeAction(mcDiff, diffFileSet)
 
 			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
 				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
