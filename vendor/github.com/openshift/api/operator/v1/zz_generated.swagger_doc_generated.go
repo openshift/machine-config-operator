@@ -918,7 +918,7 @@ var map_DefaultNetworkDefinition = map[string]string{
 	"":                    "DefaultNetworkDefinition represents a single network plugin's configuration. type must be specified, along with exactly one \"Config\" that matches the type.",
 	"type":                "type is the type of network All NetworkTypes are supported except for NetworkTypeRaw",
 	"openshiftSDNConfig":  "openShiftSDNConfig configures the openshift-sdn plugin",
-	"ovnKubernetesConfig": "oVNKubernetesConfig configures the ovn-kubernetes plugin. This is currently not implemented.",
+	"ovnKubernetesConfig": "ovnKubernetesConfig configures the ovn-kubernetes plugin.",
 	"kuryrConfig":         "KuryrConfig configures the kuryr plugin",
 }
 
@@ -934,6 +934,15 @@ var map_ExportNetworkFlows = map[string]string{
 
 func (ExportNetworkFlows) SwaggerDoc() map[string]string {
 	return map_ExportNetworkFlows
+}
+
+var map_GatewayConfig = map[string]string{
+	"":               "GatewayConfig holds node gateway-related parsed config file parameters and command-line overrides",
+	"routingViaHost": "RoutingViaHost allows pod egress traffic to exit via the ovn-k8s-mp0 management port into the host before sending it out. If this is not set, traffic will always egress directly from OVN to outside without touching the host stack. Setting this to true means hardware offload will not be supported. Default is false if GatewayConfig is specified.",
+}
+
+func (GatewayConfig) SwaggerDoc() map[string]string {
+	return map_GatewayConfig
 }
 
 var map_HybridOverlayConfig = map[string]string{
@@ -1067,6 +1076,7 @@ var map_OVNKubernetesConfig = map[string]string{
 	"hybridOverlayConfig": "HybridOverlayConfig configures an additional overlay network for peers that are not using OVN.",
 	"ipsecConfig":         "ipsecConfig enables and configures IPsec for pods on the pod network within the cluster.",
 	"policyAuditConfig":   "policyAuditConfig is the configuration for network policy audit events. If unset, reported defaults are used.",
+	"gatewayConfig":       "gatewayConfig holds the configuration for node gateway options.",
 }
 
 func (OVNKubernetesConfig) SwaggerDoc() map[string]string {
