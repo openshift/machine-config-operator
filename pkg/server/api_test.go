@@ -626,12 +626,25 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 			},
 		},
 		{
+			desc:      "http/2 should fail - no application protocol",
+			wantErr:   true,
+			errString: "tls: no application protocol",
+			client: &http.Client{
+				Transport: &http2.Transport{
+					TLSClientConfig: &tls.Config{
+						InsecureSkipVerify: true, // test server certificate is not trusted.
+					},
+				},
+			},
+		},
+		{
 			desc:      "http/2 should fail",
 			wantErr:   true,
 			errString: "http2: unexpected ALPN protocol",
 			client: &http.Client{
 				Transport: &http2.Transport{
 					TLSClientConfig: &tls.Config{
+						NextProtos:         []string{"h2", "http/1.1"},
 						InsecureSkipVerify: true, // test server certificate is not trusted.
 					},
 				},
