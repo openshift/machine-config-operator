@@ -124,6 +124,7 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with("InsightsOperatorPullingSCA").  // insights-operator/ccx, tremes, OCP specific
 		with("CSIDriverSharedResource").     // sig-build, adkaplan, OCP specific
 		with("BuildCSIVolumes").             // sig-build, adkaplan, OCP specific
+		with("NodeSwap").                    // sig-node, ehashman, Kubernetes feature gate
 		with("MachineAPIProviderOpenStack"). // openstack, egarcia (#forum-openstack), OCP specific
 		toFeatures(),
 	LatencySensitive: newDefaultFeatures().
