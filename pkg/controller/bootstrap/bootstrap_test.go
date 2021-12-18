@@ -126,6 +126,25 @@ data:
 		}, {
 			Raw: []byte(`{"apiVersion":"v1","data":{"color":"red","multi-line":"hello world\nhow are you?\n"},"kind":"ConfigMap","metadata":{"name":"a-config","namespace":"default"}}`),
 		}},
+	}, {
+		name: "container-runtime-bootstrap",
+		raw: `
+---
+apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: cr-pid-limit
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ''
+  containerRuntimeConfig:
+    pidsLimit: 100000
+---
+`,
+		want: []manifest{{
+			Raw: []byte(`{"apiVersion":"machineconfiguration.openshift.io/v1","kind":"ContainerRuntimeConfig","metadata":{"name":"cr-pid-limit"},"spec":{"containerRuntimeConfig":{"pidsLimit":100000},"machineConfigPoolSelector":{"matchLabels":{"pools.operator.machineconfiguration.openshift.io/master":""}}}}`),
+		}},
 	}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -133,7 +152,6 @@ data:
 			if err != nil {
 				t.Fatalf("failed to parse manifest: %v", err)
 			}
-
 			if !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("mismatch found %s", diff.ObjectDiff(got, test.want))
 			}
