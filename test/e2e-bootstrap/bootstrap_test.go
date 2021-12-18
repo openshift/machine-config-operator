@@ -174,6 +174,24 @@ spec:
 			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
 		},
+		{
+			name: "With a container runtime config",
+			manifests: [][]byte{
+				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: cr-pid-limit
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ""
+  containerRuntimeConfig:
+    pidsLimit: 100000
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-containerruntime"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -365,6 +383,9 @@ func createObjects(t *testing.T, clientSet *framework.ClientSet, objs ...runtime
 			}
 
 			_, err := clientSet.ControllerConfigs().Create(ctx, o, metav1.CreateOptions{})
+			require.NoError(t, err)
+		case *mcfgv1.ContainerRuntimeConfig:
+			_, err := clientSet.ContainerRuntimeConfigs().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *mcfgv1.KubeletConfig:
 			_, err := clientSet.KubeletConfigs().Create(ctx, tObj, metav1.CreateOptions{})

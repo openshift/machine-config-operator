@@ -22,7 +22,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -554,17 +553,19 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 
 		var configFileList []generatedConfigFile
 		ctrcfg := cfg.Spec.ContainerRuntimeConfig
-		if ctrcfg.OverlaySize != (resource.Quantity{}) {
-			storageTOML, err := ctrl.mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
+		if !ctrcfg.OverlaySize.IsZero() {
+			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 			if err != nil {
 				glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
+				ctrl.syncStatusOnly(cfg, err)
 			} else {
 				configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
+				ctrl.syncStatusOnly(cfg, nil)
 			}
 		}
 
 		// Create the cri-o drop-in files
-		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || ctrcfg.LogSizeMax != (resource.Quantity{}) {
+		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || !ctrcfg.LogSizeMax.IsZero() {
 			crioFileConfigs := createCRIODropinFiles(cfg)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
@@ -654,19 +655,19 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
 // It then encodes the new data and returns it.
-func (ctrl *Controller) mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
+func mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeConfig, update updateConfigFunc) ([]byte, error) {
 	if origFile.Contents.Source == nil {
-		return nil, ctrl.syncStatusOnly(cfg, fmt.Errorf("original Container Runtime config is empty"))
+		return nil, fmt.Errorf("original Container Runtime config is empty")
 	}
 	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
 	if err != nil {
-		return nil, ctrl.syncStatusOnly(cfg, err, "could not decode original Container Runtime config: %v", err)
+		return nil, fmt.Errorf("could not decode original Container Runtime config: %v", err)
 	}
 	cfgTOML, err := update(dataURL.Data, cfg.Spec.ContainerRuntimeConfig)
 	if err != nil {
-		return nil, ctrl.syncStatusOnly(cfg, err, "could not update container runtime config with new changes: %v", err)
+		return nil, fmt.Errorf("could not update container runtime config with new changes: %v", err)
 	}
-	return cfgTOML, ctrl.syncStatusOnly(cfg, nil)
+	return cfgTOML, nil
 }
 
 func (ctrl *Controller) syncImageConfig(key string) error {
