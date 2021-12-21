@@ -25,7 +25,8 @@ contents: |
     {{if .KubeletIPv6 -}}
     --prefer-ipv6 \
     {{end -}}
-    --retry-on-failure; \
+    --retry-on-failure \
+    $KUBELET_NODEIP_HINT; \
     do \
     sleep 5; \
     done"
@@ -41,6 +42,7 @@ contents: |
   Environment=NO_PROXY={{.Proxy.NoProxy}}
   {{end -}}
   {{end -}}
+  EnvironmentFile=-/etc/default/nodeip-configuration
 
   [Install]
   RequiredBy=kubelet.service
