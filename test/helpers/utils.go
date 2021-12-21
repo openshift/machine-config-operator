@@ -166,6 +166,22 @@ func WaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, pool string, 
 	return renderedConfig, nil
 }
 
+func WaitForBuild(t *testing.T, cs *framework.ClientSet, build string) {
+	startTime := time.Now()
+	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+		build, err := cs.BuildV1Interface.Builds("openshift-machine-config-operator").Get(context.TODO(), build, metav1.GetOptions{})
+		require.Nil(t, err)
+		if build.Status.Phase == "Complete" {
+			return true, nil
+		}
+		require.NotContains(t, []string{"Failed", "Error", "Cancelled"}, build.Status.Phase)
+		return false, nil
+	}); err != nil {
+		require.Nil(t, err, "build %q did not complete (waited %s)", build, time.Since(startTime))
+	}
+	t.Logf("build %q has completed (waited %s)", build, time.Since(startTime))
+}
+
 func notFoundNames(foundNames map[string]bool) []string {
 	out := []string{}
 	for name, found := range foundNames {
@@ -355,6 +371,53 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	out, err := cmd.Output()
 	require.Nil(t, err, "failed to exec cmd %v on node %s: %s", subArgs, node.Name, string(out))
 	return string(out)
+}
+
+// WriteToNode finds a node's mcd and writes a file over oc rsh's stdin
+// filename should include /rootfs to write to node filesystem
+func WriteToMCDContainer(t *testing.T, cs *framework.ClientSet, node corev1.Node, filename string, data []byte) {
+	mcd, err := mcdForNode(cs, &node)
+	require.Nil(t, err)
+	mcdName := mcd.ObjectMeta.Name
+
+	entryPoint := "oc"
+	args := []string{"rsh",
+		"-n", "openshift-machine-config-operator",
+		"-c", "machine-config-daemon",
+		mcdName,
+		"tee", filename,
+	}
+
+	cmd := exec.Command(entryPoint, args...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = bytes.NewReader(data)
+
+	out, err := cmd.Output()
+	require.Nil(t, err, "failed to write data to file %q on node %s: %s", filename, node.Name, string(out))
+}
+
+// RebootAndWait reboots a node and then waits until the node has rebooted and its status is again Ready
+func RebootAndWait(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
+	updatedNode, err := cs.Nodes().Get(context.TODO(), node.ObjectMeta.Name, metav1.GetOptions{})
+	require.Nil(t, err)
+	prevBootID := updatedNode.Status.NodeInfo.BootID
+	ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "systemctl", "reboot")
+	startTime := time.Now()
+	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+		node, err := cs.Nodes().Get(context.TODO(), node.ObjectMeta.Name, metav1.GetOptions{})
+		require.Nil(t, err)
+		if node.Status.NodeInfo.BootID != prevBootID {
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == corev1.NodeReady && condition.Status == "True" {
+					return true, nil
+				}
+			}
+		}
+		return false, nil
+	}); err != nil {
+		require.Nil(t, err, "node %q never rebooted (waited %s)", node.ObjectMeta.Name, time.Since(startTime))
+	}
+	t.Logf("node %q has rebooted (waited %s)", node.ObjectMeta.Name, time.Since(startTime))
 }
 
 // IsOKDCluster checks whether the Upstream field on the CV spec references OKD's update server
