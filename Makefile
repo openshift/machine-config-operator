@@ -69,15 +69,7 @@ install-tools:
 #    make verify
 verify: install-tools
 	golangci-lint run --build-tags=$(GOTAGS)
-	# Remove the vendor/k8s.io/code-generator vendor hack
-	# once code-generator plays nice with go modules, see
-	# https://github.com/kubernetes/kubernetes/issues/82531 and
-	# https://github.com/kubernetes/kubernetes/pull/85559
-	pushd vendor/k8s.io/code-generator && cp go.mod go.mod.bak && go mod vendor && popd
 	hack/verify-codegen.sh
-	rm -f vendor/k8s.io/code-generator/go.mod
-	mv vendor/k8s.io/code-generator/go.mod.bak vendor/k8s.io/code-generator/go.mod
-	rm -rf vendor/k8s.io/code-generator/vendor
 
 # Template for defining build targets for binaries.
 define target_template =

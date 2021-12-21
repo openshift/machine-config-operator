@@ -83,7 +83,7 @@ func (c *FakeMachineConfigs) Update(ctx context.Context, machineConfig *machinec
 // Delete takes name of the machineConfig and deletes it. Returns an error if one occurs.
 func (c *FakeMachineConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(machineconfigsResource, name), &machineconfigurationopenshiftiov1.MachineConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(machineconfigsResource, name, opts), &machineconfigurationopenshiftiov1.MachineConfig{})
 	return err
 }
 
