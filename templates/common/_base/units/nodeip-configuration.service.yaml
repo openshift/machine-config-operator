@@ -25,7 +25,8 @@ contents: |
     {{if eq .IPFamilies "IPv6" -}}
     --prefer-ipv6 \
     {{end -}}
-    --retry-on-failure; \
+    --retry-on-failure \
+    $KUBELET_NODEIP_HINT; \
     do \
     sleep 5; \
     done"
@@ -34,6 +35,7 @@ contents: |
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
+  EnvironmentFile=-/etc/default/nodeip-configuration
 
   [Install]
   RequiredBy=kubelet.service
