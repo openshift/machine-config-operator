@@ -15,18 +15,18 @@ aliases:
     - yboaron
   openstack-approvers:
     - EmilienM
-    - adduarte
     - iamemilio
     - mandre
     - mdbooth
     - pierreprinetti
+    - stephenfin
   openstack-reviewers:
     - EmilienM
-    - adduarte
     - iamemilio
     - mandre
     - mdbooth
     - pierreprinetti
+    - stephenfin
   ovirt-approvers:
     - Gal-Zaidman
     - rgolangh
