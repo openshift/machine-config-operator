@@ -153,8 +153,13 @@ func New(
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
-		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events("openshift-machine-config-operator"), "machine-config-operator", &corev1.ObjectReference{}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
+		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events("openshift-machine-config-operator"), "machine-config-operator", &corev1.ObjectReference{
+			Kind:       "Deployment",
+			Name:       "machine-config-operator",
+			Namespace:  "openshift-machine-config-operator",
+			APIVersion: "apps/v1",
+		}),
+		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
 	for _, i := range []cache.SharedIndexInformer{
