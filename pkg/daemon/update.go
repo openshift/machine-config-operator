@@ -311,11 +311,6 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		return
 	}
 
-	if err = os.MkdirAll(osImageContentDir, 0755); err != nil {
-		err = fmt.Errorf("error creating directory %s: %v", osImageContentDir, err)
-		return
-	}
-
 	// Extract the image
 	args := []string{"image", "extract", "--path", "/:" + osImageContentDir}
 	args = append(args, registryConfig...)
