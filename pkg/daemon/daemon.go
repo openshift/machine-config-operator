@@ -1368,16 +1368,6 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	}
 }
 
-// compareOSImageURL checks whether the current and desired
-// URL are the same.  This used to do more, but now the
-// only special casing is to support an empty desired URL
-// as meaning "keep current OS" which we probably don't need
-// anymore either.
-func compareOSImageURL(current, desired string) bool {
-	// A desired "" is special cased
-	return desired == "" || current == desired
-}
-
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
@@ -1391,7 +1381,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 		return true
 	}
 
-	return compareOSImageURL(dn.bootedOSImageURL, osImageURL)
+	return dn.bootedOSImageURL == osImageURL
 }
 
 // checkUnits validates the contents of all the units in the
