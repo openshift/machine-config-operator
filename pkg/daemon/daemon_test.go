@@ -11,7 +11,6 @@ import (
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -108,26 +107,6 @@ func TestValidateFiles(t *testing.T) {
 	if err := checkV2Files(filesV2); err != nil {
 		t.Errorf("Validating an overwritten file failed: %v", err)
 	}
-}
-
-func TestCompareOSImageURL(t *testing.T) {
-	refA := "registry.example.com/foo/bar@sha256:0743a3cc3bcf3b4aabb814500c2739f84cb085ff4e7ec7996aef7977c4c19c7f"
-	refB := "registry.example.com/foo/baz@sha256:0743a3cc3bcf3b4aabb814500c2739f84cb085ff4e7ec7996aef7977c4c19c7f"
-	refC := "registry.example.com/foo/bar@sha256:2a76681fd15bfc06fa4aa0ff6913ba17527e075417fc92ea29f6bcc2afca24ff"
-	m := compareOSImageURL(refA, refA)
-	if !m {
-		t.Fatalf("Expected refA ident")
-	}
-	m = compareOSImageURL(refA, refB)
-	if m {
-		t.Fatalf("Expected refA != refB")
-	}
-	m = compareOSImageURL(refA, refC)
-	if m {
-		t.Fatalf("Expected refA != refC")
-	}
-	m = compareOSImageURL("", refA)
-	assert.False(t, m)
 }
 
 type fixture struct {

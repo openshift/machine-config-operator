@@ -686,7 +686,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	return &machineConfigDiff{
-		osUpdate:   !compareOSImageURL(oldConfig.Spec.OSImageURL, newConfig.Spec.OSImageURL),
+		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
 		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
 		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
