@@ -129,6 +129,11 @@ type Daemon struct {
 	configDriftMonitor ConfigDriftMonitor
 }
 
+// CoreOSDaemon protects the methods that should only be called on CoreOS variants
+type CoreOSDaemon struct {
+	*Daemon
+}
+
 const (
 	// pathSystemd is the path systemd modifiable units, services, etc.. reside
 	pathSystemd = "/etc/systemd/system"
