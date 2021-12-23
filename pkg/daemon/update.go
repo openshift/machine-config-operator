@@ -378,13 +378,15 @@ func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig 
 	}
 
 	// Update OS
-	if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
-		nodeName := ""
-		if dn.node != nil {
-			nodeName = dn.node.Name
+	if mcDiff.osUpdate {
+		if err := updateOS(newConfig, osImageContentDir); err != nil {
+			nodeName := ""
+			if dn.node != nil {
+				nodeName = dn.node.Name
+			}
+			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
+			return err
 		}
-		MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
-		return err
 	}
 
 	defer func() {
@@ -718,7 +720,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 
 	return &machineConfigDiff{
-		osUpdate:   oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL,
+		osUpdate:   !compareOSImageURL(oldConfig.Spec.OSImageURL, newConfig.Spec.OSImageURL),
 		kargs:      !(kargsEmpty || reflect.DeepEqual(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments)),
 		fips:       oldConfig.Spec.FIPS != newConfig.Spec.FIPS,
 		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
@@ -1840,17 +1842,8 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 }
 
 // updateOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
-	if !dn.os.IsCoreOSVariant() {
-		glog.Info("Updating of non-CoreOS nodes are not supported")
-		return nil
-	}
-
+func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	newURL := config.Spec.OSImageURL
-	if compareOSImageURL(dn.bootedOSImageURL, newURL) {
-		return nil
-	}
-
 	glog.Infof("Updating OS to %s", newURL)
 	client := NewNodeUpdaterClient()
 	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
