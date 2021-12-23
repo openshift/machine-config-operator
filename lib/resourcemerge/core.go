@@ -188,10 +188,10 @@ func ensureProbePtr(modified *bool, existing **corev1.Probe, required *corev1.Pr
 func ensureProbe(modified *bool, existing *corev1.Probe, required corev1.Probe) {
 	setInt32(modified, &existing.InitialDelaySeconds, required.InitialDelaySeconds)
 
-	ensureProbeHandler(modified, &existing.Handler, required.Handler)
+	ensureProbeHandler(modified, &existing.ProbeHandler, required.ProbeHandler)
 }
 
-func ensureProbeHandler(modified *bool, existing *corev1.Handler, required corev1.Handler) {
+func ensureProbeHandler(modified *bool, existing *corev1.ProbeHandler, required corev1.ProbeHandler) {
 	if !equality.Semantic.DeepEqual(required, *existing) {
 		*modified = true
 		*existing = required
