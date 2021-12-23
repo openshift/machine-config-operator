@@ -29,7 +29,7 @@ contents:
         exit 1;
     fi
 
-    echo "running on an pre-up event for host interface $iface"
+    echo "running on a pre-up event for host interface $iface"
 
     get_mtu_on_dev(){
         local dev=$1
@@ -56,17 +56,47 @@ contents:
         local dev=$1
         local mtu=$2
 
-        dev_routes=$(ip route show dev $dev)
-
-        if [ -n "$dev_routes" ]; then
-            while IFS= read -r line; do
-                current_mtu=$(echo $line | sed -n -e 's/^.*mtu \([0-9]\+\).*/\1/p')
-                echo "mtu=$current_mtu in this route: $line"
-                if [ -z "$current_mtu" ] || [ $current_mtu -gt $mtu ]; then
-                    ip route change ${line} dev $dev mtu ${mtu}
-                fi
-            done <<< "$dev_routes"
-        fi
+        for ip_str in "-4" "-6"; do
+            # Take the IP destination for all routes going through this device
+            dev_route_destinations=$(ip $ip_str route show dev $dev | awk -F' ' '{ print $1 }' | uniq)
+            if [ -n "$dev_route_destinations" ]; then
+                while IFS= read -r route_dest; do
+                    # Take all routes to each of the destinations found above
+                    # (with multiple matches we expect different devices and different metrics)
+                    # Remove duplicates after filtering out: proto, metric (since we're
+                    # overriding them later) and MTU field, only if already set to new MTU
+                    # (so as to not interfere with the routes already added by this script)
+                    full_routes=$(ip $ip_str route show $route_dest 2> /dev/null |
+                                     sed -e 's/ \(proto\|metric\) [[:alnum:]]\+//g' -e "s/ mtu $mtu//g" -e 's/linkdown//g' |
+                                     awk '!seen[$0]++') # remove duplicates while preserving original order
+                    if [ -z "$full_routes" ]; then
+                        echo "error retrieving route for destination $route_dest through device $dev"
+                        continue
+                    fi
+                    [ "$ip_str" = "-4" ] && route_metric=0 || route_metric=1  # highest priority metric
+                    while IFS= read -r single_route; do
+                        # for each route (to the same destination) found above,
+                        # - override the metric while keeping the original order
+                        # - set MTU to new MTU if route MTU > new MTU or there's no route MTU
+                        # - set proto to static, so as to override dynamic routing
+                        # This will result in a new route (unless the same metric appears in the original route,
+                        # in which case the route is replaced) with the values above.
+                        route_mtu=$(echo $single_route | sed -n -e 's/^.*mtu \([0-9]\+\).*/\1/p')
+                        route_raw=$(echo $single_route | sed -e 's/ \(mtu\) [[:digit:]]\+//g')
+                        echo "mtu=${route_mtu:-undefined} in this route: $single_route"
+                        if [ -z "$route_mtu" ] || [ $route_mtu -gt $mtu ]; then
+                            new_route_mtu=$mtu
+                        else
+                            new_route_mtu=$route_mtu
+                        fi
+                        route="${route_raw} proto static metric ${route_metric} mtu ${new_route_mtu}"
+                        echo "Adding or replacing route: ${route}"
+                        ip $ip_str route replace ${route}
+                        ((route_metric++))
+                    done <<< "$full_routes"
+                done <<< "$dev_route_destinations"
+            fi
+        done
     }
 
     save_mtu_for_dev(){
