@@ -1150,7 +1150,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			if err != nil {
 				return err
 			}
-			if err := dn.updateOS(state.currentConfig, osImageContentDir); err != nil {
+			if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
 				return err
 			}
 			if err := os.RemoveAll(osImageContentDir); err != nil {
