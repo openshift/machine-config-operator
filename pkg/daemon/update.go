@@ -338,6 +338,10 @@ func removePendingDeployment() error {
 }
 
 func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+	if dn.os.IsCoreOSVariant() {
+		glog.Info("updating the OS on non-CoreOS nodes is not supported")
+		return nil
+	}
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
 
 	if dn.recorder != nil {
@@ -371,12 +375,10 @@ func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig 
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osImageContentDir)
 
-		if dn.os.IsCoreOSVariant() {
-			if err := addExtensionsRepo(osImageContentDir); err != nil {
-				return err
-			}
-			defer os.Remove(extensionsRepo)
+		if err := addExtensionsRepo(osImageContentDir); err != nil {
+			return err
 		}
+		defer os.Remove(extensionsRepo)
 	}
 
 	// Update OS
@@ -933,11 +935,6 @@ func generateKargs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 
 // updateKernelArguments adjusts the kernel args
 func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	if !dn.os.IsCoreOSVariant() {
-		glog.Info("updating kargs on non-CoreOS nodes is not supported")
-		return nil
-	}
-
 	kargs := generateKargs(oldConfig, newConfig)
 	if len(kargs) == 0 {
 		return nil
@@ -1038,12 +1035,6 @@ func validateExtensions(exts []string) error {
 }
 
 func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	// Right now, we support extensions only on CoreOS nodes
-	if !dn.os.IsCoreOSVariant() {
-		glog.Info("applying extensions on non-CoreOS nodes is not supported")
-		return nil
-	}
-
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
