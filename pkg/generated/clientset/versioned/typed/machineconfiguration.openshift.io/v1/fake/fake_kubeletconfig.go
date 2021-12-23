@@ -94,7 +94,7 @@ func (c *FakeKubeletConfigs) UpdateStatus(ctx context.Context, kubeletConfig *ma
 // Delete takes name of the kubeletConfig and deletes it. Returns an error if one occurs.
 func (c *FakeKubeletConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(kubeletconfigsResource, name), &machineconfigurationopenshiftiov1.KubeletConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(kubeletconfigsResource, name, opts), &machineconfigurationopenshiftiov1.KubeletConfig{})
 	return err
 }
 

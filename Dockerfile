@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.16-openshift-4.10 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 AS builder
 WORKDIR /go/src/github.com/openshift/machine-config-operator
 COPY . .
 # FIXME once we can depend on a new enough host that supports globs for COPY,
