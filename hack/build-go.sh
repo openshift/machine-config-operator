@@ -20,12 +20,13 @@ fi
 # Go to the root of the repo
 cdup="$(git rev-parse --show-cdup)" && test -n "$cdup" && cd "$cdup"
 
-if [ -z ${VERSION_OVERRIDE+a} ]; then
-	echo "Using version from git..."
-	VERSION_OVERRIDE=$(git describe --abbrev=8 --dirty --always)
-fi
-
 HASH=${SOURCE_GIT_COMMIT:-$(git rev-parse --verify 'HEAD^{commit}')}
+
+if [ -z ${VERSION_OVERRIDE+a} ]; then
+	echo "Generating version name from git..."
+	BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+	VERSION_OVERRIDE="${BRANCH_NAME}-${HASH}"
+fi
 
 GLDFLAGS+="-X ${REPO}/pkg/version.Raw=${VERSION_OVERRIDE} -X ${REPO}/pkg/version.Hash=${HASH}"
 
