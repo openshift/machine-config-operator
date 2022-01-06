@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
+	"os"
 
-	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+	"k8s.io/component-base/cli"
 )
 
 const (
@@ -24,7 +25,6 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing MCD: %v", err)
-	}
+	code := cli.Run(rootCmd)
+	os.Exit(code)
 }

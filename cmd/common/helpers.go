@@ -2,7 +2,6 @@ package common
 
 import (
 	"os"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -12,15 +11,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
-)
 
-const (
-	// LeaseDuration is the default duration for the leader election lease.
-	LeaseDuration = 90 * time.Second
-	// RenewDeadline is the default duration for the leader renewal.
-	RenewDeadline = 60 * time.Second
-	// RetryPeriod is the default duration for the leader electrion retrial.
-	RetryPeriod = 30 * time.Second
+	"context"
+
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/config/clusterstatus"
+	"github.com/openshift/library-go/pkg/config/leaderelection"
+	"k8s.io/client-go/rest"
 )
 
 // CreateResourceLock returns an interface for the resource lock.
@@ -50,4 +47,25 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 			EventRecorder: recorder,
 		},
 	}
+}
+
+// GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
+func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
+
+	// Defaults follow conventions
+	// https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#high-availability
+	defaultLeaderElection := leaderelection.LeaderElectionDefaulting(
+		configv1.LeaderElection{},
+		"", "",
+	)
+
+	if infra, err := clusterstatus.GetClusterInfraStatus(context.TODO(), restcfg); err == nil && infra != nil {
+		if infra.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
+			return leaderelection.LeaderElectionSNOConfig(defaultLeaderElection)
+		}
+	} else {
+		glog.Warningf("unable to get cluster infrastructure status, using HA cluster values for leader election: %v", err)
+	}
+
+	return defaultLeaderElection
 }

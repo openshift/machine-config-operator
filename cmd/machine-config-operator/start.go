@@ -94,11 +94,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		select {}
 	}
 
+	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
+
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
 		Lock:          common.CreateResourceLock(cb, componentNamespace, componentName),
-		LeaseDuration: common.LeaseDuration,
-		RenewDeadline: common.RenewDeadline,
-		RetryPeriod:   common.RetryPeriod,
+		LeaseDuration: leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline: leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:   leaderElectionCfg.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {

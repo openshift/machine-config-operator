@@ -94,7 +94,7 @@ func (c *FakeCSISnapshotControllers) UpdateStatus(ctx context.Context, cSISnapsh
 // Delete takes name of the cSISnapshotController and deletes it. Returns an error if one occurs.
 func (c *FakeCSISnapshotControllers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(csisnapshotcontrollersResource, name), &operatorv1.CSISnapshotController{})
+		Invokes(testing.NewRootDeleteActionWithOptions(csisnapshotcontrollersResource, name, opts), &operatorv1.CSISnapshotController{})
 	return err
 }
 

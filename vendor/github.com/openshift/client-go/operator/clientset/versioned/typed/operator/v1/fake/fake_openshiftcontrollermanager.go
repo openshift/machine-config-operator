@@ -94,7 +94,7 @@ func (c *FakeOpenShiftControllerManagers) UpdateStatus(ctx context.Context, open
 // Delete takes name of the openShiftControllerManager and deletes it. Returns an error if one occurs.
 func (c *FakeOpenShiftControllerManagers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(openshiftcontrollermanagersResource, name), &operatorv1.OpenShiftControllerManager{})
+		Invokes(testing.NewRootDeleteActionWithOptions(openshiftcontrollermanagersResource, name, opts), &operatorv1.OpenShiftControllerManager{})
 	return err
 }
 
