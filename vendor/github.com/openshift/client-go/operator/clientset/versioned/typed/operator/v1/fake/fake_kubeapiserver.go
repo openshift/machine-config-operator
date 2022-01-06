@@ -94,7 +94,7 @@ func (c *FakeKubeAPIServers) UpdateStatus(ctx context.Context, kubeAPIServer *op
 // Delete takes name of the kubeAPIServer and deletes it. Returns an error if one occurs.
 func (c *FakeKubeAPIServers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(kubeapiserversResource, name), &operatorv1.KubeAPIServer{})
+		Invokes(testing.NewRootDeleteActionWithOptions(kubeapiserversResource, name, opts), &operatorv1.KubeAPIServer{})
 	return err
 }
 

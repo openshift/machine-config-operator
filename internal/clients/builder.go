@@ -56,6 +56,11 @@ func (cb *Builder) APIExtClientOrDie(name string) apiext.Interface {
 	return apiext.NewForConfigOrDie(rest.AddUserAgent(cb.config, name))
 }
 
+// GetBuilderConfig returns a copy of the builders *rest.Config
+func (cb *Builder) GetBuilderConfig() *rest.Config {
+	return rest.CopyConfig(cb.config)
+}
+
 // NewBuilder returns a *ClientBuilder with the given kubeconfig.
 func NewBuilder(kubeconfig string) (*Builder, error) {
 	var config *rest.Config

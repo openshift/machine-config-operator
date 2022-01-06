@@ -101,7 +101,7 @@ func (c *FakeIngressControllers) UpdateStatus(ctx context.Context, ingressContro
 // Delete takes name of the ingressController and deletes it. Returns an error if one occurs.
 func (c *FakeIngressControllers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(ingresscontrollersResource, c.ns, name), &operatorv1.IngressController{})
+		Invokes(testing.NewDeleteActionWithOptions(ingresscontrollersResource, c.ns, name, opts), &operatorv1.IngressController{})
 
 	return err
 }

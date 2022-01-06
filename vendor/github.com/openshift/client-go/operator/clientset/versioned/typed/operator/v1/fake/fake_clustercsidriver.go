@@ -94,7 +94,7 @@ func (c *FakeClusterCSIDrivers) UpdateStatus(ctx context.Context, clusterCSIDriv
 // Delete takes name of the clusterCSIDriver and deletes it. Returns an error if one occurs.
 func (c *FakeClusterCSIDrivers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(clustercsidriversResource, name), &operatorv1.ClusterCSIDriver{})
+		Invokes(testing.NewRootDeleteActionWithOptions(clustercsidriversResource, name, opts), &operatorv1.ClusterCSIDriver{})
 	return err
 }
 

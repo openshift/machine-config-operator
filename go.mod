@@ -25,9 +25,9 @@ require (
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.12
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20211217221424-8779abfbd571
-	github.com/openshift/client-go v0.0.0-20210916133943-9acee1a0fb83
-	github.com/openshift/library-go v0.0.0-20210930103404-8911cacccb05
+	github.com/openshift/api v0.0.0-20211209135129-c58d9f695577
+	github.com/openshift/client-go v0.0.0-20211209144617-7385dd6338e3
+	github.com/openshift/library-go v0.0.0-20211220195323-eca2c467c492
 	github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
@@ -42,6 +42,7 @@ require (
 	k8s.io/apimachinery v0.23.0
 	k8s.io/client-go v0.23.1
 	k8s.io/code-generator v0.23.0
+	k8s.io/component-base v0.23.0
 	k8s.io/kubectl v0.23.0
 	k8s.io/kubelet v0.23.0
 	k8s.io/utils v0.0.0-20210930125809-cb0fa318a74b
@@ -258,10 +259,9 @@ require (
 	honnef.co/go/tools v0.2.1 // indirect
 	k8s.io/apiserver v0.23.0 // indirect
 	k8s.io/cli-runtime v0.23.0 // indirect
-	k8s.io/component-base v0.23.0 // indirect
 	k8s.io/gengo v0.0.0-20210813121822-485abfe95c7c // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
-	k8s.io/kube-aggregator v0.22.1 // indirect
+	k8s.io/kube-aggregator v0.23.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
 	mvdan.cc/gofumpt v0.1.1 // indirect
 	mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed // indirect
