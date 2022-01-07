@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 )
@@ -118,7 +119,7 @@ func TestEnsureContainer(t *testing.T) {
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("test#%d", idx), func(t *testing.T) {
-			modified := BoolPtr(false)
+			modified := resourcemerge.BoolPtr(false)
 			ensureContainer(modified, &test.existing, test.input)
 
 			if *modified != test.expectedModified {
