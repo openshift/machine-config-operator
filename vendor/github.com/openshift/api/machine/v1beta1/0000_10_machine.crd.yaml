@@ -80,6 +80,9 @@ spec:
                       items:
                         description: LifecycleHook represents a single instance of a lifecycle hook
                         type: object
+                        required:
+                          - name
+                          - owner
                         properties:
                           name:
                             description: Name defines a unique name for the lifcycle hook. The name should be unique and descriptive, ideally 1-3 words, in CamelCase or it may be namespaced, eg. foo.example.com/CamelCase. Names must be unique and should only be managed by a single entity.
@@ -98,6 +101,9 @@ spec:
                       items:
                         description: LifecycleHook represents a single instance of a lifecycle hook
                         type: object
+                        required:
+                          - name
+                          - owner
                         properties:
                           name:
                             description: Name defines a unique name for the lifcycle hook. The name should be unique and descriptive, ideally 1-3 words, in CamelCase or it may be namespaced, eg. foo.example.com/CamelCase. Names must be unique and should only be managed by a single entity.
