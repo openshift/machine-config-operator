@@ -1,0 +1,5 @@
+mode: 0644
+path: "/etc/subgid"
+contents:
+  inline: |
+    containers:100000:16000000
