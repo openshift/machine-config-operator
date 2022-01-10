@@ -11,7 +11,7 @@ contents: |
   Before=node-valid-hostname.service
 
   [Service]
-  ExecStart=/usr/bin/afterburn --provider openstack-metadata --hostname=/etc/hostname
+  ExecStart=/usr/bin/afterburn --provider openstack --hostname=/etc/hostname
   Type=oneshot
 
   [Install]
