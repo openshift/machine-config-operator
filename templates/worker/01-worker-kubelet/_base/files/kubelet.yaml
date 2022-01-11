@@ -33,6 +33,12 @@ contents:
       SupportPodPidsLimit: true
       DownwardAPIHugePages: true
       PodSecurity: true
+      CSIMigrationAWS: false
+      CSIMigrationAzureDisk: false
+      CSIMigrationAzureFile: false
+      CSIMigrationGCE: false
+      CSIMigrationOpenStack: false
+      CSIMigrationvSphere: false
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
     tlsCipherSuites:
