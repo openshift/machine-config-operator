@@ -7,14 +7,7 @@ contents:
     # This file is not needed anymore in 4.7+, but when rolling back to 4.6
     # the ovs pod needs it to know ovs is running on the host.
     touch /var/run/ovs-config-executed
-
-    NM_CONN_OVERLAY="/etc/NetworkManager/systemConnectionsMerged"
-    NM_CONN_UNDERLAY="/etc/NetworkManager/system-connections"
-    if [ -d "$NM_CONN_OVERLAY" ]; then
-      NM_CONN_PATH="$NM_CONN_OVERLAY"
-    else
-      NM_CONN_PATH="$NM_CONN_UNDERLAY"
-    fi
+    NM_CONN_PATH="/etc/NetworkManager/system-connections"
 
     MANAGED_NM_CONN_SUFFIX="-slave-ovs-clone"
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
@@ -51,10 +44,6 @@ contents:
       fi
     }
 
-    persist_nm_conn_files() {
-      copy_nm_conn_files "$NM_CONN_UNDERLAY"
-    }
-
     update_nm_conn_files() {
       bridge_name=${1}
       port_name=${2}
@@ -74,15 +63,12 @@ contents:
       shopt -u nullglob
       for file in "${files[@]}"; do
         file="$(basename $file)"
-        # Also remove files in underlay
-        for path in "${NM_CONN_PATH}" "${NM_CONN_UNDERLAY}"; do
-          file_path="${path}/$file"
-          if [ -f "$file_path" ]; then
-            rm -f "$file_path"
-            echo "Removed nmconnection file $file_path"
-            nm_conn_files_removed=1
-          fi
-        done
+        file_path="${NM_CONN_PATH}/$file"
+        if [ -f "$file_path" ]; then
+          rm -f "$file_path"
+          echo "Removed nmconnection file $file_path"
+          nm_conn_files_removed=1
+        fi
       done
     }
 
@@ -319,7 +305,6 @@ contents:
 
       configure_driver_options "${iface}"
       update_nm_conn_files "$bridge_name" "$port_name"
-      persist_nm_conn_files
     }
 
     # Used to remove a bridge
