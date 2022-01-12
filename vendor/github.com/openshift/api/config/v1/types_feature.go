@@ -151,6 +151,12 @@ var defaultFeatures = &FeatureGateEnabledDisabled{
 	},
 	Disabled: []string{
 		"LegacyNodeRoleBehavior", // sig-scheduling, ccoleman
+		"CSIMigrationAWS",        // sig-storage, jsafrane
+		"CSIMigrationOpenStack",  // sig-storage, jsafrane
+		"CSIMigrationGCE",        // sig-storage, jsafrane
+		"CSIMigrationAzureDisk",  // sig-storage, jsafrane
+		"CSIMigrationAzureFile",  // sig-storage, jsafrane
+		"CSIMigrationvSphere",    // sig-storage, jsafrane
 	},
 }
 
