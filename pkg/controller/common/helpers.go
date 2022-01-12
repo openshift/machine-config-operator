@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"reflect"
 	"sort"
 
@@ -331,7 +332,7 @@ func ValidateIgnition(ignconfig interface{}) error {
 		if report := validate2.ValidateWithoutSource(reflect.ValueOf(cfg)); report.IsFatal() {
 			return errors.Errorf("invalid ignition V2 config found: %v", report)
 		}
-		return nil
+		return validateIgn2FileModes(cfg)
 	case ign3types.Config:
 		if reflect.DeepEqual(ign3types.Config{}, cfg) {
 			return nil
@@ -339,10 +340,34 @@ func ValidateIgnition(ignconfig interface{}) error {
 		if report := validate3.ValidateWithContext(cfg, nil); report.IsFatal() {
 			return errors.Errorf("invalid ignition V3 config found: %v", report)
 		}
-		return nil
+		return validateIgn3FileModes(cfg)
 	default:
 		return errors.Errorf("unrecognized ignition type")
 	}
+}
+
+// Validates that Ignition V2 file modes do not have special bits (sticky, setuid, setgid) set
+// https://bugzilla.redhat.com/show_bug.cgi?id=2038240
+func validateIgn2FileModes(cfg ign2types.Config) error {
+	for _, file := range cfg.Storage.Files {
+		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm {
+			return fmt.Errorf("invalid mode %#o for %s, cannot exceed %#o", *file.Mode, file.Path, os.ModePerm)
+		}
+	}
+
+	return nil
+}
+
+// Validates that Ignition V3 file modes do not have special bits (sticky, setuid, setgid) set
+// https://bugzilla.redhat.com/show_bug.cgi?id=2038240
+func validateIgn3FileModes(cfg ign3types.Config) error {
+	for _, file := range cfg.Storage.Files {
+		if file.Mode != nil && os.FileMode(*file.Mode) > os.ModePerm {
+			return fmt.Errorf("invalid mode %#o for %s, cannot exceed %#o", *file.Mode, file.Path, os.ModePerm)
+		}
+	}
+
+	return nil
 }
 
 // InSlice search for an element in slice and return true if found, otherwise return false

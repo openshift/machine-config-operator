@@ -29,6 +29,10 @@ func TestValidateIgnition(t *testing.T) {
 
 	// Test that a valid ignition config returns nil
 	testIgn2Config.Ignition.Version = "2.0.0"
+	ign2Mode := 420
+	ign2File := ign2types.File{Node: ign2types.Node{Filesystem: "root", Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign2types.FileEmbedded1{Mode: &ign2Mode, Contents: ign2types.FileContents{Source: "data:,helloworld"}}}
+	testIgn2Config.Storage.Files = []ign2types.File{ign2File}
 	isValid = ValidateIgnition(testIgn2Config)
 	require.Nil(t, isValid)
 
@@ -52,6 +56,18 @@ func TestValidateIgnition(t *testing.T) {
 	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
 	isValid2 = ValidateIgnition(testIgn3Config)
 	require.Nil(t, isValid2)
+
+	// Test that file modes do not have special bits (sticky, setuid, setgid) set
+	// https://bugzilla.redhat.com/show_bug.cgi?id=2038240
+	invalidMode := 0o1777
+
+	testIgn3Config.Storage.Files[0].Mode = &invalidMode
+	isValid2 = ValidateIgnition(testIgn3Config)
+	require.NotNil(t, isValid2)
+
+	testIgn2Config.Storage.Files[0].Mode = &invalidMode
+	isValid2 = ValidateIgnition(testIgn2Config)
+	require.NotNil(t, isValid2)
 
 	// Test that an invalid typed config will fail
 	testInvalid := "test"
