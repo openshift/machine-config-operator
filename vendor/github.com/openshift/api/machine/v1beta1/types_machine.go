@@ -222,7 +222,7 @@ type LifecycleHook struct {
 	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$`
 	// +kubebuilder:validation:MinLength:=3
 	// +kubebuilder:validation:MaxLength:=256
-	// +required
+	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
 	// Owner defines the owner of the lifecycle hook.
@@ -232,7 +232,7 @@ type LifecycleHook struct {
 	// or an administrator managing the hook.
 	// +kubebuilder:validation:MinLength:=3
 	// +kubebuilder:validation:MaxLength:=512
-	// +required
+	// +kubebuilder:validation:Required
 	Owner string `json:"owner"`
 }
 
