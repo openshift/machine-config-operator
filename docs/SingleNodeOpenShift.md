@@ -20,7 +20,7 @@ In a non-HA/single node cluster, a node drain will **not** occur. This differs f
 
 In a non-HA cluster, all authentication and API services will be unavailable until the node finishes rebooting. If those services do not come back up due to a failed configuration change or update, debugging may require SSH or console access to the node.
 
-With the exception of [optimized updates](./MachineConfigDaemon.md#optimized-updates), any MachineConfig changes will be disruptive due to the need to reboot the node.
+With the exception of [rebootless updates](./MachineConfigDaemon.md#rebootless-updates), any MachineConfig changes will be disruptive due to the need to reboot the node.
 
 ## Supported Functionalities
 
@@ -31,7 +31,7 @@ All functionalities provided by the [MachineConfig API](./MachineConfiguration.m
 With 4.9, Single Node OpenShift upgrades-in-place is supported with the exception of [post reboot cluster safety](#Post-reboot-cluster-safety) issue.
 
 ## Post reboot cluster safety
-Any configuration applied using MCO on node including upgrades requires node reboot with the exception of [optimized updates](./MachineConfigDaemon.md#optimized-updates). MCO doesn't provide guarantee for post-reboot cluster safety. This implies that MCO will try its best to keep feature parity and behavior on SNO similar to regular OCP cluster. But due to the nature of SNO (single control plane node), when control plane node reboots during update/upgrade, node may not come up or join cluster due to multiple reasons that is not related to MCO, such as:
+Any configuration applied using MCO on node including upgrades requires node reboot with the exception of [rebootless updates](./MachineConfigDaemon.md#rebootless-updates). MCO doesn't provide guarantee for post-reboot cluster safety. This implies that MCO will try its best to keep feature parity and behavior on SNO similar to regular OCP cluster. But due to the nature of SNO (single control plane node), when control plane node reboots during update/upgrade, node may not come up or join cluster due to multiple reasons that is not related to MCO, such as:
 
 - Bug in one of the package that was updated
 - Faulty config applied on node by user
