@@ -76,6 +76,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.ClientBuilder.ConfigClientOrDie(componentName),
 			ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctrlctx.KubeMAOSharedInformer.Core().V1().Secrets(),
 		)
 
 		ctrlctx.NamespacedInformerFactory.Start(ctrlctx.Stop)
@@ -85,6 +86,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OpenShiftKubeAPIServerKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
 		go controller.Run(2, ctrlctx.Stop)
@@ -92,11 +94,13 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		select {}
 	}
 
+	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
+
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
 		Lock:          common.CreateResourceLock(cb, componentNamespace, componentName),
-		LeaseDuration: common.LeaseDuration,
-		RenewDeadline: common.RenewDeadline,
-		RetryPeriod:   common.RetryPeriod,
+		LeaseDuration: leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline: leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:   leaderElectionCfg.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {

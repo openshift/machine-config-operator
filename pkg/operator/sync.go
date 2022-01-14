@@ -8,6 +8,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,12 +28,16 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/machine-config-operator/lib/resourceapply"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	"github.com/openshift/machine-config-operator/manifests"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
+	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
@@ -312,9 +319,53 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		templatectrl.BaremetalRuntimeCfgKey: imgs.BaremetalRuntimeCfg,
 	}
 
+	ignitionHost, err := getIgnitionHost(&infra.Status)
+	if err != nil {
+		return err
+	}
+
+	pointerConfig, err := ctrlcommon.PointerConfig(ignitionHost, rootCA)
+	if err != nil {
+		return err
+	}
+	pointerConfigData, err := json.Marshal(pointerConfig)
+	if err != nil {
+		return err
+	}
+
 	// create renderConfig
-	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL)
+	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData)
 	return nil
+}
+
+func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {
+	internalURL := infraStatus.APIServerInternalURL
+	internalURLParsed, err := url.Parse(internalURL)
+	if err != nil {
+		return "", err
+	}
+	securePortStr := strconv.Itoa(server.SecurePort)
+	ignitionHost := fmt.Sprintf("%s:%s", internalURLParsed.Hostname(), securePortStr)
+	if infraStatus.PlatformStatus != nil {
+		switch infraStatus.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.BareMetal.APIServerInternalIP, securePortStr)
+		case configv1.OpenStackPlatformType:
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.OpenStack.APIServerInternalIP, securePortStr)
+		case configv1.OvirtPlatformType:
+			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIP, securePortStr)
+		case configv1.VSpherePlatformType:
+			if infraStatus.PlatformStatus.VSphere != nil {
+				if infraStatus.PlatformStatus.VSphere.APIServerInternalIP != "" {
+					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIP, securePortStr)
+				}
+			} else {
+				glog.Warning("Warning: PlatformStatus.VSphere should not be nil")
+			}
+		}
+	}
+
+	return ignitionHost, nil
 }
 
 func (optr *Operator) syncCustomResourceDefinitions() error {
@@ -328,7 +379,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 			return fmt.Errorf("error getting asset %s: %v", crd, err)
 		}
 		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
-		_, updated, err := resourceapply.ApplyCustomResourceDefinition(optr.apiExtClient.ApiextensionsV1(), c)
+		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(context.TODO(), optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
 		if err != nil {
 			return err
 		}
@@ -353,8 +404,41 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 		if err != nil {
 			return err
 		}
-		p := resourceread.ReadMachineConfigPoolV1OrDie(mcpBytes)
-		_, _, err = resourceapply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
+		p := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
+		_, _, err = mcoResourceApply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
+		if err != nil {
+			return err
+		}
+	}
+
+	userDataTemplatePath := "manifests/userdata_secret.yaml"
+	pools, err := optr.mcpLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	// base64.StdEncoding.EncodeToString
+	for _, pool := range pools {
+		pointerConfigAsset := newAssetRenderer("pointer-config")
+		pointerConfigAsset.templateData = config.PointerConfig
+		pointerConfigData, err := pointerConfigAsset.render(struct{ Role string }{pool.Name})
+		if err != nil {
+			return err
+		}
+
+		userDataAsset := newAssetRenderer(userDataTemplatePath)
+		if err := userDataAsset.read(); err != nil {
+			return err
+		}
+		userDataAsset.addTemplateFuncs()
+		userdataBytes, err := userDataAsset.render(struct{ Role, PointerConfig string }{
+			pool.Name,
+			base64.StdEncoding.EncodeToString(pointerConfigData),
+		})
+		if err != nil {
+			return err
+		}
+		p := resourceread.ReadSecretV1OrDie(userdataBytes)
+		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, p)
 		if err != nil {
 			return err
 		}
@@ -370,7 +454,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-		_, _, err = resourceapply.ApplyClusterRole(optr.kubeClient.RbacV1(), cr)
+		_, _, err = resourceapply.ApplyClusterRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
 		if err != nil {
 			return err
 		}
@@ -382,7 +466,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		rb := resourceread.ReadRoleBindingV1OrDie(rbBytes)
-		_, _, err = resourceapply.ApplyRoleBinding(optr.kubeClient.RbacV1(), rb)
+		_, _, err = resourceapply.ApplyRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, rb)
 		if err != nil {
 			return err
 		}
@@ -394,7 +478,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-		_, _, err = resourceapply.ApplyClusterRoleBinding(optr.kubeClient.RbacV1(), crb)
+		_, _, err = resourceapply.ApplyClusterRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
 		if err != nil {
 			return err
 		}
@@ -406,7 +490,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-		_, _, err = resourceapply.ApplyServiceAccount(optr.kubeClient.CoreV1(), sa)
+		_, _, err = resourceapply.ApplyServiceAccount(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
 		if err != nil {
 			return err
 		}
@@ -418,7 +502,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		s := resourceread.ReadSecretV1OrDie(sBytes)
-		_, _, err = resourceapply.ApplySecret(optr.kubeClient.CoreV1(), s)
+		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, s)
 		if err != nil {
 			return err
 		}
@@ -430,7 +514,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		d := resourceread.ReadDaemonSetV1OrDie(dBytes)
-		_, updated, err := resourceapply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
+		_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
 		if err != nil {
 			return err
 		}
@@ -469,7 +553,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	}
 	mcc := resourceread.ReadDeploymentV1OrDie(mccBytes)
 
-	_, updated, err := resourceapply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
+	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
 	if err != nil {
 		return err
 	}
@@ -482,13 +566,13 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	if err != nil {
 		return err
 	}
-	cc := resourceread.ReadControllerConfigV1OrDie(ccBytes)
+	cc := mcoResourceRead.ReadControllerConfigV1OrDie(ccBytes)
 	// Propagate our binary version into the controller config to help
 	// suppress rendered config generation until a corresponding
 	// new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
-	_, _, err = resourceapply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
+	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
 		return err
 	}
@@ -833,7 +917,7 @@ func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Net
 	return infra, network, proxy, dns, nil
 }
 
-func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string) *renderConfig {
+func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte) *renderConfig {
 	return &renderConfig{
 		TargetNamespace:        tnamespace,
 		Version:                version.Raw,
@@ -841,6 +925,7 @@ func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.C
 		Images:                 imgs,
 		APIServerURL:           apiServerURL,
 		KubeAPIServerServingCA: kubeAPIServerServingCA,
+		PointerConfig:          string(pointerConfigData),
 	}
 }
 

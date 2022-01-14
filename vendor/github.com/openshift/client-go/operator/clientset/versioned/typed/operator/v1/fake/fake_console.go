@@ -94,7 +94,7 @@ func (c *FakeConsoles) UpdateStatus(ctx context.Context, console *operatorv1.Con
 // Delete takes name of the console and deletes it. Returns an error if one occurs.
 func (c *FakeConsoles) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(consolesResource, name), &operatorv1.Console{})
+		Invokes(testing.NewRootDeleteActionWithOptions(consolesResource, name, opts), &operatorv1.Console{})
 	return err
 }
 

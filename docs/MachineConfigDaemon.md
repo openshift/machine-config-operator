@@ -144,29 +144,39 @@ The draining of pods on the only master node will not evict the control plane as
 
 Etcd is co-located on master nodes as static pods. The draining behavior defined above prevents draining of static pods to prevent interference to etcd cluster by the daemon.
 
-## Optimized Updates
+## Rebootless Updates
 
-As of Openshift 4.7, the MCD gained the functionality to apply select MachineConfig updates without a full reboot flow (drain -> update -> reboot). The action is calculated as a diff between current and desired configurations. For any MachineConfig change not listed below, or if a forcefile was set, the MCD will trigger the full reboot flow.
+As of Openshift 4.7, the MCD gained the functionality to apply select MachineConfig updates without a full reboot flow (drain -> update -> reboot). The MCD now calculates a diff between the current and desired configurations, and it uses any changes to select one of the options listed below. For any change not listed below, or if a forcefile was set, the MCD will trigger the full reboot flow.
 
-The updated list of optimized updates and behaviour (as of Openshift 4.8) is as follows:
+The updated list of optimized updates and behaviour (as of Openshift 4.10) is as follows:
 
-### Drainless and Rebootless Updates
+### Without Drain
 
-"None" action: only performs the corresponding file write. The following changes will not trigger a drain nor a reboot:
+Most reboot exceptions also skip a drain, but some have to reload crio.
 
-1. [SSH Keys](./Update-SSHKeys.md) (updating ignition/passwd/users/sshAuthorizedKeys section in a MachineConfig)
-2. kube-apiserver-to-kubelet-signer CA cert (located at `/etc/kubernetes/kubelet-ca.crt`, 1 year expiry autorotated by the openshift-kubeapiserver operator)
-3. [Pull Secret](./PullSecret.md) (cluster-wide, located at `/var/lib/kubelet/config.json`).
-4. **Selected registries.conf changes(/etc/containers/registries.conf)**  This file is generally changed via ICSP object changes. Only the following changes will cause no-drain and no-reboot updates:
-   - addition of a registry with mirror-by-digest-only=true
-   - addition of a mirror in a registry with mirror-by-digest-only=true
-   - appending items in unqualified-search-registries list
+#### "None" Action
 
-### Rebootless Updates
+The "None" action only performs the corresponding file write; it does not trigger a drain or a reboot. This action is taken for changes to the following items:
 
-"Crio Reload" action: performs the file write, and runs a `systemctl reload crio`. The following changes will trigger a drain, but not a reboot:
+1. [SSH Keys](./Update-SSHKeys.md): updated by changing `ignition.passwd.users.sshAuthorizedKeys` in a MachineConfig
+2. kube-apiserver-to-kubelet-signer CA cert: located at `/etc/kubernetes/kubelet-ca.crt` and autorotated by the openshift-kubeapiserver operator after a 1 year expiry
+3. [Pull Secret](./PullSecret.md): cluster-wide, located at `/var/lib/kubelet/config.json`
 
-1. **registries.conf (/etc/containers/registries.conf)**: This file is generally changed via ICSP object changes. Node drain will take place except for changes specified in [Drainless and Rebootless Updates](#Drainless-and-Rebootless-Updates).
+#### "Reload Crio" Action
+
+The "Reload Crio" action performs the file write and runs a `systemctl reload crio`. It does not trigger a drain or a reboot for changes to the following items:
+
+1. Container signing GPG keys: these can be changed by pointing `/etc/containers/policy.json` to `/etc/machine-config-daemon/no-reboot/containers-gpg.pub` and storing keys in the latter file. Changes to either file trigger the "Reload Crio" action
+2. **Selected** `/etc/containers/registries.conf` changes: this file is generally changed via ICSP object changes. Only the following changes will avoid a drain:
+   - addition of a registry with `mirror-by-digest-only=true`
+   - addition of a mirror in a registry with `mirror-by-digest-only=true`
+   - appending items in the `unqualified-search-registries` list
+
+### With Drain
+
+"Reload Crio" is performed with a drain for changes to the following items:
+
+1. **Selected** `/etc/containers/registries.conf` changes: this file is generally changed via ICSP object changes. Node drain will take place except for changes specified [above](#Without-Drain).
 
 ## Annotating on SSH access
 

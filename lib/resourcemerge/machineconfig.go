@@ -105,5 +105,10 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 		existing.DNS = required.DNS
 	}
 
+	if !equality.Semantic.DeepEqual(existing.Network, required.Network) {
+		*modified = true
+		existing.Network = required.Network
+	}
+
 	mergeMap(modified, &existing.Images, required.Images)
 }

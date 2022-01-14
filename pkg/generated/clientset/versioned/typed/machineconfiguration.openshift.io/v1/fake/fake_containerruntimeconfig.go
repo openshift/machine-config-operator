@@ -94,7 +94,7 @@ func (c *FakeContainerRuntimeConfigs) UpdateStatus(ctx context.Context, containe
 // Delete takes name of the containerRuntimeConfig and deletes it. Returns an error if one occurs.
 func (c *FakeContainerRuntimeConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(containerruntimeconfigsResource, name), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(containerruntimeconfigsResource, name, opts), &machineconfigurationopenshiftiov1.ContainerRuntimeConfig{})
 	return err
 }
 

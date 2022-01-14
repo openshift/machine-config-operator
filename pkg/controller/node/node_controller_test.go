@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/openshift/machine-config-operator/pkg/constants"
 	"reflect"
 	"testing"
 	"time"
@@ -783,47 +784,116 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 }
 
 func TestShouldMakeProgress(t *testing.T) {
-	f := newFixture(t)
-	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
-	mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
-	mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
-	mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
+	// nodeWithDesiredConfigTaints is at desired config, so need to do a get on the nodeWithDesiredConfigTaints to check for the taint status
+	nodeWithDesiredConfigTaints := newNodeWithLabel("nodeWithDesiredConfigTaints", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""})
+	// Update nodeWithDesiredConfigTaints to have the needed taint, this should still have no effect
+	nodeWithDesiredConfigTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
+	// nodeWithNoDesiredConfigButTaints
+	nodeWithNoDesiredConfigButTaints := newNodeWithLabel("nodeWithNoDesiredConfigButTaints", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""})
+	nodeWithNoDesiredConfigButTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
+	tests := []struct {
+		description           string
+		node                  *corev1.Node
+		expectAnnotationPatch bool
+		expectTaintsPatch     bool
+		expectTaintsGet       bool
+	}{
+		{
+			description:           "node at desired config no patch on annotation or taints",
+			node:                  newNodeWithLabel("nodeAtDesiredConfig", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			expectAnnotationPatch: false,
+			expectTaintsPatch:     false,
+		},
+		{
+			description:           "node not at desired config, patch on annotation and taints",
+			node:                  newNodeWithLabel("nodeNeedingUpdates", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+			expectAnnotationPatch: true,
+			expectTaintsPatch:     true,
+		},
+		{
+			description:           "node at desired config, no patch on annotation or taints",
+			node:                  nodeWithDesiredConfigTaints,
+			expectAnnotationPatch: false,
+			expectTaintsPatch:     false,
+		},
+		{
+			description:           "node not at desired config, patch on annotation but not on taint",
+			node:                  nodeWithNoDesiredConfigButTaints,
+			expectAnnotationPatch: true,
+			expectTaintsPatch:     false,
+			expectTaintsGet:       true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.description, func(t *testing.T) {
+			f := newFixture(t)
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.TopologyMode(""))
+			mcp := helpers.NewMachineConfigPool("test-cluster-infra", nil, helpers.InfraSelector, "v1")
+			mcpWorker := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
+			mcp.Spec.MaxUnavailable = intStrPtr(intstr.FromInt(1))
 
-	nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-		newNodeWithLabel("node-1", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
-	}
+			nodes := []*corev1.Node{
+				// Existing node in the cluster at desired config
+				newNodeWithLabel("existingNodeAtDesiredConfig", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
+				test.node,
+			}
 
-	f.ccLister = append(f.ccLister, cc)
-	f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
-	f.objects = append(f.objects, mcp, mcpWorker)
-	f.nodeLister = append(f.nodeLister, nodes...)
-	for idx := range nodes {
-		f.kubeobjects = append(f.kubeobjects, nodes[idx])
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp, mcpWorker)
+			f.objects = append(f.objects, mcp, mcpWorker)
+			f.nodeLister = append(f.nodeLister, test.node)
+			for idx := range nodes {
+				f.kubeobjects = append(f.kubeobjects, nodes[idx])
+			}
+			var oldData, newData, exppatch []byte
+			var err error
+			expNode := nodes[1].DeepCopy()
+			if test.expectTaintsPatch {
+				f.expectGetNodeAction(nodes[1])
+				expNode.Spec.Taints = append(expNode.Spec.Taints, *constants.NodeUpdateInProgressTaint)
+				oldData, err = json.Marshal(nodes[1])
+				if err != nil {
+					t.Fatal(err)
+				}
+				newData, err = json.Marshal(expNode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				exppatch, err = strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.expectPatchNodeAction(expNode, exppatch)
+			}
+			if test.expectTaintsGet {
+				f.expectGetNodeAction(nodes[1])
+			}
+			// Patch the annotations on the node object now. Always doing it for nodes[1] as nodes[0] is already at
+			// desired config
+			if test.expectAnnotationPatch {
+				f.expectGetNodeAction(nodes[1])
+				oldData, err = json.Marshal(expNode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = "v1"
+				newData, err = json.Marshal(expNode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				exppatch, err = strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.expectPatchNodeAction(expNode, exppatch)
+			}
+			expStatus := calculateStatus(mcp, nodes)
+			expMcp := mcp.DeepCopy()
+			expMcp.Status = expStatus
+			f.expectUpdateMachineConfigPoolStatus(expMcp)
+			f.run(getKey(mcp, t))
+		})
 	}
-
-	f.expectGetNodeAction(nodes[1])
-	expNode := nodes[1].DeepCopy()
-	expNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] = "v1"
-	oldData, err := json.Marshal(nodes[1])
-	if err != nil {
-		t.Fatal(err)
-	}
-	newData, err := json.Marshal(expNode)
-	if err != nil {
-		t.Fatal(err)
-	}
-	exppatch, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.expectPatchNodeAction(expNode, exppatch)
-	expStatus := calculateStatus(mcp, nodes)
-	expMcp := mcp.DeepCopy()
-	expMcp.Status = expStatus
-	f.expectUpdateMachineConfigPoolStatus(expMcp)
-
-	f.run(getKey(mcp, t))
 }
 
 func TestEmptyCurrentMachineConfig(t *testing.T) {

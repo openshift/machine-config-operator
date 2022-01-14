@@ -94,7 +94,7 @@ func (c *FakeOpenShiftAPIServers) UpdateStatus(ctx context.Context, openShiftAPI
 // Delete takes name of the openShiftAPIServer and deletes it. Returns an error if one occurs.
 func (c *FakeOpenShiftAPIServers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(openshiftapiserversResource, name), &operatorv1.OpenShiftAPIServer{})
+		Invokes(testing.NewRootDeleteActionWithOptions(openshiftapiserversResource, name, opts), &operatorv1.OpenShiftAPIServer{})
 	return err
 }
 

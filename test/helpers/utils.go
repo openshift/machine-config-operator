@@ -1,6 +1,8 @@
 package helpers
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"math/rand"
@@ -11,15 +13,90 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+
 	"k8s.io/apimachinery/pkg/util/wait"
 )
+
+type CleanupFuncs struct {
+	funcs []func()
+}
+
+func (c *CleanupFuncs) Add(f func()) {
+	c.funcs = append(c.funcs, f)
+}
+
+func (c *CleanupFuncs) Run() {
+	for _, f := range c.funcs {
+		f()
+	}
+}
+
+func NewCleanupFuncs() CleanupFuncs {
+	return CleanupFuncs{
+		funcs: []func(){},
+	}
+}
+
+func ApplyMC(t *testing.T, cs *framework.ClientSet, mc *mcfgv1.MachineConfig) func() {
+	_, err := cs.MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+	require.Nil(t, err)
+
+	return func() {
+		require.Nil(t, cs.MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}))
+	}
+}
+
+func CreatePoolAndApplyMC(t *testing.T, cs *framework.ClientSet, poolName string, mc *mcfgv1.MachineConfig) func() {
+	workerMCPName := "worker"
+
+	t.Logf("Setting up pool %s", poolName)
+
+	unlabelFunc := LabelRandomNodeFromPool(t, cs, workerMCPName, MCPNameToRole(poolName))
+	deleteMCPFunc := CreateMCP(t, cs, poolName)
+
+	node := GetSingleNodeByRole(t, cs, poolName)
+
+	t.Logf("Target Node: %s", node.Name)
+
+	mcDeleteFunc := ApplyMC(t, cs, mc)
+
+	WaitForConfigAndPoolComplete(t, cs, poolName, mc.Name)
+
+	mcpMCName := GetMcName(t, cs, poolName)
+	require.Nil(t, WaitForNodeConfigChange(t, cs, node, mcpMCName))
+
+	return func() {
+		t.Logf("Cleaning up MCP %s", poolName)
+		t.Logf("Removing label %s from node %s", MCPNameToRole(poolName), node.Name)
+		unlabelFunc()
+
+		workerMC := GetMcName(t, cs, workerMCPName)
+
+		// Wait for the worker pool to catch up with the deleted label
+		time.Sleep(5 * time.Second)
+
+		t.Logf("Waiting for %s pool to finish applying %s", workerMCPName, workerMC)
+		require.Nil(t, WaitForPoolComplete(t, cs, workerMCPName, workerMC))
+
+		t.Logf("Ensuring node has %s pool config before deleting pool %s", workerMCPName, poolName)
+		require.Nil(t, WaitForNodeConfigChange(t, cs, node, workerMC))
+
+		t.Logf("Deleting MCP %s", poolName)
+		deleteMCPFunc()
+
+		t.Logf("Deleting MachineConfig %s", mc.Name)
+		mcDeleteFunc()
+	}
+}
 
 // GetMcName returns the current configuration name of the machine config pool poolName
 func GetMcName(t *testing.T, cs *framework.ClientSet, poolName string) string {
@@ -120,6 +197,30 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 	return nil
 }
 
+func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
+	startTime := time.Now()
+	err := wait.PollImmediate(2*time.Second, 20*time.Minute, func() (bool, error) {
+		n, err := cs.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		current := n.Annotations[constants.CurrentMachineConfigAnnotationKey]
+		desired := n.Annotations[constants.DesiredMachineConfigAnnotationKey]
+
+		state := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+
+		return current == desired && desired == mcName && state == constants.MachineConfigDaemonStateDone, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("node config change did not occur (waited %v): %w", time.Since(startTime), err)
+	}
+
+	t.Logf("Node %s changed config to %s (waited %v)", node.Name, mcName, time.Since(startTime))
+	return nil
+}
+
 // LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
 func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
 	nodes, err := GetNodesByRole(cs, pool)
@@ -131,11 +232,19 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
 	// #nosec
 	infraNode := nodes[rand.Intn(len(nodes))]
-	out, err := exec.Command("oc", "label", "node", infraNode.Name, label+"=", "--overwrite=true").CombinedOutput()
-	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, string(out))
+	infraNode.Labels[label] = ""
+
+	_, err = cs.Nodes().Update(context.TODO(), &infraNode, metav1.UpdateOptions{})
+
+	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
 	return func() {
-		out, err = exec.Command("oc", "label", "node", infraNode.Name, label+"-").CombinedOutput()
-		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, string(out))
+		updatedNode, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		require.Nil(t, err, "unable to get node to update: %s", err)
+
+		delete(updatedNode.Labels, label)
+
+		_, err = cs.Nodes().Update(context.TODO(), updatedNode, metav1.UpdateOptions{})
+		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, err)
 	}
 }
 
@@ -201,11 +310,23 @@ func CreateMC(name, role string) *mcfgv1.MachineConfig {
 // ExecCmdOnNode finds a node's mcd, and oc rsh's into it to execute a command on the node
 // all commands should use /rootfs as root
 func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subArgs ...string) string {
+	// Check for an oc binary in $PATH.
+	path, err := exec.LookPath("oc")
+	if err != nil {
+		t.Fatalf("could not locate oc command: %s", err)
+	}
+
+	// Get the kubeconfig file path
+	kubeconfig, err := cs.GetKubeconfig()
+	if err != nil {
+		t.Fatalf("could not get kubeconfig: %s", err)
+	}
+
 	mcd, err := mcdForNode(cs, &node)
 	require.Nil(t, err)
 	mcdName := mcd.ObjectMeta.Name
 
-	entryPoint := "oc"
+	entryPoint := path
 	args := []string{"rsh",
 		"-n", "openshift-machine-config-operator",
 		"-c", "machine-config-daemon",
@@ -213,6 +334,10 @@ func ExecCmdOnNode(t *testing.T, cs *framework.ClientSet, node corev1.Node, subA
 	args = append(args, subArgs...)
 
 	cmd := exec.Command(entryPoint, args...)
+	// If one passes a path to a kubeconfig via NewClientSet instead of setting
+	// $KUBECONFIG, oc will be unaware of it. To remedy, we explicitly set
+	// KUBECONFIG to the value held by the clientset.
+	cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
 	cmd.Stderr = os.Stderr
 
 	out, err := cmd.Output()
@@ -261,6 +386,36 @@ func MCLabelForWorkers() map[string]string {
 // 	}
 // }
 
+// Creates an Ign3 file whose contents are gzipped and encoded according to
+// https://datatracker.ietf.org/doc/html/rfc2397
+func CreateGzippedIgn3File(path, content string, mode int) (ign3types.File, error) {
+	ign3File := ign3types.File{}
+
+	buf := bytes.NewBuffer([]byte{})
+
+	gzipWriter := gzip.NewWriter(buf)
+	if _, err := gzipWriter.Write([]byte(content)); err != nil {
+		return ign3File, err
+	}
+
+	if err := gzipWriter.Close(); err != nil {
+		return ign3File, err
+	}
+
+	ign3File = CreateEncodedIgn3File(path, buf.String(), mode)
+	ign3File.Contents.Compression = StrToPtr("gzip")
+
+	return ign3File, nil
+}
+
+// Creates an Ign3 file whose contents are encoded according to
+// https://datatracker.ietf.org/doc/html/rfc2397
+func CreateEncodedIgn3File(path, content string, mode int) ign3types.File {
+	encoded := dataurl.EncodeBytes([]byte(content))
+
+	return CreateIgn3File(path, encoded, mode)
+}
+
 func CreateIgn3File(path, content string, mode int) ign3types.File {
 	return ign3types.File{
 		FileEmbedded1: ign3types.FileEmbedded1{
@@ -276,6 +431,10 @@ func CreateIgn3File(path, content string, mode int) ign3types.File {
 			},
 		},
 	}
+}
+
+func MCDForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
+	return mcdForNode(cs, node)
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
