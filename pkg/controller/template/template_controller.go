@@ -14,7 +14,7 @@ import (
 	osev1 "github.com/openshift/api/config/v1"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
-	"github.com/openshift/machine-config-operator/lib/resourceapply"
+	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
@@ -486,7 +486,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	}
 
 	for _, mc := range mcs {
-		_, updated, err := resourceapply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mc)
+		_, updated, err := mcoResourceApply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mc)
 		if err != nil {
 			return ctrl.syncFailingStatus(cfg, err)
 		}

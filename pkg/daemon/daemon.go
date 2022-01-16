@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,15 +17,16 @@ import (
 	"syscall"
 	"time"
 
-	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
-	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -35,12 +35,14 @@ import (
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/machine-config-operator/lib/resourceread"
+	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	commonconstants "github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -122,6 +124,9 @@ type Daemon struct {
 	loggerSupportsJournal bool
 
 	drainer *drain.Helper
+
+	// Config Drift Monitor
+	configDriftMonitor ConfigDriftMonitor
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -150,6 +155,7 @@ const (
 	// the MCC/MCO will time out.  We don't want to spam our logs with the same
 	// error.
 	updateDelay = 5 * time.Second
+
 	// maxUpdateBackoff is the maximum time to react to a change as we back off
 	// in the face of errors.
 	maxUpdateBackoff = 60 * time.Second
@@ -260,6 +266,7 @@ func New(
 		exitCh:                exitCh,
 		currentConfigPath:     currentConfigPath,
 		loggerSupportsJournal: loggerSupportsJournal,
+		configDriftMonitor:    NewConfigDriftMonitor(),
 	}, nil
 }
 
@@ -461,6 +468,10 @@ func (dn *Daemon) syncNode(key string) error {
 		// currently we return immediately here, although
 		// I think we should change this to continue.
 		dn.booting = false
+
+		// Start the Config Drift Monitor since we're booted up.
+		dn.startConfigDriftMonitor()
+
 		return nil
 	}
 
@@ -470,11 +481,44 @@ func (dn *Daemon) syncNode(key string) error {
 		return errors.Wrapf(err, "prepping update")
 	}
 	if current != nil || desired != nil {
+		// Only check for config drift if we need to update.
+		if err := dn.runPreflightConfigDriftCheck(); err != nil {
+			return err
+		}
+
 		if err := dn.triggerUpdateWithMachineConfig(current, desired); err != nil {
 			return err
 		}
 	}
 	glog.V(2).Infof("Node %s is already synced", node.Name)
+	return nil
+}
+
+// Validates that the on-disk state matches the currently applied machineconfig
+// before an update occurs.
+func (dn *Daemon) runPreflightConfigDriftCheck() error {
+	// This allows skip behavior based upon the presence of
+	// the forcefile: /run/machine-config-daemon-force.
+	if forceFileExists() {
+		glog.Infof("Skipping preflight config drift check; %s present", constants.MachineConfigDaemonForceFile)
+		return nil
+	}
+
+	currentOnDisk, err := dn.getCurrentConfigOnDisk()
+	if err != nil {
+		return fmt.Errorf("could not get on-disk config: %w", err)
+	}
+
+	start := time.Now()
+
+	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
+		glog.Errorf("Preflight config drift check failed: %v", err)
+		return configDriftErr(err)
+	}
+
+	glog.Infof("Preflight config drift check successful (took %s)", time.Since(start))
+
 	return nil
 }
 
@@ -691,6 +735,72 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 		return fmt.Errorf("error: cannot apply annotation for SSH access due to: %v", err)
 	}
 	return nil
+}
+
+// Called whenever the on-disk config has drifted from the current machineconfig.
+func (dn *Daemon) onConfigDrift(err error) {
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
+	glog.Error(err)
+	dn.updateErrorState(err)
+}
+
+func (dn *Daemon) startConfigDriftMonitor() {
+	// Even though the Config Drift Monitor object ensures that only a single
+	// Config Drift Watcher is running at any given time, other things, such as
+	// emitting Kube events on startup, should only occur if we weren't
+	// previously running. This provides us with a way to short-circuit that path
+	// if we already have a Config Drift Watcher running.
+	if dn.configDriftMonitor.IsRunning() {
+		return
+	}
+
+	currentConfig, err := dn.getCurrentConfigOnDisk()
+	if err != nil {
+		dn.exitCh <- fmt.Errorf("could not get current config from disk: %w", err)
+		return
+	}
+
+	opts := ConfigDriftMonitorOpts{
+		OnDrift:       dn.onConfigDrift,
+		SystemdPath:   pathSystemd,
+		ErrChan:       dn.exitCh,
+		MachineConfig: currentConfig,
+	}
+
+	if err := dn.configDriftMonitor.Start(opts); err != nil {
+		dn.exitCh <- fmt.Errorf("could not start Config Drift Monitor: %w", err)
+		return
+	}
+
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
+		"Config Drift Monitor started, watching against %s", currentConfig.Name)
+
+	go func() {
+		// Common shutdown function
+		shutdown := func() {
+			// Stop the Config Drift Monitor, if it's not already stopped.
+			dn.configDriftMonitor.Stop()
+			// Report that we've shut down
+			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "ConfigDriftMonitorStopped", "Config Drift Monitor stopped")
+		}
+
+		for {
+			select {
+			case <-dn.stopCh:
+				// We got a stop signal from outside the MCD.
+				shutdown()
+				return
+			case <-dn.configDriftMonitor.Done():
+				// We got a stop signal from the Config Drift Monitor.
+				shutdown()
+				return
+			}
+		}
+	}()
+}
+
+func (dn *Daemon) stopConfigDriftMonitor() {
+	dn.configDriftMonitor.Stop()
 }
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
@@ -1101,15 +1211,18 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		expectedConfig = state.currentConfig
 	}
 
-	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err != nil {
-		if err := dn.validateOnDiskState(expectedConfig); err != nil {
-			return fmt.Errorf("unexpected on-disk state validating against %s: %v", expectedConfig.GetName(), err)
-		}
-		glog.Info("Validated on-disk state")
-	} else {
+	if forceFileExists() {
 		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
+
+	if err := dn.validateOnDiskState(expectedConfig); err != nil {
+		wErr := fmt.Errorf("unexpected on-disk state validating against %s: %w", expectedConfig.GetName(), err)
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
+		return wErr
+	}
+
+	glog.Info("Validated on-disk state")
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
@@ -1298,10 +1411,57 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return err
 	}
 
+	ctx := context.TODO()
+	if err := dn.removeUpdateInProgressTaint(ctx); err != nil {
+		return err
+	}
+
 	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
+}
+
+func (dn *Daemon) removeUpdateInProgressTaint(ctx context.Context) error {
+	return clientretry.RetryOnConflict(commonconstants.NodeUpdateBackoff, func() error {
+		oldNode, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+
+		// New taints to be copied.
+		var taintsAfterUpgrade []corev1.Taint
+		for _, taint := range newNode.Spec.Taints {
+			if taint.MatchTaint(commonconstants.NodeUpdateInProgressTaint) {
+				continue
+			} else {
+				taintsAfterUpgrade = append(taintsAfterUpgrade, taint)
+			}
+		}
+		// updateInProgress taint is not there, so no need to patch the node object, return immediately
+		if len(taintsAfterUpgrade) == len(newNode.Spec.Taints) {
+			return nil
+		}
+		// Remove the NodeUpdateInProgressTaint.
+		newNode.Spec.Taints = taintsAfterUpgrade
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", dn.name, err)
+		}
+		_, err = dn.kubeClient.CoreV1().Nodes().Patch(ctx, dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	})
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
@@ -1329,6 +1489,10 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 		}
 	}
 
+	// Shut down the Config Drift Monitor since we'll be performing an update
+	// and the config will "drift" while the update is occurring.
+	dn.stopConfigDriftMonitor()
+
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
 }
@@ -1343,34 +1507,8 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	if !osMatch {
 		return errors.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
 	}
-	// And the rest of the disk state
-	// We want to verify the disk state in the spec version that it was created with,
-	// to remove possibilities of behaviour changes due to translation
-	ignconfigi, err := ctrlcommon.IgnParseWrapper(currentConfig.Spec.Config.Raw)
-	if err != nil {
-		return errors.Errorf("Failed to parse Ignition for validation: %s", err)
-	}
 
-	switch typedConfig := ignconfigi.(type) {
-	case ign3types.Config:
-		if err := checkV3Files(ignconfigi.(ign3types.Config).Storage.Files); err != nil {
-			return err
-		}
-		if err := checkV3Units(ignconfigi.(ign3types.Config).Systemd.Units); err != nil {
-			return err
-		}
-		return nil
-	case ign2types.Config:
-		if err := checkV2Files(ignconfigi.(ign2types.Config).Storage.Files); err != nil {
-			return err
-		}
-		if err := checkV2Units(ignconfigi.(ign2types.Config).Systemd.Units); err != nil {
-			return err
-		}
-		return nil
-	default:
-		return errors.Errorf("unexpected type for ignition config: %v", typedConfig)
-	}
+	return validateOnDiskState(currentConfig, pathSystemd)
 }
 
 // checkOS determines whether the booted system matches the target
@@ -1387,164 +1525,6 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	}
 
 	return dn.bootedOSImageURL == osImageURL
-}
-
-// checkUnits validates the contents of all the units in the
-// target config and returns true if they match.
-func checkV3Units(units []ign3types.Unit) error {
-	for _, u := range units {
-		for j := range u.Dropins {
-			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-
-			var content string
-			if u.Dropins[j].Contents == nil {
-				content = ""
-			} else {
-				content = *u.Dropins[j].Contents
-			}
-
-			// As of 4.7 we now remove any empty defined dropins, check for that first
-			if _, err := os.Stat(path); content == "" && err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return err
-			}
-
-			// To maintain backwards compatibility, we allow existing zero length files to exist.
-			// Thus we are also ok if the dropin exists but has no content
-			if err := checkFileContentsAndMode(path, []byte(content), defaultFilePermissions); err != nil {
-				return err
-			}
-		}
-
-		if u.Contents == nil || *u.Contents == "" {
-			continue
-		}
-
-		path := filepath.Join(pathSystemd, u.Name)
-		if u.Mask != nil && *u.Mask {
-			link, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
-			}
-			if strings.Compare(pathDevNull, link) != 0 {
-				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
-			}
-		}
-		if err := checkFileContentsAndMode(path, []byte(*u.Contents), defaultFilePermissions); err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
-func checkV2Units(units []ign2types.Unit) error {
-	for _, u := range units {
-		for j := range u.Dropins {
-			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
-			if err := checkFileContentsAndMode(path, []byte(u.Dropins[j].Contents), defaultFilePermissions); err != nil {
-				return err
-			}
-		}
-
-		if u.Contents == "" {
-			continue
-		}
-
-		path := filepath.Join(pathSystemd, u.Name)
-		if u.Mask {
-			link, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return errors.Wrapf(err, "state validation: error while evaluation symlink for path %q", path)
-			}
-			if strings.Compare(pathDevNull, link) != 0 {
-				return errors.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
-			}
-		}
-		if err := checkFileContentsAndMode(path, []byte(u.Contents), defaultFilePermissions); err != nil {
-			return err
-		}
-
-	}
-	return nil
-}
-
-// checkFiles validates the contents of  all the files in the
-// target config.
-
-// V3 files should not have any duplication anymore, so there is
-// no need to check for overwrites.
-func checkV3Files(files []ign3types.File) error {
-	for _, f := range files {
-		if len(f.Append) > 0 {
-			return fmt.Errorf("found an append section when checking files. Append is not supported")
-		}
-		mode := defaultFilePermissions
-		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
-		}
-		decodedContents, err := decodeContents(f.Contents.Source, f.Contents.Compression)
-		if err != nil {
-			return fmt.Errorf("could not decode file %q: %w", f.Path, err)
-		}
-
-		if err := checkFileContentsAndMode(f.Path, decodedContents, mode); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func checkV2Files(files []ign2types.File) error {
-	checkedFiles := make(map[string]bool)
-	for i := len(files) - 1; i >= 0; i-- {
-		f := files[i]
-		// skip over checked validated files
-		if _, ok := checkedFiles[f.Path]; ok {
-			continue
-		}
-		if f.Append {
-			return fmt.Errorf("found an append section when checking files. Append is not supported")
-		}
-		mode := defaultFilePermissions
-		if f.Mode != nil {
-			mode = os.FileMode(*f.Mode)
-		}
-		decodedContents, err := decodeContents(&f.Contents.Source, &f.Contents.Compression)
-		if err != nil {
-			return fmt.Errorf("could not decode file %q: %w", f.Path, err)
-		}
-		if err := checkFileContentsAndMode(f.Path, decodedContents, mode); err != nil {
-			return err
-		}
-		checkedFiles[f.Path] = true
-	}
-	return nil
-}
-
-// checkFileContentsAndMode reads the file from the filepath and compares its
-// contents and mode with the expectedContent and mode parameters. It logs an
-// error in case of an error or mismatch and returns the status of the
-// evaluation.
-func checkFileContentsAndMode(filePath string, expectedContent []byte, mode os.FileMode) error {
-	fi, err := os.Lstat(filePath)
-	if err != nil {
-		return errors.Wrapf(err, "could not stat file %q", filePath)
-	}
-	if fi.Mode() != mode {
-		return errors.Errorf("mode mismatch for file: %q; expected: %[2]v/%[2]d/%#[2]o; received: %[3]v/%[3]d/%#[3]o", filePath, mode, fi.Mode())
-	}
-	contents, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return errors.Wrapf(err, "could not read file %q", filePath)
-	}
-	if !bytes.Equal(contents, expectedContent) {
-		glog.Errorf("content mismatch for file %q (-want +got):\n%s", filePath, cmp.Diff(expectedContent, contents))
-		return errors.Errorf("content mismatch for file %q", filePath)
-	}
-	return nil
 }
 
 // Close closes all the connections the node agent has open for it's lifetime
@@ -1608,7 +1588,7 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 	glog.V(2).Infof("%s is not an Ignition config: %v\nTrying MachineConfig.", onceFrom, err)
 
 	// Try to parse as a machine config
-	mc, err := resourceread.ReadMachineConfigV1(content)
+	mc, err := mcoResourceRead.ReadMachineConfigV1(content)
 	if err == nil && mc != nil {
 		glog.V(2).Info("onceFrom file is of type MachineConfig")
 		return *mc, contentFrom, nil
@@ -1635,4 +1615,16 @@ func (dn *Daemon) getControlPlaneTopology() configv1.TopologyMode {
 		// for any unhandled case, default to HighlyAvailableTopologyMode
 		return configv1.HighlyAvailableTopologyMode
 	}
+}
+
+// forceFileExists determines if /run/machine-config-daemon-force is present.
+func forceFileExists() bool {
+	_, err := os.Stat(constants.MachineConfigDaemonForceFile)
+
+	// No error means we could stat the file; it exists
+	if err == nil {
+		return true
+	}
+
+	return false
 }

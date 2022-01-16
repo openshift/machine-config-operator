@@ -94,7 +94,7 @@ func (c *FakeControllerConfigs) UpdateStatus(ctx context.Context, controllerConf
 // Delete takes name of the controllerConfig and deletes it. Returns an error if one occurs.
 func (c *FakeControllerConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(controllerconfigsResource, name), &machineconfigurationopenshiftiov1.ControllerConfig{})
+		Invokes(testing.NewRootDeleteActionWithOptions(controllerconfigsResource, name, opts), &machineconfigurationopenshiftiov1.ControllerConfig{})
 	return err
 }
 

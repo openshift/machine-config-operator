@@ -77,6 +77,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
+	var crconfigs []*mcfgv1.ContainerRuntimeConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	var imgCfg *apicfgv1.Image
 	for _, info := range infos {
@@ -113,6 +114,8 @@ func (b *Bootstrap) Run(destDir string) error {
 				configs = append(configs, obj)
 			case *mcfgv1.ControllerConfig:
 				cconfig = obj
+			case *mcfgv1.ContainerRuntimeConfig:
+				crconfigs = append(crconfigs, obj)
 			case *mcfgv1.KubeletConfig:
 				kconfigs = append(kconfigs, obj)
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
@@ -145,6 +148,13 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, rconfigs...)
 
+	if len(crconfigs) > 0 {
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
+		if err != nil {
+			return err
+		}
+		configs = append(configs, containerRuntimeConfigs...)
+	}
 	if featureGate != nil {
 		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, cconfig, pools)
 		if err != nil {

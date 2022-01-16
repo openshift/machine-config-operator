@@ -31,14 +31,32 @@ type renderConfig struct {
 	KubeAPIServerServingCA string
 	Infra                  configv1.Infrastructure
 	Constants              map[string]string
+	PointerConfig          string
 }
 
-func renderAsset(config *renderConfig, path string) ([]byte, error) {
-	objBytes, err := manifests.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("error getting asset %s: %v", path, err)
-	}
+type assetRenderer struct {
+	Path         string
+	tmpl         *template.Template
+	templateData string
+}
 
+func newAssetRenderer(path string) *assetRenderer {
+	return &assetRenderer{
+		Path: path,
+		tmpl: template.New(path),
+	}
+}
+
+func (a *assetRenderer) read() error {
+	objBytes, err := manifests.ReadFile(a.Path)
+	if err != nil {
+		return fmt.Errorf("error getting asset %s: %v", a.Path, err)
+	}
+	a.templateData = string(objBytes)
+	return nil
+}
+
+func (a *assetRenderer) addTemplateFuncs() {
 	funcs := sprig.TxtFuncMap()
 	funcs["toYAML"] = toYAML
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
@@ -46,13 +64,13 @@ func renderAsset(config *renderConfig, path string) ([]byte, error) {
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 
-	if config.Constants == nil {
-		config.Constants = constants.ConstantsByName
-	}
+	a.tmpl = a.tmpl.Funcs(funcs)
+}
 
-	tmpl, err := template.New(path).Funcs(funcs).Parse(string(objBytes))
+func (a *assetRenderer) render(config interface{}) ([]byte, error) {
+	tmpl, err := a.tmpl.Parse(a.templateData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse asset %s: %v", path, err)
+		return nil, fmt.Errorf("failed to parse asset %s: %v", a.Path, err)
 	}
 
 	buf := new(bytes.Buffer)
@@ -61,6 +79,21 @@ func renderAsset(config *renderConfig, path string) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func renderAsset(config *renderConfig, path string) ([]byte, error) {
+	asset := newAssetRenderer(path)
+	if err := asset.read(); err != nil {
+		return nil, err
+	}
+
+	if config.Constants == nil {
+		config.Constants = constants.ConstantsByName
+	}
+
+	asset.addTemplateFuncs()
+
+	return asset.render(config)
 }
 
 func toYAML(i interface{}) []byte {
@@ -125,6 +158,13 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 	} else if network.Status.Migration != nil {
 		// At sdn migration prepare phase, use the value in status.migration to prepare the node.
 		ccSpec.NetworkType = network.Status.Migration.NetworkType
+
+		// Set any MTU migration parameters as well
+		if network.Status.Migration.MTU != nil {
+			ccSpec.Network = &mcfgv1.NetworkInfo{
+				MTUMigration: network.Status.Migration.MTU,
+			}
+		}
 	} else {
 		// After installation, the MCO should not assume the network is changing just because the spec changed, it needs to wait until CNO updates the status.
 		ccSpec.NetworkType = network.Status.NetworkType

@@ -32,6 +32,7 @@ import (
 
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	"github.com/openshift/library-go/pkg/operator/events"
 
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -66,6 +67,7 @@ type Operator struct {
 	apiExtClient  apiextclientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
+	libgoRecorder events.Recorder
 
 	syncHandler func(ic string) error
 
@@ -101,6 +103,7 @@ type Operator struct {
 	oseKubeAPIListerSynced           cache.InformerSynced
 	nodeListerSynced                 cache.InformerSynced
 	dnsListerSynced                  cache.InformerSynced
+	maoSecretInformerSynced          cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -134,6 +137,7 @@ func New(
 	configClient configclientset.Interface,
 	oseKubeAPIInformer coreinformersv1.ConfigMapInformer,
 	nodeInformer coreinformersv1.NodeInformer,
+	maoSecretInformer coreinformersv1.SecretInformer,
 ) *Operator {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -149,6 +153,7 @@ func New(
 		apiExtClient:  apiExtClient,
 		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigoperator"}),
+		libgoRecorder: events.NewRecorder(kubeClient.CoreV1().Events("openshift-machine-config-operator"), "machine-config-operator", &corev1.ObjectReference{}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigoperator"),
 	}
 
@@ -168,6 +173,7 @@ func New(
 		oseKubeAPIInformer.Informer(),
 		nodeInformer.Informer(),
 		dnsInformer.Informer(),
+		maoSecretInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -189,6 +195,7 @@ func New(
 	optr.nodeLister = nodeInformer.Lister()
 	optr.nodeListerSynced = nodeInformer.Informer().HasSynced
 
+	optr.maoSecretInformerSynced = maoSecretInformer.Informer().HasSynced
 	optr.serviceAccountInformerSynced = serviceAccountInfomer.Informer().HasSynced
 	optr.clusterRoleInformerSynced = clusterRoleInformer.Informer().HasSynced
 	optr.clusterRoleBindingInformerSynced = clusterRoleBindingInformer.Informer().HasSynced
@@ -237,6 +244,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.clusterCmListerSynced,
 		optr.serviceAccountInformerSynced,
 		optr.clusterRoleInformerSynced,
+		optr.maoSecretInformerSynced,
 		optr.clusterRoleBindingInformerSynced,
 		optr.networkListerSynced,
 		optr.proxyListerSynced,

@@ -94,7 +94,7 @@ func (c *FakeServiceCatalogAPIServers) UpdateStatus(ctx context.Context, service
 // Delete takes name of the serviceCatalogAPIServer and deletes it. Returns an error if one occurs.
 func (c *FakeServiceCatalogAPIServers) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(servicecatalogapiserversResource, name), &operatorv1.ServiceCatalogAPIServer{})
+		Invokes(testing.NewRootDeleteActionWithOptions(servicecatalogapiserversResource, name, opts), &operatorv1.ServiceCatalogAPIServer{})
 	return err
 }
 

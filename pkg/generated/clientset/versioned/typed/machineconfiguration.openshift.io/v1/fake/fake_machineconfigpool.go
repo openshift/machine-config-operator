@@ -94,7 +94,7 @@ func (c *FakeMachineConfigPools) UpdateStatus(ctx context.Context, machineConfig
 // Delete takes name of the machineConfigPool and deletes it. Returns an error if one occurs.
 func (c *FakeMachineConfigPools) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(machineconfigpoolsResource, name), &machineconfigurationopenshiftiov1.MachineConfigPool{})
+		Invokes(testing.NewRootDeleteActionWithOptions(machineconfigpoolsResource, name, opts), &machineconfigurationopenshiftiov1.MachineConfigPool{})
 	return err
 }
 
