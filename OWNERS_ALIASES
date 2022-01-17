@@ -15,14 +15,12 @@ aliases:
     - yboaron
   openstack-approvers:
     - EmilienM
-    - iamemilio
     - mandre
     - mdbooth
     - pierreprinetti
     - stephenfin
   openstack-reviewers:
     - EmilienM
-    - iamemilio
     - mandre
     - mdbooth
     - pierreprinetti
