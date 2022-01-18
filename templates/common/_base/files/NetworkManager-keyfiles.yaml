@@ -1,0 +1,6 @@
+mode: 0644
+path: "/etc/NetworkManager/conf.d/20-keyfiles.conf"
+contents:
+  inline: |
+    [keyfile]
+    path=/etc/NetworkManager/system-connections
