@@ -1,4 +1,4 @@
-name: openshift-azure-routes.path
+name: openshift-alibabacloud-routes.path
 enabled: true
 contents: |
   [Unit]
