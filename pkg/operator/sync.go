@@ -572,6 +572,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	// new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
+
+	// add ocp release version as annotation to controller config, for use when
+	// annotating rendered configs with same.
+	optrVersion, _ := optr.vStore.Get("operator")
+	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
+
 	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
 		return err
@@ -687,7 +693,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					glog.Errorf("Error getting configmap osImageURL: %q", err)
 					return false, nil
 				}
-				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, opURL, optr.mcLister.Get); err != nil {
+				releaseVersion, _ := optr.vStore.Get("operator")
+				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
 					syncerr := optr.syncUpgradeableStatus()
 					if syncerr != nil {
