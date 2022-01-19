@@ -1,11 +1,11 @@
-name: openshift-azure-routes.service
+name: openshift-alibabacloud-routes.service
 enabled: false
 contents: |
   [Unit]
-  Description=Work around Azure load balancer hairpin
+  Description=Work around Alibaba Cloud load balancer hairpin
 
   [Service]
   Type=simple
-  ExecStart=/bin/bash /opt/libexec/openshift-azure-routes.sh start
+  ExecStart=/bin/bash /opt/libexec/openshift-alibabacloud-routes.sh start
   User=root
-  SyslogIdentifier=openshift-azure-routes
+  SyslogIdentifier=openshift-alibabacloud-routes
