@@ -364,22 +364,9 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		if dn.recorder != nil {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
+
 		var err error
-		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
-			return err
-		}
-		// Delete extracted OS image once we are done.
-		defer os.RemoveAll(osImageContentDir)
-
-		if err := addExtensionsRepo(osImageContentDir); err != nil {
-			return err
-		}
-		defer os.Remove(extensionsRepo)
-	}
-
-	// Update OS
-	if mcDiff.osUpdate {
-		if err := updateOS(newConfig, osImageContentDir); err != nil {
+		if osImageContentDir, err = ExtractAndUpdateOS(newConfig.Spec.OSImageURL); err != nil {
 			nodeName := ""
 			if dn.node != nil {
 				nodeName = dn.node.Name
@@ -387,6 +374,10 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
 			return err
 		}
+
+		// Delete extracted OS image once we are done.
+		defer os.RemoveAll(osImageContentDir)
+		defer os.Remove(extensionsRepo)
 	}
 
 	defer func() {
@@ -1036,6 +1027,11 @@ func validateExtensions(exts []string) error {
 }
 
 func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+	if isLayeredUpdate() {
+		// support new flow here, presently going to check for a new field
+		// TODO empty for now
+		return fmt.Errorf("layered update detected. Not supported at the moment to apply extensions")
+	}
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
@@ -1797,11 +1793,45 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	return nil
 }
 
+// ExtractAndUpdateOS attempts to consolidating various OS update paths to use the same entrypoint here,
+// to move towards handling CoreOS Layering.
+// Does both extraction (old model) and direct updates (new model)
+// Returns the extracted location to remove
+func ExtractAndUpdateOS(newOSImageURL string) (osImageContentDir string, err error) {
+	if isLayeredUpdate() {
+		// support new flow here, presently going to check for a new field
+		// TODO empty for now
+	} else {
+		if osImageContentDir, err = ExtractOSImage(newOSImageURL); err != nil {
+			return
+		}
+
+		if err = addExtensionsRepo(osImageContentDir); err != nil {
+			return
+		}
+
+		if err = updateOS(newOSImageURL, osImageContentDir); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// Checks both the incoming image and rpm-ostree version to see if we can use layered
+// image updating
+func isLayeredUpdate() bool {
+	if err := checkNodeRpmOstreeVersion(); err != nil {
+		glog.Infof("Layered update not supported: Failed to check rpm-ostree version: %v", err)
+		return false
+	}
+	return true
+}
+
 // updateOS updates the system OS to the one specified in newConfig
-func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
-	newURL := config.Spec.OSImageURL
+func updateOS(newURL string, osImageContentDir string) error {
 	glog.Infof("Updating OS to %s", newURL)
 	client := NewNodeUpdaterClient()
+	// If we go down this route, maybe change this to properly return changed or not
 	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %v", newURL, err)
 	}

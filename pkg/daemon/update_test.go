@@ -93,11 +93,7 @@ func TestUpdateOS(t *testing.T) {
 
 	// differentMcfg has a different OSImageURL so it will force Daemon.UpdateOS
 	// to trigger an update of the operatingsystem (as fronted by our testClient)
-	differentMcfg := &mcfgv1.MachineConfig{
-		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: "somethingDifferent",
-		},
-	}
+	differentMcfg := "somethingDifferent"
 
 	// should return an error
 	if err := updateOS(differentMcfg, ""); err == expectedError {

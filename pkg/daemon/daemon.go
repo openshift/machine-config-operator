@@ -1149,13 +1149,20 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
+			// TODO: I am actually not sure when this should happen. Bootstrap updates should
+			// in theory be going through the firstboot-complete-machineconfig path before the
+			// sync ever happens. So I don't know what constitutes the bootstrap pivot here.
+
+			// In case of the OS not fully being provisioned, I am unsure if this is the correct
+			// path either, since it doesn't consider any other OS related updates, such as kargs,
+			// extensions, etc.
+
+			// We should look into this and look to remove. In the meantime, I will just use the
+			// new update format.
 			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
 			// This only returns on error
-			osImageContentDir, err := ExtractOSImage(targetOSImageURL)
+			osImageContentDir, err := ExtractAndUpdateOS(targetOSImageURL)
 			if err != nil {
-				return err
-			}
-			if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
 				return err
 			}
 			if err := os.RemoveAll(osImageContentDir); err != nil {

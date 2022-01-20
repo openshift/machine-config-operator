@@ -10,7 +10,6 @@ import (
 	// Enable sha256 in container image references
 	_ "crypto/sha256"
 
-	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -59,16 +58,16 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 		container = args[0]
 	}
 
-	client := daemon.NewNodeUpdaterClient()
+	// I'm pretty sure we no longer use pivot directly anymore, although we have recommended users to
+	// use this utility in the past.
+	// Perhaps with coreos layering we should just remove this entirely.
 
-	osImageContentDir, err := daemon.ExtractOSImage(container)
+	osImageContentDir, err := daemon.ExtractAndUpdateOS(container)
 	if err != nil {
 		return err
 	}
-	changed, err := client.Rebase(container, osImageContentDir)
-	if err != nil {
-		return err
-	}
+
+	defer os.RemoveAll(osImageContentDir)
 
 	// Delete the file now that we successfully rebased
 	if fromEtcPullSpec {
@@ -77,10 +76,6 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 				return errors.Wrapf(err, "failed to delete %s", etcPivotFile)
 			}
 		}
-	}
-
-	if !changed {
-		glog.Info("No changes; already at target oscontainer")
 	}
 
 	return nil
