@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/util/retry"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -232,18 +233,29 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	// G404: Use of weak random number generator (math/rand instead of crypto/rand)
 	// #nosec
 	infraNode := nodes[rand.Intn(len(nodes))]
-	infraNode.Labels[label] = ""
+	infraNodeName := infraNode.Name
 
-	_, err = cs.Nodes().Update(context.TODO(), &infraNode, metav1.UpdateOptions{})
-
+	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		infraNode, err := cs.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		infraNode.Labels[label] = ""
+		_, err = cs.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
+		return err
+	})
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
+
 	return func() {
-		updatedNode, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err, "unable to get node to update: %s", err)
-
-		delete(updatedNode.Labels, label)
-
-		_, err = cs.Nodes().Update(context.TODO(), updatedNode, metav1.UpdateOptions{})
+		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			infraNode, err := cs.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			delete(infraNode.Labels, label)
+			_, err = cs.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
+			return err
+		})
 		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, err)
 	}
 }
