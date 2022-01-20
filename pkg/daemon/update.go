@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/clarketm/json"
+	"github.com/containers/image/v5/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
@@ -1027,15 +1028,16 @@ func validateExtensions(exts []string) error {
 }
 
 func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	if isLayeredUpdate() {
-		// support new flow here, presently going to check for a new field
-		// TODO empty for now
-		return fmt.Errorf("layered update detected. Not supported at the moment to apply extensions")
-	}
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
 		return nil
+	}
+
+	if isLayeredUpdate(newConfig.Spec.OSImageURL) {
+		// support new flow here, presently going to check for a new field
+		// TODO empty for now
+		return fmt.Errorf("layered update detected. Not supported at the moment to apply extensions")
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
@@ -1798,9 +1800,13 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 // Does both extraction (old model) and direct updates (new model)
 // Returns the extracted location to remove
 func ExtractAndUpdateOS(newOSImageURL string) (osImageContentDir string, err error) {
-	if isLayeredUpdate() {
-		// support new flow here, presently going to check for a new field
-		// TODO empty for now
+	if isLayeredUpdate(newOSImageURL) {
+		// support new flow here
+		// Not sure if these commands are enough?
+		glog.Infof("New format OS image detected. Doing a rebase directly")
+		args := []string{"rebase", "--experimental", fmt.Sprintf("ostree-unverified-registry:%s", newOSImageURL)}
+		err = runRpmOstree(args...)
+		return
 	} else {
 		if osImageContentDir, err = ExtractOSImage(newOSImageURL); err != nil {
 			return
@@ -1819,11 +1825,37 @@ func ExtractAndUpdateOS(newOSImageURL string) (osImageContentDir string, err err
 
 // Checks both the incoming image and rpm-ostree version to see if we can use layered
 // image updating
-func isLayeredUpdate() bool {
-	if err := checkNodeRpmOstreeVersion(); err != nil {
+func isLayeredUpdate(newOSImageURL string) bool {
+	var err error
+	if err = checkNodeRpmOstreeVersion(); err != nil {
 		glog.Infof("Layered update not supported: Failed to check rpm-ostree version: %v", err)
 		return false
 	}
+	// For now we will try checking by whether it has an ostree commit label
+	var imageData *types.ImageInspectInfo
+	if imageData, err = imageInspect(newOSImageURL); err != nil {
+		if err != nil {
+			// I feel like eventually we will have OC proxy support such that we no longer need to do this
+			// Copied over from update code, should probably dedupe. Also interesting that we have two very
+			// similar structs to return here
+			var podmanImgData *imageInspection
+			glog.Infof("Falling back to using podman inspect")
+			if podmanImgData, err = podmanInspect(newOSImageURL); err != nil {
+				glog.Errorf("Layered update not supported: Failed to inspect image: %v", err)
+				return false
+			}
+			if _, ok := podmanImgData.Labels["ostree.commit"]; !ok {
+				// Does not have ostree.commit label
+				return false
+			}
+		}
+	} else {
+		if _, ok := imageData.Labels["ostree.commit"]; !ok {
+			// Does not have ostree.commit label
+			return false
+		}
+	}
+
 	return true
 }
 
