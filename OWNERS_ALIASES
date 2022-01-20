@@ -4,15 +4,16 @@ aliases:
   baremetal-approvers:
     - bfournie
     - celebdor
+    - creydr
     - cybertron
     - hardys
     - yboaron
   baremetal-reviewers:
     - bfournie
     - celebdor
+    - creydr
     - cybertron
     - hardys
-    - yboaron
   openstack-approvers:
     - EmilienM
     - mandre
