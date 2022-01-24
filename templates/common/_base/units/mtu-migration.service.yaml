@@ -1,0 +1,32 @@
+{{ if .Network }}{{ if .Network.MTUMigration -}}
+name: mtu-migration.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Configures interfaces and routes with temporary MTUs during MTU migration
+  Requires=openvswitch.service ovs-configuration.service
+  Wants=NetworkManager-wait-online.service
+  After=NetworkManager-wait-online.service openvswitch.service network.service ovs-configuration.service
+  Before=network-online.target kubelet.service crio.service node-valid-hostname.service
+
+  [Service]
+  # Need oneshot to delay kubelet
+  Type=oneshot
+  Environment=NETWORK_TYPE={{ .NetworkType }}
+  {{ if .Network.MTUMigration.Machine }}{{ if .Network.MTUMigration.Machine.To -}}
+  Environment=TARGET_MTU={{ .Network.MTUMigration.Machine.To }}
+  {{ end }}{{ end -}}
+  {{ if .Network.MTUMigration.Machine }}{{ if .Network.MTUMigration.Machine.From -}}
+  Environment=CURRENT_MTU={{ .Network.MTUMigration.Machine.From }}
+  {{ end }}{{ end -}}
+  {{ if .Network.MTUMigration.Network }}{{ if .Network.MTUMigration.Network.To -}}
+  Environment=CNI_TARGET_MTU={{ .Network.MTUMigration.Network.To }}
+  {{ end }}{{ end -}}
+  ExecStart=/usr/local/bin/mtu-migration.sh
+  StandardOutput=journal+console
+  StandardError=journal+console
+
+  [Install]
+  WantedBy=network-online.target
+
+{{ end }}{{ end }}

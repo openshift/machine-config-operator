@@ -1,0 +1,213 @@
+{{ if .Network }}{{ if .Network.MTUMigration }}
+mode: 0755
+path: "/usr/local/bin/mtu-migration.sh"
+contents:
+  inline: |
+    #!/bin/bash
+
+    set -ex
+
+    MTU_MIGRATION_DIR="/etc/cno/mtu-migration"
+    MTU_MIGRATION_SAVE_DIR="${MTU_MIGRATION_DIR}/mtu"
+
+    # mtu-migration systemd service will call this script with the following
+    # environment variables set:
+    # - NETWORK_TYPE: OVNKubernetes or OpenshiftSDN
+    # - TARGET_MTU: new host MTU to set
+    # - CURRENT_MTU: current host MTU (optional, not currently used)
+    # - CNI_TARGET_MTU: new cluster network MTU (optional, not currently used)
+
+    get_mtu_on_dev(){
+        local dev=$1
+        mtu_path="/sys/class/net/${dev}/mtu"
+        if [ ! -f "$mtu_path" ]; then
+          echo "ERROR: no mtu file found at $mtu_path" >&2
+          exit 1
+        fi
+        cat "$mtu_path"
+    }
+
+    set_mtu_on_dev(){
+        local dev=$1
+        local new_mtu=$2
+        local ovs_type
+        ovs_type="$(ovs-vsctl --if-exists get int "$dev" type)"
+        if [[ "$ovs_type" == "system" ]] || [[ "$ovs_type" == "internal" ]]; then
+            ovs-vsctl set int "$dev" mtu_request="$new_mtu"
+        else
+            ip link set dev "$dev" mtu "$new_mtu"
+        fi
+    }
+
+    set_mtu_on_dev_routes() {
+        local dev=$1
+        local mtu=$2
+
+        for ip_str in "-4" "-6"; do
+            # Take the IP destination for all routes going through this device
+            dev_route_destinations=$(ip $ip_str -oneline route show dev "$dev" | awk -F' ' '{ print $1 }' | uniq)
+            if [ -n "$dev_route_destinations" ]; then
+                while IFS= read -r route_dest; do
+                    # Take all routes to each of the destinations found above
+                    # (with multiple matches we expect different devices and different metrics)
+                    # Remove duplicates after filtering out: proto, metric (since we're
+                    # overriding them later) and MTU field, only if already set to new MTU
+                    # (so as to not interfere with the routes already added by this script)
+                    full_routes=$(ip $ip_str -oneline route show "$route_dest" 2> /dev/null |
+                                    # remove overriden fields and linkdown (read only)
+                                    sed -re 's/ (proto|metric) [^[:blank:]]+//g' -e 's/linkdown//g' |
+                                    # remove mtu that we are going to be setting later on
+                                    sed -re "s/ mtu $mtu([[:blank:]]|$)//g" |
+                                    # ip oneline replaces '\n' with '\', remove it and normalize blanks
+                                    sed -re "s/\\\//g" -e 's/[[:blank:]]+/ /g' -e 's/[[:blank:]]*$//g' |
+                                    # remove duplicates while preserving original order
+                                    awk '!seen[$0]++')
+                    if [ -z "$full_routes" ]; then
+                        echo "error retrieving route for destination $route_dest"
+                        exit 1
+                    fi
+                    [ "$ip_str" = "-4" ] && route_metric=0 || route_metric=1  # highest priority metric
+                    while IFS= read -r single_route; do
+                        # for each route (to the same destination) found above,
+                        # - override the metric while keeping the original order
+                        # - if the route is for the dev we are handling,
+                        #   set MTU to new MTU if route MTU > new MTU or there's no route MTU
+                        # - set proto to static, so as to override dynamic routing
+                        # This will result in a new route (unless the same metric appears in the original route,
+                        # in which case the route is replaced) with the values above.
+                        route_mtu=$(echo "$single_route" | sed -nre 's/.* mtu ([0-9]+).*/\1/p')
+                        route_base=$(echo "$single_route" | awk -F"nexthop" '{print $1}' | sed -re 's/ mtu [0-9]+//g')
+                        route_multipath=${single_route#"$route_base"}
+                        echo "mtu=${route_mtu:-undefined} in this route: $single_route"
+                        new_route_mtu=""
+                        if echo "$single_route" | grep -Eq " dev ${dev}( |$)"; then
+                          if [ -z "$route_mtu" ] || [ "$route_mtu" -gt "$mtu" ]; then
+                              new_route_mtu="mtu $mtu"
+                          else
+                              new_route_mtu="mtu $route_mtu"
+                          fi
+                        fi
+                        route="${route_base} proto static metric ${route_metric} ${new_route_mtu} ${route_multipath}"
+                        echo "Adding or replacing route: ${route}"
+                        ip $ip_str route replace ${route}
+                        route_metric=$((route_metric+1))
+                    done <<< "$full_routes"
+                done <<< "$dev_route_destinations"
+            fi
+        done
+    }
+
+    save_mtu_for_dev(){
+        local dev=$1
+        local mtu=$2
+
+        if [ -f "${MTU_MIGRATION_SAVE_DIR}/${dev}" ]; then
+            rm -f "${MTU_MIGRATION_SAVE_DIR}/${dev}"
+        fi
+        if [ ! -d "${MTU_MIGRATION_SAVE_DIR}" ]; then
+            mkdir -p "${MTU_MIGRATION_SAVE_DIR}"
+        fi
+        echo "ORIGINAL_MTU=$mtu" > "${MTU_MIGRATION_SAVE_DIR}/${dev}"
+    }
+
+    set_mtu(){
+        local dev=$1
+        local is_vlan_parent=$2
+
+        if [ -f "${MTU_MIGRATION_SAVE_DIR}/${dev}" ]; then
+            . "${MTU_MIGRATION_SAVE_DIR}/${dev}"
+        else
+            ORIGINAL_MTU=$(get_mtu_on_dev "$dev")
+            save_mtu_for_dev "$dev" "$ORIGINAL_MTU"
+        fi
+
+        echo "For ORIGINAL_MTU=$ORIGINAL_MTU and TARGET_MTU=$TARGET_MTU ..."
+        echo "with is_vlan_parent=$is_vlan_parent"
+        if [ "$ORIGINAL_MTU" -gt "$TARGET_MTU" ]; then
+            if [ "$is_vlan_parent" -eq 1 ]; then
+              echo "No need to set MTU as current is greater than target and is a vlan parent"
+              return 0
+            fi
+            routable_mtu=$TARGET_MTU
+            mtu=$ORIGINAL_MTU
+        elif [ "$ORIGINAL_MTU" -lt "$TARGET_MTU" ]; then
+            routable_mtu=$ORIGINAL_MTU
+            mtu=$TARGET_MTU
+        else
+            echo "No need to set MTU as current and target are equal"
+            return 0
+        fi
+
+        echo "set routable_mtu=$routable_mtu and mtu=$mtu"
+        set_mtu_on_dev "$dev" "$mtu"
+        set_mtu_on_dev_routes "$dev" "$routable_mtu"
+    }
+
+    add_vlan_parents_to_ifaces(){
+        local vlan="$1"
+        local parent
+        parent=$(ip -j link show type vlan dev "$vlan" | jq --raw-output '.[]|.link // empty')
+        if [ -n "$parent" ]; then
+          ifaces+=("$parent")
+          add_vlan_parents_to_ifaces "$parent"
+        fi
+    }
+
+    if [[ -z "$NETWORK_TYPE" ]]; then
+        echo "error: no NETWORK_TYPE set"
+        exit 1
+    fi
+
+    if ! [[ $NETWORK_TYPE == "OVNKubernetes" || $NETWORK_TYPE == "OpenShiftSDN" ]]; then
+        echo "error: NETWORK_TYPE=$NETWORK_TYPE not supported for MTU migration"
+        exit 1
+    fi
+
+    if [[ -z "$TARGET_MTU" ]]; then
+        echo "no TARGET_MTU set, nothing to do"
+        exit 0
+    fi
+
+    ifaces=()
+    if [ "$NETWORK_TYPE" == "OVNKubernetes" ]; then
+        # for ovn-k, we handle interfaces from well known NM profiles
+        ifaces+=("$(nmcli -g connection.interface-name c show ovs-if-br-ex)")
+        ifaces+=("$(nmcli -g connection.interface-name c show ovs-if-phys0)")
+        for connection in ovs-if-br-ex1 ovs-if-phys1; do
+            # nmcli exit code is 10 when not found
+            iface="$(nmcli -g connection.interface-name c show $connection || [ "$?" = "10" ])"
+            [ -n "$iface" ] && ifaces+=("$iface")
+        done
+    else
+        # for openshift-sdn, we handle the default gateway interface
+        gw_iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        if [[ -z "$gw_iface" ]]; then
+            # no IPv4 Default gateway interface found, checking IPv6
+            gw_iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
+        fi
+        if [[ -z "$gw_iface" ]]; then
+            echo "mtu migration error: no gateway interface found, cannot continue"
+            exit 1
+        fi
+        ifaces+=("$gw_iface")
+    fi
+
+    # if it's a bond or team interface, MTU propagates to slaves when set on
+    # master.
+
+    # in case of stacked VLAN interfaces, we add the parents to the list of
+    # interfaces to handle.
+    num_nonvlan_ifaces=${#ifaces[@]}
+    for iface in "${ifaces[@]}"; do
+        add_vlan_parents_to_ifaces "$iface"
+    done
+
+    # loop in reverse order to handle slave/parent interfaces first
+    for (( i=${#ifaces[@]}-1 ; i>=0 ; i-- )) ; do
+        iface="${ifaces[i]}"
+        [ "$i" -lt "$num_nonvlan_ifaces" ] && is_parent=0 || is_parent=1
+        echo "set mtu for dev $iface"
+        set_mtu "$iface" $is_parent
+    done
+
+{{ end }}{{ end }}
