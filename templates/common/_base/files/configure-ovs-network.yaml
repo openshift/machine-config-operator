@@ -322,9 +322,23 @@ contents:
           nmcli c load ${new_conn_file}
           echo "Loaded new $ovs_interface connection file: ${new_conn_file}"
         else
+          extra_if_brex_args=""
+          # check if interface had ipv4/ipv6 addresses assigned
+          ipv4_addr=$(nmcli --get-values ip4.address conn show ${old_conn})
+          if [ -n "$ipv4_addr" ]; then
+            extra_if_brex_args+="ipv4.may-fail no "
+          fi
+
+          # IPV6 should have at least a link local address. Check for more than 1 to see if there is an
+          # assigned address.
+          num_ip6_addrs=$(nmcli -m multiline --get-values ip6.address conn show ${old_conn} | wc -l)
+          if [ "$num_ip6_addrs" -gt 1 ]; then
+            extra_if_brex_args+="ipv6.may-fail no "
+          fi
+
           nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
-            ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC"
+            ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC" ${extra_if_brex_args}
         fi
       fi
 
