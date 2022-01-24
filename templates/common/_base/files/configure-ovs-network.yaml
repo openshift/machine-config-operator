@@ -555,3 +555,6 @@ contents:
       # Remove bridges created by ovn-kubernetes
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
     fi
+
+    # Ensure network is online again before network-online.target is reached
+    systemctl restart NetworkManager-wait-online.service
