@@ -30,8 +30,9 @@ import (
 func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 	configNotFound := errors.New("Config Not Found")
 	type config struct {
-		name    string
-		version string
+		name           string
+		version        string
+		releaseVersion string
 	}
 
 	tests := []struct {
@@ -71,11 +72,13 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		err:       errors.New("controller version mismatch for g expected v2 has v1: <unknown>"),
 	}, {
 		knownConfigs: []config{{
-			name:    "g",
-			version: "v2",
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv2",
 		}, {
-			name:    "c-0",
-			version: "v1",
+			name:           "c-0",
+			version:        "v1",
+			releaseVersion: "rv2",
 		}, {
 			name: "u-0",
 		}},
@@ -85,11 +88,13 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		err:       errors.New("controller version mismatch for c-0 expected v2 has v1: <unknown>"),
 	}, {
 		knownConfigs: []config{{
-			name:    "g",
-			version: "v2",
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv2",
 		}, {
-			name:    "c-0",
-			version: "v2",
+			name:           "c-0",
+			version:        "v2",
+			releaseVersion: "rv2",
 		}, {
 			name: "u-0",
 		}},
@@ -99,11 +104,13 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		err:       nil,
 	}, {
 		knownConfigs: []config{{
-			name:    "g",
-			version: "v2",
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv2",
 		}, {
-			name:    "c-0",
-			version: "v2",
+			name:           "c-0",
+			version:        "v2",
+			releaseVersion: "rv2",
 		}, {
 			name: "u-0",
 		}},
@@ -111,6 +118,22 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		testurl:   "wrongurl",
 		generated: "g",
 		err:       errors.New("osImageURL mismatch for dummy-pool in g expected: myurl got: wrongurl"),
+	}, {
+		knownConfigs: []config{{
+			name:           "g",
+			version:        "v2",
+			releaseVersion: "rv1",
+		}, {
+			name:           "c-0",
+			version:        "v2",
+			releaseVersion: "rv1",
+		}, {
+			name: "u-0",
+		}},
+		source:    []string{"c-0", "u-0"},
+		testurl:   "myurl",
+		generated: "g",
+		err:       errors.New("release image version mismatch for dummy-pool in g expected: rv2 got: rv1"),
 	}}
 
 	for idx, test := range tests {
@@ -121,6 +144,9 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 						annos := map[string]string{}
 						if c.version != "" {
 							annos[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = c.version
+						}
+						if c.releaseVersion != "" {
+							annos[ctrlcommon.ReleaseImageVersionAnnotationKey] = c.releaseVersion
 						}
 						return &mcfgv1.MachineConfig{
 							ObjectMeta: metav1.ObjectMeta{
@@ -149,7 +175,7 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 				Status: mcfgv1.MachineConfigPoolStatus{
 					Configuration: mcfgv1.MachineConfigPoolStatusConfiguration{ObjectReference: corev1.ObjectReference{Name: test.generated}, Source: source},
 				},
-			}, "v2", "myurl", getter)
+			}, "v2", "rv2", "myurl", false, getter)
 			if !reflect.DeepEqual(err, test.err) {
 				t.Fatalf("expected %v got %v", test.err, err)
 			}
