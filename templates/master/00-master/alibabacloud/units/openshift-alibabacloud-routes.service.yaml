@@ -1,0 +1,11 @@
+name: openshift-alibabacloud-routes.service
+enabled: false
+contents: |
+  [Unit]
+  Description=Work around Alibaba Cloud load balancer hairpin
+
+  [Service]
+  Type=simple
+  ExecStart=/bin/bash /opt/libexec/openshift-alibabacloud-routes.sh start
+  User=root
+  SyslogIdentifier=openshift-alibabacloud-routes
