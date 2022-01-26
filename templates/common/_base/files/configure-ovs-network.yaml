@@ -111,6 +111,10 @@ contents:
       done
     }
 
+    # when creating the bridge, we use a value lower than NM's ethernet device default route metric
+    # (we pick 49 to be lower than anything that NM chooses by default)
+    BRIDGE_METRIC="49"
+    # Given an interface, generates NM configuration to add to an OVS bridge
     convert_to_bridge() {
       iface=${1}
       bridge_name=${2}
@@ -171,14 +175,14 @@ contents:
         extra_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
       fi
 
-      # create bridge; use NM's ethernet device default route metric (100)
+      # create bridge
       if ! nmcli connection show "$bridge_name" &> /dev/null; then
         nmcli c add type ovs-bridge \
             con-name "$bridge_name" \
             conn.interface "$bridge_name" \
             802-3-ethernet.mtu ${iface_mtu} \
-            ipv4.route-metric 100 \
-            ipv6.route-metric 100 \
+            ipv4.route-metric "$BRIDGE_METRIC" \
+            ipv6.route-metric "$BRIDGE_METRIC" \
             ${extra_brex_args}
       fi
 
@@ -323,7 +327,7 @@ contents:
         else
           nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
-            ipv4.route-metric 100 ipv6.route-metric 100
+            ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC"
         fi
       fi
 
