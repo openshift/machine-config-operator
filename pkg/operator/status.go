@@ -609,12 +609,12 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 	}
 
 	// check that the rendered config matches the OCP release version for cases where there is no OSImageURL change nor no new MCO commit
-	if !inClusterBringup {
-		rv, ok := renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
-		if ok && rv != releaseVersion {
-			return fmt.Errorf("release image version mismatch for %s in %s expected: %s got: %s", pool.GetName(), renderedMC.Name, releaseVersion, rv)
-		}
+	glog.Infof("inclusterbringup, %v", inClusterBringup)
+	rv, ok := renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
+	if ok && rv != releaseVersion {
+		return fmt.Errorf("release image version mismatch for %s in %s expected: %s got: %s", pool.GetName(), renderedMC.Name, releaseVersion, rv)
 	}
+
 	return nil
 }
 
