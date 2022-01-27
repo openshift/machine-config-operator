@@ -499,7 +499,8 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 			return err
 		}
 		glog.V(2).Infof("Generated machineconfig %s from %d configs: %s", generated.Name, len(source), source)
-		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "RenderedConfigGenerated", "%s successfully generated", generated.Name)
+		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "RenderedConfigGenerated", "%s successfully generated (release version: %s, controller version: %s)",
+			generated.Name, generated.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey], generated.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey])
 	}
 	if err != nil {
 		return err
@@ -567,6 +568,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		merged.Annotations = map[string]string{}
 	}
 	merged.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
+	merged.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = cconfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
 
 	return merged, nil
 }
