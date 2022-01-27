@@ -313,10 +313,10 @@ contents:
             extra_if_brex_args+="ipv4.may-fail no "
           fi
 
-          # IPV6 should have at least a link local address. Check for more than 1 to see if there is an
-          # assigned address.
-          num_ip6_addrs=$(nmcli -m multiline --get-values ip6.address conn show ${old_conn} | wc -l)
-          if [ "$num_ip6_addrs" -gt 1 ]; then
+          # Check for IPv6 addresses on the connection. Ignore blank lines and
+          # link-local addresses.
+          num_ip6_addrs=$(nmcli -m multiline --get-values ip6.address conn show ${old_conn} | grep -v ^$ | grep -v "IP6.ADDRESS\[.*\]:fe80::" | wc -l)
+          if [ "$num_ip6_addrs" -gt 0 ]; then
             extra_if_brex_args+="ipv6.may-fail no "
           fi
 
