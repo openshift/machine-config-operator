@@ -65,8 +65,8 @@ func TestBootInClusterImage(t *testing.T) {
 				Source: buildv1.BuildSource{
 					Type: "Git",
 					Git: &buildv1.GitBuildSource{
-						URI: "https://github.com/coreos/fcos-derivation-example",
-						Ref: "rhcos",
+						URI: "https://github.com/mkenigs/fcos-derivation-example",
+						Ref: "rhcos-openshift-builder",
 					},
 				},
 				Strategy: buildv1.BuildStrategy{
