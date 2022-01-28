@@ -116,7 +116,7 @@ When starting, MachineConfigDaemon verifies that contents and existence of the f
 
 ## Machine reboot
 
-With the exception of [optimized updates](#optimized-updates), the MachineConfigDaemon will drain and reboot the machine after applying the updated machine configuration.
+With the exception of [rebootless updates](#rebootless-updates), the MachineConfigDaemon will drain and reboot the machine after applying the updated machine configuration.
 
 ## Node drain
 
