@@ -420,12 +420,14 @@ contents:
 
     # Used to print network state
     print_state() {
-      echo "Current device, connection, interface and routing state:"
+      echo "Current device, connection, interface, routing and OVS state:"
       nmcli -g all device | grep -v unmanaged
       nmcli -g all connection
       ip -d address show
       ip route show
       ip -6 route show
+      ovs-ofctl show br-ex || true
+      ovs-ofctl dump-flows br-ex || true
     }
 
     # Setup an exit trap to rollback on error
