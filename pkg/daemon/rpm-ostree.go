@@ -47,15 +47,16 @@ type rpmOstreeState struct {
 
 // RpmOstreeDeployment represents a single deployment on a node
 type RpmOstreeDeployment struct {
-	ID           string   `json:"id"`
-	OSName       string   `json:"osname"`
-	Serial       int32    `json:"serial"`
-	Checksum     string   `json:"checksum"`
-	Version      string   `json:"version"`
-	Timestamp    uint64   `json:"timestamp"`
-	Booted       bool     `json:"booted"`
-	Origin       string   `json:"origin"`
-	CustomOrigin []string `json:"custom-origin"`
+	ID                      string   `json:"id"`
+	OSName                  string   `json:"osname"`
+	Serial                  int32    `json:"serial"`
+	Checksum                string   `json:"checksum"`
+	Version                 string   `json:"version"`
+	Timestamp               uint64   `json:"timestamp"`
+	Booted                  bool     `json:"booted"`
+	Origin                  string   `json:"origin"`
+	CustomOrigin            []string `json:"custom-origin"`
+	ContainerImageReference string   `json:"container-image-reference"`
 }
 
 // imageInspection is a public implementation of
@@ -247,6 +248,11 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
 			osImageURL = bootedDeployment.CustomOrigin[0][len("pivot://"):]
 		}
+	}
+
+	// Not sure if ContainerImageReference is canonical
+	if bootedDeployment.ContainerImageReference != "" {
+		osImageURL = bootedDeployment.ContainerImageReference[len("ostree-unverified-registry:"):]
 	}
 
 	return osImageURL, bootedDeployment.Version, nil
