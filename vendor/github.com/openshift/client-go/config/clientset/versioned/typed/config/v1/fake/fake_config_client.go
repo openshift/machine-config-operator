@@ -32,6 +32,10 @@ func (c *FakeConfigV1) ClusterVersions() v1.ClusterVersionInterface {
 	return &FakeClusterVersions{c}
 }
 
+func (c *FakeConfigV1) ConfigNodes() v1.ConfigNodeInterface {
+	return &FakeConfigNodes{c}
+}
+
 func (c *FakeConfigV1) Consoles() v1.ConsoleInterface {
 	return &FakeConsoles{c}
 }

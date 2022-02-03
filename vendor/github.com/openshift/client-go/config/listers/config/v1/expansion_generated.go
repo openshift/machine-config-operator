@@ -22,6 +22,10 @@ type ClusterOperatorListerExpansion interface{}
 // ClusterVersionLister.
 type ClusterVersionListerExpansion interface{}
 
+// ConfigNodeListerExpansion allows custom methods to be added to
+// ConfigNodeLister.
+type ConfigNodeListerExpansion interface{}
+
 // ConsoleListerExpansion allows custom methods to be added to
 // ConsoleLister.
 type ConsoleListerExpansion interface{}

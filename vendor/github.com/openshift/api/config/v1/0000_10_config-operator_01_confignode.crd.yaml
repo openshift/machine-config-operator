@@ -6,20 +6,20 @@ metadata:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
-  name: nodes.config.openshift.io
+  name: confignodes.config.openshift.io
 spec:
   group: config.openshift.io
   names:
-    kind: Node
-    listKind: NodeList
-    plural: nodes
-    singular: node
+    kind: ConfigNode
+    listKind: ConfigNodeList
+    plural: confignodes
+    singular: confignode
   scope: Namespaced
   versions:
     - name: v1
       schema:
         openAPIV3Schema:
-          description: "Node holds cluster-wide information about node specific features. \n Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer)."
+          description: "ConfigNode holds cluster-wide information about node specific features. \n Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer)."
           type: object
           required:
             - spec

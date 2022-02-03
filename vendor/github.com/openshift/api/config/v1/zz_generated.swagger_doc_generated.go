@@ -1407,39 +1407,39 @@ func (NetworkStatus) SwaggerDoc() map[string]string {
 	return map_NetworkStatus
 }
 
-var map_Node = map[string]string{
-	"":       "Node holds cluster-wide information about node specific features.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+var map_ConfigNode = map[string]string{
+	"":       "ConfigNode holds cluster-wide information about node specific features.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"spec":   "spec holds user settable values for configuration",
 	"status": "status holds observed values.",
 }
 
-func (Node) SwaggerDoc() map[string]string {
-	return map_Node
+func (ConfigNode) SwaggerDoc() map[string]string {
+	return map_ConfigNode
 }
 
-var map_NodeList = map[string]string{
+var map_ConfigNodeList = map[string]string{
 	"": "Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 }
 
-func (NodeList) SwaggerDoc() map[string]string {
-	return map_NodeList
+func (ConfigNodeList) SwaggerDoc() map[string]string {
+	return map_ConfigNodeList
 }
 
-var map_NodeSpec = map[string]string{
+var map_ConfigNodeSpec = map[string]string{
 	"cgroupMode":           "CgroupMode determines the cgroups version on the node",
 	"workerLatencyProfile": "WorkerLatencyProfile determins the how fast the kubelet is updating the status and corresponding reaction of the cluster",
 }
 
-func (NodeSpec) SwaggerDoc() map[string]string {
-	return map_NodeSpec
+func (ConfigNodeSpec) SwaggerDoc() map[string]string {
+	return map_ConfigNodeSpec
 }
 
-var map_NodeStatus = map[string]string{
+var map_ConfigNodeStatus = map[string]string{
 	"workerLatencyProfileStatus": "WorkerLatencyProfileStatus provides the current status of WorkerLatencyProfile",
 }
 
-func (NodeStatus) SwaggerDoc() map[string]string {
-	return map_NodeStatus
+func (ConfigNodeStatus) SwaggerDoc() map[string]string {
+	return map_ConfigNodeStatus
 }
 
 var map_WorkerLatencyProfileStatus = map[string]string{

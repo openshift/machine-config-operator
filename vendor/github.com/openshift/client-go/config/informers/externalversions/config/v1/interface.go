@@ -18,6 +18,8 @@ type Interface interface {
 	ClusterOperators() ClusterOperatorInformer
 	// ClusterVersions returns a ClusterVersionInformer.
 	ClusterVersions() ClusterVersionInformer
+	// ConfigNodes returns a ConfigNodeInformer.
+	ConfigNodes() ConfigNodeInformer
 	// Consoles returns a ConsoleInformer.
 	Consoles() ConsoleInformer
 	// DNSes returns a DNSInformer.
@@ -80,6 +82,11 @@ func (v *version) ClusterOperators() ClusterOperatorInformer {
 // ClusterVersions returns a ClusterVersionInformer.
 func (v *version) ClusterVersions() ClusterVersionInformer {
 	return &clusterVersionInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// ConfigNodes returns a ConfigNodeInformer.
+func (v *version) ConfigNodes() ConfigNodeInformer {
+	return &configNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // Consoles returns a ConsoleInformer.

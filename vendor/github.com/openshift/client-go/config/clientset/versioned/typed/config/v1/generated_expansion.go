@@ -12,6 +12,8 @@ type ClusterOperatorExpansion interface{}
 
 type ClusterVersionExpansion interface{}
 
+type ConfigNodeExpansion interface{}
+
 type ConsoleExpansion interface{}
 
 type DNSExpansion interface{}
