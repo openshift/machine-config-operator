@@ -6,25 +6,25 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// ConfigNode holds cluster-wide information about node specific features.
+// Node holds cluster-wide information about node specific features.
 //
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
-type ConfigNode struct {
+type Node struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec holds user settable values for configuration
 	// +kubebuilder:validation:Required
 	// +required
-	Spec ConfigNodeSpec `json:"spec"`
+	Spec NodeSpec `json:"spec"`
 
 	// status holds observed values.
 	// +optional
-	Status ConfigNodeStatus `json:"status"`
+	Status NodeStatus `json:"status"`
 }
 
-type ConfigNodeSpec struct {
+type NodeSpec struct {
 	// CgroupMode determines the cgroups version on the node
 	// +optional
 	CgroupMode CgroupMode `json:"cgroupMode,omitempty"`
@@ -35,7 +35,7 @@ type ConfigNodeSpec struct {
 	WorkerLatencyProfile WorkerLatencyProfileType `json:"workerLatencyProfile,omitempty"`
 }
 
-type ConfigNodeStatus struct {
+type NodeStatus struct {
 	// WorkerLatencyProfileStatus provides the current status of WorkerLatencyProfile
 	// +optional
 	WorkerLatencyProfileStatus WorkerLatencyProfileStatus `json:"workerLatencyProfileStatus,omitempty"`
@@ -148,9 +148,9 @@ type WorkerLatencyStatusCondition struct {
 
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
-type ConfigNodeList struct {
+type NodeList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 
-	Items []ConfigNode `json:"items"`
+	Items []Node `json:"items"`
 }

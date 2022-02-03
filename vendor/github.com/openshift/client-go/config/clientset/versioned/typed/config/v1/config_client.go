@@ -17,7 +17,6 @@ type ConfigV1Interface interface {
 	BuildsGetter
 	ClusterOperatorsGetter
 	ClusterVersionsGetter
-	ConfigNodesGetter
 	ConsolesGetter
 	DNSesGetter
 	FeatureGatesGetter
@@ -26,6 +25,7 @@ type ConfigV1Interface interface {
 	InfrastructuresGetter
 	IngressesGetter
 	NetworksGetter
+	NodesGetter
 	OAuthsGetter
 	OperatorHubsGetter
 	ProjectsGetter
@@ -58,10 +58,6 @@ func (c *ConfigV1Client) ClusterVersions() ClusterVersionInterface {
 	return newClusterVersions(c)
 }
 
-func (c *ConfigV1Client) ConfigNodes() ConfigNodeInterface {
-	return newConfigNodes(c)
-}
-
 func (c *ConfigV1Client) Consoles() ConsoleInterface {
 	return newConsoles(c)
 }
@@ -92,6 +88,10 @@ func (c *ConfigV1Client) Ingresses() IngressInterface {
 
 func (c *ConfigV1Client) Networks() NetworkInterface {
 	return newNetworks(c)
+}
+
+func (c *ConfigV1Client) Nodes() NodeInterface {
+	return newNodes(c)
 }
 
 func (c *ConfigV1Client) OAuths() OAuthInterface {

@@ -727,10 +727,10 @@ github.com/grpc-ecosystem/grpc-gateway v1.9.0/go.mod h1:vNeuVxBJEsws4ogUvrchl83t
 github.com/grpc-ecosystem/grpc-gateway v1.9.5/go.mod h1:vNeuVxBJEsws4ogUvrchl83t/GYV9WGTSLVdBhOQFDY=
 github.com/grpc-ecosystem/grpc-gateway v1.12.1/go.mod h1:8XEsbTttt/W+VvjtQhLACqCisSPWTxCZ7sBRjU6iH9c=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
-github.com/harche/api v0.0.0-20220203051531-9ddadbdb68fc h1:WvpOvdRzAcVXFP1MOGziTYJ91aPtAAifIXvAAeTDco0=
-github.com/harche/api v0.0.0-20220203051531-9ddadbdb68fc/go.mod h1:F/eU6jgr6Q2VhMu1mSpMmygxAELd7+BUxs3NHZ25jV4=
-github.com/harche/client-go v0.0.0-20220203055519-26fbb00c3300 h1:L4bWP9NogUO3R3+BjRqUUj+Mbiqa5vU7sL/9b0R7j3M=
-github.com/harche/client-go v0.0.0-20220203055519-26fbb00c3300/go.mod h1:2RmUyI0F4fggosjtSWly99SBm9fFYaQjINYGD+kYHS0=
+github.com/harche/api v0.0.0-20220207060207-1ef193eee708 h1:aPTXk/pSqhziGnASLz5kQIsmVZLFLbtBJHcI2np49xI=
+github.com/harche/api v0.0.0-20220207060207-1ef193eee708/go.mod h1:F/eU6jgr6Q2VhMu1mSpMmygxAELd7+BUxs3NHZ25jV4=
+github.com/harche/client-go v0.0.0-20220207083857-59b4eb014961 h1:X2D6XMtw4S5O5JI7mAMg+9enZ5HHEMGTzcId8IXuqrA=
+github.com/harche/client-go v0.0.0-20220207083857-59b4eb014961/go.mod h1:LELX1DHgdaciIy+212JS3LEVam0K/xBr1YrHMvubypc=
 github.com/hashicorp/consul/api v1.1.0/go.mod h1:VmuI/Lkw1nC05EYQWNKwWGbkg+FbDBtguAZLlVdkD9Q=
 github.com/hashicorp/consul/sdk v0.1.1/go.mod h1:VKf9jXwCTEY1QZP2MOLRhb5i/I/ssyNV1vwHyQBF0x8=
 github.com/hashicorp/errwrap v0.0.0-20141028054710-7554cd9344ce/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=

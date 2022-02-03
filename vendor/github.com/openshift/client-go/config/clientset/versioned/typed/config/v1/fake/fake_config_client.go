@@ -32,10 +32,6 @@ func (c *FakeConfigV1) ClusterVersions() v1.ClusterVersionInterface {
 	return &FakeClusterVersions{c}
 }
 
-func (c *FakeConfigV1) ConfigNodes() v1.ConfigNodeInterface {
-	return &FakeConfigNodes{c}
-}
-
 func (c *FakeConfigV1) Consoles() v1.ConsoleInterface {
 	return &FakeConsoles{c}
 }
@@ -66,6 +62,10 @@ func (c *FakeConfigV1) Ingresses() v1.IngressInterface {
 
 func (c *FakeConfigV1) Networks() v1.NetworkInterface {
 	return &FakeNetworks{c}
+}
+
+func (c *FakeConfigV1) Nodes() v1.NodeInterface {
+	return &FakeNodes{c}
 }
 
 func (c *FakeConfigV1) OAuths() v1.OAuthInterface {

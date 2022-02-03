@@ -12,8 +12,6 @@ type ClusterOperatorExpansion interface{}
 
 type ClusterVersionExpansion interface{}
 
-type ConfigNodeExpansion interface{}
-
 type ConsoleExpansion interface{}
 
 type DNSExpansion interface{}
@@ -29,6 +27,8 @@ type InfrastructureExpansion interface{}
 type IngressExpansion interface{}
 
 type NetworkExpansion interface{}
+
+type NodeExpansion interface{}
 
 type OAuthExpansion interface{}
 

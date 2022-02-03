@@ -22,10 +22,6 @@ type ClusterOperatorListerExpansion interface{}
 // ClusterVersionLister.
 type ClusterVersionListerExpansion interface{}
 
-// ConfigNodeListerExpansion allows custom methods to be added to
-// ConfigNodeLister.
-type ConfigNodeListerExpansion interface{}
-
 // ConsoleListerExpansion allows custom methods to be added to
 // ConsoleLister.
 type ConsoleListerExpansion interface{}
@@ -57,6 +53,10 @@ type IngressListerExpansion interface{}
 // NetworkListerExpansion allows custom methods to be added to
 // NetworkLister.
 type NetworkListerExpansion interface{}
+
+// NodeListerExpansion allows custom methods to be added to
+// NodeLister.
+type NodeListerExpansion interface{}
 
 // OAuthListerExpansion allows custom methods to be added to
 // OAuthLister.

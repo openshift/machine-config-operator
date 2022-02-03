@@ -281,8 +281,8 @@ replace (
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-	github.com/openshift/api => github.com/harche/api v0.0.0-20220203051531-9ddadbdb68fc
-	github.com/openshift/client-go => github.com/harche/client-go v0.0.0-20220203055519-26fbb00c3300
+	github.com/openshift/api => github.com/harche/api v0.0.0-20220207060207-1ef193eee708
+	github.com/openshift/client-go => github.com/harche/client-go v0.0.0-20220207083857-59b4eb014961
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 	k8s.io/api => k8s.io/api v0.23.0

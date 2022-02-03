@@ -18,8 +18,6 @@ type Interface interface {
 	ClusterOperators() ClusterOperatorInformer
 	// ClusterVersions returns a ClusterVersionInformer.
 	ClusterVersions() ClusterVersionInformer
-	// ConfigNodes returns a ConfigNodeInformer.
-	ConfigNodes() ConfigNodeInformer
 	// Consoles returns a ConsoleInformer.
 	Consoles() ConsoleInformer
 	// DNSes returns a DNSInformer.
@@ -36,6 +34,8 @@ type Interface interface {
 	Ingresses() IngressInformer
 	// Networks returns a NetworkInformer.
 	Networks() NetworkInformer
+	// Nodes returns a NodeInformer.
+	Nodes() NodeInformer
 	// OAuths returns a OAuthInformer.
 	OAuths() OAuthInformer
 	// OperatorHubs returns a OperatorHubInformer.
@@ -84,11 +84,6 @@ func (v *version) ClusterVersions() ClusterVersionInformer {
 	return &clusterVersionInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
-// ConfigNodes returns a ConfigNodeInformer.
-func (v *version) ConfigNodes() ConfigNodeInformer {
-	return &configNodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
 // Consoles returns a ConsoleInformer.
 func (v *version) Consoles() ConsoleInformer {
 	return &consoleInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
@@ -127,6 +122,11 @@ func (v *version) Ingresses() IngressInformer {
 // Networks returns a NetworkInformer.
 func (v *version) Networks() NetworkInformer {
 	return &networkInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// Nodes returns a NodeInformer.
+func (v *version) Nodes() NodeInformer {
+	return &nodeInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // OAuths returns a OAuthInformer.

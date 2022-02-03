@@ -1,91 +1,76 @@
 package confignode
 
 import (
-	"context"
 	"fmt"
-	"reflect"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/clarketm/json"
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
-	"github.com/imdario/mergo"
-	"github.com/vincent-petithory/dataurl"
+	configv1 "github.com/openshift/api/config/v1"
+	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
+	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
+	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
+	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 	corev1 "k8s.io/api/core/v1"
-	macherrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
+	"k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	coreclientsetv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
-	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
-
-	configv1 "github.com/openshift/api/config/v1"
-	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
-	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
-	"github.com/openshift/library-go/pkg/crypto"
-	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
-	mtmpl "github.com/openshift/machine-config-operator/pkg/controller/template"
-	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
-	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
-	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
-	"github.com/openshift/machine-config-operator/pkg/version"
 )
 
-var (
-	// controllerKind contains the schema.GroupVersionKind for this controller type.
-	controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ConfigNode")
+const (
+
+	// maxRetries is the number of times a machineconfig pool will be retried before it is dropped out of the queue.
+	// With the current rate-limiter in use (5ms*2^(maxRetries-1)) the following numbers represent the times
+	// a machineconfig pool is going to be requeued:
+	//
+	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
+	maxRetries = 15
+
+	// updateDelay is a pause to deal with churn in MachineConfigs; see
+	// https://github.com/openshift/machine-config-operator/issues/301
+	updateDelay = 5 * time.Second
+
+	// Default update frequency of the kubelet
+	// Please refer - https://github.com/openshift/enhancements/blob/master/enhancements/worker-latency-profile/worker-latency-profile.md#default-update-and-default-reaction
+	defaultKubeletUpdateFrequency = 10
+
+	// Medium update frequency of the kubelet
+	// Please refer - https://github.com/openshift/enhancements/blob/master/enhancements/worker-latency-profile/worker-latency-profile.md#medium-update-and-average-reaction
+	mediauKubeletUpdateFrequency = 20
+
+	// Low update frequency of the kubelet
+	// Please refer - https://github.com/openshift/enhancements/blob/master/enhancements/worker-latency-profile/worker-latency-profile.md#low-update-and-slow-reaction
+	LowKubeletUpdateFrequency = 60
 )
 
-// Controller defines the kubelet config controller.
+// Controller defines the node controller.
 type Controller struct {
-	templatesDir string
-
 	client        mcfgclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler       func(mcp string) error
-	enqueueConfigNode func(*configv1.ConfigNode)
+	enqueueConfigNode func(*configv1.Node)
 
-	ccLister       mcfglistersv1.ControllerConfigLister
+	ccLister mcfglistersv1.ControllerConfigLister
+	cnLister cligolistersv1.ConfigNodeLister
+
 	ccListerSynced cache.InformerSynced
+	cnListerSynced cache.InformerSynced
 
-	mckLister       mcfglistersv1.KubeletConfigLister
-	mckListerSynced cache.InformerSynced
-
-	mcpLister       mcfglistersv1.MachineConfigPoolLister
-	mcpListerSynced cache.InformerSynced
-
-	featLister       oselistersv1.FeatureGateLister
-	featListerSynced cache.InformerSynced
-
-	apiserverLister       oselistersv1.APIServerLister
-	apiserverListerSynced cache.InformerSynced
-
-	queue        workqueue.RateLimitingInterface
-	featureQueue workqueue.RateLimitingInterface
+	queue workqueue.RateLimitingInterface
 }
 
-// New returns a new kubelet config controller
+// New returns a new node controller.
 func New(
-	templatesDir string,
-	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
-	mkuInformer mcfginformersv1.KubeletConfigInformer,
-	featInformer oseinformersv1.FeatureGateInformer,
-	apiserverInformer oseinformersv1.APIServerInformer,
+	cnInformer cligoinformersv1.ConfigNodeInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -94,157 +79,156 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:  templatesDir,
 		client:        mcfgClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
-		featureQueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
+		kubeClient:    kubeClient,
+		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-confignodecontroller"}),
+		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-confignodecontroller"),
 	}
 
-	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addKubeletConfig,
-		UpdateFunc: ctrl.updateKubeletConfig,
-		DeleteFunc: ctrl.deleteKubeletConfig,
+	cnInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addConfiNode,
+		UpdateFunc: ctrl.updateConfigNode,
+		DeleteFunc: ctrl.deleteConfigNode,
 	})
 
-	featInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    ctrl.addFeature,
-		UpdateFunc: ctrl.updateFeature,
-		DeleteFunc: ctrl.deleteFeature,
-	})
-
-	ctrl.syncHandler = ctrl.syncKubeletConfig
-	ctrl.enqueueKubeletConfig = ctrl.enqueue
-
-	ctrl.mcpLister = mcpInformer.Lister()
-	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
+	ctrl.syncHandler = ctrl.syncConfigNode
+	ctrl.enqueueConfigNode = ctrl.enqueueDefault
 
 	ctrl.ccLister = ccInformer.Lister()
+	ctrl.cnLister = cnInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
-
-	ctrl.mckLister = mkuInformer.Lister()
-	ctrl.mckListerSynced = mkuInformer.Informer().HasSynced
-
-	ctrl.featLister = featInformer.Lister()
-	ctrl.featListerSynced = featInformer.Informer().HasSynced
-
-	ctrl.apiserverLister = apiserverInformer.Lister()
-	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
+	ctrl.cnListerSynced = cnInformer.Informer().HasSynced
 
 	return ctrl
 }
 
-// Run executes the kubelet config controller.
+// syncConfigNode will sync the confignode with the given key.
+// This function is not meant to be invoked concurrently with the same key.
+func (ctrl *Controller) syncConfigNode(key string) error {
+	startTime := time.Now()
+	glog.V(4).Infof("Started syncing config node %q (%v)", key, startTime)
+	defer func() {
+		glog.V(4).Infof("Finished syncing config node %q (%v)", key, time.Since(startTime))
+	}()
+
+	_, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
+	}
+	confignode, err := ctrl.cnLister.Get(name)
+	if errors.IsNotFound(err) {
+		glog.V(2).Infof("Configuration Node %v has been deleted", key)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if confignode != nil {
+		if &confignode.Spec.CgroupMode != nil {
+			// Create and track the KubeletConfig that enables cgroups v2
+		}
+
+		if &confignode.Spec.WorkerLatencyProfile != nil {
+			// Create and track the KubeletConfig that updates frequency argument
+			if confignode.Spec.WorkerLatencyProfile == configv1.DefaultUpdateDefaultReaction {
+
+			} else if confignode.Spec.WorkerLatencyProfile == configv1.MediumUpdateAverageReaction {
+
+			} else if confignode.Spec.WorkerLatencyProfile == configv1.LowUpdateSlowReaction {
+
+			}
+		}
+	}
+
+	return nil
+}
+
+// Run executes the render controller.
 func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
-	defer ctrl.featureQueue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.cnListerSynced) {
 		return
 	}
 
-	glog.Info("Starting MachineConfigController-KubeletConfigController")
-	defer glog.Info("Shutting down MachineConfigController-KubeletConfigController")
+	glog.Info("Starting MachineConfigController-ConfigNodeController")
+	defer glog.Info("Shutting down MachineConfigController-ConfigNodeController")
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
 	}
 
-	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.featureWorker, time.Second, stopCh)
-	}
-
 	<-stopCh
 }
 
-func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
-	if old.DeletionTimestamp != new.DeletionTimestamp {
-		return true
-	}
-	if !reflect.DeepEqual(old.Spec, new.Spec) {
-		return true
-	}
-	return false
+func (ctrl *Controller) addConfiNode(obj interface{}) {
+	pool := obj.(*configv1.Node)
+	glog.V(4).Infof("Adding ConfigNode %s", pool.Name)
+	ctrl.enqueueConfigNode(pool)
 }
 
-func (ctrl *Controller) updateKubeletConfig(old, cur interface{}) {
-	oldConfig := old.(*mcfgv1.KubeletConfig)
-	newConfig := cur.(*mcfgv1.KubeletConfig)
+func (ctrl *Controller) updateConfigNode(old, cur interface{}) {
+	oldPool := old.(*configv1.Node)
+	curPool := cur.(*configv1.Node)
 
-	if kubeletConfigTriggerObjectChange(oldConfig, newConfig) {
-		glog.V(4).Infof("Update KubeletConfig %s", oldConfig.Name)
-		ctrl.enqueueKubeletConfig(newConfig)
-	}
+	glog.V(4).Infof("Updating ConfigNode %s", oldPool.Name)
+	ctrl.enqueueConfigNode(curPool)
 }
 
-func (ctrl *Controller) addKubeletConfig(obj interface{}) {
-	cfg := obj.(*mcfgv1.KubeletConfig)
-	glog.V(4).Infof("Adding KubeletConfig %s", cfg.Name)
-	ctrl.enqueueKubeletConfig(cfg)
-}
-
-func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
-	cfg, ok := obj.(*mcfgv1.KubeletConfig)
+func (ctrl *Controller) deleteConfigNode(obj interface{}) {
+	pool, ok := obj.(*configv1.Node)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
 			return
 		}
-		cfg, ok = tombstone.Obj.(*mcfgv1.KubeletConfig)
+		pool, ok = tombstone.Obj.(*configv1.Node)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a KubeletConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a ConfigNode %#v", obj))
 			return
 		}
 	}
-	if err := ctrl.cascadeDelete(cfg); err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %v", cfg, err))
-	} else {
-		glog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
-	}
+	glog.V(4).Infof("Deleting ConfigNode %s", pool.Name)
+	// TODO(abhinavdahiya): handle deletes.
 }
 
-func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
-	if len(cfg.GetFinalizers()) == 0 {
-		return nil
-	}
-	finalizerName := cfg.GetFinalizers()[0]
-	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+func (ctrl *Controller) enqueue(pool *configv1.Node) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		return err
-	}
-	for _, mc := range mcs.Items {
-		if string(mc.ObjectMeta.GetUID()) == finalizerName || mc.GetName() == finalizerName {
-			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.GetName(), metav1.DeleteOptions{})
-			if err != nil && !macherrors.IsNotFound(err) {
-				return err
-			}
-			break
-		}
-	}
-	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
 	}
+
 	ctrl.queue.Add(key)
 }
 
-func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
+func (ctrl *Controller) enqueueRateLimited(pool *configv1.Node) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
 		return
 	}
+
 	ctrl.queue.AddRateLimited(key)
+}
+
+// enqueueAfter will enqueue a pool after the provided amount of time.
+func (ctrl *Controller) enqueueAfter(pool *configv1.Node, after time.Duration) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		return
+	}
+
+	ctrl.queue.AddAfter(key, after)
+}
+
+// enqueueDefault calls a default enqueue function
+func (ctrl *Controller) enqueueDefault(pool *configv1.Node) {
+	ctrl.enqueueAfter(pool, updateDelay)
 }
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
@@ -273,502 +257,22 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
-	if _, ok := err.(*forgetError); ok {
-		ctrl.queue.Forget(key)
-		return
-	}
-
 	if ctrl.queue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
+		glog.V(2).Infof("Error syncing confignode %v: %v", key, err)
 		ctrl.queue.AddRateLimited(key)
 		return
 	}
 
 	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping kubeletconfig %q out of the queue: %v", key, err)
+	glog.V(2).Infof("Dropping config node %q out of the queue: %v", key, err)
 	ctrl.queue.Forget(key)
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
-	if err == nil {
-		ctrl.featureQueue.Forget(key)
-		return
-	}
-
-	if ctrl.featureQueue.NumRequeues(key) < maxRetries {
-		glog.V(2).Infof("Error syncing kubeletconfig %v: %v", key, err)
-		ctrl.featureQueue.AddRateLimited(key)
-		return
-	}
-
-	utilruntime.HandleError(err)
-	glog.V(2).Infof("Dropping featureconfig %q out of the queue: %v", key, err)
-	ctrl.featureQueue.Forget(key)
-	ctrl.featureQueue.AddAfter(key, 1*time.Minute)
-}
-
-// generateOriginalKubeletConfigWithFeatureGates generates a KubeletConfig and ensure the correct feature gates are set
-// based on the given FeatureGate.
-func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *configv1.FeatureGate) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
-	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, features)
+// getErrorString returns error string if not nil and empty string if error is nil
+func getErrorString(err error) string {
 	if err != nil {
-		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %v", err)
+		return err.Error()
 	}
-	if originalKubeletIgn.Contents.Source == nil {
-		return nil, fmt.Errorf("the original Kubelet source string is empty: %v", err)
-	}
-	dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode the original Kubelet source string: %v", err)
-	}
-	originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
-	if err != nil {
-		return nil, fmt.Errorf("could not deserialize the Kubelet source: %v", err)
-	}
-
-	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate features map: %v", err)
-	}
-
-	// Merge in Feature Gates.
-	// If they are the same, this will be a no-op
-	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
-		return nil, fmt.Errorf("could not merge feature gates: %v", err)
-	}
-
-	return originalKubeConfig, nil
-}
-
-func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir, role string, featureGate *configv1.FeatureGate) (*ign3types.File, error) {
-	// Render the default templates
-	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGate: featureGate}
-	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
-	if err != nil {
-		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error %s", err)
-	}
-	// Find generated kubelet.config
-	for _, gmc := range generatedConfigs {
-		gmcKubeletConfig, err := findKubeletConfig(gmc)
-		if err != nil {
-			continue
-		}
-		return gmcKubeletConfig, nil
-	}
-	return nil, fmt.Errorf("could not generate old kubelet config")
-}
-
-func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
-	statusUpdateError := retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
-		if getErr != nil {
-			return getErr
-		}
-		// Keeps a list of three status to avoid a long list of same statuses,
-		// only append a status if it is the first status
-		// or if the status message is different from the message of the last status recorded
-		// If the last status message is the same as the new one, then update the last status to
-		// reflect the latest time stamp from the new status message.
-		newStatusCondition := wrapErrorWithCondition(err, args...)
-		cleanUpStatusConditions(&newcfg.Status.Conditions, newStatusCondition)
-		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
-		return lerr
-	})
-	if statusUpdateError != nil {
-		glog.Warningf("error updating kubeletconfig status: %v", statusUpdateError)
-	}
-	return err
-}
-
-// cleanUpStatusConditions keeps at most three conditions of different timestamps for the kubelet config object
-func cleanUpStatusConditions(statusConditions *[]mcfgv1.KubeletConfigCondition, newStatusCondition mcfgv1.KubeletConfigCondition) {
-	statusLimit := 3
-	statusLen := len(*statusConditions)
-	if statusLen > 0 && (*statusConditions)[statusLen-1].Message == newStatusCondition.Message {
-		(*statusConditions)[statusLen-1].LastTransitionTime = newStatusCondition.LastTransitionTime
-	} else {
-		*statusConditions = append(*statusConditions, newStatusCondition)
-	}
-	if len(*statusConditions) > statusLimit {
-		*statusConditions = (*statusConditions)[len(*statusConditions)-statusLimit:]
-	}
-}
-
-// addAnnotation adds the annotions for a kubeletconfig object with the given annotationKey and annotationVal
-func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, annotationVal string) error {
-	annotationUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
-		if getErr != nil {
-			return getErr
-		}
-		newcfg.SetAnnotations(map[string]string{
-			annotationKey: annotationVal,
-		})
-		_, updateErr := ctrl.client.MachineconfigurationV1().KubeletConfigs().Update(context.TODO(), newcfg, metav1.UpdateOptions{})
-		return updateErr
-	})
-	if annotationUpdateErr != nil {
-		glog.Warningf("error updating the kubelet config with annotation key %q and value %q: %v", annotationKey, annotationVal, annotationUpdateErr)
-	}
-	return annotationUpdateErr
-}
-
-// syncKubeletConfig will sync the kubeletconfig with the given key.
-// This function is not meant to be invoked concurrently with the same key.
-//nolint:gocyclo
-func (ctrl *Controller) syncKubeletConfig(key string) error {
-	startTime := time.Now()
-	glog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
-	defer func() {
-		glog.V(4).Infof("Finished syncing kubeletconfig %q (%v)", key, time.Since(startTime))
-	}()
-
-	// Wait to apply a kubelet config if the controller config is not completed
-	if err := mcfgv1.IsControllerConfigCompleted(ctrlcommon.ControllerConfigName, ctrl.ccLister.Get); err != nil {
-		return err
-	}
-
-	_, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return err
-	}
-
-	// Fetch the KubeletConfig
-	cfg, err := ctrl.mckLister.Get(name)
-	if macherrors.IsNotFound(err) {
-		glog.V(2).Infof("KubeletConfig %v has been deleted", key)
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	// Deep-copy otherwise we are mutating our cache.
-	cfg = cfg.DeepCopy()
-
-	// Check for Deleted KubeletConfig and optionally delete finalizers
-	if cfg.DeletionTimestamp != nil {
-		if len(cfg.GetFinalizers()) > 0 {
-			return ctrl.cascadeDelete(cfg)
-		}
-		return nil
-	}
-
-	// If we have seen this generation then skip
-	if cfg.Status.ObservedGeneration >= cfg.Generation {
-		return nil
-	}
-
-	// Validate the KubeletConfig CR
-	if err := validateUserKubeletConfig(cfg); err != nil {
-		return ctrl.syncStatusOnly(cfg, newForgetError(err))
-	}
-
-	// Find all MachineConfigPools
-	mcpPools, err := ctrl.getPoolsForKubeletConfig(cfg)
-	if err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
-	}
-
-	if len(mcpPools) == 0 {
-		err := fmt.Errorf("KubeletConfig %v does not match any MachineConfigPools", key)
-		glog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
-	}
-
-	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
-	if macherrors.IsNotFound(err) {
-		features = createNewDefaultFeatureGate()
-	} else if err != nil {
-		glog.V(2).Infof("%v", err)
-		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
-		return ctrl.syncStatusOnly(cfg, err)
-	}
-
-	for _, pool := range mcpPools {
-		if pool.Spec.Configuration.Name == "" {
-			updateDelay := 5 * time.Second
-			// Previously we spammed the logs about empty pools.
-			// Let's just pause for a bit here to let the renderer
-			// initialize them.
-			time.Sleep(updateDelay)
-			return fmt.Errorf("Pool %s is unconfigured, pausing %v for renderer to initialize", pool.Name, updateDelay)
-		}
-		role := pool.Name
-		// Get MachineConfig
-		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not get kubelet config key: %v", err)
-		}
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
-		if err != nil && !macherrors.IsNotFound(err) {
-			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
-		}
-		isNotFound := macherrors.IsNotFound(err)
-
-		userDefinedSystemReserved := make(map[string]string, 2)
-
-		// Generate the original KubeletConfig
-		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
-		if err != nil {
-			return fmt.Errorf("could not get ControllerConfig %v", err)
-		}
-
-		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
-		}
-
-		// Get the default API Server Security Profile
-		var profile *configv1.TLSSecurityProfile
-		if apiServerSettings, err := ctrl.apiserverLister.Get(defaultOpenshiftTLSSecurityProfileConfig); err != nil {
-			if !macherrors.IsNotFound(err) {
-				return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", defaultOpenshiftTLSSecurityProfileConfig, err)
-			}
-		} else {
-			profile = apiServerSettings.Spec.TLSSecurityProfile
-		}
-		if cfg.Spec.TLSSecurityProfile != nil {
-			profile = cfg.Spec.TLSSecurityProfile
-		}
-		// Inject TLS Options from Spec
-		observedMinTLSVersion, observedCipherSuites := getSecurityProfileCiphers(profile)
-		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
-		originalKubeConfig.TLSCipherSuites = observedCipherSuites
-
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig, userDefinedSystemReserved)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err)
-		}
-
-		if isNotFound {
-			ignConfig := ctrlcommon.NewIgnConfig()
-			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
-			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
-			}
-			mc.ObjectMeta.UID = uuid.NewUUID()
-			_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
-			arr := strings.Split(managedKey, "-")
-			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
-			// suffix annotation and suffix value to the kubelet config object
-			if len(arr) > 4 && !ok {
-				_, err := strconv.Atoi(arr[len(arr)-1])
-				if err == nil {
-					if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
-						return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
-					}
-				}
-			}
-		}
-
-		tempIgnConfig := ctrlcommon.NewIgnConfig()
-		if autoSizingReservedIgnition != nil {
-			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *autoSizingReservedIgnition)
-		}
-		if logLevelIgnition != nil {
-			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *logLevelIgnition)
-		}
-		if kubeletIgnition != nil {
-			tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, *kubeletIgnition)
-		}
-
-		rawIgn, err := json.Marshal(tempIgnConfig)
-		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not marshal kubelet config Ignition: %v", err)
-		}
-		mc.Spec.Config.Raw = rawIgn
-
-		mc.SetAnnotations(map[string]string{
-			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
-		})
-		oref := metav1.NewControllerRef(cfg, controllerKind)
-		mc.SetOwnerReferences([]metav1.OwnerReference{*oref})
-
-		// Create or Update, on conflict retry
-		if err := retry.RetryOnConflict(updateBackoff, func() error {
-			var err error
-			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
-			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
-			}
-			return err
-		}); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not Create/Update MachineConfig: %v", err)
-		}
-		// Add Finalizers to the KubletConfig
-		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
-		}
-		glog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
-	}
-	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
-		return err
-	}
-
-	return ctrl.syncStatusOnly(cfg, nil)
-}
-
-// cleanUpDuplicatedMC removes the MC of uncorrected version if format of its name contains 'generated-xxx'.
-// BZ 1955517: upgrade when there are more than one configs, these generated MC will be duplicated
-// by upgraded MC with number suffixed name (func getManagedKubeletConfigKey()) and fails the upgrade.
-func (ctrl *Controller) cleanUpDuplicatedMC() error {
-	generatedKubeletCfg := "generated-kubelet"
-	// Get all machine configs
-	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("error listing kubelet machine configs: %v", err)
-	}
-	for _, mc := range mcList.Items {
-		if !strings.Contains(mc.Name, generatedKubeletCfg) {
-			continue
-		}
-		// delete the mc if its degraded
-		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
-			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
-				return fmt.Errorf("error deleting degraded kubelet machine config %s: %v", mc.Name, err)
-			}
-		}
-	}
-	return nil
-}
-
-func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
-	return retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, err := ctrl.mckLister.Get(kc.Name)
-		if macherrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		curJSON, err := json.Marshal(newcfg)
-		if err != nil {
-			return err
-		}
-
-		kcTmp := newcfg.DeepCopy()
-		kcTmp.Finalizers = append(kc.Finalizers[:0], kc.Finalizers[1:]...)
-
-		modJSON, err := json.Marshal(kcTmp)
-		if err != nil {
-			return err
-		}
-
-		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-		if err != nil {
-			return err
-		}
-		return ctrl.patchKubeletConfigs(newcfg.Name, patch)
-	})
-}
-
-func (ctrl *Controller) patchKubeletConfigs(name string, patch []byte) error {
-	_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(context.TODO(), name, types.MergePatchType, patch, metav1.PatchOptions{})
-	return err
-}
-
-func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
-	return retry.RetryOnConflict(updateBackoff, func() error {
-		newcfg, err := ctrl.mckLister.Get(kc.Name)
-		if macherrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		curJSON, err := json.Marshal(newcfg)
-		if err != nil {
-			return err
-		}
-
-		kcTmp := newcfg.DeepCopy()
-		// We want to use the mc name as the finalizer instead of the uid because
-		// every time a resync happens, a new uid is generated. This is why the list
-		// of finalizers had multiple entries. So check if the list of finalizers consists
-		// of uids, if it does then clear the list of finalizers and we will add the mc
-		// name to it, ensuring we don't have duplicate or multiple finalizers.
-		for _, finalizerName := range newcfg.Finalizers {
-			if !strings.Contains(finalizerName, "kubelet") {
-				kcTmp.ObjectMeta.SetFinalizers([]string{})
-			}
-		}
-		// Only append the mc name if it is not already in the list of finalizers.
-		// When we update an existing kubeletconfig, the generation number increases causing
-		// a resync to happen. When this happens, the mc name is the same, so we don't
-		// want to add duplicate entries to the list of finalizers.
-		if !ctrlcommon.InSlice(mc.Name, kcTmp.ObjectMeta.Finalizers) {
-			kcTmp.ObjectMeta.Finalizers = append(kcTmp.ObjectMeta.Finalizers, mc.Name)
-		}
-
-		modJSON, err := json.Marshal(kcTmp)
-		if err != nil {
-			return err
-		}
-		patch, err := jsonmergepatch.CreateThreeWayJSONMergePatch(curJSON, modJSON, curJSON)
-		if err != nil {
-			return err
-		}
-		return ctrl.patchKubeletConfigs(newcfg.Name, patch)
-	})
-}
-
-func (ctrl *Controller) getPoolsForKubeletConfig(config *mcfgv1.KubeletConfig) ([]*mcfgv1.MachineConfigPool, error) {
-	pList, err := ctrl.mcpLister.List(labels.Everything())
-	if err != nil {
-		return nil, err
-	}
-
-	selector, err := metav1.LabelSelectorAsSelector(config.Spec.MachineConfigPoolSelector)
-	if err != nil {
-		return nil, fmt.Errorf("invalid label selector: %v", err)
-	}
-
-	var pools []*mcfgv1.MachineConfigPool
-	for _, p := range pList {
-		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
-		if selector.Empty() || !selector.Matches(labels.Set(p.Labels)) {
-			continue
-		}
-		pools = append(pools, p)
-	}
-
-	if len(pools) == 0 {
-		return nil, errCouldNotFindMCPSet
-	}
-
-	return pools, nil
-}
-
-// Extracts the minimum TLS version and cipher suites from TLSSecurityProfile object,
-// Converts the ciphers to IANA names as supported by Kube ServingInfo config.
-// If profile is nil, returns config defined by the Intermediate TLS Profile
-func getSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []string) {
-	var profileType configv1.TLSProfileType
-	if profile == nil {
-		profileType = configv1.TLSProfileIntermediateType
-	} else {
-		profileType = profile.Type
-	}
-
-	var profileSpec *configv1.TLSProfileSpec
-	if profileType == configv1.TLSProfileCustomType {
-		if profile.Custom != nil {
-			profileSpec = &profile.Custom.TLSProfileSpec
-		}
-	} else {
-		profileSpec = configv1.TLSProfiles[profileType]
-	}
-
-	// nothing found / custom type set but no actual custom spec
-	if profileSpec == nil {
-		profileSpec = configv1.TLSProfiles[configv1.TLSProfileIntermediateType]
-	}
-
-	// need to remap all Ciphers to their respective IANA names used by Go
-	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+	return ""
 }
