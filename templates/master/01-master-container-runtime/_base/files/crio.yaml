@@ -58,18 +58,29 @@ contents:
     enable_metrics = true
     metrics_port = 9537
     metrics_collectors = [
-      "operations",
-      "operations_latency_microseconds_total",
-      "operations_latency_microseconds",
-      "operations_errors",
+      "operations", # DEPRECATED: in favour of "operations_total"
+      "operations_latency_microseconds_total", # DEPRECATED: in favour of "operations_latency_seconds_total"
+      "operations_latency_microseconds", # DEPRECATED: in favour of "operations_latency_seconds"
+      "operations_errors", # DEPRECATED: in favour of "operations_errors_total"
       "image_pulls_layer_size",
-      "containers_oom_total",
+      "containers_oom_total", # DEPRECATED: in favour of "containers_oom_count_total"
       "containers_oom",
       # Drop metrics with excessive label cardinality.
-      # "image_pulls_by_digest",
-      # "image_pulls_by_name",
-      # "image_pulls_by_name_skipped",
-      # "image_pulls_failures",
-      # "image_pulls_successes",
-      # "image_layer_reuse",
+      # "image_pulls_by_digest", # DEPRECATED: in favour of "image_pulls_bytes_total"
+      # "image_pulls_by_name", # DEPRECATED: in favour of "image_pulls_bytes_total"
+      # "image_pulls_by_name_skipped", # DEPRECATED: in favour of "image_pulls_skipped_bytes_total"
+      # "image_pulls_failures", # DEPRECATED: in favour of "image_pulls_failure_total"
+      # "image_pulls_successes", # DEPRECATED: in favour of "image_pulls_success_total"
+      # "image_layer_reuse", # DEPRECATED: in favour of "image_layer_reuse_total"
+      "operations_total",
+      "operations_latency_seconds_total",
+      "operations_latency_seconds",
+      "operations_errors_total",
+      "image_pulls_bytes_total",
+      "image_pulls_skipped_bytes_total",
+      "image_pulls_success_total",
+      "image_pulls_failure_total",
+      "image_layer_reuse_total",
+      "containers_oom_count_total",
+      "processes_defunct"
     ]
