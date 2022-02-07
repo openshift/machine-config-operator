@@ -795,3 +795,18 @@ func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
 	}
 	return false
 }
+
+// Returns list of extensions possible to install on a CoreOS based system.
+func GetSupportedExtensions() map[string][]string {
+	// In future when list of extensions grow, it will make
+	// more sense to populate it in a dynamic way.
+
+	// These are RHCOS supported extensions.
+	// Each extension keeps a list of packages required to get enabled on host.
+	return map[string][]string{
+		"usbguard":             {"usbguard"},
+		"kerberos":             {"krb5-workstation", "libkadm5"},
+		"kernel-devel":         {"kernel-devel", "kernel-headers"},
+		"sandboxed-containers": {"kata-containers"},
+	}
+}

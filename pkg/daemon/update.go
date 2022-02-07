@@ -972,7 +972,7 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	extArgs := []string{"update"}
 
 	if dn.os.IsRHCOS() {
-		extensions := getSupportedExtensions()
+		extensions := ctrlcommon.GetSupportedExtensions()
 		for _, ext := range added {
 			for _, pkg := range extensions[ext] {
 				extArgs = append(extArgs, "--install", pkg)
@@ -1002,23 +1002,8 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	return extArgs
 }
 
-// Returns list of extensions possible to install on a CoreOS based system.
-func getSupportedExtensions() map[string][]string {
-	// In future when list of extensions grow, it will make
-	// more sense to populate it in a dynamic way.
-
-	// These are RHCOS supported extensions.
-	// Each extension keeps a list of packages required to get enabled on host.
-	return map[string][]string{
-		"usbguard":             {"usbguard"},
-		"kerberos":             {"krb5-workstation", "libkadm5"},
-		"kernel-devel":         {"kernel-devel", "kernel-headers"},
-		"sandboxed-containers": {"kata-containers"},
-	}
-}
-
 func validateExtensions(exts []string) error {
-	supportedExtensions := getSupportedExtensions()
+	supportedExtensions := ctrlcommon.GetSupportedExtensions()
 	invalidExts := []string{}
 	for _, ext := range exts {
 		if _, ok := supportedExtensions[ext]; !ok {
