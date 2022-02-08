@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -318,6 +320,14 @@ func newNode(annotations map[string]string) *corev1.Node {
 	}
 }
 
+func newNodeWithLabels(labels map[string]string) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+		},
+	}
+}
+
 func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	tmpCurrentConfig, err := os.CreateTemp("", "currentconfig")
 	require.Nil(t, err)
@@ -394,4 +404,138 @@ func TestPrepUpdateFromClusterOnDiskDrift(t *testing.T) {
 	require.NotNil(t, desired)
 	require.Equal(t, onDiskMC.GetName(), current.GetName())
 	require.Equal(t, desired.GetName(), "test2")
+}
+
+func TestAddOrRemoveExcludeFromLoadBalancerLabel(t *testing.T) {
+	otherExcludeValue := "not-set-by-mco"
+	otherLabel := "myLabel"
+	otherLabelValue := "myValue"
+	labelsWithNoExclude := map[string]string{
+		otherLabel: otherLabelValue,
+	}
+	labelsWithEmptyExclude := map[string]string{
+		otherLabel:                   otherLabelValue,
+		excludeFromLoadBalancerLabel: "",
+	}
+	labelsWithMCOExclude := map[string]string{
+		otherLabel:                   otherLabelValue,
+		excludeFromLoadBalancerLabel: excludeFromLoadBalancerLabelValue,
+	}
+	labelsWithOtherExclude := map[string]string{
+		otherLabel:                   otherLabelValue,
+		excludeFromLoadBalancerLabel: otherExcludeValue,
+	}
+
+	initializeEnvironment := func(labels map[string]string) *Daemon {
+		f := newFixture(t)
+		node := newNodeWithLabels(labels)
+		node.Name = "node_name_test"
+		f.nodeLister = append(f.nodeLister, node)
+		f.kubeobjects = append(f.kubeobjects, node)
+		dn := f.newController()
+		dn.node = node
+		return dn
+	}
+
+	readNode := func(dn *Daemon) *v1.Node {
+		newNode, err := dn.kubeClient.CoreV1().Nodes().Get(
+			context.TODO(), dn.node.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("error reading node: %v", err)
+		}
+		return newNode
+	}
+
+	checkForOtherLabel := func(node *v1.Node) {
+		otherLabelValueRead, otherLabelExists := node.Labels[otherLabel]
+		assert.True(t, otherLabelExists)
+		assert.EqualValues(t, otherLabelValue, otherLabelValueRead)
+	}
+
+	// Add "exclude" label to a node that doesn't have it yet
+	dn := initializeEnvironment(labelsWithNoExclude)
+	err := dn.addOrRemoveExcludeFromLoadBalancerLabel(true)
+	assert.Nil(t, err)
+	newNode := readNode(dn)
+	labelValue, labelExists := newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.True(t, labelExists)
+	assert.EqualValues(t, excludeFromLoadBalancerLabelValue, labelValue)
+	checkForOtherLabel(newNode)
+
+	// Try to remove the "exclude" label from a node that doesn't have it yet
+	dn = initializeEnvironment(labelsWithNoExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(false)
+	assert.Nil(t, err)
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.False(t, labelExists)
+	checkForOtherLabel(newNode)
+
+	// Try to add the "exclude" label to a node that has it already, but whose value is empty.
+	// It should leave the node as is.
+	dn = initializeEnvironment(labelsWithEmptyExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(true)
+	assert.Nil(t, err)
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.True(t, labelExists)
+	assert.EqualValues(t, "", labelValue)
+	checkForOtherLabel(newNode)
+
+	// Try to remove the "exclude" label from a node that has it already,
+	// but whose value is empty. Check that the label does NOT get removed.
+	dn = initializeEnvironment(labelsWithEmptyExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(false)
+	assert.Nil(t, err)
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.True(t, labelExists)
+	assert.EqualValues(t, "", labelValue)
+	checkForOtherLabel(newNode)
+
+	// Try to add the "exclude" label to a node that has it already, and whose value is
+	// the one that MCO adds. Nothing should change.
+	dn = initializeEnvironment(labelsWithMCOExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(true)
+	assert.Nil(t, err)
+	// check that the label is still there
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.True(t, labelExists)
+	assert.EqualValues(t, excludeFromLoadBalancerLabelValue, labelValue)
+	checkForOtherLabel(newNode)
+
+	// Remove the "exclude" label from a node that has it already, and whose value is
+	// the one MCO adds. The label should be removed
+	dn = initializeEnvironment(labelsWithMCOExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(false)
+	assert.Nil(t, err)
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.False(t, labelExists)
+	checkForOtherLabel(newNode)
+
+	// Try to add the "exclude" label to a node that has it already, but whose value
+	// is arbitrary.
+	// Both "add" and "remove" should leave the node as is.
+	dn = initializeEnvironment(labelsWithOtherExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(true)
+	assert.Nil(t, err)
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.True(t, labelExists)
+	assert.EqualValues(t, otherExcludeValue, labelValue)
+	checkForOtherLabel(newNode)
+
+	// Try to remove the "exclude" label from a node that has it already, but whose value
+	// is arbitrary. Check that the label does NOT get removed
+	dn = initializeEnvironment(labelsWithOtherExclude)
+	err = dn.addOrRemoveExcludeFromLoadBalancerLabel(false)
+	assert.Nil(t, err)
+	newNode = readNode(dn)
+	labelValue, labelExists = newNode.Labels[excludeFromLoadBalancerLabel]
+	assert.True(t, labelExists)
+	assert.EqualValues(t, otherExcludeValue, labelValue)
+	checkForOtherLabel(newNode)
+
 }

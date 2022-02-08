@@ -128,6 +128,10 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 // finalizeBeforeReboot is the last step in an update() and then we take appropriate postConfigChangeAction.
 // It can also be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
+	if err := dn.addOrRemoveExcludeFromLoadBalancerLabel(true); err != nil {
+		glog.Warningf("Unable to add label %s to node : %s", excludeFromLoadBalancerLabel, err)
+	}
+
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
 		return fmt.Errorf("failed to log pending config: %s: %w", string(out), err)
 	}

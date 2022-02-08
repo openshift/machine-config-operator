@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
@@ -163,6 +164,13 @@ const (
 	// maxUpdateBackoff is the maximum time to react to a change as we back off
 	// in the face of errors.
 	maxUpdateBackoff = 60 * time.Second
+
+	// excludeFromLoadBalancerLabel is used by the cloud service controller in order to know
+	// which nodes to exclude from backend pools of cloud load balancers.
+	excludeFromLoadBalancerLabel = "node.kubernetes.io/exclude-from-external-load-balancers"
+	// excludeFromLoadBalancerLabelValue is a custom value to recognize that
+	// the label was added by MCO.
+	excludeFromLoadBalancerLabelValue = "added-by-mco"
 
 	// used for Hypershift daemon
 	mcsServedConfigPath         = "/etc/mcs-machine-config-content.json"
@@ -456,6 +464,11 @@ func (dn *Daemon) initializeNode() error {
 	if dn.nodeInitialized {
 		return nil
 	}
+
+	if err := dn.addOrRemoveExcludeFromLoadBalancerLabel(false); err != nil {
+		glog.Warningf("Unable to remove label %s from node : %s", excludeFromLoadBalancerLabel, err)
+	}
+
 	// Some parts of the MCO dispatch on whether or not we're managing a control plane node
 	if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
 		glog.Infof("Node %s is part of the control plane", dn.node.Name)
@@ -2101,4 +2114,108 @@ func forceFileExists() bool {
 	}
 
 	return false
+}
+
+// patchLabelsOnNode takes a map of key/value string pairs and patches them as labels on the node
+func (dn *Daemon) patchLabelsOnNode(labels map[string]interface{}) error {
+	var err error
+	var patchData []byte
+	patch := struct {
+		Metadata map[string]interface{} `json:"metadata"`
+	}{
+		Metadata: map[string]interface{}{
+			"labels": labels,
+		},
+	}
+	dn.logSystem("Patching labels %v", labels)
+	patchData, err = json.Marshal(&patch)
+	if err != nil {
+		dn.logSystem("Error in patching labels: %v", err)
+		return err
+	}
+	_, err = dn.kubeClient.CoreV1().Nodes().Patch(
+		context.TODO(), dn.name, types.MergePatchType, patchData, metav1.PatchOptions{})
+	if err != nil {
+		dn.logSystem("Error patching labels: %v", err)
+		return err
+	}
+	return nil
+}
+
+// Add or remove excludeFromLoadBalancerLabel to the node. If addLabel=true, it
+// adds the label if the label doesn't already exist and sets it to a custom value
+// so as to know that it was added by MCO. If addLabel=false, it removes the label,
+// only if its value is the known custom value, otherwise it leaves it as is.
+func (dn *Daemon) addOrRemoveExcludeFromLoadBalancerLabel(addLabel bool) error {
+	var err error
+	var labelValue interface{}
+	if dn.node == nil {
+		return nil
+	}
+	// Add the label only if not present; remove the label only if it has our custom value
+	labelValue, labelExists := dn.node.Labels[excludeFromLoadBalancerLabel]
+	if addLabel {
+		if labelExists {
+			dn.logSystem("node %s already has label %s=%s (addLabel=%t), nothing to add",
+				dn.name, excludeFromLoadBalancerLabel, labelValue, addLabel)
+			return nil
+		}
+		// Add addOrRemoveExcludeFromLoadBalancerLabel to the node, as in:
+		// labels:
+		//   beta.kubernetes.io/arch: amd64
+		//   beta.kubernetes.io/instance-type: Standard_D4s_v3
+		//   beta.kubernetes.io/os: linux
+		//   failure-domain.beta.kubernetes.io/region: centralus
+		//   failure-domain.beta.kubernetes.io/zone: centralus-1
+		//   kubernetes.io/arch: amd64
+		//   kubernetes.io/hostname: ci-ln-0h2ssy2-1d09d-vpvjc-worker-centralus1-l2thg
+		//   kubernetes.io/os: linux
+		//   node-role.kubernetes.io/worker: ""
+		//   node.kubernetes.io/exclude-from-external-load-balancers: added-by-mco
+		//   node.kubernetes.io/instance-type: Standard_D4s_v3
+		//   node.openshift.io/os_id: rhcos
+		//   topology.disk.csi.azure.com/zone: centralus-1
+		//   topology.kubernetes.io/region: centralus
+		//   topology.kubernetes.io/zone: centralus-1
+		labelValue = excludeFromLoadBalancerLabelValue
+	} else {
+		if labelExists {
+			if labelValue != excludeFromLoadBalancerLabelValue {
+				dn.logSystem("label %s=%s was not added by MCO, not removing it",
+					excludeFromLoadBalancerLabel, labelValue)
+				return nil
+			}
+		} else {
+			dn.logSystem("label %s not present on node %s, nothing to remove",
+				excludeFromLoadBalancerLabel, dn.name)
+			return nil
+		}
+
+		// Removing the label by setting its value to nil.
+		// Continuing from the example above:
+		// labels:
+		//   beta.kubernetes.io/arch: amd64
+		//   beta.kubernetes.io/instance-type: Standard_D4s_v3
+		//   beta.kubernetes.io/os: linux
+		//   failure-domain.beta.kubernetes.io/region: centralus
+		//   failure-domain.beta.kubernetes.io/zone: centralus-1
+		//   kubernetes.io/arch: amd64
+		//   kubernetes.io/hostname: ci-ln-0h2ssy2-1d09d-vpvjc-worker-centralus1-l2thg
+		//   kubernetes.io/os: linux
+		//   node-role.kubernetes.io/worker: ""
+		//   node.kubernetes.io/instance-type: Standard_D4s_v3
+		//   node.openshift.io/os_id: rhcos
+		//   topology.disk.csi.azure.com/zone: centralus-1
+		//   topology.kubernetes.io/region: centralus
+		//   topology.kubernetes.io/zone: centralus-1
+
+		labelValue = nil
+	}
+	err = dn.patchLabelsOnNode(map[string]interface{}{excludeFromLoadBalancerLabel: labelValue})
+	if err != nil {
+		dn.logSystem("Error patching node %s with label %s=%s: %v",
+			dn.name, excludeFromLoadBalancerLabel, labelValue, err)
+		return err
+	}
+	return nil
 }
