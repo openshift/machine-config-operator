@@ -135,6 +135,10 @@ func (dn *Daemon) performDrain() error {
 		return nil
 	}
 
+	if err := dn.addOrRemoveExcludeFromLoadBalancerLabel(true); err != nil {
+		glog.Warningf("Unable to add label %s to node : %s", excludeFromLoadBalancerLabel, err)
+	}
+
 	// We are here, that means we need to cordon and drain node
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
