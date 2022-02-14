@@ -234,6 +234,8 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 			return "vsphere"
 		case configv1.KubevirtPlatformType:
 			return "kubevirt"
+		case configv1.NutanixPlatformType:
+			return "nutanix"
 		default:
 			return ""
 		}
@@ -255,6 +257,7 @@ func onPremPlatformKeepalivedEnableUnicast(cfg mcfgv1.ControllerConfigSpec) (int
 	}
 }
 
+//nolint:dupl
 func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
@@ -268,6 +271,8 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
 		case configv1.KubevirtPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Kubevirt.IngressIP, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
@@ -276,6 +281,7 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 	}
 }
 
+//nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
@@ -289,6 +295,8 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
 		case configv1.KubevirtPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
