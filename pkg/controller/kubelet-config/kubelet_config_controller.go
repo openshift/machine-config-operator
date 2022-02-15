@@ -595,6 +595,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			mc.ObjectMeta.UID = uuid.NewUUID()
 			_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			arr := strings.Split(managedKey, "-")
+			// the first managed key value 99-poolname-generated-kubelet does not have a suffix
+			// set "" as suffix annotation to the kubelet config object
+			if _, err := strconv.Atoi(arr[len(arr)-1]); err != nil && !ok {
+				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
+					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
+				}
+			}
 			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
 			// suffix annotation and suffix value to the kubelet config object
 			if len(arr) > 4 && !ok {
