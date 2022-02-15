@@ -893,3 +893,67 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 	_, ok = actual[machineConfigUpgrade.Name]
 	require.True(t, ok, "expect generated-kubelet-1 in the list, but got false")
 }
+
+func TestKubeletConfigResync(t *testing.T) {
+	for _, platform := range []osev1.PlatformType{osev1.AWSPlatformType, osev1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc2 := newKubeletConfig("smaller-max-pods-2", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+
+			c := f.newController()
+			err := c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.mckLister = append(f.mckLister, kc2)
+			f.objects = append(f.objects, kc2)
+
+			c = f.newController()
+			err = c.syncHandler(getKey(kc2, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			val := kc2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "1", val)
+
+			val = kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+
+			// resync kc1 and kc2
+			c = f.newController()
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+			val = kc1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+
+			c = f.newController()
+			err = c.syncHandler(getKey(kc2, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+			val = kc2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "1", val)
+		})
+	}
+}
