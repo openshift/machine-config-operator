@@ -91,7 +91,7 @@ func (optr *Operator) syncRelatedObjects() error {
 }
 
 // syncAvailableStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncAvailableStatus() error {
+func (optr *Operator) syncAvailableStatus(ierr syncError) error {
 	co, err := optr.fetchClusterOperator()
 	if err != nil {
 		return err
@@ -100,15 +100,14 @@ func (optr *Operator) syncAvailableStatus() error {
 		return nil
 	}
 
-	optrVersion, _ := optr.vStore.Get("operator")
-	degraded := cov1helpers.IsStatusConditionTrue(co.Status.Conditions, configv1.OperatorDegraded)
-	message := fmt.Sprintf("Cluster has deployed %s", optrVersion)
-
+	message := fmt.Sprintf("Cluster has deployed %s", co.Status.Versions)
 	available := configv1.ConditionTrue
 
-	if degraded {
+	// we will only be Available = False where there is a problem syncing
+	// operands of the MCO as that points to impaired operator functionality.
+	// RequiredPools failing but everything else being ok, should be just Degraded = True.
+	if ierr.err != nil && ierr.task != "RequiredPools" {
 		available = configv1.ConditionFalse
-		message = fmt.Sprintf("Cluster not available for %s", optrVersion)
 		mcoObjectRef := &corev1.ObjectReference{
 			Kind:      co.Kind,
 			Name:      co.Name,
@@ -117,6 +116,7 @@ func (optr *Operator) syncAvailableStatus() error {
 		}
 
 		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, "OperatorNotAvailable", message)
+		message = fmt.Sprintf("Cluster not available for %s", co.Status.Versions)
 	}
 
 	coStatus := configv1.ClusterOperatorStatusCondition{
