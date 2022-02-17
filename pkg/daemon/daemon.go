@@ -1643,16 +1643,10 @@ func forceFileExists() bool {
 }
 
 // patchLabelsOnNode takes a map of key/value string pairs and patches them as labels on the node
-func (dn *Daemon) patchLabelsOnNode(labels map[string]interface{}) error {
+func (dn *Daemon) patchLabelsOnNode(labels map[string]string) error {
 	var err error
 	var patchData []byte
-	patch := struct {
-		Metadata map[string]interface{} `json:"metadata"`
-	}{
-		Metadata: map[string]interface{}{
-			"labels": labels,
-		},
-	}
+	patch := metav1.ObjectMeta{Labels: labels}
 	dn.logSystem("Patching labels %v", labels)
 	patchData, err = json.Marshal(&patch)
 	if err != nil {
@@ -1674,7 +1668,7 @@ func (dn *Daemon) patchLabelsOnNode(labels map[string]interface{}) error {
 // only if its value is the known custom value, otherwise it leaves it as is.
 func (dn *Daemon) addOrRemoveExcludeFromLoadBalancerLabel(addLabel bool) error {
 	var err error
-	var labelValue interface{}
+	var labelValue string
 	// Add the label only if not present; remove the label only if it has our custom value
 	labelValue, labelExists := dn.node.Labels[excludeFromLoadBalancerLabel]
 	if addLabel {
@@ -1734,7 +1728,7 @@ func (dn *Daemon) addOrRemoveExcludeFromLoadBalancerLabel(addLabel bool) error {
 
 		labelValue = nil
 	}
-	err = dn.patchLabelsOnNode(map[string]interface{}{excludeFromLoadBalancerLabel: labelValue})
+	err = dn.patchLabelsOnNode(map[string]string{excludeFromLoadBalancerLabel: labelValue})
 	if err != nil {
 		dn.logSystem("Error patching node %s with label %s=%s: %v",
 			dn.name, excludeFromLoadBalancerLabel, labelValue, err)
