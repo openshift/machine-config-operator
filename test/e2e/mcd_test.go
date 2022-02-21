@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,6 +79,57 @@ func TestMCDeployed(t *testing.T) {
 		}
 		t.Logf("All nodes updated with %s (%s elapsed)", mcadd.Name, time.Since(startTime))
 	}
+}
+
+func TestNodeLabels(t *testing.T) {
+	mcpName := "infra"
+
+	cs := framework.NewClientSet("")
+
+	cleanupFuncs := helpers.NewCleanupFuncs()
+	defer cleanupFuncs.Run()
+
+	mc := createMCToAddFile("add-a-file", "/etc/mytestconf", "test")
+	mc.Labels = helpers.MCLabelForRole(mcpName)
+
+	var wg sync.WaitGroup = sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		cleanupFuncs.Add(helpers.CreatePoolAndApplyMC(t, cs, mcpName, mc))
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(1 * time.Second)
+		targetNode := helpers.GetSingleNodeByRole(t, cs, mcpName)
+
+		labelFound := false
+		err := wait.PollImmediate(1*time.Second, 5*time.Minute, func() (bool, error) {
+			n, err := cs.Nodes().Get(context.TODO(), targetNode.Name, metav1.GetOptions{})
+			if err != nil {
+				return false, err
+			}
+
+			labels := n.GetLabels()
+			val, ok := labels["node.kubernetes.io/exclude-from-external-load-balancers"]
+			if labelFound && !ok {
+				t.Logf("Label removed as expected!")
+				return true, nil
+			}
+
+			if ok && val == "added-by-mco" && !labelFound {
+				t.Logf("Label added as expected!")
+				labelFound = true
+			}
+
+			return false, nil
+		})
+
+		require.Nil(t, err)
+	}()
+
+	wg.Wait()
 }
 
 func TestRunShared(t *testing.T) {
