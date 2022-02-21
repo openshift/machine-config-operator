@@ -810,3 +810,11 @@ func GetSupportedExtensions() map[string][]string {
 		"sandboxed-containers": {"kata-containers"},
 	}
 }
+
+// canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
+func CanonicalizeKernelType(kernelType string) string {
+	if kernelType == KernelTypeRealtime {
+		return KernelTypeRealtime
+	}
+	return KernelTypeDefault
+}
