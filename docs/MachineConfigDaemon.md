@@ -181,3 +181,69 @@ The "Reload Crio" action performs the file write and runs a `systemctl reload cr
 ## Annotating on SSH access
 
 RHCOS nodes in Openshift are not meant to be manually accessed via SSH. MCD uses logind to watch for login sessions, which, upon detection, warns the user and annotates the node with `machineconfiguration.openshift.io/ssh=accessed`. This in turn will be used to warn cluster admins.
+
+## Config Drift Detection
+
+### Overview
+
+There may be situations when the on-disk state of a node may differ or "drift"
+from what is specified by the MachineConfig. This is usually (though not
+always) due to a cluster admin manually editing files. In the past, the MCD
+would only verify that the on-disk state matches what is specified by the
+MachineConfig after a reboot. Whenever this occurs, the node and Machine Config
+Pool (MCP) would be marked Degraded and unable to apply any MachineConfigs.
+
+Because reboots do not frequently occur, the config drift isn't immediately
+detected. In cases where the config drift was intentional, the cluster admin
+may lose the context which necessitated the config drift between the time the
+drift occurred and when it was detected. This leads to the node and / or MCP
+becoming degraded at an inconvenient time and can block future updates until
+the issue is remedied.
+
+### Detection
+
+To avoid this, a Config Drift Monitor was built into the MCD in OCP 4.10. It
+uses `fsnotify` to proactively detect config drift and mark the node `Degraded`
+within seconds of the drift taking place.
+
+Whenever a filesystem write event is detected for any of the objects (Ignition
+files and systemd units / dropins) defined in the currently applied
+MachineConfig, the Config Drift Monitor validates that the file contents and
+permissions fully match what the currently-applied MachineConfig specifies.
+
+Whenever the Config Drift Monitor detects an inconsistent object, it will:
+1. Emit an error to the console logs.
+1. Emit a Kubernetes event indicating that a configuration drift has occurred.
+1. Stop further verification.
+1. Set `machineconfiguration.openshift.io/state` to `Degraded`. 
+
+### Machine Config Updates
+
+Prior to applying a new MachineConfig, a preflight check is made to verify that
+the current on-disk state matches the active MachineConfig. If config drift is
+detected, `machineconfiguration.openshift.io/state` will be set to `Degraded`
+and the update will not be applied until recovery steps are taken.
+
+To apply a new MachineConfig, the Config Drift Monitor is temporarily shut down.
+This is because the config will "drift" from the current MachineConfig to the
+new MachineConfig. Once new MachineConfig has been applied (assuming no reboot
+is needed), the Config Drift Monitor will be restarted and supplied with the
+newly active MachineConfig. If a reboot is required, the Config Drift Monitor
+will be started once the MCD is out of the booting phase.
+
+Whenever the Config Drift Monitor is started or stopped, a Kubernetes Event
+will be emitted. At startup, the event will also include the name of the
+MachineConfig it is using as a reference.
+
+### Recovering From Config Drift
+
+Once config drift is detected, there are two options for recovery:
+
+1. Ensure that the contents and file permissons of the file on disk match what
+the MachineConfig specifies. This can be done by manually rewriting the file
+contents or changing the file mode. Once this is done, the MCD will reapply the
+current MachineConfig.
+1. Create the forcefile (`/run/machine-config-daemon-force`). This will cause
+the MCD to bypass the preflight config checks and reapply the current
+MachineConfig. This will also cause the node to reboot, which may not be
+desirable.
