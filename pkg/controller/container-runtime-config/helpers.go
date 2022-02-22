@@ -522,18 +522,27 @@ func getValidBlockedRegistries(releaseImage string, imgSpec *apicfgv1.ImageSpec)
 
 func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) error {
 	for _, scope := range insecure {
+		if scope == "" {
+			return fmt.Errorf("invaid empty entry for insecure registries")
+		}
 		if !registries.IsValidRegistriesConfScope(scope) {
 			return fmt.Errorf("invalid entry for insecure registries %q", scope)
 		}
 	}
 
 	for _, scope := range blocked {
+		if scope == "" {
+			return fmt.Errorf("invalid empty entry for blocked registries")
+		}
 		if !registries.IsValidRegistriesConfScope(scope) {
 			return fmt.Errorf("invalid entry for blocked registries %q", scope)
 		}
 	}
 
 	for _, scope := range allowed {
+		if scope == "" {
+			return fmt.Errorf("invalid empty entry for allowed registries")
+		}
 		if !registries.IsValidRegistriesConfScope(scope) {
 			return fmt.Errorf("invalid entry for allowed registries %q", scope)
 		}
@@ -541,10 +550,16 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 
 	for _, icsp := range icspRules {
 		for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
+			if mirrorSet.Source == "" {
+				return fmt.Errorf("invalid empty entry for source configuration")
+			}
 			if strings.Contains(mirrorSet.Source, "*") {
 				return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirrorSet.Source)
 			}
 			for _, mirror := range mirrorSet.Mirrors {
+				if mirror == "" {
+					return fmt.Errorf("invalid empty entry for mirror configuration")
+				}
 				if strings.Contains(mirror, "*") {
 					return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirror)
 				}

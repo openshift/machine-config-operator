@@ -3,6 +3,7 @@ package containerruntimeconfig
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -291,5 +292,117 @@ func TestUpdatePolicyJSON(t *testing.T) {
 			_, err = signature.NewPolicyFromBytes(got)
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestValidateRegistriesConfScopes(t *testing.T) {
+	tests := []struct {
+		insecure    []string
+		blocked     []string
+		allowed     []string
+		icspRules   []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		expectedErr error
+	}{
+		{
+			insecure: []string{""},
+			blocked:  []string{"*.block.com"},
+			allowed:  []string{"*.allowed.com"},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []string{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invaid empty entry for insecure registries"),
+		},
+		{
+			insecure: []string{"*.insecure.com"},
+			blocked:  []string{""},
+			allowed:  []string{"*.allowed.com"},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []string{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid empty entry for blocked registries"),
+		},
+		{
+			insecure: []string{"*.insecure.com"},
+			blocked:  []string{"*.block.com"},
+			allowed:  []string{""},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+							{Source: "blocked.com/ns-b/ns2-b", Mirrors: []string{"other.com/ns-o2", "insecure.com/ns-i2"}},
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid empty entry for allowed registries"),
+		},
+		{
+			insecure: []string{"*.insecure.com"},
+			blocked:  []string{"*.block.com"},
+			allowed:  []string{"*.allowed.com"},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "", Mirrors: []string{"blocked.com/ns-b1", "other.com/ns-o1"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid empty entry for source configuration"),
+		},
+		{
+			insecure: []string{"*.insecure.com"},
+			blocked:  []string{"*.block.com"},
+			allowed:  []string{"*.allowed.com"},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{ // other.com is neither insecure nor blocked
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"", "other.com/ns-o1"}},
+						},
+					},
+				},
+			},
+			expectedErr: errors.New("invalid empty entry for mirror configuration"),
+		},
+		{
+			insecure: []string{"*.insecure.com"},
+			blocked:  []string{"*.block.com"},
+			allowed:  []string{"*.allowed.com"},
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "insecure.com/ns-i1", Mirrors: []string{"other.com/ns-o1"}},
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		res := validateRegistriesConfScopes(tc.insecure, tc.blocked, tc.allowed, tc.icspRules)
+		require.Equal(t, tc.expectedErr, res)
 	}
 }
