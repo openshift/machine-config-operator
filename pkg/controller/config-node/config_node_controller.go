@@ -59,7 +59,7 @@ type Controller struct {
 	enqueueConfigNode func(*configv1.Node)
 
 	ccLister mcfglistersv1.ControllerConfigLister
-	cnLister cligolistersv1.ConfigNodeLister
+	cnLister cligolistersv1.NodeLister
 
 	ccListerSynced cache.InformerSynced
 	cnListerSynced cache.InformerSynced
@@ -70,7 +70,7 @@ type Controller struct {
 // New returns a new node controller.
 func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
-	cnInformer cligoinformersv1.ConfigNodeInformer,
+	cnInformer cligoinformersv1.NodeInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {

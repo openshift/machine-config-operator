@@ -78,6 +78,7 @@ type Operator struct {
 	deployLister     appslisterv1.DeploymentLister
 	daemonsetLister  appslisterv1.DaemonSetLister
 	infraLister      configlistersv1.InfrastructureLister
+	confignodeLister configlistersv1.NodeLister
 	networkLister    configlistersv1.NetworkLister
 	mcoCmLister      corelisterv1.ConfigMapLister
 	clusterCmLister  corelisterv1.ConfigMapLister
@@ -90,6 +91,7 @@ type Operator struct {
 	deployListerSynced               cache.InformerSynced
 	daemonsetListerSynced            cache.InformerSynced
 	infraListerSynced                cache.InformerSynced
+	confignodeListerSynced           cache.InformerSynced
 	networkListerSynced              cache.InformerSynced
 	mcpListerSynced                  cache.InformerSynced
 	ccListerSynced                   cache.InformerSynced
@@ -128,6 +130,7 @@ func New(
 	mcoCmInformer,
 	clusterCmInfomer coreinformersv1.ConfigMapInformer,
 	infraInformer configinformersv1.InfrastructureInformer,
+	confignodeInformer configinformersv1.NodeInformer,
 	networkInformer configinformersv1.NetworkInformer,
 	proxyInformer configinformersv1.ProxyInformer,
 	dnsInformer configinformersv1.DNSInformer,
@@ -172,6 +175,7 @@ func New(
 		clusterRoleBindingInformer.Informer(),
 		mcoCmInformer.Informer(),
 		infraInformer.Informer(),
+		confignodeInformer.Informer(),
 		networkInformer.Informer(),
 		mcpInformer.Informer(),
 		proxyInformer.Informer(),
@@ -214,6 +218,8 @@ func New(
 	optr.daemonsetListerSynced = daemonsetInformer.Informer().HasSynced
 	optr.infraLister = infraInformer.Lister()
 	optr.infraListerSynced = infraInformer.Informer().HasSynced
+	optr.confignodeLister = confignodeInformer.Lister()
+	optr.confignodeListerSynced = confignodeInformer.Informer().HasSynced
 	optr.networkLister = networkInformer.Lister()
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
 	optr.dnsLister = dnsInformer.Lister()
@@ -245,6 +251,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		optr.deployListerSynced,
 		optr.daemonsetListerSynced,
 		optr.infraListerSynced,
+		optr.confignodeListerSynced,
 		optr.mcoCmListerSynced,
 		optr.clusterCmListerSynced,
 		optr.serviceAccountInformerSynced,

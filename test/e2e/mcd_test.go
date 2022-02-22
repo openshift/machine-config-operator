@@ -167,7 +167,7 @@ func TestKernelArguments(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
@@ -254,7 +254,7 @@ func TestKernelType(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
@@ -363,7 +363,7 @@ func TestExtensions(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
@@ -488,7 +488,7 @@ func TestNoReboot(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
@@ -695,7 +695,7 @@ func TestDontDeleteRPMFiles(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil
@@ -766,7 +766,7 @@ func TestIgn3Cfg(t *testing.T) {
 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
 	require.Nil(t, err)
 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err)
 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
 			return false, nil

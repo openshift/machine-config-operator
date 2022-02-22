@@ -164,7 +164,7 @@ func assertNodeReachesState(t *testing.T, cs *framework.ClientSet, target corev1
 	maxWait := 5 * time.Minute
 
 	end, err := pollForResourceState(maxWait, func() (bool, error) {
-		node, err := cs.Nodes().Get(context.TODO(), target.Name, metav1.GetOptions{})
+		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), target.Name, metav1.GetOptions{})
 		return stateFunc(*node), err
 	})
 

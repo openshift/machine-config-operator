@@ -108,7 +108,8 @@ func toYAML(i interface{}) []byte {
 // fields for the controller spec.
 // Infrastructure provides information about the platform, etcd discovery domain.
 // Network provides the service network that is used to calculate the cluster DNS IP.
-func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, network *configv1.Network, proxy *configv1.Proxy, dns *configv1.DNS) (*mcfgv1.ControllerConfigSpec, error) {
+// (TODO) Need to add a comment regarding the node object and also default the fields of the Node object if found empty.
+func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, node *configv1.Node, network *configv1.Network, proxy *configv1.Proxy, dns *configv1.DNS) (*mcfgv1.ControllerConfigSpec, error) {
 	if len(network.Spec.ServiceNetwork) == 0 {
 		return nil, fmt.Errorf("service cidr is empty in Network")
 	}
@@ -150,6 +151,7 @@ func createDiscoveredControllerConfigSpec(infra *configv1.Infrastructure, networ
 		// Still populating it here for now until it will be removed eventually
 		Platform: platform,
 		Infra:    infra,
+		Node:     node,
 		DNS:      dns,
 	}
 	if network.Status.NetworkType == "" {

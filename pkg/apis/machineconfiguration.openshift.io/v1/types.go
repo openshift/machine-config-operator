@@ -84,6 +84,10 @@ type ControllerConfigSpec struct {
 	// +nullable
 	Infra *configv1.Infrastructure `json:"infra"`
 
+	// node holds the cluster-wide information about the node specific features.
+	// +nullable
+	Node *configv1.Node `json:"node"`
+
 	// dns holds the cluster dns details
 	// +nullable
 	DNS *configv1.DNS `json:"dns"`

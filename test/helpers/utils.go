@@ -200,7 +200,7 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
 	startTime := time.Now()
 	err := wait.PollImmediate(2*time.Second, 20*time.Minute, func() (bool, error) {
-		n, err := cs.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -234,16 +234,16 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	infraNode := nodes[rand.Intn(len(nodes))]
 	infraNode.Labels[label] = ""
 
-	_, err = cs.Nodes().Update(context.TODO(), &infraNode, metav1.UpdateOptions{})
+	_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), &infraNode, metav1.UpdateOptions{})
 
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
 	return func() {
-		updatedNode, err := cs.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+		updatedNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
 		require.Nil(t, err, "unable to get node to update: %s", err)
 
 		delete(updatedNode.Labels, label)
 
-		_, err = cs.Nodes().Update(context.TODO(), updatedNode, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), updatedNode, metav1.UpdateOptions{})
 		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, err)
 	}
 }
@@ -261,7 +261,7 @@ func GetNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error)
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
 	}
-	nodes, err := cs.Nodes().List(context.TODO(), listOptions)
+	nodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, err
 	}

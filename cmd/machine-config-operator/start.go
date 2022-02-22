@@ -67,6 +67,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.KubeNamespacedInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.KubeInformerFactory.Core().V1().ConfigMaps(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Infrastructures(),
+			ctrlctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Networks(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Proxies(),
 			ctrlctx.ConfigInformerFactory.Config().V1().DNSes(),
