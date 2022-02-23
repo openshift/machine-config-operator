@@ -236,12 +236,12 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	infraNodeName := infraNode.Name
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		infraNode, err := cs.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
+		infraNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		infraNode.Labels[label] = ""
-		_, err = cs.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
 		return err
 	})
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
