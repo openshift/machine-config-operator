@@ -22,6 +22,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -183,33 +184,47 @@ func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 // nolint: dupl
 func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.ContainerRuntimeConfig) (string, error) {
 	// Get all the ctrcfg CRs
-	ctrcfgList, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
+	ctrcfgListAll, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error listing container runtime configs: %v", err)
 	}
 	// If there is no ctrcfg in the list, return the default MC name with no suffix
-	if ctrcfgList == nil || len(ctrcfgList.Items) == 0 {
+	if ctrcfgListAll == nil || len(ctrcfgListAll.Items) == 0 {
 		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 	}
-	for _, ctrcfg := range ctrcfgList.Items {
-		if ctrcfg.Name == cfg.Name {
-			val, ok := ctrcfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
-			// If we find a matching ctrcfg and it is the only one in the list, then return the default MC name with no suffix
-			if !ok && len(ctrcfgList.Items) < 2 {
-				return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
-			}
-			// Otherwise if an MC name suffix exists, append it to the default MC name and return that as this ctrcfg exists and
-			// we are probably doing an update action on it
-			if val != "" {
-				return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, val), nil
-			}
+
+	var ctrcfgList []mcfgv1.ContainerRuntimeConfig
+	for _, ctrcfg := range ctrcfgListAll.Items {
+		selector, err := metav1.LabelSelectorAsSelector(ctrcfg.Spec.MachineConfigPoolSelector)
+		if err != nil {
+			return "", fmt.Errorf("invalid label selector: %v", err)
+		}
+		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
+			continue
+		}
+		ctrcfgList = append(ctrcfgList, ctrcfg)
+	}
+
+	for _, ctrcfg := range ctrcfgList {
+		if ctrcfg.Name != cfg.Name {
+			continue
+		}
+		val, ok := ctrcfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+		// If we find a matching ctrcfg and it is the only one in the list, then return the default MC name with no suffix
+		if !ok && len(ctrcfgList) < 2 {
+			return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+		}
+		// Otherwise if an MC name suffix exists, append it to the default MC name and return that as this ctrcfg exists and
+		// we are probably doing an update action on it
+		if val != "" {
+			return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, val), nil
 		}
 	}
 
 	// If we are here, this means that a new ctrcfg was created, so we have to calculate the suffix value for its MC name
 	suffixNum := 0
 	// Go through the list of ctrcfg objects created and get the max suffix value currently created
-	for _, item := range ctrcfgList.Items {
+	for _, item := range ctrcfgList {
 		val, ok := item.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 		if ok {
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far

@@ -68,7 +68,8 @@ type fixture struct {
 	cvLister   []*apicfgv1.ClusterVersion
 	icspLister []*apioperatorsv1alpha1.ImageContentSourcePolicy
 
-	actions []core.Action
+	actions               []core.Action
+	skipActionsValidation bool
 
 	objects         []runtime.Object
 	imgObjects      []runtime.Object
@@ -83,6 +84,10 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func (f *fixture) validateActions() {
+	if f.skipActionsValidation {
+		f.t.Log("Skipping actions validation")
+		return
+	}
 	actions := filterInformerActions(f.client.Actions())
 	for i, action := range actions {
 		glog.Infof("Action: %v", action)
@@ -93,12 +98,17 @@ func (f *fixture) validateActions() {
 		}
 
 		expectedAction := f.actions[i]
-		checkAction(expectedAction, action, f.t)
+		checkAction(expectedAction, action, f.t, i)
 	}
 
 	if len(f.actions) > len(actions) {
 		f.t.Errorf("%d additional expected actions:%+v", len(f.actions)-len(actions), f.actions[len(actions):])
 	}
+}
+
+func (f *fixture) resetActions() {
+	f.actions = []core.Action{}
+	f.client.ClearActions()
 }
 
 func newControllerConfig(name string, platform apicfgv1.PlatformType) *mcfgv1.ControllerConfig {
@@ -275,9 +285,15 @@ func filterInformerActions(actions []core.Action) []core.Action {
 
 // checkAction verifies that expected and actual actions are equal and both have
 // same attached resources
-func checkAction(expected, actual core.Action, t *testing.T) {
+func checkAction(expected, actual core.Action, t *testing.T, index int) {
 	if !(expected.Matches(actual.GetVerb(), actual.GetResource().Resource) && actual.GetSubresource() == expected.GetSubresource()) {
 		t.Errorf("Expected\n\t%#v\ngot\n\t%#v", expected, actual)
+		if actual.GetVerb() == "patch" {
+			actual := actual.(core.PatchAction)
+			t.Errorf("Expected(index=%v)\n\t%#v\ngot\n\t%#v\npatch\t%#v", index, expected, actual, string(actual.GetPatch()))
+		} else {
+			t.Errorf("Expected(index=%v)\n\t%#v\ngot\n\t%#v", index, expected, actual)
+		}
 		return
 	}
 
@@ -1011,4 +1027,52 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 	require.True(t, ok, "expect custom-containerruntime in the list, but got false")
 	_, ok = actual[machineConfigUpgrade.Name]
 	require.True(t, ok, "expect generated-containerruntime-1 in the list, but got false")
+}
+
+func generateManagedKey(ctrcfg *mcfgv1.ContainerRuntimeConfig, generation uint64) string {
+	return fmt.Sprintf("99-%s-generated-containerruntime-%v", ctrcfg.Name, generation)
+}
+
+func TestCtrruntimeConfigMultiCreate(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			f.ccLister = append(f.ccLister, cc)
+
+			ctrcfgCount := 30
+			for i := 0; i < ctrcfgCount; i++ {
+				f.resetActions()
+
+				poolName := fmt.Sprintf("subpool%v", i)
+				poolLabelName := fmt.Sprintf("pools.operator.machineconfiguration.openshift.io/%s", poolName)
+				labelSelector := metav1.AddLabelToSelector(&metav1.LabelSelector{}, poolLabelName, "")
+
+				mcp := helpers.NewMachineConfigPool(poolName, nil, labelSelector, "v0")
+				mcp.ObjectMeta.Labels[poolLabelName] = ""
+
+				ccr := newContainerRuntimeConfig(poolName, &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, labelSelector)
+
+				f.mcpLister = append(f.mcpLister, mcp)
+				f.mccrLister = append(f.mccrLister, ccr)
+				f.objects = append(f.objects, ccr)
+
+				mcs := helpers.NewMachineConfig(generateManagedKey(ccr, 1), labelSelector.MatchLabels, "dummy://", []ign3types.File{{}})
+				mcsDeprecated := mcs.DeepCopy()
+				mcsDeprecated.Name = getManagedKeyCtrCfgDeprecated(mcp)
+
+				expectedPatch := fmt.Sprintf("{\"metadata\":{\"finalizers\":[\"99-%v-generated-containerruntime-1\"]}}", poolName)
+
+				f.expectGetMachineConfigAction(mcs)
+				f.expectGetMachineConfigAction(mcsDeprecated)
+				f.expectGetMachineConfigAction(mcs)
+				f.expectCreateMachineConfigAction(mcs)
+				f.expectPatchContainerRuntimeConfig(ccr, []byte(expectedPatch))
+				f.expectUpdateContainerRuntimeConfig(ccr)
+				f.run(poolName)
+			}
+		})
+	}
 }
