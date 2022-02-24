@@ -741,7 +741,7 @@ github.com/opencontainers/runtime-spec/specs-go
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/go-selinux/label
 github.com/opencontainers/selinux/pkg/pwalk
-# github.com/openshift/api v0.0.0-20220110171111-997c316db5e1
+# github.com/openshift/api v0.0.0-20220209124712-b632c5fc10c0
 ## explicit; go 1.16
 github.com/openshift/api
 github.com/openshift/api/apiserver
