@@ -7,7 +7,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
-	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -153,15 +152,17 @@ func (dn *Daemon) performDrain() error {
 	return nil
 }
 
+type ReadFileFunc func(string) ([]byte, error)
+
 // isDrainRequired determines whether node drain is required or not to apply config changes.
-func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
+func isDrainRequired(actions, diffFileSet []string, readOldFile, readNewFile ReadFileFunc) (bool, error) {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
 		// Node is going to reboot, we definitely want to perform drain
 		return true, nil
 	} else if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
 		// Drain may or may not be necessary in case of container registry config changes.
 		if ctrlcommon.InSlice(constants.ContainerRegistryConfPath, diffFileSet) {
-			isSafe, err := isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig)
+			isSafe, err := isSafeContainerRegistryConfChanges(readOldFile, readNewFile)
 			if err != nil {
 				return false, err
 			}
@@ -184,16 +185,16 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 // 2. A new registry has been added that has `mirror-by-digest-only=true`
 // See https://bugzilla.redhat.com/show_bug.cgi?id=1943315
 //nolint:gocyclo
-func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
+func isSafeContainerRegistryConfChanges(readOldFile, readNewFile ReadFileFunc) (bool, error) {
 	// /etc/containers/registries.conf contains config in toml format. Parse the file
-	oldData, err := ctrlcommon.GetIgnitionFileDataByPath(&oldIgnConfig, constants.ContainerRegistryConfPath)
+	oldData, err := readOldFile(constants.ContainerRegistryConfPath)
 	if err != nil {
-		return false, fmt.Errorf("Failed decoding Data URL scheme string: %v", err)
+		return false, fmt.Errorf("failed to get old registries.conf content: %w", err)
 	}
 
-	newData, err := ctrlcommon.GetIgnitionFileDataByPath(&newIgnConfig, constants.ContainerRegistryConfPath)
+	newData, err := readNewFile(constants.ContainerRegistryConfPath)
 	if err != nil {
-		return false, fmt.Errorf("Failed decoding Data URL scheme string %v", err)
+		return false, fmt.Errorf("failed to get new registries.conf content: %w", err)
 	}
 
 	tomlConfOldReg := sysregistriesv2.V2RegistriesConf{}
