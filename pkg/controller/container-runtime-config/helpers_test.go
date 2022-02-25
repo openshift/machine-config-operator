@@ -214,7 +214,7 @@ func TestUpdatePolicyJSON(t *testing.T) {
 		Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 		Transports: map[string]signature.PolicyTransportScopes{
 			"docker-daemon": map[string]signature.PolicyRequirements{
-				"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+				"": {signature.NewPRInsecureAcceptAnything()},
 			},
 		},
 	}
@@ -239,15 +239,15 @@ func TestUpdatePolicyJSON(t *testing.T) {
 				Default: signature.PolicyRequirements{signature.NewPRReject()},
 				Transports: map[string]signature.PolicyTransportScopes{
 					"atomic": map[string]signature.PolicyRequirements{
-						"allow.io":              signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
-						"*.allowed-example.com": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"allow.io":              {signature.NewPRInsecureAcceptAnything()},
+						"*.allowed-example.com": {signature.NewPRInsecureAcceptAnything()},
 					},
 					"docker": map[string]signature.PolicyRequirements{
-						"allow.io":              signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
-						"*.allowed-example.com": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"allow.io":              {signature.NewPRInsecureAcceptAnything()},
+						"*.allowed-example.com": {signature.NewPRInsecureAcceptAnything()},
 					},
 					"docker-daemon": map[string]signature.PolicyRequirements{
-						"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"": {signature.NewPRInsecureAcceptAnything()},
 					},
 				},
 			},
@@ -259,15 +259,15 @@ func TestUpdatePolicyJSON(t *testing.T) {
 				Default: signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
 				Transports: map[string]signature.PolicyTransportScopes{
 					"atomic": map[string]signature.PolicyRequirements{
-						"block.com":             signature.PolicyRequirements{signature.NewPRReject()},
-						"*.blocked-example.com": signature.PolicyRequirements{signature.NewPRReject()},
+						"block.com":             {signature.NewPRReject()},
+						"*.blocked-example.com": {signature.NewPRReject()},
 					},
 					"docker": map[string]signature.PolicyRequirements{
-						"block.com":             signature.PolicyRequirements{signature.NewPRReject()},
-						"*.blocked-example.com": signature.PolicyRequirements{signature.NewPRReject()},
+						"block.com":             {signature.NewPRReject()},
+						"*.blocked-example.com": {signature.NewPRReject()},
 					},
 					"docker-daemon": map[string]signature.PolicyRequirements{
-						"": signature.PolicyRequirements{signature.NewPRInsecureAcceptAnything()},
+						"": {signature.NewPRInsecureAcceptAnything()},
 					},
 				},
 			},
