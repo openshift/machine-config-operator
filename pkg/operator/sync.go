@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/machine-config-operator/lib/resourceapply"
 	"github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	templatectrl "github.com/openshift/machine-config-operator/pkg/controller/template"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/operator/assets"
@@ -402,6 +403,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	// new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
+
+	// add ocp release version as annotation to controller config, for use when
+	// annotating rendered configs with same.
+	optrVersion, _ := optr.vStore.Get("operator")
+	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
+
 	_, _, err = resourceapply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
 		return err
@@ -613,7 +620,8 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					glog.Errorf("Error getting configmap osImageURL: %q", err)
 					return false, nil
 				}
-				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, opURL, optr.mcLister.Get); err != nil {
+				releaseVersion, _ := optr.vStore.Get("operator")
+				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %v, retrying", pool.Name, err)
 					return false, nil
 				}
