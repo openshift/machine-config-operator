@@ -427,32 +427,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 }
 
-func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
-	filesPostConfigChangeActionNone := []string{
-		"/etc/kubernetes/kubelet-ca.crt",
-		"/var/lib/kubelet/config.json",
-	}
-	filesPostConfigChangeActionReloadCrio := []string{
-		constants.ContainerRegistryConfPath,
-		GPGNoRebootPath,
-		"/etc/containers/policy.json",
-	}
-
-	actions = []string{postConfigChangeActionNone}
-	for _, path := range diffFileSet {
-		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
-			continue
-		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
-			actions = []string{postConfigChangeActionReloadCrio}
-		} else {
-			actions = []string{postConfigChangeActionReboot}
-			return
-		}
-	}
-	return
-}
-
-func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
+func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string) ([]string, error) {
 	// If a machine-config-daemon-force file is present, it means the user wants to
 	// move to desired state without additional validation. We will reboot the node in
 	// this case regardless of what MachineConfig diff is.
@@ -464,13 +439,46 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
+	filesPostConfigChangeActionNone := []string{
+		"/etc/kubernetes/kubelet-ca.crt",
+		"/var/lib/kubelet/config.json",
+	}
+	if dn.os.IsFCOS() {
+		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition"))
+	} else {
+		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, filepath.Join(coreUserSSHPath, "authorized_keys"))
+	}
+
+	filesPostConfigChangeActionReloadCrio := []string{
+		constants.ContainerRegistryConfPath,
+		GPGNoRebootPath,
+		"/etc/containers/policy.json",
+	}
+
+	actions := []string{postConfigChangeActionNone}
+	for _, path := range diffFileSet {
+		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
+			continue
+		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
+			actions = []string{postConfigChangeActionReloadCrio}
+		} else {
+			return []string{postConfigChangeActionReboot}, nil
+		}
+	}
+	return actions, nil
+}
+
+func (dn *Daemon) calculatePostConfigChangeActionWithMCDiff(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
+	// Note this function may only return []string{postConfigChangeActionReboot} directly,
+	// since calculatePostConfigChangeActionFromFiles may find files that require a reboot
+
+	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
 	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
 		// must reboot
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
-	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
-	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
+	return dn.calculatePostConfigChangeActionFromFiles(diffFileSet)
 }
 
 // update the node to the provided node configuration.
@@ -530,7 +538,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
+	actions, err := dn.calculatePostConfigChangeActionWithMCDiff(diff, diffFileSet)
 	if err != nil {
 		return err
 	}
