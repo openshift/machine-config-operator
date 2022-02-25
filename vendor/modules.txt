@@ -842,7 +842,7 @@ github.com/openshift/library-go/pkg/operator/resource/resourcehelper
 github.com/openshift/library-go/pkg/operator/resource/resourcemerge
 github.com/openshift/library-go/pkg/operator/resource/resourceread
 github.com/openshift/library-go/pkg/operator/v1helpers
-# github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d
+# github.com/openshift/runtime-utils v0.0.0-20220225175100-8dec0d84fb39
 ## explicit; go 1.13
 github.com/openshift/runtime-utils/pkg/registries
 # github.com/pelletier/go-toml v1.9.3
