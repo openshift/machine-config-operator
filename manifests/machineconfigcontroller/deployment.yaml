@@ -27,10 +27,42 @@ spec:
             cpu: 20m
             memory: 50Mi
         terminationMessagePolicy: FallbackToLogsOnError
+      - name: oauth-proxy
+        image: {{.Images.OauthProxy}}
+        ports:
+        - containerPort: 9001
+          name: metrics
+          protocol: TCP
+        args:
+        - --https-address=:9001
+        - --provider=openshift
+        - --openshift-service-account=machine-config-controller
+        - --upstream=http://127.0.0.1:8797
+        - --tls-cert=/etc/tls/private/tls.crt
+        - --tls-key=/etc/tls/private/tls.key
+        - --cookie-secret-file=/etc/tls/cookie-secret/cookie-secret
+        - '--openshift-sar={"resource": "namespaces", "verb": "get"}'
+        - '--openshift-delegate-urls={"/": {"resource": "namespaces", "verb": "get"}}'
+        resources:
+          requests:
+            cpu: 20m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/tls/private
+          name: proxy-tls
+        - mountPath: /etc/tls/cookie-secret
+          name: cookie-secret
       serviceAccountName: machine-config-controller
       nodeSelector:
         node-role.kubernetes.io/master: ""
       priorityClassName: "system-cluster-critical"
+      volumes:
+        - name: proxy-tls
+          secret:
+            secretName: mcc-proxy-tls
+        - name: cookie-secret
+          secret:
+            secretName: cookie-secret
       restartPolicy: Always
       tolerations:
       - key: node-role.kubernetes.io/master
