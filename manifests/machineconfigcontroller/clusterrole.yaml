@@ -25,3 +25,16 @@ rules:
 - apiGroups: ["operator.openshift.io"]
   resources: ["etcds"]
   verbs: ["get", "list", "watch"]
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
