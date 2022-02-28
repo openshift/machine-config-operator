@@ -16,7 +16,9 @@ import (
 	"strings"
 
 	"github.com/clarketm/json"
-	fcctbase "github.com/coreos/fcct/base/v0_1"
+	bubase "github.com/coreos/butane/base/v0_3"
+	bucommon "github.com/coreos/butane/config/common"
+	fcosbutane "github.com/coreos/butane/config/fcos/v1_2"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v32tov22"
 	"github.com/coreos/ign-converter/translate/v32tov31"
@@ -600,47 +602,54 @@ func removeIgnDuplicateFilesUnitsUsers(ignConfig ign2types.Config) (ign2types.Co
 	return ignConfig, nil
 }
 
-// TranspileCoreOSConfigToIgn transpiles Fedora CoreOS config to ignition
-// internally it transpiles to Ign spec v3 config
-func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error) {
+// ConvertButaneFragmentsToIgnition takes as input butane fragments (fcos 1.3) and returns an Ignition v3.2 configuration.
+func ConvertButaneFragmentsToIgnition(files, units []string) (*ign3types.Config, error) {
 	overwrite := true
-	outConfig := ign3types.Config{}
+	buCfg := fcosbutane.Config{}
 	// Convert data to Ignition resources
 	for _, contents := range files {
-		f := new(fcctbase.File)
+		f := new(bubase.File)
 		if err := yaml.Unmarshal([]byte(contents), f); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal %q into struct: %w", contents, err)
 		}
 		f.Overwrite = &overwrite
 
-		// Add the file to the config
-		var ctCfg fcctbase.Config
-		ctCfg.Storage.Files = append(ctCfg.Storage.Files, *f)
-		ign3_0config, tSet, err := ctCfg.ToIgn3_0()
-		if err != nil {
-			return nil, fmt.Errorf("failed to transpile config to Ignition config %w\nTranslation set: %v", err, tSet)
-		}
-		ign3_2config := translate3.Translate(translate3_1.Translate(ign3_0config))
-		outConfig = ign3.Merge(outConfig, ign3_2config)
+		buCfg.Storage.Files = append(buCfg.Storage.Files, *f)
 	}
 
+	dropins := make(map[string]bubase.Unit)
 	for _, contents := range units {
-		u := new(fcctbase.Unit)
+		u := new(bubase.Unit)
 		if err := yaml.Unmarshal([]byte(contents), u); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %w", err)
 		}
 
-		// Add the unit to the config
-		var ctCfg fcctbase.Config
-		ctCfg.Systemd.Units = append(ctCfg.Systemd.Units, *u)
-		ign3_0config, tSet, err := ctCfg.ToIgn3_0()
-		if err != nil {
-			return nil, fmt.Errorf("failed to transpile config to Ignition config %w\nTranslation set: %v", err, tSet)
+		// Handle drop-ins specially; a unit name with drop-ins can be repeated and they should be merged.
+		if len(u.Dropins) > 0 {
+			if current, ok := dropins[u.Name]; ok {
+				current.Dropins = append(current.Dropins, u.Dropins...)
+			} else {
+				dropins[u.Name] = *u
+			}
+		} else {
+			buCfg.Systemd.Units = append(buCfg.Systemd.Units, *u)
 		}
-		ign3_2config := translate3.Translate(translate3_1.Translate(ign3_0config))
-		outConfig = ign3.Merge(outConfig, ign3_2config)
+	}
+	for _, unit := range dropins {
+		buCfg.Systemd.Units = append(buCfg.Systemd.Units, unit)
 	}
 
+	// We want the output of this to be reproducible (it should not depend on the order of the filesystem)
+	sort.Slice(buCfg.Storage.Files, func(i, j int) bool { return buCfg.Storage.Files[i].Path < buCfg.Storage.Files[j].Path })
+	sort.Slice(buCfg.Systemd.Units, func(i, j int) bool { return buCfg.Systemd.Units[i].Name < buCfg.Systemd.Units[j].Name })
+	for _, unit := range buCfg.Systemd.Units {
+		sort.Slice(unit.Dropins, func(i, j int) bool { return unit.Dropins[i].Name < unit.Dropins[j].Name })
+	}
+
+	outConfig, rep, err := buCfg.ToIgn3_2(bucommon.TranslateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert butane fragments: %v %w", rep, err)
+	}
 	return &outConfig, nil
 }
 

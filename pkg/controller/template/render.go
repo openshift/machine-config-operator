@@ -285,9 +285,9 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 		return vs
 	}
 
-	ignCfg, err := ctrlcommon.TranspileCoreOSConfigToIgn(keySortVals(files), keySortVals(units))
+	ignCfg, err := ctrlcommon.ConvertButaneFragmentsToIgnition(keySortVals(files), keySortVals(units))
 	if err != nil {
-		return nil, fmt.Errorf("error transpiling CoreOS config to Ignition config: %w", err)
+		return nil, fmt.Errorf("error converting Butane fragments to Ignition config: %w", err)
 	}
 	mcfg, err := ctrlcommon.MachineConfigFromIgnConfig(role, name, ignCfg)
 	if err != nil {

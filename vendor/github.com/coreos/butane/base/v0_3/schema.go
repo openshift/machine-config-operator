@@ -12,23 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.)
 
-package v0_1
+package v0_3
 
-type CaReference struct {
-	Source       string       `yaml:"source"`
-	Verification Verification `yaml:"verification"`
+type Clevis struct {
+	Custom    *Custom `yaml:"custom"`
+	Tang      []Tang  `yaml:"tang"`
+	Threshold *int    `yaml:"threshold"`
+	Tpm2      *bool   `yaml:"tpm2"`
 }
 
 type Config struct {
+	Version  string   `yaml:"version"`
+	Variant  string   `yaml:"variant"`
 	Ignition Ignition `yaml:"ignition"`
 	Passwd   Passwd   `yaml:"passwd"`
 	Storage  Storage  `yaml:"storage"`
 	Systemd  Systemd  `yaml:"systemd"`
 }
 
-type ConfigReference struct {
-	Source       *string      `yaml:"source"`
-	Verification Verification `yaml:"verification"`
+type Custom struct {
+	Config       string `yaml:"config"`
+	NeedsNetwork *bool  `yaml:"needs_network"`
+	Pin          string `yaml:"pin"`
 }
 
 type Device string
@@ -53,45 +58,48 @@ type Dropin struct {
 }
 
 type File struct {
-	Group     NodeGroup      `yaml:"group"`
-	Overwrite *bool          `yaml:"overwrite"`
-	Path      string         `yaml:"path"`
-	User      NodeUser       `yaml:"user"`
-	Append    []FileContents `yaml:"append"`
-	Contents  FileContents   `yaml:"contents"`
-	Mode      *int           `yaml:"mode"`
-}
-
-type FileContents struct {
-	Compression  *string      `yaml:"compression"`
-	Source       *string      `yaml:"source"`
-	Inline       *string      `yaml:"inline"` // Added, not in ignition spec
-	Verification Verification `yaml:"verification"`
+	Group     NodeGroup  `yaml:"group"`
+	Overwrite *bool      `yaml:"overwrite"`
+	Path      string     `yaml:"path"`
+	User      NodeUser   `yaml:"user"`
+	Append    []Resource `yaml:"append"`
+	Contents  Resource   `yaml:"contents"`
+	Mode      *int       `yaml:"mode"`
 }
 
 type Filesystem struct {
-	Device         string             `yaml:"device"`
-	Format         *string            `yaml:"format"`
-	Label          *string            `yaml:"label"`
-	Options        []FilesystemOption `yaml:"options"`
-	Path           *string            `yaml:"path"`
-	UUID           *string            `yaml:"uuid"`
-	WipeFilesystem *bool              `yaml:"wipe_filesystem"`
+	Device         string   `yaml:"device"`
+	Format         *string  `yaml:"format"`
+	Label          *string  `yaml:"label"`
+	MountOptions   []string `yaml:"mount_options"`
+	Options        []string `yaml:"options"`
+	Path           *string  `yaml:"path"`
+	UUID           *string  `yaml:"uuid"`
+	WipeFilesystem *bool    `yaml:"wipe_filesystem"`
+	WithMountUnit  *bool    `yaml:"with_mount_unit" butane:"auto_skip"` // Added, not in Ignition spec
 }
 
 type FilesystemOption string
 
 type Group string
 
+type HTTPHeader struct {
+	Name  string  `yaml:"name"`
+	Value *string `yaml:"value"`
+}
+
+type HTTPHeaders []HTTPHeader
+
 type Ignition struct {
 	Config   IgnitionConfig `yaml:"config"`
+	Proxy    Proxy          `yaml:"proxy"`
 	Security Security       `yaml:"security"`
 	Timeouts Timeouts       `yaml:"timeouts"`
 }
 
 type IgnitionConfig struct {
-	Merge   []ConfigReference `yaml:"merge"`
-	Replace ConfigReference   `yaml:"replace"`
+	Merge   []Resource `yaml:"merge"`
+	Replace Resource   `yaml:"replace"`
 }
 
 type Link struct {
@@ -102,6 +110,19 @@ type Link struct {
 	Hard      *bool     `yaml:"hard"`
 	Target    string    `yaml:"target"`
 }
+
+type Luks struct {
+	Clevis     *Clevis      `yaml:"clevis"`
+	Device     *string      `yaml:"device"`
+	KeyFile    Resource     `yaml:"key_file"`
+	Label      *string      `yaml:"label"`
+	Name       string       `yaml:"name"`
+	Options    []LuksOption `yaml:"options"`
+	UUID       *string      `yaml:"uuid"`
+	WipeVolume *bool        `yaml:"wipe_volume"`
+}
+
+type LuksOption string
 
 type NodeGroup struct {
 	ID   *int    `yaml:"id"`
@@ -117,6 +138,7 @@ type Partition struct {
 	GUID               *string `yaml:"guid"`
 	Label              *string `yaml:"label"`
 	Number             int     `yaml:"number"`
+	Resize             *bool   `yaml:"resize"`
 	ShouldExist        *bool   `yaml:"should_exist"`
 	SizeMiB            *int    `yaml:"size_mib"`
 	StartMiB           *int    `yaml:"start_mib"`
@@ -133,6 +155,7 @@ type PasswdGroup struct {
 	Gid          *int    `yaml:"gid"`
 	Name         string  `yaml:"name"`
 	PasswordHash *string `yaml:"password_hash"`
+	ShouldExist  *bool   `yaml:"should_exist"`
 	System       *bool   `yaml:"system"`
 }
 
@@ -146,10 +169,17 @@ type PasswdUser struct {
 	NoUserGroup       *bool              `yaml:"no_user_group"`
 	PasswordHash      *string            `yaml:"password_hash"`
 	PrimaryGroup      *string            `yaml:"primary_group"`
+	ShouldExist       *bool              `yaml:"should_exist"`
 	SSHAuthorizedKeys []SSHAuthorizedKey `yaml:"ssh_authorized_keys"`
 	Shell             *string            `yaml:"shell"`
 	System            *bool              `yaml:"system"`
 	UID               *int               `yaml:"uid"`
+}
+
+type Proxy struct {
+	HTTPProxy  *string  `yaml:"http_proxy"`
+	HTTPSProxy *string  `yaml:"https_proxy"`
+	NoProxy    []string `yaml:"no_proxy"`
 }
 
 type Raid struct {
@@ -161,6 +191,15 @@ type Raid struct {
 }
 
 type RaidOption string
+
+type Resource struct {
+	Compression  *string      `yaml:"compression"`
+	HTTPHeaders  HTTPHeaders  `yaml:"http_headers"`
+	Source       *string      `yaml:"source"`
+	Inline       *string      `yaml:"inline"` // Added, not in ignition spec
+	Local        *string      `yaml:"local"`  // Added, not in ignition spec
+	Verification Verification `yaml:"verification"`
+}
 
 type SSHAuthorizedKey string
 
@@ -174,20 +213,32 @@ type Storage struct {
 	Files       []File       `yaml:"files"`
 	Filesystems []Filesystem `yaml:"filesystems"`
 	Links       []Link       `yaml:"links"`
+	Luks        []Luks       `yaml:"luks"`
 	Raid        []Raid       `yaml:"raid"`
+	Trees       []Tree       `yaml:"trees" butane:"auto_skip"` // Added, not in ignition spec
 }
 
 type Systemd struct {
 	Units []Unit `yaml:"units"`
 }
 
+type Tang struct {
+	Thumbprint *string `yaml:"thumbprint"`
+	URL        string  `yaml:"url"`
+}
+
 type TLS struct {
-	CertificateAuthorities []CaReference `yaml:"certificate_authorities"`
+	CertificateAuthorities []Resource `yaml:"certificate_authorities"`
 }
 
 type Timeouts struct {
 	HTTPResponseHeaders *int `yaml:"http_response_headers"`
 	HTTPTotal           *int `yaml:"http_total"`
+}
+
+type Tree struct {
+	Local string  `yaml:"local"`
+	Path  *string `yaml:"path"`
 }
 
 type Unit struct {

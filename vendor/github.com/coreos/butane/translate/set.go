@@ -17,6 +17,8 @@ package translate
 import (
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/coreos/vcontext/path"
 )
@@ -27,6 +29,10 @@ import (
 type Translation struct {
 	From path.ContextPath
 	To   path.ContextPath
+}
+
+func (t Translation) String() string {
+	return fmt.Sprintf("%s → %s", t.From, t.To)
 }
 
 // TranslationSet represents all of the translations that occurred. They're stored in a map from a string representation
@@ -48,9 +54,28 @@ func NewTranslationSet(fromTag, toTag string) TranslationSet {
 }
 
 func (ts TranslationSet) String() string {
-	str := fmt.Sprintf("from: %v\nto: %v\n", ts.FromTag, ts.ToTag)
+	type entry struct {
+		sortKey   string
+		formatted string
+	}
+	var entries []entry
 	for k, v := range ts.Set {
-		str += fmt.Sprintf("%s: %v -> %v\n", k, v.From.String(), v.To.String())
+		formatted := v.String()
+		// lookup key should always match To path; report if it doesn't
+		if k != v.To.String() {
+			formatted += fmt.Sprintf(" (key: %s)", k)
+		}
+		entries = append(entries, entry{
+			sortKey:   v.To.String(),
+			formatted: formatted,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].sortKey < entries[j].sortKey
+	})
+	str := fmt.Sprintf("TranslationSet: %v → %v\n", ts.FromTag, ts.ToTag)
+	for _, entry := range entries {
+		str += entry.formatted + "\n"
 	}
 	return str
 }
@@ -68,24 +93,16 @@ func (ts TranslationSet) AddTranslation(from, to path.ContextPath) {
 	ts.Set[toString] = translation
 }
 
-// Shortcut for AddTranslation for identity translations
-func (ts TranslationSet) AddIdentity(paths ...string) {
-	for _, p := range paths {
-		from := path.New(ts.FromTag, p)
-		to := path.New(ts.ToTag, p)
-		ts.AddTranslation(from, to)
-	}
-}
-
 // AddFromCommonSource adds translations for all of the paths in to from a single common path. This is useful
 // if one part of a config generates a large struct and all of the large struct should map to one path in the
 // config being translated.
 func (ts TranslationSet) AddFromCommonSource(common path.ContextPath, toPrefix path.ContextPath, to interface{}) {
 	v := reflect.ValueOf(to)
-	vPaths := prefixPaths(getAllPaths(v, ts.ToTag), toPrefix.Path...)
-	for _, path := range vPaths {
-		ts.AddTranslation(common, path)
+	vPaths := prefixPaths(getAllPaths(v, ts.ToTag, true), toPrefix.Path...)
+	for _, toPath := range vPaths {
+		ts.AddTranslation(common, toPath)
 	}
+	ts.AddTranslation(common, toPrefix)
 }
 
 // Merge adds all the entries to the set. It mutates the Set in place.
@@ -95,19 +112,66 @@ func (ts TranslationSet) Merge(from TranslationSet) {
 	}
 }
 
-// MergeP is like Merge, but first it calls Prefix on the set being merged in.
+// MergeP is like Merge, but it adds a prefix to the set being merged in.
 func (ts TranslationSet) MergeP(prefix interface{}, from TranslationSet) {
-	from = from.Prefix(prefix)
+	ts.MergeP2(prefix, prefix, from)
+}
+
+// MergeP2 is like Merge, but it adds distinct prefixes to each side of the
+// set being merged in.
+func (ts TranslationSet) MergeP2(fromPrefix interface{}, toPrefix interface{}, from TranslationSet) {
+	from = from.PrefixPaths(path.New(from.FromTag, fromPrefix), path.New(from.ToTag, toPrefix))
 	ts.Merge(from)
 }
 
 // Prefix returns a TranslationSet with all translation paths prefixed by prefix.
 func (ts TranslationSet) Prefix(prefix interface{}) TranslationSet {
+	return ts.PrefixPaths(path.New(ts.FromTag, prefix), path.New(ts.ToTag, prefix))
+}
+
+// PrefixPaths returns a TranslationSet with from translation paths prefixed by
+// fromPrefix and to translation paths prefixed by toPrefix.
+func (ts TranslationSet) PrefixPaths(fromPrefix, toPrefix path.ContextPath) TranslationSet {
 	ret := NewTranslationSet(ts.FromTag, ts.ToTag)
-	from := path.New(ts.FromTag, prefix)
-	to := path.New(ts.ToTag, prefix)
 	for _, tr := range ts.Set {
-		ret.AddTranslation(from.Append(tr.From.Path...), to.Append(tr.From.Path...))
+		ret.AddTranslation(fromPrefix.Append(tr.From.Path...), toPrefix.Append(tr.To.Path...))
 	}
 	return ret
+}
+
+// Descend returns the subtree of translations rooted at the specified To path.
+func (ts TranslationSet) Descend(to path.ContextPath) TranslationSet {
+	ret := NewTranslationSet(ts.FromTag, ts.ToTag)
+OUTER:
+	for _, tr := range ts.Set {
+		if len(tr.To.Path) < len(to.Path) {
+			// can't be in the requested subtree; skip
+			continue
+		}
+		for i, e := range to.Path {
+			if tr.To.Path[i] != e {
+				// not in the requested subtree; skip
+				continue OUTER
+			}
+		}
+		subtreePath := path.New(tr.To.Tag, tr.To.Path[len(to.Path):]...)
+		ret.AddTranslation(tr.From, subtreePath)
+	}
+	return ret
+}
+
+// DebugVerifyCoverage recursively checks whether every non-zero field in v
+// has a translation.  If translations are missing, it returns a multi-line
+// error listing them.
+func (ts TranslationSet) DebugVerifyCoverage(v interface{}) error {
+	var missingPaths []string
+	for _, pathToCheck := range getAllPaths(reflect.ValueOf(v), ts.ToTag, false) {
+		if _, ok := ts.Set[pathToCheck.String()]; !ok {
+			missingPaths = append(missingPaths, pathToCheck.String())
+		}
+	}
+	if len(missingPaths) > 0 {
+		return fmt.Errorf("Missing paths in TranslationSet:\n%v\n", strings.Join(missingPaths, "\n"))
+	}
+	return nil
 }

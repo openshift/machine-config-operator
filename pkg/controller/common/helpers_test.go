@@ -18,7 +18,15 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
-func TestTranspileCoreOSConfig(t *testing.T) {
+func TestConvertButaneFragmentsToIgnition(t *testing.T) {
+	// Test the null case
+	config, err := ConvertButaneFragmentsToIgnition([]string{}, []string{})
+	require.NoError(t, err)
+	if report := validate3.ValidateWithContext(config, nil); report.IsFatal() {
+		t.Fatalf("invalid ignition V3 config found: %v", report)
+	}
+	require.Equal(t, len(config.Storage.Files), 0)
+
 	kubeletConfig := `
 mode: 0644
 path: "/etc/kubernetes/kubelet.conf"
@@ -58,13 +66,13 @@ dropins:
     [Unit]
     ConditionPathExists=/enoent
 `
-	config, err := TranspileCoreOSConfigToIgn([]string{kubeletConfig, auditConfig}, []string{kubeletService, crioDropin, dockerDropin})
+	config, err = ConvertButaneFragmentsToIgnition([]string{kubeletConfig, auditConfig}, []string{kubeletService, crioDropin, dockerDropin})
 	require.Nil(t, err)
 	if report := validate3.ValidateWithContext(config, nil); report.IsFatal() {
 		t.Fatalf("invalid ignition V3 config found: %v", report)
 	}
 	require.Equal(t, len(config.Storage.Files), 2)
-	require.True(t, strings.HasPrefix(*config.Storage.Files[0].Contents.Source, "data:,kind%3A%20KubeletConfiguration%0Aapi"))
+	require.True(t, strings.HasPrefix(*config.Storage.Files[1].Contents.Source, "data:,kind%3A%20KubeletConfiguration%0Aapi"))
 	require.Equal(t, len(config.Systemd.Units), 3)
 }
 
