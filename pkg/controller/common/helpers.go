@@ -563,7 +563,7 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 	for _, d := range files {
 		f := new(fcctbase.File)
 		if err := yaml.Unmarshal([]byte(d), f); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
+			return nil, fmt.Errorf("failed to unmarshal %q into struct: %v", d, err)
 		}
 		f.Overwrite = &overwrite
 
