@@ -1063,6 +1063,8 @@ github.com/openshift/library-go v0.0.0-20211220195323-eca2c467c492 h1:oj/rSQqVWV
 github.com/openshift/library-go v0.0.0-20211220195323-eca2c467c492/go.mod h1:4UQ9snU1vg53fyTpHQw3vLPiAxI8ub5xrc+y8KPQQFs=
 github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d h1:lmhB56wFIB/CBhjiZTd1IinQz9OFoNet8OYBQF59Z0I=
 github.com/openshift/runtime-utils v0.0.0-20210722191527-8b8348d80d1d/go.mod h1:H2kQ7bM4oYJk8G+N9ybDDlTg45V10G/+h2xL8zmjjHU=
+github.com/openshift/runtime-utils v0.0.0-20220225175100-8dec0d84fb39 h1:5woAtivjIZDVaRdMRDstmSBd0hHLsdYcdumLCMs0dwk=
+github.com/openshift/runtime-utils v0.0.0-20220225175100-8dec0d84fb39/go.mod h1:H2kQ7bM4oYJk8G+N9ybDDlTg45V10G/+h2xL8zmjjHU=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/ostreedev/ostree-go v0.0.0-20190702140239-759a8c1ac913/go.mod h1:J6OG6YJVEWopen4avK3VNQSnALmmjvniMmni/YFYAwc=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
