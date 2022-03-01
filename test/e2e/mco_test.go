@@ -28,7 +28,7 @@ func TestClusterOperatorRelatedObjects(t *testing.T) {
 	}
 	var foundNS bool
 	for _, ro := range co.Status.RelatedObjects {
-		if ro.Resource == "namespaces" && ro.Name == "openshift-machine-config-operator" {
+		if ro.Resource == "namespaces" && ro.Name == ctrlcommon.MCONamespace {
 			foundNS = true
 		}
 	}
