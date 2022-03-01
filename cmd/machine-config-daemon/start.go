@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"flag"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
 
 	"github.com/google/renameio"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -166,6 +168,25 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("%v", errors.Wrapf(err, "copying self to host"))
 		return
 	}
+
+	// Use kubelet kubeconfig file to get the URL to kube-api-server
+	kubeconfig, err := clientcmd.LoadFromFile("/etc/kubernetes/kubeconfig")
+	if err != nil {
+		glog.Errorf("failed to load kubelet kubeconfig: %v", err)
+	}
+	clusterName := kubeconfig.Contexts[kubeconfig.CurrentContext].Cluster
+	apiURL := kubeconfig.Clusters[clusterName].Server
+
+	url, err := url.Parse(apiURL)
+	if err != nil {
+		glog.Fatalf("failed to parse api url from kubelet kubeconfig: %v", err)
+	}
+
+	// The kubernetes in-cluster functions don't let you override the apiserver
+	// directly; gotta "pass" it via environment vars.
+	glog.Infof("overriding kubernetes api to %s", apiURL)
+	os.Setenv("KUBERNETES_SERVICE_HOST", url.Hostname())
+	os.Setenv("KUBERNETES_SERVICE_PORT", url.Port())
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
