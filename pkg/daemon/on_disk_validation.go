@@ -150,7 +150,7 @@ func checkV3Files(files []ign3types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := decodeContents(f.Contents.Source, f.Contents.Compression)
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
 		if err != nil {
 			return fmt.Errorf("couldn't decode file %q: %w", f.Path, err)
 		}
@@ -177,7 +177,7 @@ func checkV2Files(files []ign2types.File) error {
 		if f.Mode != nil {
 			mode = os.FileMode(*f.Mode)
 		}
-		contents, err := decodeContents(&f.Contents.Source, &f.Contents.Compression)
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(&f.Contents.Source, &f.Contents.Compression)
 		if err != nil {
 			return fmt.Errorf("couldn't decode file %q: %w", f.Path, err)
 		}

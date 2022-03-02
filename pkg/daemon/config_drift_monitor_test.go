@@ -12,6 +12,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -464,7 +465,7 @@ func (tc configDriftMonitorTestCase) onDriftFunc(t *testing.T, err error) {
 func (tc configDriftMonitorTestCase) writeIgn3FileForTest(t *testing.T, file ign3types.File) {
 	t.Helper()
 
-	decodedContents, err := decodeContents(file.Contents.Source, file.Contents.Compression)
+	decodedContents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
 	require.Nil(t, err)
 
 	require.Nil(t, writeFileAtomicallyWithDefaults(file.Path, decodedContents))
