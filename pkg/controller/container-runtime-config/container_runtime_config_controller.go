@@ -18,7 +18,6 @@ import (
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
 	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
-	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -659,11 +658,11 @@ func mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeCo
 	if origFile.Contents.Source == nil {
 		return nil, fmt.Errorf("original Container Runtime config is empty")
 	}
-	dataURL, err := dataurl.DecodeString(*origFile.Contents.Source)
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(origFile.Contents.Source, origFile.Contents.Compression)
 	if err != nil {
 		return nil, fmt.Errorf("could not decode original Container Runtime config: %v", err)
 	}
-	cfgTOML, err := update(dataURL.Data, cfg.Spec.ContainerRuntimeConfig)
+	cfgTOML, err := update(contents, cfg.Spec.ContainerRuntimeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("could not update container runtime config with new changes: %v", err)
 	}
@@ -824,11 +823,11 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if originalRegistriesIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original registries config is empty")
 		}
-		dataURL, err := dataurl.DecodeString(*originalRegistriesIgn.Contents.Source)
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(originalRegistriesIgn.Contents.Source, originalRegistriesIgn.Contents.Compression)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %v", err)
 		}
-		registriesTOML, err = updateRegistriesConfig(dataURL.Data, insecureRegs, blockedRegs, icspRules)
+		registriesTOML, err = updateRegistriesConfig(contents, insecureRegs, blockedRegs, icspRules)
 		if err != nil {
 			return nil, fmt.Errorf("could not update registries config with new changes: %v", err)
 		}
@@ -837,11 +836,11 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if originalPolicyIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original policy json is empty")
 		}
-		dataURL, err := dataurl.DecodeString(*originalPolicyIgn.Contents.Source)
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(originalPolicyIgn.Contents.Source, originalPolicyIgn.Contents.Compression)
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original policy json: %v", err)
 		}
-		policyJSON, err = updatePolicyJSON(dataURL.Data, blockedRegs, allowedRegs)
+		policyJSON, err = updatePolicyJSON(contents, blockedRegs, allowedRegs)
 		if err != nil {
 			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
 		}

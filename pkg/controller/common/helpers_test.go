@@ -300,7 +300,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 		Passwd: ign3types.Passwd{
 			Users: []ign3types.PasswdUser{
-				ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
 			},
 		},
 	}

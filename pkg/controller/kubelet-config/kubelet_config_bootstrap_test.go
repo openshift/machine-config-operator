@@ -9,7 +9,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
-	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
@@ -91,9 +90,9 @@ func verifyKubeletConfigJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcN
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	require.NoError(t, err)
 	regfile := ignCfg.Storage.Files[0]
-	conf, err := dataurl.DecodeString(*regfile.Contents.Source)
+	conf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 	require.NoError(t, err)
-	require.Contains(t, string(conf.Data), `"maxPods": 100`)
+	require.Contains(t, string(conf), `"maxPods": 100`)
 }
 
 func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
