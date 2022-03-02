@@ -360,6 +360,18 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 		return nil, fmt.Errorf("could not merge feature gates: %v", err)
 	}
 
+	// (TODO) KubeletConfig can be modified based on the cgroupMode.
+	// modifying the kubelet's node-status-update-frequency based on the WorkerLatencyProfile
+	if cc.Spec.Node != nil {
+		switch cc.Spec.Node.Spec.WorkerLatencyProfile {
+		case configv1.MediumUpdateAverageReaction:
+			originalKubeConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: 20 * time.Second}
+		case configv1.LowUpdateSlowReaction:
+			originalKubeConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: 60 * time.Second}
+		default:
+			originalKubeConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: 10 * time.Second}
+		}
+	}
 	return originalKubeConfig, nil
 }
 
