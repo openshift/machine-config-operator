@@ -7,7 +7,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
@@ -29,8 +28,9 @@ func TestFeatureGateDrift(t *testing.T) {
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
-			dataURL, _ := dataurl.DecodeString(*kubeletConfig.Contents.Source)
-			originalKubeConfig, _ := decodeKubeletConfig(dataURL.Data)
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
+			require.Nil(t, err)
+			originalKubeConfig, _ := decodeKubeletConfig(contents)
 			defaultFeatureGates, err := generateFeatureMap(createNewDefaultFeatureGate())
 			if err != nil {
 				t.Errorf("could not generate defaultFeatureGates: %v", err)
@@ -190,10 +190,10 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 			for _, mc := range mcs {
 				ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 				regfile := ignCfg.Storage.Files[0]
-				conf, err := dataurl.DecodeString(*regfile.Contents.Source)
+				conf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 				require.NoError(t, err)
 
-				originalKubeConfig, _ := decodeKubeletConfig(conf.Data)
+				originalKubeConfig, _ := decodeKubeletConfig(conf)
 				defaultFeatureGates, err := generateFeatureMap(createNewDefaultFeatureGate())
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
