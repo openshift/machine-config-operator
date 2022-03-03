@@ -255,11 +255,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 	// sync up os image url
 	// TODO: this should probably be part of the imgs
-	osimageurl, err := optr.getOsImageURL(optr.namespace)
+	oscontainer, osimageurl, err := optr.getOsImageURLs(optr.namespace)
 	if err != nil {
 		return err
 	}
 	imgs.MachineOSContent = osimageurl
+	imgs.BaseOperatingSystemContainer = oscontainer
 
 	// sync up the ControllerConfigSpec
 	infra, network, proxy, dns, err := optr.getGlobalConfig()
@@ -308,6 +309,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.RootCAData = bundle
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
+	spec.BaseOperatingSystemContainer = imgs.BaseOperatingSystemContainer
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
 
@@ -688,7 +690,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			_, hasRequiredPoolLabel := pool.Labels[requiredForUpgradeMachineConfigPoolLabelKey]
 
 			if hasRequiredPoolLabel {
-				opURL, err := optr.getOsImageURL(optr.namespace)
+				_, opURL, err := optr.getOsImageURLs(optr.namespace)
 				if err != nil {
 					glog.Errorf("Error getting configmap osImageURL: %q", err)
 					return false, nil
@@ -859,17 +861,26 @@ func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.Cont
 	return nil
 }
 
-func (optr *Operator) getOsImageURL(namespace string) (string, error) {
+// getOsImageURLs returns (new type, old type) for operating system update images.
+func (optr *Operator) getOsImageURLs(namespace string) (string, string, error) {
 	cm, err := optr.mcoCmLister.ConfigMaps(namespace).Get(osImageConfigMapName)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	releaseVersion := cm.Data["releaseVersion"]
 	optrVersion, _ := optr.vStore.Get("operator")
 	if releaseVersion != optrVersion {
-		return "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
+		return "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
 	}
-	return cm.Data["osImageURL"], nil
+	newformat, ok := cm.Data["baseOperatingSystemContainer"]
+	if !ok {
+		return "", "", fmt.Errorf("Missing baseOperatingSystemContainer from configmap")
+	}
+	oldformat := cm.Data["osImageURL"]
+	if !ok {
+		return "", "", fmt.Errorf("Missing osImageURL from configmap")
+	}
+	return newformat, oldformat, nil
 }
 
 func (optr *Operator) getCAsFromConfigMap(namespace, name, key string) ([]byte, error) {

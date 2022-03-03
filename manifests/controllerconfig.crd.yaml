@@ -918,6 +918,10 @@ spec:
                   contains the OS update payload. Its value is taken from the data.osImageURL
                   field on the machine-config-osimageurl ConfigMap.
                 type: string
+              baseOperatingSystemContainer:
+                description: baseOperatingSystemContainer is the new format operating system update image.
+                  See https://github.com/openshift/enhancements/pull/1032
+                type: string
               platform:
                 description: platform is deprecated, use Infra.Status.PlatformStatus.Type
                   instead
@@ -992,6 +996,7 @@ spec:
             - ipFamilies
             - kubeAPIServerServingCAData
             - osImageURL
+            - baseOperatingSystemContainer
             - proxy
             - releaseImage
             - rootCAData
