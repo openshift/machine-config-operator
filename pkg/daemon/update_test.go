@@ -171,9 +171,10 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Raid changes react as expected
 	oldIgnCfg.Storage.Raid = []ign3types.Raid{
-		ign3types.Raid{
+		{
 			Name:  "data",
 			Level: "stripe",
+			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
