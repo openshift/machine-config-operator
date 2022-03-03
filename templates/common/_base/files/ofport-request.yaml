@@ -1,0 +1,121 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/pre-up.d/10-ofport-request.sh"
+contents:
+  inline: |
+    #!/bin/bash
+    # Set interface ofport_request to guarantee stable ofport numbers. This is important for flow matches.
+    # Otherwise, another ofport number is assigned to the interface on every restart of NetworkManager.
+    # This script will build an associative array INTERFACE_NAME->ofport_request and will save it to file CONFIGURATION_FILE.
+    # When an interface is brought up, this will reuse the value from the associative array if such a value exists.
+    # Otherwise, this will try to use the current ofport value. If the ofport value is already reserved, then
+    # this uses the lowest available numerical value, instead.
+    set -eux -o pipefail
+    if [[ "{{ .NetworkType }}" != "OVNKubernetes" ]]; then
+        exit 0
+    fi
+    
+    INTERFACE_NAME=$1
+    OPERATION=$2
+    
+    # Only execute this on pre-up
+    if [ "${OPERATION}" != "pre-up" ]; then
+        exit 0
+    fi
+    
+    # Get the interface's NM uuid
+    INTERFACE_CONNECTION_UUID=$(nmcli -t -f device,type,uuid conn | awk -F ':' '{if($1=="'${INTERFACE_NAME}'" && $2!~/^ovs*/) print $NF}')
+    if [ "${INTERFACE_CONNECTION_UUID}" == "" ]; then
+        exit 0
+    fi
+    
+    # Get the interface's slave-type. If this is not an ovs-port, then exit
+    INTERFACE_OVS_SLAVE_TYPE=$(nmcli -t -f connection.slave-type conn show "${INTERFACE_CONNECTION_UUID}" | awk -F ':' '{print $NF}')
+    if [ "${INTERFACE_OVS_SLAVE_TYPE}" != "ovs-port" ]; then
+        exit 0
+    fi
+    
+    # This is not necessarily a UUID (can be a name in case of bonds) but this should be unique
+    PORT=$(nmcli -t -f connection.master conn show "${INTERFACE_CONNECTION_UUID}" | awk -F ':' '{print $NF}')
+    if [ "${PORT}" == "" ]; then
+        exit 0
+    fi
+    
+    # Get the interface's NM uuid
+    PORT_CONNECTION_UUID=$(nmcli -t -f device,type,uuid conn | awk -F ':' '{if( ($1=="'${PORT}'" || $3=="'${PORT}'") && $2~/^ovs*/) print $NF}')
+    if [ "${PORT_CONNECTION_UUID}" == "" ]; then
+        exit 0
+    fi
+    
+    # Get the port's slave-type. If this is not an ovs-bridge, then exit
+    PORT_OVS_SLAVE_TYPE=$(nmcli -t -f connection.slave-type conn show "${PORT_CONNECTION_UUID}" | awk -F ':' '{print $NF}')
+    if [ "${PORT_OVS_SLAVE_TYPE}" != "ovs-bridge" ]; then
+        exit 0
+    fi
+    
+    # Get the port's master = bridge name
+    BRIDGE_NAME=$(nmcli -t -f connection.master conn show "${PORT_CONNECTION_UUID}" | awk -F ':' '{print $NF}')
+    # Limit this to br-ex and br-ex1 only. If one wanted to enable this for all OVS bridges,
+    # the condition would be: if [ "$BRIDGE_NAME" == "" ]; then
+    if [ "${BRIDGE_NAME}" != "br-ex" ] && [ "${BRIDGE_NAME}" != "br-ex1" ]; then
+        exit 0
+    fi
+    
+    # Make sure that the interface is plugged into OVS
+    # This should always be the case given that we are in pre-up, but exit gracefully in the odd case that it's not
+    if ! ovs-vsctl list interface "${INTERFACE_NAME}" >/dev/null 2>&1; then
+        exit 0
+    fi
+    
+    CONFIGURATION_FILE="/run/ofport_requests.${BRIDGE_NAME}"
+    
+    # Declare a new associative array. If CONFIGURATION_FILE exists, source entries from there
+    declare -A INTERFACES
+    if [ -f "${CONFIGURATION_FILE}" ]; then
+        echo "Sourcing configuration file '${CONFIGURATION_FILE}' with contents:"
+        cat "${CONFIGURATION_FILE}"
+        source "${CONFIGURATION_FILE}"
+    fi
+    
+    # get_interface_ofport_request will return
+    # * either: the current ofport assignment for the port if no interface has claimed this ofport number, yet
+    # * or:     the lowest available free ofport number
+    function get_interface_ofport_request() {
+        # Build an array that only contains the currently reserved ofport_requests
+        declare -A ofport_requests
+        for interface_name in "${!INTERFACES[@]}"; do
+            ofport_requests[${INTERFACES[$interface_name]}]=${INTERFACES[$interface_name]}
+        done
+    
+        # Get the current ofport number assignment
+        local current_ofport=$(ovs-vsctl get Interface "${INTERFACE_NAME}" ofport)
+    
+        # If the current ofport number is still free, use it
+        if ! [ "${ofport_requests[$current_ofport]+a}" ]; then
+            echo $current_ofport
+            return
+        fi
+    
+        # If the current ofport number is not free, return the lowest free entry
+        i=0
+        for i in {1..65000}; do
+            if ! [ "${ofport_requests[$i]+a}" ]; then
+                echo $i
+                return
+            fi
+        done
+    
+        # if we still cannot find an ID, exit with an error
+        echo "Impossible to find an ofport ID for interface ${INTERFACE_NAME}" >&2
+        exit 1
+    }
+    
+    # If INTERFACES[INTERFACE_NAME] exists, use that value
+    # If INTERFACES[INTERFACE_NAME] does not exists, use the value from get_interface_ofport_request
+    if ! [ "${INTERFACES[$INTERFACE_NAME]+a}" ]; then
+        INTERFACES[$INTERFACE_NAME]=$(get_interface_ofport_request)
+    fi
+    # Set ofport_request according to INTERFACES[INTERFACE_NAME]
+    ovs-vsctl set Interface "${INTERFACE_NAME}" ofport_request=${INTERFACES[$INTERFACE_NAME]}
+    
+    # Save current state of INTERFACES to CONFIGURATION_FILE
+    declare -p INTERFACES >| "${CONFIGURATION_FILE}"
