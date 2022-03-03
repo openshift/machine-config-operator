@@ -23,6 +23,10 @@ spec:
     from:
       kind: DockerImage
       name: registry.svc.ci.openshift.org/openshift:machine-os-content
+  - name: rhel-coreos
+    from:
+      kind: DockerImage
+      name: registry.ci.openshift.org/openshift:rhel-coreos
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
