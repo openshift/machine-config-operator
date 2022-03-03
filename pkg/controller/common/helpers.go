@@ -599,10 +599,10 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 	overwrite := true
 	outConfig := ign3types.Config{}
 	// Convert data to Ignition resources
-	for _, d := range files {
+	for _, contents := range files {
 		f := new(fcctbase.File)
-		if err := yaml.Unmarshal([]byte(d), f); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %q into struct: %v", d, err)
+		if err := yaml.Unmarshal([]byte(contents), f); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %q into struct: %v", contents, err)
 		}
 		f.Overwrite = &overwrite
 
@@ -617,9 +617,9 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 		outConfig = ign3.Merge(outConfig, ign3_2config)
 	}
 
-	for _, d := range units {
+	for _, contents := range units {
 		u := new(fcctbase.Unit)
-		if err := yaml.Unmarshal([]byte(d), u); err != nil {
+		if err := yaml.Unmarshal([]byte(contents), u); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
 		}
 
