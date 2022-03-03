@@ -371,9 +371,9 @@ func (optr *Operator) allMachineConfigPoolStatus() (map[string]string, error) {
 	return ret, nil
 }
 
-// isMachineConfigPoolConfigurationValid returns nil, or error when the configuration of a `pool` is created by the controller at version `version` or
-// when the osImageURL does not match what's in the configmap
-func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version, osURL string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
+// isMachineConfigPoolConfigurationValid returns nil, or error when the configuration of a `pool` is created by the controller at version `version`,
+// when the osImageURL does not match what's in the configmap or when the rendered-config-xxx does not match the OCP release version.
+func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, version, releaseVersion, osURL string, machineConfigGetter func(string) (*mcfgv1.MachineConfig, error)) error {
 	// both .status.configuration.name and .status.configuration.source must be set.
 	if pool.Spec.Configuration.Name == "" {
 		return fmt.Errorf("configuration spec for pool %s is empty: %v", pool.GetName(), machineConfigPoolStatus(pool))
@@ -422,6 +422,17 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 	if renderedMC.Spec.OSImageURL != osURL {
 		return fmt.Errorf("osImageURL mismatch for %s in %s expected: %s got: %s", pool.GetName(), renderedMC.Name, osURL, renderedMC.Spec.OSImageURL)
 	}
+
+	// check that the rendered config matches the OCP release version for cases where there is no OSImageURL change nor new MCO commit
+	rv, ok := renderedMC.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
+	if ok && rv != releaseVersion {
+		return fmt.Errorf("release image version mismatch for %s in %s expected: %s got: %s", pool.GetName(), renderedMC.Name, releaseVersion, rv)
+	}
+
+	if !ok {
+		return fmt.Errorf("Unable to access annotation %s for %s expected: %s", ctrlcommon.ReleaseImageVersionAnnotationKey, renderedMC.Name, releaseVersion)
+	}
+
 	return nil
 }
 
