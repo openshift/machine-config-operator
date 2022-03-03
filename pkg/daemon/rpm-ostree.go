@@ -232,7 +232,7 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 
 }
 
-// Rebase potentially rebases system if not already rebased.
+// Rebase potentially rebases the system to the image in osImageContentDir if not already rebased.
 func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool, err error) {
 	var (
 		ostreeCsum    string
@@ -324,35 +324,12 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	return
 }
 
-// Rebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) RebaseLayered(imgURL string) (changed bool, err error) {
-
-	defaultDeployment, err := r.GetBootedDeployment()
-	if err != nil {
-		return
-	}
-
-	previousPivot := ""
-	if len(defaultDeployment.CustomOrigin) > 0 {
-		if strings.HasPrefix(defaultDeployment.CustomOrigin[0], "pivot://") {
-			previousPivot = defaultDeployment.CustomOrigin[0][len("pivot://"):]
-			glog.Infof("Previous pivot: %s", previousPivot)
-		} else {
-			glog.Infof("Previous custom origin: %s", defaultDeployment.CustomOrigin[0])
-		}
-	} else {
-		glog.Info("Current origin is not custom")
-	}
-
+// RebaseLayered rebases system or errors if already rebased
+func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 	glog.Infof("Executing rebase to %s", imgURL)
 	args := []string{"rebase", "--experimental", "ostree-unverified-registry:" + imgURL}
 
-	if err = runRpmOstree(args...); err != nil {
-		return
-	}
-
-	changed = true
-	return
+	return runRpmOstree(args...)
 }
 
 // Live apply live-applies whatever we rebased to
