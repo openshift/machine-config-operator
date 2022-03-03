@@ -1015,6 +1015,7 @@ func getSupportedExtensions() map[string][]string {
 	// Each extension keeps a list of packages required to get enabled on host.
 	return map[string][]string{
 		"usbguard":             {"usbguard"},
+		"kerberos":             {"krb5-workstation", "libkadm5"},
 		"kernel-devel":         {"kernel-devel", "kernel-headers"},
 		"sandboxed-containers": {"kata-containers"},
 	}
