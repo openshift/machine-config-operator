@@ -72,8 +72,10 @@ type ControllerConfigSpec struct {
 	// images is map of images that are used by the controller to render templates under ./templates/
 	Images map[string]string `json:"images"`
 
-	// osImageURL is the location of the container image that contains the OS update payload.
-	// Its value is taken from the data.osImageURL field on the machine-config-osimageurl ConfigMap.
+	// BaseOperatingSystemContainer is the new-format container image for operating system updates.
+	BaseOperatingSystemContainer string `json:"baseOperatingSystemContainer"`
+
+	// OSImageURL is the old-format container image that contains the OS update payload.
 	OSImageURL string `json:"osImageURL"`
 
 	// releaseImage is the image used when installing the cluster

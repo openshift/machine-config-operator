@@ -139,6 +139,7 @@ func RenderBootstrap(
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
 	spec.OSImageURL = imgs.MachineOSContent
+	spec.BaseOperatingSystemContainer = imgs.BaseOperatingSystemContainer
 	spec.ReleaseImage = releaseImage
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,

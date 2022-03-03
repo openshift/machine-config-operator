@@ -9,6 +9,10 @@ metadata:
     include.release.openshift.io/single-node-developer: "true"
 data:
   releaseVersion: 0.0.1-snapshot
-  # The OS payload, managed by the daemon + pivot + rpm-ostree
-  # https://github.com/openshift/machine-config-operator/issues/183
+  # This (will eventually) replace the below when https://github.com/openshift/enhancements/pull/1032
+  # progresses towards the default.
+  baseOperatingSystemContainer: "registry.ci.openshift.org/openshift:rhel-coreos"
+  # The OS payload used for 4.10 and below; more information in
+  # https://github.com/openshift/machine-config-operator/blob/master/docs/OSUpgrades.md
+  # (The original issue was  https://github.com/openshift/machine-config-operator/issues/183 )
   osImageURL: "registry.svc.ci.openshift.org/openshift:machine-os-content"
