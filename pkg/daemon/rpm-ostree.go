@@ -437,55 +437,58 @@ func runGetOut(command string, args ...string) ([]byte, error) {
 	return rawOut, nil
 }
 
+type Deployment struct {
+	RequestedLocalPackages []interface{} `json:"requested-local-packages"`
+	BaseCommitMeta         struct {
+		OstreeContainerImageConfig  string   `json:"ostree.container.image-config"`
+		OstreeManifest              string   `json:"ostree.manifest"`
+		OstreeManifestDigest        string   `json:"ostree.manifest-digest"`
+		OstreeImporterVersion       string   `json:"ostree.importer.version"`
+		CoreosAssemblerConfigGitrev string   `json:"coreos-assembler.config-gitrev"`
+		RpmostreeInitramfsArgs      []string `json:"rpmostree.initramfs-args"`
+		OstreeLinux                 string   `json:"ostree.linux"`
+		RpmostreeRpmmdRepos         []struct {
+			ID        string `json:"id"`
+			Timestamp int64  `json:"timestamp"`
+		} `json:"rpmostree.rpmmd-repos"`
+		CoreosAssemblerConfigDirty string                    `json:"coreos-assembler.config-dirty"`
+		OstreeBootable             bool                      `json:"ostree.bootable"`
+		CoreosAssemblerBasearch    string                    `json:"coreos-assembler.basearch"`
+		Version                    string                    `json:"version"`
+		RpmostreeInputhash         string                    `json:"rpmostree.inputhash"`
+		OstreeTarFiltered          map[string]map[string]int `json:"ostree.tar-filtered"`
+	} `json:"base-commit-meta,omitempty"`
+	BaseRemovals                       []interface{} `json:"base-removals"`
+	Unlocked                           string        `json:"unlocked"`
+	Booted                             bool          `json:"booted"`
+	RequestedLocalFileoverridePackages []interface{} `json:"requested-local-fileoverride-packages"`
+	ID                                 string        `json:"id"`
+	Osname                             string        `json:"osname"`
+	Pinned                             bool          `json:"pinned"`
+	ModulesEnabled                     []interface{} `json:"modules-enabled"`
+	RegenerateInitramfs                bool          `json:"regenerate-initramfs"`
+	BaseLocalReplacements              []interface{} `json:"base-local-replacements"`
+	ContainerImageReference            string        `json:"container-image-reference,omitempty"`
+	Checksum                           string        `json:"checksum"`
+	RequestedBaseLocalReplacements     []interface{} `json:"requested-base-local-replacements"`
+	RequestedModules                   []interface{} `json:"requested-modules"`
+	RequestedPackages                  []interface{} `json:"requested-packages"`
+	Serial                             int           `json:"serial"`
+	Timestamp                          int           `json:"timestamp"`
+	Packages                           []interface{} `json:"packages"`
+	Staged                             bool          `json:"staged"`
+	RequestedBaseRemovals              []interface{} `json:"requested-base-removals"`
+	Modules                            []interface{} `json:"modules"`
+	ContainerImageReferenceDigest      string        `json:"container-image-reference-digest,omitempty"`
+	Origin                             string        `json:"origin,omitempty"`
+	Version                            string        `json:"version,omitempty"`
+	CustomOrigin                       []string      `json:"custom-origin,omitempty"`
+	LiveReplaced                       string        `json:"live-replaced,omitempty"`
+}
+
 type RpmOstreeStatus struct {
-	Deployments []struct {
-		RequestedLocalPackages []interface{} `json:"requested-local-packages"`
-		BaseCommitMeta         struct {
-			OstreeContainerImageConfig  string   `json:"ostree.container.image-config"`
-			OstreeManifest              string   `json:"ostree.manifest"`
-			OstreeManifestDigest        string   `json:"ostree.manifest-digest"`
-			OstreeImporterVersion       string   `json:"ostree.importer.version"`
-			CoreosAssemblerConfigGitrev string   `json:"coreos-assembler.config-gitrev"`
-			RpmostreeInitramfsArgs      []string `json:"rpmostree.initramfs-args"`
-			OstreeLinux                 string   `json:"ostree.linux"`
-			RpmostreeRpmmdRepos         []struct {
-				ID        string `json:"id"`
-				Timestamp int64  `json:"timestamp"`
-			} `json:"rpmostree.rpmmd-repos"`
-			CoreosAssemblerConfigDirty string                    `json:"coreos-assembler.config-dirty"`
-			OstreeBootable             bool                      `json:"ostree.bootable"`
-			CoreosAssemblerBasearch    string                    `json:"coreos-assembler.basearch"`
-			Version                    string                    `json:"version"`
-			RpmostreeInputhash         string                    `json:"rpmostree.inputhash"`
-			OstreeTarFiltered          map[string]map[string]int `json:"ostree.tar-filtered"`
-		} `json:"base-commit-meta,omitempty"`
-		BaseRemovals                       []interface{} `json:"base-removals"`
-		Unlocked                           string        `json:"unlocked"`
-		Booted                             bool          `json:"booted"`
-		RequestedLocalFileoverridePackages []interface{} `json:"requested-local-fileoverride-packages"`
-		ID                                 string        `json:"id"`
-		Osname                             string        `json:"osname"`
-		Pinned                             bool          `json:"pinned"`
-		ModulesEnabled                     []interface{} `json:"modules-enabled"`
-		RegenerateInitramfs                bool          `json:"regenerate-initramfs"`
-		BaseLocalReplacements              []interface{} `json:"base-local-replacements"`
-		ContainerImageReference            string        `json:"container-image-reference,omitempty"`
-		Checksum                           string        `json:"checksum"`
-		RequestedBaseLocalReplacements     []interface{} `json:"requested-base-local-replacements"`
-		RequestedModules                   []interface{} `json:"requested-modules"`
-		RequestedPackages                  []interface{} `json:"requested-packages"`
-		Serial                             int           `json:"serial"`
-		Timestamp                          int           `json:"timestamp"`
-		Packages                           []interface{} `json:"packages"`
-		Staged                             bool          `json:"staged"`
-		RequestedBaseRemovals              []interface{} `json:"requested-base-removals"`
-		Modules                            []interface{} `json:"modules"`
-		ContainerImageReferenceDigest      string        `json:"container-image-reference-digest,omitempty"`
-		Origin                             string        `json:"origin,omitempty"`
-		Version                            string        `json:"version,omitempty"`
-		CustomOrigin                       []string      `json:"custom-origin,omitempty"`
-	} `json:"deployments"`
-	Transaction  interface{} `json:"transaction"`
-	CachedUpdate interface{} `json:"cached-update"`
-	UpdateDriver interface{} `json:"update-driver"`
+	Deployments  []Deployment `json:"deployments"`
+	Transaction  interface{}  `json:"transaction"`
+	CachedUpdate interface{}  `json:"cached-update"`
+	UpdateDriver interface{}  `json:"update-driver"`
 }
