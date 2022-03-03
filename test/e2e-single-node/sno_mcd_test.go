@@ -195,7 +195,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"usbguard", "kernel-devel"},
+			Extensions: []string{"usbguard", "kernel-devel", "kerberos"},
 		},
 	}
 
@@ -211,8 +211,8 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers")
-	expectedPackages := []string{"usbguard", "kernel-devel", "kernel-headers"}
+	installedPackages := helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
+	expectedPackages := []string{"usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5"}
 	for _, v := range expectedPackages {
 		if !strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s doesn't have expected extensions", node.Name)
@@ -236,7 +236,7 @@ func TestExtensions(t *testing.T) {
 	assert.Equal(t, node.Annotations[constants.CurrentMachineConfigAnnotationKey], oldMasterRenderedConfig)
 	assert.Equal(t, node.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	installedPackages = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers")
+	installedPackages = helpers.ExecCmdOnNode(t, cs, node, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "krb5-workstation", "libkadm5")
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
 			t.Fatalf("Node %s did not rollback successfully", node.Name)

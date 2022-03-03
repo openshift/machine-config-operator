@@ -285,7 +285,7 @@ func TestExtensions(t *testing.T) {
 			Config: runtime.RawExtension{
 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
 			},
-			Extensions: []string{"usbguard", "kernel-devel", "sandboxed-containers"},
+			Extensions: []string{"usbguard", "kerberos", "kernel-devel", "sandboxed-containers"},
 		},
 	}
 
@@ -311,10 +311,11 @@ func TestExtensions(t *testing.T) {
 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
 		// "sandboxed-containers" extension is not available on OKD
 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
+		// "kerberos" extension is not available on OKD
 		expectedPackages = []string{"usbguard", "kernel-devel"}
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers")
-		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers"}
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
+		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5"}
 
 	}
 	for _, v := range expectedPackages {
@@ -348,7 +349,7 @@ func TestExtensions(t *testing.T) {
 		// "sandboxed-containers" extension is not available on OKD
 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
 	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers")
+		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
 	}
 	for _, v := range expectedPackages {
 		if strings.Contains(installedPackages, v) {
