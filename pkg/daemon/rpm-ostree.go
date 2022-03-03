@@ -337,13 +337,7 @@ func (r *RpmOstreeClient) ApplyLive() (err error) {
 
 	glog.Infof("Applying live")
 
-	args := []string{"ex", "apply-live", "--allow-replacement"}
-
-	if err = runRpmOstree(args...); err != nil {
-		return
-	}
-
-	return
+	return runRpmOstree("ex", "apply-live", "--allow-replacement")
 }
 
 type FileTree struct {
