@@ -118,6 +118,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		),
 		containerruntimeconfig.New(
 			rootOpts.templates,
+			componentNamespace,
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
