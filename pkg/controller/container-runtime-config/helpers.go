@@ -41,9 +41,10 @@ const (
 	policyConfigPath        = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	CRIODropInFilePathLogLevel                   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit                  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax                 = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	crioDropInFilePathAddInheritableCapabilities = "/etc/crio/crio.conf.d/01-mc-addInheritableCapabilities"
 )
 
 var errParsingReference = errors.New("error parsing reference of release image")
@@ -91,6 +92,17 @@ type tomlConfigCRIOLogSizeMax struct {
 	Crio struct {
 		Runtime struct {
 			LogSizeMax int64 `toml:"log_size_max,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOAddInheritableCapabilities is used for the drop in crio file setting add_inheritable_capabilities
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOAddInheritableCapabilities struct {
+	Crio struct {
+		Runtime struct {
+			AddInheritableCapabilities bool `toml:"add_inheritable_capabilities"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -250,6 +262,10 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Inter
 	return ctrlcommon.GetManagedKey(pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
 }
 
+func getManagedKeyCapabilities(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("99-%s-generated-crio-add-inheritable-capabilities", pool.Name)
+}
+
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
 	var condition *mcfgv1.ContainerRuntimeConfigCondition
 	if err != nil {
@@ -297,6 +313,25 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 	}
 
 	return newData.Bytes(), nil
+}
+
+// createDefaultAddInheritableCapabilitiesFile created the drop-in file setting add_inheritable_capabilities to true
+// crio is has added the field add_inheritable_capabilities in 1.25, and this drop-in file with the
+// add_inheritable_capabilities to true will ensure we don't break existing clusters that rely on the inheritable capabilities.
+// Users will have the option to delete the MC associated with this file when they are ready to
+// consume the add_inheritable_capabilities change for their workload
+func createDefaultAddInheritableCapabilitiesFile() []generatedConfigFile {
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	tomlConf := tomlConfigCRIOAddInheritableCapabilities{}
+	tomlConf.Crio.Runtime.AddInheritableCapabilities = true
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathAddInheritableCapabilities, tomlConf)
+	if err != nil {
+		glog.V(2).Infoln(err, "error setting default add_inheritable_capabilities to crio.conf.d: %v", err)
+	}
+	return generatedConfigFileList
 }
 
 func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path string, tomlConf interface{}) ([]generatedConfigFile, error) {

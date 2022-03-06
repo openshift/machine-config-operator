@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -41,7 +42,13 @@ const (
 	bootstrapTestName        = "BootstrapTest"
 	templatesDir             = "../../templates"
 	bootstrapTestDataDir     = "../../pkg/controller/bootstrap/testdata/bootstrap"
+	imagesFile               = "../../install/image-references"
 	openshiftConfigNamespace = "openshift-config"
+	componentNamespace       = "openshift-machine-config-operator"
+	pollInterval             = 200 * time.Millisecond
+	pollTimeout              = 30 * time.Second
+	inheritableMCMaster      = "99-master-generated-crio-add-inheritable-capabilities"
+	inheritableMCWorker      = "99-worker-generated-crio-add-inheritable-capabilities"
 )
 
 var (
@@ -84,6 +91,13 @@ func TestE2EBootstrap(t *testing.T) {
 
 	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
+			Name: componentNamespace,
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: openshiftConfigNamespace,
 		},
 	}, metav1.CreateOptions{})
@@ -97,8 +111,8 @@ func TestE2EBootstrap(t *testing.T) {
 	}{
 		{
 			name:             "With no additional manifests",
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries"},
 		},
 		{
 			name: "With a featuregate manifest",
@@ -110,8 +124,8 @@ metadata:
 spec:
   featureSet: TechPreviewNoUpgrade`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries", "98-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
 		{
 			name: "With a node config manifest",
@@ -123,8 +137,8 @@ metadata:
 spec:
   workerLatencyProfile: MediumUpdateAverageReaction`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a featuregate manifest and master kubelet config manifest",
@@ -154,8 +168,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries", "99-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries"},
 		},
 		{
 			name: "With a node config manifest and master kubelet config manifest",
@@ -185,8 +199,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries", "99-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries", "97-worker-generated-kubelet"},
 		},
 		{
 			name: "With a node config manifest and worker kubelet config manifest",
@@ -216,8 +230,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries", "99-worker-generated-kubelet"},
 		},
 		{
 			name: "With a worker kubelet config manifest",
@@ -241,8 +255,8 @@ spec:
       memory: 500Mi
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries", "99-worker-generated-kubelet"},
 		},
 		{
 			name: "With a container runtime config",
@@ -259,8 +273,8 @@ spec:
     pidsLimit: 100000
 `),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-containerruntime"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+			waitForMasterMCs: []string{"99-master-ssh", inheritableMCMaster, "99-master-generated-registries", "99-master-generated-containerruntime"},
+			waitForWorkerMCs: []string{"99-worker-ssh", inheritableMCWorker, "99-worker-generated-registries"},
 		},
 	}
 
@@ -268,6 +282,19 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
+
+			inheritableRawIgnition := []byte(`{"ignition":{"version":"3.2.0"},"storage":{"files":[{"overwrite":true,"path":"/etc/crio/crio.conf.d/01-mc-addInheritableCapabilities","contents":{"compression":"","source":"data:text/plain;charset=utf-8;base64,W2NyaW9dCiAgW2NyaW8ucnVudGltZV0KICAgIGFkZF9pbmhlcml0YWJsZV9jYXBhYmlsaXRpZXMgPSB0cnVlCg=="},"mode":420}]}}`)
+			masterInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("master", inheritableMCMaster, inheritableRawIgnition)
+			require.NoError(t, err)
+
+			workerInheritableMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("worker", inheritableMCWorker, inheritableRawIgnition)
+			require.NoError(t, err)
+
+			_, err = clientSet.MachineConfigs().Create(ctx, masterInheritableMC, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			_, err = clientSet.MachineConfigs().Create(ctx, workerInheritableMC, metav1.CreateOptions{})
+			require.NoError(t, err)
 
 			fixture := newTestFixture(t, cfg, objs)
 			// Defer stop after cleanup so that the cleanup happens after the stop (defer unwrapping order)
@@ -402,6 +429,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		),
 		containerruntimeconfig.New(
 			templatesDir,
+			componentNamespace,
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
@@ -571,7 +599,8 @@ func checkCleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 
 	mcList, err := clientSet.MachineConfigs().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
-	require.Len(t, mcList.Items, 0)
+	// 2 99-poolname-generated-crio-add-inheritable-capabilities mc should exist
+	require.Len(t, mcList.Items, 2)
 	// ######################################
 	// END: machineconfiguration.openshift.io
 	// ######################################
