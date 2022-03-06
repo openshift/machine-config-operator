@@ -148,6 +148,12 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, rconfigs...)
 
+	seccompUseconfigs, err := containerruntimeconfig.RunSeccompUseDefaultBootstrap(pools)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, seccompUseconfigs...)
+
 	if len(crconfigs) > 0 {
 		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
 		if err != nil {

@@ -70,9 +70,11 @@ var updateBackoff = wait.Backoff{
 // Controller defines the container runtime config controller.
 type Controller struct {
 	templatesDir string
+	namespace    string
 
 	client        mcfgclientset.Interface
 	configClient  configclientset.Interface
+	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler                   func(mcp string) error
@@ -103,7 +105,7 @@ type Controller struct {
 
 // New returns a new container runtime config controller
 func New(
-	templatesDir string,
+	templatesDir, namespace string,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
@@ -120,11 +122,13 @@ func New(
 
 	ctrl := &Controller{
 		templatesDir:  templatesDir,
+		namespace:     namespace,
 		client:        mcfgClient,
 		configClient:  configClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-containerruntimeconfigcontroller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-containerruntimeconfigcontroller"),
 		imgQueue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		kubeClient:    kubeClient,
 	}
 
 	mcrInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -166,6 +170,10 @@ func New(
 
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
+	// Add to the queue to trigger a sync when an upgrade happens
+	// this ensures that the seccomp-use-default MC is created on an upgrade
+	// This will be removed in the next version
+	ctrl.queue.Add("force-sync-on-upgrade")
 
 	return ctrl
 }
@@ -476,6 +484,17 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		glog.V(4).Infof("Finished syncing ContainerRuntimeconfig %q (%v)", key, time.Since(startTime))
 	}()
 
+	// First let's create the MC for the drop in seccomp use default crio.conf file
+	// This will be removed in the next version
+	if err := ctrl.createSeccompUseDefaultMC(); err != nil {
+		return fmt.Errorf("failed to create the crio-seccomp-use-default MC: %v", err)
+	}
+	// If the key is set to force-sync-on-upgrade, then we can return after creating
+	// the capabilities MC.
+	if key == "force-sync-on-upgrade" {
+		return nil
+	}
+
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
@@ -519,12 +538,6 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
-	if len(mcpPools) == 0 {
-		err := fmt.Errorf("containerRuntimeConfig %v does not match any MachineConfigPools", key)
-		glog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
-	}
-
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
@@ -540,9 +553,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// If we have seen this generation and the sync didn't fail, then skip
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
 			// But we still need to compare the generated controller version because during an upgrade we need a new one
-			mcCtrlVersion := mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey]
-			if mcCtrlVersion == version.Hash {
-				return nil
+			if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] == version.Hash {
+				continue
 			}
 		}
 		// Generate the original ContainerRuntimeConfig
@@ -856,6 +868,87 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 	registriesIgn := createNewIgnition(generatedConfigFileList)
 	return &registriesIgn, nil
+}
+
+func (ctrl *Controller) createSeccompUseDefaultMC() error {
+	var configMapName = "crio-seccomp-use-default-when-empty"
+
+	// Check if the crio-seccomp-use-default-when-empty config map exists in the openshift-machine-config-operator namespace
+	seccompUseDefaultCM, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrl.namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	seccompCMIsNotFound := errors.IsNotFound(err)
+	if err != nil && !seccompCMIsNotFound {
+		return fmt.Errorf("error checking for %s config map: %v", configMapName, err)
+	}
+	// If the crio-seccomp-use-default-when-empty config map exists, that means the crio-seccomp-use-default MC was already created
+	// so we should not create this MC again and return
+	if seccompUseDefaultCM != nil && !seccompCMIsNotFound {
+		return nil
+	}
+
+	sel, err := metav1.LabelSelectorAsSelector(metav1.AddLabelToSelector(&metav1.LabelSelector{}, builtInLabelKey, ""))
+	if err != nil {
+		return err
+	}
+	// Find all the MachineConfigPools
+	mcpPoolsAll, err := ctrl.mcpLister.List(sel)
+	if err != nil {
+		return err
+	}
+
+	// Create the crio-seccomp-use-default MC for all the available pools
+	for _, pool := range mcpPoolsAll {
+		managedKey := getManagedKeySeccomp(pool)
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		isNotFound := errors.IsNotFound(err)
+		if err != nil && !isNotFound {
+			return fmt.Errorf("error checking for %s machine config: %v", managedKey, err)
+		}
+		// continue to the next MC if this already exists
+		if mc != nil && !isNotFound {
+			continue
+		}
+
+		tempIgnCfg := ctrlcommon.NewIgnConfig()
+		mc, err = ctrlcommon.MachineConfigFromIgnConfig(pool.Name, managedKey, tempIgnCfg)
+		if err != nil {
+			return fmt.Errorf("could not create crio-seccomp-use-default MachineConfig from new Ignition config: %v", err)
+		}
+		rawCapsIgnition, err := json.Marshal(createNewIgnition(createDefaultSeccompUseDefaultWhenEmptyFile()))
+		if err != nil {
+			return fmt.Errorf("error marshalling crio-seccomp-use-default config ignition: %v", err)
+		}
+		mc.Spec.Config.Raw = rawCapsIgnition
+		// Create the crio-seccomp-use-default MC
+		if err := retry.RetryOnConflict(updateBackoff, func() error {
+			_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+			return err
+		}); err != nil {
+			return fmt.Errorf("could not create MachineConfig for crio-seccomp-use-default: %v", err)
+		}
+		glog.Infof("Applied Seccomp Use Default MC %v on MachineConfigPool %v", managedKey, pool.Name)
+	}
+
+	// Create the config map for crio-seccomp-use-default so we know that the crio-seccomp-use-default MC has been created
+	seccompUseDefaultCM.Name = configMapName
+	seccompUseDefaultCM.Namespace = ctrl.namespace
+	if _, err := ctrl.kubeClient.CoreV1().ConfigMaps(ctrl.namespace).Create(context.TODO(), seccompUseDefaultCM, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("error creating %s config map: %v", configMapName, err)
+	}
+	return nil
+}
+
+// RunSeccompUseDefaultBootstrap creates the crio-seccomp-use-default mc on bootstrap
+func RunSeccompUseDefaultBootstrap(mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+	var res []*mcfgv1.MachineConfig
+	for _, pool := range mcpPools {
+		seccompUseDefaultIgn := createNewIgnition(createDefaultSeccompUseDefaultWhenEmptyFile())
+		mc, err := ctrlcommon.MachineConfigFromIgnConfig(pool.Name, getManagedKeySeccomp(pool), seccompUseDefaultIgn)
+		if err != nil {
+			return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
+		}
+		res = append(res, mc)
+	}
+	return res, nil
 }
 
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,

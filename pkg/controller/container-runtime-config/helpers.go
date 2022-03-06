@@ -39,9 +39,10 @@ const (
 	policyConfigPath        = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	CRIODropInFilePathLogLevel                   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit                  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax                 = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	crioDropInFilePathSeccompUseDefaultWhenEmpty = "/etc/crio/crio.conf.d/01-mc-seccompUseDefault"
 )
 
 var errParsingReference = errors.New("error parsing reference of release image")
@@ -89,6 +90,17 @@ type tomlConfigCRIOLogSizeMax struct {
 	Crio struct {
 		Runtime struct {
 			LogSizeMax int64 `toml:"log_size_max,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIOSeccompUseDefaultWhenEmpty is used for the drop in crio file setting seccomp_use_default_when_empty
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIOSeccompUseDefaultWhenEmpty struct {
+	Crio struct {
+		Runtime struct {
+			SeccompUseDefaultWhenEmpty bool `toml:"seccomp_use_default_when_empty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -259,6 +271,10 @@ func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Inter
 	return ctrlcommon.GetManagedKey(pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
 }
 
+func getManagedKeySeccomp(pool *mcfgv1.MachineConfigPool) string {
+	return fmt.Sprintf("99-%s-generated-crio-seccomp-use-default", pool.Name)
+}
+
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {
 	var condition *mcfgv1.ContainerRuntimeConfigCondition
 	if err != nil {
@@ -306,6 +322,25 @@ func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfigura
 	}
 
 	return newData.Bytes(), nil
+}
+
+// createDefaultSeccompUseDefaultWhenEmptyFile created the drop-in file setting seccomp_use_default_when_empty to false
+// crio is changing default value of seccomp_use_default_when_empty from false to true from crio 1.24 so adding
+// this drop-in file with the seccomp_use_default_when_empty false to ensure we don't break existing clusters.
+// Users will have the option to delete the MC associated with this file when they are ready to
+// consume the seccomp_use_default_when_empty change for their workload
+func createDefaultSeccompUseDefaultWhenEmptyFile() []generatedConfigFile {
+	var (
+		generatedConfigFileList []generatedConfigFile
+		err                     error
+	)
+	tomlConf := tomlConfigCRIOSeccompUseDefaultWhenEmpty{}
+	tomlConf.Crio.Runtime.SeccompUseDefaultWhenEmpty = false
+	generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, crioDropInFilePathSeccompUseDefaultWhenEmpty, tomlConf)
+	if err != nil {
+		glog.V(2).Infoln(err, "error setting default seccomp_use_default_when_empty to crio.conf.d: %v", err)
+	}
+	return generatedConfigFileList
 }
 
 func addTOMLgeneratedConfigFile(configFileList []generatedConfigFile, path string, tomlConf interface{}) ([]generatedConfigFile, error) {

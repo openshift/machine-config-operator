@@ -32,6 +32,7 @@ contents:
         "/etc/hostname",
     ]
     drop_infra_ctr = true
+    seccomp_use_default_when_empty = true
 
     [crio.runtime.workloads.openshift-builder]
     activation_annotation = "io.openshift.builder"
