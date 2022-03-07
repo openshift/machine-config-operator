@@ -61,8 +61,11 @@ const (
 )
 
 var (
-	origParentDirPath   = filepath.Join("/etc", "machine-config-daemon", "orig")
-	noOrigParentDirPath = filepath.Join("/etc", "machine-config-daemon", "noorig")
+	origParentDirPath      = filepath.Join("/etc", "machine-config-daemon", "orig")
+	noOrigParentDirPath    = filepath.Join("/etc", "machine-config-daemon", "noorig")
+	authKeyFragmentDirPath = filepath.Join(coreUserSSHPath, "authorized_keys.d")
+	fcosAuthKeyPath        = filepath.Join(authKeyFragmentDirPath, "ignition")
+	nonFCOSAuthKeyPath     = filepath.Join(coreUserSSHPath, "authorized_keys")
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -444,9 +447,9 @@ func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string)
 		"/var/lib/kubelet/config.json",
 	}
 	if dn.os.IsFCOS() {
-		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition"))
+		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, fcosAuthKeyPath)
 	} else {
-		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, filepath.Join(coreUserSSHPath, "authorized_keys"))
+		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, nonFCOSAuthKeyPath)
 	}
 
 	filesPostConfigChangeActionReloadCrio := []string{
@@ -1679,9 +1682,9 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 
 	var authKeyPath string
 	if dn.os.IsFCOS() {
-		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition")
+		authKeyPath = fcosAuthKeyPath
 	} else {
-		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys")
+		authKeyPath = nonFCOSAuthKeyPath
 	}
 
 	// Keys should only be written to "/home/core/.ssh"
@@ -1723,24 +1726,21 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		}
 	}
 	if !dn.mock {
-		authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
-		authKeyFragmentDirPath := filepath.Join(coreUserSSHPath, "authorized_keys.d")
-
 		if dn.os.IsFCOS() {
 			// In older versions of OKD, the keys were written to `/home/core/.ssh/authorized_keys`.
 			// Newer versions of OKD will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
 			// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
 			// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
 			// that is called right after.
-			_, err := os.Stat(authKeyPath)
+			_, err := os.Stat(nonFCOSAuthKeyPath)
 			if err == nil {
-				err := os.RemoveAll(authKeyPath)
+				err := os.RemoveAll(nonFCOSAuthKeyPath)
 				if err != nil {
-					return fmt.Errorf("failed to remove path '%s': %v", authKeyPath, err)
+					return fmt.Errorf("failed to remove path '%s': %v", nonFCOSAuthKeyPath, err)
 				}
 			} else if !os.IsNotExist(err) {
 				// This shouldn't ever happen
-				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyPath, err)
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", nonFCOSAuthKeyPath, err)
 			}
 
 			// Ensure authorized_keys.d/ignition is the only fragment that exists

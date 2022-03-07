@@ -17,14 +17,25 @@ type OperatingSystem struct {
 	VersionID string
 }
 
+var FCOS = OperatingSystem{
+	ID:        "fedora",
+	VariantID: "coreos",
+}
+
+var RHCOS = OperatingSystem{
+	ID: "rhcos",
+	// per https://github.com/openshift/os/commit/31f295e3362a6622749a64a6ff610b727560bda1
+	// there's no VARIANT_ID and confirmed by looking at /etc/os-release
+}
+
 // IsRHCOS is true if the OS is RHEL CoreOS
 func (os OperatingSystem) IsRHCOS() bool {
-	return os.ID == "rhcos"
+	return os.ID == RHCOS.ID
 }
 
 // IsFCOS is true if the OS is RHEL CoreOS
 func (os OperatingSystem) IsFCOS() bool {
-	return os.ID == "fedora" && os.VariantID == "coreos"
+	return os.ID == FCOS.ID && os.VariantID == FCOS.VariantID
 }
 
 // IsCoreOSVariant is true if the OS is FCOS or a derivative (ostree+Ignition)
