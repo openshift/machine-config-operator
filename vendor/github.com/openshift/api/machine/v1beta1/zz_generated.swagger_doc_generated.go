@@ -123,11 +123,22 @@ func (LoadBalancerReference) SwaggerDoc() map[string]string {
 	return map_LoadBalancerReference
 }
 
+var map_LocalAWSPlacementGroupReference = map[string]string{
+	"":     "LocalAWSPlacementGroupReference contains enough information to let you locate the referenced AWSPlacementGroup inside the same namespace.",
+	"name": "Name of the AWSPlacementGroup.",
+}
+
+func (LocalAWSPlacementGroupReference) SwaggerDoc() map[string]string {
+	return map_LocalAWSPlacementGroupReference
+}
+
 var map_Placement = map[string]string{
 	"":                 "Placement indicates where to create the instance in AWS",
 	"region":           "Region is the region to use to create the instance",
 	"availabilityZone": "AvailabilityZone is the availability zone of the instance",
 	"tenancy":          "Tenancy indicates if instance should run on shared or single-tenant hardware. There are supported 3 options: default, dedicated and host.",
+	"group":            "Group specifies a reference to an AWSPlacementGroup resource to create the Machine within. If the group specified does not exist, the Machine will not be created and will enter the failed phase.",
+	"number":           "PartitionNumber specifies the numbered partition in which instances should be launched. It is recommended to only use this value if multiple MachineSets share a single Placement Group, in which case, each MachineSet should represent an individual partition number. If unset, when a Partition placement group is used, AWS will attempt to distribute instances evenly between partitions. If PartitionNumber is set when used with a non Partition type Placement Group, this will be considered an error.",
 }
 
 func (Placement) SwaggerDoc() map[string]string {

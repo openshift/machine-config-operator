@@ -80,29 +80,6 @@ spec:
                           type:
                             description: type specifies the aspect reported by this condition.
                             type: string
-                    relatedObjects:
-                      description: relatedObjects is a list of objects that are "interesting" or related to this WorkerLatencyProfile. e.g. KubeletConfig object used for updating Kubelet arguments
-                      type: array
-                      items:
-                        description: ObjectReference contains enough information to let you inspect or modify the referred object.
-                        type: object
-                        required:
-                          - group
-                          - name
-                          - resource
-                        properties:
-                          group:
-                            description: group of the referent.
-                            type: string
-                          name:
-                            description: name of the referent.
-                            type: string
-                          namespace:
-                            description: namespace of the referent.
-                            type: string
-                          resource:
-                            description: resource of the referent.
-                            type: string
       served: true
       storage: true
 status:

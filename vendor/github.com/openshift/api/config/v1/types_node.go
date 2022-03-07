@@ -44,10 +44,10 @@ type NodeStatus struct {
 type CgroupMode string
 
 const (
-	CgroupMode_Empty   = "" // Empty string will always use the Default
-	CgroupMode_v1      = "v1"
-	CgroupMode_v2      = "v2"
-	CgroupMode_Default = CgroupMode_v1
+	CgroupModeEmpty   CgroupMode = "" // Empty string indicates to honor user set value on the system that should not be overridden by OpenShift
+	CgroupModeV1      CgroupMode = "v1"
+	CgroupModeV2      CgroupMode = "v2"
+	CgroupModeDefault CgroupMode = CgroupModeV1
 )
 
 type WorkerLatencyProfileType string
@@ -71,10 +71,6 @@ type WorkerLatencyProfileStatus struct {
 	// +patchStrategy=merge
 	// +optional
 	Conditions []WorkerLatencyStatusCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
-
-	// relatedObjects is a list of objects that are "interesting" or related to this WorkerLatencyProfile. e.g. KubeletConfig object used for updating Kubelet arguments
-	// +optional
-	RelatedObjects []ObjectReference `json:"relatedObjects,omitempty"`
 }
 
 // WorkerLatencyStatusConditionType is an aspect of WorkerLatencyProfile state.
