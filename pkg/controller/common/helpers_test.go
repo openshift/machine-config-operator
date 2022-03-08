@@ -2,11 +2,13 @@ package common
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
+	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,6 +16,56 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
+
+func TestTranspileCoreOSConfig(t *testing.T) {
+	kubeletConfig := `
+mode: 0644
+path: "/etc/kubernetes/kubelet.conf"
+contents:
+  inline: |
+    kind: KubeletConfiguration
+    apiVersion: kubelet.config.k8s.io/v1beta1
+`
+	auditConfig := `
+mode: 0644
+path: "/etc/audit/rules.d/mco-audit.rules"
+contents:
+  inline: |
+    -a exclude,always -F msgtype=NETFILTER_CFG
+`
+	kubeletService := `name: kubelet.service
+enabled: true
+contents: | 
+  [Unit]
+  Description=kubelet
+  [Service]
+  ExecStart=/usr/bin/hyperkube
+`
+	crioDropin := `
+name: crio.service
+dropins:
+  - name: 10-mco-default-madv.conf
+    contents: |
+      [Service]
+      Environment="GODEBUG=x509ignoreCN=0,madvdontneed=1"
+`
+	dockerDropin := `
+name: docker.socket
+dropins:
+- name: mco-disabled.conf
+  contents: |
+    [Unit]
+    ConditionPathExists=/enoent
+`
+	config, err := TranspileCoreOSConfigToIgn([]string{kubeletConfig, auditConfig}, []string{kubeletService, crioDropin, dockerDropin})
+	require.Nil(t, err)
+	if report := validate3.ValidateWithContext(config, nil); report.IsFatal() {
+		t.Fatalf("invalid ignition V3 config found: %v", report)
+	}
+	require.Equal(t, len(config.Storage.Files), 2)
+	require.True(t, strings.HasPrefix(*config.Storage.Files[0].Contents.Source, "data:,kind%3A%20KubeletConfiguration%0Aapi"))
+	require.Equal(t, len(config.Systemd.Units), 3)
+}
 
 func TestValidateIgnition(t *testing.T) {
 	// Test that an empty ignition config returns nil
@@ -248,7 +300,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 		Passwd: ign3types.Passwd{
 			Users: []ign3types.PasswdUser{
-				ign3types.PasswdUser{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
+				{Name: "core", SSHAuthorizedKeys: []ign3types.SSHAuthorizedKey{"1234"}},
 			},
 		},
 	}

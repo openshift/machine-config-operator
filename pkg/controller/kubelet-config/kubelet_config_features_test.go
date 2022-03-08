@@ -7,7 +7,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/vincent-petithory/dataurl"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
@@ -29,8 +28,10 @@ func TestFeatureGateDrift(t *testing.T) {
 			if err != nil {
 				t.Errorf("could not generate kubelet config from templates %v", err)
 			}
-			dataURL, _ := dataurl.DecodeString(*kubeletConfig.Contents.Source)
-			originalKubeConfig, _ := decodeKubeletConfig(dataURL.Data)
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(kubeletConfig.Contents.Source, kubeletConfig.Contents.Compression)
+			require.NoError(t, err)
+			originalKubeConfig, err := decodeKubeletConfig(contents)
+			require.NoError(t, err)
 			defaultFeatureGates, err := generateFeatureMap(createNewDefaultFeatureGate())
 			if err != nil {
 				t.Errorf("could not generate defaultFeatureGates: %v", err)
@@ -53,8 +54,10 @@ func TestFeaturesDefault(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc2 := newKubeletConfig("bigger-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 250}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey1, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
-			kubeletConfigKey2, _ := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			kubeletConfigKey1, err := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			require.NoError(t, err)
+			kubeletConfigKey2, err := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			require.NoError(t, err)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
@@ -92,8 +95,10 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc2 := newKubeletConfig("bigger-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 250}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey1, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
-			kubeletConfigKey2, _ := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			kubeletConfigKey1, err := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			require.NoError(t, err)
+			kubeletConfigKey2, err := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			require.NoError(t, err)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
@@ -190,10 +195,11 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 			for _, mc := range mcs {
 				ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 				regfile := ignCfg.Storage.Files[0]
-				conf, err := dataurl.DecodeString(*regfile.Contents.Source)
+				conf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 				require.NoError(t, err)
 
-				originalKubeConfig, _ := decodeKubeletConfig(conf.Data)
+				originalKubeConfig, err := decodeKubeletConfig(conf)
+				require.NoError(t, err)
 				defaultFeatureGates, err := generateFeatureMap(createNewDefaultFeatureGate())
 				if err != nil {
 					t.Errorf("could not generate defaultFeatureGates: %v", err)
