@@ -960,6 +960,8 @@ func (dn *Daemon) LogSystemData() {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
 		}
 		glog.Info(status)
+
+		logProvisioningInformation()
 	}
 
 	boots, err := runGetOut("journalctl", "--list-boots")
