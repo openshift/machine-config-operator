@@ -3,9 +3,7 @@ package daemon
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -22,7 +20,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/google/renameio"
 	errors "github.com/pkg/errors"
-	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1530,39 +1527,6 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 	return nil
 }
 
-func decodeContents(source, compression *string) ([]byte, error) {
-	var contentsBytes []byte
-
-	// To allow writing of "empty" files we'll allow source to be nil
-	if source != nil {
-		source, err := dataurl.DecodeString(*source)
-		if err != nil {
-			return []byte{}, fmt.Errorf("could not decode file content string: %w", err)
-		}
-		if compression != nil {
-			switch *compression {
-			case "":
-				contentsBytes = source.Data
-			case "gzip":
-				reader, err := gzip.NewReader(bytes.NewReader(source.Data))
-				if err != nil {
-					return []byte{}, fmt.Errorf("could not create gzip reader: %w", err)
-				}
-				defer reader.Close()
-				contentsBytes, err = io.ReadAll(reader)
-				if err != nil {
-					return []byte{}, fmt.Errorf("failed decompressing: %w", err)
-				}
-			default:
-				return []byte{}, fmt.Errorf("unsupported compression type %q", *compression)
-			}
-		} else {
-			contentsBytes = source.Data
-		}
-	}
-	return contentsBytes, nil
-}
-
 // writeFiles writes the given files to disk.
 // it doesn't fetch remote files and expects a flattened config file.
 func (dn *Daemon) writeFiles(files []ign3types.File) error {
@@ -1575,7 +1539,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 			return fmt.Errorf("found an append section when writing files. Append is not supported")
 		}
 
-		decodedContents, err := decodeContents(file.Contents.Source, file.Contents.Compression)
+		decodedContents, err := ctrlcommon.DecodeIgnitionFileContents(file.Contents.Source, file.Contents.Compression)
 		if err != nil {
 			return fmt.Errorf("could not decode file %q: %w", file.Path, err)
 		}

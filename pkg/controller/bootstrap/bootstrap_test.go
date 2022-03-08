@@ -12,7 +12,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vincent-petithory/dataurl"
 	"k8s.io/apimachinery/pkg/util/diff"
 
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -190,15 +189,15 @@ func TestBootstrapRun(t *testing.T) {
 				}
 			}
 			require.NotNil(t, registriesConfig)
-			dataURL, err := dataurl.DecodeString(*registriesConfig.Contents.Source)
+			contents, err := ctrlcommon.DecodeIgnitionFileContents(registriesConfig.Contents.Source, registriesConfig.Contents.Compression)
 			require.NoError(t, err)
 			// Only a minimal presence check; more comprehensive tests that the contents correspond to the ICSP semantics are
 			// maintained in pkg/controller/container-runtime-config.
-			assert.Contains(t, string(dataURL.Data), "registry.mirror.example.com/ocp")
-			assert.Contains(t, string(dataURL.Data), "insecure-reg-1.io")
-			assert.Contains(t, string(dataURL.Data), "insecure-reg-2.io")
-			assert.Contains(t, string(dataURL.Data), "blocked-reg.io")
-			assert.NotContains(t, string(dataURL.Data), "release-registry.product.example.org")
+			assert.Contains(t, string(contents), "registry.mirror.example.com/ocp")
+			assert.Contains(t, string(contents), "insecure-reg-1.io")
+			assert.Contains(t, string(contents), "insecure-reg-2.io")
+			assert.Contains(t, string(contents), "blocked-reg.io")
+			assert.NotContains(t, string(contents), "release-registry.product.example.org")
 		})
 	}
 }
