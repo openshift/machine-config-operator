@@ -17,6 +17,8 @@ type Images struct {
 type RenderConfigImages struct {
 	MachineConfigOperator string `json:"machineConfigOperator"`
 	MachineOSContent      string `json:"machineOSContent"`
+	// The new format image
+	BaseOperatingSystemContainer string `json:"baseOperatingSystemContainer"`
 	// These have to be named differently from the ones in ControllerConfigImages
 	// or we get errors about ambiguous selectors because both structs are
 	// combined in the Images struct.
