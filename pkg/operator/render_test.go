@@ -190,7 +190,6 @@ func TestRenderAsset(t *testing.T) {
 func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 	tests := []struct {
 		Infra   *configv1.Infrastructure
-		Node    *configv1.Node
 		Network *configv1.Network
 		Proxy   *configv1.Proxy
 		DNS     *configv1.DNS
@@ -254,11 +253,6 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 				EtcdDiscoveryDomain: "tt.testing",
 			},
 		},
-		Node: &configv1.Node{
-			Spec: configv1.NodeSpec{
-				WorkerLatencyProfile: configv1.DefaultUpdateDefaultReaction,
-			},
-		},
 		Network: &configv1.Network{
 			Spec: configv1.NetworkSpec{ServiceNetwork: []string{"192.168.1.1/24"}}},
 		DNS: &configv1.DNS{
@@ -268,7 +262,7 @@ func TestCreateDiscoveredControllerConfigSpec(t *testing.T) {
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			desc := fmt.Sprintf("Infra(%#v), Network(%#v)", test.Infra, test.Network)
-			controllerConfigSpec, err := createDiscoveredControllerConfigSpec(test.Infra, test.Node, test.Network, test.Proxy, test.DNS)
+			controllerConfigSpec, err := createDiscoveredControllerConfigSpec(test.Infra, test.Network, test.Proxy, test.DNS)
 			if err != nil {
 				if !test.Error {
 					t.Fatalf("%s failed: %s", desc, err.Error())

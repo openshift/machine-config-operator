@@ -28,7 +28,6 @@ var (
 		haproxyImage              string
 		imagesConfigMapFile       string
 		infraConfigFile           string
-		nodeConfigFile            string
 		infraImage                string
 		releaseImage              string
 		keepalivedImage           string
@@ -63,7 +62,6 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.configFile, "config-file", "", "ClusterConfig ConfigMap file.")
 	bootstrapCmd.MarkFlagRequired("config-file")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.infraConfigFile, "infra-config-file", "/assets/manifests/cluster-infrastructure-02-config.yml", "File containing infrastructure.config.openshift.io manifest.")
-	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.nodeConfigFile, "node-config-file", "/assets/manifests/cluster-node-02-config.yml", "File containing node.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.networkConfigFile, "network-config-file", "/assets/manifests/cluster-network-02-config.yml", "File containing network.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudConfigFile, "cloud-config-file", "", "File containing the config map that contains the cloud config for cloudprovider.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.proxyConfigFile, "proxy-config-file", "/assets/manifests/cluster-proxy-01-config.yaml", "File containing proxy.config.openshift.io manifest.")
@@ -108,7 +106,6 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.proxyConfigFile,
 		bootstrapOpts.configFile,
 		bootstrapOpts.infraConfigFile,
-		bootstrapOpts.nodeConfigFile,
 		bootstrapOpts.networkConfigFile,
 		bootstrapOpts.dnsConfigFile,
 		bootstrapOpts.cloudConfigFile,

@@ -28,7 +28,7 @@ func RenderBootstrap(
 	additionalTrustBundleFile,
 	proxyFile,
 	clusterConfigConfigMapFile,
-	infraFile, nodeFile, networkFile, dnsFile,
+	infraFile, networkFile, dnsFile,
 	cloudConfigFile, cloudProviderCAFile,
 	rootCAFile, kubeAPIServerServingCA, pullSecretFile string,
 	imgs *Images,
@@ -39,7 +39,6 @@ func RenderBootstrap(
 		proxyFile,
 		clusterConfigConfigMapFile,
 		infraFile,
-		nodeFile,
 		networkFile,
 		rootCAFile,
 		pullSecretFile,
@@ -69,15 +68,6 @@ func RenderBootstrap(
 		return fmt.Errorf("expected *configv1.Infrastructure found %T", obji)
 	}
 
-	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[nodeFile])
-	if err != nil {
-		return err
-	}
-	node, ok := obji.(*configv1.Node)
-	if !ok {
-		return fmt.Errorf("expected *configv1.Node found %T", obji)
-	}
-
 	obji, err = runtime.Decode(configscheme.Codecs.UniversalDecoder(configv1.SchemeGroupVersion), filesData[proxyFile])
 	if err != nil {
 		return err
@@ -105,9 +95,18 @@ func RenderBootstrap(
 		return fmt.Errorf("expected *configv1.DNS found %T", obji)
 	}
 
-	spec, err := createDiscoveredControllerConfigSpec(infra, node, network, proxy, dns)
+	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy, dns)
 	if err != nil {
 		return err
+	}
+
+	// node provides information about the cgroup modes, worker latency profiles
+	// populating the node field with the default values.
+	spec.Node = &configv1.Node{
+		Spec: configv1.NodeSpec{
+			CgroupMode:           configv1.CgroupModeDefault,
+			WorkerLatencyProfile: configv1.DefaultUpdateDefaultReaction,
+		},
 	}
 
 	additionalTrustBundleData, err := ioutil.ReadFile(additionalTrustBundleFile)

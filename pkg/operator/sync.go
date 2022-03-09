@@ -262,15 +262,30 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	imgs.MachineOSContent = osimageurl
 
 	// sync up the ControllerConfigSpec
-	infra, node, network, proxy, dns, err := optr.getGlobalConfig()
+	infra, network, proxy, dns, err := optr.getGlobalConfig()
 	if err != nil {
 		return err
 	}
-	spec, err := createDiscoveredControllerConfigSpec(infra, node, network, proxy, dns)
+	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy, dns)
 	if err != nil {
 		return err
 	}
 
+	node, err := optr.confignodeLister.Get("cluster")
+	if apierrors.IsNotFound(err) {
+		node = &configv1.Node{
+			Spec: configv1.NodeSpec{
+				CgroupMode:           configv1.CgroupModeDefault,
+				WorkerLatencyProfile: configv1.DefaultUpdateDefaultReaction,
+			},
+		}
+	} else if err != nil {
+		glog.V(2).Infof("%v", err)
+		return fmt.Errorf("could not fetch node object: %v", err)
+	}
+	if node != nil {
+		spec.Node = node
+	}
 	var trustBundle []byte
 	certPool := x509.NewCertPool()
 	// this is the generic trusted bundle for things like self-signed registries.
@@ -904,28 +919,24 @@ func getCloudConfigFromConfigMap(cm *corev1.ConfigMap, key string) (string, erro
 
 // getGlobalConfig gets global configuration for the cluster, namely, the Infrastructure and Network types.
 // Each type of global configuration is named `cluster` for easy discovery in the cluster.
-func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Node, *configv1.Network, *configv1.Proxy, *configv1.DNS, error) {
+func (optr *Operator) getGlobalConfig() (*configv1.Infrastructure, *configv1.Network, *configv1.Proxy, *configv1.DNS, error) {
 	infra, err := optr.infraLister.Get("cluster")
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
-	}
-	node, err := optr.confignodeLister.Get("cluster")
-	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	network, err := optr.networkLister.Get("cluster")
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	proxy, err := optr.proxyLister.Get("cluster")
 	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	dns, err := optr.dnsLister.Get("cluster")
 	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return infra, node, network, proxy, dns, nil
+	return infra, network, proxy, dns, nil
 }
 
 func getRenderConfig(tnamespace, kubeAPIServerServingCA string, ccSpec *mcfgv1.ControllerConfigSpec, imgs *RenderConfigImages, apiServerURL string, pointerConfigData []byte) *renderConfig {
