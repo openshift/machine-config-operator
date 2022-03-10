@@ -129,6 +129,11 @@ type Daemon struct {
 	configDriftMonitor ConfigDriftMonitor
 }
 
+// CoreOSDaemon protects the methods that should only be called on CoreOS variants
+type CoreOSDaemon struct {
+	*Daemon
+}
+
 const (
 	// pathSystemd is the path systemd modifiable units, services, etc.. reside
 	pathSystemd = "/etc/systemd/system"
@@ -1148,7 +1153,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			if err != nil {
 				return err
 			}
-			if err := dn.updateOS(state.currentConfig, osImageContentDir); err != nil {
+			if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
 				return err
 			}
 			if err := os.RemoveAll(osImageContentDir); err != nil {
@@ -1504,16 +1509,6 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	return validateOnDiskState(currentConfig, pathSystemd)
 }
 
-// compareOSImageURL checks whether the current and desired
-// URL are the same.  This used to do more, but now the
-// only special casing is to support an empty desired URL
-// as meaning "keep current OS" which we probably don't need
-// anymore either.
-func compareOSImageURL(current, desired string) bool {
-	// A desired "" is special cased
-	return desired == "" || current == desired
-}
-
 // checkOS determines whether the booted system matches the target
 // osImageURL and if not whether we need to take action.  This function
 // returns `true` if no action is required, which is the case if we're
@@ -1527,7 +1522,7 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 		return true
 	}
 
-	return compareOSImageURL(dn.bootedOSImageURL, osImageURL)
+	return dn.bootedOSImageURL == osImageURL
 }
 
 // Close closes all the connections the node agent has open for it's lifetime
