@@ -29,7 +29,7 @@ contents:
         files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection $src_path/*${MANAGED_NM_CONN_SUFFIX})
         shopt -u nullglob
         for file in "${files[@]}"; do
-          file="$(basename $file)"
+          file=$(basename "$file")
           if [ -f "$src_path/$file" ]; then
             if [ ! -f "$dst_path/$file" ]; then
               echo "Copying configuration $file"
@@ -65,7 +65,7 @@ contents:
       files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
       shopt -u nullglob
       for file in "${files[@]}"; do
-        file="$(basename $file)"
+        file=$(basename "$file")
         file_path="${NM_CONN_PATH}/$file"
         if [ -f "$file_path" ]; then
           rm -f "$file_path"
@@ -238,7 +238,8 @@ contents:
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
         nmcli c add type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
-        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
+        connection.autoconnect-priority 100 connection.autoconnect-slaves 1 802-3-ethernet.mtu ${iface_mtu} \
+        ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuid
@@ -374,29 +375,35 @@ contents:
       
       echo "Reloading NetworkManager after configuration changes..."
 
-      # set network off, so that auto-connect priority is evaluated when turning
-      # it back on
+      # recycle network, so that existing profiles and priorities are re-evaluated
       nmcli network off
+
+      # wait for no devices to show as connected
+      echo "Waiting for devices to disconnect..."
+      if ! timeout 60 bash -c "while nmcli -g DEVICE,STATE d | grep -v :unmanaged; do sleep 5; done"; then
+        echo "Warning: NetworkManager did not disconnect all devices"
+      fi
       
-      # restart NetworkManager to reload profiles, including generating
-      # transient profiles for devices that don't have any
+      # reload profiles and set networking back on
+      nmcli connection reload
+      nmcli network on
+      
+      # restart NetworkManager so that we can wait on `nm-online -s`
       systemctl restart NetworkManager
 
-      # turn network back on triggering auto-connects 
-      nmcli network on
-
       # Wait until all profiles auto-connect
+      echo "Waiting for profiles to activate..."
       if nm-online -s -t 60; then
         echo "NetworkManager has activated all suitable profiles after reload"
       else
-        echo "NetworkManager has not activated all suitable profiles after reload"
+        echo "Warning: NetworkManager has not activated all suitable profiles after reload"
       fi
 
       # Check if we have any type of connectivity
       if nm-online -t 0; then
         echo "NetworkManager has connectivity after reload"
       else
-        echo "NetworkManager does not have connectivity after reload"
+        echo "Warning: NetworkManager does not have connectivity after reload"
       fi
     }
 
@@ -412,6 +419,11 @@ contents:
     # Activates a NM connection profile
     activate_nm_conn() {
       local conn="$1"
+      local active_state="$(nmcli -g GENERAL.STATE conn show $conn)"
+      if [ "$active_state" = "activated" ]; then
+        echo "Connection $conn already activated"
+        return
+      fi
       for i in {1..10}; do
         echo "Attempt $i to bring up connection $conn"
         nmcli conn up "$conn" && s=0 && break || s=$?
@@ -558,7 +570,7 @@ contents:
 
       # Remove bridges created by openshift-sdn
       ovs-vsctl --timeout=30 --if-exists del-br br0
-      
+
       # Recycle NM connections
       reload_nm
 
