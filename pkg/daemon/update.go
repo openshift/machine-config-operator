@@ -334,7 +334,7 @@ func removePendingDeployment() error {
 	return runRpmOstree("cleanup", "-p")
 }
 
-func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
 
 	if dn.recorder != nil {
@@ -368,22 +368,22 @@ func (dn *Daemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig 
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osImageContentDir)
 
-		if dn.os.IsCoreOSVariant() {
-			if err := addExtensionsRepo(osImageContentDir); err != nil {
-				return err
-			}
-			defer os.Remove(extensionsRepo)
+		if err := addExtensionsRepo(osImageContentDir); err != nil {
+			return err
 		}
+		defer os.Remove(extensionsRepo)
 	}
 
 	// Update OS
-	if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
-		nodeName := ""
-		if dn.node != nil {
-			nodeName = dn.node.Name
+	if mcDiff.osUpdate {
+		if err := updateOS(newConfig, osImageContentDir); err != nil {
+			nodeName := ""
+			if dn.node != nil {
+				nodeName = dn.node.Name
+			}
+			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
+			return err
 		}
-		MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
-		return err
 	}
 
 	defer func() {
@@ -572,18 +572,23 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 	}()
 
-	if err := dn.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
-		return err
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := dn.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
-				return
-			}
+	if dn.os.IsCoreOSVariant() {
+		coreOSDaemon := CoreOSDaemon{dn}
+		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+			return err
 		}
-	}()
+
+		defer func() {
+			if retErr != nil {
+				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+					retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
+					return
+				}
+			}
+		}()
+	} else {
+		glog.Info("updating the OS on non-CoreOS nodes is not supported")
+	}
 
 	// Ideally we would want to update kernelArguments only via MachineConfigs.
 	// We are keeping this to maintain compatibility and OKD requirement.
@@ -927,12 +932,7 @@ func generateKargs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 }
 
 // updateKernelArguments adjusts the kernel args
-func (dn *Daemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	if !dn.os.IsCoreOSVariant() {
-		glog.Info("updating kargs on non-CoreOS nodes is not supported")
-		return nil
-	}
-
+func (dn *CoreOSDaemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	kargs := generateKargs(oldConfig, newConfig)
 	if len(kargs) == 0 {
 		return nil
@@ -1033,13 +1033,7 @@ func validateExtensions(exts []string) error {
 
 }
 
-func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	// Right now, we support extensions only on CoreOS nodes
-	if !dn.os.IsCoreOSVariant() {
-		glog.Info("applying extensions on non-CoreOS nodes is not supported")
-		return nil
-	}
-
+func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	extensionsEmpty := len(oldConfig.Spec.Extensions) == 0 && len(newConfig.Spec.Extensions) == 0
 	if (extensionsEmpty) ||
 		(reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions) && oldConfig.Spec.OSImageURL == newConfig.Spec.OSImageURL) {
@@ -1058,7 +1052,7 @@ func (dn *Daemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConfig) er
 
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
 // Right now it supports default (traditional) and realtime kernel
-func (dn *Daemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
+func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
 	// We support Kernel update only on RHCOS nodes
 	if !dn.os.IsRHCOS() {
 		glog.Info("updating kernel on non-RHCOS nodes is not supported")
@@ -1769,17 +1763,8 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 }
 
 // updateOS updates the system OS to the one specified in newConfig
-func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
-	if !dn.os.IsCoreOSVariant() {
-		glog.Info("Updating of non-CoreOS nodes are not supported")
-		return nil
-	}
-
+func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	newURL := config.Spec.OSImageURL
-	if compareOSImageURL(dn.bootedOSImageURL, newURL) {
-		return nil
-	}
-
 	glog.Infof("Updating OS to %s", newURL)
 	client := NewNodeUpdaterClient()
 	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
