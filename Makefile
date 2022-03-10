@@ -92,7 +92,7 @@ install: binaries
 	  install -D -m 0755 _output/linux/$(GOARCH)/$${component} $(DESTDIR)$(PREFIX)/bin/$${component}; \
 	done
 
-Dockerfile.rhel7: Dockerfile Makefile
+Dockerfile.rhel: Dockerfile Makefile
 	(echo '# THIS FILE IS GENERATED FROM '$<' DO NOT EDIT' && \
 	 sed -e s,org/openshift/release,org/ocp/builder, -e s,/openshift/origin-v4.0:base,/ocp/4.0:base, < $<) > $@.tmp && mv $@.tmp $@
 
