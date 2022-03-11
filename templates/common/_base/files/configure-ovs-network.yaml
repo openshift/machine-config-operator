@@ -54,7 +54,7 @@ contents:
       ovs_interface="ovs-if-${bridge_name}"
       default_port_name="ovs-port-${port_name}" # ovs-port-phys0
       bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
-    # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
+      # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
       MANAGED_NM_CONN_FILES=($(echo {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"} {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}.nmconnection))
     }
 
@@ -109,17 +109,19 @@ contents:
     }
 
     # when creating the bridge, we use a value lower than NM's ethernet device default route metric
-    # (we pick 49 to be lower than anything that NM chooses by default)
-    BRIDGE_METRIC="49"
+    # (we pick 48 and 49 to be lower than anything that NM chooses by default)
+    BRIDGE_METRIC="48"
+    BRIDGE1_METRIC="49"
     # Given an interface, generates NM configuration to add to an OVS bridge
     convert_to_bridge() {
-      iface=${1}
-      bridge_name=${2}
-      port_name=${3}
-      ovs_port="ovs-port-${bridge_name}"
-      ovs_interface="ovs-if-${bridge_name}"
-      default_port_name="ovs-port-${port_name}" # ovs-port-phys0
-      bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
+      local iface=${1}
+      local bridge_name=${2}
+      local port_name=${3}
+      local bridge_metric=${4}
+      local ovs_port="ovs-port-${bridge_name}"
+      local ovs_interface="ovs-if-${bridge_name}"
+      local default_port_name="ovs-port-${port_name}" # ovs-port-phys0
+      local bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
 
       if [ "$iface" = "$bridge_name" ]; then
         # handle vlans and bonds etc if they have already been
@@ -324,7 +326,7 @@ contents:
 
           nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
-            ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC" ${extra_if_brex_args}
+            ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}" ${extra_if_brex_args}
         fi
       fi
 
@@ -667,12 +669,12 @@ contents:
         fi
       fi
 
-      convert_to_bridge "$iface" "br-ex" "phys0"
+      convert_to_bridge "$iface" "br-ex" "phys0" "${BRIDGE_METRIC}"
 
       # Check if we need to configure the second bridge
       if [ -f "$extra_bridge_file" ] && (! nmcli connection show br-ex1 &> /dev/null || ! nmcli connection show ovs-if-phys1 &> /dev/null); then
         interface=$(head -n 1 $extra_bridge_file)
-        convert_to_bridge "$interface" "br-ex1" "phys1"
+        convert_to_bridge "$interface" "br-ex1" "phys1" "${BRIDGE1_METRIC}"
       fi
 
       # Check if we need to remove the second bridge
