@@ -26,18 +26,12 @@ contents:
       ephemeral-storage: 1Gi
     featureGates:
       APIPriorityAndFairness: true
-      LegacyNodeRoleBehavior: false
-      NodeDisruptionExclusion: true
       RotateKubeletServerCertificate: true
-      ServiceNodeExclusion: true
-      SupportPodPidsLimit: true
       DownwardAPIHugePages: true
       PodSecurity: true
       CSIMigrationAWS: false
-      CSIMigrationAzureDisk: false
       CSIMigrationAzureFile: false
       CSIMigrationGCE: false
-      CSIMigrationOpenStack: false
       CSIMigrationvSphere: false
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
