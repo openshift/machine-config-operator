@@ -2,10 +2,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"io/ioutil"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
+	imagev1 "github.com/openshift/api/image/v1"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -41,6 +45,7 @@ var (
 		proxyConfigFile           string
 		additionalTrustBundleFile string
 		dnsConfigFile             string
+		imageReferences           string
 	}
 )
 
@@ -72,8 +77,30 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.oauthProxyImage, "oauth-proxy-image", "", "Image for origin oauth proxy.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.imageReferences, "image-references", "", "File containing imagestreams (from cluster-version-operator)")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.cloudProviderCAFile, "cloud-provider-ca-file", "", "path to cloud provider CA certificate")
 
+}
+
+// findImage returns the image with a particular tag in an imagestream.
+func findImage(stream *imagev1.ImageStream, name string) (string, error) {
+	for _, tag := range stream.Spec.Tags {
+		if tag.Name == name {
+			// we found the short name in ImageStream
+			if tag.From != nil && tag.From.Kind == "DockerImage" {
+				return tag.From.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("could not find %s in images", name)
+}
+
+func findImageOrDie(stream *imagev1.ImageStream, name string) string {
+	img, err := findImage(stream, name)
+	if err != nil {
+		glog.Fatalf("Failed to find %s in image references", name)
+	}
+	return img
 }
 
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
@@ -82,6 +109,25 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+
+	if bootstrapOpts.imageReferences != "" {
+		imageRefData, err := ioutil.ReadFile(bootstrapOpts.imageReferences)
+		if err != nil {
+			glog.Fatalf("failed to read %s: %v", bootstrapOpts.imageReferences, err)
+		}
+
+		imgstream := resourceread.ReadImageStreamV1OrDie(imageRefData)
+
+		bootstrapOpts.mcoImage = findImageOrDie(imgstream, "machine-config-operator")
+		bootstrapOpts.oscontentImage = findImageOrDie(imgstream, "machine-os-content")
+		bootstrapOpts.keepalivedImage = findImageOrDie(imgstream, "keepalived-ipfailover")
+		bootstrapOpts.corednsImage = findImageOrDie(imgstream, "coredns")
+		bootstrapOpts.baremetalRuntimeCfgImage = findImageOrDie(imgstream, "baremetal-runtimecfg")
+		// TODO: Hmm, this one doesn't actually seem to be passed right now at bootstrap time by the installer
+		bootstrapOpts.oauthProxyImage = findImageOrDie(imgstream, "oauth-proxy")
+		bootstrapOpts.infraImage = findImageOrDie(imgstream, "pod")
+		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
+	}
 
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{
