@@ -91,10 +91,6 @@ func TestUpdateOS(t *testing.T) {
 	// expectedError is the error we will use when expecting an error to return
 	expectedError := fmt.Errorf("broken")
 
-	d := newMockDaemon()
-
-	// Set up machineconfigs to pass to updateOS.
-	mcfg := &mcfgv1.MachineConfig{}
 	// differentMcfg has a different OSImageURL so it will force Daemon.UpdateOS
 	// to trigger an update of the operatingsystem (as fronted by our testClient)
 	differentMcfg := &mcfgv1.MachineConfig{
@@ -103,12 +99,8 @@ func TestUpdateOS(t *testing.T) {
 		},
 	}
 
-	// This should be a no-op
-	if err := d.updateOS(mcfg, ""); err != nil {
-		t.Errorf("Expected no error. Got %s.", err)
-	}
-	// Second call should return an error
-	if err := d.updateOS(differentMcfg, ""); err == expectedError {
+	// should return an error
+	if err := updateOS(differentMcfg, ""); err == expectedError {
 		t.Error("Expected an error. Got none.")
 	}
 }
@@ -171,9 +163,10 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Raid changes react as expected
 	oldIgnCfg.Storage.Raid = []ign3types.Raid{
-		ign3types.Raid{
+		{
 			Name:  "data",
 			Level: "stripe",
+			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
 		},
 	}
 	oldConfig = helpers.CreateMachineConfigFromIgnition(oldIgnCfg)

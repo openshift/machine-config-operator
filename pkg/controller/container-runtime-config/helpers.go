@@ -541,10 +541,16 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 
 	for _, icsp := range icspRules {
 		for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
+			if mirrorSet.Source == "" {
+				return fmt.Errorf("invalid empty entry for source configuration")
+			}
 			if strings.Contains(mirrorSet.Source, "*") {
 				return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirrorSet.Source)
 			}
 			for _, mirror := range mirrorSet.Mirrors {
+				if mirror == "" {
+					return fmt.Errorf("invalid empty entry for mirror configuration")
+				}
 				if strings.Contains(mirror, "*") {
 					return fmt.Errorf("wildcard entries are not supported with mirror configuration %q", mirror)
 				}
