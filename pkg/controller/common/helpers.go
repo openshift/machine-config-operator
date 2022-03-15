@@ -1,8 +1,11 @@
 package common
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -370,6 +373,42 @@ func validateIgn3FileModes(cfg ign3types.Config) error {
 	return nil
 }
 
+// DecodeIgnitionFileContents returns uncompressed, decoded inline file contents.
+// This function does not handle remote resources; it assumes they have already
+// been fetched.
+func DecodeIgnitionFileContents(source, compression *string) ([]byte, error) {
+	var contentsBytes []byte
+
+	// To allow writing of "empty" files we'll allow source to be nil
+	if source != nil {
+		source, err := dataurl.DecodeString(*source)
+		if err != nil {
+			return []byte{}, fmt.Errorf("could not decode file content string: %w", err)
+		}
+		if compression != nil {
+			switch *compression {
+			case "":
+				contentsBytes = source.Data
+			case "gzip":
+				reader, err := gzip.NewReader(bytes.NewReader(source.Data))
+				if err != nil {
+					return []byte{}, fmt.Errorf("could not create gzip reader: %w", err)
+				}
+				defer reader.Close()
+				contentsBytes, err = io.ReadAll(reader)
+				if err != nil {
+					return []byte{}, fmt.Errorf("failed decompressing: %w", err)
+				}
+			default:
+				return []byte{}, fmt.Errorf("unsupported compression type %q", *compression)
+			}
+		} else {
+			contentsBytes = source.Data
+		}
+	}
+	return contentsBytes, nil
+}
+
 // InSlice search for an element in slice and return true if found, otherwise return false
 func InSlice(elem string, slice []string) bool {
 	for _, k := range slice {
@@ -560,10 +599,10 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 	overwrite := true
 	outConfig := ign3types.Config{}
 	// Convert data to Ignition resources
-	for _, d := range files {
+	for _, contents := range files {
 		f := new(fcctbase.File)
-		if err := yaml.Unmarshal([]byte(d), f); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal file into struct: %v", err)
+		if err := yaml.Unmarshal([]byte(contents), f); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %q into struct: %v", contents, err)
 		}
 		f.Overwrite = &overwrite
 
@@ -578,9 +617,9 @@ func TranspileCoreOSConfigToIgn(files, units []string) (*ign3types.Config, error
 		outConfig = ign3.Merge(outConfig, ign3_2config)
 	}
 
-	for _, d := range units {
+	for _, contents := range units {
 		u := new(fcctbase.Unit)
-		if err := yaml.Unmarshal([]byte(d), u); err != nil {
+		if err := yaml.Unmarshal([]byte(contents), u); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal systemd unit into struct: %v", err)
 		}
 

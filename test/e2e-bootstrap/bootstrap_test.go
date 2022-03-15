@@ -397,7 +397,7 @@ func createObjects(t *testing.T, clientSet *framework.ClientSet, objs ...runtime
 			_, err := clientSet.ImageContentSourcePolicies().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.Image:
-			_, err := clientSet.Images().Create(ctx, tObj, metav1.CreateOptions{})
+			_, err := clientSet.ConfigV1Interface.Images().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *configv1.FeatureGate:
 			_, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
@@ -523,7 +523,7 @@ func checkCleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 	// #############################
 	// BEGIN: config.openshift.io/v1
 	// #############################
-	imagesList, err := clientSet.Images().List(ctx, metav1.ListOptions{})
+	imagesList, err := clientSet.ConfigV1Interface.Images().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 	require.Len(t, imagesList.Items, 0)
 
@@ -598,7 +598,7 @@ func cleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 	// #############################
 	// BEGIN: config.openshift.io/v1
 	// #############################
-	err = clientSet.Images().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	err = clientSet.ConfigV1Interface.Images().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 	require.NoError(t, err)
 
 	err = clientSet.ClusterVersions().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})

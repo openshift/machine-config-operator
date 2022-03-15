@@ -12,10 +12,7 @@ data:
     {
       "releaseVersion": "0.0.1-snapshot",
       "machineConfigOperator": "registry.svc.ci.openshift.org/openshift:machine-config-operator",
-      "etcd": "registry.svc.ci.openshift.org/openshift:etcd",
       "infraImage": "registry.svc.ci.openshift.org/openshift:pod",
-      "kubeClientAgentImage": "registry.svc.ci.openshift.org/openshift:kube-client-agent",
-      "clusterEtcdOperatorImage": "registry.svc.ci.openshift.org/openshift:cluster-etcd-operator",
       "keepalivedImage": "registry.svc.ci.openshift.org/openshift:keepalived-ipfailover",
       "corednsImage": "registry.svc.ci.openshift.org/openshift:coredns",
       "haproxyImage": "registry.svc.ci.openshift.org/openshift:haproxy-router",

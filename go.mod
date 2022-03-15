@@ -15,17 +15,17 @@ require (
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
 	github.com/coreos/ignition v0.35.0
-	github.com/coreos/ignition/v2 v2.7.0
+	github.com/coreos/ignition/v2 v2.13.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/ghodss/yaml v1.0.0
 	github.com/golang/glog v1.0.0
 	github.com/golangci/golangci-lint v1.42.1
-	github.com/google/go-cmp v0.5.6
+	github.com/google/go-cmp v0.5.7
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.12
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20220110171111-997c316db5e1
+	github.com/openshift/api v0.0.0-20220310165943-abf6417c2748
 	github.com/openshift/client-go v0.0.0-20211209144617-7385dd6338e3
 	github.com/openshift/library-go v0.0.0-20211220195323-eca2c467c492
 	github.com/openshift/runtime-utils v0.0.0-20220225175100-8dec0d84fb39
@@ -34,18 +34,18 @@ require (
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.0
-	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
+	github.com/vincent-petithory/dataurl v1.0.0
 	golang.org/x/net v0.0.0-20210825183410-e898025ed96a
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
-	k8s.io/api v0.23.0
+	k8s.io/api v0.23.4
 	k8s.io/apiextensions-apiserver v0.23.1
-	k8s.io/apimachinery v0.23.0
+	k8s.io/apimachinery v0.23.4
 	k8s.io/client-go v0.23.1
 	k8s.io/code-generator v0.23.0
 	k8s.io/component-base v0.23.0
 	k8s.io/kubectl v0.23.0
 	k8s.io/kubelet v0.23.0
-	k8s.io/utils v0.0.0-20210930125809-cb0fa318a74b
+	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9
 	sigs.k8s.io/controller-runtime v0.11.0
 )
 
@@ -79,9 +79,10 @@ require (
 	github.com/containerd/cgroups v1.0.1 // indirect
 	github.com/containers/libtrust v0.0.0-20190913040956-14b96171aa3b // indirect
 	github.com/containers/ocicrypt v1.1.2 // indirect
+	github.com/coreos/go-json v0.0.0-20211020211907-c63f628265de // indirect
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
-	github.com/coreos/vcontext v0.0.0-20191017033345-260217907eb5 // indirect
+	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/daixiang0/gci v0.2.9 // indirect
 	github.com/denis-tingajkin/go-header v0.4.2 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
@@ -101,7 +102,7 @@ require (
 	github.com/fzipp/gocyclo v0.3.1 // indirect
 	github.com/go-critic/go-critic v0.5.6 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
-	github.com/go-logr/logr v1.2.0 // indirect
+	github.com/go-logr/logr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.19.5 // indirect
 	github.com/go-openapi/swag v0.19.14 // indirect
@@ -260,7 +261,7 @@ require (
 	k8s.io/apiserver v0.23.0 // indirect
 	k8s.io/cli-runtime v0.23.0 // indirect
 	k8s.io/gengo v0.0.0-20210813121822-485abfe95c7c // indirect
-	k8s.io/klog/v2 v2.30.0 // indirect
+	k8s.io/klog/v2 v2.40.1 // indirect
 	k8s.io/kube-aggregator v0.23.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
 	mvdan.cc/gofumpt v0.1.1 // indirect
@@ -271,7 +272,7 @@ require (
 	sigs.k8s.io/kube-storage-version-migrator v0.0.4 // indirect
 	sigs.k8s.io/kustomize/api v0.10.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.13.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.2.0 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 

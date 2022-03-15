@@ -198,7 +198,7 @@ func RenderBootstrap(
 
 		path := filepath.Join(destinationDir, m.filename)
 		dirname := filepath.Dir(path)
-		if err := os.MkdirAll(dirname, 0655); err != nil {
+		if err := os.MkdirAll(dirname, 0755); err != nil {
 			return err
 		}
 		// Disable gosec here to avoid throwing
