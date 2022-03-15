@@ -176,6 +176,20 @@ func isDrainRequired(actions, diffFileSet []string, readOldFile, readNewFile Rea
 	return true, nil
 }
 
+func (dn *Daemon) drainIfRequired(actions, diffFileSet []string, readOldFile, readNewFile ReadFileFunc) error {
+	drain, err := isDrainRequired(actions, diffFileSet, readOldFile, readNewFile)
+	if err != nil {
+		return err
+	}
+
+	if drain {
+		return dn.performDrain()
+	}
+
+	glog.Info("Changes do not require drain, skipping.")
+	return nil
+}
+
 // isSafeContainerRegistryConfChanges looks inside old and new versions of registries.conf file.
 // It compares the content and determines whether changes made are safe or not. This will
 // help MCD to decide whether we can skip node drain for applied changes into container

@@ -559,16 +559,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, diffFileSet, getIgnitionFileDataReadFunc(&oldIgnConfig), getIgnitionFileDataReadFunc(&newIgnConfig))
-	if err != nil {
+	if err := dn.drainIfRequired(actions, diffFileSet, getIgnitionFileDataReadFunc(&oldIgnConfig), getIgnitionFileDataReadFunc(&newIgnConfig)); err != nil {
 		return err
-	}
-	if drain {
-		if err := dn.performDrain(); err != nil {
-			return err
-		}
-	} else {
-		glog.Info("Changes do not require drain, skipping.")
 	}
 
 	// update files on disk that need updating
