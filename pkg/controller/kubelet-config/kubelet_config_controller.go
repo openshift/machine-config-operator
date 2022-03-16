@@ -13,7 +13,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	"github.com/imdario/mergo"
-	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	macherrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -340,11 +339,11 @@ func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, 
 	if originalKubeletIgn.Contents.Source == nil {
 		return nil, fmt.Errorf("the original Kubelet source string is empty: %v", err)
 	}
-	dataURL, err := dataurl.DecodeString(*originalKubeletIgn.Contents.Source)
+	contents, err := ctrlcommon.DecodeIgnitionFileContents(originalKubeletIgn.Contents.Source, originalKubeletIgn.Contents.Compression)
 	if err != nil {
 		return nil, fmt.Errorf("could not decode the original Kubelet source string: %v", err)
 	}
-	originalKubeConfig, err := decodeKubeletConfig(dataURL.Data)
+	originalKubeConfig, err := decodeKubeletConfig(contents)
 	if err != nil {
 		return nil, fmt.Errorf("could not deserialize the Kubelet source: %v", err)
 	}

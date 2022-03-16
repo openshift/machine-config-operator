@@ -12,7 +12,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vincent-petithory/dataurl"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -391,9 +390,9 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 		regfile = ignCfg.Storage.Files[1]
 	}
 	assert.Equal(t, registriesConfigPath, regfile.Node.Path)
-	registriesConf, err := dataurl.DecodeString(*regfile.Contents.Source)
+	registriesConf, err := ctrlcommon.DecodeIgnitionFileContents(regfile.Contents.Source, regfile.Contents.Compression)
 	require.NoError(t, err)
-	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf.Data))
+	assert.Equal(t, string(expectedRegistriesConf), string(registriesConf))
 
 	// Validate the policy.json contents if a change is expected from the tests
 	if verifyPolicyJSON {
@@ -406,9 +405,9 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			policyfile = ignCfg.Storage.Files[0]
 		}
 		assert.Equal(t, policyConfigPath, policyfile.Node.Path)
-		policyJSON, err := dataurl.DecodeString(*policyfile.Contents.Source)
+		policyJSON, err := ctrlcommon.DecodeIgnitionFileContents(policyfile.Contents.Source, policyfile.Contents.Compression)
 		require.NoError(t, err)
-		assert.Equal(t, string(expectedPolicyJSON), string(policyJSON.Data))
+		assert.Equal(t, string(expectedPolicyJSON), string(policyJSON))
 	}
 
 	// Validate the drop-in search registries file contents if a change is expected from the tests
@@ -419,9 +418,9 @@ func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.Machin
 			dropinfile = ignCfg.Storage.Files[1]
 		}
 		assert.Equal(t, searchRegDropInFilePath, dropinfile.Node.Path)
-		searchRegsConf, err := dataurl.DecodeString(*dropinfile.Contents.Source)
+		searchRegsConf, err := ctrlcommon.DecodeIgnitionFileContents(dropinfile.Contents.Source, dropinfile.Contents.Compression)
 		require.NoError(t, err)
-		assert.Equal(t, string(expectedSearchRegsConf[0].data), string(searchRegsConf.Data))
+		assert.Equal(t, string(expectedSearchRegsConf[0].data), string(searchRegsConf))
 	}
 }
 
