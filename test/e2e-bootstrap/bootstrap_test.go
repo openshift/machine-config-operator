@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -42,11 +41,7 @@ const (
 	bootstrapTestName        = "BootstrapTest"
 	templatesDir             = "../../templates"
 	bootstrapTestDataDir     = "../../pkg/controller/bootstrap/testdata/bootstrap"
-	imagesFile               = "../../install/image-references"
 	openshiftConfigNamespace = "openshift-config"
-	componentNamespace       = "openshift-machine-config-operator"
-	pollInterval             = 200 * time.Millisecond
-	pollTimeout              = 30 * time.Second
 )
 
 var (
