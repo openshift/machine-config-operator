@@ -609,8 +609,10 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 		desc      string
 		wantErr   bool
 		errString string
-		client    *http.Client
-		ciphers   []uint16
+		// Errors may also match this
+		errStrings []string
+		client     *http.Client
+		ciphers    []uint16
 	}
 
 	tests := []testCase{
@@ -651,9 +653,10 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 			},
 		},
 		{
-			desc:      "TLS1.1 should fail",
-			wantErr:   true,
-			errString: "protocol version not supported",
+			desc:    "TLS1.1 should fail",
+			wantErr: true,
+			errStrings: []string{"protocol version not supported", // go < 1.18
+				"no supported versions satisfy MinVersion and MaxVersion"}, // go >= 1.18
 			client: &http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
@@ -706,7 +709,20 @@ EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 				}
 			}
 			if c.wantErr {
-				if !strings.Contains(fmt.Sprintf("%v", err), c.errString) {
+				errstr := fmt.Sprintf("%v", err)
+				if c.errStrings != nil {
+					matches := false
+					for _, expected := range c.errStrings {
+						if strings.Contains(errstr, expected) {
+							matches = true
+							break
+						}
+					}
+					if !matches {
+						expected := strings.Join(c.errStrings, " or ")
+						t.Fatalf("want: %s\n got: %v", expected, err)
+					}
+				} else if !strings.Contains(errstr, c.errString) {
 					t.Fatalf("want: %s\n got: %v", c.errString, err)
 				}
 			}
