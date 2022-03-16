@@ -1,4 +1,3 @@
-filesystem: "root"
 mode: 0744
 path: "/etc/NetworkManager/dispatcher.d/99-vsphere-disable-tx-udp-tnl"
 contents:

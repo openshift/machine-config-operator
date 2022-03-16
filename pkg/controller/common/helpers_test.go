@@ -17,7 +17,15 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
-func TestTranspileCoreOSConfig(t *testing.T) {
+func TestConvertButaneFragmentsToIgnition(t *testing.T) {
+	// Test the null case
+	config, err := ConvertButaneFragmentsToIgnition([]string{}, []string{})
+	require.NoError(t, err)
+	if report := validate3.ValidateWithContext(config, nil); report.IsFatal() {
+		t.Fatalf("invalid ignition V3 config found: %v", report)
+	}
+	require.Equal(t, len(config.Storage.Files), 0)
+
 	kubeletConfig := `
 mode: 0644
 path: "/etc/kubernetes/kubelet.conf"
@@ -57,14 +65,41 @@ dropins:
     [Unit]
     ConditionPathExists=/enoent
 `
-	config, err := TranspileCoreOSConfigToIgn([]string{kubeletConfig, auditConfig}, []string{kubeletService, crioDropin, dockerDropin})
+	config, err = ConvertButaneFragmentsToIgnition([]string{kubeletConfig, auditConfig}, []string{kubeletService, crioDropin, dockerDropin})
 	require.Nil(t, err)
 	if report := validate3.ValidateWithContext(config, nil); report.IsFatal() {
 		t.Fatalf("invalid ignition V3 config found: %v", report)
 	}
 	require.Equal(t, len(config.Storage.Files), 2)
-	require.True(t, strings.HasPrefix(*config.Storage.Files[0].Contents.Source, "data:,kind%3A%20KubeletConfiguration%0Aapi"))
+	kubeconfig := config.Storage.Files[1].Contents
+	require.True(t, strings.HasPrefix(*kubeconfig.Source, "data:,kind%3A%20KubeletConfiguration%0Aapi"))
+	buf, err := DecodeIgnitionFileContents(kubeconfig.Source, kubeconfig.Compression)
+	require.NoError(t, err)
+	require.Contains(t, string(buf), "kind: KubeletConfiguration")
 	require.Equal(t, len(config.Systemd.Units), 3)
+}
+
+func TestDecodeIgnitionFileContents(t *testing.T) {
+	mode := 0644
+	compression := "gzip"
+	// echo hello world | gzip | base64
+	buf := "data:text/plain;base64,H4sIAEArMmIAA8tIzcnJVyjPL8pJ4QIALTsIrwwAAAA="
+	f := ign3types.File{
+		Node: ign3types.Node{
+			Path: "/etc/someconfig",
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Mode: &mode,
+			Contents: ign3types.Resource{
+				Source:      &buf,
+				Compression: &compression,
+			},
+		},
+	}
+
+	extractedbuf, err := DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
+	require.NoError(t, err)
+	require.Equal(t, "hello world\n", string(extractedbuf))
 }
 
 func TestValidateIgnition(t *testing.T) {
