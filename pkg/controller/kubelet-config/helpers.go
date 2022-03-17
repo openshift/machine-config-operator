@@ -263,9 +263,6 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	if len(kcDecoded.FeatureGates) > 0 {
 		return fmt.Errorf("KubeletConfiguration: featureGates is not allowed to be set, but contains: %v", kcDecoded.FeatureGates)
 	}
-	if kcDecoded.RuntimeRequestTimeout.Duration != 0 {
-		return fmt.Errorf("KubeletConfiguration: runtimeRequestTimeout is not allowed to be set, but contains: %s", kcDecoded.RuntimeRequestTimeout.Duration)
-	}
 	if kcDecoded.StaticPodPath != "" {
 		return fmt.Errorf("KubeletConfiguration: staticPodPath is not allowed to be set, but contains: %s", kcDecoded.StaticPodPath)
 	}
