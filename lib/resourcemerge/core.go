@@ -93,6 +93,12 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 	setStringIfSet(modified, &existing.Name, required.Name)
 	setStringIfSet(modified, &existing.Image, required.Image)
 
+	// This previously didn't properly sync the cpu and memory request fields, which caused a payload rejection
+	// https://github.com/openshift/machine-config-operator/pull/3027
+	// cpu and memory are unfortunately not explicit fields, they are functions that reference keys in a map
+	// (a map that it really looks like we're not supposed to modify directly), so we just overwrite the whole map
+	setResourceListIfSet(modified, &existing.Resources.Requests, required.Resources.Requests)
+
 	// if you want modify the launch, you need to modify it in the config, not in the launch args
 	setStringSliceIfSet(modified, &existing.Command, required.Command)
 	setStringSliceIfSet(modified, &existing.Args, required.Args)
@@ -297,6 +303,16 @@ func ensureCapabilities(modified *bool, existing *corev1.Capabilities, required 
 }
 
 func setStringSliceIfSet(modified *bool, existing *[]string, required []string) {
+	if required == nil {
+		return
+	}
+	if !equality.Semantic.DeepEqual(required, *existing) {
+		*existing = required
+		*modified = true
+	}
+}
+
+func setResourceListIfSet(modified *bool, existing *corev1.ResourceList, required corev1.ResourceList) {
 	if required == nil {
 		return
 	}
