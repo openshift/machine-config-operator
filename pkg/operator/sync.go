@@ -70,6 +70,7 @@ const (
 	mccEventsRoleBindingDefaultManifestPath = "manifests/machineconfigcontroller/events-rolebinding-default.yaml"
 	mccEventsRoleBindingTargetManifestPath  = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
 	mccClusterRoleBindingManifestPath       = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
+	mccRegistryRoleBindingManifestPath      = "manifests/machineconfigcontroller/registry-rolebinding.yaml"
 	mccServiceAccountManifestPath           = "manifests/machineconfigcontroller/sa.yaml"
 
 	// Machine Config Daemon manifest paths
@@ -80,6 +81,7 @@ const (
 	mcdClusterRoleBindingManifestPath       = "manifests/machineconfigdaemon/clusterrolebinding.yaml"
 	mcdServiceAccountManifestPath           = "manifests/machineconfigdaemon/sa.yaml"
 	mcdDaemonsetManifestPath                = "manifests/machineconfigdaemon/daemonset.yaml"
+	mcdRegistryRoleBindingManifestPath      = "manifests/machineconfigcontroller/registry-rolebinding.yaml"
 
 	// Machine Config Server manifest paths
 	mcsClusterRoleManifestPath                    = "manifests/machineconfigserver/clusterrole.yaml"
@@ -537,6 +539,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		roleBindings: []string{
 			mccEventsRoleBindingDefaultManifestPath,
 			mccEventsRoleBindingTargetManifestPath,
+			mccRegistryRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mccClusterRoleBindingManifestPath,
@@ -596,6 +599,7 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 		roleBindings: []string{
 			mcdEventsRoleBindingDefaultManifestPath,
 			mcdEventsRoleBindingTargetManifestPath,
+			mcdRegistryRoleBindingManifestPath,
 		},
 		clusterRoleBindings: []string{
 			mcdClusterRoleBindingManifestPath,
