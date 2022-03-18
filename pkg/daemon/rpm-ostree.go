@@ -3,8 +3,10 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -364,6 +366,10 @@ func (r *RpmOstreeClient) ApplyLive() (err error) {
 	}
 
 	return
+}
+
+func Cat(stateroot, commit, path string) ([]byte, error) {
+	return ioutil.ReadFile(filepath.Join(fmt.Sprintf("/ostree/deploy/%s/deploy/%s.0", stateroot, commit), path))
 }
 
 // truncate a string using runes/codepoints as limits.
