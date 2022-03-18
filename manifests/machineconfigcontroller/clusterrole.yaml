@@ -37,3 +37,9 @@ rules:
   - subjectaccessreviews
   verbs:
   - create
+- apiGroups: ["build.openshift.io"]
+  resources: ["buildconfigs","buildconfigs/instantiate"]
+  verbs: ["*"]
+- apiGroups: ["image.openshift.io"]
+  resources: ["imagestreams","images"]
+  verbs: ["*"]
