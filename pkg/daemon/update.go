@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -24,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -473,6 +475,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 
 // update the node to the provided node configuration.
 func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+
 	oldConfig = canonicalizeEmptyMC(oldConfig)
 
 	if dn.nodeWriter != nil {
@@ -1974,4 +1977,176 @@ func (dn *Daemon) reboot(rationale string) error {
 	// if everything went well, this should be unreachable.
 	MCDRebootErr.WithLabelValues(dn.node.Name, "reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
+}
+
+// experimentalUpdateLayeredConfig() pretends to do the normal config update for the pool but actually does
+// an image update instead. This function should be completely thrown away.
+// TODO(jkyros): right now this skips drain and reboot, it just live-applies it, but you *can* boot it and it will work
+func (dn *Daemon) experimentalUpdateLayeredConfig() error {
+
+	desiredImage := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
+	currentImage := dn.node.Annotations[constants.CurrentImageConfigAnnotationKey]
+	desiredConfig := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
+
+	// Layered doesn't exist right out of the gate right now, it takes some time to reconcile
+	// We should never get here now though, since node-controller is waiting for the image
+	if desiredImage == "" {
+		glog.Infof("Looks like we don't have a desired image yet. Nothing to do.")
+		return nil
+	}
+
+	// I don't set currentImage ever, so we always hit the else block right now
+	if currentImage == desiredImage {
+		// Orrrr....if we've live updated to it
+		glog.Infof("Node is on proper image %s", desiredImage)
+
+		glog.Infof("Completing pending config %s", currentImage)
+		if err := dn.completeUpdate(currentImage); err != nil {
+			MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
+
+		}
+
+		// TODO(jkyros): For now I'm just making the pool happy so it's like "yeah I'm done"
+		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
+			errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+			MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+			return nil
+		}
+
+	} else {
+		// We think we have work to do
+
+		client := &RpmOstreeClient{}
+		state, err := client.GetStatusStructured()
+		if err != nil {
+			return err
+		}
+
+		// Look through our deployments
+		// If we've rebased to it, but not booted, that's okay IF we've live-applied
+		for _, deployment := range state.Deployments {
+
+			// Our URL looks like: ostree-unverified-registry:registry.ci.openshift.org/rhcos-devel/rhel-coreos
+			containerURLTokens := strings.SplitN(deployment.ContainerImageReference, ":", 2)
+			// For now, token 0 is probably "ostree-unverified-registry", but who knows what we'll end up with later
+			if len(containerURLTokens) > 1 {
+
+				// What we're looking for is at least in the list
+				if containerURLTokens[1] == desiredImage {
+
+					// We rebased but we haven't booted, might be a liveapply
+					if deployment.Staged == true {
+
+						// TODO(jkyros): Check to see about liveapply rather than just marking this done
+						glog.Infof("Node is staged to %s, checking to see if we've liveapplied", desiredImage)
+						if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
+							errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+							MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+							return nil
+						}
+
+						return nil
+					}
+
+					// Everything is perfect, we're already there the good way
+					if deployment.Booted == true {
+						glog.Infof("Node is already in image %s", desiredImage)
+						// TODO(jkyros): Someday actually set the current image
+						return nil
+					}
+				}
+			}
+
+		}
+
+		pullSecret, err := dn.getPullSecret()
+		if err != nil {
+			return err
+		}
+
+		// TODO(jkyros): take this out once https://github.com/ostreedev/ostree/pull/2563 merges and is available
+		os.Mkdir("/run/ostree", 0544)
+
+		err = ioutil.WriteFile("/run/ostree/auth.json", pullSecret, 0400)
+		if err != nil {
+			return err
+		}
+
+		// I write this in the image build now, so config checker still works AND I don't get stuck on it
+		os.Remove(dn.currentConfigPath)
+
+		_, err = client.RebaseLayered(desiredImage)
+		if err != nil {
+			return err
+		}
+
+		// TODO(jkyros): This is a hack until we figure out file "owners"/layers/precedence
+		// When you add files to an image (like we with ignition-liveapply), they get stuffed into /usr/etc/, so they are
+		// essentially "default files"
+		// This defaults the files we added to /etc/ so we know the 3-way merge will update them with the container versions from machineconfig
+		_, err = runGetOut("rsync", "-avh", "/usr/etc/", "/etc/")
+		if err != nil {
+			return err
+		}
+
+		// For now we always live apply so our config is functional again after we "defaulted it" above
+		// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
+		// perform the '3 way merge' from scratch again after it sets its checkpoint
+		err = client.ApplyLive()
+		if err != nil {
+			return err
+		}
+
+		// I don't reboot the node here, I just mark it done, so anything that requires post-config actions will currently
+		// break, but you *can* reboot the node and it will come back properly.
+		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
+			errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+			MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+			return nil
+		}
+
+	}
+
+	return nil
+}
+
+// getPullSecret retrieves the pull secret for the machine-config-daemon service account. It should probably be a
+// a more generic helper function that is centrally located somewhere. The image pull secret names are generated, so we can't
+// request them directly without fuzzy string matching on the list of secrets, so we get their names off of the serviceaccount they
+// are associated with.
+func (dn *Daemon) getPullSecret() ([]byte, error) {
+	var targetNamespace = "openshift-machine-config-operator"
+
+	// Get the service accoutn
+	mcdServiceAccount, err := dn.kubeClient.CoreV1().ServiceAccounts(targetNamespace).Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve the mcc service account: %s", err)
+	}
+	// Get the secret off the service account
+	imagePullSecret, err := dn.kubeClient.CoreV1().Secrets(targetNamespace).Get(context.TODO(), mcdServiceAccount.ImagePullSecrets[0].Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve the image pull secret: %s", err)
+	}
+
+	// Get the data out of it
+	dockerConfigData := imagePullSecret.Data[corev1.DockerConfigKey]
+
+	// Unmarshal it into the proper struct
+	var dockerConfig credentialprovider.DockerConfig
+	err = json.Unmarshal(dockerConfigData, &dockerConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-pack it into an auth file (what comes out of the API doesn't have the "auths" object in the json)
+	dockerConfigJSON := credentialprovider.DockerConfigJSON{
+		Auths: dockerConfig,
+	}
+	authfileData, err := json.Marshal(dockerConfigJSON)
+	if err != nil {
+		return nil, fmt.Errorf("Error trying to marshal docker secrets: %s", authfileData)
+	}
+
+	return authfileData, nil
+
 }
