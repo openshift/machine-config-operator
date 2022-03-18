@@ -51,6 +51,7 @@ const (
 
 	// ExperimentalLayeringPoolImageStreamLabel is the label that enables tells the pool which imagestream to grab images out of
 	ExperimentalLayeringPoolImageStreamLabel = "machineconfiguration.openshift.io/selected-image-stream"
+
 	// ExperimentalNewestLayeredImageAnnotationKey is the annotation that signifies the newest image that has been pushed to a machine
 	// config pool's imagestream
 	ExperimentalNewestLayeredImageAnnotationKey = "machineconfiguration.openshift.io/newestImage"
@@ -66,6 +67,7 @@ const (
 	ImageStreamSuffixCoreOS = "-base"
 	// ImageStreamSuffixExternalBase is the suffix for a pool imagestream  where the base image comes from outside the cluster
 	ImageStreamSuffixExternalBase = "-external-base"
+
 	// ImageStreamSuffixRenderedConfig is the suffix for a pool imagestream where the mco also writes its rendered machineconfig
 	ImageStreamSuffixRenderedConfig = "-rendered-config"
 	// ImageStreamSuffixMCOContent  is the suffix for a pool imagestream where the mco has applied its rendered-config to the base image
@@ -74,6 +76,7 @@ const (
 	ImageStreamSuffixMCOContentCustom = "-mco-content-custom"
 	// ImageStreamSuffixMCOContentExternal is the suffix for a pool imagestream  where content comes from outside the cluster
 	ImageStreamSuffixMCOContentExternal = "-mco-content-external"
+
 	// ImageStreamSuffixMCOContentPerNode is the suffix for a pool imagestream containing any per-node images
 	ImageStreamSuffixMCOContentPerNode = "-mco-content-per-node"
 )
