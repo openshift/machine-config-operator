@@ -1181,3 +1181,10 @@ func GetPoolImageStream(pool *mcfgv1.MachineConfigPool) (string, error) {
 func SetPoolImageStream(pool *mcfgv1.MachineConfigPool, imageStreamName string) {
 	pool.Labels[ExperimentalLayeringPoolImageStreamLabel] = imageStreamName
 }
+
+func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
+	if _, ok := pool.Labels[ExperimentalLayeringPoolLabel]; ok {
+		return true
+	}
+	return false
+}
