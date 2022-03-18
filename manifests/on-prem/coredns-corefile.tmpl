@@ -16,21 +16,21 @@
         fallthrough
     }
     template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        match ^api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
         fallthrough
     }
     template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        match ^api.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
     template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
         fallthrough
     }
     template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .ControllerConfig.DNS.Spec.BaseDomain }} {
-        match api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
+        match ^api-int.{{ .ControllerConfig.DNS.Spec.BaseDomain }}
         fallthrough
     }
 }
