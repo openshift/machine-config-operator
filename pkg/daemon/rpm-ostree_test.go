@@ -1,5 +1,11 @@
 package daemon
 
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
 /*
  * This file contains test code for the rpm-ostree client. It is meant to be used when
  * testing the daemon and mocking the responses that would normally be executed by the
@@ -45,4 +51,20 @@ func (r RpmOstreeClientMock) GetStatus() (string, error) {
 
 func (r RpmOstreeClientMock) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	return &RpmOstreeDeployment{}, nil
+}
+
+func TestParseDiff(t *testing.T) {
+	// this deliberately has a trailing newline to check parsing an empty line
+	diff := `A    /usr/etc/transpiled.ign
+A    /usr/etc/rpm-ostree
+A    /usr/etc/rpm-ostree/origin.d
+A    /usr/etc/rpm-ostree/origin.d/extensions-48783c1.yaml
+`
+	expectedDiffFileSet := []string{
+		"/usr/etc/transpiled.ign",
+		"/usr/etc/rpm-ostree/origin.d/extensions-48783c1.yaml",
+	}
+
+	diffFileSet := ParseDiff([]byte(diff))
+	assert.ElementsMatch(t, expectedDiffFileSet, diffFileSet)
 }

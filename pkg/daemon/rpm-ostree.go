@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -366,6 +367,70 @@ func (r *RpmOstreeClient) ApplyLive() (err error) {
 	}
 
 	return
+}
+
+type FileTree struct {
+	children map[string]*FileTree
+}
+
+// ensures nodes exist for every element in a path
+func (node *FileTree) insert(path []string) {
+	child, ok := node.children[path[0]]
+	if !ok {
+		// if we're inserting the first child for this node we need to create the map
+		if node.children == nil {
+			node.children = make(map[string]*FileTree)
+		}
+		// there isn't a node for the first element in the path, so we need to create one
+		child = &FileTree{}
+		node.children[path[0]] = child
+	}
+	if len(path) > 1 {
+		child.insert(path[1:])
+	}
+}
+
+// walk the tree, generating a list of all paths to leaves
+func (node *FileTree) walk() (paths []string) {
+	for childPath, child := range node.children {
+		pathsToLeaves := child.walk()
+		if len(pathsToLeaves) == 0 {
+			// child is a leaf, so add it to paths
+			paths = append(paths, path.Join("/", childPath))
+		} else {
+			// else prepend childPath to all pathsToLeaves
+			for _, pathToLeaf := range pathsToLeaves {
+				paths = append(paths, path.Join("/", childPath, pathToLeaf))
+			}
+		}
+	}
+	return
+}
+
+func Diff(fromRev, toRev string) ([]string, error) {
+	stdout, err := runGetOut("ostree", "diff", fromRev, toRev)
+	if err != nil {
+		return []string{}, fmt.Errorf("failed to run ostree diff: %w", err)
+	}
+	return ParseDiff(stdout), nil
+}
+
+func ParseDiff(stdout []byte) []string {
+	paths := FileTree{}
+	lines := strings.Split(string(stdout), "\n")
+	for _, line := range lines {
+		words := strings.Fields(line)
+		// lines will be of the form
+		// {A,D,M} path
+		// all we care about is getting the path
+		// add len check since last line will be empty
+		if len(words) >= 1 {
+			splitPath := strings.Split(words[1], string(os.PathSeparator))
+			// pass splitPath[1:] since splitPath will have "" as its first element
+			paths.insert(splitPath[1:])
+		}
+	}
+	return paths.walk()
 }
 
 func Cat(stateroot, commit, path string) ([]byte, error) {
