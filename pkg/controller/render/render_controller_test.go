@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -31,6 +32,9 @@ import (
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
+
+	buildfake "github.com/openshift/client-go/build/clientset/versioned/fake"
+	imagefake "github.com/openshift/client-go/image/clientset/versioned/fake"
 )
 
 var (
@@ -41,7 +45,8 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client *fake.Clientset
+	client      *fake.Clientset
+	imageclient *imagefake.Clientset
 
 	mcpLister []*mcfgv1.MachineConfigPool
 	mcLister  []*mcfgv1.MachineConfig
@@ -61,11 +66,15 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	// TODO(jkyros): this is here until we decide where the imagestream informer gets to live (probably ultiamtely in the build controller).
+	// If this stays here, take note this simple clientset has no objects to act on, and make sure these tests actually test it
+	f.imageclient = imagefake.NewSimpleClientset()
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+	imageInformer := imageinformers.NewSharedInformerFactory(f.imageclient, noResyncPeriodFunc())
 
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
-		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), f.client)
+		i.Machineconfiguration().V1().ControllerConfigs(), imageInformer.Image().V1().ImageStreams(), k8sfake.NewSimpleClientset(), f.client, imagefake.NewSimpleClientset(), buildfake.NewSimpleClientset())
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
