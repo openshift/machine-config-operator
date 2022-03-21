@@ -1968,6 +1968,46 @@ func (dn *Daemon) reboot(rationale string) error {
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }
 
+func stripUnverifiedPrefix(containerImageReference string) (string, error) {
+	containerURLTokens := strings.SplitN(containerImageReference, ":", 2)
+	if len(containerURLTokens) < 2 || containerURLTokens[0] != "ostree-unverified-registry" {
+		return "", fmt.Errorf("failed to strip ostree-unverified-registry: from %q", containerImageReference)
+	}
+	return containerURLTokens[1], nil
+}
+
+func getOstreeFileDataReadFunc(stateroot, commit string) ReadFileFunc {
+	return func(path string) ([]byte, error) {
+		return Cat(stateroot, commit, path)
+	}
+}
+
+// onDesiredImage() checks whether desired image is either booted or live applied
+// it additionally returns whether a rebase is necessary (as opposed to just live applying)
+func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool) {
+	var bootedIsLegacy, stagedIsLegacy bool
+	strippedBootedContainerImageReference, err := stripUnverifiedPrefix(booted.ContainerImageReference)
+	if err != nil {
+		bootedIsLegacy = true
+	}
+	var strippedStagedContainerImageReference string
+	if staged.ID != "" {
+		strippedStagedContainerImageReference, err = stripUnverifiedPrefix(staged.ContainerImageReference)
+		if err != nil {
+			stagedIsLegacy = true
+		}
+	}
+
+	return !bootedIsLegacy && !stagedIsLegacy &&
+			(
+			// booted into desiredImage or
+			strippedBootedContainerImageReference == desiredImage && staged.ID == "" && booted.LiveReplaced == "" ||
+				// live applied desiredImage
+				strippedStagedContainerImageReference == desiredImage && booted.LiveReplaced == staged.Checksum),
+		// we could have previously rebased but not live applied (if eg drain failed and update layered was called again)
+		strippedStagedContainerImageReference != desiredImage
+}
+
 // experimentalUpdateLayeredConfig() pretends to do the normal config update for the pool but actually does
 // an image update instead. This function should be completely thrown away.
 // TODO(jkyros): right now this skips drain and reboot, it just live-applies it, but you *can* boot it and it will work
@@ -1975,115 +2015,137 @@ func (dn *Daemon) experimentalUpdateLayeredConfig() error {
 
 	desiredImage := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
 	currentImage := dn.node.Annotations[constants.CurrentImageConfigAnnotationKey]
-	desiredConfig := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
 
-	// Layered doesn't exist right out of the gate right now, it takes some time to reconcile
-	// We should never get here now though, since node-controller is waiting for the image
-	if desiredImage == "" {
-		glog.Infof("Looks like we don't have a desired image yet. Nothing to do.")
+	if currentImage == desiredImage {
+		glog.Infof("Node is on proper image %s; skipping update", currentImage)
 		return nil
 	}
 
-	// I don't set currentImage ever, so we always hit the else block right now
-	if currentImage == desiredImage {
-		// Orrrr....if we've live updated to it
-		glog.Infof("Node is on proper image %s", desiredImage)
+	// TODO drop NodeUpdaterClient or change its interface
+	client := &RpmOstreeClient{}
 
-		glog.Infof("Completing pending config %s", currentImage)
-		if err := dn.completeUpdate(currentImage); err != nil {
-			MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
+	state, err := client.GetStatusStructured()
+	if err != nil {
+		return err
+	}
 
+	var staged, booted Deployment
+	for _, deployment := range state.Deployments {
+		if deployment.Staged {
+			staged = deployment
 		}
-
-		// TODO(jkyros): For now I'm just making the pool happy so it's like "yeah I'm done"
-		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
-			errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-			MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
-			return nil
+		if deployment.Booted {
+			booted = deployment
 		}
+	}
 
-	} else {
-		// We think we have work to do
-
-		client := &RpmOstreeClient{}
-		state, err := client.GetStatusStructured()
-		if err != nil {
-			return err
-		}
-
-		// Look through our deployments
-		// If we've rebased to it, but not booted, that's okay IF we've live-applied
-		for _, deployment := range state.Deployments {
-
-			// Our URL looks like: ostree-unverified-registry:registry.ci.openshift.org/rhcos-devel/rhel-coreos
-			containerURLTokens := strings.SplitN(deployment.ContainerImageReference, ":", 2)
-			// For now, token 0 is probably "ostree-unverified-registry", but who knows what we'll end up with later
-			if len(containerURLTokens) > 1 {
-
-				// What we're looking for is at least in the list
-				if containerURLTokens[1] == desiredImage {
-
-					// We rebased but we haven't booted, might be a liveapply
-					if deployment.Staged == true {
-
-						// TODO(jkyros): Check to see about liveapply rather than just marking this done
-						glog.Infof("Node is staged to %s, checking to see if we've liveapplied", desiredImage)
-						if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
-							errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-							MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
-							return nil
-						}
-
-						return nil
-					}
-
-					// Everything is perfect, we're already there the good way
-					if deployment.Booted == true {
-						glog.Infof("Node is already in image %s", desiredImage)
-						// TODO(jkyros): Someday actually set the current image
-						return nil
-					}
-				}
-			}
-
+	if onDesired, needRebase := onDesiredImage(desiredImage, booted, staged); !onDesired {
+		if err := dn.setWorking(); err != nil {
+			return fmt.Errorf("failed to set working: %w", err)
 		}
 
 		// TODO move this to daemon init once we handle layered there
 		dn.WritePullSecret()
 
-		// I write this in the image build now, so config checker still works AND I don't get stuck on it
-		os.Remove(dn.currentConfigPath)
+		if needRebase {
+			if err := client.RebaseLayered(desiredImage); err != nil {
+				return err
+			}
+		}
 
-		_, err = client.RebaseLayered(desiredImage)
-		if err != nil {
+		// Ideally we would want to update kernelArguments only via MachineConfigs.
+		// We are keeping this to maintain compatibility and OKD requirement.
+		if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
 			return err
 		}
 
-		// TODO(jkyros): This is a hack until we figure out file "owners"/layers/precedence
-		// When you add files to an image (like we with ignition-liveapply), they get stuffed into /usr/etc/, so they are
-		// essentially "default files"
-		// This defaults the files we added to /etc/ so we know the 3-way merge will update them with the container versions from machineconfig
-		_, err = runGetOut("rsync", "-avh", "/usr/etc/", "/etc/")
+		state, err := client.GetStatusStructured()
 		if err != nil {
 			return err
 		}
-
-		// For now we always live apply so our config is functional again after we "defaulted it" above
-		// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
-		// perform the '3 way merge' from scratch again after it sets its checkpoint
-		err = client.ApplyLive()
-		if err != nil {
-			return err
+		for _, deployment := range state.Deployments {
+			if deployment.Staged {
+				staged = deployment
+			}
+		}
+		var activeChecksum string
+		if booted.LiveReplaced != "" {
+			activeChecksum = booted.LiveReplaced
+		} else {
+			activeChecksum = booted.Checksum
 		}
 
-		// I don't reboot the node here, I just mark it done, so anything that requires post-config actions will currently
-		// break, but you *can* reboot the node and it will come back properly.
-		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
-			errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-			MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
-			return nil
-		}
+		// I'm not sure if it's possible to get to such a state, but if staged was different than booted or LiveReplaced before this method was called,
+		// then it's possible activeChecksum == staged.Checksum
+		// but most likely activeChecksum != staged.Checksum, so we need to apply live or reboot
+		if activeChecksum != staged.Checksum {
+			diffFileSet, err := Diff(activeChecksum, staged.Checksum)
+			if err != nil {
+				return fmt.Errorf("failed to diff container images: %w", err)
+			}
+			for i, path := range diffFileSet {
+				if strings.HasPrefix(path, "/usr/etc") {
+					diffFileSet[i] = strings.TrimPrefix(path, "/usr")
+				}
+			}
+			actions, err := dn.calculatePostConfigChangeActionFromFiles(diffFileSet)
+			if err != nil {
+				return err
+			}
 
+			// I write this in the image build now, so config checker still works AND I don't get stuck on it
+			os.Remove(dn.currentConfigPath)
+
+			// TODO(jkyros): This is a hack until we figure out file "owners"/layers/precedence
+			// When you add files to an image (like we with ignition-liveapply), they get stuffed into /usr/etc/, so they are
+			// essentially "default files"
+			// This defaults the files we added to /etc/ so we know the 3-way merge will update them with the container versions from machineconfig
+			_, err = runGetOut("rsync", "-avh", "/usr/etc/", "/etc/")
+			if err != nil {
+				return err
+			}
+
+			// Check and perform node drain if required
+			if err := dn.drainIfRequired(actions, diffFileSet, getOstreeFileDataReadFunc(booted.Osname, activeChecksum), getOstreeFileDataReadFunc(staged.Osname, staged.Checksum)); err != nil {
+				return err
+			}
+			// For now we always live apply so our config is functional again after we "defaulted it" above
+			// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
+			// perform the '3 way merge' from scratch again after it sets its checkpoint
+
+			if !ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
+				client.ApplyLive()
+			}
+			// might reboot
+			if err := dn.performPostConfigChangeAction(actions, desiredImage); err != nil {
+				return err
+			}
+		}
+	}
+
+	// we've either live applied or rebooted after an update
+	// mark everything done
+	glog.Infof("Node is on proper image %s", desiredImage)
+
+	if err := dn.completeUpdate(desiredImage); err != nil {
+		MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
+	}
+
+	if err := dn.nodeWriter.SetLayeredDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredImage); err != nil {
+		errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+		MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+		return nil
+	}
+
+	desiredConfig := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
+	if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
+		errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
+		MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+		return nil
+	}
+
+	if dn.recorder != nil {
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, desiredImage))
 	}
 
 	return nil
