@@ -2115,7 +2115,7 @@ func (dn *Daemon) experimentalUpdateLayeredConfig() error {
 // request them directly without fuzzy string matching on the list of secrets, so we get their names off of the serviceaccount they
 // are associated with.
 func (dn *Daemon) getPullSecret() ([]byte, error) {
-	var targetNamespace = "openshift-machine-config-operator"
+	var targetNamespace = ctrlcommon.MCONamespace
 
 	// Get the service accoutn
 	mcdServiceAccount, err := dn.kubeClient.CoreV1().ServiceAccounts(targetNamespace).Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
