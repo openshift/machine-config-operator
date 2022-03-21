@@ -64,6 +64,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ImageInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -134,8 +135,11 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.ImageInformerFactory.Image().V1().ImageStreams(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
+			ctx.ClientBuilder.ImageClientOrDie("render-controller"),
+			ctx.ClientBuilder.BuildClientOrDie("render-controller"),
 		),
 		// The node controller consumes data written by the above
 		node.New(

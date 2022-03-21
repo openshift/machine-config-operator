@@ -788,3 +788,10 @@ func GetIgnitionFileDataByPath(config *ign3types.Config, path string) ([]byte, e
 	}
 	return nil, nil
 }
+
+func IsLayeredPool(pool *mcfgv1.MachineConfigPool) bool {
+	if _, ok := pool.Labels[ExperimentalLayeringPoolLabel]; ok {
+		return true
+	}
+	return false
+}

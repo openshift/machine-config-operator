@@ -1491,6 +1491,11 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
 
+	// Hack in our layered node workflow for pools labeled as "layered"
+	if _, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]; ok {
+		return dn.experimentalUpdateLayeredConfig()
+	}
+
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
 }
@@ -1519,6 +1524,13 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	// Nothing to do if we're not on RHCOS or FCOS
 	if !dn.os.IsCoreOSVariant() {
 		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
+		return true
+	}
+
+	// If it has a desired image, it's taking the "layering" path and OSImageURl won't match, but that's okay
+	// because the desired image annotation is it's OSImageURL
+	if _, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]; ok {
+		glog.Infof("This is a layered host, ignoring OSImageURL %s", osImageURL)
 		return true
 	}
 

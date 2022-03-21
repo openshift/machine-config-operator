@@ -8,10 +8,17 @@ const (
 	//
 	// XXX
 
-	// CurrentMachineConfigAnnotationKey is used to fetch current MachineConfig for a machine
+	// CurrentMachineConfigAnnotationKey is used to describe the current MachineConfig for a machine
 	CurrentMachineConfigAnnotationKey = "machineconfiguration.openshift.io/currentConfig"
 	// DesiredMachineConfigAnnotationKey is used to specify the desired MachineConfig for a machine
 	DesiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
+
+	// CurrentImageConfigAnnotationKey is used to fetch the current container image for a machine
+	CurrentImageConfigAnnotationKey = "machineconfiguration.openshift.io/currentImage"
+
+	// DesiredImageConfigAnnotationKey is used to specify the desired container image for a machine
+	DesiredImageConfigAnnotationKey = "machineconfiguration.openshift.io/desiredImage"
+
 	// MachineConfigDaemonStateAnnotationKey is used to fetch the state of the daemon on the machine.
 	MachineConfigDaemonStateAnnotationKey = "machineconfiguration.openshift.io/state"
 	// ClusterControlPlaneTopologyAnnotationKey is set by the node controller by reading value from
