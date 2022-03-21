@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/util/retry"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -220,6 +222,74 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 
 	t.Logf("Node %s changed config to %s (waited %v)", node.Name, mcName, time.Since(startTime))
 	return nil
+}
+
+// WaitForPoolComplete polls a pool until it has completed any update
+func WaitForPoolCompleteAny(t *testing.T, cs *framework.ClientSet, pool string) error {
+	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		// wait until the cluter is back to normal (for the next test at least)
+		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("Machine config pool did not complete an update: %v", err)
+	}
+	return nil
+}
+
+// WaitForPausedConfig waits for configuration to be pending in a paused pool
+func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) error {
+	if err := wait.PollImmediate(2*time.Second, 2*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		// paused == not updated, not updating, not degraded
+		if mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdated) &&
+			mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) &&
+			mcfgv1.IsMachineConfigPoolConditionFalse(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("Machine config pool never entered the state where configuration was waiting behind pause: %v", err)
+	}
+	return nil
+}
+
+// GetMonitoringToken retrieves the token from the openshift-monitoring secrets in the prometheus-k8s namespace.
+// It is equivalent to "oc sa get-token prometheus-k8s -n openshift-monitoring"
+func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
+	sa, err := cs.ServiceAccounts("openshift-monitoring").Get(context.TODO(), "prometheus-k8s", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("Failed to retrieve service account: %v", err)
+	}
+	for _, secret := range sa.Secrets {
+		if strings.HasPrefix(secret.Name, "prometheus-k8s-token") {
+			sec, err := cs.Secrets("openshift-monitoring").Get(context.TODO(), secret.Name, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("Failed to retrieve monitoring secret: %v", err)
+			}
+			if token, ok := sec.Data["token"]; ok {
+				return string(token), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("No token found in openshift-monitoring secrets")
+}
+
+// ForceKubeApiserverCertificateRotation sets the kube-apiserver-to-kubelet-signer's not-after date to nil, which causes the
+// apiserver to rotate it
+func ForceKubeApiserverCertificateRotation(cs *framework.ClientSet) error {
+	// Take note that the slash had to be encoded as ~1 because it's a reference: https://www.rfc-editor.org/rfc/rfc6901#section-3
+	certPatch := fmt.Sprintf(`[{"op":"replace","path":"/metadata/annotations/auth.openshift.io~1certificate-not-after","value": null }]`)
+	_, err := cs.Secrets("openshift-kube-apiserver-operator").Patch(context.TODO(), "kube-apiserver-to-kubelet-signer", types.JSONPatchType, []byte(certPatch), metav1.PatchOptions{})
+	return err
 }
 
 // LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
