@@ -34,7 +34,7 @@ func assertKernelArgsEqual(t *testing.T, cs *framework.ClientSet, target corev1.
 }
 
 func getKernelArgs(t *testing.T, cs *framework.ClientSet, target corev1.Node) string {
-	return helpers.ExecCmdOnNode(t, cs, target, "chroot", "/rootfs", "/usr/bin/rpm-ostree", "kargs")
+	return helpers.ExecCmdOnNode(t, cs, target, "cat", "/proc/cmdline")
 }
 
 func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
