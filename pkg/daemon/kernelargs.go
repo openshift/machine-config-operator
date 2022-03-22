@@ -144,14 +144,14 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 }
 
 // UpdateTuningArgs executes additions and removals of kernel tuning arguments
-func UpdateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
+func UpdateTuningArgs(tuningFilePath, cmdLinePath string) error {
 	if cmdLinePath == "" {
 		cmdLinePath = CmdLineFile
 	}
 	changed := false
 	additions, deletions, err := parseTuningFile(tuningFilePath, cmdLinePath)
 	if err != nil {
-		return changed, err
+		return err
 	}
 
 	// Execute additions
@@ -160,7 +160,7 @@ func UpdateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 			changed = true
 			err := exec.Command("rpm-ostree", "kargs", fmt.Sprintf("--append=%s", toAdd.Key)).Run()
 			if err != nil {
-				return false, errors.Wrapf(err, "adding karg")
+				return fmt.Errorf("failed adding karg: %w", err)
 			}
 		} else {
 			panic("Not supported")
@@ -172,11 +172,15 @@ func UpdateTuningArgs(tuningFilePath, cmdLinePath string) (bool, error) {
 			changed = true
 			err := exec.Command("rpm-ostree", "kargs", fmt.Sprintf("--delete=%s", toDelete.Key)).Run()
 			if err != nil {
-				return false, errors.Wrapf(err, "deleting karg")
+				return fmt.Errorf("failed deleting karg: %w", err)
 			}
 		} else {
 			panic("Not supported")
 		}
 	}
-	return changed, nil
+
+	if changed {
+		glog.Info("Updated kernel tuning arguments")
+	}
+	return nil
 }
