@@ -827,23 +827,11 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 	FROM image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/coreos
 
 	# Pull in the files from our machineconfig stage 
-	COPY --from=machineconfig /machineconfig.json /etc/mco-content-machineconfig.json
-	COPY --from=machineconfig /ignition.json /etc/mco-content-ignition.json
-
-	# Try to make mcd config checker happy
-	COPY --from=machineconfig /machineconfig.json /etc/machine-config-daemon/currentconfig
+	COPY --from=machineconfig /machine-config-ignition.json /etc/machine-config-ignition.json
 
 	# Apply the config to the host 
 	ENV container=1
-	RUN ignition-liveapply /etc/mco-content-ignition.json
-
-	# I dropped some repos and some butane in my machineconfig to make this work 
-	# Render butane into ignition that ignition-liveapply can apply 
-	RUN butane --pretty --strict /etc/mco-butane.yaml -o /etc/mco-butane.json 
-
-	# Apply the butane-rendered ignition so it ends up in origin.d 
-	# machineconfig -> ignition -> ignition-liveapply -> butane file -> more ignition -> ignition-liveapply -> treefile -> rebuild
-	RUN ignition-liveapply /etc/mco-butane.json 
+	RUN ignition-liveapply /etc/machine-config-ignition.json
 
 	# Rebuild origin.d (I included an /etc/yum.repos.d/ file in my machineconfig so it could find the RPMS, that's why this works)
 	RUN rpm-ostree ex rebuild && rm -rf /var/cache /etc/rpm-ostree/origin.d
@@ -936,40 +924,28 @@ func (ctrl *Controller) experimentalRenderToImageStream(pool *mcfgv1.MachineConf
 
 	glog.V(2).Infof("Triggering image build for machineconfig %s", generated.Name)
 
-	// NOTE: below here essentially packs a tiny image containing our machine config content
-	// and stuffs it into the integrated repository using our servicetoken. I used "crane" because
-	// it was simple and straightforward, there's probably a podman/buildah/libcontainer equivalent
-	// that I should use instead.
-
-	// Get the ignition out of the MachineConfig
-	ignConf, err := ctrlcommon.ParseAndConvertConfig(generated.Spec.Config.Raw)
-	if err != nil {
-		glog.Errorf("parsing Ignition config failed with error: %v", err)
-	}
-
-	// Convert it to json
-	ignJSON, err := json.MarshalIndent(ignConf, "  ", "    ")
-	if err != nil {
-		glog.Warningf("Failed to marshal config for container: %s", err)
-	}
-
-	// Convert the MachineConfig to JSON also just in case we want it
-	machineConfigJSON, err := json.MarshalIndent(generated, "  ", "    ")
-	if err != nil {
-		glog.Warningf("Failed to marshal config for container: %s", err)
-	}
+	// NOTE: below here essentially packs a tiny image containing our machine config translated to
+	// ignition and stuffs it into the integrated repository using our servicetoken. I used "crane"
+	// because it was simple and straightforward, there's probably a podman/buildah/libcontainer
+	// equivalent that I should use instead.
 
 	// TODO(jkyros): we could potentially expose the component machineconfigs or metadata here too
+	convertedMachineConfig, err := MachineConfigToIgnition(&generated.Spec)
+	if err != nil {
+		return fmt.Errorf("could not convert rendered config to Ignition: %w", err)
+	}
+	convertedJSON, err := json.MarshalIndent(convertedMachineConfig, "  ", "    ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal converted machine config ignition to JSON: %w", err)
+	}
 
 	// This is the "file guts" for our "layer "
 	var fileMap = map[string][]byte{
-		"/machineconfig.json": machineConfigJSON,
-		"/ignition.json":      ignJSON,
+		"/machine-config-ignition.json": convertedJSON,
 	}
 
 	// This is essentially "FROM scratch"
-	// ADD /machineconfig.json
-	// ADD /ignition.json
+	// ADD /machine-config-ignition.json
 	newImg, err := crane.Image(fileMap)
 	if err != nil {
 		glog.Warningf("Failed to create image layer: %s", err)
