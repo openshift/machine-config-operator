@@ -465,6 +465,10 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
+		if dn.isLayeredNode() {
+			// experimentalUpdateLayeredConfig is idempotent
+			return dn.experimentalUpdateLayeredConfig()
+		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
 		}
@@ -1466,6 +1470,11 @@ func (dn *Daemon) removeUpdateInProgressTaint(ctx context.Context) error {
 	})
 }
 
+func (dn *Daemon) isLayeredNode() bool {
+	_, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
+	return ok
+}
+
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig) error {
@@ -1496,7 +1505,7 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	dn.stopConfigDriftMonitor()
 
 	// Hack in our layered node workflow for pools labeled as "layered"
-	if _, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]; ok {
+	if dn.isLayeredNode() {
 		return dn.experimentalUpdateLayeredConfig()
 	}
 
