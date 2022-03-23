@@ -63,3 +63,16 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-vsphere-infra
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-nutanix-infra
+  annotations:
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    openshift.io/node-selector: ""
+    workload.openshift.io/allowed: "management"
+  labels:
+    name: openshift-nutanix-infra
+

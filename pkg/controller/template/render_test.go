@@ -63,6 +63,10 @@ func TestCloudProvider(t *testing.T) {
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
 		res:         "openstack",
 	}, {
+		platform:    configv1.NutanixPlatformType,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
+		res:         "nutanix",
+	}, {
 		platform: configv1.AWSPlatformType,
 		res:      "aws",
 	}, {
@@ -89,6 +93,9 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform: configv1.AlibabaCloudPlatformType,
 		res:      "external",
+	}, {
+		platform: configv1.NutanixPlatformType,
+		res:      "nutanix",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
@@ -213,6 +220,22 @@ func TestCloudConfigFlag(t *testing.T) {
 `,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
 		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+	}, {
+		platform: configv1.NutanixPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil),
+		res:         "",
+	}, {
+		platform: configv1.NutanixPlatformType,
+		content: `
+[dummy-config]
+    option = a
+`,
+		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
+		res:         "",
 	}}
 
 	for idx, c := range cases {
@@ -300,6 +323,7 @@ var (
 		"vsphere":       "./test_data/controller_config_vsphere.yaml",
 		"kubevirt":      "./test_data/controller_config_kubevirt.yaml",
 		"powervs":       "./test_data/controller_config_powervs.yaml",
+		"nutanix":       "./test_data/controller_config_nutanix.yaml",
 	}
 )
 
