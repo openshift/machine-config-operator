@@ -58,3 +58,11 @@ aliases:
     - Prashanth684
     - clnperez
     - mkumatag
+  nutanix-approvers:
+    - thunderboltsid
+    - yanhua121
+    - adiantum
+  nutanix-reviewers:
+    - thunderboltsid
+    - yanhua121
+    - adiantum
