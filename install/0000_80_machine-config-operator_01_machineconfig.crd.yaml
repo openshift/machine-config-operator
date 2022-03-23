@@ -337,5 +337,5 @@ spec:
                 type: string
               osImageURL:
                 description: OSImageURL specifies the remote location that will be used
-                  to fetch the OS to fetch the OS.
+                  to fetch the OS
                 type: string
