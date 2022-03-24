@@ -1,0 +1,15 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: layered
+  name: file
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,SSB3YXMgY3JlYXRlZCBieSBhIE1hY2hpbmVDb25maWc=
+        path: /etc/test-file
