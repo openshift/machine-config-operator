@@ -1272,10 +1272,11 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			// Great, we've successfully rebooted for the desired config,
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
-			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
+			if err := dn.uncordonAndUntaintNode(); err != nil {
 				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return inDesiredConfig, err
 			}
+			glog.Info("Update complete")
 		}
 		// If we're degraded here, it means we got an error likely on startup and we retried.
 		// If that's the case, clear it out.
@@ -1401,10 +1402,8 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	return currentConfig, desiredConfig, nil
 }
 
-// completeUpdate marks the node as schedulable again, then deletes the
-// "transient state" file, which signifies that all of those prior steps have
-// been completed.
-func (dn *Daemon) completeUpdate(desiredConfigName string) error {
+// uncordonAndUntaintNode uncordons the node and removes the update in progress taint
+func (dn *Daemon) uncordonAndUntaintNode() error {
 	if err := dn.cordonOrUncordonNode(false); err != nil {
 		return err
 	}
@@ -1414,8 +1413,9 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return err
 	}
 
-	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
+	message := "Node has been successfully uncordoned and untainted"
+	dn.logSystem(message)
+	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", message)
 
 	return nil
 }
