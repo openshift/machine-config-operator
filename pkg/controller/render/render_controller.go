@@ -836,6 +836,16 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 	# Rebuild origin.d (I included an /etc/yum.repos.d/ file in my machineconfig so it could find the RPMS, that's why this works)
 	RUN rpm-ostree ex rebuild && rm -rf /var/cache /etc/rpm-ostree/origin.d
 
+	# clean up. We want to be particularly strict so that live apply works
+	RUN rm /etc/machine-config-ignition.json
+	# TODO remove these hacks once we have
+	# https://github.com/coreos/rpm-ostree/pull/3544
+	# and
+	# https://github.com/coreos/ignition/issues/1339 is fixed
+	# don't fail if wildcard has no matches
+	RUN bash -c "rm /usr/share/rpm/__db.*"; true
+	# to keep live apply working
+	RUN bash -c "if [[ -e /etc/systemd/system-preset/20-ignition.preset ]]; then sort /etc/systemd/system-preset/20-ignition.preset -o /etc/systemd/system-preset/20-ignition.preset; fi"
 
 	# This is so we can get the machineconfig injected
 	ARG machineconfig=unknown
@@ -845,6 +855,8 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 
 	_, err := ctrl.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).Get(context.TODO(), buildConfigName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
+
+		skipLayers := buildv1.ImageOptimizationSkipLayers
 
 		// Construct a buildconfig for this pool if it doesn't exist
 		buildConfig := &buildv1.BuildConfig{
@@ -866,8 +878,10 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 						Dockerfile: &dockerFile,
 					},
 					Strategy: buildv1.BuildStrategy{
-						DockerStrategy: &buildv1.DockerBuildStrategy{},
-						Type:           "Docker",
+						DockerStrategy: &buildv1.DockerBuildStrategy{
+							ImageOptimizationPolicy: &skipLayers,
+						},
+						Type: "Docker",
 					},
 					// Output to the imagestreams we made before
 					Output: buildv1.BuildOutput{
