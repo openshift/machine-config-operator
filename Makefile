@@ -22,6 +22,8 @@ export GOLANGCI_LINT_CACHE=$(shell echo $${GOLANGCI_LINT_CACHE:-$$GOPATH/cache})
 
 GOTAGS = "containers_image_openpgp exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_ostree_stub"
 
+all: binaries
+
 .PHONY: clean test test-unit test-e2e verify update install-tools
 # Remove build artifaces
 # Example:
