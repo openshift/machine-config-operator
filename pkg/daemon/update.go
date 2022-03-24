@@ -1997,7 +1997,7 @@ func (dn *Daemon) experimentalUpdateLayeredConfig() error {
 		glog.Infof("Node is on proper image %s", desiredImage)
 
 		glog.Infof("Completing pending config %s", currentImage)
-		if err := dn.completeUpdate(currentImage); err != nil {
+		if err := dn.uncordonAndUntaintNode(); err != nil {
 			MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 
 		}
