@@ -39,6 +39,7 @@ type clusterNodeWriter struct {
 type NodeWriter interface {
 	Run(stop <-chan struct{})
 	SetDone(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string, dcAnnotation string) error
+	SetLayeredDone(client corev1client.NodeInterface, lister corev1lister.NodeLister, node, image string) error
 	SetWorking(client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
 	SetUnreconcilable(err error, client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
 	SetDegraded(err error, client corev1client.NodeInterface, lister corev1lister.NodeLister, node string) error
@@ -64,6 +65,26 @@ func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 			msg.responseChannel <- err
 		}
 	}
+}
+
+// SetLayeredDone sets current image, state to done, and clears any Degraded/Unreconcilable reason
+func (nw *clusterNodeWriter) SetLayeredDone(client corev1client.NodeInterface, lister corev1lister.NodeLister, node, image string) error {
+	annos := map[string]string{
+		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateDone,
+		constants.CurrentImageConfigAnnotationKey:       image,
+		// clear out any Degraded/Unreconcilable reason
+		constants.MachineConfigDaemonReasonAnnotationKey: "",
+	}
+	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
+	respChan := make(chan error, 1)
+	nw.writer <- message{
+		client:          client,
+		lister:          lister,
+		node:            node,
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	return <-respChan
 }
 
 // SetDone sets the state to Done.
