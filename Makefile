@@ -100,7 +100,7 @@ Dockerfile.rhel7: Dockerfile Makefile
 
 # This was copied from https://github.com/openshift/cluster-image-registry-operator
 test-e2e:
-	go test -tags=$(GOTAGS) -failfast -timeout 90m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
+	go test -tags=$(GOTAGS) -failfast -timeout 100m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e/
 
 test-e2e-single-node:
 	go test -tags=$(GOTAGS) -failfast -timeout 90m -v$${WHAT:+ -run="$$WHAT"} ./test/e2e-single-node/
