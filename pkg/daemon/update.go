@@ -3,7 +3,6 @@ package daemon
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -25,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -2050,18 +2048,8 @@ func (dn *Daemon) experimentalUpdateLayeredConfig() error {
 
 		}
 
-		pullSecret, err := dn.getPullSecret()
-		if err != nil {
-			return err
-		}
-
-		// TODO(jkyros): take this out once https://github.com/ostreedev/ostree/pull/2563 merges and is available
-		os.Mkdir("/run/ostree", 0544)
-
-		err = ioutil.WriteFile("/run/ostree/auth.json", pullSecret, 0400)
-		if err != nil {
-			return err
-		}
+		// TODO move this to daemon init once we handle layered there
+		dn.WritePullSecret()
 
 		// I write this in the image build now, so config checker still works AND I don't get stuck on it
 		os.Remove(dn.currentConfigPath)
@@ -2099,45 +2087,4 @@ func (dn *Daemon) experimentalUpdateLayeredConfig() error {
 	}
 
 	return nil
-}
-
-// getPullSecret retrieves the pull secret for the machine-config-daemon service account. It should probably be a
-// a more generic helper function that is centrally located somewhere. The image pull secret names are generated, so we can't
-// request them directly without fuzzy string matching on the list of secrets, so we get their names off of the serviceaccount they
-// are associated with.
-func (dn *Daemon) getPullSecret() ([]byte, error) {
-	var targetNamespace = ctrlcommon.MCONamespace
-
-	// Get the service accoutn
-	mcdServiceAccount, err := dn.kubeClient.CoreV1().ServiceAccounts(targetNamespace).Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("Failed to retrieve the mcc service account: %s", err)
-	}
-	// Get the secret off the service account
-	imagePullSecret, err := dn.kubeClient.CoreV1().Secrets(targetNamespace).Get(context.TODO(), mcdServiceAccount.ImagePullSecrets[0].Name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("Failed to retrieve the image pull secret: %s", err)
-	}
-
-	// Get the data out of it
-	dockerConfigData := imagePullSecret.Data[corev1.DockerConfigKey]
-
-	// Unmarshal it into the proper struct
-	var dockerConfig credentialprovider.DockerConfig
-	err = json.Unmarshal(dockerConfigData, &dockerConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// Re-pack it into an auth file (what comes out of the API doesn't have the "auths" object in the json)
-	dockerConfigJSON := credentialprovider.DockerConfigJSON{
-		Auths: dockerConfig,
-	}
-	authfileData, err := json.Marshal(dockerConfigJSON)
-	if err != nil {
-		return nil, fmt.Errorf("Error trying to marshal docker secrets: %s", authfileData)
-	}
-
-	return authfileData, nil
-
 }

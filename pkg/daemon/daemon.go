@@ -38,6 +38,7 @@ import (
 	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -159,6 +160,9 @@ const (
 	// maxUpdateBackoff is the maximum time to react to a change as we back off
 	// in the face of errors.
 	maxUpdateBackoff = 60 * time.Second
+
+	// daemon pull secret to allow rpm-ostree to pull in cluster images
+	ostreeAuthFile = "/run/ostree/auth.json"
 )
 
 type onceFromOrigin int
@@ -1637,4 +1641,57 @@ func forceFileExists() bool {
 	}
 
 	return false
+}
+
+// getPullSecret retrieves the pull secret for the machine-config-daemon service account. It should probably be a
+// a more generic helper function that is centrally located somewhere. The image pull secret names are generated, so we can't
+// request them directly without fuzzy string matching on the list of secrets, so we get their names off of the serviceaccount they
+// are associated with.
+func (dn *Daemon) getPullSecret() ([]byte, error) {
+	// Get the service account
+	mcdServiceAccount, err := dn.kubeClient.CoreV1().ServiceAccounts(ctrlcommon.MCONamespace).Get(context.TODO(), "machine-config-daemon", metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve the mcc service account: %s", err)
+	}
+	// Get the secret off the service account
+	imagePullSecret, err := dn.kubeClient.CoreV1().Secrets(ctrlcommon.MCONamespace).Get(context.TODO(), mcdServiceAccount.ImagePullSecrets[0].Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve the image pull secret: %s", err)
+	}
+
+	// Get the data out of it
+	dockerConfigData := imagePullSecret.Data[corev1.DockerConfigKey]
+
+	// Unmarshal it into the proper struct
+	var dockerConfig credentialprovider.DockerConfig
+	err = json.Unmarshal(dockerConfigData, &dockerConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-pack it into an auth file (what comes out of the API doesn't have the "auths" object in the json)
+	dockerConfigJSON := credentialprovider.DockerConfigJSON{
+		Auths: dockerConfig,
+	}
+	authfileData, err := json.Marshal(dockerConfigJSON)
+	if err != nil {
+		return nil, fmt.Errorf("Error trying to marshal docker secrets: %s", authfileData)
+	}
+
+	return authfileData, nil
+}
+
+func (dn *Daemon) WritePullSecret() error {
+	pullSecret, err := dn.getPullSecret()
+	if err != nil {
+		return err
+	}
+
+	// TODO: take this out once https://github.com/ostreedev/ostree/pull/2563 merges and is available
+	os.Mkdir("/run/ostree", 0544)
+	err = ioutil.WriteFile(ostreeAuthFile, pullSecret, 0400)
+	if err != nil {
+		return fmt.Errorf("failed to write pull secret file: %w", err)
+	}
+	return nil
 }
