@@ -117,7 +117,7 @@ contents:
           initialDelaySeconds: 50
           httpGet:
             path: /haproxy_ready
-            port: 30936
+            port: 9444
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: haproxy-monitor
