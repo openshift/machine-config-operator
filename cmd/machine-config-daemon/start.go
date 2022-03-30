@@ -216,9 +216,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
 	)
-	if err != nil {
-		glog.Fatalf("Failed to initialize daemon: %v", err)
-	}
 
 	ctx.KubeInformerFactory.Start(stopCh)
 	ctx.InformerFactory.Start(stopCh)
