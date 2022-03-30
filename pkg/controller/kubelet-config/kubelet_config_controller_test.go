@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
-	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
@@ -656,12 +655,6 @@ func TestKubeletConfigDenylistedOptions(t *testing.T) {
 			name: "test banned clusterdomain",
 			config: &kubeletconfigv1beta1.KubeletConfiguration{
 				ClusterDomain: "some_value",
-			},
-		},
-		{
-			name: "test banned runtimerequesttimeout",
-			config: &kubeletconfigv1beta1.KubeletConfiguration{
-				RuntimeRequestTimeout: metav1.Duration{Duration: 1 * time.Minute},
 			},
 		},
 		{
