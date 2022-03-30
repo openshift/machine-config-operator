@@ -61,8 +61,11 @@ const (
 )
 
 var (
-	origParentDirPath   = filepath.Join("/etc", "machine-config-daemon", "orig")
-	noOrigParentDirPath = filepath.Join("/etc", "machine-config-daemon", "noorig")
+	origParentDirPath      = filepath.Join("/etc", "machine-config-daemon", "orig")
+	noOrigParentDirPath    = filepath.Join("/etc", "machine-config-daemon", "noorig")
+	authKeyFragmentDirPath = filepath.Join(coreUserSSHPath, "authorized_keys.d")
+	fcosAuthKeyPath        = filepath.Join(authKeyFragmentDirPath, "ignition")
+	nonFCOSAuthKeyPath     = filepath.Join(coreUserSSHPath, "authorized_keys")
 )
 
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
@@ -427,32 +430,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 }
 
-func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
-	filesPostConfigChangeActionNone := []string{
-		"/etc/kubernetes/kubelet-ca.crt",
-		"/var/lib/kubelet/config.json",
-	}
-	filesPostConfigChangeActionReloadCrio := []string{
-		constants.ContainerRegistryConfPath,
-		GPGNoRebootPath,
-		"/etc/containers/policy.json",
-	}
-
-	actions = []string{postConfigChangeActionNone}
-	for _, path := range diffFileSet {
-		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
-			continue
-		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
-			actions = []string{postConfigChangeActionReloadCrio}
-		} else {
-			actions = []string{postConfigChangeActionReboot}
-			return
-		}
-	}
-	return
-}
-
-func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
+func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string) ([]string, error) {
 	// If a machine-config-daemon-force file is present, it means the user wants to
 	// move to desired state without additional validation. We will reboot the node in
 	// this case regardless of what MachineConfig diff is.
@@ -464,13 +442,46 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
+	filesPostConfigChangeActionNone := []string{
+		"/etc/kubernetes/kubelet-ca.crt",
+		"/var/lib/kubelet/config.json",
+	}
+	if dn.os.IsFCOS() {
+		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, fcosAuthKeyPath)
+	} else {
+		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, nonFCOSAuthKeyPath)
+	}
+
+	filesPostConfigChangeActionReloadCrio := []string{
+		constants.ContainerRegistryConfPath,
+		GPGNoRebootPath,
+		"/etc/containers/policy.json",
+	}
+
+	actions := []string{postConfigChangeActionNone}
+	for _, path := range diffFileSet {
+		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
+			continue
+		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
+			actions = []string{postConfigChangeActionReloadCrio}
+		} else {
+			return []string{postConfigChangeActionReboot}, nil
+		}
+	}
+	return actions, nil
+}
+
+func (dn *Daemon) calculatePostConfigChangeActionWithMCDiff(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
+	// Note this function may only return []string{postConfigChangeActionReboot} directly,
+	// since calculatePostConfigChangeActionFromFiles may find files that require a reboot
+
+	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
 	if diff.osUpdate || diff.kargs || diff.fips || diff.units || diff.kernelType || diff.extensions {
 		// must reboot
 		return []string{postConfigChangeActionReboot}, nil
 	}
 
-	// We don't actually have to consider ssh keys changes, which is the only section of passwd that is allowed to change
-	return calculatePostConfigChangeActionFromFileDiffs(diffFileSet), nil
+	return dn.calculatePostConfigChangeActionFromFiles(diffFileSet)
 }
 
 // update the node to the provided node configuration.
@@ -530,7 +541,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
 
 	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-	actions, err := calculatePostConfigChangeAction(diff, diffFileSet)
+	actions, err := dn.calculatePostConfigChangeActionWithMCDiff(diff, diffFileSet)
 	if err != nil {
 		return err
 	}
@@ -1671,9 +1682,9 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 
 	var authKeyPath string
 	if dn.os.IsFCOS() {
-		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition")
+		authKeyPath = fcosAuthKeyPath
 	} else {
-		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys")
+		authKeyPath = nonFCOSAuthKeyPath
 	}
 
 	// Keys should only be written to "/home/core/.ssh"
@@ -1715,24 +1726,21 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 		}
 	}
 	if !dn.mock {
-		authKeyPath := filepath.Join(coreUserSSHPath, "authorized_keys")
-		authKeyFragmentDirPath := filepath.Join(coreUserSSHPath, "authorized_keys.d")
-
 		if dn.os.IsFCOS() {
 			// In older versions of OKD, the keys were written to `/home/core/.ssh/authorized_keys`.
 			// Newer versions of OKD will however expect the keys at `/home/core/.ssh/authorized_keys.d/ignition`.
 			// Check if the authorized_keys file at the legacy path exists. If it does, remove it.
 			// It will be recreated at the new fragment path by the atomicallyWriteSSHKey function
 			// that is called right after.
-			_, err := os.Stat(authKeyPath)
+			_, err := os.Stat(nonFCOSAuthKeyPath)
 			if err == nil {
-				err := os.RemoveAll(authKeyPath)
+				err := os.RemoveAll(nonFCOSAuthKeyPath)
 				if err != nil {
-					return fmt.Errorf("failed to remove path '%s': %v", authKeyPath, err)
+					return fmt.Errorf("failed to remove path '%s': %v", nonFCOSAuthKeyPath, err)
 				}
 			} else if !os.IsNotExist(err) {
 				// This shouldn't ever happen
-				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyPath, err)
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", nonFCOSAuthKeyPath, err)
 			}
 
 			// Ensure authorized_keys.d/ignition is the only fragment that exists

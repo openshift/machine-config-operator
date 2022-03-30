@@ -164,8 +164,8 @@ func TestReconcilable(t *testing.T) {
 	// Verify Raid changes react as expected
 	oldIgnCfg.Storage.Raid = []ign3types.Raid{
 		{
-			Name:  "data",
-			Level: "stripe",
+			Name:    "data",
+			Level:   "stripe",
 			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
 		},
 	}
@@ -579,96 +579,139 @@ func TestDropinCheck(t *testing.T) {
 // i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
 func TestCalculatePostConfigChangeAction(t *testing.T) {
 	files := map[string]ign3types.File{
-		"pullsecret1":     helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
-		"pullsecret2":     helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
-		"registries1":     helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 1\n"),
-		"registries2":     helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 2\n"),
-		"randomfile1":     helpers.NewIgnFile("/etc/random-reboot-file", "test\n"),
-		"randomfile2":     helpers.NewIgnFile("/etc/random-reboot-file", "test 2\n"),
-		"kubeletCA1":      helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
-		"kubeletCA2":      helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
-		"policy1":         helpers.NewIgnFile("/etc/containers/policy.json", "policy1"),
-		"policy2":         helpers.NewIgnFile("/etc/containers/policy.json", "policy2"),
-		"containers-gpg1": helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
-		"containers-gpg2": helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
+		"pullsecret1":              helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
+		"pullsecret2":              helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
+		"registries1":              helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 1\n"),
+		"registries2":              helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 2\n"),
+		"randomfile1":              helpers.NewIgnFile("/etc/random-reboot-file", "test\n"),
+		"randomfile2":              helpers.NewIgnFile("/etc/random-reboot-file", "test 2\n"),
+		"kubeletCA1":               helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
+		"kubeletCA2":               helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
+		"policy1":                  helpers.NewIgnFile("/etc/containers/policy.json", "policy1"),
+		"policy2":                  helpers.NewIgnFile("/etc/containers/policy.json", "policy2"),
+		"containers-gpg1":          helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
+		"containers-gpg2":          helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
+		"fcos_authorized_keys":     helpers.NewIgnFile(fcosAuthKeyPath, "authorized_keys"),
+		"non_fcos_authorized_keys": helpers.NewIgnFile(nonFCOSAuthKeyPath, "authorized_keys"),
 	}
 
 	tests := []struct {
 		oldConfig      *mcfgv1.MachineConfig
 		newConfig      *mcfgv1.MachineConfig
+		os             OperatingSystem
 		expectedAction []string
 	}{
 		{
 			// test that a normal file change is reboot
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["randomfile1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["randomfile2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
 		{
 			// test that a pull secret change is none
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["pullsecret1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["pullsecret2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionNone},
 		},
 		{
 			// test that a SSH key change is none
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy://"),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionNone},
 		},
 		{
 			// test that a registries change is reload
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["registries1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["registries2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 		{
 			// test that a kubelet CA change is none
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["kubeletCA1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["kubeletCA2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionNone},
 		},
 		{
 			// test that a registries change (reload) overwrites pull secret (none)
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["registries1"], files["pullsecret1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["registries2"], files["pullsecret2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 		{
 			// test that a osImage change (reboot) overwrites registries (reload) and SSH keys (none)
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["registries2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{}, "default", "dummy1://"),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
 		{
 			// test that adding a pull secret is none
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["registries1"], files["pullsecret2"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionNone},
 		},
 		{
 			// test that removing a registries is crio reload
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["randomfile1"], files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["randomfile1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 		{
 			// mixed test - final should be reboot due to kargs changes
 			oldConfig:      helpers.NewMachineConfigExtended("00-test", nil, []ign3types.File{files["registries1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key1"}, []string{}, false, []string{}, "default", "dummy://"),
 			newConfig:      helpers.NewMachineConfigExtended("01-test", nil, []ign3types.File{files["pullsecret2"], files["kubeletCA1"]}, []ign3types.Unit{}, []ign3types.SSHAuthorizedKey{"key2"}, []string{}, false, []string{"karg1"}, "default", "dummy://"),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReboot},
 		},
 		{
 			// test that updating policy.json is crio reload
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["policy1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["policy2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReloadCrio},
 		},
 		{
 			// test that updating containers-gpg.pub is crio reload
 			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{files["containers-gpg1"]}),
 			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["containers-gpg2"]}),
+			os:             FCOS,
 			expectedAction: []string{postConfigChangeActionReloadCrio},
+		},
+		{
+			// test that on FCOS authorized_keys are ignored
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["fcos_authorized_keys"]}),
+			os:             FCOS,
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
+			// test that on FCOS authorized_keys for RHEL are not ignored
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["non_fcos_authorized_keys"]}),
+			os:             FCOS,
+			expectedAction: []string{postConfigChangeActionReboot},
+		},
+		{
+			// test that on non-FCOS authorized_keys are ignored
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["non_fcos_authorized_keys"]}),
+			os:             RHCOS,
+			expectedAction: []string{postConfigChangeActionNone},
+		},
+		{
+			// test that on non-FCOS authorized_keys for FCOS are not ignored
+			oldConfig:      helpers.NewMachineConfig("00-test", nil, "dummy://", []ign3types.File{}),
+			newConfig:      helpers.NewMachineConfig("01-test", nil, "dummy://", []ign3types.File{files["fcos_authorized_keys"]}),
+			os:             RHCOS,
+			expectedAction: []string{postConfigChangeActionReboot},
 		},
 	}
 
@@ -687,7 +730,10 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 				t.Errorf("error creating machineConfigDiff: %v", err)
 			}
 			diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-			calculatedAction, err := calculatePostConfigChangeAction(mcDiff, diffFileSet)
+			dn := Daemon{
+				os: test.os,
+			}
+			calculatedAction, err := dn.calculatePostConfigChangeActionWithMCDiff(mcDiff, diffFileSet)
 
 			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
 				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
