@@ -65,7 +65,7 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform:    configv1.NutanixPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "nutanix",
+		res:         "",
 	}, {
 		platform: configv1.AWSPlatformType,
 		res:      "aws",
@@ -95,7 +95,7 @@ func TestCloudProvider(t *testing.T) {
 		res:      "external",
 	}, {
 		platform: configv1.NutanixPlatformType,
-		res:      "nutanix",
+		res:      "",
 	}}
 	for idx, c := range cases {
 		name := fmt.Sprintf("case #%d", idx)
