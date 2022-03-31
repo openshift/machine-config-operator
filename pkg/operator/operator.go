@@ -16,6 +16,8 @@ import (
 	apiextlistersv1 "k8s.io/apiextensions-apiserver/pkg/client/listers/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
@@ -288,6 +290,13 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 func (optr *Operator) enqueue(obj interface{}) {
 	// we're filtering out config maps that are "leader" based and we don't have logic around them
 	// resyncing on these causes the operator to sync every 14s for no good reason
+	json, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		glog.Infof("CONTROLLER CONFIG DEBUG: enqueue unknown")
+	} else {
+		unstructured := unstructured.Unstructured{Object: json}
+		glog.Infof("CONTROLLER CONFIG DEBUG: enqueue %s/%s/%s", unstructured.GetKind(), unstructured.GetNamespace(), unstructured.GetName())
+	}
 	if cm, ok := obj.(*corev1.ConfigMap); ok && cm.GetAnnotations() != nil && cm.GetAnnotations()[resourcelock.LeaderElectionRecordAnnotationKey] != "" {
 		return
 	}

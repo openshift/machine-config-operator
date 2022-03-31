@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
@@ -266,10 +267,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if err != nil {
 		return err
 	}
+	glog.Infof("CONTROLLER CONFIG DEBUG: getGlobalConfig Network %s", spew.Sprintf("%v", network))
 	spec, err := createDiscoveredControllerConfigSpec(infra, network, proxy, dns)
 	if err != nil {
 		return err
 	}
+	glog.Infof("CONTROLLER CONFIG DEBUG: createDiscoveredControllerConfigSpec Network %s", spew.Sprintf("%v", spec.Network))
 
 	var trustBundle []byte
 	certPool := x509.NewCertPool()
@@ -335,6 +338,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 
 	// create renderConfig
 	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData)
+	glog.Infof("CONTROLLER CONFIG DEBUG: getRenderConfig Network %s", spew.Sprintf("%v", optr.renderConfig.ControllerConfig.Network))
 	return nil
 }
 

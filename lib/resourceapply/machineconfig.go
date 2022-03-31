@@ -3,6 +3,9 @@ package resourceapply
 import (
 	"context"
 
+	"github.com/davecgh/go-spew/spew"
+
+	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/lib/resourcemerge"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
@@ -65,6 +68,7 @@ func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required
 
 	modified := resourcemerge.BoolPtr(false)
 	resourcemerge.EnsureControllerConfig(modified, existing, *required)
+	glog.Infof("CONTROLLER CONFIG DEBUG: modified %v, existing %s, required %s", *modified, spew.Sprintf("%v", (*existing).Spec.Network), spew.Sprintf("%v", (*required).Spec.Network))
 	if !*modified {
 		return existing, false, nil
 	}
