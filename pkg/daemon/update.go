@@ -116,9 +116,6 @@ func reloadService(name string) error {
 }
 
 // performPostConfigChangeAction takes action based on what postConfigChangeAction has been asked.
-// For non-reboot action, it applies configuration, updates node's config and state.
-// In the end uncordon node to schedule workload.
-// If at any point an error occurs, we reboot the node so that node has correct configuration.
 func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string, configName string) error {
 	if ctrlcommon.InSlice(postConfigChangeActionReboot, postConfigChangeActions) {
 		dn.logSystem("Rebooting node")
@@ -147,10 +144,10 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		}
 		dn.logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
+	return nil
+}
 
-	// We are here, which means reboot was not needed to apply the configuration.
-
-	// Get current state of node, in case of an error reboot
+func (dn *Daemon) getAndUpdateConfigAndState(configName string) error {
 	state, err := dn.getStateAndConfigs(configName)
 	if err != nil {
 		return fmt.Errorf("Could not apply update: error processing state and configs. Error: %v", err)
@@ -484,11 +481,7 @@ func (dn *Daemon) calculatePostConfigChangeActionWithMCDiff(diff *machineConfigD
 	return dn.calculatePostConfigChangeActionFromFiles(diffFileSet)
 }
 
-// update the node to the provided node configuration.
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
-
-	oldConfig = canonicalizeEmptyMC(oldConfig)
-
+func (dn *Daemon) setWorking() error {
 	if dn.nodeWriter != nil {
 		state, err := getNodeAnnotationExt(dn.node, constants.MachineConfigDaemonStateAnnotationKey, true)
 		if err != nil {
@@ -500,6 +493,21 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 		}
 	}
+	return nil
+}
+
+// this should probably become part of the implementation of an Updater interface
+func getIgnitionFileDataReadFunc(ignConfig *ign3types.Config) ReadFileFunc {
+	return func(path string) ([]byte, error) {
+		return ctrlcommon.GetIgnitionFileDataByPath(ignConfig, path)
+	}
+}
+
+// update the node to the provided node configuration.
+func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+	if err := dn.setWorking(); err != nil {
+		return fmt.Errorf("failed to set working: %w", err)
+	}
 
 	dn.catchIgnoreSIGTERM()
 	defer func() {
@@ -508,6 +516,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		dn.cancelSIGTERM()
 	}()
 
+	oldConfig = canonicalizeEmptyMC(oldConfig)
 	oldConfigName := oldConfig.GetName()
 	newConfigName := newConfig.GetName()
 
@@ -547,16 +556,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}
 
 	// Check and perform node drain if required
-	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig)
-	if err != nil {
+	if err := dn.drainIfRequired(actions, diffFileSet, getIgnitionFileDataReadFunc(&oldIgnConfig), getIgnitionFileDataReadFunc(&newIgnConfig)); err != nil {
 		return err
-	}
-	if drain {
-		if err := dn.performDrain(); err != nil {
-			return err
-		}
-	} else {
-		glog.Info("Changes do not require drain, skipping.")
 	}
 
 	// update files on disk that need updating
@@ -626,7 +627,16 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
-	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
+	if err := dn.performPostConfigChangeAction(actions, newConfig.GetName()); err != nil {
+		return err
+	}
+
+	// if dn.skipReboot, a reboot might be performed manually after update(), in which case we don't want to update state
+	// else reboot was not needed to apply the configuration, and we need to update state
+	if !dn.skipReboot {
+		return dn.getAndUpdateConfigAndState(newConfig.GetName())
+	}
+	return nil
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.

@@ -359,7 +359,7 @@ location = "example.com/repo/test-img"
 				t.Errorf("parsing new Ignition config failed: %v", err)
 			}
 			diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
-			drain, err := isDrainRequired(test.actions, diffFileSet, oldIgnConfig, newIgnConfig)
+			drain, err := isDrainRequired(test.actions, diffFileSet, getIgnitionFileDataReadFunc(&oldIgnConfig), getIgnitionFileDataReadFunc(&newIgnConfig))
 			if !reflect.DeepEqual(test.expectedAction, drain) {
 				t.Errorf("Failed determining drain behavior: expected: %v but result is: %v. Error: %v", test.expectedAction, drain, err)
 			}
