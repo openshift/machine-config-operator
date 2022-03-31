@@ -340,12 +340,13 @@ func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ig
 }
 
 // generateKubeletIgnFiles generates the Ignition files from the kubelet config
-func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration, userDefinedSystemReserved map[string]string) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
+func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeConfig *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, *ign3types.File, *ign3types.File, error) {
 	var (
 		kubeletIgnition            *ign3types.File
 		logLevelIgnition           *ign3types.File
 		autoSizingReservedIgnition *ign3types.File
 	)
+	userDefinedSystemReserved := make(map[string]string)
 
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
 		specKubeletConfig, err := decodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
