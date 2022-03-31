@@ -408,7 +408,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 	// Apply kargs
 	if mcDiff.kargs {
-		if err := dn.updateKernelArguments(oldConfig, newConfig); err != nil {
+		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
 			return err
 		}
 	}
@@ -923,9 +923,9 @@ func parseKernelArguments(kargs []string) []string {
 // Note what we really should be doing though is also looking at the *current*
 // kernel arguments in case there was drift.  But doing that requires us knowing
 // what the "base" arguments are. See https://github.com/ostreedev/ostree/issues/479
-func generateKargs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
-	oldKargs := parseKernelArguments(oldConfig.Spec.KernelArguments)
-	newKargs := parseKernelArguments(newConfig.Spec.KernelArguments)
+func generateKargs(oldKernelArguments, newKernelArguments []string) []string {
+	oldKargs := parseKernelArguments(oldKernelArguments)
+	newKargs := parseKernelArguments(newKernelArguments)
 	cmdArgs := []string{}
 
 	// To keep kernel argument processing simpler and bug free, we first delete all
@@ -942,8 +942,8 @@ func generateKargs(oldConfig, newConfig *mcfgv1.MachineConfig) []string {
 }
 
 // updateKernelArguments adjusts the kernel args
-func (dn *CoreOSDaemon) updateKernelArguments(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	kargs := generateKargs(oldConfig, newConfig)
+func (dn *CoreOSDaemon) updateKernelArguments(oldKernelArguments, newKernelArguments []string) error {
+	kargs := generateKargs(oldKernelArguments, newKernelArguments)
 	if len(kargs) == 0 {
 		return nil
 	}
