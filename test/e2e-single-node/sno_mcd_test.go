@@ -35,7 +35,7 @@ func TestMCDToken(t *testing.T) {
 		LabelSelector: labels.SelectorFromSet(labels.Set{"k8s-app": "machine-config-daemon"}).String(),
 	}
 
-	mcdList, err := cs.Pods("openshift-machine-config-operator").List(context.TODO(), listOptions)
+	mcdList, err := cs.Pods(ctrlcommon.MCONamespace).List(context.TODO(), listOptions)
 	require.Nil(t, err)
 
 	for _, pod := range mcdList.Items {
