@@ -51,9 +51,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("error creating clients: %v", err)
 	}
 	run := func(ctx context.Context) {
-		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentNamespace)
+		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), ctrlcommon.MCONamespace)
 		controller := operator.New(
-			componentNamespace, componentName,
+			ctrlcommon.MCONamespace, componentName,
 			startOpts.imagesFile,
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctrlctx.NamespacedInformerFactory.Machineconfiguration().V1().MachineConfigs(),
@@ -97,7 +97,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
 	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
-		Lock:          common.CreateResourceLock(cb, componentNamespace, componentName),
+		Lock:          common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
 		LeaseDuration: leaderElectionCfg.LeaseDuration.Duration,
 		RenewDeadline: leaderElectionCfg.RenewDeadline.Duration,
 		RetryPeriod:   leaderElectionCfg.RetryPeriod.Duration,

@@ -8,10 +8,7 @@ import (
 	"k8s.io/component-base/cli"
 )
 
-const (
-	componentName      = "machine-config"
-	componentNamespace = "openshift-machine-config-operator"
-)
+const componentName = "machine-config"
 
 var (
 	rootCmd = &cobra.Command{
