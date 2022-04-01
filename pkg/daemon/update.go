@@ -679,14 +679,6 @@ func (mcDiff *machineConfigDiff) osChangesString() string {
 	return strings.Join(changes, "; ")
 }
 
-// canonicalizeKernelType returns a valid kernelType. We consider empty("") and default kernelType as same
-func canonicalizeKernelType(kernelType string) string {
-	if kernelType == ctrlcommon.KernelTypeRealtime {
-		return ctrlcommon.KernelTypeRealtime
-	}
-	return ctrlcommon.KernelTypeDefault
-}
-
 // newMachineConfigDiff compares two MachineConfig objects.
 func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
@@ -710,7 +702,7 @@ func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineC
 		passwd:     !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd),
 		files:      !reflect.DeepEqual(oldIgn.Storage.Files, newIgn.Storage.Files),
 		units:      !reflect.DeepEqual(oldIgn.Systemd.Units, newIgn.Systemd.Units),
-		kernelType: canonicalizeKernelType(oldConfig.Spec.KernelType) != canonicalizeKernelType(newConfig.Spec.KernelType),
+		kernelType: ctrlcommon.CanonicalizeKernelType(oldConfig.Spec.KernelType) != ctrlcommon.CanonicalizeKernelType(newConfig.Spec.KernelType),
 		extensions: !(extensionsEmpty || reflect.DeepEqual(oldConfig.Spec.Extensions, newConfig.Spec.Extensions)),
 	}, nil
 }
@@ -993,7 +985,7 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	extArgs := []string{"update"}
 
 	if dn.os.IsRHCOS() {
-		extensions := getSupportedExtensions()
+		extensions := ctrlcommon.GetSupportedExtensions()
 		for _, ext := range added {
 			for _, pkg := range extensions[ext] {
 				extArgs = append(extArgs, "--install", pkg)
@@ -1023,23 +1015,8 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 	return extArgs
 }
 
-// Returns list of extensions possible to install on a CoreOS based system.
-func getSupportedExtensions() map[string][]string {
-	// In future when list of extensions grow, it will make
-	// more sense to populate it in a dynamic way.
-
-	// These are RHCOS supported extensions.
-	// Each extension keeps a list of packages required to get enabled on host.
-	return map[string][]string{
-		"usbguard":             {"usbguard"},
-		"kerberos":             {"krb5-workstation", "libkadm5"},
-		"kernel-devel":         {"kernel-devel", "kernel-headers"},
-		"sandboxed-containers": {"kata-containers"},
-	}
-}
-
 func validateExtensions(exts []string) error {
-	supportedExtensions := getSupportedExtensions()
+	supportedExtensions := ctrlcommon.GetSupportedExtensions()
 	invalidExts := []string{}
 	for _, ext := range exts {
 		if _, ok := supportedExtensions[ext]; !ok {
@@ -1080,16 +1057,16 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 	}
 
 	// Do nothing if both old and new KernelType are of type default
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+	if ctrlcommon.CanonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && ctrlcommon.CanonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		return nil
 	}
 
 	defaultKernel := []string{"kernel", "kernel-core", "kernel-modules", "kernel-modules-extra"}
 	realtimeKernel := []string{"kernel-rt-core", "kernel-rt-modules", "kernel-rt-modules-extra", "kernel-rt-kvm"}
 
-	dn.logSystem("Initiating switch from kernel %s to %s", canonicalizeKernelType(oldConfig.Spec.KernelType), canonicalizeKernelType(newConfig.Spec.KernelType))
+	dn.logSystem("Initiating switch from kernel %s to %s", ctrlcommon.CanonicalizeKernelType(oldConfig.Spec.KernelType), ctrlcommon.CanonicalizeKernelType(newConfig.Spec.KernelType))
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
+	if ctrlcommon.CanonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && ctrlcommon.CanonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault {
 		args := []string{"override", "reset"}
 		args = append(args, defaultKernel...)
 		for _, pkg := range realtimeKernel {
@@ -1099,7 +1076,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return runRpmOstree(args...)
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
+	if ctrlcommon.CanonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && ctrlcommon.CanonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		// Switch to RT kernel
 		args := []string{"override", "remove"}
 		args = append(args, defaultKernel...)
@@ -1111,7 +1088,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		return runRpmOstree(args...)
 	}
 
-	if canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
+	if ctrlcommon.CanonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime && ctrlcommon.CanonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeRealtime {
 		if oldConfig.Spec.OSImageURL != newConfig.Spec.OSImageURL {
 			args := []string{"update"}
 			dn.logSystem("Updating rt-kernel packages on host: %+q", args)
