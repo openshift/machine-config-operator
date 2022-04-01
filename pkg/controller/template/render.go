@@ -350,7 +350,7 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 		}
 
 		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType, configv1.NutanixPlatformType:
+		case configv1.AWSPlatformType, configv1.AzurePlatformType, configv1.OpenStackPlatformType, configv1.VSpherePlatformType:
 			return strings.ToLower(string(cfg.Infra.Status.PlatformStatus.Type)), nil
 		case configv1.GCPPlatformType:
 			return "gce", nil
