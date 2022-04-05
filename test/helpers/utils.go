@@ -222,6 +222,41 @@ func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.
 	return nil
 }
 
+// TODO deduplicate shared labeling code with LabelRandomNodeFromPool once we are okay making layering changes to our e2e's
+func LabelAllNodesInPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
+	nodes, err := GetNodesByRole(cs, pool)
+	require.Nil(t, err)
+	require.NotEmpty(t, nodes)
+
+	for _, node := range nodes {
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			node, err := cs.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			node.Labels[label] = ""
+			_, err = cs.Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+			return err
+		})
+		require.Nil(t, err, "unable to label %s node %s with infra: %s", pool, node.Name, err)
+	}
+
+	return func() {
+		for _, node := range nodes {
+			err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				infraNode, err := cs.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				delete(infraNode.Labels, label)
+				_, err = cs.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
+				return err
+			})
+			require.Nil(t, err, "unable to remove label from node %s: %s", node.Name, err)
+		}
+	}
+}
+
 // LabelRandomNodeFromPool gets all nodes in pool and chooses one at random to label
 func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label string) func() {
 	nodes, err := GetNodesByRole(cs, pool)
