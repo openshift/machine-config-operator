@@ -378,8 +378,10 @@ contents:
       nmcli network off
 
       # wait for no devices to show as connected
+      # ignore patch ports as there is a bug in NM that shows them as managed
+      # https://bugzilla.redhat.com/show_bug.cgi?id=2077950 
       echo "Waiting for devices to disconnect..."
-      if ! timeout 60 bash -c "while nmcli -g DEVICE,STATE d | grep -v :unmanaged; do sleep 5; done"; then
+      if ! timeout 60 bash -c "while nmcli -g DEVICE,STATE d | grep -v :unmanaged | grep -v '^patch-br-'; do sleep 5; done"; then
         echo "Warning: NetworkManager did not disconnect all devices"
       fi
       
