@@ -32,7 +32,8 @@ const (
 	ClusterFeatureInstanceName = "cluster"
 
 	// ExperimentalLayeringPoolLabel is the label that enables the "layered" workflow path for a pool
-	ExperimentalLayeringPoolLabel = "machineconfiguration.openshift.io/layered"
+	ExperimentalLayeringPoolName  = "layered"
+	ExperimentalLayeringPoolLabel = "machineconfiguration.openshift.io/" + ExperimentalLayeringPoolName
 	// ExperimentalNewestLayeredImageAnnotationKey is the annotation that signifies the newest image that has been pushed to a machine
 	// config pool's imagestream
 	ExperimentalNewestLayeredImageAnnotationKey = "machineconfiguration.openshift.io/newestImage"
