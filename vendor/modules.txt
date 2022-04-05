@@ -37,32 +37,7 @@ github.com/Masterminds/sprig
 # github.com/Microsoft/go-winio v0.5.1
 ## explicit; go 1.12
 github.com/Microsoft/go-winio
-github.com/Microsoft/go-winio/backuptar
 github.com/Microsoft/go-winio/pkg/guid
-github.com/Microsoft/go-winio/pkg/security
-github.com/Microsoft/go-winio/vhd
-# github.com/Microsoft/hcsshim v0.8.23
-## explicit; go 1.13
-github.com/Microsoft/hcsshim
-github.com/Microsoft/hcsshim/computestorage
-github.com/Microsoft/hcsshim/internal/cow
-github.com/Microsoft/hcsshim/internal/hcs
-github.com/Microsoft/hcsshim/internal/hcs/schema1
-github.com/Microsoft/hcsshim/internal/hcs/schema2
-github.com/Microsoft/hcsshim/internal/hcserror
-github.com/Microsoft/hcsshim/internal/hns
-github.com/Microsoft/hcsshim/internal/interop
-github.com/Microsoft/hcsshim/internal/log
-github.com/Microsoft/hcsshim/internal/logfields
-github.com/Microsoft/hcsshim/internal/longpath
-github.com/Microsoft/hcsshim/internal/mergemaps
-github.com/Microsoft/hcsshim/internal/oc
-github.com/Microsoft/hcsshim/internal/safefile
-github.com/Microsoft/hcsshim/internal/timeout
-github.com/Microsoft/hcsshim/internal/vmcompute
-github.com/Microsoft/hcsshim/internal/wclayer
-github.com/Microsoft/hcsshim/internal/winapi
-github.com/Microsoft/hcsshim/osversion
 # github.com/OpenPeeDeeP/depguard v1.0.1
 ## explicit; go 1.13
 github.com/OpenPeeDeeP/depguard
@@ -93,9 +68,6 @@ github.com/ashcrow/osrelease
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
-# github.com/bits-and-blooms/bitset v1.2.0
-## explicit; go 1.14
-github.com/bits-and-blooms/bitset
 # github.com/bkielbasa/cyclop v1.2.0
 ## explicit; go 1.15
 github.com/bkielbasa/cyclop/pkg/analyzer
@@ -123,15 +95,12 @@ github.com/chavacava/garif
 # github.com/clarketm/json v1.14.1
 ## explicit
 github.com/clarketm/json
-# github.com/containerd/cgroups v1.0.1
-## explicit; go 1.13
-github.com/containerd/cgroups/stats/v1
 # github.com/containerd/stargz-snapshotter/estargz v0.10.1
 ## explicit; go 1.16
 github.com/containerd/stargz-snapshotter/estargz
 github.com/containerd/stargz-snapshotter/estargz/errorutil
-# github.com/containers/image/v5 v5.14.0
-## explicit; go 1.11
+# github.com/containers/image/v5 v5.17.0
+## explicit; go 1.13
 github.com/containers/image/v5/docker
 github.com/containers/image/v5/docker/policyconfiguration
 github.com/containers/image/v5/docker/reference
@@ -140,7 +109,10 @@ github.com/containers/image/v5/internal/blobinfocache
 github.com/containers/image/v5/internal/iolimits
 github.com/containers/image/v5/internal/pkg/keyctl
 github.com/containers/image/v5/internal/pkg/platform
+github.com/containers/image/v5/internal/putblobdigest
 github.com/containers/image/v5/internal/rootless
+github.com/containers/image/v5/internal/streamdigest
+github.com/containers/image/v5/internal/tmpdir
 github.com/containers/image/v5/internal/types
 github.com/containers/image/v5/internal/uploadreader
 github.com/containers/image/v5/manifest
@@ -162,50 +134,21 @@ github.com/containers/libtrust
 # github.com/containers/ocicrypt v1.1.2
 ## explicit; go 1.12
 github.com/containers/ocicrypt/spec
-# github.com/containers/storage v1.32.6
+# github.com/containers/storage v1.37.0
 ## explicit; go 1.14
-github.com/containers/storage
-github.com/containers/storage/drivers
-github.com/containers/storage/drivers/aufs
-github.com/containers/storage/drivers/btrfs
-github.com/containers/storage/drivers/copy
-github.com/containers/storage/drivers/devmapper
-github.com/containers/storage/drivers/overlay
-github.com/containers/storage/drivers/overlayutils
-github.com/containers/storage/drivers/quota
-github.com/containers/storage/drivers/register
-github.com/containers/storage/drivers/vfs
-github.com/containers/storage/drivers/windows
-github.com/containers/storage/drivers/zfs
-github.com/containers/storage/pkg/archive
-github.com/containers/storage/pkg/chrootarchive
-github.com/containers/storage/pkg/chunked
+github.com/containers/storage/pkg/chunked/compressor
+github.com/containers/storage/pkg/chunked/internal
 github.com/containers/storage/pkg/config
-github.com/containers/storage/pkg/devicemapper
-github.com/containers/storage/pkg/directory
-github.com/containers/storage/pkg/dmesg
-github.com/containers/storage/pkg/fileutils
-github.com/containers/storage/pkg/fsutils
 github.com/containers/storage/pkg/homedir
 github.com/containers/storage/pkg/idtools
 github.com/containers/storage/pkg/ioutils
-github.com/containers/storage/pkg/locker
 github.com/containers/storage/pkg/lockfile
 github.com/containers/storage/pkg/longpath
-github.com/containers/storage/pkg/loopback
 github.com/containers/storage/pkg/mount
-github.com/containers/storage/pkg/parsers
-github.com/containers/storage/pkg/parsers/kernel
-github.com/containers/storage/pkg/pools
-github.com/containers/storage/pkg/promise
 github.com/containers/storage/pkg/reexec
 github.com/containers/storage/pkg/stringid
-github.com/containers/storage/pkg/stringutils
 github.com/containers/storage/pkg/system
-github.com/containers/storage/pkg/tarlog
-github.com/containers/storage/pkg/truncindex
 github.com/containers/storage/pkg/unshare
-github.com/containers/storage/types
 # github.com/coreos/butane v0.14.0
 ## explicit; go 1.15
 github.com/coreos/butane/base/util
@@ -415,9 +358,7 @@ github.com/gobwas/glob/util/strings
 github.com/gofrs/flock
 # github.com/gogo/protobuf v1.3.2
 ## explicit; go 1.15
-github.com/gogo/protobuf/gogoproto
 github.com/gogo/protobuf/proto
-github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/sortkeys
 # github.com/golang/glog v1.0.0
 ## explicit; go 1.11
@@ -532,9 +473,6 @@ github.com/google/go-containerregistry/pkg/v1/remote/transport
 github.com/google/go-containerregistry/pkg/v1/stream
 github.com/google/go-containerregistry/pkg/v1/tarball
 github.com/google/go-containerregistry/pkg/v1/types
-# github.com/google/go-intervals v0.0.2
-## explicit; go 1.12
-github.com/google/go-intervals/intervalset
 # github.com/google/gofuzz v1.2.0
 ## explicit; go 1.12
 github.com/google/gofuzz
@@ -545,7 +483,7 @@ github.com/google/renameio
 # github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 ## explicit; go 1.13
 github.com/google/shlex
-# github.com/google/uuid v1.2.0
+# github.com/google/uuid v1.3.0
 ## explicit
 github.com/google/uuid
 # github.com/googleapis/gnostic v0.5.5 => github.com/googleapis/gnostic v0.4.1
@@ -681,9 +619,6 @@ github.com/mattn/go-isatty
 # github.com/mattn/go-runewidth v0.0.13
 ## explicit; go 1.9
 github.com/mattn/go-runewidth
-# github.com/mattn/go-shellwords v1.0.12
-## explicit; go 1.13
-github.com/mattn/go-shellwords
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
@@ -699,9 +634,6 @@ github.com/mgechev/revive/config
 github.com/mgechev/revive/formatter
 github.com/mgechev/revive/lint
 github.com/mgechev/revive/rule
-# github.com/mistifyio/go-zfs v2.1.2-0.20190413222219-f784269be439+incompatible
-## explicit
-github.com/mistifyio/go-zfs
 # github.com/mitchellh/copystructure v1.0.0
 ## explicit
 github.com/mitchellh/copystructure
@@ -778,15 +710,9 @@ github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.0.2
 ## explicit; go 1.13
 github.com/opencontainers/runc/libcontainer/user
-github.com/opencontainers/runc/libcontainer/userns
 # github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/opencontainers/selinux v1.8.2
-## explicit; go 1.13
-github.com/opencontainers/selinux/go-selinux
-github.com/opencontainers/selinux/go-selinux/label
-github.com/opencontainers/selinux/pkg/pwalk
 # github.com/openshift/api v0.0.0-20220310165943-abf6417c2748
 ## explicit; go 1.16
 github.com/openshift/api
@@ -929,16 +855,17 @@ github.com/polyfloyd/go-errorlint/errorlint
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/promhttp
+github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.2.0
 ## explicit; go 1.9
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.28.0
+# github.com/prometheus/common v0.32.1
 ## explicit; go 1.13
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
 github.com/prometheus/common/model
-# github.com/prometheus/procfs v0.6.0
+# github.com/prometheus/procfs v0.7.3
 ## explicit; go 1.13
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
@@ -1031,9 +958,6 @@ github.com/subosito/gotenv
 # github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
 ## explicit
 github.com/syndtr/gocapability/capability
-# github.com/tchap/go-patricia v2.3.0+incompatible
-## explicit
-github.com/tchap/go-patricia/patricia
 # github.com/tdakkota/asciicheck v0.0.0-20200416200610-e657995f937b
 ## explicit; go 1.13
 github.com/tdakkota/asciicheck
@@ -1069,8 +993,6 @@ github.com/uudashr/gocognit
 # github.com/vbatts/tar-split v0.11.2
 ## explicit; go 1.15
 github.com/vbatts/tar-split/archive/tar
-github.com/vbatts/tar-split/tar/asm
-github.com/vbatts/tar-split/tar/storage
 # github.com/vincent-petithory/dataurl v1.0.0
 ## explicit
 github.com/vincent-petithory/dataurl
@@ -1082,13 +1004,6 @@ github.com/xlab/treeprint
 # github.com/yeya24/promlinter v0.1.0
 ## explicit; go 1.14
 github.com/yeya24/promlinter
-# go.opencensus.io v0.23.0
-## explicit; go 1.13
-go.opencensus.io
-go.opencensus.io/internal
-go.opencensus.io/trace
-go.opencensus.io/trace/internal
-go.opencensus.io/trace/tracestate
 # go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
 ## explicit; go 1.13
 go.starlark.net/internal/compile

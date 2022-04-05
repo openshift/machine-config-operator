@@ -29,10 +29,10 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig string
-		templates  string
-
-		resourceLockNamespace string
+		kubeconfig               string
+		templates                string
+		promMetricsListenAddress string
+		resourceLockNamespace    string
 	}
 )
 
@@ -40,6 +40,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.resourceLockNamespace, "resourcelock-namespace", metav1.NamespaceSystem, "Path to the template files used for creating MachineConfig objects")
+	startCmd.PersistentFlags().StringVar(&startOpts.promMetricsListenAddress, "metrics-listen-address", "127.0.0.1:8797", "Listen address for prometheus metrics listener")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -55,6 +56,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 	run := func(ctx context.Context) {
 		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentName)
+
+		// Start the metrics handler
+		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop)
 
 		controllers := createControllers(ctrlctx)
 
@@ -144,6 +148,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		// The node controller consumes data written by the above
 		node.New(
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),

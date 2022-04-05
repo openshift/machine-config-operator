@@ -29,7 +29,7 @@ contents:
         files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection $src_path/*${MANAGED_NM_CONN_SUFFIX})
         shopt -u nullglob
         for file in "${files[@]}"; do
-          file="$(basename $file)"
+          file=$(basename "$file")
           if [ -f "$src_path/$file" ]; then
             if [ ! -f "$dst_path/$file" ]; then
               echo "Copying configuration $file"
@@ -54,7 +54,7 @@ contents:
       ovs_interface="ovs-if-${bridge_name}"
       default_port_name="ovs-port-${port_name}" # ovs-port-phys0
       bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
-    # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
+      # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
       MANAGED_NM_CONN_FILES=($(echo {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"} {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}.nmconnection))
     }
 
@@ -65,7 +65,7 @@ contents:
       files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
       shopt -u nullglob
       for file in "${files[@]}"; do
-        file="$(basename $file)"
+        file=$(basename "$file")
         file_path="${NM_CONN_PATH}/$file"
         if [ -f "$file_path" ]; then
           rm -f "$file_path"
@@ -108,19 +108,20 @@ contents:
       done
     }
 
-
     # when creating the bridge, we use a value lower than NM's ethernet device default route metric
-    # (we pick 49 to be lower than anything that NM chooses by default)
-    BRIDGE_METRIC="49"
+    # (we pick 48 and 49 to be lower than anything that NM chooses by default)
+    BRIDGE_METRIC="48"
+    BRIDGE1_METRIC="49"
     # Given an interface, generates NM configuration to add to an OVS bridge
     convert_to_bridge() {
-      iface=${1}
-      bridge_name=${2}
-      port_name=${3}
-      ovs_port="ovs-port-${bridge_name}"
-      ovs_interface="ovs-if-${bridge_name}"
-      default_port_name="ovs-port-${port_name}" # ovs-port-phys0
-      bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
+      local iface=${1}
+      local bridge_name=${2}
+      local port_name=${3}
+      local bridge_metric=${4}
+      local ovs_port="ovs-port-${bridge_name}"
+      local ovs_interface="ovs-if-${bridge_name}"
+      local default_port_name="ovs-port-${port_name}" # ovs-port-phys0
+      local bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
 
       if [ "$iface" = "$bridge_name" ]; then
         # handle vlans and bonds etc if they have already been
@@ -160,33 +161,13 @@ contents:
       # store old conn for later
       old_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
 
-      extra_brex_args=""
-      # check for dhcp client ids
-      dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
-      if [ -n "$dhcp_client_id" ]; then
-        extra_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
-      fi
-
-      dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
-      if [ -n "$dhcp6_client_id" ]; then
-        extra_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
-      fi
-
-      ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
-      if [ -n "$ipv6_addr_gen_mode" ]; then
-        extra_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
-      fi
-
       # create bridge
       if ! nmcli connection show "$bridge_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-br "$bridge_name"
         nmcli c add type ovs-bridge \
             con-name "$bridge_name" \
             conn.interface "$bridge_name" \
-            802-3-ethernet.mtu ${iface_mtu} \
-            ipv4.route-metric "$BRIDGE_METRIC" \
-            ipv6.route-metric "$BRIDGE_METRIC" \
-            ${extra_brex_args}
+            802-3-ethernet.mtu ${iface_mtu}
       fi
 
       # find default port to add to bridge
@@ -238,7 +219,8 @@ contents:
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
         nmcli c add type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
-        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
+        connection.autoconnect-priority 100 connection.autoconnect-slaves 1 802-3-ethernet.mtu ${iface_mtu} \
+        ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuid
@@ -327,9 +309,25 @@ contents:
             extra_if_brex_args+="ipv6.may-fail no "
           fi
 
+          # check for dhcp client ids
+          dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
+          if [ -n "$dhcp_client_id" ]; then
+            extra_if_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
+          fi
+
+          dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
+          if [ -n "$dhcp6_client_id" ]; then
+            extra_if_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
+          fi
+
+          ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
+          if [ -n "$ipv6_addr_gen_mode" ]; then
+            extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
+          fi
+
           nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
-            ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC" ${extra_if_brex_args}
+            ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}" ${extra_if_brex_args}
         fi
       fi
 
@@ -374,29 +372,35 @@ contents:
       
       echo "Reloading NetworkManager after configuration changes..."
 
-      # set network off, so that auto-connect priority is evaluated when turning
-      # it back on
+      # recycle network, so that existing profiles and priorities are re-evaluated
       nmcli network off
+
+      # wait for no devices to show as connected
+      echo "Waiting for devices to disconnect..."
+      if ! timeout 60 bash -c "while nmcli -g DEVICE,STATE d | grep -v :unmanaged; do sleep 5; done"; then
+        echo "Warning: NetworkManager did not disconnect all devices"
+      fi
       
-      # restart NetworkManager to reload profiles, including generating
-      # transient profiles for devices that don't have any
+      # reload profiles and set networking back on
+      nmcli connection reload
+      nmcli network on
+      
+      # restart NetworkManager so that we can wait on `nm-online -s`
       systemctl restart NetworkManager
 
-      # turn network back on triggering auto-connects 
-      nmcli network on
-
       # Wait until all profiles auto-connect
+      echo "Waiting for profiles to activate..."
       if nm-online -s -t 60; then
         echo "NetworkManager has activated all suitable profiles after reload"
       else
-        echo "NetworkManager has not activated all suitable profiles after reload"
+        echo "Warning: NetworkManager has not activated all suitable profiles after reload"
       fi
 
       # Check if we have any type of connectivity
       if nm-online -t 0; then
         echo "NetworkManager has connectivity after reload"
       else
-        echo "NetworkManager does not have connectivity after reload"
+        echo "Warning: NetworkManager does not have connectivity after reload"
       fi
     }
 
@@ -412,6 +416,11 @@ contents:
     # Activates a NM connection profile
     activate_nm_conn() {
       local conn="$1"
+      local active_state="$(nmcli -g GENERAL.STATE conn show $conn)"
+      if [ "$active_state" = "activated" ]; then
+        echo "Connection $conn already activated"
+        return
+      fi
       for i in {1..10}; do
         echo "Attempt $i to bring up connection $conn"
         nmcli conn up "$conn" && s=0 && break || s=$?
@@ -423,6 +432,123 @@ contents:
         echo "ERROR: Cannot bring up connection $conn after $i attempts"
       fi
       return $s
+    }
+
+    # Accepts parameters $iface_default_hint_file, $iface
+    # Writes content of $iface into $iface_default_hint_file
+    write_iface_default_hint() {
+      local iface_default_hint_file="$1"
+      local iface="$2"
+
+      echo "${iface}" >| "${iface_default_hint_file}"
+    }
+
+    # Accepts parameters $iface_default_hint_file
+    # Returns the stored interface default hint if the hint is non-empty,
+    # not br-ex, not br-ex1 and if the interface can be found in /sys/class/net
+    get_iface_default_hint() {
+      local iface_default_hint_file=$1
+      if [ -f "${iface_default_hint_file}" ]; then
+        local iface_default_hint=$(cat "${iface_default_hint_file}")
+        if [ "${iface_default_hint}" != "" ] &&
+           [ "${iface_default_hint}" != "br-ex" ] &&
+           [ "${iface_default_hint}" != "br-ex1" ] &&
+           [ -d "/sys/class/net/${iface_default_hint}" ]; then
+           echo "${iface_default_hint}"
+           return
+        fi
+      fi
+      echo ""
+    }
+
+    # Accepts parameters $bridge_interface (e.g. ovs-port-phys0)
+    # Returns the physical interface name if $bridge_interface exists, "" otherwise
+    get_bridge_physical_interface() {
+      local bridge_interface="$1"
+      local physical_interface=""
+      physical_interface=$(nmcli -g connection.interface-name conn show "${bridge_interface}" 2>/dev/null || echo "")
+      echo "${physical_interface}"
+    }
+
+    # Accepts parameters $iface, $iface_default_hint_file
+    # Finds the default interface. If the default interface is br-ex, use that and return.
+    # Never use the interface that is provided inside extra_bridge_file for br-ex1.
+    # Never use br-ex1.
+    # If the default interface is not br-ex:
+    # Check if there is a valid hint inside iface_default_hint_file. If so, use that hint.
+    # If there is no valid hint, use the default interface that we found during the step
+    # earlier. Write the default interface to the hint file.
+    get_default_interface() {
+      local iface=""
+      local counter=0
+      local iface_default_hint_file="$1"
+      local extra_bridge_file="$2"
+      local extra_bridge=""
+
+      if [ -f "${extra_bridge_file}" ]; then
+        extra_bridge=$(cat ${extra_bridge_file})
+      fi
+
+      # find default interface
+      # the default interface might be br-ex, so check this before looking at the hint
+      while [ ${counter} -lt 12 ]; do
+        # check ipv4
+        # never use the interface that's specified in extra_bridge_file
+        # never use br-ex1
+        if [ "${extra_bridge}" != "" ]; then
+          iface=$(ip route show default | grep -v "br-ex1" | grep -v "${extra_bridge}" | awk '{ if ($4 == "dev") { print $5; exit } }')
+        else
+          iface=$(ip route show default | grep -v "br-ex1" | awk '{ if ($4 == "dev") { print $5; exit } }')
+        fi
+        if [[ -n "${iface}" ]]; then
+          break
+        fi
+        # check ipv6
+        # never use the interface that's specified in extra_bridge_file
+        # never use br-ex1
+        if [ "${extra_bridge}" != "" ]; then
+          iface=$(ip -6 route show default | grep -v "br-ex1" | grep -v "${extra_bridge}" | awk '{ if ($4 == "dev") { print $5; exit } }')
+        else
+          iface=$(ip -6 route show default | grep -v "br-ex1" | awk '{ if ($4 == "dev") { print $5; exit } }')
+        fi
+        if [[ -n "${iface}" ]]; then
+          break
+        fi
+        counter=$((counter+1))
+        sleep 5
+      done
+
+      # if the default interface does not point out of br-ex or br-ex1
+      if [ "${iface}" != "br-ex" ] && [ "${iface}" != "br-ex1" ]; then
+        # determine if an interface default hint exists from a previous run
+        # and if the interface has a valid default route
+        iface_default_hint=$(get_iface_default_hint "${iface_default_hint_file}")
+        if [ "${iface_default_hint}" != "" ] &&
+           [ "${iface_default_hint}" != "${iface}" ]; then
+          # start wherever count left off in the previous loop
+          # allow this for one more iteration than the previous loop
+          while [ ${counter} -le 12 ]; do
+            # check ipv4
+            if [ "$(ip route show default dev "${iface_default_hint}")" != "" ]; then
+              iface="${iface_default_hint}"
+              break
+            fi
+            # check ipv6
+            if [ "$(ip -6 route show default dev "${iface_default_hint}")" != "" ]; then
+              iface="${iface_default_hint}"
+              break
+            fi
+            counter=$((counter+1))
+            sleep 5
+          done
+        fi
+        # store what was determined was the (new) default interface inside
+        # the default hint file for future reference
+        if [ "${iface}" != "" ]; then
+          write_iface_default_hint "${iface_default_hint_file}" "${iface}"
+        fi
+      fi
+      echo "${iface}"
     }
 
     # Used to print network state
@@ -465,7 +591,7 @@ contents:
       echo "Cleaning up left over mtu migration configuration"
       rm -rf /etc/cno/mtu-migration
     fi
-    
+
     if ! rpm -qa | grep -q openvswitch; then
       echo "Warning: Openvswitch package is not installed!"
       exit 1
@@ -495,6 +621,40 @@ contents:
         fi
       }
 
+      ovnk_config_dir='/etc/ovnk'
+      ovnk_var_dir='/var/lib/ovnk'
+      extra_bridge_file="${ovnk_config_dir}/extra_bridge"
+      iface_default_hint_file="${ovnk_var_dir}/iface_default_hint"
+
+      # make sure to create ovnk_config_dir if it does not exist, yet
+      mkdir -p "${ovnk_config_dir}"
+      # make sure to create ovnk_var_dir if it does not exist, yet
+      mkdir -p "${ovnk_var_dir}"
+
+      # For upgrade scenarios, make sure that we stabilize what we already configured
+      # before. If we do not have a valid interface hint, find the physical interface
+      # that's attached to ovs-if-phys0.
+      # If we find such an interface, write it to the hint file.
+      iface_default_hint=$(get_iface_default_hint "${iface_default_hint_file}")
+      if [ "${iface_default_hint}" == "" ]; then
+        current_interface=$(get_bridge_physical_interface ovs-if-phys0)
+        if [ "${current_interface}" != "" ]; then
+          write_iface_default_hint "${iface_default_hint_file}" "${current_interface}"
+        fi
+      fi
+
+      # delete iface_default_hint_file if it has the same content as extra_bridge_file
+      # in that case, we must also force a reconfiguration of our network interfaces
+      # to make sure that we reconcile this conflict
+      if [ -f "${iface_default_hint_file}" ] &&
+         [ -f "${extra_bridge_file}" ] &&
+         [ "$(cat "${iface_default_hint_file}")" == "$(cat "${extra_bridge_file}")" ]; then
+        echo "${iface_default_hint_file} and ${extra_bridge_file} share the same content"
+        echo "Deleting file ${iface_default_hint_file} to choose a different interface"
+        rm -f "${iface_default_hint_file}"
+        rm -f /run/configure-ovs-boot-done
+      fi
+
       # on every boot we rollback and generate the configuration again, to take
       # in any changes that have possibly been applied in the standard
       # configuration sources
@@ -505,28 +665,7 @@ contents:
       fi
       touch /run/configure-ovs-boot-done
 
-      iface=""
-      counter=0
-      # find default interface
-      while [ $counter -lt 12 ]; do
-        # check ipv4
-        iface=$(ip route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -n "$iface" ]]; then
-          echo "IPv4 Default gateway interface found: ${iface}"
-          break
-        fi
-        # check ipv6
-        iface=$(ip -6 route show default | awk '{ if ($4 == "dev") { print $5; exit } }')
-        if [[ -n "$iface" ]]; then
-          echo "IPv6 Default gateway interface found: ${iface}"
-          break
-        fi
-        counter=$((counter+1))
-        echo "No default route found on attempt: ${counter}"
-        sleep 5
-      done
-
-      extra_bridge_file='/etc/ovnk/extra_bridge'
+      iface=$(get_default_interface "${iface_default_hint_file}" "$extra_bridge_file")
 
       if [ "$iface" != "br-ex" ]; then
         # Default gateway is not br-ex.
@@ -542,12 +681,12 @@ contents:
         fi
       fi
 
-      convert_to_bridge "$iface" "br-ex" "phys0"
+      convert_to_bridge "$iface" "br-ex" "phys0" "${BRIDGE_METRIC}"
 
       # Check if we need to configure the second bridge
       if [ -f "$extra_bridge_file" ] && (! nmcli connection show br-ex1 &> /dev/null || ! nmcli connection show ovs-if-phys1 &> /dev/null); then
         interface=$(head -n 1 $extra_bridge_file)
-        convert_to_bridge "$interface" "br-ex1" "phys1"
+        convert_to_bridge "$interface" "br-ex1" "phys1" "${BRIDGE1_METRIC}"
       fi
 
       # Check if we need to remove the second bridge
@@ -558,7 +697,7 @@ contents:
 
       # Remove bridges created by openshift-sdn
       ovs-vsctl --timeout=30 --if-exists del-br br0
-      
+
       # Recycle NM connections
       reload_nm
 

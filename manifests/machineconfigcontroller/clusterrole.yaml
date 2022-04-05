@@ -2,7 +2,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: machine-config-controller
-  namespace: {{.TargetNamespace}}
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -31,3 +30,16 @@ rules:
 - apiGroups: ["image.openshift.io"]
   resources: ["imagestreams","images"]
   verbs: ["*"]
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create

@@ -2,11 +2,13 @@ package node
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
+	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
@@ -24,6 +26,7 @@ import (
 	goerrs "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -64,7 +67,14 @@ const (
 
 	// masterPoolName is the control plane MachineConfigPool name
 	masterPoolName = "master"
+
+	// kubeletCAFilePath is the expected file path for the kubelet ca
+	kubeletCAFilePath = "/etc/kubernetes/kubelet-ca.crt"
 )
+
+// kubeAPIToKubeletSignerNamePrefixes is the list of subject common names that are regarded as a kube-apiserver-to-kubelet-signer ca certificate
+// Based on naming convention from https://github.com/openshift/library-go/blob/ed9bc958bd8a2fff079d52976806e4e0a8a7c315/pkg/operator/certrotation/signer.go#L132
+var kubeAPIToKubeletSignerNamePrefixes = []string{"openshift-kube-apiserver-operator_kube-apiserver-to-kubelet-signer@", "kube-apiserver-to-kubelet-signer"}
 
 // Controller defines the node controller.
 type Controller struct {
@@ -76,10 +86,12 @@ type Controller struct {
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
 	ccLister   mcfglistersv1.ControllerConfigLister
+	mcLister   mcfglistersv1.MachineConfigLister
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
 	nodeLister corelisterv1.NodeLister
 
 	ccListerSynced   cache.InformerSynced
+	mcListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
 
@@ -92,6 +104,7 @@ type Controller struct {
 // New returns a new node controller.
 func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	mcInformer mcfginformersv1.MachineConfigInformer,
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	schedulerInformer cligoinformersv1.SchedulerInformer,
@@ -128,9 +141,11 @@ func New(
 	ctrl.enqueueMachineConfigPool = ctrl.enqueueDefault
 
 	ctrl.ccLister = ccInformer.Lister()
+	ctrl.mcLister = mcInformer.Lister()
 	ctrl.mcpLister = mcpInformer.Lister()
 	ctrl.nodeLister = nodeInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.mcpListerSynced = mcpInformer.Informer().HasSynced
 	ctrl.nodeListerSynced = nodeInformer.Informer().HasSynced
 
@@ -145,7 +160,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
 
@@ -743,8 +758,16 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		if mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating) {
 			glog.Infof("Pool %s is paused and will not update.", pool.Name)
 		}
+
+		// Only check for pending files if we're out of sync
+		if pool.Spec.Configuration.Name != pool.Status.Configuration.Name {
+			ctrl.setPendingFileMetrics(pool)
+		}
 		return ctrl.syncStatusOnly(pool)
 	}
+
+	// We aren't paused anymore, so reset the metrics
+	ctrl.resetPendingFileMetrics(pool)
 
 	// Check to see if this is a layered, pool, and if it is, wait for the image that matches our desiredConfig to render
 	// If our image isn't cooked yet, don't do anything, the pool will get requeued when it's done
@@ -1096,5 +1119,113 @@ func (ctrl *Controller) experimentalHasValidImage(pool *mcfgv1.MachineConfigPool
 		}
 	}
 	return
+}
 
+// setPendingFileMetrics checks to see if there are any important files in the
+// machineconfig that the pool should be moving to, and sets metrics if there are
+func (ctrl *Controller) setPendingFileMetrics(pool *mcfgv1.MachineConfigPool) {
+	// Retrieve and parse the pool's machine config
+	currentConfig, pendingConfig, err := ctrl.parseConvertMachineConfigFilesForPool(pool)
+	if err != nil {
+		glog.Warningf("Error converting pool configs for %s pool: %v", pool.Name, err)
+		return
+	}
+
+	// Figure out what files differ between pool.Spec and pool.Status
+	fileDiff := ctrlcommon.CalculateConfigFileDiffs(currentConfig, pendingConfig)
+
+	// Go through our files until we hit the kubelet CA bundle
+	for _, path := range fileDiff {
+		// We only care about the kubelet CA bundle
+		if path != kubeletCAFilePath {
+			continue
+		}
+
+		// If it's there, get the *newest* (in case there have been multiple rotations) kube-apiserver-to-kubelet signer certifiate out of the bundle
+		newestSignerCertificate, err := ctrl.getNewestAPIToKubeletSignerCertificate(currentConfig)
+		if err != nil {
+			glog.Warningf("Error retrieving kubelet-ca certificates from pool %s: %v", pool.Name, err)
+		} else {
+			// Set the metric value to the UTC expiry date of that cert so we can count down to it
+			glog.V(2).Infof("Kubelet CA is stuck in paused pool %s. Setting metric to expiry date of %s (%s)", pool.Name, newestSignerCertificate.Subject.CommonName, newestSignerCertificate.NotAfter.UTC())
+			ctrlcommon.MachineConfigControllerPausedPoolKubeletCA.WithLabelValues(pool.Name).Set(float64(newestSignerCertificate.NotAfter.UTC().Unix()))
+		}
+		break
+	}
+}
+
+// resetPendingFileMetrics turns off any "paused file" metrics that were firing for the pool
+func (ctrl *Controller) resetPendingFileMetrics(pool *mcfgv1.MachineConfigPool) {
+	// Set the metric for this pool back to zero
+	ctrlcommon.MachineConfigControllerPausedPoolKubeletCA.WithLabelValues(pool.Name).Set(0)
+}
+
+// parseConvertMachineConfigFilesForPool retrieves the current and pending configurations for
+// a pool, parses and converts them, and returns them as ignition v3 Config objects. The controller needs
+// to retrieve and examine the actual configurations so it can diff the file lists and figure out which new
+// files are "stuck" behind a paused pool.
+func (ctrl *Controller) parseConvertMachineConfigFilesForPool(pool *mcfgv1.MachineConfigPool) (current, pending *ign3types.Config, err error) {
+	// The config we're in right now
+	currentName := pool.Status.Configuration.Name
+	// The config we would be going to
+	pendingName := pool.Spec.Configuration.Name
+
+	// Get the machine config objects
+	currentConfig, err := ctrl.mcLister.Get(currentName)
+	if apierrors.IsNotFound(err) {
+		glog.V(2).Infof("MachineConfig %v has been deleted", currentName)
+		return nil, nil, err
+	}
+
+	pendingConfig, err := ctrl.mcLister.Get(pendingName)
+	if apierrors.IsNotFound(err) {
+		glog.V(2).Infof("MachineConfigPool %v has been deleted", pendingName)
+		return nil, nil, err
+	}
+
+	// Make sure we can coax the objects into ignitionv3
+	currentIgnConfig, err := ctrlcommon.ParseAndConvertConfig(currentConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	pendingIgnConfig, err := ctrlcommon.ParseAndConvertConfig(pendingConfig.Spec.Config.Raw)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &currentIgnConfig, &pendingIgnConfig, nil
+}
+
+// getNewestAPIToKubeletSignerCertificate returns the newest kube-apiserver-to-kubelet-signer
+// certificate present in the kubelet-ca.crt bundle. We extract the certificate so we can use its
+// expiry date in our metrics/alerting. It's a very important certificate and its expiry will cause
+// nodes using it to cease communicating with the cluster.
+func (ctrl *Controller) getNewestAPIToKubeletSignerCertificate(statusIgnConfig *ign3types.Config) (*x509.Certificate, error) {
+	// Retrieve the file data from ignition
+	kubeletBundle, err := ctrlcommon.GetIgnitionFileDataByPath(statusIgnConfig, kubeletCAFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse that bundle into its component certificates
+	containedCertificates, err := ctrlcommon.GetCertificatesFromPEMBundle(kubeletBundle)
+	if err != nil {
+		return nil, err
+	}
+
+	// We have other problems if this is empty, but it's possible
+	if len(containedCertificates) == 0 {
+		return nil, fmt.Errorf("No certificates found in bundle")
+	}
+
+	// The *original* signer has a different name, the rotated ones have longer names
+	// The suffix changes with the timstamp on rotation, which is why I'm using prefix here not exact match
+	newestCertificate := ctrlcommon.GetLongestValidCertificate(containedCertificates, kubeAPIToKubeletSignerNamePrefixes)
+
+	// Shouldn't come back with nothing, but just in case we do
+	if newestCertificate == nil {
+		return nil, fmt.Errorf("No matching kube-apiserver-to-kubelet-signer certificates found in bundle")
+	}
+
+	return newestCertificate, nil
 }

@@ -318,6 +318,27 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 		)
 	}
 
+	if infra.Status.PlatformStatus.Nutanix != nil {
+		manifests = append(manifests,
+			manifest{
+				name:     "manifests/on-prem/coredns.yaml",
+				filename: "nutanix/manifests/coredns.yaml",
+			},
+			manifest{
+				name:     "manifests/on-prem/coredns-corefile.tmpl",
+				filename: "nutanix/static-pod-resources/coredns/Corefile.tmpl",
+			},
+			manifest{
+				name:     "manifests/on-prem/keepalived.yaml",
+				filename: "nutanix/manifests/keepalived.yaml",
+			},
+			manifest{
+				name:     "manifests/on-prem/keepalived.conf.tmpl",
+				filename: "nutanix/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+		)
+	}
+
 	return manifests
 }
 

@@ -299,7 +299,7 @@ type ImageDestination interface {
 	IgnoresEmbeddedDockerReference() bool
 
 	// PutBlob writes contents of stream and returns data representing the result.
-	// inputInfo.Digest can be optionally provided if known; it is not mandatory for the implementation to verify it.
+	// inputInfo.Digest can be optionally provided if known; if provided, and stream is read to the end without error, the digest MUST match the stream contents.
 	// inputInfo.Size is the expected length of stream, if known.
 	// inputInfo.MediaType describes the blob format, if known.
 	// May update cache.
@@ -622,6 +622,10 @@ type SystemContext struct {
 	DockerLogMirrorChoice bool
 	// Directory to use for OSTree temporary files
 	OSTreeTmpDirPath string
+	// If true, all blobs will have precomputed digests to ensure layers are not uploaded that already exist on the registry.
+	// Note that this requires writing blobs to temporary files, and takes more time than the default behavior,
+	// when the digest for a blob is unknown.
+	DockerRegistryPushPrecomputeDigests bool
 
 	// === docker/daemon.Transport overrides ===
 	// A directory containing a CA certificate (ending with ".crt"),
@@ -636,6 +640,8 @@ type SystemContext struct {
 	// === dir.Transport overrides ===
 	// DirForceCompress compresses the image layers if set to true
 	DirForceCompress bool
+	// DirForceDecompress decompresses the image layers if set to true
+	DirForceDecompress bool
 
 	// CompressionFormat is the format to use for the compression of the blobs
 	CompressionFormat *compression.Algorithm

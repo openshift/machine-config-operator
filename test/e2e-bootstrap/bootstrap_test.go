@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
@@ -42,11 +41,7 @@ const (
 	bootstrapTestName        = "BootstrapTest"
 	templatesDir             = "../../templates"
 	bootstrapTestDataDir     = "../../pkg/controller/bootstrap/testdata/bootstrap"
-	imagesFile               = "../../install/image-references"
 	openshiftConfigNamespace = "openshift-config"
-	componentNamespace       = "openshift-machine-config-operator"
-	pollInterval             = 200 * time.Millisecond
-	pollTimeout              = 30 * time.Second
 )
 
 var (
@@ -355,6 +350,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		// The node controller consumes data written by the above
 		node.New(
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
