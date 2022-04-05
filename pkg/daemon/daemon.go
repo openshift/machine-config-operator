@@ -465,9 +465,13 @@ func (dn *Daemon) syncNode(key string) error {
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
 		}
-		if dn.isLayeredNode() {
+		coreOSDaemon, err := dn.shouldUpdateLayered()
+		if err != nil {
+			return err
+		}
+		if coreOSDaemon != nil {
 			// experimentalUpdateLayeredConfig is idempotent
-			return dn.experimentalUpdateLayeredConfig()
+			return coreOSDaemon.experimentalUpdateLayeredConfig()
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
@@ -1470,9 +1474,16 @@ func (dn *Daemon) removeUpdateInProgressTaint(ctx context.Context) error {
 	})
 }
 
-func (dn *Daemon) isLayeredNode() bool {
+func (dn *Daemon) shouldUpdateLayered() (*CoreOSDaemon, error) {
 	_, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
-	return ok
+	if ok {
+		// sanity check that we're on CoreOS. The controller checks if a node runs CoreOS before setting desired image
+		if dn.os.IsCoreOSVariant() {
+			return &CoreOSDaemon{dn}, nil
+		}
+		return nil, fmt.Errorf("can't treat a non-CoreOS node as layered")
+	}
+	return nil, nil
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
@@ -1505,8 +1516,12 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	dn.stopConfigDriftMonitor()
 
 	// Hack in our layered node workflow for pools labeled as "layered"
-	if dn.isLayeredNode() {
-		return dn.experimentalUpdateLayeredConfig()
+	coreOSDaemon, err := dn.shouldUpdateLayered()
+	if err != nil {
+		return err
+	}
+	if coreOSDaemon != nil {
+		return coreOSDaemon.experimentalUpdateLayeredConfig()
 	}
 
 	// run the update process. this function doesn't currently return.
