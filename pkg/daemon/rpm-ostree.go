@@ -3,8 +3,11 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -229,7 +232,7 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 
 }
 
-// Rebase potentially rebases system if not already rebased.
+// Rebase potentially rebases the system to the image in osImageContentDir if not already rebased.
 func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool, err error) {
 	var (
 		ostreeCsum    string
@@ -321,35 +324,12 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	return
 }
 
-// Rebase potentially rebases system if not already rebased.
-func (r *RpmOstreeClient) RebaseLayered(imgURL string) (changed bool, err error) {
-
-	defaultDeployment, err := r.GetBootedDeployment()
-	if err != nil {
-		return
-	}
-
-	previousPivot := ""
-	if len(defaultDeployment.CustomOrigin) > 0 {
-		if strings.HasPrefix(defaultDeployment.CustomOrigin[0], "pivot://") {
-			previousPivot = defaultDeployment.CustomOrigin[0][len("pivot://"):]
-			glog.Infof("Previous pivot: %s", previousPivot)
-		} else {
-			glog.Infof("Previous custom origin: %s", defaultDeployment.CustomOrigin[0])
-		}
-	} else {
-		glog.Info("Current origin is not custom")
-	}
-
+// RebaseLayered rebases system or errors if already rebased
+func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 	glog.Infof("Executing rebase to %s", imgURL)
 	args := []string{"rebase", "--experimental", "ostree-unverified-registry:" + imgURL}
 
-	if err = runRpmOstree(args...); err != nil {
-		return
-	}
-
-	changed = true
-	return
+	return runRpmOstree(args...)
 }
 
 // Live apply live-applies whatever we rebased to
@@ -357,13 +337,75 @@ func (r *RpmOstreeClient) ApplyLive() (err error) {
 
 	glog.Infof("Applying live")
 
-	args := []string{"ex", "apply-live", "--allow-replacement"}
+	return runRpmOstree("ex", "apply-live", "--allow-replacement")
+}
 
-	if err = runRpmOstree(args...); err != nil {
-		return
+type FileTree struct {
+	children map[string]*FileTree
+}
+
+// ensures nodes exist for every element in a path
+func (node *FileTree) insert(path []string) {
+	child, ok := node.children[path[0]]
+	if !ok {
+		// if we're inserting the first child for this node we need to create the map
+		if node.children == nil {
+			node.children = make(map[string]*FileTree)
+		}
+		// there isn't a node for the first element in the path, so we need to create one
+		child = &FileTree{}
+		node.children[path[0]] = child
 	}
+	if len(path) > 1 {
+		child.insert(path[1:])
+	}
+}
 
+// walk the tree, generating a list of all paths to leaves
+func (node *FileTree) walk() (paths []string) {
+	for childPath, child := range node.children {
+		pathsToLeaves := child.walk()
+		if len(pathsToLeaves) == 0 {
+			// child is a leaf, so add it to paths
+			paths = append(paths, path.Join("/", childPath))
+		} else {
+			// else prepend childPath to all pathsToLeaves
+			for _, pathToLeaf := range pathsToLeaves {
+				paths = append(paths, path.Join("/", childPath, pathToLeaf))
+			}
+		}
+	}
 	return
+}
+
+func Diff(fromRev, toRev string) ([]string, error) {
+	stdout, err := runGetOut("ostree", "diff", fromRev, toRev)
+	if err != nil {
+		return []string{}, fmt.Errorf("failed to run ostree diff: %w", err)
+	}
+	return ParseDiff(stdout), nil
+}
+
+func ParseDiff(stdout []byte) []string {
+	paths := FileTree{}
+	lines := strings.Split(string(stdout), "\n")
+	for _, line := range lines {
+		words := strings.Fields(line)
+		// lines will be of the form
+		// {A,D,M} path
+		// all we care about is getting the path
+		// add len check since last line will be empty
+		if len(words) >= 1 {
+			splitPath := strings.Split(words[1], string(os.PathSeparator))
+			// pass splitPath[1:] since splitPath will have "" as its first element
+			paths.insert(splitPath[1:])
+		}
+	}
+	return paths.walk()
+}
+
+func Cat(stateroot, commit, path string) ([]byte, error) {
+	return ioutil.ReadFile(filepath.Join(fmt.Sprintf("/ostree/deploy/%s/deploy/%s.0", stateroot, commit), path))
 }
 
 // truncate a string using runes/codepoints as limits.
@@ -395,55 +437,58 @@ func runGetOut(command string, args ...string) ([]byte, error) {
 	return rawOut, nil
 }
 
+type Deployment struct {
+	RequestedLocalPackages []interface{} `json:"requested-local-packages"`
+	BaseCommitMeta         struct {
+		OstreeContainerImageConfig  string   `json:"ostree.container.image-config"`
+		OstreeManifest              string   `json:"ostree.manifest"`
+		OstreeManifestDigest        string   `json:"ostree.manifest-digest"`
+		OstreeImporterVersion       string   `json:"ostree.importer.version"`
+		CoreosAssemblerConfigGitrev string   `json:"coreos-assembler.config-gitrev"`
+		RpmostreeInitramfsArgs      []string `json:"rpmostree.initramfs-args"`
+		OstreeLinux                 string   `json:"ostree.linux"`
+		RpmostreeRpmmdRepos         []struct {
+			ID        string `json:"id"`
+			Timestamp int64  `json:"timestamp"`
+		} `json:"rpmostree.rpmmd-repos"`
+		CoreosAssemblerConfigDirty string                    `json:"coreos-assembler.config-dirty"`
+		OstreeBootable             bool                      `json:"ostree.bootable"`
+		CoreosAssemblerBasearch    string                    `json:"coreos-assembler.basearch"`
+		Version                    string                    `json:"version"`
+		RpmostreeInputhash         string                    `json:"rpmostree.inputhash"`
+		OstreeTarFiltered          map[string]map[string]int `json:"ostree.tar-filtered"`
+	} `json:"base-commit-meta,omitempty"`
+	BaseRemovals                       []interface{} `json:"base-removals"`
+	Unlocked                           string        `json:"unlocked"`
+	Booted                             bool          `json:"booted"`
+	RequestedLocalFileoverridePackages []interface{} `json:"requested-local-fileoverride-packages"`
+	ID                                 string        `json:"id"`
+	Osname                             string        `json:"osname"`
+	Pinned                             bool          `json:"pinned"`
+	ModulesEnabled                     []interface{} `json:"modules-enabled"`
+	RegenerateInitramfs                bool          `json:"regenerate-initramfs"`
+	BaseLocalReplacements              []interface{} `json:"base-local-replacements"`
+	ContainerImageReference            string        `json:"container-image-reference,omitempty"`
+	Checksum                           string        `json:"checksum"`
+	RequestedBaseLocalReplacements     []interface{} `json:"requested-base-local-replacements"`
+	RequestedModules                   []interface{} `json:"requested-modules"`
+	RequestedPackages                  []interface{} `json:"requested-packages"`
+	Serial                             int           `json:"serial"`
+	Timestamp                          int           `json:"timestamp"`
+	Packages                           []interface{} `json:"packages"`
+	Staged                             bool          `json:"staged"`
+	RequestedBaseRemovals              []interface{} `json:"requested-base-removals"`
+	Modules                            []interface{} `json:"modules"`
+	ContainerImageReferenceDigest      string        `json:"container-image-reference-digest,omitempty"`
+	Origin                             string        `json:"origin,omitempty"`
+	Version                            string        `json:"version,omitempty"`
+	CustomOrigin                       []string      `json:"custom-origin,omitempty"`
+	LiveReplaced                       string        `json:"live-replaced,omitempty"`
+}
+
 type RpmOstreeStatus struct {
-	Deployments []struct {
-		RequestedLocalPackages []interface{} `json:"requested-local-packages"`
-		BaseCommitMeta         struct {
-			OstreeContainerImageConfig  string   `json:"ostree.container.image-config"`
-			OstreeManifest              string   `json:"ostree.manifest"`
-			OstreeManifestDigest        string   `json:"ostree.manifest-digest"`
-			OstreeImporterVersion       string   `json:"ostree.importer.version"`
-			CoreosAssemblerConfigGitrev string   `json:"coreos-assembler.config-gitrev"`
-			RpmostreeInitramfsArgs      []string `json:"rpmostree.initramfs-args"`
-			OstreeLinux                 string   `json:"ostree.linux"`
-			RpmostreeRpmmdRepos         []struct {
-				ID        string `json:"id"`
-				Timestamp int64  `json:"timestamp"`
-			} `json:"rpmostree.rpmmd-repos"`
-			CoreosAssemblerConfigDirty string                    `json:"coreos-assembler.config-dirty"`
-			OstreeBootable             bool                      `json:"ostree.bootable"`
-			CoreosAssemblerBasearch    string                    `json:"coreos-assembler.basearch"`
-			Version                    string                    `json:"version"`
-			RpmostreeInputhash         string                    `json:"rpmostree.inputhash"`
-			OstreeTarFiltered          map[string]map[string]int `json:"ostree.tar-filtered"`
-		} `json:"base-commit-meta,omitempty"`
-		BaseRemovals                       []interface{} `json:"base-removals"`
-		Unlocked                           string        `json:"unlocked"`
-		Booted                             bool          `json:"booted"`
-		RequestedLocalFileoverridePackages []interface{} `json:"requested-local-fileoverride-packages"`
-		ID                                 string        `json:"id"`
-		Osname                             string        `json:"osname"`
-		Pinned                             bool          `json:"pinned"`
-		ModulesEnabled                     []interface{} `json:"modules-enabled"`
-		RegenerateInitramfs                bool          `json:"regenerate-initramfs"`
-		BaseLocalReplacements              []interface{} `json:"base-local-replacements"`
-		ContainerImageReference            string        `json:"container-image-reference,omitempty"`
-		Checksum                           string        `json:"checksum"`
-		RequestedBaseLocalReplacements     []interface{} `json:"requested-base-local-replacements"`
-		RequestedModules                   []interface{} `json:"requested-modules"`
-		RequestedPackages                  []interface{} `json:"requested-packages"`
-		Serial                             int           `json:"serial"`
-		Timestamp                          int           `json:"timestamp"`
-		Packages                           []interface{} `json:"packages"`
-		Staged                             bool          `json:"staged"`
-		RequestedBaseRemovals              []interface{} `json:"requested-base-removals"`
-		Modules                            []interface{} `json:"modules"`
-		ContainerImageReferenceDigest      string        `json:"container-image-reference-digest,omitempty"`
-		Origin                             string        `json:"origin,omitempty"`
-		Version                            string        `json:"version,omitempty"`
-		CustomOrigin                       []string      `json:"custom-origin,omitempty"`
-	} `json:"deployments"`
-	Transaction  interface{} `json:"transaction"`
-	CachedUpdate interface{} `json:"cached-update"`
-	UpdateDriver interface{} `json:"update-driver"`
+	Deployments  []Deployment `json:"deployments"`
+	Transaction  interface{}  `json:"transaction"`
+	CachedUpdate interface{}  `json:"cached-update"`
+	UpdateDriver interface{}  `json:"update-driver"`
 }
