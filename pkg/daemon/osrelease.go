@@ -45,6 +45,12 @@ func (os OperatingSystem) IsCoreOSVariant() bool {
 	return os.IsFCOS() || os.IsRHCOS()
 }
 
+// IsProbablyCoreOSVariant is true if the OS could be FCOS or a derivative solely based on OS ID
+// This will be inaccurate for Fedora, but we don't expect anyone will be running non-FCOS Fedora
+func IsProbablyCoreOSVariant(osID string) bool {
+	return osID == FCOS.ID || osID == RHCOS.ID
+}
+
 // IsLikeTraditionalRHEL7 is true if the OS is traditional RHEL7 or CentOS7:
 // yum based + kickstart/cloud-init (not Ignition).
 func (os OperatingSystem) IsLikeTraditionalRHEL7() bool {

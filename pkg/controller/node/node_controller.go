@@ -16,6 +16,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/daemon"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -58,6 +59,9 @@ const (
 
 	// osLabel is used to identify which type of OS the node has
 	osLabel = "kubernetes.io/os"
+
+	// osIDLabel stores ID from /etc/os-release
+	osIDLabel = "node.openshift.io/os_id"
 
 	// schedulerCRName that we're interested in watching.
 	schedulerCRName = "cluster"
@@ -983,13 +987,23 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		// TODO(jkyros): this does not obviate the desiredConfig annotation below for now, as we're using "are we in our desired machineconfig"
 		// as our "done" signal
 		if isImagePool {
-			if targetImageMatchesConfig {
-				ctrl.logPool(pool, "Setting node %s target image to %s", node.Name, targetImage)
-				if err := ctrl.setNodeAnnotation(node.Name, daemonconsts.DesiredImageConfigAnnotationKey, targetImage); err != nil {
-					return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
+			// double check that this node has CoreOS and will support layering
+			osID, ok := node.Labels[osIDLabel]
+			if ok {
+				if daemon.IsProbablyCoreOSVariant(osID) {
+					if targetImageMatchesConfig {
+						ctrl.logPool(pool, "Setting node %s target image to %s", node.Name, targetImage)
+						if err := ctrl.setNodeAnnotation(node.Name, daemonconsts.DesiredImageConfigAnnotationKey, targetImage); err != nil {
+							return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
+						}
+					} else {
+						glog.Infof("Image %s matched %s not %s. Proper image may not have rendered yet", targetImage, equivalentTo, targetConfig)
+					}
+				} else {
+					return fmt.Errorf("node %s is in layered pool but has OS ID %s which does not support layering", node.Name, osID)
 				}
 			} else {
-				glog.Infof("Image %s matched %s not %s. Proper image may not have rendered yet", targetImage, equivalentTo, targetConfig)
+				return fmt.Errorf("node %s is in layered pool but has no os_id label, so refusing to perform layered update", node.Name)
 			}
 
 		}
