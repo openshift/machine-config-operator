@@ -991,7 +991,10 @@ func (ctrl *Controller) experimentalRenderToImageStream(pool *mcfgv1.MachineConf
 	}
 
 	// TODO(jkyros): This is better than using skipverify/"nosec" to get past verify, but figure out error cases here later
-	rootCAs := x509.NewCertPool()
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		return fmt.Errorf("Failed to load system cert pool: %w", err)
+	}
 	rootCAs.AppendCertsFromPEM([]byte(serviceServingSignerCA.Data["service-ca.crt"]))
 
 	// Add the service serving CA to our trust bundle in our tls config
