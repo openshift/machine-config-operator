@@ -818,3 +818,29 @@ func CanonicalizeKernelType(kernelType string) string {
 	}
 	return KernelTypeDefault
 }
+
+// experimentalHasValidImage is what makes node_controller wait for an image to render for a "layered" pool. Checks the state of the pool annotations assigned by render_controller to see if our image is done rendering
+// and it's the proper image to apply to this pool. This is used to make sure we don't assign a config to a node too early and have it take the non-image
+// path because all it got was a machineconfig.
+func ExperimentalHasValidImage(pool *mcfgv1.MachineConfigPool) (targetImage, equivalentTo string, isLayeredPool, targetImageMatchesConfig bool) {
+
+	var hasTargetImage bool
+	// The image that's currently the latest in the image stream
+	targetImage, hasTargetImage = pool.Annotations[ExperimentalNewestLayeredImageAnnotationKey]
+	// Which machineconfig it's "equivalent" to
+	equivalentTo, hasEquivalentTo := pool.Annotations[ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
+
+	// TODO(jkyros): Flag or something later, this is just for now
+	isLayeredPool = IsLayeredPool(pool)
+
+	// If it has these, we know it's cooked at least one image, but it might be the previous one, and
+	// the new one might still be rendering
+	if hasTargetImage && hasEquivalentTo {
+		// But if it matches our machineconfig, we know it's the right one
+		if equivalentTo == pool.Spec.Configuration.Name {
+			targetImageMatchesConfig = true
+		}
+	}
+	return
+
+}

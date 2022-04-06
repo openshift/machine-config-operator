@@ -748,7 +748,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	// Check to see if this is a layered, pool, and if it is, wait for the image that matches our desiredConfig to render
 	// If our image isn't cooked yet, don't do anything, the pool will get requeued when it's done
-	targetImage, equivalentTo, isImagePool, targetImageMatchesConfig := ctrl.experimentalHasValidImage(pool)
+	targetImage, equivalentTo, isImagePool, targetImageMatchesConfig := ctrlcommon.ExperimentalHasValidImage(pool)
 	if isImagePool && !targetImageMatchesConfig {
 		glog.Infof("Target image %s (%s) does not match target config %s. Skipping pool %s for now.", targetImage, equivalentTo, pool.Spec.Configuration.Name, pool.Name)
 		return ctrl.syncStatusOnly(pool)
@@ -977,7 +977,7 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 	for _, node := range candidates {
 
 		// Check image details for this pool
-		targetImage, equivalentTo, isImagePool, targetImageMatchesConfig := ctrl.experimentalHasValidImage(pool)
+		targetImage, equivalentTo, isImagePool, targetImageMatchesConfig := ctrlcommon.ExperimentalHasValidImage(pool)
 
 		// If our pool is annotated with an image AND that image is the right image, then update these nodes with it
 		// TODO(jkyros): this does not obviate the desiredConfig annotation below for now, as we're using "are we in our desired machineconfig"
@@ -1071,30 +1071,4 @@ func getErrorString(err error) string {
 		return err.Error()
 	}
 	return ""
-}
-
-// experimentalHasValidImage is what makes node_controller wait for an image to render for a "layered" pool. Checks the state of the pool annotations assigned by render_controller to see if our image is done rendering
-// and it's the proper image to apply to this pool. This is used to make sure we don't assign a config to a node too early and have it take the non-image
-// path because all it got was a machineconfig.
-func (ctrl *Controller) experimentalHasValidImage(pool *mcfgv1.MachineConfigPool) (targetImage, equivalentTo string, isLayeredPool, targetImageMatchesConfig bool) {
-
-	var hasTargetImage bool
-	// The image that's currently the latest in the image stream
-	targetImage, hasTargetImage = pool.Annotations[ctrlcommon.ExperimentalNewestLayeredImageAnnotationKey]
-	// Which machineconfig it's "equivalent" to
-	equivalentTo, hasEquivalentTo := pool.Annotations[ctrlcommon.ExperimentalNewestLayeredImageEquivalentConfigAnnotationKey]
-
-	// TODO(jkyros): Flag or something later, this is just for now
-	isLayeredPool = ctrlcommon.IsLayeredPool(pool)
-
-	// If it has these, we know it's cooked at least one image, but it might be the previous one, and
-	// the new one might still be rendering
-	if hasTargetImage && hasEquivalentTo {
-		// But if it matches our machineconfig, we know it's the right one
-		if equivalentTo == pool.Spec.Configuration.Name {
-			targetImageMatchesConfig = true
-		}
-	}
-	return
-
 }
