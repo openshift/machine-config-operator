@@ -81,7 +81,8 @@ func (suite *LayeringSuite) TestNoReboot() {
 	// Re-fetch the infra node for updated annotations
 	infraNode = helpers.GetSingleNodeByRole(suite.T(), cs, "infra")
 
-	assert.Equal(suite.T(), infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+	// TODO come up with equivalent layering condition
+	// assert.Equal(suite.T(), infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
 	assert.Equal(suite.T(), infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
 	foundSSHKey := helpers.ExecCmdOnNode(suite.T(), cs, infraNode, "cat", "/rootfs/home/core/.ssh/authorized_keys")
