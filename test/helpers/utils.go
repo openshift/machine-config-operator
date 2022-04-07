@@ -13,6 +13,7 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/pkg/errors"
@@ -195,6 +196,30 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 		return errors.Wrapf(err, "pool %s didn't report %s to updated (waited %s)", pool, target, time.Since(startTime))
 	}
 	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
+	return nil
+}
+
+func WaitForLayeredPoolInitialUpdate(t *testing.T, cs *framework.ClientSet, pool string) error {
+	var equivalentTo string
+	startTime := time.Now()
+	if err := wait.Poll(2*time.Second, 20*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), pool, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		var targetImageMatchesConfig bool
+		_, equivalentTo, _, targetImageMatchesConfig = ctrlcommon.ExperimentalHasValidImage(mcp)
+		return targetImageMatchesConfig, nil
+	}); err != nil {
+		return fmt.Errorf("pool %s didn't build valid image for layered update (waited %s): %w", pool, time.Since(startTime), err)
+	}
+	t.Logf("Pool %s built valid image for layered update (waited %v)", pool, time.Since(startTime))
+
+	if err := WaitForPoolComplete(t, cs, pool, equivalentTo); err != nil {
+		return fmt.Errorf("pool %s didn't complete initial layered update (waited %s): %w", pool, time.Since(startTime), err)
+	}
+	t.Logf("Pool %s has completed initial layered update (waited %v)", pool, time.Since(startTime))
+
 	return nil
 }
 
