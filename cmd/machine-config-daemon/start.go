@@ -32,16 +32,16 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig             string
-		nodeName               string
-		rootMount              string
-		desiredConfigMap       string
-		onceFrom               string
-		skipReboot             bool
-		fromIgnition           bool
-		kubeletHealthzEnabled  bool
-		kubeletHealthzEndpoint string
-		promMetricsURL         string
+		kubeconfig                 string
+		nodeName                   string
+		rootMount                  string
+		hypershiftDesiredConfigMap string
+		onceFrom                   string
+		skipReboot                 bool
+		fromIgnition               bool
+		kubeletHealthzEnabled      bool
+		kubeletHealthzEndpoint     string
+		promMetricsURL             string
 	}
 )
 
@@ -50,7 +50,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
 	startCmd.PersistentFlags().StringVar(&startOpts.rootMount, "root-mount", "/rootfs", "where the nodes root filesystem is mounted for chroot and file manipulation.")
-	startCmd.PersistentFlags().StringVar(&startOpts.desiredConfigMap, "desired-configmap", "", "Runs the daemon for a Hypershift hosted cluster node. Requires a configmap with desired config as input.")
+	startCmd.PersistentFlags().StringVar(&startOpts.hypershiftDesiredConfigMap, "desired-configmap", "", "Runs the daemon for a Hypershift hosted cluster node. Requires a configmap with desired config as input.")
 	startCmd.PersistentFlags().StringVar(&startOpts.onceFrom, "once-from", "", "Runs the daemon once using a provided file path or URL endpoint as its machine config or ignition (.ign) file source")
 	startCmd.PersistentFlags().BoolVar(&startOpts.skipReboot, "skip-reboot", false, "Skips reboot after a sync, applies only in once-from")
 	startCmd.PersistentFlags().BoolVar(&startOpts.kubeletHealthzEnabled, "kubelet-healthz-enabled", true, "kubelet healthz endpoint monitoring")
@@ -204,14 +204,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
-	if startOpts.desiredConfigMap != "" {
+	if startOpts.hypershiftDesiredConfigMap != "" {
 		// This is a hypershift-mode daemon
 		ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
 		dn.HypershiftConnect(
 			startOpts.nodeName,
 			kubeClient,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
-			startOpts.desiredConfigMap,
+			startOpts.hypershiftDesiredConfigMap,
 		)
 
 		ctx.KubeInformerFactory.Start(stopCh)
@@ -222,7 +222,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 
 		// We shouldn't ever get here
-		glog.Fatalf("Hypershift mode state machine somehow returned: %v", err)
+		glog.Fatalf("Unexpected error, hypershift mode state machine returned: %v", err)
 	}
 
 	// Start local metrics listener

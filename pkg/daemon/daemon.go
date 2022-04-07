@@ -130,7 +130,7 @@ type Daemon struct {
 	configDriftMonitor ConfigDriftMonitor
 
 	// Used for Hypershift
-	configMap string
+	hypershiftConfigMap string
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -163,6 +163,12 @@ const (
 	// maxUpdateBackoff is the maximum time to react to a change as we back off
 	// in the face of errors.
 	maxUpdateBackoff = 60 * time.Second
+
+	// used for Hypershift daemon
+	mcsServedConfigPath         = "/etc/mcs-machine-config-content.json"
+	hypershiftCurrentConfigPath = "/etc/mcd-currentconfig.json"
+	configMapConfigKey          = "config"
+	configMapHashKey            = "hash"
 )
 
 type onceFromOrigin int
@@ -348,7 +354,7 @@ func (dn *Daemon) HypershiftConnect(
 ) {
 	dn.name = name
 	dn.kubeClient = kubeClient
-	dn.configMap = configMap
+	dn.hypershiftConfigMap = configMap
 
 	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
@@ -646,7 +652,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	//   b) /etc/mcs-machine-config-content.json, written by MCS when the node is provisioned,
 	//      if no MCD has operated on this node
 	// desired configuration will be read directly off a ConfigMap in our namespace, specified by
-	// dn.configMap. This currently has a "config" key (full ignition served json) and a "hash"
+	// dn.hypershiftConfigMap. This currently has a "config" key (full ignition served json) and a "hash"
 	// key, which is the TargetVersionConfigHash for Hypershift nodepools
 
 	// This isn't strictly necessary but we should only react to our own node changes, like normal MCD
@@ -657,13 +663,6 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	if name != dn.name {
 		return nil
 	}
-
-	mcsServedConfigPath := "/etc/mcs-machine-config-content.json"
-	hypershiftCurrentConfigPath := "/etc/mcd-currentconfig.json"
-	// TODO May need to be variable
-	// namespace := "hypershift-mco"
-	configMapConfigKey := "config"
-	configMapHashKey := "hash"
 
 	// First, check if our drain/uncordon request was honored by the controller
 	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
@@ -680,7 +679,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		// We have not yet been signaled to update, just return
 		// This may cause issues because the desiredConfig here doesn't necessarily match the config in the configmap
 		// TODO consider revisiting that
-		glog.Infof("CurrentConfig == DesiredConfig in node annotations.")
+		glog.V(4).Info("CurrentConfig == DesiredConfig in node annotations.")
 		return nil
 	}
 
@@ -704,20 +703,14 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		return errors.Wrapf(err, "Cannot read on-disk state into MachineConfig")
 	}
 
-	// The RBAC settings should allow us to read configmaps, so let's do that
-	// desiredConfigCM, err := dn.kubeClient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), dn.configMap, metav1.GetOptions{})
-	// if err != nil {
-	// 	return errors.Wrapf(err, "Cannot fetch desiredConfig from configmap %s", dn.configMap)
-	// }
-
 	// Instead of reading from configmap directly, let's mount it in as a volumn, such that we don't have to give that
 	// additional RBAC rule
-	ignServedConfigPath := filepath.Join(dn.configMap, configMapConfigKey)
+	ignServedConfigPath := filepath.Join(dn.hypershiftConfigMap, configMapConfigKey)
 	ignServedConfigBytes, err := ioutil.ReadFile(ignServedConfigPath)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to load desiredConfig")
 	}
-	targetHashPath := filepath.Join(dn.configMap, configMapHashKey)
+	targetHashPath := filepath.Join(dn.hypershiftConfigMap, configMapHashKey)
 	targetHashBytes, err := ioutil.ReadFile(targetHashPath)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to load desiredConfig hash")
@@ -794,7 +787,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			return errors.Wrapf(err, "Failed to set Done annotation on node")
 		}
 		// Wait for a future sync to perform post-drain actions
-		glog.Infof("Setting drain request via annotation to controller")
+		glog.Info("Setting drain request via annotation to controller.")
 		return nil
 	}
 
