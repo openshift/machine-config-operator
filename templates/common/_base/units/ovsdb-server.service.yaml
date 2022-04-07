@@ -3,5 +3,8 @@ enabled: {{if eq .NetworkType "OVNKubernetes"}}true{{else if eq .NetworkType "Op
 dropins:
   - name: 10-ovsdb-restart.conf
     contents: |
+      [Unit]
+      After=sysroot.mount
+
       [Service]
       Restart=always
