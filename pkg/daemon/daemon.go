@@ -661,7 +661,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	mcsServedConfigPath := "/etc/mcs-machine-config-content.json"
 	hypershiftCurrentConfigPath := "/etc/mcd-currentconfig.json"
 	// TODO May need to be variable
-	namespace := "hypershift-mco"
+	// namespace := "hypershift-mco"
 	configMapConfigKey := "config"
 	configMapHashKey := "hash"
 
@@ -705,16 +705,27 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	// The RBAC settings should allow us to read configmaps, so let's do that
-	desiredConfigCM, err := dn.kubeClient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), dn.configMap, metav1.GetOptions{})
+	// desiredConfigCM, err := dn.kubeClient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), dn.configMap, metav1.GetOptions{})
+	// if err != nil {
+	// 	return errors.Wrapf(err, "Cannot fetch desiredConfig from configmap %s", dn.configMap)
+	// }
+
+	// Instead of reading from configmap directly, let's mount it in as a volumn, such that we don't have to give that
+	// additional RBAC rule
+	ignServedConfigPath := filepath.Join(dn.configMap, configMapConfigKey)
+	ignServedConfigBytes, err := ioutil.ReadFile(ignServedConfigPath)
 	if err != nil {
-		return errors.Wrapf(err, "Cannot fetch desiredConfig from configmap %s", dn.configMap)
+		return errors.Wrapf(err, "Failed to load desiredConfig")
 	}
+	targetHashPath := filepath.Join(dn.configMap, configMapHashKey)
+	targetHashBytes, err := ioutil.ReadFile(targetHashPath)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to load desiredConfig hash")
+	}
+	targetHash := string(targetHashBytes)
 
 	// TODO probably have to compress this in the future
-	cmData := desiredConfigCM.Data[configMapConfigKey]
-	targetHash := desiredConfigCM.Data[configMapHashKey]
-
-	ignConfig, err := ctrlcommon.ParseAndConvertConfig([]byte(cmData))
+	ignConfig, err := ctrlcommon.ParseAndConvertConfig(ignServedConfigBytes)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to parse Ignition from configmap data.config")
 	}
