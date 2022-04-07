@@ -14,6 +14,14 @@ const (
 	DesiredMachineConfigAnnotationKey = "machineconfiguration.openshift.io/desiredConfig"
 	// MachineConfigDaemonStateAnnotationKey is used to fetch the state of the daemon on the machine.
 	MachineConfigDaemonStateAnnotationKey = "machineconfiguration.openshift.io/state"
+	// DesiredDrainerAnnotationKey is set by the MCD to indicate drain/uncordon requests
+	DesiredDrainerAnnotationKey = "machineconfiguration.openshift.io/desiredDrain"
+	// LastAppliedDrainerAnnotationKey is set by the controller to indicate the last request applied
+	LastAppliedDrainerAnnotationKey = "machineconfiguration.openshift.io/lastAppliedDrain"
+	// DrainerStateDrain is used for drainer annotation as a value to indicate needing a drain
+	DrainerStateDrain = "drain"
+	// DrainerStateUncordon is used for drainer annotation as a value to indicate needing an uncordon
+	DrainerStateUncordon = "uncordon"
 	// ClusterControlPlaneTopologyAnnotationKey is set by the node controller by reading value from
 	// controllerConfig. MCD uses the annotation value to decide drain action on the node.
 	ClusterControlPlaneTopologyAnnotationKey = "machineconfiguration.openshift.io/controlPlaneTopology"
