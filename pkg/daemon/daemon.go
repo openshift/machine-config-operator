@@ -675,6 +675,14 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		glog.Infof("The controller has not yet performed our previous drain/uncordon request %s", node.Annotations[constants.DesiredDrainerAnnotationKey])
 		return nil
 	}
+	if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == "" ||
+		node.Annotations[constants.CurrentMachineConfigAnnotationKey] == node.Annotations[constants.DesiredMachineConfigAnnotationKey] {
+		// We have not yet been signaled to update, just return
+		// This may cause issues because the desiredConfig here doesn't necessarily match the config in the configmap
+		// TODO consider revisiting that
+		glog.Infof("CurrentConfig == DesiredConfig in node annotations.")
+		return nil
+	}
 
 	// /etc/machine-config-daemon/currentconfig actually exists in hypershift nodes, but is empty.
 	// So we are using another location instead
@@ -736,7 +744,6 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			return errors.Wrapf(err, "Disk validation failed")
 		}
 
-		// TODO consider having the controller write a desiredconfig, so we can check earlier and skip the reads
 		if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == targetHash &&
 			node.Annotations[constants.DesiredDrainerAnnotationKey] == fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash) {
 			// We are in a done state
