@@ -610,6 +610,71 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	return dn.performPostConfigChangeAction(actions, newConfig.GetName())
 }
 
+// This is currently a subsection copied over from update() since we need to be more nuanced. Should eventually
+// de-dupe the functions.
+func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, diff *machineConfigDiff) (retErr error) {
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+	}
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+	}
+
+	// update files on disk that need updating
+	if err := dn.updateFiles(oldIgnConfig, newIgnConfig); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back files writes %v", err)
+				return
+			}
+		}
+	}()
+
+	if err := dn.updateSSHKeys(newIgnConfig.Passwd.Users); err != nil {
+		return err
+	}
+
+	defer func() {
+		if retErr != nil {
+			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
+				retErr = errors.Wrapf(retErr, "error rolling back SSH keys updates %v", err)
+				return
+			}
+		}
+	}()
+
+	if dn.os.IsCoreOSVariant() {
+		coreOSDaemon := CoreOSDaemon{dn}
+		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
+			return err
+		}
+
+		defer func() {
+			if retErr != nil {
+				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
+					retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
+					return
+				}
+			}
+		}()
+	} else {
+		glog.Info("updating the OS on non-CoreOS nodes is not supported")
+	}
+
+	if err := UpdateTuningArgs(KernelTuningFile, CmdLineFile); err != nil {
+		return err
+	}
+
+	glog.Info("Successfully completed Hypershift config update")
+	return nil
+}
+
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
 // At some point this may change into holding just the files/units that changed
 // and the MCO would just operate on that.  For now we're just doing this to get
