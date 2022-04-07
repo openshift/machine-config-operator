@@ -70,36 +70,43 @@ For the sake of your fellow reviewers, commit vendored code separately from any 
 
 # Developing the MCD without building images
 
-It is possible to iterate on the MCD without having to rebuild images
-for each change. To do this, change the daemonset definition to
-something like:
+It is possible to iterate on the MCD without having to rebuild images for each
+change. You can use the `hack/prep-cluster-for-mcd-push.sh` to prepare the
+cluster to push your MCD changes. You only need to run this script once, but
+running it additional times is fine. To build and push your changes, use the
+`hack/push-to-mcd-pods.sh` script. The scripts do the following:
 
+`hack/prep-cluster-for-mcd-push.sh`:
+1. Disables the cluster version operator and the machine config operator. This prevents the MCD DaemonSet modifications the script makes from being overwritten.
+1. Copies the MCD binary from the container onto the host's filesystem via the `/rootfs` volume mount on the MCD pods.
+1. Modifies The MCD DaemonSet to compute the sha256sum of the binary and then start the MCD binary from the nodes' filesystems instead of from inside the container. The sha256sum is useful for determining if the latest MCD binary is running.
+1. Restarts MCD DaemonSet to use the new config.
 
-```yaml
-containers:
-- command: ["/bin/bash"]
-  args:
-  - -c
-  - cp /rootfs/usr/local/bin/machine-config-daemon /usr/local/bin/machine-config-daemon && /usr/local/bin/machine-config-daemon start -v 4
+To revert the cluster back to its prior configuration, reenable the cluster version operator and the machine config operator:
+- `$ oc scale --replicas=1 deployment/machine-config-operator --namespace openshift-machine-config-operator`
+- `$ oc scale --replicas=1 deployment/cluster-version-operator --namespace openshift-cluster-version`
+
+`hack/push-to-mcd-pods.sh`:
+1. Determines the underlying cluster architecture and OS. **NOTE:** It only grabs this info from the first node returned by `$ oc get nodes`. This will need some refactoring for multiarch clusters.
+1. Builds the MCD binary for the target cluster architecture and OS by setting the `GOOS` and `GOARCH` env variables.
+1. Computes a sha256sum of the newly-built MCD binary.
+1. Copies the newly-built binary to the nodes' underlying filesystem via the currently-running MCD pods.
+1. Restarts the MCD DaemonSet which causes the newly-built MCD binary to be executed.
+
+`hack/get-mcd-pods.py`:
+
+This script outputs the currently running MCD pods, what nodes they're running on, and what roles they have:
+
+```console
+Current MCD Pods:
+machine-config-daemon-9l5nm     ip-10-0-171-232.ec2.internal    master
+machine-config-daemon-dsknp     ip-10-0-137-167.ec2.internal    worker
+machine-config-daemon-mrsml     ip-10-0-161-151.ec2.internal    worker
+machine-config-daemon-rdlgn     ip-10-0-152-65.ec2.internal     master
+machine-config-daemon-t6qnm     ip-10-0-155-187.ec2.internal    worker
+machine-config-daemon-wrh6c     ip-10-0-130-41.ec2.internal     master
 ```
 
-Then, one can simply `scp` newly built binaries to `/usr/local/bin` on
-all the nodes and restart the daemon (one can just delete the running
-ones and let new instances take their place). E.g.:
-
-```sh
-# copy core creds to root so we can scp directly in the next invocation
-for ip in 11 51; do ssh core@192.168.126.$ip sudo cp -R /home/core/.ssh /root; done
-# scp MCD build to /usr/local/bin
-for ip in 11 51; do scp _output/linux/amd64/machine-config-daemon root@192.168.126.$ip:/usr/local/bin; done
-```
-
-This still requires [disabling the CVO](https://github.com/openshift/cluster-version-operator/blob/master/docs/dev/clusterversion.md#disabling-the-cluster-version-operator). It also requires disabling
-the operator since the MCD daemonset will be overwritten:
-
-```
-oc scale deployment machine-config-operator --replicas=0
-```
 
 # The test suites
 
