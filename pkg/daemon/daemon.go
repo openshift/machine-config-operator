@@ -414,6 +414,7 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 
 	// Exit if nodewriter is not initialized, used for Hypershift
 	if dn.nodeWriter == nil {
+		dn.updateErrorStateHypershift(err)
 		glog.Fatalf("Error handling node sync: %v", err)
 	}
 
@@ -429,6 +430,19 @@ func (dn *Daemon) updateErrorState(err error) {
 		dn.nodeWriter.SetUnreconcilable(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
 	default:
 		dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+	}
+}
+
+func (dn *Daemon) updateErrorStateHypershift(err error) {
+	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
+	// annotation size limit (256 kb) at any point
+	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
+	annos := map[string]string{
+		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
+		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
+	}
+	if annoErr := dn.HypershiftSetAnnotation(annos); annoErr != nil {
+		glog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
 	}
 }
 
@@ -653,6 +667,9 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 
 	// First, check if our drain/uncordon request was honored by the controller
 	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
 	if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
 		// The controller has not yet performed our previous request
 		glog.Infof("The controller has not yet performed our previous drain/uncordon request %s", node.Annotations[constants.DesiredDrainerAnnotationKey])
@@ -747,13 +764,14 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	// check whether we need to drain.
 	// TODO add disruptionless updates here
 
-	if node.Annotations[constants.DesiredDrainerAnnotationKey] != fmt.Sprintf("%s-%s", constants.DrainerStateDrain, targetHash) {
+	targetDrainValue := fmt.Sprintf("%s-%s", constants.DrainerStateDrain, targetHash)
+	if node.Annotations[constants.DesiredDrainerAnnotationKey] != targetDrainValue {
 		// Make a request to perform drain
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
 			constants.CurrentMachineConfigAnnotationKey:      targetHash,
-			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateDrain, targetHash),
+			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 		}
 		if err := dn.HypershiftSetAnnotation(annos); err != nil {
 			return errors.Wrapf(err, "Failed to set Done annotation on node")
