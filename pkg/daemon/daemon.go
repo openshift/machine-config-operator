@@ -788,7 +788,6 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		annos := map[string]string{
 			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
-			constants.CurrentMachineConfigAnnotationKey:      targetHash,
 			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 		}
 		if err := dn.HypershiftSetAnnotation(annos); err != nil {
