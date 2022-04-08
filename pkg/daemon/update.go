@@ -797,9 +797,11 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 
 	// FIPS section
 	// We do not allow update to FIPS for a running cluster, so any changes here will be an error
-	if err := checkFIPS(oldConfig, newConfig); err != nil {
+	if err := checkFIPS(newConfig.Spec.FIPS); err != nil {
 		return nil, err
 	}
+	// if the oldConfig somehow drifted from the state on the node, we want to ignore it when we calculate newMachineConfigDiff
+	oldConfig.Spec.FIPS = newConfig.Spec.FIPS
 
 	// we made it through all the checks. reconcile away!
 	glog.V(2).Info("Configs are reconcilable")
@@ -838,7 +840,7 @@ func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 // Anyone who wants to force this can change the MC flag, then
 // `oc debug node` and run the disable command by hand, then reboot.
 // If we detect that FIPS has been changed, we reject the update.
-func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
+func checkFIPS(desiredFIPS bool) error {
 	content, err := ioutil.ReadFile(fipsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -852,12 +854,10 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 	if err != nil {
 		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
 	}
-	if desired.Spec.FIPS == nodeFIPS {
-		if desired.Spec.FIPS {
+	if desiredFIPS == nodeFIPS {
+		if desiredFIPS {
 			glog.Infof("FIPS is configured and enabled")
 		}
-		// Check if FIPS on the system is at the desired setting
-		current.Spec.FIPS = nodeFIPS
 		return nil
 	}
 	return errors.New("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
