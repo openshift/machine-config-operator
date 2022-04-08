@@ -144,8 +144,8 @@ spec:
               kube-apiservers are also under-provisioned.
               To fix this, increase the CPU and memory on your control plane nodes.
           expr: |
-            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 90 AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
-          for: 5m
+            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 75 AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+          for: 1h
           labels:
             namespace: openshift-machine-config-operator
             severity: warning
