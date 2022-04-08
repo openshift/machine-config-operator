@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -581,6 +582,26 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 	return errors.New("unsupported onceFrom type provided")
 }
 
+// synthesizeCurrentState creates a machineconfig object which describes
+// what we see on the node.
+func (dn *Daemon) synthesizeCurrentState() (*mcfgv1.MachineConfig, error) {
+	// Start with an empty config, then add our *booted* osImageURL to
+	// it, reflecting the current machine state.
+	config := canonicalizeEmptyMC(nil)
+	config.Spec.OSImageURL = dn.bootedOSImageURL
+	// Also inject the current fips state, which was handled before we run.
+	content, err := ioutil.ReadFile(fipsFile)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading FIPS file at %s: %w", fipsFile, err)
+	}
+	fips, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing FIPS: %w", err)
+	}
+	config.Spec.FIPS = fips
+	return config, nil
+}
+
 // RunFirstbootCompleteMachineconfig is run via systemd on the first boot
 // to complete processing of the target MachineConfig.
 func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
@@ -594,10 +615,10 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 		return errors.Wrapf(err, "failed to parse MachineConfig")
 	}
 
-	// Start with an empty config, then add our *booted* osImageURL to
-	// it, reflecting the current machine state.
-	oldConfig := canonicalizeEmptyMC(nil)
-	oldConfig.Spec.OSImageURL = dn.bootedOSImageURL
+	oldConfig, err := dn.synthesizeCurrentState()
+	if err != nil {
+		return err
+	}
 	// Currently, we generally expect the bootimage to be older, but in the special
 	// case of having bootimage == machine-os-content, and no kernel arguments
 	// specified, then we don't need to do anything here.
