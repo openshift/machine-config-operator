@@ -130,6 +130,12 @@ type Daemon struct {
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
+// Ideally New() would return a Daemon interface that could either be a base Daemon or a
+// CoreOSDaemon. Besides adding some type-checking and clarity, that would allow moving fields like
+// bootedOSImageURL or functions like checkOS() to CoreOSDaemon. Both Daemon and CoreOSDaemon,
+// however, have to share the update() method, and update() requires access to many fields from
+// Daemon. That eliminates the possibility of update() being defined on an interface. So we have to
+// cast Daemon to CoreOSDaemon manually in update()
 type CoreOSDaemon struct {
 	*Daemon
 }
