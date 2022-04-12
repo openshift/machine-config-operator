@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 
+	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,6 +61,7 @@ type fixture struct {
 	client         *fake.Clientset
 	imgClient      *fakeconfigv1client.Clientset
 	operatorClient *fakeoperatorclient.Clientset
+	kubeClient     *k8sfake.Clientset
 
 	ccLister   []*mcfgv1.ControllerConfig
 	mcpLister  []*mcfgv1.MachineConfigPool
@@ -74,6 +76,7 @@ type fixture struct {
 	objects         []runtime.Object
 	imgObjects      []runtime.Object
 	operatorObjects []runtime.Object
+	k8sObjects      []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -144,6 +147,15 @@ func newContainerRuntimeConfig(name string, ctrconf *mcfgv1.ContainerRuntimeConf
 	}
 }
 
+func newConfigMap(name string) *k8sv1.ConfigMap {
+	return &k8sv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "openshift-machine-config-operator",
+		},
+	}
+}
+
 func newImageConfig(name string, regconf *apicfgv1.RegistrySources) *apicfgv1.Image {
 	return &apicfgv1.Image{
 		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
@@ -180,18 +192,19 @@ func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
 	f.imgClient = fakeconfigv1client.NewSimpleClientset(f.imgObjects...)
 	f.operatorClient = fakeoperatorclient.NewSimpleClientset(f.operatorObjects...)
+	f.kubeClient = k8sfake.NewSimpleClientset(f.k8sObjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
 	ci := configv1informer.NewSharedInformerFactory(f.imgClient, noResyncPeriodFunc())
 	oi := operatorinformer.NewSharedInformerFactory(f.operatorClient, noResyncPeriodFunc())
-	c := New(templateDir,
+	c := New(templateDir, "openshift-machine-config-operator",
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		ci.Config().V1().Images(),
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
-		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
+		f.kubeClient, f.client, f.imgClient)
 
 	c.mcpListerSynced = alwaysReady
 	c.mccrListerSynced = alwaysReady
@@ -444,12 +457,14 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
 			mcs2.Name = ctrCfgKey
+			cm := newConfigMap("crio-seccomp-use-default-when-empty")
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectGetMachineConfigAction(mcs1)
@@ -480,12 +495,14 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
 			mcsUpdate.Name = keyCtrCfg
+			cm := newConfigMap("crio-seccomp-use-default-when-empty")
 
 			f.ccLister = append(f.ccLister, cc)
 			f.mcpLister = append(f.mcpLister, mcp)
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			f.expectGetMachineConfigAction(mcsUpdate)
 			f.expectGetMachineConfigAction(mcs)
@@ -518,6 +535,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ctrcfgUpdate)
 			f.objects = append(f.objects, mcsUpdate, ctrcfgUpdate)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			c = f.newController()
 			stopCh = make(chan struct{})
@@ -577,7 +595,15 @@ func TestImageConfigCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs2)
 			f.expectCreateMachineConfigAction(mcs2)
 
-			f.run("cluster")
+			c := f.newController()
+			stopCh := make(chan struct{})
+			err := c.syncImgHandler("cluster")
+			if err != nil {
+				t.Errorf("syncImgHandler returned %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
 				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, cc.Spec.ReleaseImage, true, true)
@@ -1042,6 +1068,8 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			f.ccLister = append(f.ccLister, cc)
 
+			cm := newConfigMap("crio-seccomp-use-default-when-empty")
+			f.k8sObjects = []runtime.Object{cm}
 			ctrcfgCount := 30
 			for i := 0; i < ctrcfgCount; i++ {
 				f.resetActions()
@@ -1058,6 +1086,7 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.mcpLister = append(f.mcpLister, mcp)
 				f.mccrLister = append(f.mccrLister, ccr)
 				f.objects = append(f.objects, ccr)
+				f.k8sObjects = []runtime.Object{cm}
 
 				mcs := helpers.NewMachineConfig(generateManagedKey(ccr, 1), labelSelector.MatchLabels, "dummy://", []ign3types.File{{}})
 				mcsDeprecated := mcs.DeepCopy()
