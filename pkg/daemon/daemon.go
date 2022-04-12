@@ -471,7 +471,7 @@ func (dn *Daemon) syncNode(key string) error {
 		}
 		if coreOSDaemon != nil {
 			// experimentalUpdateLayeredConfig is idempotent
-			return coreOSDaemon.experimentalUpdateLayeredConfig()
+			return (&ImageUpdater{coreOSDaemon}).experimentalUpdateLayeredConfig()
 		}
 		if err := dn.checkStateOnFirstRun(); err != nil {
 			return err
@@ -618,7 +618,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	}
 
 	dn.skipReboot = true
-	err = dn.update(nil, &mc)
+	err = (&MCUpdater{dn}).update(nil, &mc)
 	if err != nil {
 		return err
 	}
@@ -1333,7 +1333,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 	}
 	if contentFrom == onceFromLocalConfig {
 		// Execute update without hitting the cluster
-		return dn.update(nil, &machineConfig)
+		return (&MCUpdater{dn}).update(nil, &machineConfig)
 	}
 	// Otherwise return an error as the input format is unsupported
 	return fmt.Errorf("%v is not a path nor url; can not run once", contentFrom)
@@ -1521,11 +1521,11 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 		return err
 	}
 	if coreOSDaemon != nil {
-		return coreOSDaemon.experimentalUpdateLayeredConfig()
+		return (&ImageUpdater{coreOSDaemon}).experimentalUpdateLayeredConfig()
 	}
 
 	// run the update process. this function doesn't currently return.
-	return dn.update(currentConfig, desiredConfig)
+	return (&MCUpdater{dn}).update(currentConfig, desiredConfig)
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration

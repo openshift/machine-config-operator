@@ -66,6 +66,14 @@ var (
 	nonFCOSAuthKeyPath     = filepath.Join(coreUserSSHPath, "authorized_keys")
 )
 
+type ImageUpdater struct {
+	*CoreOSDaemon
+}
+
+type MCUpdater struct {
+	*Daemon
+}
+
 func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 	return writeFileAtomically(fpath, b, defaultDirectoryPermissions, defaultFilePermissions, -1, -1)
 }
@@ -145,7 +153,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	return nil
 }
 
-func (dn *Daemon) getAndUpdateConfigAndState(configName string) error {
+func (dn *MCUpdater) getAndUpdateConfigAndState(configName string) error {
 	state, err := dn.getStateAndConfigs(configName)
 	if err != nil {
 		return fmt.Errorf("Could not apply update: error processing state and configs. Error: %v", err)
@@ -466,7 +474,7 @@ func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string)
 	return actions, nil
 }
 
-func (dn *Daemon) calculatePostConfigChangeActionWithMCDiff(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
+func (dn *MCUpdater) calculatePostConfigChangeActionWithMCDiff(diff *machineConfigDiff, diffFileSet []string) ([]string, error) {
 	// Note this function may only return []string{postConfigChangeActionReboot} directly,
 	// since calculatePostConfigChangeActionFromFiles may find files that require a reboot
 
@@ -502,7 +510,7 @@ func getIgnitionFileDataReadFunc(ignConfig *ign3types.Config) ReadFileFunc {
 }
 
 // update the node to the provided node configuration.
-func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+func (dn *MCUpdater) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if err := dn.setWorking(); err != nil {
 		return fmt.Errorf("failed to set working: %w", err)
 	}
@@ -586,7 +594,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	}()
 
 	if dn.os.IsCoreOSVariant() {
-		coreOSDaemon := CoreOSDaemon{dn}
+		coreOSDaemon := CoreOSDaemon{dn.Daemon}
 		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
 			return err
 		}
@@ -1114,7 +1122,7 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 // whatever has been written is picked up by the appropriate daemons, if
 // required. in particular, a daemon-reload and restart for any unit files
 // touched.
-func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error {
+func (dn *MCUpdater) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Updating files")
 	if err := dn.writeFiles(newIgnConfig.Storage.Files); err != nil {
 		return err
@@ -1159,7 +1167,7 @@ func isPathASystemdDropin(path string) (bool, string, string) {
 }
 
 // iterate systemd units and return true if this path is already covered by a systemd dropin
-func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool {
+func (dn *MCUpdater) isPathInDropins(path string, systemd *ign3types.Systemd) bool {
 	if ok, service, dropin := isPathASystemdDropin(path); ok {
 		for _, u := range systemd.Units {
 			if u.Name == service {
@@ -1179,7 +1187,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
 //nolint:gocyclo
-func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
+func (dn *MCUpdater) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Deleting stale data")
 	newFileSet := make(map[string]struct{})
 	for _, f := range newIgnConfig.Storage.Files {
@@ -1654,7 +1662,7 @@ func getFileOwnership(file ign3types.File) (int, int, error) {
 	return uid, gid, nil
 }
 
-func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
+func (dn *MCUpdater) atomicallyWriteSSHKey(keys string) error {
 	uid, err := lookupUID(constants.CoreUserName)
 	if err != nil {
 		return err
@@ -1686,7 +1694,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 }
 
 // Update a given PasswdUser's SSHKey
-func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
+func (dn *MCUpdater) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 	if len(newUsers) == 0 {
 		return nil
 	}
@@ -2011,7 +2019,7 @@ func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool)
 // experimentalUpdateLayeredConfig() pretends to do the normal config update for the pool but actually does
 // an image update instead. This function should be completely thrown away.
 // TODO(jkyros): right now this skips drain and reboot, it just live-applies it, but you *can* boot it and it will work
-func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
+func (dn *ImageUpdater) experimentalUpdateLayeredConfig() error {
 
 	desiredImage := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
 	currentImage := dn.node.Annotations[constants.CurrentImageConfigAnnotationKey]

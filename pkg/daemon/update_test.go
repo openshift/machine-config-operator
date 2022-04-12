@@ -25,7 +25,7 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
-func newMockDaemon() Daemon {
+func newMockDaemon() MCUpdater {
 	// testClient is the NodeUpdaterClient mock instance that will front
 	// calls to update the host.
 	testClient := RpmOstreeClientMock{
@@ -33,14 +33,15 @@ func newMockDaemon() Daemon {
 	}
 
 	// Create a Daemon instance with mocked clients
-	return Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
-	}
+	return MCUpdater{
+		Daemon: &Daemon{
+			mock:              true,
+			name:              "nodeName",
+			os:                OperatingSystem{},
+			NodeUpdaterClient: testClient,
+			kubeClient:        k8sfake.NewSimpleClientset(),
+			bootedOSImageURL:  "test",
+		}}
 }
 
 func setupTempDirWithEtc(t *testing.T) (string, func()) {
@@ -725,7 +726,7 @@ func TestCalculatePostConfigChangeAction(t *testing.T) {
 			dn := Daemon{
 				os: test.os,
 			}
-			calculatedAction, err := dn.calculatePostConfigChangeActionWithMCDiff(mcDiff, diffFileSet)
+			calculatedAction, err := (&MCUpdater{&dn}).calculatePostConfigChangeActionWithMCDiff(mcDiff, diffFileSet)
 
 			if !reflect.DeepEqual(test.expectedAction, calculatedAction) {
 				t.Errorf("Failed calculating config change action: expected: %v but result is: %v. Error: %v", test.expectedAction, calculatedAction, err)
