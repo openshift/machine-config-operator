@@ -129,7 +129,7 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Disk changes react as expected
 	oldIgnCfg.Storage.Disks = []ign3types.Disk{
-		ign3types.Disk{
+		{
 			Device: "/one",
 		},
 	}
@@ -145,7 +145,7 @@ func TestReconcilable(t *testing.T) {
 
 	// Verify Filesystems changes react as expected
 	oldIgnCfg.Storage.Filesystems = []ign3types.Filesystem{
-		ign3types.Filesystem{
+		{
 			Device: "/dev/sda1",
 			Format: helpers.StrToPtr("ext4"),
 			Path:   helpers.StrToPtr("/foo/bar"),
@@ -548,20 +548,20 @@ func TestDropinCheck(t *testing.T) {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
 			ignCfg := ctrlcommon.NewIgnConfig()
 			ignCfg.Systemd.Units = []ign3types.Unit{
-				ign3types.Unit{
+				{
 					Name: test.service,
 					Dropins: []ign3types.Dropin{
-						ign3types.Dropin{
+						{
 							Name:     test.dropin,
 							Contents: helpers.StrToPtr("[Unit]"),
 						},
-						ign3types.Dropin{
+						{
 							Name:     "99-other.conf",
 							Contents: helpers.StrToPtr("[Unit]"),
 						},
 					},
 				},
-				ign3types.Unit{
+				{
 					Name: "other.service",
 				},
 			}
