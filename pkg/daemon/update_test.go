@@ -313,15 +313,7 @@ func TestKernelAguments(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case#%d", idx), func(t *testing.T) {
-			oldIgnCfg := ctrlcommon.NewIgnConfig()
-			oldMcfg := helpers.CreateMachineConfigFromIgnition(oldIgnCfg)
-			oldMcfg.Spec.KernelArguments = test.oldKargs
-
-			newIgnCfg := ctrlcommon.NewIgnConfig()
-			newMcfg := helpers.CreateMachineConfigFromIgnition(newIgnCfg)
-			newMcfg.Spec.KernelArguments = test.newKargs
-
-			res := generateKargs(oldMcfg, newMcfg)
+			res := generateKargs(test.oldKargs, test.newKargs)
 
 			if !reflect.DeepEqual(test.out, res) {
 				t.Errorf("Failed kernel arguments processing: expected: %v but result is: %v", test.out, res)
