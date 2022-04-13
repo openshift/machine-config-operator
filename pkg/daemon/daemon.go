@@ -36,14 +36,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
-	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
-	commonconstants "github.com/openshift/machine-config-operator/pkg/constants"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
@@ -1706,57 +1704,10 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		return err
 	}
 
-	ctx := context.TODO()
-	if err := dn.removeUpdateInProgressTaint(ctx); err != nil {
-		return err
-	}
-
 	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
 	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
-}
-
-func (dn *Daemon) removeUpdateInProgressTaint(ctx context.Context) error {
-	return clientretry.RetryOnConflict(commonconstants.NodeUpdateBackoff, func() error {
-		oldNode, err := dn.kubeClient.CoreV1().Nodes().Get(ctx, dn.name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		oldData, err := json.Marshal(oldNode)
-		if err != nil {
-			return err
-		}
-
-		newNode := oldNode.DeepCopy()
-
-		// New taints to be copied.
-		var taintsAfterUpgrade []corev1.Taint
-		for _, taint := range newNode.Spec.Taints {
-			if taint.MatchTaint(commonconstants.NodeUpdateInProgressTaint) {
-				continue
-			} else {
-				taintsAfterUpgrade = append(taintsAfterUpgrade, taint)
-			}
-		}
-		// updateInProgress taint is not there, so no need to patch the node object, return immediately
-		if len(taintsAfterUpgrade) == len(newNode.Spec.Taints) {
-			return nil
-		}
-		// Remove the NodeUpdateInProgressTaint.
-		newNode.Spec.Taints = taintsAfterUpgrade
-		newData, err := json.Marshal(newNode)
-		if err != nil {
-			return err
-		}
-
-		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
-		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", dn.name, err)
-		}
-		_, err = dn.kubeClient.CoreV1().Nodes().Patch(ctx, dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
-		return err
-	})
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
