@@ -1066,6 +1066,43 @@ func TestShouldDoNothing(t *testing.T) {
 	f.run(getKey(mcp, t))
 }
 
+func TestSortNodeList(t *testing.T) {
+	old_node_nozone := newNode("node-4", "v1", "v1")
+	old_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
+
+	newer_node_nozone := newNode("node-5", "v1", "v1")
+	newer_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(200, 30))
+
+	newest_node_nozone := newNode("node-6", "v1", "v1")
+	newest_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(900, 30))
+
+	nodes := []*corev1.Node{
+		newNodeWithLabel("node-3", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
+		newer_node_nozone,
+		newNodeWithLabel("node-2", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
+		newest_node_nozone,
+		old_node_nozone,
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"}),
+	}
+
+	sorted_nodes := []*corev1.Node{
+		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"}),
+		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
+		newNodeWithLabel("node-2", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
+		newNodeWithLabel("node-3", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"}),
+		old_node_nozone,
+		newer_node_nozone,
+		newest_node_nozone,
+	}
+
+	output_nodes := sortNodeList(nodes)
+
+	if !reflect.DeepEqual(sorted_nodes, output_nodes) {
+		t.Fatalf("sorting failed. expected: %v got: %v", sorted_nodes, output_nodes)
+	}
+}
+
 func TestControlPlaneTopology(t *testing.T) {
 	f := newFixture(t)
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName, configv1.SingleReplicaTopologyMode)
