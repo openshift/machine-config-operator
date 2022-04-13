@@ -31,6 +31,7 @@ import (
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
+	configclientset "github.com/openshift/client-go/config/clientset/versioned"
 	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/crypto"
@@ -75,6 +76,7 @@ type Controller struct {
 	templatesDir string
 
 	client        mcfgclientset.Interface
+	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
 	syncHandler          func(mcp string) error
@@ -92,11 +94,15 @@ type Controller struct {
 	featLister       oselistersv1.FeatureGateLister
 	featListerSynced cache.InformerSynced
 
+	nodeConfigLister       oselistersv1.NodeLister
+	nodeConfigListerSynced cache.InformerSynced
+
 	apiserverLister       oselistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
-	queue        workqueue.RateLimitingInterface
-	featureQueue workqueue.RateLimitingInterface
+	queue           workqueue.RateLimitingInterface
+	featureQueue    workqueue.RateLimitingInterface
+	nodeConfigQueue workqueue.RateLimitingInterface
 }
 
 // New returns a new kubelet config controller
@@ -106,20 +112,24 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mkuInformer mcfginformersv1.KubeletConfigInformer,
 	featInformer oseinformersv1.FeatureGateInformer,
+	nodeConfigInformer oseinformersv1.NodeInformer,
 	apiserverInformer oseinformersv1.APIServerInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
+	configclient configclientset.Interface,
 ) *Controller {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:  templatesDir,
-		client:        mcfgClient,
-		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
-		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
-		featureQueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
+		templatesDir:    templatesDir,
+		client:          mcfgClient,
+		configClient:    configclient,
+		eventRecorder:   eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
+		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
+		featureQueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
+		nodeConfigQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
 	}
 
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -132,6 +142,12 @@ func New(
 		AddFunc:    ctrl.addFeature,
 		UpdateFunc: ctrl.updateFeature,
 		DeleteFunc: ctrl.deleteFeature,
+	})
+
+	nodeConfigInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addNodeConfig,
+		UpdateFunc: ctrl.updateNodeConfig,
+		DeleteFunc: ctrl.deleteNodeConfig,
 	})
 
 	ctrl.syncHandler = ctrl.syncKubeletConfig
@@ -149,6 +165,9 @@ func New(
 	ctrl.featLister = featInformer.Lister()
 	ctrl.featListerSynced = featInformer.Informer().HasSynced
 
+	ctrl.nodeConfigLister = nodeConfigInformer.Lister()
+	ctrl.nodeConfigListerSynced = nodeConfigInformer.Informer().HasSynced
+
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
 
@@ -160,6 +179,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
+	defer ctrl.nodeConfigQueue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
@@ -174,6 +194,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.featureWorker, time.Second, stopCh)
+	}
+
+	for i := 0; i < workers; i++ {
+		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
 	}
 
 	<-stopCh
@@ -507,6 +531,15 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
+	// Fetch the NodeConfig
+	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	if macherrors.IsNotFound(err) {
+		nodeConfig = createNewDefaultNodeconfig()
+	} else if err != nil {
+		err := fmt.Errorf("could not fetch Node: %v", err)
+		return ctrl.syncStatusOnly(cfg, err)
+	}
+
 	for _, pool := range mcpPools {
 		if pool.Spec.Configuration.Name == "" {
 			updateDelay := 5 * time.Second
@@ -539,6 +572,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
+		}
+		// updating the originalKubeConfig based on the nodeConfig on a worker node
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 		}
 
 		// Get the default API Server Security Profile
