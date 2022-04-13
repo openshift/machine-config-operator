@@ -794,9 +794,18 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
 		// to be chosen during the scheduling cycle.
 		targetConfig := pool.Spec.Configuration.Name
-		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != targetConfig {
-			if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
-				return goerrs.Wrapf(err, "failed applying %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
+		hasInProgressTaint := checkIfNodeHasInProgressTaint(node)
+		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
+			if hasInProgressTaint {
+				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
+					return goerrs.Wrapf(err, "failed removing %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
+				}
+			}
+		} else {
+			if !hasInProgressTaint {
+				if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
+					return goerrs.Wrapf(err, "failed applying %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
+				}
 			}
 		}
 	}
@@ -811,6 +820,16 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		}
 	}
 	return ctrl.syncStatusOnly(pool)
+}
+
+// checkIfNodeHasInProgressTaint checks if the given node has in progress taint
+func checkIfNodeHasInProgressTaint(node *corev1.Node) bool {
+	for _, taint := range node.Spec.Taints {
+		if taint.MatchTaint(constants.NodeUpdateInProgressTaint) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*corev1.Node, error) {
@@ -1003,7 +1022,7 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 }
 
 // setUpdateInProgressTaint applies in progress taint to all the nodes that are to be updated.
-// The taint on the individual node is removed by MCD once the update of the node is complete.
+// The taint on the individual node is removed by MCC once the update of the node is complete.
 // This is to ensure that the updated nodes are being preferred to non-updated nodes there by
 // reducing the number of reschedules.
 func (ctrl *Controller) setUpdateInProgressTaint(ctx context.Context, nodeName string) error {
@@ -1022,13 +1041,47 @@ func (ctrl *Controller) setUpdateInProgressTaint(ctx context.Context, nodeName s
 			newNode.Spec.Taints = []corev1.Taint{}
 		}
 
+		newNode.Spec.Taints = append(newNode.Spec.Taints, *constants.NodeUpdateInProgressTaint)
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+		}
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	})
+}
+
+// removeUpdateInProgressTaint removes the update in progress taint for given node.
+func (ctrl *Controller) removeUpdateInProgressTaint(ctx context.Context, nodeName string) error {
+	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
+		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldData, err := json.Marshal(oldNode)
+		if err != nil {
+			return err
+		}
+
+		newNode := oldNode.DeepCopy()
+
+		// New taints to be copied.
+		var taintsAfterUpgrade []corev1.Taint
 		for _, taint := range newNode.Spec.Taints {
 			if taint.MatchTaint(constants.NodeUpdateInProgressTaint) {
-				return nil
+				continue
+			} else {
+				taintsAfterUpgrade = append(taintsAfterUpgrade, taint)
 			}
 		}
 
-		newNode.Spec.Taints = append(newNode.Spec.Taints, *constants.NodeUpdateInProgressTaint)
+		// Remove the NodeUpdateInProgressTaint.
+		newNode.Spec.Taints = taintsAfterUpgrade
 		newData, err := json.Marshal(newNode)
 		if err != nil {
 			return err
