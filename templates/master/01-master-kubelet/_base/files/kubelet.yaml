@@ -18,6 +18,7 @@ contents:
     maxPods: 250
     kubeAPIQPS: 50
     kubeAPIBurst: 100
+    podPidsLimit: 4096
     rotateCertificates: true
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
