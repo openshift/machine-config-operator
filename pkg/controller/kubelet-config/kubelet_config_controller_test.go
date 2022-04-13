@@ -53,6 +53,7 @@ type fixture struct {
 	mcpLister       []*mcfgv1.MachineConfigPool
 	mckLister       []*mcfgv1.KubeletConfig
 	featLister      []*osev1.FeatureGate
+	nodeLister      []*osev1.Node
 	apiserverLister []*osev1.APIServer
 
 	actions               []core.Action
@@ -194,14 +195,17 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
 		featinformer.Config().V1().FeatureGates(),
+		featinformer.Config().V1().Nodes(),
 		featinformer.Config().V1().APIServers(),
 		k8sfake.NewSimpleClientset(),
 		f.client,
+		f.oseclient,
 	)
 	c.mcpListerSynced = alwaysReady
 	c.mckListerSynced = alwaysReady
 	c.ccListerSynced = alwaysReady
 	c.featListerSynced = alwaysReady
+	c.nodeConfigListerSynced = alwaysReady
 	c.apiserverListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -225,6 +229,9 @@ func (f *fixture) newController() *Controller {
 	for _, c := range f.apiserverLister {
 		featinformer.Config().V1().APIServers().Informer().GetIndexer().Add(c)
 	}
+	for _, c := range f.nodeLister {
+		featinformer.Config().V1().Nodes().Informer().GetIndexer().Add(c)
+	}
 
 	return c
 }
@@ -235,6 +242,10 @@ func (f *fixture) run(mcpname string) {
 
 func (f *fixture) runFeature(featname string) {
 	f.runFeatureController(featname, false)
+}
+
+func (f *fixture) runNode(nodename string) {
+	f.runNodeController(nodename, false)
 }
 
 func (f *fixture) runExpectError(mcpname string) {
@@ -262,6 +273,18 @@ func (f *fixture) runFeatureController(featname string, expectError bool) {
 		f.t.Errorf("error syncing kubeletconfigs: %v", err)
 	} else if expectError && err == nil {
 		f.t.Error("expected error syncing kubeletconfigs, got nil")
+	}
+
+	f.validateActions()
+}
+
+func (f *fixture) runNodeController(nodename string, expectError bool) {
+	c := f.newController()
+	err := c.syncNodeConfigHandler(nodename)
+	if !expectError && err != nil {
+		f.t.Errorf("error syncing node configs: %v", err)
+	} else if expectError && err == nil {
+		f.t.Error("expected error syncing node configs, got nil")
 	}
 
 	f.validateActions()
@@ -349,6 +372,10 @@ func checkAction(expected, actual core.Action, t *testing.T, index int) {
 
 func (f *fixture) expectGetKubeletConfigAction(config *mcfgv1.KubeletConfig) {
 	f.actions = append(f.actions, core.NewRootGetAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config.Name))
+}
+
+func (f *fixture) expectCreateKubeletConfigAction(config *mcfgv1.KubeletConfig) {
+	f.actions = append(f.actions, core.NewRootCreateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "kubeletconfigs"}, config))
 }
 
 func (f *fixture) expectGetMachineConfigAction(config *mcfgv1.MachineConfig) {
@@ -754,6 +781,15 @@ func getKeyFromFeatureGate(gate *osev1.FeatureGate, t *testing.T) string {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(gate)
 	if err != nil {
 		t.Errorf("Unexpected error getting key for FeatureGate %v: %v", gate.Name, err)
+		return ""
+	}
+	return key
+}
+
+func getKeyFromConfigNode(node *osev1.Node, t *testing.T) string {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
+	if err != nil {
+		t.Errorf("Unexpected error getting key for Config Node %v: %v", node.Name, err)
 		return ""
 	}
 	return key

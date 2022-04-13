@@ -114,6 +114,19 @@ spec:
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
 		{
+			name: "With a node config manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster
+spec:
+  workerLatencyProfile: MediumUpdateAverageReaction`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+		},
+		{
 			name: "With a featuregate manifest and master kubelet config manifest",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
@@ -143,6 +156,68 @@ spec:
 			},
 			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+		},
+		{
+			name: "With a node config manifest and master kubelet config manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster
+spec:
+  workerLatencyProfile: MediumUpdateAverageReaction`),
+				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: master-kubelet-config
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/master: ""
+  kubeletConfig:
+    podsPerCore: 10
+    maxPods: 250
+    systemReserved:
+      cpu: 1000m
+      memory: 500Mi
+    kubeReserved:
+      cpu: 1000m
+      memory: 500Mi
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "99-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "97-worker-generated-kubelet"},
+		},
+		{
+			name: "With a node config manifest and worker kubelet config manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster
+spec:
+  workerLatencyProfile: MediumUpdateAverageReaction`),
+				[]byte(`apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: master-kubelet-config
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  kubeletConfig:
+    podsPerCore: 10
+    maxPods: 250
+    systemReserved:
+      cpu: 1000m
+      memory: 500Mi
+    kubeReserved:
+      cpu: 1000m
+      memory: 500Mi
+`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "99-worker-generated-kubelet"},
 		},
 		{
 			name: "With a worker kubelet config manifest",
@@ -319,9 +394,11 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().KubeletConfigs(),
 			ctx.ConfigInformerFactory.Config().V1().FeatureGates(),
+			ctx.ConfigInformerFactory.Config().V1().Nodes(),
 			ctx.ConfigInformerFactory.Config().V1().APIServers(),
 			ctx.ClientBuilder.KubeClientOrDie("kubelet-config-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("kubelet-config-controller"),
+			ctx.ClientBuilder.ConfigClientOrDie("kubelet-config-controller"),
 		),
 		containerruntimeconfig.New(
 			templatesDir,
@@ -397,6 +474,9 @@ func createObjects(t *testing.T, clientSet *framework.ClientSet, objs ...runtime
 			require.NoError(t, err)
 		case *configv1.FeatureGate:
 			_, err := clientSet.FeatureGates().Create(ctx, tObj, metav1.CreateOptions{})
+			require.NoError(t, err)
+		case *configv1.Node:
+			_, err := clientSet.ConfigV1Interface.Nodes().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		default:
 			t.Errorf("Unknown object type %T", obj)
@@ -530,6 +610,10 @@ func checkCleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 	featureGateList, err := clientSet.FeatureGates().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 	require.Len(t, featureGateList.Items, 0)
+
+	nodeConfigList, err := clientSet.ConfigV1Interface.Nodes().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, nodeConfigList.Items, 0)
 	// ###########################
 	// END: config.openshift.io/v1
 	// ###########################
@@ -601,6 +685,9 @@ func cleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 	require.NoError(t, err)
 
 	err = clientSet.FeatureGates().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	require.NoError(t, err)
+
+	err = clientSet.ConfigV1Interface.Nodes().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 	require.NoError(t, err)
 	// ###########################
 	// END: config.openshift.io/v1

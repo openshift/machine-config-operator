@@ -13,7 +13,7 @@ rules:
   resources: ["configmaps", "secrets"]
   verbs: ["*"]
 - apiGroups: ["config.openshift.io"]
-  resources: ["images", "clusterversions", "featuregates"]
+  resources: ["images", "clusterversions", "featuregates", "nodes", "nodes/status"]
   verbs: ["*"]
 - apiGroups: ["config.openshift.io"]
   resources: ["schedulers", "apiservers", "infrastructures"]
