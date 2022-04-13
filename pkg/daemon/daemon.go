@@ -35,6 +35,7 @@ import (
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	clientretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
@@ -127,6 +128,9 @@ type Daemon struct {
 
 	// Config Drift Monitor
 	configDriftMonitor ConfigDriftMonitor
+
+	// Used for Hypershift
+	hypershiftConfigMap string
 }
 
 // CoreOSDaemon protects the methods that should only be called on CoreOS variants
@@ -165,6 +169,12 @@ const (
 	// maxUpdateBackoff is the maximum time to react to a change as we back off
 	// in the face of errors.
 	maxUpdateBackoff = 60 * time.Second
+
+	// used for Hypershift daemon
+	mcsServedConfigPath         = "/etc/mcs-machine-config-content.json"
+	hypershiftCurrentConfigPath = "/etc/mcd-currentconfig.json"
+	configMapConfigKey          = "config"
+	configMapHashKey            = "hash"
 )
 
 type onceFromOrigin int
@@ -341,6 +351,42 @@ func (dn *Daemon) ClusterConnect(
 	}
 }
 
+// HypershiftConnect sets up a simplified daemon for Hypershift updates
+func (dn *Daemon) HypershiftConnect(
+	name string,
+	kubeClient kubernetes.Interface,
+	nodeInformer coreinformersv1.NodeInformer,
+	configMap string,
+) {
+	dn.name = name
+	dn.kubeClient = kubeClient
+	dn.hypershiftConfigMap = configMap
+
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		glog.Fatalf("Cannot fetch node object: %v", err)
+	}
+	dn.node = node
+
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    dn.handleNodeEvent,
+		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleNodeEvent(newObj) },
+	})
+
+	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
+
+	dn.enqueueNode = dn.enqueueDefault
+	dn.syncHandler = dn.syncNodeHypershift
+
+	// TODO the event broadcasting is being rejected by the server
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.V(2).Infof)
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
+	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
+}
+
 // writer implements io.Writer interface as a pass-through for klog.
 type writer struct {
 	logFunc func(args ...interface{})
@@ -378,6 +424,12 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 		return
 	}
 
+	// Exit if nodewriter is not initialized, used for Hypershift
+	if dn.nodeWriter == nil {
+		dn.updateErrorStateHypershift(err)
+		glog.Fatalf("Error handling node sync: %v", err)
+	}
+
 	dn.updateErrorState(err)
 	// This is at V(2) since the updateErrorState() call above ends up logging too
 	glog.V(2).Infof("Error syncing node %v (retries %d): %v", key, dn.queue.NumRequeues(key), err)
@@ -390,6 +442,19 @@ func (dn *Daemon) updateErrorState(err error) {
 		dn.nodeWriter.SetUnreconcilable(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
 	default:
 		dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+	}
+}
+
+func (dn *Daemon) updateErrorStateHypershift(err error) {
+	// truncatedErr caps error message at a reasonable length to limit the risk of hitting the total
+	// annotation size limit (256 kb) at any point
+	truncatedErr := fmt.Sprintf("%.2000s", err.Error())
+	annos := map[string]string{
+		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
+		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
+	}
+	if annoErr := dn.HypershiftSetAnnotation(annos); annoErr != nil {
+		glog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
 	}
 }
 
@@ -556,6 +621,232 @@ func (dn *Daemon) detectEarlySSHAccessesFromBoot() error {
 		if err := dn.applySSHAccessedAnnotation(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// RunHypershift is the entry point for the simplified Hypershift mode daemon
+func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) error {
+	glog.Info("Starting MachineConfigDaemon - Hypershift")
+
+	signaled := make(chan struct{})
+	dn.InstallSignalHandler(signaled)
+
+	defer utilruntime.HandleCrash()
+	defer dn.queue.ShutDown()
+
+	go wait.Until(dn.worker, time.Second, stopCh)
+
+	for {
+		select {
+		case <-stopCh:
+			return nil
+		case <-signaled:
+			return nil
+		case err := <-exitCh:
+			// This channel gets errors from auxiliary goroutines like loginmonitor and kubehealth
+			// TODO we really shouldn't have any for hypershift
+			glog.Warningf("Got an error from auxiliary tools: %v", err)
+		}
+	}
+}
+
+func (dn *Daemon) syncNodeHypershift(key string) error {
+	// First, get the current and desired configurations for the node
+	// current configuration will be read from on-disk state, either
+	//   a) /etc/mcd-currentconfig.json, written by a previous hypershift-mode MCD
+	//   b) /etc/mcs-machine-config-content.json, written by MCS when the node is provisioned,
+	//      if no MCD has operated on this node
+	// desired configuration will be read directly off a ConfigMap in our namespace, specified by
+	// dn.hypershiftConfigMap. This currently has a "config" key (full ignition served json) and a "hash"
+	// key, which is the TargetVersionConfigHash for Hypershift nodepools
+
+	// This isn't strictly necessary but we should only react to our own node changes, like normal MCD
+	_, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
+	}
+	if name != dn.name {
+		return nil
+	}
+
+	// First, check if our drain/uncordon request was honored by the controller
+	node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
+		// The controller has not yet performed our previous request
+		glog.Infof("The controller has not yet performed our previous drain/uncordon request %s", node.Annotations[constants.DesiredDrainerAnnotationKey])
+		return nil
+	}
+	if node.Annotations[constants.DesiredMachineConfigAnnotationKey] == "" ||
+		node.Annotations[constants.CurrentMachineConfigAnnotationKey] == node.Annotations[constants.DesiredMachineConfigAnnotationKey] {
+		// We have not yet been signaled to update, just return
+		// This may cause issues because the desiredConfig here doesn't necessarily match the config in the configmap
+		// TODO consider revisiting that
+		glog.V(4).Info("CurrentConfig == DesiredConfig in node annotations.")
+		return nil
+	}
+
+	// /etc/machine-config-daemon/currentconfig actually exists in hypershift nodes, but is empty.
+	// So we are using another location instead
+	currentConfigBytes, err := ioutil.ReadFile(hypershiftCurrentConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			currentConfigBytes, err = ioutil.ReadFile(mcsServedConfigPath)
+			if err != nil {
+				return errors.Wrapf(err, "Cannot find any existing configuration on disk")
+			}
+		} else {
+			return errors.Wrapf(err, "Failed to load local config")
+		}
+	}
+
+	var currentConfig mcfgv1.MachineConfig
+	err = json.Unmarshal(currentConfigBytes, &currentConfig)
+	if err != nil {
+		return errors.Wrapf(err, "Cannot read on-disk state into MachineConfig")
+	}
+
+	// Instead of reading from configmap directly, let's mount it in as a volumn, such that we don't have to give that
+	// additional RBAC rule
+	ignServedConfigPath := filepath.Join(dn.hypershiftConfigMap, configMapConfigKey)
+	ignServedConfigBytes, err := ioutil.ReadFile(ignServedConfigPath)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to load desiredConfig")
+	}
+	targetHashPath := filepath.Join(dn.hypershiftConfigMap, configMapHashKey)
+	targetHashBytes, err := ioutil.ReadFile(targetHashPath)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to load desiredConfig hash")
+	}
+	targetHash := string(targetHashBytes)
+
+	// TODO probably have to compress this in the future
+	ignConfig, err := ctrlcommon.ParseAndConvertConfig(ignServedConfigBytes)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to parse Ignition from configmap data.config")
+	}
+
+	desiredConfigBytes, err := ctrlcommon.GetIgnitionFileDataByPath(&ignConfig, mcsServedConfigPath)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to find desiredConfig from configmap data")
+	}
+
+	var desiredConfig mcfgv1.MachineConfig
+	err = json.Unmarshal(desiredConfigBytes, &desiredConfig)
+	if err != nil {
+		return errors.Wrapf(err, "Cannot decode desiredConfig from configmap data")
+	}
+
+	glog.Infof("Successfully read current/desired Config")
+
+	// check update reconcilability
+	mcDiff, err := reconcilable(&currentConfig, &desiredConfig)
+	if err != nil {
+		return errors.Wrapf(err, "The update is not reconcilable")
+	}
+	if mcDiff.isEmpty() {
+		// No diff was detected. Check if we are in the right state.
+		glog.Infof("No diff detected. Assuming a previous update was completed. Checking on-disk state.")
+		if err := dn.validateOnDiskState(&desiredConfig); err != nil {
+			return errors.Wrapf(err, "Disk validation failed")
+		}
+
+		if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == targetHash &&
+			node.Annotations[constants.DesiredDrainerAnnotationKey] == fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash) {
+			// We are in a done state
+			glog.Infof("The pod is in a completed state. Awaiting removal.")
+			return nil
+		}
+		// Assume an update is completed. Set node state to done. Also request an uncordon
+		annos := map[string]string{
+			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDone,
+			constants.MachineConfigDaemonReasonAnnotationKey: "",
+			constants.CurrentMachineConfigAnnotationKey:      targetHash,
+			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
+		}
+		if err := dn.HypershiftSetAnnotation(annos); err != nil {
+			return errors.Wrapf(err, "Failed to set Done annotation on node")
+		}
+		glog.Infof("The pod has completed update. Awaiting removal.")
+		// TODO os.Exit here
+		return nil
+	}
+
+	glog.Infof("Update is reconcilable. Diff: %v", mcDiff)
+
+	// If we want to match existing MCD behaviour, we will also need to
+	// check whether we need to drain.
+	// TODO add disruptionless updates here
+
+	targetDrainValue := fmt.Sprintf("%s-%s", constants.DrainerStateDrain, targetHash)
+	if node.Annotations[constants.DesiredDrainerAnnotationKey] != targetDrainValue {
+		// Make a request to perform drain
+		annos := map[string]string{
+			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
+			constants.MachineConfigDaemonReasonAnnotationKey: "",
+			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
+		}
+		if err := dn.HypershiftSetAnnotation(annos); err != nil {
+			return errors.Wrapf(err, "Failed to set Done annotation on node")
+		}
+		// Wait for a future sync to perform post-drain actions
+		glog.Info("Setting drain request via annotation to controller.")
+		return nil
+	}
+
+	// For us to be here, DesiredDrainerAnnotationKey == LastAppliedDrainerAnnotationKey == drain-targetHash
+	// perform the actual update
+	if err := dn.updateHypershift(&currentConfig, &desiredConfig, mcDiff); err != nil {
+		return errors.Wrapf(err, "Failed to update configuration")
+	}
+
+	// Finally, once we are successful, we perform the necessary post config change action (TODO)
+
+	// write new config to disk, used for future updates
+	err = writeFileAtomicallyWithDefaults(hypershiftCurrentConfigPath, desiredConfigBytes)
+	if err != nil {
+		return errors.Wrapf(err, "Cannot store new config to disk")
+	}
+
+	return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
+}
+
+// HypershiftSetAnnotation sets the necessary communication annotations between nodepool controller
+// and the daemon.
+func (dn *Daemon) HypershiftSetAnnotation(annotations map[string]string) error {
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		n, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		oldNode, err := json.Marshal(n)
+		if err != nil {
+			return err
+		}
+
+		nodeClone := n.DeepCopy()
+		for k, v := range annotations {
+			nodeClone.Annotations[k] = v
+		}
+
+		newNode, err := json.Marshal(nodeClone)
+		if err != nil {
+			return err
+		}
+
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
+		if err != nil {
+			return fmt.Errorf("failed to create patch for node %q: %v", dn.name, err)
+		}
+
+		_, err = dn.kubeClient.CoreV1().Nodes().Patch(context.TODO(), dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
+	}); err != nil {
+		// may be conflict if max retries were hit
+		return fmt.Errorf("unable to update node %s: %v", dn.name, err)
 	}
 	return nil
 }
