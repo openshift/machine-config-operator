@@ -64,6 +64,8 @@ const (
 	// renderDelay is a pause to avoid churn in MachineConfigs; see
 	// https://github.com/openshift/machine-config-operator/issues/301
 	renderDelay = 5 * time.Second
+
+	internalRegistry = "image-registry.openshift-image-registry.svc:5000"
 )
 
 var (
@@ -811,6 +813,21 @@ func (ctrl *Controller) experimentalAddImageStreams(pool *mcfgv1.MachineConfigPo
 	return nil
 }
 
+// We can use either the pristine base image, or a custom one.
+func (ctrl *Controller) getBaseImage(pool *mcfgv1.MachineConfigPool) (string, error) {
+	external, err := ctrl.imageclient.ImageV1().ImageStreams(ctrlcommon.MCONamespace).Get(context.Background(), ctrlcommon.ImageStreamSuffixMCOContentExternal, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	for _, tag := range external.Status.Tags {
+		if tag.Tag != "latest" {
+			continue
+		}
+		return tag.Items[0].DockerImageReference, nil
+	}
+	return fmt.Sprintf("%s/%s/coreos", internalRegistry, ctrlcommon.MCONamespace), nil
+}
+
 // experimentalAddBuildConfigs creates a build config for a pool so that its content automatically
 // gets rendered into an image when the machineconfig content changes
 func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPool) error {
@@ -818,13 +835,18 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 	buildConfigName := fmt.Sprintf("mco-build-content-%s", pool.Name)
 	contentImageStreamName := pool.Name + ctrlcommon.ImageStreamSuffixMCOContent
 
+	baseImageRef, err := ctrl.getBaseImage(pool)
+	if err != nil {
+		return err
+	}
+
 	// Multistage build, butane is optional (the [l] character class makes it a 'wildcard' and it won't fail if it doesn't exist)
 	var dockerFile = `
 	# Multistage build, we need to grab the files from our config imagestream 
 	FROM image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/` + pool.Name + ctrlcommon.ImageStreamSuffixRenderedConfig + ` AS machineconfig
 	
 	# We're actually basing on the "new format" image from the coreos base image stream 
-	FROM image-registry.openshift-image-registry.svc:5000/openshift-machine-config-operator/coreos
+	FROM ` + baseImageRef + `
 
 	# Pull in the files from our machineconfig stage 
 	COPY --from=machineconfig /machine-config-ignition.json /etc/machine-config-ignition.json
@@ -853,7 +875,7 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 	LABEL machineconfig=$machineconfig
 	`
 
-	_, err := ctrl.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).Get(context.TODO(), buildConfigName, metav1.GetOptions{})
+	_, err = ctrl.buildclient.BuildV1().BuildConfigs(ctrlcommon.MCONamespace).Get(context.TODO(), buildConfigName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 
 		skipLayers := buildv1.ImageOptimizationSkipLayers
