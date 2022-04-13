@@ -1985,6 +1985,7 @@ func getOstreeFileDataReadFunc(stateroot, commit string) ReadFileFunc {
 
 // onDesiredImage() checks whether desired image is either booted or live applied
 // it additionally returns whether a rebase is necessary (as opposed to just live applying)
+// Default Deployment values are handled
 func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool) {
 	var bootedIsLegacy, stagedIsLegacy bool
 	strippedBootedContainerImageReference, err := stripUnverifiedPrefix(booted.ContainerImageReference)
@@ -2025,19 +2026,9 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 	// TODO drop NodeUpdaterClient or change its interface
 	client := &RpmOstreeClient{}
 
-	state, err := client.GetStatusStructured()
+	booted, staged, err := client.getBootedAndStagedDeployments()
 	if err != nil {
 		return err
-	}
-
-	var staged, booted Deployment
-	for _, deployment := range state.Deployments {
-		if deployment.Staged {
-			staged = deployment
-		}
-		if deployment.Booted {
-			booted = deployment
-		}
 	}
 
 	if onDesired, needRebase := onDesiredImage(desiredImage, booted, staged); !onDesired {
@@ -2057,11 +2048,7 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 			if err != nil {
 				return err
 			}
-			for _, deployment := range state.Deployments {
-				if deployment.Staged {
-					staged = deployment
-				}
-			}
+			staged = state.getStagedDeployment()
 
 			// since we reboot whenever kargs change, we can get old kargs from live-applied or booted
 			oldContentBytes, err := Cat(booted.Osname, booted.Checksum, render.MCDContentPath)
