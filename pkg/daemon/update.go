@@ -979,7 +979,11 @@ func generateKargs(oldKernelArguments, newKernelArguments []string) []string {
 	// kernel arguments present in the new rendered MachineConfig.
 	// See https://bugzilla.redhat.com/show_bug.cgi?id=1866546#c10.
 	for _, arg := range oldKargs {
-		cmdArgs = append(cmdArgs, "--delete="+arg)
+		// Use `--delete-if-present` instead of `--delete` so we gracefully
+		// deal with any possible drift that could have happened, e.g.
+		// sysadmins directly editing kargs instead of using the MCO.
+		// https://bugzilla.redhat.com/show_bug.cgi?id=2075126
+		cmdArgs = append(cmdArgs, "--delete-if-present="+arg)
 	}
 	for _, arg := range newKargs {
 		cmdArgs = append(cmdArgs, "--append="+arg)
