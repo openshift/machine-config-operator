@@ -2011,7 +2011,7 @@ func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool)
 // experimentalUpdateLayeredConfig() pretends to do the normal config update for the pool but actually does
 // an image update instead. This function should be completely thrown away.
 // TODO(jkyros): right now this skips drain and reboot, it just live-applies it, but you *can* boot it and it will work
-func (dn *Daemon) experimentalUpdateLayeredConfig() error {
+func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 
 	desiredImage := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
 	currentImage := dn.node.Annotations[constants.CurrentImageConfigAnnotationKey]
