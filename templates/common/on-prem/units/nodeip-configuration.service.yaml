@@ -21,7 +21,8 @@ contents: |
     /usr/bin/podman run --rm \
     --authfile /var/lib/kubelet/config.json \
     --net=host \
-    --volume /etc/systemd/system:/etc/systemd/system:z \
+    --security-opt label=disable \
+    --volume /etc/systemd/system:/etc/systemd/system \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
