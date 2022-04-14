@@ -78,7 +78,7 @@ func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version
 		tmpIgnCfg := ctrlcommon.NewIgnConfig()
 		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
 		if err != nil {
-			return fmt.Errorf("error marshalling Ignition config: %v", err)
+			return fmt.Errorf("error marshalling Ignition config: %w", err)
 		}
 	} else {
 		tmpIgnCfg := ign2types.Config{
@@ -88,7 +88,7 @@ func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version
 		}
 		rawTmpIgnCfg, err = json.Marshal(tmpIgnCfg)
 		if err != nil {
-			return fmt.Errorf("error marshalling Ignition config: %v", err)
+			return fmt.Errorf("error marshalling Ignition config: %w", err)
 		}
 	}
 
@@ -96,11 +96,11 @@ func appendEncapsulated(conf *igntypes.Config, mc *mcfgv1.MachineConfig, version
 	tmpcfg.Spec.Config.Raw = rawTmpIgnCfg
 	serialized, err := json.Marshal(tmpcfg)
 	if err != nil {
-		return fmt.Errorf("error marshalling MachineConfig: %v", err)
+		return fmt.Errorf("error marshalling MachineConfig: %w", err)
 	}
 	err = appendFileToIgnition(conf, daemonconsts.MachineConfigEncapsulatedPath, string(serialized))
 	if err != nil {
-		return fmt.Errorf("error appending file to raw Ignition config: %v", err)
+		return fmt.Errorf("error appending file to raw Ignition config: %w", err)
 	}
 	return nil
 }
@@ -150,7 +150,7 @@ func getNodeAnnotation(conf string) (string, error) {
 	}
 	contents, err := json.Marshal(nodeAnnotations)
 	if err != nil {
-		return "", fmt.Errorf("could not marshal node annotations, err: %v", err)
+		return "", fmt.Errorf("could not marshal node annotations, err: %w", err)
 	}
 	return string(contents), nil
 }

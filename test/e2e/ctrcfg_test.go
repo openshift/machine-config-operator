@@ -14,7 +14,6 @@ import (
 	ctrcfg "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -147,7 +146,7 @@ func runTestWithCtrcfg(t *testing.T, testName, regexKey, expectedConfVal1, expec
 	arr := strings.Split(ctrcfg.CRIODropInFilePathLogLevel, "/")
 	overrideFileName := arr[len(arr)-1]
 	if fileExists(t, cs, node, overrideFileName) {
-		err := errors.New("override file still exists in crio.conf.d")
+		err := fmt.Errorf("override file still exists in crio.conf.d")
 		require.Nil(t, err)
 	}
 }
@@ -204,7 +203,7 @@ func getMCFromCtrcfg(t *testing.T, cs *framework.ClientSet, ctrcfgName string) (
 		}
 		return false, nil
 	}); err != nil {
-		return "", errors.Wrapf(err, "can't find machine config created by ctrcfg %s", ctrcfgName)
+		return "", fmt.Errorf("can't find machine config created by ctrcfg %s: %w", ctrcfgName, err)
 	}
 	return mcName, nil
 }

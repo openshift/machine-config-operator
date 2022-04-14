@@ -70,7 +70,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig %v", err)
+		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
 
 	// Find all MachineConfigPools
@@ -122,7 +122,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 			return err
 		}); err != nil {
-			return fmt.Errorf("Could not Create/Update MachineConfig: %v", err)
+			return fmt.Errorf("Could not Create/Update MachineConfig: %w", err)
 		}
 		glog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
 	}
@@ -133,7 +133,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 func (ctrl *Controller) enqueueFeature(feat *osev1.FeatureGate) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(feat)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", feat, err))
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %w", feat, err))
 		return
 	}
 	ctrl.featureQueue.Add(key)

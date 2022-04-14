@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -14,7 +15,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
 	"github.com/openshift/machine-config-operator/pkg/version"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection"
@@ -52,7 +52,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 	cb, err := clients.NewBuilder(startOpts.kubeconfig)
 	if err != nil {
-		ctrlcommon.WriteTerminationError(errors.Wrapf(err, "Creating clients"))
+		ctrlcommon.WriteTerminationError(fmt.Errorf("creating clients: %w", err))
 	}
 	run := func(ctx context.Context) {
 		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentName)

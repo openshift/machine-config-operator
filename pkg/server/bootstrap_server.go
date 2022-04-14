@@ -70,13 +70,13 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("server: could not read file %s, err: %v", fileName, err)
+		return nil, fmt.Errorf("server: could not read file %s, err: %w", fileName, err)
 	}
 
 	mp := new(mcfgv1.MachineConfigPool)
 	err = yaml.Unmarshal(data, mp)
 	if err != nil {
-		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
+		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %w", fileName, err)
 	}
 
 	currConf := mp.Status.Configuration.Name
@@ -90,17 +90,17 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("server: could not read file %s, err: %v", fileName, err)
+		return nil, fmt.Errorf("server: could not read file %s, err: %w", fileName, err)
 	}
 
 	mc := new(mcfgv1.MachineConfig)
 	err = yaml.Unmarshal(data, mc)
 	if err != nil {
-		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %v", fileName, err)
+		return nil, fmt.Errorf("server: could not unmarshal file %s, err: %w", fileName, err)
 	}
 	ignConf, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %w", err)
 	}
 
 	appenders := getAppenders(currConf, nil, bsc.kubeconfigFunc)
@@ -120,7 +120,7 @@ func (bsc *bootstrapServer) GetConfig(cr poolRequest) (*runtime.RawExtension, er
 func kubeconfigFromFile(path string) ([]byte, []byte, error) {
 	kcData, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting kubeconfig from disk: %v", err)
+		return nil, nil, fmt.Errorf("error getting kubeconfig from disk: %w", err)
 	}
 
 	kc := clientcmd.Config{}

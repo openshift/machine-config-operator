@@ -12,11 +12,11 @@ import (
 	e2eShared "github.com/openshift/machine-config-operator/test/e2e-shared-tests"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -405,10 +405,11 @@ func waitForSingleNodePoolComplete(t *testing.T, cs *framework.ClientSet, pool, 
 		}
 		return true, nil
 	}); err != nil {
+		errs := kubeErrs.NewAggregate([]error{lastErr, err})
 		if err == wait.ErrWaitTimeout {
-			errors.Wrapf(err, "pool %s is still not updated, waited %v: %v", pool, time.Since(startTime), lastErr)
+			return fmt.Errorf("pool %s is still not updated, waited %v: %w", pool, time.Since(startTime), errs)
 		} else {
-			return errors.Wrapf(err, "unkown error occured %v", lastErr)
+			return fmt.Errorf("unknown error occurred: %w", errs)
 		}
 	}
 

@@ -134,14 +134,14 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing Kubelet Ignition config failed with error: %w", err)
 	}
 	for _, c := range ignCfg.Storage.Files {
 		if c.Path == "/etc/kubernetes/kubelet.conf" {
 			return &c, nil
 		}
 	}
-	return nil, fmt.Errorf("Could not find Kubelet Config")
+	return nil, fmt.Errorf("could not find Kubelet Config")
 }
 
 // nolint: dupl
@@ -149,7 +149,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	// Get all the kubelet config CRs
 	kcListAll, err := client.MachineconfigurationV1().KubeletConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return "", fmt.Errorf("error listing kubelet configs: %v", err)
+		return "", fmt.Errorf("error listing kubelet configs: %w", err)
 	}
 
 	// If there is no kubelet config in the list, return the default MC name with no suffix
@@ -161,7 +161,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	for _, kc := range kcListAll.Items {
 		selector, err := metav1.LabelSelectorAsSelector(kc.Spec.MachineConfigPoolSelector)
 		if err != nil {
-			return "", fmt.Errorf("invalid label selector: %v", err)
+			return "", fmt.Errorf("invalid label selector: %w", err)
 		}
 		if selector.Empty() || !selector.Matches(labels.Set(pool.Labels)) {
 			continue
@@ -199,7 +199,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
 			intVal, err := strconv.Atoi(val)
 			if err != nil {
-				return "", fmt.Errorf("error converting %s to int: %v", val, err)
+				return "", fmt.Errorf("error converting %s to int: %w", val, err)
 			}
 			if intVal > suffixNum {
 				suffixNum = intVal
@@ -243,7 +243,7 @@ func validateUserKubeletConfig(cfg *mcfgv1.KubeletConfig) error {
 	}
 	kcDecoded, err := decodeKubeletConfig(cfg.Spec.KubeletConfig.Raw)
 	if err != nil {
-		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %v", err)
+		return fmt.Errorf("KubeletConfig could not be unmarshalled, err: %w", err)
 	}
 
 	// Check all the fields a user cannot set within the KubeletConfig CR.
@@ -333,7 +333,7 @@ func newKubeletconfigJSONEncoder(targetVersion schema.GroupVersion) (runtime.Enc
 func kubeletConfigToIgnFile(cfg *kubeletconfigv1beta1.KubeletConfiguration) (*ign3types.File, error) {
 	cfgJSON, err := EncodeKubeletConfig(cfg, kubeletconfigv1beta1.SchemeGroupVersion)
 	if err != nil {
-		return nil, fmt.Errorf("could not encode kubelet configuration: %v", err)
+		return nil, fmt.Errorf("could not encode kubelet configuration: %w", err)
 	}
 	cfgIgn := createNewKubeletIgnition(cfgJSON)
 	return cfgIgn, nil
@@ -351,7 +351,7 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 	if kubeletConfig.Spec.KubeletConfig != nil && kubeletConfig.Spec.KubeletConfig.Raw != nil {
 		specKubeletConfig, err := decodeKubeletConfig(kubeletConfig.Spec.KubeletConfig.Raw)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %v", err)
+			return nil, nil, nil, fmt.Errorf("could not deserialize the new Kubelet config: %w", err)
 		}
 
 		if val, ok := specKubeletConfig.SystemReserved["memory"]; ok {
@@ -371,14 +371,14 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		// Merge the Old and New
 		err = mergo.Merge(originalKubeConfig, specKubeletConfig, mergo.WithOverride)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %v", err)
+			return nil, nil, nil, fmt.Errorf("could not merge original config and new config: %w", err)
 		}
 	}
 
 	// Encode the new config into an Ignition File
 	kubeletIgnition, err := kubeletConfigToIgnFile(originalKubeConfig)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("could not encode JSON: %v", err)
+		return nil, nil, nil, fmt.Errorf("could not encode JSON: %w", err)
 	}
 
 	if kubeletConfig.Spec.LogLevel != nil {

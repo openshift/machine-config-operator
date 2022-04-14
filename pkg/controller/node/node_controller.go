@@ -24,13 +24,13 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
-	goerrs "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
@@ -178,7 +178,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
 	nodeList, err := ctrl.nodeLister.List(labels.SelectorFromSet(labels.Set{ctrlcommon.MasterLabel: ""}))
 	if err != nil {
-		return nil, fmt.Errorf("error while listing master nodes %v", err)
+		return nil, fmt.Errorf("error while listing master nodes %w", err)
 	}
 	return nodeList, nil
 }
@@ -199,14 +199,16 @@ func (ctrl *Controller) checkMasterNodesOnDelete(obj interface{}) {
 	}
 	currentMasters, err := ctrl.getCurrentMasters()
 	if err != nil {
-		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		err = fmt.Errorf("reconciling to make master nodes schedulable/unschedulable failed: %w", err)
+		glog.Error(err)
 		return
 	}
 	// On deletion make all masters unschedulable to restore default behaviour
 	errs := ctrl.makeMastersUnSchedulable(currentMasters)
 	if len(errs) > 0 {
 		err = v1helpers.NewMultiLineAggregate(errs)
-		goerrs.Wrap(err, "Reconciling to make nodes schedulable/unschedulable failed")
+		err = fmt.Errorf("reconciling to make nodes schedulable/unschedulable failed: %w", err)
+		glog.Error(err)
 		return
 	}
 	return
@@ -236,7 +238,7 @@ func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) 
 	var errs []error
 	for _, node := range currentMasters {
 		if err := ctrl.makeMasterNodeUnSchedulable(node); err != nil {
-			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %v", node.Name, err))
+			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %w", node.Name, err))
 		}
 	}
 	return errs
@@ -318,12 +320,12 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		pool, ok = tombstone.Obj.(*mcfgv1.MachineConfigPool)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineConfigPool %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineConfigPool %#v", obj))
 			return
 		}
 	}
@@ -335,7 +337,7 @@ func (ctrl *Controller) deleteMachineConfigPool(obj interface{}) {
 func (ctrl *Controller) getMastersSchedulable() (bool, error) {
 	schedulerList, err := ctrl.schedulerList.List(labels.SelectorFromSet(nil))
 	if err != nil {
-		return false, fmt.Errorf("error while listing scheduler config %v", err)
+		return false, fmt.Errorf("error while listing scheduler config %w", err)
 	}
 	for _, sched := range schedulerList {
 		if sched.Name == schedulerCRName {
@@ -369,19 +371,22 @@ func isWindows(node *corev1.Node) bool {
 func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 	mastersSchedulable, err := ctrl.getMastersSchedulable()
 	if err != nil {
-		goerrs.Wrap(err, "Getting scheduler config failed")
+		err = fmt.Errorf("getting scheduler config failed: %w", err)
+		glog.Error(err)
 		return
 	}
 	if mastersSchedulable {
 		err = ctrl.makeMasterNodeSchedulable(node)
 		if err != nil {
-			goerrs.Wrap(err, "Failed making master Node schedulable")
+			err = fmt.Errorf("failed making master Node schedulable: %w", err)
+			glog.Error(err)
 			return
 		}
 	} else if !mastersSchedulable {
 		err = ctrl.makeMasterNodeUnSchedulable(node)
 		if err != nil {
-			goerrs.Wrap(err, "Failed making master Node unschedulable")
+			err = fmt.Errorf("failed making master Node unschedulable: %w", err)
+			glog.Error(err)
 			return
 		}
 	}
@@ -392,7 +397,8 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 func (ctrl *Controller) reconcileMasters() {
 	currentMasters, err := ctrl.getCurrentMasters()
 	if err != nil {
-		goerrs.Wrap(err, "Reconciling to make master nodes schedulable/unschedulable failed")
+		err = fmt.Errorf("reconciling to make master nodes schedulable/unschedulable failed: %w", err)
+		glog.Error(err)
 		return
 	}
 	for _, node := range currentMasters {
@@ -528,12 +534,12 @@ func (ctrl *Controller) deleteNode(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		node, ok = tombstone.Obj.(*corev1.Node)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Node %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Node %#v", obj))
 			return
 		}
 	}
@@ -572,7 +578,7 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 	for _, p := range pl {
 		selector, err := metav1.LabelSelectorAsSelector(p.Spec.NodeSelector)
 		if err != nil {
-			return nil, fmt.Errorf("invalid label selector: %v", err)
+			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
 
 		// If a pool with a nil or empty selector creeps in, it should match nothing, not everything.
@@ -639,7 +645,7 @@ func (ctrl *Controller) getPrimaryPoolForNode(node *corev1.Node) (*mcfgv1.Machin
 func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", pool, err))
 		return
 	}
 
@@ -649,7 +655,7 @@ func (ctrl *Controller) enqueue(pool *mcfgv1.MachineConfigPool) {
 func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", pool, err))
 		return
 	}
 
@@ -660,7 +666,7 @@ func (ctrl *Controller) enqueueRateLimited(pool *mcfgv1.MachineConfigPool) {
 func (ctrl *Controller) enqueueAfter(pool *mcfgv1.MachineConfigPool, after time.Duration) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pool)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", pool, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", pool, err))
 		return
 	}
 
@@ -773,7 +779,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-			return goerrs.Wrapf(err, "error getting nodes for pool %q, sync error: %v", pool.Name, syncErr)
+			errs := kubeErrs.NewAggregate([]error{syncErr, err})
+			return fmt.Errorf("error getting nodes for pool %q, sync error: %w", pool.Name, errs)
 		}
 		return err
 	}
@@ -781,13 +788,14 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
 		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-			return goerrs.Wrapf(err, "error getting max unavailable count for pool %q, sync error: %v", pool.Name, syncErr)
+			errs := kubeErrs.NewAggregate([]error{syncErr, err})
+			return fmt.Errorf("error getting max unavailable count for pool %q, sync error: %w", pool.Name, errs)
 		}
 		return err
 	}
 
 	if err := ctrl.setClusterConfigAnnotation(nodes); err != nil {
-		return goerrs.Wrapf(err, "error setting clusterConfig Annotation for node in pool %q, error: %v", pool.Name, err)
+		return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
 	}
 	// Taint all the nodes in the node pool, irrespective of their upgrade status.
 	ctx := context.TODO()
@@ -799,13 +807,15 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
 			if hasInProgressTaint {
 				if err := ctrl.removeUpdateInProgressTaint(ctx, node.Name); err != nil {
-					return goerrs.Wrapf(err, "failed removing %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
+					err = fmt.Errorf("failed removing %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
+					glog.Error(err)
 				}
 			}
 		} else {
 			if !hasInProgressTaint {
 				if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
-					return goerrs.Wrapf(err, "failed applying %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
+					err = fmt.Errorf("failed applying %s taint for node %s: %w", constants.NodeUpdateInProgressTaint.Key, node.Name, err)
+					glog.Error(err)
 				}
 			}
 		}
@@ -815,7 +825,8 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(candidates), capacity)
 		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
 			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
-				return goerrs.Wrapf(err, "error setting desired machine config annotation for pool %q, sync error: %v", pool.Name, syncErr)
+				errs := kubeErrs.NewAggregate([]error{syncErr, err})
+				return fmt.Errorf("error setting desired machine config annotation for pool %q, sync error: %w", pool.Name, errs)
 			}
 			return err
 		}
@@ -836,7 +847,7 @@ func checkIfNodeHasInProgressTaint(node *corev1.Node) bool {
 func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*corev1.Node, error) {
 	selector, err := metav1.LabelSelectorAsSelector(pool.Spec.NodeSelector)
 	if err != nil {
-		return nil, fmt.Errorf("invalid label selector: %v", err)
+		return nil, fmt.Errorf("invalid label selector: %w", err)
 	}
 
 	initialNodes, err := ctrl.nodeLister.List(selector)
@@ -913,7 +924,7 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
@@ -1013,7 +1024,7 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 	for _, node := range candidates {
 		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
 		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, targetConfig); err != nil {
-			return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
+			return fmt.Errorf("setting desired config for node %s: %w", node.Name, err)
 		}
 	}
 	if len(candidates) == 1 {
@@ -1114,7 +1125,7 @@ func (ctrl *Controller) removeUpdateInProgressTaint(ctx context.Context, nodeNam
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
+			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
@@ -1238,7 +1249,7 @@ func (ctrl *Controller) getNewestAPIToKubeletSignerCertificate(statusIgnConfig *
 
 	// We have other problems if this is empty, but it's possible
 	if len(containedCertificates) == 0 {
-		return nil, fmt.Errorf("No certificates found in bundle")
+		return nil, fmt.Errorf("no certificates found in bundle")
 	}
 
 	// The *original* signer has a different name, the rotated ones have longer names
@@ -1247,7 +1258,7 @@ func (ctrl *Controller) getNewestAPIToKubeletSignerCertificate(statusIgnConfig *
 
 	// Shouldn't come back with nothing, but just in case we do
 	if newestCertificate == nil {
-		return nil, fmt.Errorf("No matching kube-apiserver-to-kubelet-signer certificates found in bundle")
+		return nil, fmt.Errorf("no matching kube-apiserver-to-kubelet-signer certificates found in bundle")
 	}
 
 	return newestCertificate, nil

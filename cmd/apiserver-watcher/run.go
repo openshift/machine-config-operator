@@ -59,7 +59,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 
 	uri, err := url.Parse(runOpts.healthCheckURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse health-check-url: %v", err)
+		return fmt.Errorf("failed to parse health-check-url: %w", err)
 	}
 	if !uri.IsAbs() {
 		return fmt.Errorf("invalid URI %q (no scheme)", uri)
@@ -82,7 +82,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 		}},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create httpCheck: %v", err)
+		return fmt.Errorf("failed to create httpCheck: %w", err)
 	}
 	errCh := make(chan error)
 

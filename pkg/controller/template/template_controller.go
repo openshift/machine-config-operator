@@ -161,12 +161,12 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		secret, ok = tombstone.Obj.(*corev1.Secret)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a Secret %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a Secret %#v", obj))
 			return
 		}
 	}
@@ -174,7 +174,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 	if secret.Name == "pull-secret" {
 		cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get ControllerConfig on secret callback %#v", err))
+			utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on secret callback %#w", err))
 			return
 		}
 		glog.V(4).Infof("Re-syncing ControllerConfig %s due to secret deletion", cfg.Name)
@@ -186,7 +186,7 @@ func (ctrl *Controller) deleteSecret(obj interface{}) {
 func (ctrl *Controller) enqueueController() {
 	cfg, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on dependency callback %#v", err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get ControllerConfig on dependency callback %#w", err))
 		return
 	}
 	glog.V(4).Infof("Re-syncing ControllerConfig %s due to dependency change", cfg.Name)
@@ -213,12 +213,12 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		features, ok = tombstone.Obj.(*osev1.FeatureGate)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a FeatureGate %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a FeatureGate %#v", obj))
 			return
 		}
 	}
@@ -263,12 +263,12 @@ func (ctrl *Controller) deleteControllerConfig(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		cfg, ok = tombstone.Obj.(*mcfgv1.ControllerConfig)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a ControllerConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a ControllerConfig %#v", obj))
 			return
 		}
 	}
@@ -318,12 +318,12 @@ func (ctrl *Controller) deleteMachineConfig(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 			return
 		}
 		mc, ok = tombstone.Obj.(*mcfgv1.MachineConfig)
 		if !ok {
-			utilruntime.HandleError(fmt.Errorf("Tombstone contained object that is not a MachineConfig %#v", obj))
+			utilruntime.HandleError(fmt.Errorf("tombstone contained object that is not a MachineConfig %#v", obj))
 			return
 		}
 	}
@@ -363,7 +363,7 @@ func (ctrl *Controller) resolveControllerRef(controllerRef *metav1.OwnerReferenc
 func (ctrl *Controller) enqueue(config *mcfgv1.ControllerConfig) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(config)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", config, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", config, err))
 		return
 	}
 
@@ -373,7 +373,7 @@ func (ctrl *Controller) enqueue(config *mcfgv1.ControllerConfig) {
 func (ctrl *Controller) enqueueRateLimited(controllerconfig *mcfgv1.ControllerConfig) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(controllerconfig)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", controllerconfig, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", controllerconfig, err))
 		return
 	}
 
@@ -384,7 +384,7 @@ func (ctrl *Controller) enqueueRateLimited(controllerconfig *mcfgv1.ControllerCo
 func (ctrl *Controller) enqueueAfter(controllerconfig *mcfgv1.ControllerConfig, after time.Duration) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(controllerconfig)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", controllerconfig, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", controllerconfig, err))
 		return
 	}
 
@@ -476,7 +476,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 
 	fg, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
 	if err != nil && !errors.IsNotFound(err) {
-		err := fmt.Errorf("could not fetch FeatureGate: %v", err)
+		err := fmt.Errorf("could not fetch FeatureGate: %w", err)
 		glog.V(2).Infof("%v", err)
 		return ctrl.syncFailingStatus(cfg, err)
 	}
@@ -501,7 +501,7 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate) ([]*mcfgv1.MachineConfig, error) {
 	buf := &bytes.Buffer{}
 	if err := json.Compact(buf, pullSecretRaw); err != nil {
-		return nil, fmt.Errorf("couldn't compact pullsecret %q: %v", string(pullSecretRaw), err)
+		return nil, fmt.Errorf("couldn't compact pullsecret %q: %w", string(pullSecretRaw), err)
 	}
 	rc := &RenderConfig{
 		ControllerConfigSpec: &config.Spec,

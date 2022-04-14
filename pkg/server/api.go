@@ -12,7 +12,6 @@ import (
 	"github.com/clarketm/json"
 	"github.com/coreos/go-semver/semver"
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -253,7 +252,7 @@ func parseAcceptHeader(input string) ([]acceptHeaderValue, error) {
 	}
 
 	if len(header) == 0 {
-		return nil, errors.New("no valid accept header detected")
+		return nil, fmt.Errorf("no valid accept header detected")
 	}
 
 	// Sort headers by descending q factor value.
@@ -294,7 +293,7 @@ func detectSpecVersionFromAcceptHeader(acceptHeader string) (*semver.Version, er
 			} else if !header.SemVer.LessThan(*v2_2) && header.SemVer.LessThan(*semver.New("3.0.0")) {
 				return v2_2, nil
 			}
-			ignVersionError = errors.Errorf("unsupported Ignition version in Accept header: %s", acceptHeader)
+			ignVersionError = fmt.Errorf("unsupported Ignition version in Accept header: %s", acceptHeader)
 		}
 	}
 	// return error if version of Ignition MIME subtype is not supported

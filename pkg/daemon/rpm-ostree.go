@@ -12,7 +12,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -94,7 +93,7 @@ func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
 	}
 
 	if err := json.Unmarshal(output, &rosState); err != nil {
-		return nil, errors.Wrapf(err, "failed to parse `rpm-ostree status --json` output (%s)", truncate(string(output), 30))
+		return nil, fmt.Errorf("failed to parse `rpm-ostree status --json` output (%s): %w", truncate(string(output), 30), err)
 	}
 
 	return &rosState, nil
@@ -207,7 +206,7 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 	var imagedataArray []imageInspection
 	err = json.Unmarshal(output, &imagedataArray)
 	if err != nil {
-		err = errors.Wrapf(err, "unmarshaling podman inspect")
+		err = fmt.Errorf("unmarshaling podman inspect: %w", err)
 		return
 	}
 	imgdata = &imagedataArray[0]
@@ -283,11 +282,11 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 			}
 			ostreeCsum = strings.TrimSpace(string(ostreeCsumBytes))
 		} else if len(refs) > 1 {
-			err = errors.New("multiple refs found in repo")
+			err = fmt.Errorf("multiple refs found in repo")
 			return
 		} else {
 			// XXX: in the future, possibly scan the repo to find a unique .commit object
-			err = errors.New("No refs found in repo")
+			err = fmt.Errorf("no refs found in repo")
 			return
 		}
 	}

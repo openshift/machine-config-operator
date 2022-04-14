@@ -87,13 +87,13 @@ func (b *Bootstrap) Run(destDir string) error {
 
 		file, err := os.Open(filepath.Join(b.manifestDir, info.Name()))
 		if err != nil {
-			return fmt.Errorf("error opening %s: %v", file.Name(), err)
+			return fmt.Errorf("error opening %s: %w", file.Name(), err)
 		}
 		defer file.Close()
 
 		manifests, err := parseManifests(file.Name(), file)
 		if err != nil {
-			return fmt.Errorf("error parsing manifests from %s: %v", file.Name(), err)
+			return fmt.Errorf("error parsing manifests from %s: %w", file.Name(), err)
 		}
 
 		for idx, m := range manifests {
@@ -104,7 +104,7 @@ func (b *Bootstrap) Run(destDir string) error {
 					glog.V(4).Infof("skipping path %q [%d] manifest because it is not part of expected api group: %v", file.Name(), idx+1, err)
 					continue
 				}
-				return fmt.Errorf("error parsing %q [%d] manifest: %v", file.Name(), idx+1, err)
+				return fmt.Errorf("error parsing %q [%d] manifest: %w", file.Name(), idx+1, err)
 			}
 
 			switch obj := obji.(type) {
@@ -268,7 +268,7 @@ func parseManifests(filename string, r io.Reader) ([]manifest, error) {
 			if err == io.EOF {
 				return manifests, nil
 			}
-			return manifests, fmt.Errorf("error parsing %q: %v", filename, err)
+			return manifests, fmt.Errorf("error parsing %q: %w", filename, err)
 		}
 		m.Raw = bytes.TrimSpace(m.Raw)
 		if len(m.Raw) == 0 || bytes.Equal(m.Raw, []byte("null")) {

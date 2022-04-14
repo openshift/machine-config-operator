@@ -453,7 +453,7 @@ func controllerConfigFromFile(path string) (*mcfgv1.ControllerConfig, error) {
 	}
 	cci, _, err := scheme.Codecs.UniversalDecoder().Decode(data, nil, &mcfgv1.ControllerConfig{})
 	if err != nil {
-		return nil, fmt.Errorf("unable to decode ControllerConfig manifest: %v", err)
+		return nil, fmt.Errorf("unable to decode ControllerConfig manifest: %w", err)
 	}
 	cc, ok := cci.(*mcfgv1.ControllerConfig)
 	if !ok {
@@ -489,7 +489,7 @@ func verifyIgn(actual [][]byte, dir string, t *testing.T) {
 		}
 		if info.IsDir() {
 			if path != dir {
-				return fmt.Errorf("unexpected dir: %v", err)
+				return fmt.Errorf("unexpected dir: %w", err)
 			}
 			return nil
 		}
