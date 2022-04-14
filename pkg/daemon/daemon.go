@@ -1493,12 +1493,29 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 		}
 	}
 
+	appliedPoolName := getPoolName(currentConfig.GetOwnerReferences())
+	desiredPoolName := getPoolName(desiredConfig.GetOwnerReferences())
+
+	if desiredPoolName != "" && appliedPoolName != desiredPoolName {
+		glog.Infof("MachineConfigPool mismatch observed setting current config nil")
+		currentConfig = nil
+	}
+
 	// Shut down the Config Drift Monitor since we'll be performing an update
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
+}
+
+func getPoolName(ownerRefs []metav1.OwnerReference) string {
+	for _, ownerRef := range ownerRefs {
+		if ownerRef.Kind == "MachineConfigPool" {
+			return ownerRef.Name
+		}
+	}
+	return ""
 }
 
 // validateOnDiskState compares the on-disk state against what a configuration

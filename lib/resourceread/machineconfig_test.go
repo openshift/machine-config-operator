@@ -27,14 +27,14 @@ func TestReadMachineConfig(t *testing.T) {
 			desc:      "test valid machine config",
 			wantError: false,
 			mc: &mcfgv1.MachineConfig{
-				metav1.TypeMeta{
+				TypeMeta: metav1.TypeMeta{
 					Kind:       testMCKind,
 					APIVersion: testMCVer,
 				},
-				metav1.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: testMCName,
 				},
-				mcfgv1.MachineConfigSpec{},
+				Spec: mcfgv1.MachineConfigSpec{},
 			},
 		},
 		{
@@ -45,14 +45,14 @@ func TestReadMachineConfig(t *testing.T) {
 			desc:      "test invalid machine config",
 			wantError: true,
 			mc: &mcfgv1.MachineConfig{
-				metav1.TypeMeta{
+				TypeMeta: metav1.TypeMeta{
 					Kind:       "invalidMachineConfig",
 					APIVersion: "invalidAPIVersion",
 				},
-				metav1.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "test invalid machine config",
 				},
-				mcfgv1.MachineConfigSpec{},
+				Spec: mcfgv1.MachineConfigSpec{},
 			},
 		},
 	}

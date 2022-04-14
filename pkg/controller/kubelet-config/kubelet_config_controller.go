@@ -508,15 +508,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	}
 
 	for _, pool := range mcpPools {
-		if pool.Spec.Configuration.Name == "" {
-			updateDelay := 5 * time.Second
-			// Previously we spammed the logs about empty pools.
-			// Let's just pause for a bit here to let the renderer
-			// initialize them.
-			time.Sleep(updateDelay)
-			return fmt.Errorf("Pool %s is unconfigured, pausing %v for renderer to initialize", pool.Name, updateDelay)
+		var role string
+		if pool.Spec.MachineConfigSelector != nil {
+			role = pool.Spec.MachineConfigSelector.MatchLabels[mcfgv1.MachineConfigRoleLabelKey]
 		}
-		role := pool.Name
+		if role == "" {
+			role = pool.Name
+		}
+
 		// Get MachineConfig
 		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
 		if err != nil {
@@ -632,6 +631,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		glog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
+
 	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
 		return err
 	}
