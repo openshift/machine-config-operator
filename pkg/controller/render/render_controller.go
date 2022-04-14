@@ -831,7 +831,7 @@ func (ctrl *Controller) experimentalAddBuildConfigs(pool *mcfgv1.MachineConfigPo
 
 	# Apply the config to the host 
 	ENV container=1
-	RUN exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition /etc/machine-config-ignition.json
+	RUN exec -a ignition-apply /usr/lib/dracut/modules.d/30ignition/ignition --ignore-unsupported /etc/machine-config-ignition.json
 
 	# Rebuild origin.d (I included an /etc/yum.repos.d/ file in my machineconfig so it could find the RPMS, that's why this works)
 	RUN rpm-ostree ex rebuild && rm -rf /var/cache /etc/rpm-ostree/origin.d
