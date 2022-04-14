@@ -16,7 +16,6 @@ import (
 func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletConfig, controllerConfig *mcfgv1.ControllerConfig, features *configv1.FeatureGate, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
-	userDefinedSystemReserved := make(map[string]string)
 	// Validate the KubeletConfig CR if exists
 	for _, kubeletConfig := range kubeletConfigs {
 		if err := validateUserKubeletConfig(kubeletConfig); err != nil {
@@ -50,7 +49,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				originalKubeConfig.TLSCipherSuites = observedCipherSuites
 			}
 
-			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig, userDefinedSystemReserved)
+			kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(kubeletConfig, originalKubeConfig)
 			if err != nil {
 				return nil, err
 			}

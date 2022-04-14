@@ -528,8 +528,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		isNotFound := macherrors.IsNotFound(err)
 
-		userDefinedSystemReserved := make(map[string]string, 2)
-
 		// Generate the original KubeletConfig
 		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
@@ -558,7 +556,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		originalKubeConfig.TLSMinVersion = observedMinTLSVersion
 		originalKubeConfig.TLSCipherSuites = observedCipherSuites
 
-		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig, userDefinedSystemReserved)
+		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
 			return ctrl.syncStatusOnly(cfg, err)
 		}
