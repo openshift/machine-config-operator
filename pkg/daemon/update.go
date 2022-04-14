@@ -800,7 +800,8 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	if err := checkFIPS(newConfig.Spec.FIPS); err != nil {
 		return nil, err
 	}
-	// if the oldConfig somehow drifted from the state on the node, we want to ignore it when we calculate newMachineConfigDiff
+	// If the oldConfig somehow drifted from the state on the node, we want to ignore it when we calculate newMachineConfigDiff
+	// That state shouldn't ever be reachable, since we always call checkFIPS
 	oldConfig.Spec.FIPS = newConfig.Spec.FIPS
 
 	// we made it through all the checks. reconcile away!
@@ -841,18 +842,9 @@ func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 // `oc debug node` and run the disable command by hand, then reboot.
 // If we detect that FIPS has been changed, we reject the update.
 func checkFIPS(desiredFIPS bool) error {
-	content, err := ioutil.ReadFile(fipsFile)
+	nodeFIPS, err := getFIPS()
 	if err != nil {
-		if os.IsNotExist(err) {
-			// we just exit cleanly if we're not even on linux
-			glog.Infof("no %s on this system, skipping FIPS check", fipsFile)
-			return nil
-		}
-		return errors.Wrapf(err, "Error reading FIPS file at %s: %s", fipsFile, string(content))
-	}
-	nodeFIPS, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
-	if err != nil {
-		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
+		return err
 	}
 	if desiredFIPS == nodeFIPS {
 		if desiredFIPS {
@@ -860,7 +852,7 @@ func checkFIPS(desiredFIPS bool) error {
 		}
 		return nil
 	}
-	return errors.New("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
+	return fmt.Errorf("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
 }
 
 // checks for white-space characters in "C" and "POSIX" locales.

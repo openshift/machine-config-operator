@@ -590,16 +590,29 @@ func (dn *Daemon) synthesizeCurrentState() (*mcfgv1.MachineConfig, error) {
 	config := canonicalizeEmptyMC(nil)
 	config.Spec.OSImageURL = dn.bootedOSImageURL
 	// Also inject the current fips state, which was handled before we run.
-	content, err := ioutil.ReadFile(fipsFile)
+	fips, err := getFIPS()
 	if err != nil {
-		return nil, fmt.Errorf("Error reading FIPS file at %s: %w", fipsFile, err)
-	}
-	fips, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
-	if err != nil {
-		return nil, fmt.Errorf("Error parsing FIPS: %w", err)
+		return nil, err
 	}
 	config.Spec.FIPS = fips
 	return config, nil
+}
+
+func getFIPS() (bool, error) {
+	content, err := ioutil.ReadFile(fipsFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// we just exit cleanly if we're not even on linux
+			glog.Infof("no %s on this system, skipping FIPS check", fipsFile)
+			return false, nil
+		}
+		return false, errors.Wrapf(err, "error reading FIPS file at %s: %w", fipsFile, err)
+	}
+	fips, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
+	if err != nil {
+		return false, fmt.Errorf("error parsing FIPS file at %s: %w", fipsFile, err)
+	}
+	return fips, nil
 }
 
 // RunFirstbootCompleteMachineconfig is run via systemd on the first boot
