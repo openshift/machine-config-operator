@@ -27,6 +27,7 @@ import (
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
@@ -1984,6 +1985,7 @@ func getOstreeFileDataReadFunc(stateroot, commit string) ReadFileFunc {
 
 // onDesiredImage() checks whether desired image is either booted or live applied
 // it additionally returns whether a rebase is necessary (as opposed to just live applying)
+// Default Deployment values are handled
 func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool) {
 	var bootedIsLegacy, stagedIsLegacy bool
 	strippedBootedContainerImageReference, err := stripUnverifiedPrefix(booted.ContainerImageReference)
@@ -2024,19 +2026,9 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 	// TODO drop NodeUpdaterClient or change its interface
 	client := &RpmOstreeClient{}
 
-	state, err := client.GetStatusStructured()
+	booted, staged, err := client.getBootedAndStagedDeployments()
 	if err != nil {
 		return err
-	}
-
-	var staged, booted Deployment
-	for _, deployment := range state.Deployments {
-		if deployment.Staged {
-			staged = deployment
-		}
-		if deployment.Booted {
-			booted = deployment
-		}
 	}
 
 	if onDesired, needRebase := onDesiredImage(desiredImage, booted, staged); !onDesired {
@@ -2051,6 +2043,40 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 			if err := client.RebaseLayered(desiredImage); err != nil {
 				return err
 			}
+
+			state, err := client.GetStatusStructured()
+			if err != nil {
+				return err
+			}
+			staged = state.getStagedDeployment()
+
+			// since we reboot whenever kargs change, we can get old kargs from live-applied or booted
+			oldContentBytes, err := Cat(booted.Osname, booted.Checksum, render.MCDContentPath)
+			if err != nil {
+				return err
+			}
+			newContentBytes, err := Cat(staged.Osname, staged.Checksum, render.MCDContentPath)
+			if err != nil {
+				return err
+			}
+			var oldContent, newContent render.MCDContent
+			if err := json.Unmarshal(oldContentBytes, &oldContent); err != nil {
+				return err
+			}
+			if err := json.Unmarshal(newContentBytes, &newContent); err != nil {
+				return err
+			}
+			// this shouldn't break transactionality because
+			// 1. if power is lost, rpm-ostree won't have changed the bootloader entry yet, so we'll reboot into the old image, and the rebase will be run again
+			// 2. we can't have graceful shutdown, because the MCO installs a SIGTERM handler
+			if err := dn.updateKernelArguments(oldContent.KernelArguments, newContent.KernelArguments); err != nil {
+				glog.Infof("Rolling back layered update since applying kernel arguments failed with: %v", err)
+				if cleanupErr := removePendingDeployment(); err != nil {
+					// at this point we have broken transactionality, but it's unlikely enough that we'll ignore for now
+					return fmt.Errorf("failed to rollback layered update: %w", cleanupErr)
+				}
+				return fmt.Errorf("failed to update kernel arguments: %w", err)
+			}
 		}
 
 		// Ideally we would want to update kernelArguments only via MachineConfigs.
@@ -2059,15 +2085,6 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 			return err
 		}
 
-		state, err := client.GetStatusStructured()
-		if err != nil {
-			return err
-		}
-		for _, deployment := range state.Deployments {
-			if deployment.Staged {
-				staged = deployment
-			}
-		}
 		var activeChecksum string
 		if booted.LiveReplaced != "" {
 			activeChecksum = booted.LiveReplaced

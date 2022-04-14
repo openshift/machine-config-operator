@@ -437,6 +437,7 @@ func runGetOut(command string, args ...string) ([]byte, error) {
 	return rawOut, nil
 }
 
+// TODO deduplicate with RpmOstreeDeployment
 type Deployment struct {
 	RequestedLocalPackages []interface{} `json:"requested-local-packages"`
 	BaseCommitMeta         struct {
@@ -491,4 +492,36 @@ type RpmOstreeStatus struct {
 	Transaction  interface{}  `json:"transaction"`
 	CachedUpdate interface{}  `json:"cached-update"`
 	UpdateDriver interface{}  `json:"update-driver"`
+}
+
+// getBootedAndStagedDeployments returns the booted and staged deployments
+// It errors if booted does not exist, but if stage does not exist it returns a default value
+// TODO deduplicate with RpmOstreeClient.GetBootedDeployment
+func (r *RpmOstreeClient) getBootedAndStagedDeployments() (booted, staged Deployment, err error) {
+	status, err := r.GetStatusStructured()
+	if err != nil {
+		return
+	}
+
+	booted, err = status.getBootedDeployment()
+	staged = status.getStagedDeployment()
+	return
+}
+
+func (status *RpmOstreeStatus) getBootedDeployment() (Deployment, error) {
+	for _, deployment := range status.Deployments {
+		if deployment.Booted {
+			return deployment, nil
+		}
+	}
+	return Deployment{}, fmt.Errorf("not currently booted in a deployment")
+}
+
+func (status *RpmOstreeStatus) getStagedDeployment() Deployment {
+	for _, deployment := range status.Deployments {
+		if deployment.Staged {
+			return deployment
+		}
+	}
+	return Deployment{}
 }
