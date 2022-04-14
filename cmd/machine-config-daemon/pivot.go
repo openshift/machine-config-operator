@@ -12,7 +12,6 @@ import (
 
 	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
-	errors "github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -50,9 +49,9 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 		data, err := ioutil.ReadFile(etcPivotFile)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("No container specified")
+				return fmt.Errorf("no container specified")
 			}
-			return errors.Wrapf(err, "failed to read from %s", etcPivotFile)
+			return fmt.Errorf("failed to read from %s: %w", etcPivotFile, err)
 		}
 		container = strings.TrimSpace(string(data))
 	} else {
@@ -74,7 +73,7 @@ func run(_ *cobra.Command, args []string) (retErr error) {
 	if fromEtcPullSpec {
 		if err := os.Remove(etcPivotFile); err != nil {
 			if !os.IsNotExist(err) {
-				return errors.Wrapf(err, "failed to delete %s", etcPivotFile)
+				return fmt.Errorf("failed to delete %s: %w", etcPivotFile, err)
 			}
 		}
 	}

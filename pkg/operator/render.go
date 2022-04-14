@@ -50,7 +50,7 @@ func newAssetRenderer(path string) *assetRenderer {
 func (a *assetRenderer) read() error {
 	objBytes, err := manifests.ReadFile(a.Path)
 	if err != nil {
-		return fmt.Errorf("error getting asset %s: %v", a.Path, err)
+		return fmt.Errorf("error getting asset %s: %w", a.Path, err)
 	}
 	a.templateData = string(objBytes)
 	return nil
@@ -70,12 +70,12 @@ func (a *assetRenderer) addTemplateFuncs() {
 func (a *assetRenderer) render(config interface{}) ([]byte, error) {
 	tmpl, err := a.tmpl.Parse(a.templateData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse asset %s: %v", a.Path, err)
+		return nil, fmt.Errorf("failed to parse asset %s: %w", a.Path, err)
 	}
 
 	buf := new(bytes.Buffer)
 	if err := tmpl.Execute(buf, config); err != nil {
-		return nil, fmt.Errorf("failed to execute template: %v", err)
+		return nil, fmt.Errorf("failed to execute template: %w", err)
 	}
 
 	return buf.Bytes(), nil

@@ -11,8 +11,8 @@ import (
 	"github.com/golang/glog"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubectl/pkg/drain"
 )
@@ -67,9 +67,10 @@ func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
-			return errors.Wrapf(lastErr, "failed to %s node (%d tries): %v", verb, backoff.Steps, err)
+			errs := kubeErrs.NewAggregate([]error{err, lastErr})
+			return fmt.Errorf("failed to %s node (%d tries): %w", verb, backoff.Steps, errs)
 		}
-		return errors.Wrapf(err, "failed to %s node", verb)
+		return fmt.Errorf("failed to %s node: %w", verb, err)
 	}
 
 	return nil
@@ -111,7 +112,7 @@ func (dn *Daemon) drain() error {
 		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
 		MCDDrainErr.Set(1)
-		return errors.New(failMsg)
+		return fmt.Errorf(failMsg)
 	case <-drainer():
 		return nil
 	}
@@ -188,22 +189,22 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 	// /etc/containers/registries.conf contains config in toml format. Parse the file
 	oldData, err := ctrlcommon.GetIgnitionFileDataByPath(&oldIgnConfig, constants.ContainerRegistryConfPath)
 	if err != nil {
-		return false, fmt.Errorf("Failed decoding Data URL scheme string: %v", err)
+		return false, fmt.Errorf("failed decoding Data URL scheme string: %w", err)
 	}
 
 	newData, err := ctrlcommon.GetIgnitionFileDataByPath(&newIgnConfig, constants.ContainerRegistryConfPath)
 	if err != nil {
-		return false, fmt.Errorf("Failed decoding Data URL scheme string %v", err)
+		return false, fmt.Errorf("failed decoding Data URL scheme string %w", err)
 	}
 
 	tomlConfOldReg := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(oldData), &tomlConfOldReg); err != nil {
-		return false, fmt.Errorf("Failed decoding TOML content from file %s: %v", constants.ContainerRegistryConfPath, err)
+		return false, fmt.Errorf("failed decoding TOML content from file %s: %w", constants.ContainerRegistryConfPath, err)
 	}
 
 	tomlConfNewReg := sysregistriesv2.V2RegistriesConf{}
 	if _, err := toml.Decode(string(newData), &tomlConfNewReg); err != nil {
-		return false, fmt.Errorf("Failed decoding TOML content from file %s: %v", constants.ContainerRegistryConfPath, err)
+		return false, fmt.Errorf("failed decoding TOML content from file %s: %w", constants.ContainerRegistryConfPath, err)
 	}
 
 	// Ensure that any unqualified-search-registries has not been deleted

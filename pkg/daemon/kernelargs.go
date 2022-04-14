@@ -13,7 +13,6 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
-	errors "github.com/pkg/errors"
 )
 
 const (
@@ -39,7 +38,7 @@ var tuneableFCOSArgsAllowlist = map[string]bool{
 func isArgTunable(arg string) (bool, error) {
 	os, err := GetHostRunningOS()
 	if err != nil {
-		return false, errors.Errorf("failed to get OS for determining whether kernel arg is tuneable: %v", err)
+		return false, fmt.Errorf("failed to get OS for determining whether kernel arg is tuneable: %w", err)
 	}
 
 	if os.IsRHCOS() {
@@ -84,7 +83,7 @@ func parseTuningFile(tuningFilePath, cmdLinePath string) ([]types.TuneArgument, 
 			// It's ok if the file doesn't exist
 			return addArguments, deleteArguments, nil
 		}
-		return addArguments, deleteArguments, errors.Wrapf(err, "reading %s", tuningFilePath)
+		return addArguments, deleteArguments, fmt.Errorf("reading %s: %w", tuningFilePath, err)
 	}
 	// Clean up
 	defer file.Close()

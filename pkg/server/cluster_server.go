@@ -49,7 +49,7 @@ type clusterServer struct {
 func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 	restConfig, err := getClientConfig(kubeConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
+		return nil, fmt.Errorf("failed to create Kubernetes rest client: %w", err)
 	}
 
 	mc := v1.NewForConfigOrDie(restConfig)
@@ -64,7 +64,7 @@ func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
 func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
 	mp, err := cs.machineClient.MachineConfigPools().Get(context.TODO(), cr.machineConfigPool, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
+		return nil, fmt.Errorf("could not fetch pool. err: %w", err)
 	}
 
 	// For new nodes, we roll out the latest if at least one node has successfully updated.
@@ -80,11 +80,11 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 
 	mc, err := cs.machineClient.MachineConfigs().Get(context.TODO(), currConf, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
+		return nil, fmt.Errorf("could not fetch config %s, err: %w", currConf, err)
 	}
 	ignConf, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing Ignition config failed with error: %w", err)
 	}
 
 	appenders := getAppenders(currConf, cr.version, cs.kubeconfigFunc)
@@ -118,11 +118,11 @@ func kubeconfigFromSecret(secretDir, apiserverURL string) ([]byte, []byte, error
 	tokenFile := filepath.Join(secretDir, corev1.ServiceAccountTokenKey)
 	caData, err := ioutil.ReadFile(caFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to read %s: %v", caFile, err)
+		return nil, nil, fmt.Errorf("failed to read %s: %w", caFile, err)
 	}
 	token, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to read %s: %v", tokenFile, err)
+		return nil, nil, fmt.Errorf("failed to read %s: %w", tokenFile, err)
 	}
 
 	kubeconfig := clientcmdv1.Config{

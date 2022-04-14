@@ -220,7 +220,7 @@ func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
 		}
 	}
 	if err := ctrl.cascadeDelete(cfg); err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
 		glog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
 	}
@@ -253,7 +253,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
 func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
 		return
 	}
 	ctrl.queue.Add(key)
@@ -262,7 +262,7 @@ func (ctrl *Controller) enqueue(cfg *mcfgv1.KubeletConfig) {
 func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
 		return
 	}
 	ctrl.queue.AddRateLimited(key)
@@ -334,29 +334,29 @@ func (ctrl *Controller) handleFeatureErr(err error, key interface{}) {
 func generateOriginalKubeletConfigWithFeatureGates(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *configv1.FeatureGate) (*kubeletconfigv1beta1.KubeletConfiguration, error) {
 	originalKubeletIgn, err := generateOriginalKubeletConfigIgn(cc, templatesDir, role, features)
 	if err != nil {
-		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %v", err)
+		return nil, fmt.Errorf("could not generate the original Kubelet config ignition: %w", err)
 	}
 	if originalKubeletIgn.Contents.Source == nil {
-		return nil, fmt.Errorf("the original Kubelet source string is empty: %v", err)
+		return nil, fmt.Errorf("the original Kubelet source string is empty: %w", err)
 	}
 	contents, err := ctrlcommon.DecodeIgnitionFileContents(originalKubeletIgn.Contents.Source, originalKubeletIgn.Contents.Compression)
 	if err != nil {
-		return nil, fmt.Errorf("could not decode the original Kubelet source string: %v", err)
+		return nil, fmt.Errorf("could not decode the original Kubelet source string: %w", err)
 	}
 	originalKubeConfig, err := decodeKubeletConfig(contents)
 	if err != nil {
-		return nil, fmt.Errorf("could not deserialize the Kubelet source: %v", err)
+		return nil, fmt.Errorf("could not deserialize the Kubelet source: %w", err)
 	}
 
 	featureGates, err := generateFeatureMap(features, openshiftOnlyFeatureGates...)
 	if err != nil {
-		return nil, fmt.Errorf("could not generate features map: %v", err)
+		return nil, fmt.Errorf("could not generate features map: %w", err)
 	}
 
 	// Merge in Feature Gates.
 	// If they are the same, this will be a no-op
 	if err := mergo.Merge(&originalKubeConfig.FeatureGates, featureGates, mergo.WithOverride); err != nil {
-		return nil, fmt.Errorf("could not merge feature gates: %v", err)
+		return nil, fmt.Errorf("could not merge feature gates: %w", err)
 	}
 
 	return originalKubeConfig, nil
@@ -367,7 +367,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec, FeatureGate: featureGate}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templatesDir)
 	if err != nil {
-		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error %s", err)
+		return nil, fmt.Errorf("GenerateMachineConfigsforRole failed with error: %w", err)
 	}
 	// Find generated kubelet.config
 	for _, gmc := range generatedConfigs {
@@ -503,7 +503,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		features = createNewDefaultFeatureGate()
 	} else if err != nil {
 		glog.V(2).Infof("%v", err)
-		err := fmt.Errorf("could not fetch FeatureGates: %v", err)
+		err := fmt.Errorf("could not fetch FeatureGates: %w", err)
 		return ctrl.syncStatusOnly(cfg, err)
 	}
 
@@ -531,7 +531,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		// Generate the original KubeletConfig
 		cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 		if err != nil {
-			return fmt.Errorf("could not get ControllerConfig %v", err)
+			return fmt.Errorf("could not get ControllerConfig %w", err)
 		}
 
 		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
@@ -645,7 +645,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 	// Get all machine configs
 	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("error listing kubelet machine configs: %v", err)
+		return fmt.Errorf("error listing kubelet machine configs: %w", err)
 	}
 	for _, mc := range mcList.Items {
 		if !strings.Contains(mc.Name, generatedKubeletCfg) {
@@ -654,7 +654,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 		// delete the mc if its degraded
 		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
 			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
-				return fmt.Errorf("error deleting degraded kubelet machine config %s: %v", mc.Name, err)
+				return fmt.Errorf("error deleting degraded kubelet machine config %s: %w", mc.Name, err)
 			}
 		}
 	}
@@ -751,7 +751,7 @@ func (ctrl *Controller) getPoolsForKubeletConfig(config *mcfgv1.KubeletConfig) (
 
 	selector, err := metav1.LabelSelectorAsSelector(config.Spec.MachineConfigPoolSelector)
 	if err != nil {
-		return nil, fmt.Errorf("invalid label selector: %v", err)
+		return nil, fmt.Errorf("invalid label selector: %w", err)
 	}
 
 	var pools []*mcfgv1.MachineConfigPool

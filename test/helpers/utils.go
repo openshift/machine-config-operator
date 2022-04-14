@@ -16,7 +16,6 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -162,7 +161,7 @@ func WaitForRenderedConfigs(t *testing.T, cs *framework.ClientSet, pool string, 
 		renderedConfig = mcp.Spec.Configuration.Name
 		return true, nil
 	}); err != nil {
-		return "", errors.Wrapf(err, "machine configs %v hasn't been picked by pool %s (waited %s)", notFoundNames(found), pool, time.Since(startTime))
+		return "", fmt.Errorf("machine configs %v hasn't been picked by pool %s (waited %s): %w", notFoundNames(found), pool, time.Since(startTime), err)
 	}
 	t.Logf("Pool %s has rendered configs %v with %s (waited %v)", pool, mcNames, renderedConfig, time.Since(startTime))
 	return renderedConfig, nil
@@ -194,7 +193,7 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 		}
 		return false, nil
 	}); err != nil {
-		return errors.Wrapf(err, "pool %s didn't report %s to updated (waited %s)", pool, target, time.Since(startTime))
+		return fmt.Errorf("pool %s didn't report %s to updated (waited %s): %w", pool, target, time.Since(startTime), err)
 	}
 	t.Logf("Pool %s has completed %s (waited %v)", pool, target, time.Since(startTime))
 	return nil
@@ -267,13 +266,13 @@ func WaitForPausedConfig(t *testing.T, cs *framework.ClientSet, pool string) err
 func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
 	sa, err := cs.ServiceAccounts("openshift-monitoring").Get(context.TODO(), "prometheus-k8s", metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("Failed to retrieve service account: %v", err)
+		return "", fmt.Errorf("failed to retrieve service account: %w", err)
 	}
 	for _, secret := range sa.Secrets {
 		if strings.HasPrefix(secret.Name, "prometheus-k8s-token") {
 			sec, err := cs.Secrets("openshift-monitoring").Get(context.TODO(), secret.Name, metav1.GetOptions{})
 			if err != nil {
-				return "", fmt.Errorf("Failed to retrieve monitoring secret: %v", err)
+				return "", fmt.Errorf("failed to retrieve monitoring secret: %w", err)
 			}
 			if token, ok := sec.Data["token"]; ok {
 				return string(token), nil

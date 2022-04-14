@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 )
 
 // alephPath contains information on the original bootimage; for more
@@ -44,12 +43,12 @@ func byLabel(label string) string {
 func getParentDeviceSysfs(device string) (string, error) {
 	target, err := os.Readlink(device)
 	if err != nil {
-		return "", errors.Wrapf(err, "reading %s", device)
+		return "", fmt.Errorf("reading %s: %w", device, err)
 	}
 	sysfsDevLink := fmt.Sprintf("/sys/class/block/%s", filepath.Base(target))
 	sysfsDev, err := filepath.EvalSymlinks(sysfsDevLink)
 	if err != nil {
-		return "", errors.Wrapf(err, "parsing %s", sysfsDevLink)
+		return "", fmt.Errorf("parsing %s: %w", sysfsDevLink, err)
 	}
 	if _, err := os.Stat(filepath.Join(sysfsDev, "partition")); err == nil {
 		sysfsDev = filepath.Dir(sysfsDev)
@@ -71,7 +70,7 @@ func getRootBlockDeviceSysfs() (string, error) {
 	if _, err := os.Stat(root); err == nil {
 		return getParentDeviceSysfs(root)
 	}
-	return "", fmt.Errorf("Failed to find %s", root)
+	return "", fmt.Errorf("failed to find %s", root)
 }
 
 func logAlephInformation() error {

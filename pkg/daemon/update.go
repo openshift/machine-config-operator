@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -19,10 +20,10 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
 	"github.com/google/renameio"
-	errors "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -72,7 +73,7 @@ func writeFileAtomicallyWithDefaults(fpath string, b []byte) error {
 func writeFileAtomically(fpath string, b []byte, dirMode, fileMode os.FileMode, uid, gid int) error {
 	dir := filepath.Dir(fpath)
 	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return fmt.Errorf("failed to create directory %q: %v", dir, err)
+		return fmt.Errorf("failed to create directory %q: %w", dir, err)
 	}
 	t, err := renameio.TempFile(dir, fpath)
 	if err != nil {
@@ -134,7 +135,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			if dn.recorder != nil {
 				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
-			return fmt.Errorf("Could not apply update: reloading %s configuration failed. Error: %v", serviceName, err)
+			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
 
 		if dn.recorder != nil {
@@ -148,12 +149,12 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	// Get current state of node, in case of an error reboot
 	state, err := dn.getStateAndConfigs(configName)
 	if err != nil {
-		return fmt.Errorf("Could not apply update: error processing state and configs. Error: %v", err)
+		return fmt.Errorf("could not apply update: error processing state and configs. Error: %w", err)
 	}
 
 	var inDesiredConfig bool
 	if inDesiredConfig, err = dn.updateConfigAndState(state); err != nil {
-		return fmt.Errorf("Could not apply update: setting node's state to Done failed. Error: %v", err)
+		return fmt.Errorf("could not apply update: setting node's state to Done failed. Error: %w", err)
 	}
 	if inDesiredConfig {
 		// (re)start the config drift monitor since rebooting isn't needed.
@@ -169,7 +170,7 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 // It can also be called as a special case for the "bootstrap pivot".
 func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr error) {
 	if out, err := dn.storePendingState(newConfig, 1); err != nil {
-		return errors.Wrapf(err, "failed to log pending config: %s", string(out))
+		return fmt.Errorf("failed to log pending config: %s: %w", string(out), err)
 	}
 	defer func() {
 		if retErr != nil {
@@ -177,7 +178,8 @@ func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr 
 				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfigRollBack", fmt.Sprintf("Rolling back pending config %s: %v", newConfig.GetName(), retErr))
 			}
 			if out, err := dn.storePendingState(newConfig, 0); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back pending config %v: %s", err, string(out))
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back pending config %s: %w", string(out), errs)
 				return
 			}
 		}
@@ -188,8 +190,6 @@ func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr 
 
 	return nil
 }
-
-var errUnreconcilable = errors.New("unreconcilable")
 
 func canonicalizeEmptyMC(config *mcfgv1.MachineConfig) *mcfgv1.MachineConfig {
 	if config != nil {
@@ -218,7 +218,7 @@ func (dn *Daemon) compareMachineConfig(oldConfig, newConfig *mcfgv1.MachineConfi
 	newConfigName := newConfig.GetName()
 	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
-		return true, errors.Wrapf(err, "error creating machineConfigDiff for comparison")
+		return true, fmt.Errorf("error creating machineConfigDiff for comparison: %w", err)
 	}
 	if mcDiff.isEmpty() {
 		glog.Infof("No changes from %s to %s", oldConfigName, newConfigName)
@@ -284,7 +284,7 @@ func podmanCopy(imgURL, osImageContentDir string) (err error) {
 	args = []string{"-R", "-t", "var_run_t", osImageContentDir}
 	err = runCmdSync("chcon", args...)
 	if err != nil {
-		err = errors.Wrapf(err, "changing selinux context on path %s", osImageContentDir)
+		err = fmt.Errorf("changing selinux context on path %s: %w", osImageContentDir, err)
 		return
 	}
 	return
@@ -300,7 +300,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
 	}
 	if err = os.MkdirAll(osImageContentBaseDir, 0755); err != nil {
-		err = fmt.Errorf("error creating directory %s: %v", osImageContentBaseDir, err)
+		err = fmt.Errorf("error creating directory %s: %w", osImageContentBaseDir, err)
 		return
 	}
 
@@ -390,7 +390,8 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			// Print out the error now so that if we fail to cleanup -p, we don't lose it.
 			glog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
 			if err := removePendingDeployment(); err != nil {
-				retErr = errors.Wrapf(retErr, "error removing staged deployment: %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error removing staged deployment: %w", errs)
 				return
 			}
 		}
@@ -451,7 +452,7 @@ func calculatePostConfigChangeAction(diff *machineConfigDiff, diffFileSet []stri
 	// this case regardless of what MachineConfig diff is.
 	if _, err := os.Stat(constants.MachineConfigDaemonForceFile); err == nil {
 		if err := os.Remove(constants.MachineConfigDaemonForceFile); err != nil {
-			return []string{}, errors.Wrap(err, "failed to remove force validation file")
+			return []string{}, fmt.Errorf("failed to remove force validation file: %w", err)
 		}
 		glog.Infof("Setting post config change action to postConfigChangeActionReboot; %s present", constants.MachineConfigDaemonForceFile)
 		return []string{postConfigChangeActionReboot}, nil
@@ -477,7 +478,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		}
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
 			if err := dn.nodeWriter.SetWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
-				return errors.Wrap(err, "error setting node's state to Working")
+				return fmt.Errorf("error setting node's state to Working: %w", err)
 			}
 		}
 	}
@@ -507,7 +508,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	diff, reconcilableError := reconcilable(oldConfig, newConfig)
 
 	if reconcilableError != nil {
-		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %v", oldConfigName, newConfigName, reconcilableError)
+		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
 		if dn.recorder != nil {
 			mcRef := &corev1.ObjectReference{
 				Kind: "MachineConfig",
@@ -516,7 +517,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			}
 			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
-		return errors.Wrapf(errUnreconcilable, "%v", wrappedErr)
+		return &unreconcilableErr{wrappedErr}
 	}
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)
@@ -548,7 +549,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	defer func() {
 		if retErr != nil {
 			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back files writes %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
 			}
 		}
@@ -561,7 +563,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	defer func() {
 		if retErr != nil {
 			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back SSH keys updates %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
 			}
 		}
@@ -576,7 +579,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		defer func() {
 			if retErr != nil {
 				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
-					retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
 					return
 				}
 			}
@@ -597,7 +601,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 	defer func() {
 		if retErr != nil {
 			if err := dn.storeCurrentConfigOnDisk(oldConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back current config on disk %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back current config on disk: %w", errs)
 				return
 			}
 		}
@@ -630,7 +635,8 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 	defer func() {
 		if retErr != nil {
 			if err := dn.updateFiles(newIgnConfig, oldIgnConfig); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back files writes %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back files writes: %w", errs)
 				return
 			}
 		}
@@ -643,7 +649,8 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 	defer func() {
 		if retErr != nil {
 			if err := dn.updateSSHKeys(oldIgnConfig.Passwd.Users); err != nil {
-				retErr = errors.Wrapf(retErr, "error rolling back SSH keys updates %v", err)
+				errs := kubeErrs.NewAggregate([]error{err, retErr})
+				retErr = fmt.Errorf("error rolling back SSH keys updates: %w", errs)
 				return
 			}
 		}
@@ -658,7 +665,8 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 		defer func() {
 			if retErr != nil {
 				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
-					retErr = errors.Wrapf(retErr, "error rolling back changes to OS %v", err)
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)
 					return
 				}
 			}
@@ -727,11 +735,11 @@ func canonicalizeKernelType(kernelType string) string {
 func newMachineConfigDiff(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDiff, error) {
 	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %w", err)
 	}
 	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %w", err)
 	}
 
 	// Both nil and empty slices are of zero length,
@@ -764,11 +772,11 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	// The ignition output in case of success will always have maxVersion
 	oldIgn, err := ctrlcommon.ParseAndConvertConfig(oldConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing old Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing old Ignition config failed with error: %w", err)
 	}
 	newIgn, err := ctrlcommon.ParseAndConvertConfig(newConfig.Spec.Config.Raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing new Ignition config failed with error: %v", err)
+		return nil, fmt.Errorf("parsing new Ignition config failed with error: %w", err)
 	}
 
 	// Check if this is a generally valid Ignition Config
@@ -784,17 +792,17 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	passwdChanged := !reflect.DeepEqual(oldIgn.Passwd, newIgn.Passwd)
 	if passwdChanged {
 		if !reflect.DeepEqual(oldIgn.Passwd.Groups, newIgn.Passwd.Groups) {
-			return nil, errors.New("ignition Passwd Groups section contains changes")
+			return nil, fmt.Errorf("ignition Passwd Groups section contains changes")
 		}
 		if !reflect.DeepEqual(oldIgn.Passwd.Users, newIgn.Passwd.Users) {
 			if len(oldIgn.Passwd.Users) > 0 && len(newIgn.Passwd.Users) == 0 {
-				return nil, errors.New("ignition passwd user section contains unsupported changes: user core may not be deleted")
+				return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: user core may not be deleted")
 			}
 			// there is an update to Users, we must verify that it is ONLY making an acceptable
 			// change to the SSHAuthorizedKeys for the user "core"
 			for _, user := range newIgn.Passwd.Users {
 				if user.Name != constants.CoreUserName {
-					return nil, errors.New("ignition passwd user section contains unsupported changes: non-core user")
+					return nil, fmt.Errorf("ignition passwd user section contains unsupported changes: non-core user")
 				}
 			}
 			glog.Infof("user data to be verified before ssh update: %v", newIgn.Passwd.Users[len(newIgn.Passwd.Users)-1])
@@ -809,23 +817,23 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	// we can only reconcile files right now. make sure the sections we can't
 	// fix aren't changed.
 	if !reflect.DeepEqual(oldIgn.Storage.Disks, newIgn.Storage.Disks) {
-		return nil, errors.New("ignition disks section contains changes")
+		return nil, fmt.Errorf("ignition disks section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Filesystems, newIgn.Storage.Filesystems) {
-		return nil, errors.New("ignition filesystems section contains changes")
+		return nil, fmt.Errorf("ignition filesystems section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Raid, newIgn.Storage.Raid) {
-		return nil, errors.New("ignition raid section contains changes")
+		return nil, fmt.Errorf("ignition raid section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Directories, newIgn.Storage.Directories) {
-		return nil, errors.New("ignition directories section contains changes")
+		return nil, fmt.Errorf("ignition directories section contains changes")
 	}
 	if !reflect.DeepEqual(oldIgn.Storage.Links, newIgn.Storage.Links) {
 		// This means links have been added, as opposed as being removed as it happened with
 		// https://bugzilla.redhat.com/show_bug.cgi?id=1677198. This doesn't really change behavior
 		// since we still don't support links but we allow old MC to remove links when upgrading.
 		if len(newIgn.Storage.Links) != 0 {
-			return nil, errors.New("ignition links section contains changes")
+			return nil, fmt.Errorf("ignition links section contains changes")
 		}
 	}
 
@@ -851,7 +859,7 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 	glog.V(2).Info("Configs are reconcilable")
 	mcDiff, err := newMachineConfigDiff(oldConfig, newConfig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error creating machineConfigDiff")
+		return nil, fmt.Errorf("error creating machineConfigDiff: %w", err)
 	}
 	return mcDiff, nil
 }
@@ -868,11 +876,11 @@ func verifyUserFields(pwdUser ign3types.PasswdUser) error {
 		tempUser.Name = ""
 		tempUser.SSHAuthorizedKeys = nil
 		if !reflect.DeepEqual(emptyUser, tempUser) {
-			return errors.New("ignition passwd user section contains unsupported changes: non-sshKey changes")
+			return fmt.Errorf("ignition passwd user section contains unsupported changes: non-sshKey changes")
 		}
 		glog.Info("SSH Keys reconcilable")
 	} else {
-		return errors.New("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
+		return fmt.Errorf("ignition passwd user section contains unsupported changes: user must be core and have 1 or more sshKeys")
 	}
 	return nil
 }
@@ -892,11 +900,11 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 			glog.Infof("no %s on this system, skipping FIPS check", fipsFile)
 			return nil
 		}
-		return errors.Wrapf(err, "Error reading FIPS file at %s: %s", fipsFile, string(content))
+		return fmt.Errorf("error reading FIPS file at %s: %s: %w", fipsFile, string(content), err)
 	}
 	nodeFIPS, err := strconv.ParseBool(strings.TrimSuffix(string(content), "\n"))
 	if err != nil {
-		return errors.Wrapf(err, "Error parsing FIPS file at %s", fipsFile)
+		return fmt.Errorf("error parsing FIPS file at %s: %w", fipsFile, err)
 	}
 	if desired.Spec.FIPS == nodeFIPS {
 		if desired.Spec.FIPS {
@@ -906,7 +914,7 @@ func checkFIPS(current, desired *mcfgv1.MachineConfig) error {
 		current.Spec.FIPS = nodeFIPS
 		return nil
 	}
-	return errors.New("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
+	return fmt.Errorf("detected change to FIPS flag; refusing to modify FIPS on a running cluster")
 }
 
 // checks for white-space characters in "C" and "POSIX" locales.
@@ -1191,10 +1199,10 @@ func (dn *Daemon) updateFiles(oldIgnConfig, newIgnConfig ign3types.Config) error
 
 func restorePath(path string) error {
 	if out, err := exec.Command("cp", "-a", "--reflink=auto", origFileName(path), path).CombinedOutput(); err != nil {
-		return errors.Wrapf(err, "restoring %q from orig file %q: %s", path, origFileName(path), string(out))
+		return fmt.Errorf("restoring %q from orig file %q: %s: %w", path, origFileName(path), string(out), err)
 	}
 	if err := os.Remove(origFileName(path)); err != nil {
-		return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(path), err)
+		return fmt.Errorf("deleting orig file %q: %w", origFileName(path), err)
 	}
 	return nil
 }
@@ -1252,8 +1260,8 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			continue
 		}
 		if _, err := os.Stat(noOrigFileStampName(f.Path)); err == nil {
-			if err := os.Remove(noOrigFileStampName(f.Path)); err != nil {
-				return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(f.Path), err)
+			if delErr := os.Remove(noOrigFileStampName(f.Path)); delErr != nil {
+				return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(f.Path), delErr)
 			}
 			glog.V(2).Infof("Removing file %q completely", f.Path)
 		} else if _, err := os.Stat(origFileName(f.Path)); err == nil {
@@ -1284,8 +1292,8 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 				continue
 			}
 
-			if err := os.Remove(origFileName(f.Path)); err != nil {
-				return errors.Wrapf(err, "deleting orig file %q: %v", origFileName(f.Path), err)
+			if delErr := os.Remove(origFileName(f.Path)); delErr != nil {
+				return fmt.Errorf("deleting orig file %q: %w", origFileName(f.Path), delErr)
 			}
 		}
 
@@ -1297,7 +1305,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 
 		glog.V(2).Infof("Deleting stale config file: %s", f.Path)
 		if err := os.Remove(f.Path); err != nil {
-			newErr := fmt.Errorf("unable to delete %s: %s", f.Path, err)
+			newErr := fmt.Errorf("unable to delete %s: %w", f.Path, err)
 			if !os.IsNotExist(err) {
 				return newErr
 			}
@@ -1323,8 +1331,8 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			path := filepath.Join(pathSystemd, u.Name+".d", u.Dropins[j].Name)
 			if _, ok := newDropinSet[path]; !ok {
 				if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
-					if err := os.Remove(noOrigFileStampName(path)); err != nil {
-						return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(path), err)
+					if delErr := os.Remove(noOrigFileStampName(path)); delErr != nil {
+						return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(path), delErr)
 					}
 					glog.V(2).Infof("Removing file %q completely", path)
 				} else if _, err := os.Stat(origFileName(path)); err == nil {
@@ -1336,7 +1344,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 				}
 				glog.V(2).Infof("Deleting stale systemd dropin file: %s", path)
 				if err := os.Remove(path); err != nil {
-					newErr := fmt.Errorf("unable to delete %s: %s", path, err)
+					newErr := fmt.Errorf("unable to delete %s: %w", path, err)
 					if !os.IsNotExist(err) {
 						return newErr
 					}
@@ -1356,8 +1364,8 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 				glog.Infof("Did not restore preset for %s (may not exist): %s", u.Name, err)
 			}
 			if _, err := os.Stat(noOrigFileStampName(path)); err == nil {
-				if err := os.Remove(noOrigFileStampName(path)); err != nil {
-					return errors.Wrapf(err, "deleting noorig file stamp %q: %v", noOrigFileStampName(path), err)
+				if delErr := os.Remove(noOrigFileStampName(path)); delErr != nil {
+					return fmt.Errorf("deleting noorig file stamp %q: %w", noOrigFileStampName(path), delErr)
 				}
 				glog.V(2).Infof("Removing file %q completely", path)
 			} else if _, err := os.Stat(origFileName(path)); err == nil {
@@ -1369,7 +1377,7 @@ func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) e
 			}
 			glog.V(2).Infof("Deleting stale systemd unit file: %s", path)
 			if err := os.Remove(path); err != nil {
-				newErr := fmt.Errorf("unable to delete %s: %s", path, err)
+				newErr := fmt.Errorf("unable to delete %s: %w", path, err)
 				if !os.IsNotExist(err) {
 					return newErr
 				}
@@ -1476,7 +1484,7 @@ func (dn *Daemon) writeDropins(u ign3types.Unit) error {
 			}
 		}
 		if err := writeFileAtomicallyWithDefaults(dpath, []byte(*u.Dropins[i].Contents)); err != nil {
-			return fmt.Errorf("failed to write systemd unit dropin %q: %v", u.Dropins[i].Name, err)
+			return fmt.Errorf("failed to write systemd unit dropin %q: %w", u.Dropins[i].Name, err)
 		}
 
 		glog.V(2).Infof("Wrote systemd unit dropin at %s", dpath)
@@ -1500,12 +1508,12 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 
 			glog.V(2).Info("Systemd unit masked")
 			if err := os.RemoveAll(fpath); err != nil {
-				return fmt.Errorf("failed to remove unit %q: %v", u.Name, err)
+				return fmt.Errorf("failed to remove unit %q: %w", u.Name, err)
 			}
 			glog.V(2).Infof("Removed unit %q", u.Name)
 
 			if err := renameio.Symlink(pathDevNull, fpath); err != nil {
-				return fmt.Errorf("failed to symlink unit %q to %s: %v", u.Name, pathDevNull, err)
+				return fmt.Errorf("failed to symlink unit %q to %s: %w", u.Name, pathDevNull, err)
 			}
 			glog.V(2).Infof("Created symlink unit %q to %s", u.Name, pathDevNull)
 
@@ -1521,7 +1529,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 				}
 			}
 			if err := writeFileAtomicallyWithDefaults(fpath, []byte(*u.Contents)); err != nil {
-				return fmt.Errorf("failed to write systemd unit %q: %v", u.Name, err)
+				return fmt.Errorf("failed to write systemd unit %q: %w", u.Name, err)
 			}
 
 			glog.V(2).Infof("Successfully wrote systemd unit %q: ", u.Name)
@@ -1533,7 +1541,7 @@ func (dn *Daemon) writeUnits(units []ign3types.Unit) error {
 			// of those edge cases rather than introducing more complexity.
 			glog.V(2).Infof("Ensuring systemd unit %q has no mask at %q", u.Name, fpath)
 			if err := os.RemoveAll(fpath); err != nil {
-				return fmt.Errorf("failed to cleanup %s: %v", fpath, err)
+				return fmt.Errorf("failed to cleanup %s: %w", fpath, err)
 			}
 		}
 
@@ -1602,7 +1610,7 @@ func (dn *Daemon) writeFiles(files []ign3types.File) error {
 		// set chown if file information is provided
 		uid, gid, err := getFileOwnership(file)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve file ownership for file %q: %v", file.Path, err)
+			return fmt.Errorf("failed to retrieve file ownership for file %q: %w", file.Path, err)
 		}
 		if err := createOrigFile(file.Path, file.Path); err != nil {
 			return err
@@ -1646,8 +1654,8 @@ func createOrigFile(fromPath, fpath string) error {
 		// create a noorig file that tells the MCD that the file wasn't present on disk before MCD
 		// took over so it can just remove it when deleting stale data, as opposed as restoring a file
 		// that was shipped _with_ the underlying OS (e.g. a default chrony config).
-		if err := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0755); err != nil {
-			return errors.Wrapf(err, "creating no orig parent dir: %v", err)
+		if makeErr := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0755); makeErr != nil {
+			return fmt.Errorf("creating no orig parent dir: %w", makeErr)
 		}
 		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
 	}
@@ -1664,10 +1672,10 @@ func createOrigFile(fromPath, fpath string) error {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(origFileName(fpath)), 0755); err != nil {
-		return errors.Wrapf(err, "creating orig parent dir: %v", err)
+		return fmt.Errorf("creating orig parent dir: %w", err)
 	}
 	if out, err := exec.Command("cp", "-a", "--reflink=auto", fromPath, origFileName(fpath)).CombinedOutput(); err != nil {
-		return errors.Wrapf(err, "creating orig file for %q: %s", fpath, string(out))
+		return fmt.Errorf("creating orig file for %q: %s: %w", fpath, string(out), err)
 	}
 	return nil
 }
@@ -1785,11 +1793,11 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 			if err == nil {
 				err := os.RemoveAll(authKeyPath)
 				if err != nil {
-					return fmt.Errorf("failed to remove path '%s': %v", authKeyPath, err)
+					return fmt.Errorf("failed to remove path '%s': %w", authKeyPath, err)
 				}
 			} else if !os.IsNotExist(err) {
 				// This shouldn't ever happen
-				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyPath, err)
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", authKeyPath, err)
 			}
 
 			// Ensure authorized_keys.d/ignition is the only fragment that exists
@@ -1800,13 +1808,13 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 						keyPath := filepath.Join(authKeyFragmentDirPath, fragment.Name())
 						err := os.RemoveAll(keyPath)
 						if err != nil {
-							return fmt.Errorf("failed to remove path '%s': %v", keyPath, err)
+							return fmt.Errorf("failed to remove path '%s': %w", keyPath, err)
 						}
 					}
 				}
 			} else if !os.IsNotExist(err) {
 				// This shouldn't ever happen
-				return fmt.Errorf("unexpectedly failed to get info for path '%s': %v", authKeyFragmentDirPath, err)
+				return fmt.Errorf("unexpectedly failed to get info for path '%s': %w", authKeyFragmentDirPath, err)
 			}
 		}
 
@@ -1824,7 +1832,7 @@ func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	glog.Infof("Updating OS to %s", newURL)
 	client := NewNodeUpdaterClient()
 	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
-		return fmt.Errorf("failed to update OS to %s : %v", newURL, err)
+		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}
 
 	return nil
@@ -1839,7 +1847,7 @@ func (dn *Daemon) getPendingStateLegacyLogger() (*journalMsg, error) {
 	cmd.Stdout = &combinedOutput
 	cmd.Stderr = &combinedOutput
 	if err := cmd.Start(); err != nil {
-		return nil, errors.Wrap(err, "failed shelling out to journalctl -o cat")
+		return nil, fmt.Errorf("failed shelling out to journalctl -o cat: %w", err)
 	}
 	if err := cmd.Wait(); err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
@@ -1852,11 +1860,12 @@ func (dn *Daemon) getPendingStateLegacyLogger() (*journalMsg, error) {
 					return nil, nil
 				}
 				if status.ExitStatus() > 1 {
-					return nil, errors.Wrapf(fmt.Errorf("grep exited with %s", combinedOutput.Bytes()), "failed to grep on journal output: %v", exiterr)
+					errs := kubeErrs.NewAggregate([]error{exiterr, fmt.Errorf("grep exited with %s", combinedOutput.Bytes())})
+					return nil, fmt.Errorf("failed to grep on journal output: %w", errs)
 				}
 			}
 		} else {
-			return nil, errors.Wrap(err, "command wait error")
+			return nil, fmt.Errorf("command wait error: %w", err)
 		}
 	}
 	journalOutput := combinedOutput.Bytes()
@@ -1880,7 +1889,7 @@ func (dn *Daemon) processJournalOutput(journalOutput []byte) (*journalMsg, error
 
 	entry := &journalMsg{}
 	if err := json.Unmarshal([]byte(last), entry); err != nil {
-		return nil, errors.Wrap(err, "getting pending state from journal")
+		return nil, fmt.Errorf("getting pending state from journal: %w", err)
 	}
 	if entry.Pending == "0" {
 		return nil, nil
@@ -1899,7 +1908,7 @@ func (dn *Daemon) getPendingState() (*journalMsg, error) {
 	}
 	journalOutput, err := exec.Command("journalctl", "-o", "json", "_UID=0", fmt.Sprintf("MESSAGE_ID=%s", pendingStateMessageID)).CombinedOutput()
 	if err != nil {
-		return nil, errors.Wrap(err, "error running journalctl -o json")
+		return nil, fmt.Errorf("error running journalctl -o json: %w", err)
 	}
 	if len(journalOutput) == 0 {
 		return nil, nil
@@ -1950,7 +1959,7 @@ func runCmdSync(cmdName string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return errors.Wrapf(err, "error running %s %s: %s", cmdName, strings.Join(args, " "), string(stderr.Bytes()))
+		return fmt.Errorf("error running %s %s: %s: %w", cmdName, strings.Join(args, " "), string(stderr.Bytes()), err)
 	}
 
 	return nil

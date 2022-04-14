@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 )
 
 // setRootDeviceSchedulerBFQ switches to the `bfq` I/O scheduler
@@ -69,7 +68,7 @@ func setRootDeviceSchedulerBFQ() error {
 // latency spikes for etcd; see https://github.com/ostreedev/ostree/pull/2152
 func updateOstreeObjectSync() error {
 	if err := exec.Command("ostree", "--repo=/sysroot/ostree/repo", "config", "set", "core.per-object-fsync", "true").Run(); err != nil {
-		return errors.Wrapf(err, "Failed to set per-object-fsync for ostree")
+		return fmt.Errorf("failed to set per-object-fsync for ostree: %w", err)
 	}
 	return nil
 }

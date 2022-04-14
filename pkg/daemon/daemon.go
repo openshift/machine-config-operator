@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,7 +20,6 @@ import (
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -230,7 +230,7 @@ func New(
 		hostos, err = GetHostRunningOS()
 		if err != nil {
 			HostOS.WithLabelValues("unsupported", "").Set(1)
-			return nil, errors.Wrapf(err, "checking operating system")
+			return nil, fmt.Errorf("checking operating system: %w", err)
 		}
 	}
 
@@ -238,11 +238,11 @@ func New(
 	if hostos.IsCoreOSVariant() {
 		err := nodeUpdaterClient.Initialize()
 		if err != nil {
-			return nil, fmt.Errorf("error initializing rpm-ostree: %v", err)
+			return nil, fmt.Errorf("error initializing rpm-ostree: %w", err)
 		}
 		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
-			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %v", err)
+			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %w", err)
 		}
 		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
 	}
@@ -251,7 +251,7 @@ func New(
 	if !mock {
 		bootID, err = getBootID()
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read boot ID")
+			return nil, fmt.Errorf("failed to read boot ID: %w", err)
 		}
 	}
 
@@ -261,7 +261,7 @@ func New(
 		if hostos.IsLikeTraditionalRHEL7() {
 			loggerOutput, err := exec.Command("logger", "--help").CombinedOutput()
 			if err != nil {
-				return nil, errors.Wrapf(err, "running logger --help")
+				return nil, fmt.Errorf("running logger --help: %w", err)
 			}
 			loggerSupportsJournal = strings.Contains(string(loggerOutput), "--journald")
 		}
@@ -434,11 +434,15 @@ func (dn *Daemon) handleErr(err error, key interface{}) {
 	dn.queue.AddRateLimited(key)
 }
 
+type unreconcilableErr struct {
+	error
+}
+
 func (dn *Daemon) updateErrorState(err error) {
-	switch errors.Cause(err) {
-	case errUnreconcilable:
+	var uErr *unreconcilableErr
+	if errors.As(err, &uErr) {
 		dn.nodeWriter.SetUnreconcilable(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
-	default:
+	} else {
 		dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
 	}
 }
@@ -547,7 +551,7 @@ func (dn *Daemon) syncNode(key string) error {
 	// Pass to the shared update prep method
 	current, desired, err := dn.prepUpdateFromCluster()
 	if err != nil {
-		return errors.Wrapf(err, "prepping update")
+		return fmt.Errorf("prepping update: %w", err)
 	}
 	if current != nil || desired != nil {
 		// Only check for config drift if we need to update.
@@ -583,7 +587,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
 		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
 		glog.Errorf("Preflight config drift check failed: %v", err)
-		return configDriftErr(err)
+		return &configDriftErr{err}
 	}
 
 	glog.Infof("Preflight config drift check successful (took %s)", time.Since(start))
@@ -595,7 +599,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 func (dn *Daemon) enqueueDefault(node *corev1.Node) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", node, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", node, err))
 		return
 	}
 	dn.queue.AddRateLimited(key)
@@ -694,17 +698,17 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		if os.IsNotExist(err) {
 			currentConfigBytes, err = ioutil.ReadFile(mcsServedConfigPath)
 			if err != nil {
-				return errors.Wrapf(err, "Cannot find any existing configuration on disk")
+				return fmt.Errorf("cannot find any existing configuration on disk: %w", err)
 			}
 		} else {
-			return errors.Wrapf(err, "Failed to load local config")
+			return fmt.Errorf("failed to load local config: %w", err)
 		}
 	}
 
 	var currentConfig mcfgv1.MachineConfig
 	err = json.Unmarshal(currentConfigBytes, &currentConfig)
 	if err != nil {
-		return errors.Wrapf(err, "Cannot read on-disk state into MachineConfig")
+		return fmt.Errorf("cannot read on-disk state into MachineConfig: %w", err)
 	}
 
 	// Instead of reading from configmap directly, let's mount it in as a volumn, such that we don't have to give that
@@ -712,30 +716,30 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	ignServedConfigPath := filepath.Join(dn.hypershiftConfigMap, configMapConfigKey)
 	ignServedConfigBytes, err := ioutil.ReadFile(ignServedConfigPath)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to load desiredConfig")
+		return fmt.Errorf("failed to load desiredConfig: %w", err)
 	}
 	targetHashPath := filepath.Join(dn.hypershiftConfigMap, configMapHashKey)
 	targetHashBytes, err := ioutil.ReadFile(targetHashPath)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to load desiredConfig hash")
+		return fmt.Errorf("failed to load desiredConfig hash: %w", err)
 	}
 	targetHash := string(targetHashBytes)
 
 	// TODO probably have to compress this in the future
 	ignConfig, err := ctrlcommon.ParseAndConvertConfig(ignServedConfigBytes)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to parse Ignition from configmap data.config")
+		return fmt.Errorf("failed to parse Ignition from configmap data.config: %w", err)
 	}
 
 	desiredConfigBytes, err := ctrlcommon.GetIgnitionFileDataByPath(&ignConfig, mcsServedConfigPath)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to find desiredConfig from configmap data")
+		return fmt.Errorf("failed to find desiredConfig from configmap data: %w", err)
 	}
 
 	var desiredConfig mcfgv1.MachineConfig
 	err = json.Unmarshal(desiredConfigBytes, &desiredConfig)
 	if err != nil {
-		return errors.Wrapf(err, "Cannot decode desiredConfig from configmap data")
+		return fmt.Errorf("cannot decode desiredConfig from configmap data: %w", err)
 	}
 
 	glog.Infof("Successfully read current/desired Config")
@@ -743,13 +747,13 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	// check update reconcilability
 	mcDiff, err := reconcilable(&currentConfig, &desiredConfig)
 	if err != nil {
-		return errors.Wrapf(err, "The update is not reconcilable")
+		return fmt.Errorf("the update is not reconcilable: %w", err)
 	}
 	if mcDiff.isEmpty() {
 		// No diff was detected. Check if we are in the right state.
 		glog.Infof("No diff detected. Assuming a previous update was completed. Checking on-disk state.")
 		if err := dn.validateOnDiskState(&desiredConfig); err != nil {
-			return errors.Wrapf(err, "Disk validation failed")
+			return fmt.Errorf("disk validation failed: %w", err)
 		}
 
 		if node.Annotations[constants.CurrentMachineConfigAnnotationKey] == targetHash &&
@@ -766,7 +770,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
 		}
 		if err := dn.HypershiftSetAnnotation(annos); err != nil {
-			return errors.Wrapf(err, "Failed to set Done annotation on node")
+			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		glog.Infof("The pod has completed update. Awaiting removal.")
 		// TODO os.Exit here
@@ -788,7 +792,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 		}
 		if err := dn.HypershiftSetAnnotation(annos); err != nil {
-			return errors.Wrapf(err, "Failed to set Done annotation on node")
+			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		// Wait for a future sync to perform post-drain actions
 		glog.Info("Setting drain request via annotation to controller.")
@@ -798,7 +802,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	// For us to be here, DesiredDrainerAnnotationKey == LastAppliedDrainerAnnotationKey == drain-targetHash
 	// perform the actual update
 	if err := dn.updateHypershift(&currentConfig, &desiredConfig, mcDiff); err != nil {
-		return errors.Wrapf(err, "Failed to update configuration")
+		return fmt.Errorf("failed to update configuration: %w", err)
 	}
 
 	// Finally, once we are successful, we perform the necessary post config change action (TODO)
@@ -806,7 +810,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	// write new config to disk, used for future updates
 	err = writeFileAtomicallyWithDefaults(hypershiftCurrentConfigPath, desiredConfigBytes)
 	if err != nil {
-		return errors.Wrapf(err, "Cannot store new config to disk")
+		return fmt.Errorf("cannot store new config to disk: %w", err)
 	}
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
@@ -837,14 +841,14 @@ func (dn *Daemon) HypershiftSetAnnotation(annotations map[string]string) error {
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %v", dn.name, err)
+			return fmt.Errorf("failed to create patch for node %q: %w", dn.name, err)
 		}
 
 		_, err = dn.kubeClient.CoreV1().Nodes().Patch(context.TODO(), dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return fmt.Errorf("unable to update node %s: %v", dn.name, err)
+		return fmt.Errorf("unable to update node %s: %w", dn.name, err)
 	}
 	return nil
 }
@@ -865,7 +869,7 @@ func (dn *Daemon) RunOnceFrom(onceFrom string, skipReboot bool) error {
 		glog.V(2).Info("Daemon running directly from MachineConfig")
 		return dn.runOnceFromMachineConfig(c, contentFrom)
 	}
-	return errors.New("unsupported onceFrom type provided")
+	return fmt.Errorf("unsupported onceFrom type provided")
 }
 
 // RunFirstbootCompleteMachineconfig is run via systemd on the first boot
@@ -878,7 +882,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	var mc mcfgv1.MachineConfig
 	err = json.Unmarshal(data, &mc)
 	if err != nil {
-		return errors.Wrapf(err, "failed to parse MachineConfig")
+		return fmt.Errorf("failed to parse MachineConfig: %w", err)
 	}
 
 	// Start with an empty config, then add our *booted* osImageURL to
@@ -890,12 +894,12 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// specified, then we don't need to do anything here.
 	mcDiffNotEmpty, err := dn.compareMachineConfig(oldConfig, &mc)
 	if err != nil {
-		return errors.Wrapf(err, "failed to compare MachineConfig")
+		return fmt.Errorf("failed to compare MachineConfig: %w", err)
 	}
 	if !mcDiffNotEmpty {
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
-			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
+			return fmt.Errorf("failed to remove %s: %w", constants.MachineConfigEncapsulatedPath, err)
 		}
 		return nil
 	}
@@ -908,7 +912,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 
 	// Removing this file signals completion of the initial MC processing.
 	if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
-		return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
+		return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
 	}
 
 	dn.skipReboot = false
@@ -964,7 +968,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	defer dn.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, dn.nodeListerSynced, dn.mcListerSynced) {
-		return errors.New("failed to sync initial listers cache")
+		return fmt.Errorf("failed to sync initial listers cache")
 	}
 
 	go wait.Until(dn.worker, time.Second, stopCh)
@@ -1027,7 +1031,7 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 
 func (dn *Daemon) applySSHAccessedAnnotation() error {
 	if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
-		return fmt.Errorf("error: cannot apply annotation for SSH access due to: %v", err)
+		return fmt.Errorf("error: cannot apply annotation for SSH access due to: %w", err)
 	}
 	return nil
 }
@@ -1109,7 +1113,7 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 			err := dn.getHealth()
 			if err != nil {
 				failureCount++
-				exitCh <- fmt.Errorf("kubelet health check has failed %d times: %v", failureCount, err)
+				exitCh <- fmt.Errorf("kubelet health check has failed %d times: %w", failureCount, err)
 			} else {
 				// reset failure count on success
 				failureCount = 0
@@ -1315,13 +1319,13 @@ func (dn *Daemon) getPendingConfig() (*pendingConfigState, error) {
 	s, err := ioutil.ReadFile("/etc/machine-config-daemon/state.json")
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return nil, errors.Wrapf(err, "loading transient state")
+			return nil, fmt.Errorf("loading transient state: %w", err)
 		}
 		return nil, nil
 	}
 	var p pendingConfigState
 	if err := json.Unmarshal(s, &p); err != nil {
-		return nil, errors.Wrapf(err, "parsing transient state")
+		return nil, fmt.Errorf("parsing transient state: %w", err)
 	}
 
 	return &p, nil
@@ -1360,7 +1364,7 @@ func upgradeHackFor44AndBelow() error {
 		glog.Warningf("Failed to complete machine-config-daemon-firstboot before joining cluster!")
 		// Removing this file signals completion of the initial MC processing.
 		if err := os.Rename(constants.MachineConfigEncapsulatedPath, constants.MachineConfigEncapsulatedBakPath); err != nil {
-			return errors.Wrap(err, "failed to rename encapsulated MachineConfig after processing on firstboot")
+			return fmt.Errorf("failed to rename encapsulated MachineConfig after processing on firstboot: %w", err)
 		}
 	}
 	return nil
@@ -1371,7 +1375,7 @@ func upgradeHackFor44AndBelow() error {
 // Currently removes the systemd preset file written by Ignition.
 func removeIgnitionArtifacts() error {
 	if err := os.Remove(constants.IgnitionSystemdPresetFile); err != nil && !os.IsNotExist(err) {
-		return errors.Wrap(err, "failed to remove Ignition-written systemd preset file")
+		return fmt.Errorf("failed to remove Ignition-written systemd preset file: %w", err)
 	}
 	return nil
 }
@@ -1434,7 +1438,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if err := dn.detectEarlySSHAccessesFromBoot(); err != nil {
-		return fmt.Errorf("error detecting previous SSH accesses: %v", err)
+		return fmt.Errorf("error detecting previous SSH accesses: %w", err)
 	}
 
 	// Bootstrapping state is when we have the node annotations file
@@ -1465,7 +1469,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		// currentConfig's osImageURL should now be *truth*.
 		// In other words if it drifts somehow, we go degraded.
 		if err := os.Rename(constants.InitialNodeAnnotationsFilePath, constants.InitialNodeAnnotationsBakPath); err != nil {
-			return errors.Wrap(err, "renaming initial node annotation file")
+			return fmt.Errorf("renaming initial node annotation file: %w", err)
 		}
 	}
 
@@ -1543,10 +1547,10 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
 		}
 		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
-			return true, errors.Wrap(err, "error setting node's state to Done")
+			return true, fmt.Errorf("error setting node's state to Done: %w", err)
 		}
 		if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
-			return true, errors.Wrapf(err, "failed to reset pending config: %s", string(out))
+			return true, fmt.Errorf("failed to reset pending config: %s: %w", string(out), err)
 		}
 
 		state.currentConfig = state.pendingConfig
@@ -1578,7 +1582,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 				MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
-				return inDesiredConfig, errors.Wrap(err, "error setting node's state to Done")
+				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
 
@@ -1638,7 +1642,7 @@ func (dn *Daemon) runOnceFromIgnition(ignConfig ign3types.Config) error {
 	_, err := os.Stat(constants.MachineConfigEncapsulatedPath)
 	if err == nil {
 		if err := os.Remove(constants.MachineConfigEncapsulatedPath); err != nil {
-			return errors.Wrapf(err, "failed to remove %s", constants.MachineConfigEncapsulatedPath)
+			return fmt.Errorf("failed to remove %s: %w", constants.MachineConfigEncapsulatedPath, err)
 		}
 	}
 	return dn.reboot("runOnceFromIgnition complete")
@@ -1751,7 +1755,7 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	// Be sure we're booted into the OS we expect
 	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if !osMatch {
-		return errors.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+		return fmt.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
 	}
 
 	return validateOnDiskState(currentConfig, pathSystemd)
@@ -1840,7 +1844,7 @@ func (dn *Daemon) senseAndLoadOnceFrom(onceFrom string) (interface{}, onceFromOr
 		return *mc, contentFrom, nil
 	}
 
-	return nil, onceFromUnknownConfig, fmt.Errorf("unable to decipher onceFrom config type: %v", err)
+	return nil, onceFromUnknownConfig, fmt.Errorf("unable to decipher onceFrom config type: %w", err)
 }
 
 func isSingleNodeTopology(topology configv1.TopologyMode) bool {

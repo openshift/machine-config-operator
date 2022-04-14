@@ -27,7 +27,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 		// use selector since label matching part of a KubeletConfig is not handled during the bootstrap
 		selector, err := metav1.LabelSelectorAsSelector(kubeletConfig.Spec.MachineConfigPoolSelector)
 		if err != nil {
-			return nil, fmt.Errorf("invalid label selector: %v", err)
+			return nil, fmt.Errorf("invalid label selector: %w", err)
 		}
 
 		for _, pool := range mcpPools {
@@ -76,7 +76,7 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
-				return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
+				return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
 			}
 			mc.Spec.Config.Raw = rawIgn
 			mc.SetAnnotations(map[string]string{

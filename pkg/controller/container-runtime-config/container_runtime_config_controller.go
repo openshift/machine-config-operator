@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -258,7 +259,7 @@ func (ctrl *Controller) deleteContainerRuntimeConfig(obj interface{}) {
 		}
 	}
 	if err := ctrl.cascadeDelete(cfg); err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
 		glog.V(4).Infof("Deleted ContainerRuntimeConfig %s and restored default config", cfg.Name)
 	}
@@ -282,7 +283,7 @@ func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.ContainerRuntimeConfig) error 
 func (ctrl *Controller) enqueue(cfg *mcfgv1.ContainerRuntimeConfig) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
 		return
 	}
 	ctrl.queue.Add(key)
@@ -291,7 +292,7 @@ func (ctrl *Controller) enqueue(cfg *mcfgv1.ContainerRuntimeConfig) {
 func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.ContainerRuntimeConfig) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(cfg)
 	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", cfg, err))
+		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %w", cfg, err))
 		return
 	}
 	ctrl.queue.AddRateLimited(key)
@@ -377,7 +378,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	rc := &mtmpl.RenderConfig{ControllerConfigSpec: &cc.Spec}
 	generatedConfigs, err := mtmpl.GenerateMachineConfigsForRole(rc, role, templateDir)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %s", err)
+		return nil, nil, nil, fmt.Errorf("generateMachineConfigsforRole failed with error %w", err)
 	}
 	// Find generated storage.conf, registries.conf, and policy.json
 	var (
@@ -409,7 +410,8 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 		}
 	}
 	if errStorage != nil || errRegistries != nil || errPolicy != nil {
-		return nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %v, %v, %v", errStorage, errRegistries, errPolicy)
+		errs := kubeErrs.NewAggregate([]error{errStorage, errRegistries, errPolicy})
+		return nil, nil, nil, fmt.Errorf("could not generate old container runtime configs: %w", errs)
 	}
 
 	return gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
@@ -509,7 +511,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	// Get ControllerConfig
 	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig %v", err)
+		return fmt.Errorf("could not get ControllerConfig %w", err)
 	}
 
 	// Find all MachineConfigPools
@@ -635,7 +637,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 	// Get all machine configs
 	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("error listing containerruntime machine configs: %v", err)
+		return fmt.Errorf("error listing containerruntime machine configs: %w", err)
 	}
 	for _, mc := range mcList.Items {
 		if !strings.Contains(mc.Name, generatedCtrCfg) {
@@ -644,7 +646,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 		// delete the containerruntime mc if its degraded
 		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
 			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
-				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %v", mc.Name, err)
+				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
 			}
 
 		}
@@ -660,11 +662,11 @@ func mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeCo
 	}
 	contents, err := ctrlcommon.DecodeIgnitionFileContents(origFile.Contents.Source, origFile.Contents.Compression)
 	if err != nil {
-		return nil, fmt.Errorf("could not decode original Container Runtime config: %v", err)
+		return nil, fmt.Errorf("could not decode original Container Runtime config: %w", err)
 	}
 	cfgTOML, err := update(contents, cfg.Spec.ContainerRuntimeConfig)
 	if err != nil {
-		return nil, fmt.Errorf("could not update container runtime config with new changes: %v", err)
+		return nil, fmt.Errorf("could not update container runtime config with new changes: %w", err)
 	}
 	return cfgTOML, nil
 }
@@ -713,7 +715,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	// Get ControllerConfig
 	controllerConfig, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
-		return fmt.Errorf("could not get ControllerConfig %v", err)
+		return fmt.Errorf("could not get ControllerConfig: %w", err)
 	}
 
 	// Find all ImageContentSourcePolicy objects
@@ -751,11 +753,11 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 			rawRegistriesIgn, err := json.Marshal(registriesIgn)
 			if err != nil {
-				return fmt.Errorf("could not encode registries Ignition config: %v", err)
+				return fmt.Errorf("could not encode registries Ignition config: %w", err)
 			}
 			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
-				return fmt.Errorf("could not find MachineConfig: %v", err)
+				return fmt.Errorf("could not find MachineConfig: %w", err)
 			}
 			isNotFound := errors.IsNotFound(err)
 			if !isNotFound && equality.Semantic.DeepEqual(rawRegistriesIgn, mc.Spec.Config.Raw) {
@@ -771,7 +773,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 				tempIgnCfg := ctrlcommon.NewIgnConfig()
 				mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 				if err != nil {
-					return fmt.Errorf("could not create MachineConfig from new Ignition config: %v", err)
+					return fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
 				}
 			}
 			mc.Spec.Config.Raw = rawRegistriesIgn
@@ -795,7 +797,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 
 			return err
 		}); err != nil {
-			return fmt.Errorf("could not Create/Update MachineConfig: %v", err)
+			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
 		}
 		if applied {
 			glog.Infof("Applied ImageConfig cluster on MachineConfigPool %v", pool.Name)
@@ -816,7 +818,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 	// Generate the original registries config
 	_, originalRegistriesIgn, originalPolicyIgn, err := generateOriginalContainerRuntimeConfigs(templateDir, controllerConfig, role)
 	if err != nil {
-		return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %v", err)
+		return nil, fmt.Errorf("could not generate origin ContainerRuntime Configs: %w", err)
 	}
 
 	if insecureRegs != nil || blockedRegs != nil || len(icspRules) != 0 {
@@ -825,11 +827,11 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		}
 		contents, err := ctrlcommon.DecodeIgnitionFileContents(originalRegistriesIgn.Contents.Source, originalRegistriesIgn.Contents.Compression)
 		if err != nil {
-			return nil, fmt.Errorf("could not decode original registries config: %v", err)
+			return nil, fmt.Errorf("could not decode original registries config: %w", err)
 		}
 		registriesTOML, err = updateRegistriesConfig(contents, insecureRegs, blockedRegs, icspRules)
 		if err != nil {
-			return nil, fmt.Errorf("could not update registries config with new changes: %v", err)
+			return nil, fmt.Errorf("could not update registries config with new changes: %w", err)
 		}
 	}
 	if blockedRegs != nil || allowedRegs != nil {
@@ -838,11 +840,11 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		}
 		contents, err := ctrlcommon.DecodeIgnitionFileContents(originalPolicyIgn.Contents.Source, originalPolicyIgn.Contents.Compression)
 		if err != nil {
-			return nil, fmt.Errorf("could not decode original policy json: %v", err)
+			return nil, fmt.Errorf("could not decode original policy json: %w", err)
 		}
 		policyJSON, err = updatePolicyJSON(contents, blockedRegs, allowedRegs)
 		if err != nil {
-			return nil, fmt.Errorf("could not update policy json with new changes: %v", err)
+			return nil, fmt.Errorf("could not update policy json with new changes: %w", err)
 		}
 	}
 	generatedConfigFileList := []generatedConfigFile{
@@ -992,7 +994,7 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 
 	selector, err := metav1.LabelSelectorAsSelector(config.Spec.MachineConfigPoolSelector)
 	if err != nil {
-		return nil, fmt.Errorf("invalid label selector: %v", err)
+		return nil, fmt.Errorf("invalid label selector: %w", err)
 	}
 
 	var pools []*mcfgv1.MachineConfigPool
