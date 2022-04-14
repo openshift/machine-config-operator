@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -982,8 +983,11 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		ctrl.logPool(pool, "filtered to %d candidate nodes for update, capacity: %d", len(candidates), capacity)
 	}
 	if capacity < uint(len(candidates)) {
-		// Arbitrarily pick the first N candidates; no attempt at sorting.
-		// Perhaps later we allow admins to weight somehow, or do something more intelligent.
+		// when list is longer than maxUnavailable, rollout nodes in zone order, zones without zone label
+		// are done last from oldest to youngest. this reduces likelihood of randomly picking nodes
+		// across multiple zones that run the same types of pods resulting in an outage in HA clusters
+		candidates = sortNodeList(candidates)
+
 		candidates = candidates[:capacity]
 	}
 	targetConfig := pool.Spec.Configuration.Name
@@ -1000,6 +1004,27 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "SetDesiredConfig", "Set target for %d nodes to config %s", targetConfig)
 	}
 	return nil
+}
+
+// sortNodeList sorts the list of candidate nodes by label topology.kubernetes.io/zone
+// nodes without label are at end of list and sorted by age (oldest to youngest)
+func sortNodeList(nodes []*corev1.Node) []*corev1.Node {
+	sort.Slice(nodes, func(i, j int) bool {
+		iZone, iOk := nodes[i].Labels["topology.kubernetes.io/zone"]
+		jZone, jOk := nodes[j].Labels["topology.kubernetes.io/zone"]
+		// if both nodes have zone label, sort by zone, push nodes without label to end of list
+		if iOk && jOk {
+			return iZone < jZone
+		} else if jOk {
+			return false
+		} else if !iOk && !jOk {
+			// if nodes have no labels sortby creationTime oldest to newest
+			return nodes[i].GetObjectMeta().GetCreationTimestamp().Time.Before(nodes[j].GetObjectMeta().GetCreationTimestamp().Time)
+		}
+
+		return true
+	})
+	return nodes
 }
 
 // setUpdateInProgressTaint applies in progress taint to all the nodes that are to be updated.
