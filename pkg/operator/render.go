@@ -232,8 +232,6 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 			return "openstack"
 		case configv1.VSpherePlatformType:
 			return "vsphere"
-		case configv1.KubevirtPlatformType:
-			return "kubevirt"
 		case configv1.NutanixPlatformType:
 			return "nutanix"
 		default:
@@ -247,7 +245,7 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 func onPremPlatformKeepalivedEnableUnicast(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType, configv1.KubevirtPlatformType:
+		case configv1.BareMetalPlatformType:
 			return "yes", nil
 		default:
 			return "no", nil
@@ -269,8 +267,6 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
 		case configv1.VSpherePlatformType:
 			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
-		case configv1.KubevirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Kubevirt.IngressIP, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
 		default:
@@ -293,8 +289,6 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
 		case configv1.VSpherePlatformType:
 			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
-		case configv1.KubevirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
 		default:
