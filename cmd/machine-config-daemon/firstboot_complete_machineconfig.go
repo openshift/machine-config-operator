@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"os"
+	"time"
 
+	"github.com/golang/glog"
 	daemon "github.com/openshift/machine-config-operator/pkg/daemon"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -40,9 +40,14 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 }
 
 func executeFirstbootCompleteMachineConfig(cmd *cobra.Command, args []string) {
-	err := runFirstBootCompleteMachineConfig(cmd, args)
-	if err != nil {
-		fmt.Printf("error: %v\n", err)
-		os.Exit(1)
+	for {
+		err := runFirstBootCompleteMachineConfig(cmd, args)
+		if err != nil {
+			glog.Warningf("error: %v\n", err)
+			glog.Info("Sleeping 1 minute for retry")
+			time.Sleep(time.Minute)
+		} else {
+			break
+		}
 	}
 }
