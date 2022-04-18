@@ -194,3 +194,48 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 		require.Equal(t, tc.expectedManagedKey, res)
 	}
 }
+
+func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
+	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			pools := []*mcfgv1.MachineConfigPool{
+				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
+			}
+			// kc for bootstrap mode
+			kc := newKubeletConfig("kcfg-master", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, pools[0])
+			f.mckLister = append(f.mckLister, kc)
+			f.objects = append(f.objects, kc)
+
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, nil, nil, pools)
+			require.NoError(t, err)
+			require.Len(t, mcs, 1)
+
+			// add kc1 after bootstrap
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+			f.mckLister = append(f.mckLister, kc1)
+			f.objects = append(f.objects, kc1)
+			c := f.newController()
+			err = c.syncHandler(getKey(kc1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			// resync kc and check the managedKey
+			c = f.newController()
+			err = c.syncHandler(getKey(kc, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+			val := kc.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+		})
+	}
+}
