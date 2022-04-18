@@ -786,42 +786,45 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 func TestShouldMakeProgress(t *testing.T) {
 	// nodeWithDesiredConfigTaints is at desired config, so need to do a get on the nodeWithDesiredConfigTaints to check for the taint status
 	nodeWithDesiredConfigTaints := newNodeWithLabel("nodeWithDesiredConfigTaints", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""})
-	// Update nodeWithDesiredConfigTaints to have the needed taint, this should still have no effect
-	nodeWithDesiredConfigTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
+	// Update nodeWithDesiredConfigTaints to have the needed taint and some dummy taint, UpdateInProgress taint should be removed
+	nodeWithDesiredConfigTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint, {Key: "dummy", Effect: corev1.TaintEffectPreferNoSchedule}}
 	// nodeWithNoDesiredConfigButTaints
 	nodeWithNoDesiredConfigButTaints := newNodeWithLabel("nodeWithNoDesiredConfigButTaints", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""})
 	nodeWithNoDesiredConfigButTaints.Spec.Taints = []corev1.Taint{*constants.NodeUpdateInProgressTaint}
 	tests := []struct {
-		description           string
-		node                  *corev1.Node
-		expectAnnotationPatch bool
-		expectTaintsPatch     bool
-		expectTaintsGet       bool
+		description             string
+		node                    *corev1.Node
+		expectAnnotationPatch   bool
+		expectTaintsAddPatch    bool
+		expectTaintsRemovePatch bool
+		expectTaintsGet         bool
+		expectedNodeGet         int
 	}{
 		{
 			description:           "node at desired config no patch on annotation or taints",
 			node:                  newNodeWithLabel("nodeAtDesiredConfig", "v1", "v1", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expectAnnotationPatch: false,
-			expectTaintsPatch:     false,
+			expectTaintsAddPatch:  false,
 		},
 		{
 			description:           "node not at desired config, patch on annotation and taints",
 			node:                  newNodeWithLabel("nodeNeedingUpdates", "v0", "v0", map[string]string{"node-role/worker": "", "node-role/infra": ""}),
 			expectAnnotationPatch: true,
-			expectTaintsPatch:     true,
+			expectTaintsAddPatch:  true,
 		},
 		{
-			description:           "node at desired config, no patch on annotation or taints",
-			node:                  nodeWithDesiredConfigTaints,
-			expectAnnotationPatch: false,
-			expectTaintsPatch:     false,
+			description:             "node at desired config, no patch on annotation but taint should be removed",
+			node:                    nodeWithDesiredConfigTaints,
+			expectAnnotationPatch:   false,
+			expectTaintsAddPatch:    false,
+			expectTaintsRemovePatch: true,
+			expectedNodeGet:         1,
 		},
 		{
 			description:           "node not at desired config, patch on annotation but not on taint",
 			node:                  nodeWithNoDesiredConfigButTaints,
 			expectAnnotationPatch: true,
-			expectTaintsPatch:     false,
-			expectTaintsGet:       true,
+			expectTaintsAddPatch:  false,
 		},
 	}
 	for _, test := range tests {
@@ -848,9 +851,21 @@ func TestShouldMakeProgress(t *testing.T) {
 			var oldData, newData, exppatch []byte
 			var err error
 			expNode := nodes[1].DeepCopy()
-			if test.expectTaintsPatch {
-				f.expectGetNodeAction(nodes[1])
+			if test.expectTaintsRemovePatch {
+				var taints []corev1.Taint
+				for _, taint := range expNode.Spec.Taints {
+					if taint.MatchTaint(constants.NodeUpdateInProgressTaint) {
+						continue
+					} else {
+						taints = append(taints, taint)
+					}
+				}
+				expNode.Spec.Taints = taints
+			} else if test.expectTaintsAddPatch {
 				expNode.Spec.Taints = append(expNode.Spec.Taints, *constants.NodeUpdateInProgressTaint)
+			}
+			if test.expectTaintsAddPatch || test.expectTaintsRemovePatch {
+				f.expectGetNodeAction(nodes[1])
 				oldData, err = json.Marshal(nodes[1])
 				if err != nil {
 					t.Fatal(err)
