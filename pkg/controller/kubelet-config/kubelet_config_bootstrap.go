@@ -80,6 +80,11 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			if err != nil {
 				return nil, err
 			}
+			// the first managed key value 99-poolname-generated-kubelet does not have a suffix
+			// set "" as suffix annotation to the kubelet config object
+			kubeletConfig.SetAnnotations(map[string]string{
+				ctrlcommon.MCNameSuffixAnnotationKey: "",
+			})
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
