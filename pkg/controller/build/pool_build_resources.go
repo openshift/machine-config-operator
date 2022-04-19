@@ -19,12 +19,20 @@ type PoolResourceNames struct {
 }
 
 type PoolImageStreamList struct {
-	Base           string
+	// Base image for all of our builds
+	Base string
+	// Base image supplied externally, takes precedence over default CoreOS stream
+	ExternalBase string
+	// Where the render controller renders its tiny config image
 	RenderedConfig string
-	Content        string
-	CustomContent  string
-	External       string
-	PerNode        string
+	// Where the MCO outputs its multi-stage build with machineconfig to
+	Content string
+	// Where the image goes if a user uses the custom buildconfig
+	CustomContent string
+	// Hypothetically if you built a working image outside the cluster, you would tag it here
+	External string
+	// Where we look for a per-node config image
+	PerNode string
 }
 
 type PoolBuildConfigList struct {
@@ -44,6 +52,7 @@ func PoolBuildResources(pool *mcfgv1.MachineConfigPool) *PoolResourceNames {
 
 	pisl := PoolImageStreamList{
 		Base:           pool.Name + ctrlcommon.ImageStreamSuffixCoreOS,
+		ExternalBase:   pool.Name + ctrlcommon.ImageStreamSuffixExternalBase,
 		RenderedConfig: pool.Name + ctrlcommon.ImageStreamSuffixRenderedConfig,
 		Content:        pool.Name + ctrlcommon.ImageStreamSuffixMCOContent,
 		CustomContent:  pool.Name + ctrlcommon.ImageStreamSuffixMCOContentCustom,
