@@ -1170,3 +1170,14 @@ func (n namespacedEventRecorder) Eventf(object runtime.Object, eventtype, reason
 func (n namespacedEventRecorder) AnnotatedEventf(object runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
 	n.delegate.AnnotatedEventf(ensureEventNamespace(object), annotations, eventtype, reason, messageFmt, args...)
 }
+
+func GetPoolImageStream(pool *mcfgv1.MachineConfigPool) (string, error) {
+	if imagestream, ok := pool.Labels[ExperimentalLayeringPoolImageStreamLabel]; ok {
+		return imagestream, nil
+	}
+	return "", fmt.Errorf("No ImageStream found for pool %s", pool.Name)
+}
+
+func SetPoolImageStream(pool *mcfgv1.MachineConfigPool, imageStreamName string) {
+	pool.Labels[ExperimentalLayeringPoolImageStreamLabel] = imageStreamName
+}
