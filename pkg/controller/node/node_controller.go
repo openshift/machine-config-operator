@@ -66,9 +66,6 @@ const (
 	// schedulerCRName that we're interested in watching.
 	schedulerCRName = "cluster"
 
-	// masterPoolName is the control plane MachineConfigPool name
-	masterPoolName = "master"
-
 	// kubeletCAFilePath is the expected file path for the kubelet ca
 	kubeletCAFilePath = "/etc/kubernetes/kubelet-ca.crt"
 )
@@ -496,7 +493,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 				ctrl.logPoolNode(pool, curNode, "changed annotation %s = %s", anno, newValue)
 				changed = true
 				// For the control plane, emit events for these since they're important
-				if pool.Name == masterPoolName {
+				if pool.Name == ctrlcommon.MachineConfigPoolMaster {
 					ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "AnnotationChange", "Node %s now has %s=%s", curNode.Name, anno, newValue)
 				}
 			}
@@ -597,7 +594,7 @@ func (ctrl *Controller) getPoolsForNode(node *corev1.Node) ([]*mcfgv1.MachineCon
 	var master, worker *mcfgv1.MachineConfigPool
 	var custom []*mcfgv1.MachineConfigPool
 	for _, pool := range pools {
-		if pool.Name == masterPoolName {
+		if pool.Name == ctrlcommon.MachineConfigPoolMaster {
 			master = pool
 		} else if pool.Name == "worker" {
 			worker = pool
@@ -1003,7 +1000,7 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineCon
 
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
 func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
-	if pool.Name == masterPoolName {
+	if pool.Name == ctrlcommon.MachineConfigPoolMaster {
 		var err error
 		candidates, capacity, err = ctrl.filterControlPlaneCandidateNodes(pool, candidates, capacity)
 		if err != nil {

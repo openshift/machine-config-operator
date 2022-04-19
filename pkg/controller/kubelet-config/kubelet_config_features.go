@@ -80,8 +80,18 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	}
 
 	for _, pool := range mcpPools {
+		var nodeConfig *osev1.Node
 		role := pool.Name
-
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			// Fetch the Node Config object
+			nodeConfig, err = ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+			if errors.IsNotFound(err) {
+				nodeConfig = createNewDefaultNodeconfig()
+			} else if err != nil {
+				err := fmt.Errorf("could not fetch Node: %w", err)
+				return err
+			}
+		}
 		// Get MachineConfig
 		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
 		if err != nil {
@@ -100,7 +110,7 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, features)
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(cc, ctrl.templatesDir, role, features, nodeConfig)
 		if err != nil {
 			return err
 		}
@@ -206,10 +216,13 @@ func generateFeatureMap(features *osev1.FeatureGate, exclusions ...string) (*map
 	return &rv, nil
 }
 
-func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *osev1.FeatureGate) ([]byte, error) {
+func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir, role string, features *osev1.FeatureGate, nodeConfig *osev1.Node) ([]byte, error) {
 	originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, templatesDir, role, features)
 	if err != nil {
 		return nil, err
+	}
+	if nodeConfig != nil {
+		updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 	}
 	defaultFeatures, err := generateFeatureMap(createNewDefaultFeatureGate(), openshiftOnlyFeatureGates...)
 	if err != nil {
@@ -237,12 +250,19 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
 		role := pool.Name
-		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, features)
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			if nodeConfig == nil {
+				nodeConfig = createNewDefaultNodeconfig()
+			}
+		} else {
+			nodeConfig = nil
+		}
+		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, features, nodeConfig)
 		if err != nil {
 			return nil, err
 		}

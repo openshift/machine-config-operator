@@ -150,7 +150,7 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 
 			features := createNewDefaultFeatureGate()
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", features, cc, mcps)
+			mcs, err := RunFeatureGateBootstrap("../../../templates", features, nil, cc, mcps)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
@@ -184,7 +184,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				},
 			}
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", features, cc, mcps)
+			mcs, err := RunFeatureGateBootstrap("../../../templates", features, nil, cc, mcps)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
