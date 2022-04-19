@@ -441,6 +441,7 @@ func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string)
 	filesPostConfigChangeActionNone := []string{
 		"/etc/kubernetes/kubelet-ca.crt",
 		"/var/lib/kubelet/config.json",
+		"/etc/machine-config-daemon/currentconfig",
 	}
 	if dn.os.IsFCOS() {
 		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, fcosAuthKeyPath)
@@ -461,6 +462,7 @@ func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string)
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
 			actions = []string{postConfigChangeActionReloadCrio}
 		} else {
+			glog.Infof("Need to reboot because of at least: %s", path)
 			return []string{postConfigChangeActionReboot}, nil
 		}
 	}
@@ -2015,8 +2017,14 @@ func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool)
 // TODO(jkyros): right now this skips drain and reboot, it just live-applies it, but you *can* boot it and it will work
 func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 
-	desiredImage := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
-	currentImage := dn.node.Annotations[constants.CurrentImageConfigAnnotationKey]
+	currentImage := dn.node.Annotations[constants.CurrentMachineConfigAnnotationKey]
+	desiredImage := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
+
+	desiredImageObject, err := dn.imageLister.Get(desiredImage)
+	if err != nil {
+		return err
+	}
+	desiredImageReference := desiredImageObject.DockerImageReference
 
 	if currentImage == desiredImage {
 		glog.Infof("Node is on proper image %s; skipping update", currentImage)
@@ -2031,7 +2039,7 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 		return err
 	}
 
-	if onDesired, needRebase := onDesiredImage(desiredImage, booted, staged); !onDesired {
+	if onDesired, needRebase := onDesiredImage(desiredImageReference, booted, staged); !onDesired {
 		if err := dn.setWorking(); err != nil {
 			return fmt.Errorf("failed to set working: %w", err)
 		}
@@ -2040,7 +2048,7 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 		dn.WritePullSecret()
 
 		if needRebase {
-			if err := client.RebaseLayered(desiredImage); err != nil {
+			if err := client.RebaseLayered(desiredImageReference); err != nil {
 				return err
 			}
 
@@ -2101,6 +2109,7 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 				return fmt.Errorf("failed to diff container images: %w", err)
 			}
 			for i, path := range diffFileSet {
+				glog.Infof("changed: %s", path)
 				if strings.HasPrefix(path, "/usr/etc") {
 					diffFileSet[i] = strings.TrimPrefix(path, "/usr")
 				}
@@ -2134,7 +2143,7 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 				client.ApplyLive()
 			}
 			// might reboot
-			if err := dn.performPostConfigChangeAction(actions, desiredImage); err != nil {
+			if err := dn.performPostConfigChangeAction(actions, desiredImageReference); err != nil {
 				return err
 			}
 		}
@@ -2144,18 +2153,11 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 	// mark everything done
 	glog.Infof("Node is on proper image %s", desiredImage)
 
-	if err := dn.completeUpdate(desiredImage); err != nil {
+	if err := dn.completeUpdate(desiredImageReference); err != nil {
 		MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 	}
 
-	if err := dn.nodeWriter.SetLayeredDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredImage); err != nil {
-		errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-		MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
-		return nil
-	}
-
-	desiredConfig := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
-	if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredConfig); err != nil {
+	if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredImage); err != nil {
 		errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 		MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
 		return nil

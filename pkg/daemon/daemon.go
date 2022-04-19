@@ -48,6 +48,9 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+
+	imageinformersv1 "github.com/openshift/client-go/image/informers/externalversions/image/v1"
+	imagelistersv1 "github.com/openshift/client-go/image/listers/image/v1"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -81,6 +84,10 @@ type Daemon struct {
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corev1lister.NodeLister
 	nodeListerSynced cache.InformerSynced
+
+	// imageLister is for retrieving our image details for application
+	imageLister       imagelistersv1.ImageLister
+	imageListerSynced cache.InformerSynced
 
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
@@ -280,6 +287,7 @@ func (dn *Daemon) ClusterConnect(
 	name string,
 	kubeClient kubernetes.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
+	imageInformer imageinformersv1.ImageInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
@@ -310,6 +318,8 @@ func (dn *Daemon) ClusterConnect(
 	})
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
+	dn.imageLister = imageInformer.Lister()
+	dn.imageListerSynced = imageInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
 
@@ -488,6 +498,7 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// Pass to the shared update prep method
+
 	current, desired, err := dn.prepUpdateFromCluster()
 	if err != nil {
 		return errors.Wrapf(err, "prepping update")
@@ -1372,17 +1383,29 @@ func (dn *Daemon) handleNodeEvent(node interface{}) {
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
+
+	// currentConfig is always expected to be there as loadNodeAnnotations
+	// is one of the very first calls when the daemon starts.
+	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	desiredConfigName, err := getNodeAnnotationExt(dn.node, constants.DesiredMachineConfigAnnotationKey, true)
 	if err != nil {
 		return nil, nil, err
 	}
-	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
-	if err != nil {
-		return nil, nil, err
+
+	// TODO(jkyros): do this better
+	if dn.isDesiredConfigAnImage() {
+		if currentConfigName != desiredConfigName {
+			return &mcfgv1.MachineConfig{}, &mcfgv1.MachineConfig{}, nil
+		}
+		return nil, nil, nil
+
 	}
-	// currentConfig is always expected to be there as loadNodeAnnotations
-	// is one of the very first calls when the daemon starts.
-	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
+
+	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1475,20 +1498,44 @@ func (dn *Daemon) removeUpdateInProgressTaint(ctx context.Context) error {
 }
 
 func (dn *Daemon) shouldUpdateLayered() (*CoreOSDaemon, error) {
-	_, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
-	if ok {
+	if dn.isDesiredConfigAnImage() {
 		// sanity check that we're on CoreOS. The controller checks if a node runs CoreOS before setting desired image
 		if dn.os.IsCoreOSVariant() {
+			glog.Infof("Node is capable of image update")
 			return &CoreOSDaemon{dn}, nil
 		}
+
 		return nil, fmt.Errorf("can't treat a non-CoreOS node as layered")
 	}
 	return nil, nil
+}
+func (dn *Daemon) isDesiredConfigAnImage() bool {
+
+	if desiredConfigName, ok := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]; ok {
+		// TODO(jkyros): This works for now, but we should probably add another annotation or at least
+		// do something more elegant than string prefix parsing
+		if strings.HasPrefix(desiredConfigName, "sha256:") {
+			glog.Infof("Image update requested: %s", desiredConfigName)
+			return true
+		}
+	}
+	return false
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig) error {
+
+	// Hack in our layered node workflow for pools labeled as "layered"
+	coreOSDaemon, err := dn.shouldUpdateLayered()
+	if err != nil {
+		return err
+	}
+	if coreOSDaemon != nil {
+		dn.stopConfigDriftMonitor()
+		return coreOSDaemon.experimentalUpdateLayeredConfig()
+	}
+
 	if currentConfig == nil {
 		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {
@@ -1514,15 +1561,6 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	// Shut down the Config Drift Monitor since we'll be performing an update
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
-
-	// Hack in our layered node workflow for pools labeled as "layered"
-	coreOSDaemon, err := dn.shouldUpdateLayered()
-	if err != nil {
-		return err
-	}
-	if coreOSDaemon != nil {
-		return coreOSDaemon.experimentalUpdateLayeredConfig()
-	}
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)

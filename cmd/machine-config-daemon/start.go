@@ -212,6 +212,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.nodeName,
 		kubeClient,
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
+		ctx.ImageNamespacedInformerFactory.Image().V1().Images(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
@@ -221,6 +222,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	ctx.KubeInformerFactory.Start(stopCh)
+	ctx.ImageNamespacedInformerFactory.Start(stopCh)
 	ctx.InformerFactory.Start(stopCh)
 	close(ctx.InformersStarted)
 
