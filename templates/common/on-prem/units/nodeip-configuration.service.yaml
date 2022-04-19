@@ -1,5 +1,5 @@
 name: nodeip-configuration.service
-enabled: {{if (onPremPlatformAPIServerInternalIP .)}}true{{else}}false{{end}}
+enabled: {{if (onPremPlatformAPIServerInternalIPs .)}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
@@ -26,7 +26,7 @@ contents: |
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
-    {{ onPremPlatformAPIServerInternalIP . }}; \
+    {{- range onPremPlatformAPIServerInternalIPs . }}{{.}} {{end}}; \
     do \
     sleep 5; \
     done"

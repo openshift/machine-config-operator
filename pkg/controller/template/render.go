@@ -307,7 +307,9 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
+	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
+	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
@@ -451,6 +453,33 @@ func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 }
 
 //nolint:dupl
+func onPremPlatformIngressIPs(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
+			}
+			// VSphere UPI doesn't populate VSphere field. So it's not an error,
+			// and there is also no data
+			return nil, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for Ingress IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+//nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
@@ -463,6 +492,33 @@ func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
 				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+			}
+			// VSphere UPI doesn't populate VSphere field. So it's not an error,
+			// and there is also no data
+			return nil, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+//nolint:dupl
+func onPremPlatformAPIServerInternalIPs(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
 			}
 			// VSphere UPI doesn't populate VSphere field. So it's not an error,
 			// and there is also no data
