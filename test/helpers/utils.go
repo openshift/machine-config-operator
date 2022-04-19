@@ -202,7 +202,7 @@ func WaitForPoolComplete(t *testing.T, cs *framework.ClientSet, pool, target str
 func WaitForNodeConfigChange(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcName string) error {
 	startTime := time.Now()
 	err := wait.PollImmediate(2*time.Second, 20*time.Minute, func() (bool, error) {
-		n, err := cs.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		n, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -305,24 +305,24 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 	infraNodeName := infraNode.Name
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		infraNode, err := cs.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
+		infraNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		infraNode.Labels[label] = ""
-		_, err = cs.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
+		_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
 		return err
 	})
 	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
 
 	return func() {
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			infraNode, err := cs.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
+			infraNode, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNodeName, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
 			delete(infraNode.Labels, label)
-			_, err = cs.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
+			_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
 			return err
 		})
 		require.Nil(t, err, "unable to remove label from node %s: %s", infraNode.Name, err)
@@ -342,7 +342,7 @@ func GetNodesByRole(cs *framework.ClientSet, role string) ([]corev1.Node, error)
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""}).String(),
 	}
-	nodes, err := cs.Nodes().List(context.TODO(), listOptions)
+	nodes, err := cs.CoreV1Interface.Nodes().List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, err
 	}

@@ -74,6 +74,7 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
+	var nodeConfig *apicfgv1.Node
 	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
@@ -126,6 +127,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.ClusterFeatureInstanceName {
 					featureGate = obj
 				}
+			case *apicfgv1.Node:
+				if obj.GetName() == ctrlcommon.ClusterNodeInstanceName {
+					nodeConfig = obj
+				}
 			default:
 				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -156,14 +161,22 @@ func (b *Bootstrap) Run(destDir string) error {
 		configs = append(configs, containerRuntimeConfigs...)
 	}
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, cconfig, pools)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, nodeConfig, cconfig, pools)
 		if err != nil {
 			return err
 		}
 		configs = append(configs, featureConfigs...)
 	}
+
+	if nodeConfig != nil {
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, featureGate, cconfig, nodeConfig, pools)
+		if err != nil {
+			return err
+		}
+		configs = append(configs, nodeConfigs...)
+	}
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, pools)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, nodeConfig, pools)
 		if err != nil {
 			return err
 		}

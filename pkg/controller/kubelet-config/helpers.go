@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -131,6 +132,42 @@ func createNewDefaultFeatureGate() *osev1.FeatureGate {
 	}
 }
 
+func createNewDefaultNodeconfig() *osev1.Node {
+	return &osev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: ctrlcommon.ClusterNodeInstanceName,
+		},
+		Spec: osev1.NodeSpec{
+			CgroupMode:           osev1.CgroupModeDefault,
+			WorkerLatencyProfile: osev1.DefaultUpdateDefaultReaction,
+		},
+	}
+}
+
+// updateOriginalKubeConfigwithNodeConfig updates the original Kubelet Configuration based on the Nodespecific configuration
+func updateOriginalKubeConfigwithNodeConfig(node *osev1.Node, originalKubeletConfig *kubeletconfigv1beta1.KubeletConfiguration) error {
+	if node == nil {
+		return fmt.Errorf("node configuration not found, failed to update the original kubelet configuration")
+	}
+	if reflect.DeepEqual(node.Spec, osev1.NodeSpec{}) {
+		return fmt.Errorf("empty node resource spec found")
+	}
+	// updating the kubelet specific fields based on the Node's workerlatency profile.
+	// (TODO): The durations can be replaced with the defined constants in the openshift/api repository once the respective changes are merged.
+	switch node.Spec.WorkerLatencyProfile {
+	case osev1.MediumUpdateAverageReaction:
+		originalKubeletConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: osev1.MediumNodeStatusUpdateFrequency}
+	case osev1.LowUpdateSlowReaction:
+		originalKubeletConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: osev1.LowNodeStatusUpdateFrequency}
+	case osev1.DefaultUpdateDefaultReaction:
+		originalKubeletConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: osev1.DefaultNodeStatusUpdateFrequency}
+	default:
+		return fmt.Errorf("unknown worker latency profile type found %v, failed to update the original kubelet configuration", node.Spec.WorkerLatencyProfile)
+	}
+	// The kubelet configuration can be updated based on the cgroupmode as well here.
+	return nil
+}
+
 func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 	ignCfg, err := ctrlcommon.ParseAndConvertConfig(mc.Spec.Config.Raw)
 	if err != nil {
@@ -225,6 +262,10 @@ func getManagedFeaturesKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.
 // Deprecated: use getManagedFeaturesKey
 func getManagedFeaturesKeyDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("98-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
+}
+
+func getManagedNodeConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(pool, client, "97", "kubelet", fmt.Sprintf("97-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID))
 }
 
 // Deprecated: use getManagedKubeletConfigKey

@@ -30,4 +30,12 @@ const (
 
 	// ClusterFeatureInstanceName is a singleton name for featureGate configuration
 	ClusterFeatureInstanceName = "cluster"
+
+	// ClusterNodeInstanceName is a singleton name for node configuration
+	ClusterNodeInstanceName = "cluster"
+
+	// MachineConfigPoolMaster is the MachineConfigPool name given to the master
+	MachineConfigPoolMaster = "master"
+	// MachineConfigPoolWorker is the MachineConfigPool name given to the worker
+	MachineConfigPoolWorker = "worker"
 )
