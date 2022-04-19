@@ -1,5 +1,5 @@
 mode: 0644
-path: {{ if (onPremPlatformAPIServerInternalIP .) -}} "/etc/kubernetes/manifests/coredns.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/coredns.yaml" {{ end }}
+path: {{ if (onPremPlatformAPIServerInternalIPs .) -}} "/etc/kubernetes/manifests/coredns.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/coredns.yaml" {{ end }}
 contents:
   inline: |
     kind: Pod
@@ -32,10 +32,10 @@ contents:
         - runtimecfg
         - render
         - "/var/lib/kubelet/kubeconfig"
-        - "--api-vip"
-        - "{{ onPremPlatformAPIServerInternalIP . }}"
-        - "--ingress-vip"
-        - "{{ onPremPlatformIngressIP . }}"
+        - "--api-vips"
+        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--ingress-vips"
+        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "/config"
         - "--out-dir"
         - "/etc/coredns"
@@ -87,10 +87,10 @@ contents:
         - "/var/lib/kubelet/kubeconfig"
         - "/config/Corefile.tmpl"
         - "/etc/coredns/Corefile"
-        - "--api-vip"
-        - "{{ onPremPlatformAPIServerInternalIP . }}"
-        - "--ingress-vip"
-        - "{{ onPremPlatformIngressIP . }}"
+        - "--api-vips"
+        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--ingress-vips"
+        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         resources:
           requests:
             cpu: 100m

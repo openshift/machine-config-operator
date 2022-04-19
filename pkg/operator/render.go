@@ -60,7 +60,9 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs := sprig.TxtFuncMap()
 	funcs["toYAML"] = toYAML
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
+	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
+	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 
 	a.tmpl = a.tmpl.Funcs(funcs)
@@ -264,6 +266,30 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 }
 
 //nolint:dupl
+func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
+		case configv1.VSpherePlatformType:
+			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
+// 		case configv1.KubevirtPlatformType:
+// 			return cfg.Infra.Status.PlatformStatus.Kubevirt.IngressIP, nil
+// 		case configv1.NutanixPlatformType:
+// 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for Ingress IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+//nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
@@ -277,6 +303,30 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+//nolint:dupl
+func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
+		case configv1.VSpherePlatformType:
+			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
+// 		case configv1.KubevirtPlatformType:
+// 			return cfg.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP, nil
+// 		case configv1.NutanixPlatformType:
+// 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}

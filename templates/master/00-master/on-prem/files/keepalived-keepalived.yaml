@@ -54,9 +54,10 @@ contents:
         fall 2
     }
 
+    {{`{{ range $i, $config := .Configs }}`}}
     {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
 
-    vrrp_instance {{`{{ .Cluster.Name }}`}}_API {
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_API_{{`{{$i}}`}} {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
         virtual_router_id {{`{{ .Cluster.APIVirtualRouterID }}`}}
@@ -85,7 +86,7 @@ contents:
         }
     }
 
-    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {
+    vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}} {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
         virtual_router_id {{`{{ .Cluster.IngressVirtualRouterID }}`}}
@@ -113,3 +114,4 @@ contents:
             chk_default_ingress
         }
     }
+    {{`{{ end }}`}}
