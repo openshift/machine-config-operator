@@ -750,14 +750,6 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return ctrl.syncStatusOnly(pool)
 	}
 
-	// Check to see if this is a layered, pool, and if it is, wait for the image that matches our desiredConfig to render
-	// If our image isn't cooked yet, don't do anything, the pool will get requeued when it's done
-	targetImage, equivalentTo, isImagePool, targetImageMatchesConfig := ctrl.experimentalHasValidImage(pool)
-	if isImagePool && !targetImageMatchesConfig {
-		glog.Infof("Target image %s (%s) does not match target config %s. Skipping pool %s for now.", targetImage, equivalentTo, pool.Spec.Configuration.Name, pool.Name)
-		return ctrl.syncStatusOnly(pool)
-	}
-
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
@@ -980,30 +972,18 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 	targetConfig := pool.Spec.Configuration.Name
 	for _, node := range candidates {
 
-		// Check image details for this pool
-		targetImage, equivalentTo, isImagePool, targetImageMatchesConfig := ctrl.experimentalHasValidImage(pool)
-
-		// If our pool is annotated with an image AND that image is the right image, then update these nodes with it
-		// TODO(jkyros): this does not obviate the desiredConfig annotation below for now, as we're using "are we in our desired machineconfig"
-		// as our "done" signal
-		if isImagePool {
+		// make sure if we're going to assign an image, that it will actually support it
+		if pool.Spec.Configuration.Kind == "Image" {
 			// double check that this node has CoreOS and will support layering
 			osID, ok := node.Labels[osIDLabel]
 			if ok {
-				if daemon.IsProbablyCoreOSVariant(osID) {
-					if targetImageMatchesConfig {
-						ctrl.logPool(pool, "Setting node %s target image to %s", node.Name, targetImage)
-						if err := ctrl.setNodeAnnotation(node.Name, daemonconsts.DesiredImageConfigAnnotationKey, targetImage); err != nil {
-							return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
-						}
-					} else {
-						glog.Infof("Image %s matched %s not %s. Proper image may not have rendered yet", targetImage, equivalentTo, targetConfig)
-					}
-				} else {
-					return fmt.Errorf("node %s is in layered pool but has OS ID %s which does not support layering", node.Name, osID)
+				// if it's not CoreOS, it's not going to work
+				if !daemon.IsProbablyCoreOSVariant(osID) {
+					return fmt.Errorf("node %s is in layered pool but has OS ID %s which does not support image-based config", node.Name, osID)
 				}
 			} else {
-				return fmt.Errorf("node %s is in layered pool but has no os_id label, so refusing to perform layered update", node.Name)
+				// we can't tell what it is, it's probably also not going to work
+				return fmt.Errorf("node %s would be assigned a config image, but has no os_id label, so refusing to perform image update", node.Name)
 			}
 
 		}
