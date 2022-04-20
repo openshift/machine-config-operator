@@ -9,6 +9,12 @@ contents:
     touch /var/run/ovs-config-executed
     NM_CONN_PATH="/etc/NetworkManager/system-connections"
 
+    # Enable NM debug logging
+    cat <<'EOF' > /etc/NetworkManager/conf.d/95-nm-debug.conf
+    [logging]
+    domains=ALL:DEBUG
+    EOF
+
     # this flag tracks if any config change was made
     nm_config_changed=0
 
@@ -45,6 +51,20 @@ contents:
           fi
         done
       fi
+    }
+
+    debug_data() {
+      (
+      echo "**** Collecting debug data... $(date)"
+      caller
+      nmcli conn show
+      nmcli -f uuid conn show | tail -n+2 | while read c ; do echo === $c === ; nmcli conn show $c |cat ; done
+      grep '' /etc/NetworkManager/system-connections/* 2>/dev/null || true
+      grep '' /etc/NetworkManager/conf.d/* 2>/dev/null || true
+      grep '' /etc/NetworkManager/* 2>/dev/null || true
+      ip route
+      ip a
+      ) | logger
     }
 
     update_nm_conn_files() {
@@ -353,12 +373,12 @@ contents:
     # Removes any previous ovs configuration
     remove_all_ovn_bridges() {
       echo "Reverting any previous OVS configuration"
-      
+
       remove_ovn_bridges br-ex phys0
       if [ -d "/sys/class/net/br-ex1" ]; then
         remove_ovn_bridges br-ex1 phys1
       fi
-      
+
       echo "OVS configuration successfully reverted"
     }
 
@@ -369,7 +389,7 @@ contents:
         return
       fi
       nm_config_changed=0
-      
+
       echo "Reloading NetworkManager after configuration changes..."
 
       # recycle network, so that existing profiles and priorities are re-evaluated
@@ -380,11 +400,11 @@ contents:
       if ! timeout 60 bash -c "while nmcli -g DEVICE,STATE d | grep -v :unmanaged; do sleep 5; done"; then
         echo "Warning: NetworkManager did not disconnect all devices"
       fi
-      
+
       # reload profiles and set networking back on
       nmcli connection reload
       nmcli network on
-      
+
       # restart NetworkManager so that we can wait on `nm-online -s`
       systemctl restart NetworkManager
 
@@ -408,7 +428,7 @@ contents:
     rollback_nm() {
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       remove_all_ovn_bridges
-      
+
       # Reload NM if necessary
       reload_nm
     }
@@ -491,6 +511,7 @@ contents:
 
       # find default interface
       # the default interface might be br-ex, so check this before looking at the hint
+      debug_data
       while [ ${counter} -lt 12 ]; do
         # check ipv4
         # never use the interface that's specified in extra_bridge_file
@@ -517,6 +538,7 @@ contents:
         counter=$((counter+1))
         sleep 5
       done
+      debug_data
 
       # if the default interface does not point out of br-ex or br-ex1
       if [ "${iface}" != "br-ex" ] && [ "${iface}" != "br-ex1" ]; then
@@ -548,6 +570,7 @@ contents:
           write_iface_default_hint "${iface_default_hint_file}" "${iface}"
         fi
       fi
+      debug_data
       echo "${iface}"
     }
 
@@ -559,6 +582,7 @@ contents:
       ip -d address show
       ip route show
       ip -6 route show
+      debug_data
     }
 
     # Setup an exit trap to rollback on error
@@ -621,6 +645,8 @@ contents:
         fi
       }
 
+      debug_data
+
       ovnk_config_dir='/etc/ovnk'
       ovnk_var_dir='/var/lib/ovnk'
       extra_bridge_file="${ovnk_config_dir}/extra_bridge"
@@ -664,6 +690,7 @@ contents:
         print_state
       fi
       touch /run/configure-ovs-boot-done
+      debug_data
 
       iface=$(get_default_interface "${iface_default_hint_file}" "$extra_bridge_file")
 
@@ -701,6 +728,8 @@ contents:
       # Recycle NM connections
       reload_nm
 
+      debug_data
+
       # Make sure everything is activated
       activate_nm_conn ovs-if-phys0
       activate_nm_conn ovs-if-br-ex
@@ -711,7 +740,9 @@ contents:
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm
-      
+
       # Remove bridges created by ovn-kubernetes
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
     fi
+
+    debug_data
