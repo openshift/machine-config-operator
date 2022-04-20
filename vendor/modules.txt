@@ -647,6 +647,9 @@ github.com/nbutton23/zxcvbn-go/match
 github.com/nbutton23/zxcvbn-go/matching
 github.com/nbutton23/zxcvbn-go/scoring
 github.com/nbutton23/zxcvbn-go/utils/math
+# github.com/nightlyone/lockfile v1.0.0
+## explicit; go 1.11
+github.com/nightlyone/lockfile
 # github.com/nishanths/exhaustive v0.2.3
 ## explicit; go 1.14
 github.com/nishanths/exhaustive

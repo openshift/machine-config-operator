@@ -24,12 +24,12 @@ require (
 	github.com/google/go-cmp v0.5.7
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.12
+	github.com/nightlyone/lockfile v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20220412161459-8f38b7648620
 	github.com/openshift/client-go v0.0.0-20220411091747-c100636b0bc0
 	github.com/openshift/library-go v0.0.0-20211220195323-eca2c467c492
 	github.com/openshift/runtime-utils v0.0.0-20220225175100-8dec0d84fb39
-	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.1
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/pflag v1.0.5
@@ -193,6 +193,7 @@ require (
 	github.com/pelletier/go-toml v1.9.3 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/phayes/checkstyle v0.0.0-20170904204023-bfd46e6a821d // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/polyfloyd/go-errorlint v0.0.0-20210722154253-910bb7978349 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
