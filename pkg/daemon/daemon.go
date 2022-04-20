@@ -517,6 +517,13 @@ func (dn *Daemon) syncNode(key string) error {
 			return err
 		}
 	} else {
+		// Log state transitions here
+		oldState := dn.node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+		newState := node.Annotations[constants.MachineConfigDaemonStateAnnotationKey]
+		if oldState != newState {
+			glog.Infof("Transitioned from state: %v -> %v", oldState, newState)
+		}
+
 		dn.node = node
 	}
 
@@ -1217,6 +1224,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		glog.Infof("Current config: %s", currentConfigName)
 		glog.Infof("Desired config: %s", desiredConfigName)
 	}
+	glog.Infof("state: %s", state)
 
 	var pendingConfig *mcfgv1.MachineConfig
 	// We usually expect that if current != desired, pending == desired; however,
@@ -1690,10 +1698,14 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 	}
 
 	// Detect if there is an update
-	if desiredConfigName == currentConfigName && state == constants.MachineConfigDaemonStateDone {
-		// No actual update to the config
-		glog.V(2).Info("No updating is required")
-		return nil, nil, nil
+	if desiredConfigName == currentConfigName {
+		if state == constants.MachineConfigDaemonStateDone {
+			// No actual update to the config
+			glog.V(2).Info("No updating is required")
+			return nil, nil, nil
+		}
+		// This seems like it shouldn't happen...let's just warn for now.
+		glog.Warningf("current+desiredConfig is %s but state is %s", currentConfigName, state)
 	}
 	return currentConfig, desiredConfig, nil
 }
