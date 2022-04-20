@@ -292,6 +292,8 @@ contents:
     type=internal
     EOF
           nmcli c load ${new_conn_file}
+          # Set interface metric in the static route case. For the DHCP route case, see below.
+          nmcli c mod "${ovs_interface}" ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}"
           echo "Loaded new $ovs_interface connection file: ${new_conn_file}"
         else
           extra_if_brex_args=""
