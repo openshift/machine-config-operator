@@ -63,6 +63,9 @@ const (
 	// osLabel is used to identify which type of OS the node has
 	osLabel = "kubernetes.io/os"
 
+	// zoneLabel is for https://kubernetes.io/docs/setup/best-practices/multiple-zones/
+	zoneLabel = "topology.kubernetes.io/zone"
+
 	// schedulerCRName that we're interested in watching.
 	schedulerCRName = "cluster"
 
@@ -435,7 +438,12 @@ func (ctrl *Controller) logPool(pool *mcfgv1.MachineConfigPool, format string, a
 
 func (ctrl *Controller) logPoolNode(pool *mcfgv1.MachineConfigPool, node *corev1.Node, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	glog.Infof("Pool %s: node %s: %s", pool.Name, node.Name, msg)
+	zone, zok := node.Labels[zoneLabel]
+	zonemsg := ""
+	if zok {
+		zonemsg = fmt.Sprintf("[zone=%s]", zone)
+	}
+	glog.Infof("Pool %s%s: node %s: %s", pool.Name, zonemsg, node.Name, msg)
 }
 
 func (ctrl *Controller) updateNode(old, cur interface{}) {
@@ -825,7 +833,14 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 	candidates, capacity := getAllCandidateMachines(pool, nodes, maxunavail)
 	if len(candidates) > 0 {
-		ctrl.logPool(pool, "%d candidate nodes for update, capacity: %d", len(candidates), capacity)
+		zones := make(map[string]bool)
+		for _, candidate := range candidates {
+			zone, ok := candidate.Labels[zoneLabel]
+			if ok {
+				zones[zone] = true
+			}
+		}
+		ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
 		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
 			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
 				errs := kubeErrs.NewAggregate([]error{syncErr, err})
@@ -1043,8 +1058,8 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 // nodes without label are at end of list and sorted by age (oldest to youngest)
 func sortNodeList(nodes []*corev1.Node) []*corev1.Node {
 	sort.Slice(nodes, func(i, j int) bool {
-		iZone, iOk := nodes[i].Labels["topology.kubernetes.io/zone"]
-		jZone, jOk := nodes[j].Labels["topology.kubernetes.io/zone"]
+		iZone, iOk := nodes[i].Labels[zoneLabel]
+		jZone, jOk := nodes[j].Labels[zoneLabel]
 		// if both nodes have zone label, sort by zone, push nodes without label to end of list
 		if iOk && jOk {
 			return iZone < jZone
