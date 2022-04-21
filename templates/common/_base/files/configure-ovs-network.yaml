@@ -166,33 +166,13 @@ contents:
       # store old conn for later
       old_conn=$(nmcli --fields UUID,DEVICE conn show --active | awk "/\s${iface}\s*\$/ {print \$1}")
 
-      extra_brex_args=""
-      # check for dhcp client ids
-      dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
-      if [ -n "$dhcp_client_id" ]; then
-        extra_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
-      fi
-
-      dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
-      if [ -n "$dhcp6_client_id" ]; then
-        extra_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
-      fi
-
-      ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
-      if [ -n "$ipv6_addr_gen_mode" ]; then
-        extra_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
-      fi
-
       # create bridge
       if ! nmcli connection show "$bridge_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-br "$bridge_name"
         nmcli c add type ovs-bridge \
             con-name "$bridge_name" \
             conn.interface "$bridge_name" \
-            802-3-ethernet.mtu ${iface_mtu} \
-            ipv4.route-metric "$BRIDGE_METRIC" \
-            ipv6.route-metric "$BRIDGE_METRIC" \
-            ${extra_brex_args}
+            802-3-ethernet.mtu ${iface_mtu}
       fi
 
       # find default port to add to bridge
@@ -331,6 +311,22 @@ contents:
           num_ip6_addrs=$(ip -j a show dev ${iface} | jq ".[0].addr_info | map(. | select(.family == \"inet6\" and .scope != \"link\")) | length")
           if [ "$num_ip6_addrs" -gt 0 ]; then
             extra_if_brex_args+="ipv6.may-fail no "
+          fi
+
+          # check for dhcp client ids
+          dhcp_client_id=$(nmcli --get-values ipv4.dhcp-client-id conn show ${old_conn})
+          if [ -n "$dhcp_client_id" ]; then
+            extra_if_brex_args+="ipv4.dhcp-client-id ${dhcp_client_id} "
+          fi
+
+          dhcp6_client_id=$(nmcli --get-values ipv6.dhcp-duid conn show ${old_conn})
+          if [ -n "$dhcp6_client_id" ]; then
+            extra_if_brex_args+="ipv6.dhcp-duid ${dhcp6_client_id} "
+          fi
+
+          ipv6_addr_gen_mode=$(nmcli --get-values ipv6.addr-gen-mode conn show ${old_conn})
+          if [ -n "$ipv6_addr_gen_mode" ]; then
+            extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
           fi
 
           nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
