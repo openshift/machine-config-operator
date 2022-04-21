@@ -460,6 +460,12 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	}
 	glog.V(4).Infof("Node %s updated", curNode.Name)
 
+	// Let's be verbose when a node changes pool
+	oldPool, err := ctrl.getPrimaryPoolForNode(oldNode)
+	if err == nil && oldPool.Name != pool.Name {
+		ctrl.logPoolNode(pool, curNode, "changed from pool %s", oldPool.Name)
+	}
+
 	var changed bool
 	oldReadyErr := checkNodeReady(oldNode)
 	newReadyErr := checkNodeReady(curNode)
