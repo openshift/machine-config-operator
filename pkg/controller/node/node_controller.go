@@ -466,11 +466,17 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 		isNodeDone(curNode) {
 		ctrl.logPoolNode(pool, curNode, "Completed update to %s", curNode.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey])
 		changed = true
+	} else if oldNode.Annotations[daemonconsts.CurrentImageConfigAnnotationKey] != oldNode.Annotations[daemonconsts.DesiredImageConfigAnnotationKey] &&
+		isNodeDone(curNode) {
+		ctrl.logPoolNode(pool, curNode, "Completed update to %s", curNode.Annotations[daemonconsts.DesiredImageConfigAnnotationKey])
+		changed = true
 	} else {
 		annos := []string{
 			daemonconsts.CurrentMachineConfigAnnotationKey,
 			daemonconsts.DesiredMachineConfigAnnotationKey,
 			daemonconsts.MachineConfigDaemonStateAnnotationKey,
+			daemonconsts.DesiredImageConfigAnnotationKey,
+			daemonconsts.CurrentImageConfigAnnotationKey,
 		}
 		for _, anno := range annos {
 			newValue := curNode.Annotations[anno]
@@ -775,7 +781,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
 		// to be chosen during the scheduling cycle.
 		targetConfig := pool.Spec.Configuration.Name
-		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != targetConfig {
+		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] != targetConfig && node.Annotations[daemonconsts.DesiredImageConfigAnnotationKey] != targetConfig {
 			if err := ctrl.setUpdateInProgressTaint(ctx, node.Name); err != nil {
 				return goerrs.Wrapf(err, "failed applying %s taint for node %s", constants.NodeUpdateInProgressTaint.Key, node.Name)
 			}
@@ -897,7 +903,7 @@ func getAllCandidateMachines(pool *mcfgv1.MachineConfigPool, nodesInPool []*core
 	// We only look at nodes which aren't already targeting our desired config
 	var nodes []*corev1.Node
 	for _, node := range nodesInPool {
-		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig {
+		if node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] == targetConfig || node.Annotations[daemonconsts.DesiredImageConfigAnnotationKey] == targetConfig {
 			if isNodeMCDFailing(node) {
 				failingThisConfig++
 			}
@@ -982,17 +988,24 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 					return fmt.Errorf("node %s is in layered pool but has OS ID %s which does not support image-based config", node.Name, osID)
 				}
 			} else {
-				// we can't tell what it is, it's probably also not going to work
+				// we can't tell what os it is, it's probably also not going to work
 				return fmt.Errorf("node %s would be assigned a config image, but has no os_id label, so refusing to perform image update", node.Name)
 			}
 
-		}
+			// assign the image, since we think it will work
+			ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
+			if err := ctrl.setNodeAnnotation(node.Name, daemonconsts.DesiredImageConfigAnnotationKey, targetConfig); err != nil {
+				return goerrs.Wrapf(err, "setting desired image for node %s", node.Name)
+			}
 
-		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
-		if err := ctrl.setNodeAnnotation(node.Name, daemonconsts.DesiredMachineConfigAnnotationKey, targetConfig); err != nil {
-			return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
-		}
+		} else {
 
+			// assign a machineconfig if we're not getting an image
+			ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
+			if err := ctrl.setNodeAnnotation(node.Name, daemonconsts.DesiredMachineConfigAnnotationKey, targetConfig); err != nil {
+				return goerrs.Wrapf(err, "setting desired config for node %s", node.Name)
+			}
+		}
 	}
 	if len(candidates) == 1 {
 		candidate := candidates[0]

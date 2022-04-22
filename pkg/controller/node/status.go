@@ -88,6 +88,7 @@ func calculateStatus(pool *mcfgv1.MachineConfigPool, nodes []*corev1.Node) mcfgv
 		mcfgv1.SetMachineConfigPoolCondition(&status, *supdating)
 		if status.Configuration.Name != pool.Spec.Configuration.Name || !equality.Semantic.DeepEqual(status.Configuration.Source, pool.Spec.Configuration.Source) {
 			glog.Infof("Pool %s: %s", pool.Name, updatedMsg)
+			// TODO(jkyros): This is where this gets set right here, so you need to calculate the metadata here
 			status.Configuration = pool.Spec.Configuration
 		}
 	} else {
@@ -136,11 +137,21 @@ func isNodeManaged(node *corev1.Node) bool {
 	if node.Annotations == nil {
 		return false
 	}
-	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
-	if !ok || cconfig == "" {
-		return false
+
+	cconfig, hasConfig := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
+	cimage, hasImage := node.Annotations[daemonconsts.CurrentImageConfigAnnotationKey]
+
+	// if we have an image config present
+	if hasImage && cimage != "" {
+		return true
 	}
-	return true
+
+	// if we have a machineconfig present
+	if hasConfig && cconfig != "" {
+		return true
+	}
+
+	return false
 }
 
 // isNodeDone returns true if the current == desired and the MCD has marked done.
@@ -148,6 +159,22 @@ func isNodeDone(node *corev1.Node) bool {
 	if node.Annotations == nil {
 		return false
 	}
+
+	// if we have an image assigned,  check images, otherwise fall through to  machineconfig
+	if dimage, ok := node.Annotations[daemonconsts.DesiredImageConfigAnnotationKey]; ok {
+		// if we do but it's empty, that's weird and probably not done
+		if dimage == "" {
+			return false
+		}
+		// if it was populated, but we're not on it yet, we're not done
+		cimage, ok := node.Annotations[daemonconsts.CurrentImageConfigAnnotationKey]
+		if !ok || cimage == "" {
+			return false
+		}
+
+		return cimage == dimage && isNodeMCDState(node, daemonconsts.MachineConfigDaemonStateDone)
+	}
+
 	cconfig, ok := node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey]
 	if !ok || cconfig == "" {
 		return false
@@ -162,6 +189,12 @@ func isNodeDone(node *corev1.Node) bool {
 
 // isNodeDoneAt checks whether a node is fully updated to a targetConfig
 func isNodeDoneAt(node *corev1.Node, targetConfig string) bool {
+	// TODO(jkyros): There are a bunch of these types of "currentConfig IS the MCO" sort of assumptions in here,
+	// we should probably centralize the switch/if path rather than just keep iffing between image and machoneconfig
+	if currentImage, ok := node.Annotations[daemonconsts.CurrentImageConfigAnnotationKey]; ok {
+		return isNodeDone(node) && (currentImage == targetConfig)
+	}
+
 	return isNodeDone(node) && node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == targetConfig
 }
 
@@ -177,6 +210,15 @@ func isNodeMCDState(node *corev1.Node, state string) bool {
 
 // isNodeMCDFailing checks if the MCD has unsuccessfully applied an update
 func isNodeMCDFailing(node *corev1.Node) bool {
+
+	// TODO(jkyros): Here's another one where we just keep stuffing ifs in here
+	// This was catching when the image annotations where both blank, this was safe with one type of config, but feels
+	// way less safe trying to figure out two
+	if desiredImage, hasDesiredImage := node.Annotations[daemonconsts.DesiredImageConfigAnnotationKey]; hasDesiredImage {
+		if node.Annotations[daemonconsts.CurrentImageConfigAnnotationKey] == desiredImage {
+			return false
+		}
+	}
 	if node.Annotations[daemonconsts.CurrentMachineConfigAnnotationKey] == node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey] {
 		return false
 	}
@@ -279,10 +321,16 @@ func getDegradedMachines(nodes []*corev1.Node) []*corev1.Node {
 		if node.Annotations == nil {
 			continue
 		}
-		dconfig, ok := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
-		if !ok || dconfig == "" {
+
+		dimage, hasDimage := node.Annotations[daemonconsts.DesiredImageConfigAnnotationKey]
+		dconfig, hasDconfig := node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
+
+		// TODO(jkyros): another joint image/machineconfig condition
+		// If we don't have a desired image, or it's empty AND we don't have a desired config (or it's also empty), then not our node so we ignore it
+		if (!hasDimage || dimage == "") && (!hasDconfig || dconfig == "") {
 			continue
 		}
+
 		dstate, ok := node.Annotations[daemonconsts.MachineConfigDaemonStateAnnotationKey]
 		if !ok || dstate == "" {
 			continue
