@@ -11,7 +11,13 @@ contents:
       containers:
       - name: apiserver-watcher
         image: "{{.Images.apiServerWatcherKey}}"
-        command: ["apiserver-watcher"]
+        command:
+          - flock
+          - --verbose
+          - --exclusive
+          - --timeout=300
+          - /rootfs/run/cloud-routes/apiserver-watcher.lock
+          - apiserver-watcher
         args:
         - "run"
         - "--health-check-url={{.Infra.Status.APIServerInternalURL}}/readyz"
