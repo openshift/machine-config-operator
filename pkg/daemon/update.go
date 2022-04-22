@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -2014,13 +2015,12 @@ func onDesiredImage(desiredImage string, booted, staged Deployment) (bool, bool)
 
 // experimentalUpdateLayeredConfig() pretends to do the normal config update for the pool but actually does
 // an image update instead. This function should be completely thrown away.
-// TODO(jkyros): right now this skips drain and reboot, it just live-applies it, but you *can* boot it and it will work
 func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 
-	currentImage := dn.node.Annotations[constants.CurrentMachineConfigAnnotationKey]
-	desiredImage := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]
+	desiredImage := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
+	currentImage := dn.node.Annotations[constants.CurrentImageConfigAnnotationKey]
 
-	desiredImageObject, err := dn.imageLister.Get(desiredImage)
+	desiredImageObject, err := dn.imageClient.ImageV1().Images().Get(context.TODO(), desiredImage, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -2157,14 +2157,14 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 		MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 	}
 
-	if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredImage); err != nil {
+	if err := dn.nodeWriter.SetLayeredDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, desiredImage); err != nil {
 		errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 		MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
 		return nil
 	}
 
 	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, desiredImage))
+		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentImage %s to Done", dn.node.Name, desiredImage))
 	}
 
 	return nil

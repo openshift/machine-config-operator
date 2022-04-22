@@ -49,8 +49,7 @@ import (
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 
-	imageinformersv1 "github.com/openshift/client-go/image/informers/externalversions/image/v1"
-	imagelistersv1 "github.com/openshift/client-go/image/listers/image/v1"
+	imageclientset "github.com/openshift/client-go/image/clientset/versioned"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -78,16 +77,15 @@ type Daemon struct {
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 
+	// imageClient allows interaction with openshift api Image objects
+	imageClient imageclientset.Interface
+
 	// recorder sends events to the apiserver
 	recorder record.EventRecorder
 
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corev1lister.NodeLister
 	nodeListerSynced cache.InformerSynced
-
-	// imageLister is for retrieving our image details for application
-	imageLister       imagelistersv1.ImageLister
-	imageListerSynced cache.InformerSynced
 
 	mcLister       mcfglistersv1.MachineConfigLister
 	mcListerSynced cache.InformerSynced
@@ -286,14 +284,15 @@ func New(
 func (dn *Daemon) ClusterConnect(
 	name string,
 	kubeClient kubernetes.Interface,
+	imageClient imageclientset.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
-	imageInformer imageinformersv1.ImageInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
 ) {
 	dn.name = name
 	dn.kubeClient = kubeClient
+	dn.imageClient = imageClient
 
 	dn.nodeWriter = newNodeWriter()
 	go dn.nodeWriter.Run(dn.stopCh)
@@ -318,8 +317,6 @@ func (dn *Daemon) ClusterConnect(
 	})
 	dn.nodeLister = nodeInformer.Lister()
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
-	dn.imageLister = imageInformer.Lister()
-	dn.imageListerSynced = imageInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
 
@@ -1384,28 +1381,34 @@ func (dn *Daemon) handleNodeEvent(node interface{}) {
 // update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
 
-	// currentConfig is always expected to be there as loadNodeAnnotations
-	// is one of the very first calls when the daemon starts.
-	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
-	if err != nil {
-		return nil, nil, err
+	// TODO(jkyros): do this better
+	if dn.isDesiredConfigAnImage() {
+		desiredImageName, err := getNodeAnnotationExt(dn.node, constants.CurrentImageConfigAnnotationKey, true)
+		if err != nil {
+			return nil, nil, err
+		}
+		currentImageName, err := getNodeAnnotationExt(dn.node, constants.DesiredImageConfigAnnotationKey, true)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if currentImageName != desiredImageName {
+			return &mcfgv1.MachineConfig{}, &mcfgv1.MachineConfig{}, nil
+		}
+		return nil, nil, nil
 	}
 
 	desiredConfigName, err := getNodeAnnotationExt(dn.node, constants.DesiredMachineConfigAnnotationKey, true)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	// TODO(jkyros): do this better
-	if dn.isDesiredConfigAnImage() {
-		if currentConfigName != desiredConfigName {
-			return &mcfgv1.MachineConfig{}, &mcfgv1.MachineConfig{}, nil
-		}
-		return nil, nil, nil
-
-	}
-
 	desiredConfig, err := dn.mcLister.Get(desiredConfigName)
+	if err != nil {
+		return nil, nil, err
+	}
+	// currentConfig is always expected to be there as loadNodeAnnotations
+	// is one of the very first calls when the daemon starts.
+	currentConfigName, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1510,14 +1513,9 @@ func (dn *Daemon) shouldUpdateLayered() (*CoreOSDaemon, error) {
 	return nil, nil
 }
 func (dn *Daemon) isDesiredConfigAnImage() bool {
-
-	if desiredConfigName, ok := dn.node.Annotations[constants.DesiredMachineConfigAnnotationKey]; ok {
-		// TODO(jkyros): This works for now, but we should probably add another annotation or at least
-		// do something more elegant than string prefix parsing
-		if strings.HasPrefix(desiredConfigName, "sha256:") {
-			glog.Infof("Image update requested: %s", desiredConfigName)
-			return true
-		}
+	if desiredImageName, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]; ok {
+		glog.Infof("Image update requested: %s", desiredImageName)
+		return true
 	}
 	return false
 }
