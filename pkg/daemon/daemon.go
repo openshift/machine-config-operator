@@ -1339,6 +1339,8 @@ func (dn *Daemon) getPendingConfig() (*pendingConfigState, error) {
 	return &p, nil
 }
 
+// getCurrentConfigOnDisk retrieves the serialized MachineConfig written to /etc
+// which exists during the time we're trying to perform an update.
 func (dn *Daemon) getCurrentConfigOnDisk() (*mcfgv1.MachineConfig, error) {
 	mcJSON, err := os.Open(dn.currentConfigPath)
 	if err != nil {
@@ -1352,6 +1354,9 @@ func (dn *Daemon) getCurrentConfigOnDisk() (*mcfgv1.MachineConfig, error) {
 	return currentOnDisk, nil
 }
 
+// storeCurrentConfigOnDisk serializes a machine config into a file in /etc,
+// which we use to denote that we are expecting the system has transitioned
+// into this state.
 func (dn *Daemon) storeCurrentConfigOnDisk(current *mcfgv1.MachineConfig) error {
 	mcJSON, err := json.Marshal(current)
 	if err != nil {
