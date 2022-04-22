@@ -31,7 +31,6 @@ import (
 	"github.com/openshift/machine-config-operator/test/helpers"
 
 	imagefake "github.com/openshift/client-go/image/clientset/versioned/fake"
-	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
 )
 
 var pathtests = []struct {
@@ -149,7 +148,6 @@ func (f *fixture) newController() *Daemon {
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
-	isi := imageinformers.NewFilteredSharedInformerFactory(f.imageclient, noResyncPeriodFunc(), "openshift-machine-config-operator", nil)
 	k8sI := kubeinformers.NewSharedInformerFactory(f.kubeclient, noResyncPeriodFunc())
 
 	d, err := New(NewNodeUpdaterClient(), nil)
@@ -158,8 +156,8 @@ func (f *fixture) newController() *Daemon {
 	}
 	d.ClusterConnect("node_name_test",
 		f.kubeclient,
+		f.imageclient,
 		i.Machineconfiguration().V1().MachineConfigs(),
-		isi.Image().V1().Images(),
 		k8sI.Core().V1().Nodes(),
 		false,
 		"",
