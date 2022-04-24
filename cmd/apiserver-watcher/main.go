@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 
-	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+	"k8s.io/component-base/cli"
 )
 
 const (
@@ -26,7 +26,5 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		glog.Exitf("Error executing %s: %v", componentName, err)
-	}
+	_ = cli.Run(rootCmd)
 }

@@ -16,8 +16,8 @@ import (
 
 	health "github.com/InVisionApp/go-health"
 	"github.com/InVisionApp/go-health/checkers"
-	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 
 	"github.com/openshift/machine-config-operator/pkg/version"
 )
@@ -55,7 +55,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	flag.Parse()
 
 	// To help debugging, immediately log version
-	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
+	klog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
 	uri, err := url.Parse(runOpts.healthCheckURL)
 	if err != nil {
@@ -102,6 +102,7 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	h := health.New()
+	h.Logger = &logger{}
 	h.AddChecks([]*health.Config{{
 		Name:       "dependency-check",
 		Checker:    httpCheck,
@@ -118,9 +119,9 @@ func runRunCmd(cmd *cobra.Command, args []string) error {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for sig := range c {
-			glog.Infof("Signal %s received: treating service as down", sig)
+			klog.Infof("Signal %s received: treating service as down", sig)
 			if err := handler.onFailure(); err != nil {
-				glog.Infof("Failed to mark service down on signal: %s", err)
+				klog.Infof("Failed to mark service down on signal: %s", err)
 			}
 			os.Exit(0)
 		}
@@ -148,7 +149,7 @@ func newHandler(uri *url.URL) (*handler, error) {
 	h := handler{
 		vips: addrs,
 	}
-	glog.Infof("Using VIPs %v", h.vips)
+	klog.Infof("Using VIPs %v", h.vips)
 	return &h, nil
 }
 
@@ -158,7 +159,7 @@ func (h *handler) onFailure() error {
 		if err := writeVipStateFile(vip, "down"); err != nil {
 			return err
 		}
-		glog.Infof("healthcheck failed, created downfile %s.down", vip)
+		klog.Infof("healthcheck failed, created downfile %s.down", vip)
 		if err := removeVipStateFile(vip, "up"); err != nil {
 			return err
 		}
@@ -172,7 +173,7 @@ func (h *handler) onSuccess() error {
 		if err := removeVipStateFile(vip, "down"); err != nil {
 			return err
 		}
-		glog.Infof("healthcheck succeeded, removed downfile %s.down", vip)
+		klog.Infof("healthcheck succeeded, removed downfile %s.down", vip)
 		if err := writeVipStateFile(vip, "up"); err != nil {
 			return err
 		}
@@ -247,7 +248,7 @@ func (sl *healthTracker) OnComplete(state *health.State) {
 		sl.succeeded++
 		if sl.succeeded >= sl.SuccessThreshold {
 			if sl.state != succeededTrackerState {
-				glog.Info("Running OnSuccess trigger")
+				klog.Info("Running OnSuccess trigger")
 				if err := sl.OnSuccess(); err != nil {
 					sl.ErrCh <- err
 				}
@@ -259,7 +260,7 @@ func (sl *healthTracker) OnComplete(state *health.State) {
 		sl.failed++
 		if sl.failed >= sl.FailureThreshold {
 			if sl.state != failedTrackerState {
-				glog.Info("Running OnFailure trigger")
+				klog.Info("Running OnFailure trigger")
 				if err := sl.OnFailure(); err != nil {
 					sl.ErrCh <- err
 				}
