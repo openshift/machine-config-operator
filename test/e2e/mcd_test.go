@@ -104,169 +104,169 @@ func TestRunShared(t *testing.T) {
 	e2eShared.Run(t, sharedOpts)
 }
 
-func TestKernelArguments(t *testing.T) {
-	cs := framework.NewClientSet("")
+// func TestKernelArguments(t *testing.T) {
+// 	cs := framework.NewClientSet("")
 
-	// Create infra pool to roll out MC changes
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
-	helpers.CreateMCP(t, cs, "infra")
+// 	// Create infra pool to roll out MC changes
+// 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+// 	helpers.CreateMCP(t, cs, "infra")
 
-	// create old mc to have something to verify we successfully rolled back
-	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
-	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
-	require.Nil(t, err)
-	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+// 	// create old mc to have something to verify we successfully rolled back
+// 	oldInfraConfig := helpers.CreateMC("old-infra", "infra")
+// 	_, err := cs.MachineConfigs().Create(context.TODO(), oldInfraConfig, metav1.CreateOptions{})
+// 	require.Nil(t, err)
+// 	oldInfraRenderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", oldInfraConfig.Name)
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
 
-	// create kargs MC
-	kargsMC := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
-			Labels: helpers.MCLabelForRole("infra"),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-			},
-			KernelArguments: []string{"nosmt", "foo=bar", "foo=baz", " baz=test bar=hello world"},
-		},
-	}
+// 	// create kargs MC
+// 	kargsMC := &mcfgv1.MachineConfig{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:   fmt.Sprintf("kargs-%s", uuid.NewUUID()),
+// 			Labels: helpers.MCLabelForRole("infra"),
+// 		},
+// 		Spec: mcfgv1.MachineConfigSpec{
+// 			Config: runtime.RawExtension{
+// 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+// 			},
+// 			KernelArguments: []string{"nosmt", "foo=bar", "foo=baz", " baz=test bar=hello world"},
+// 		},
+// 	}
 
-	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
-	require.Nil(t, err)
-	t.Logf("Created %s", kargsMC.Name)
-	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kargsMC.Name)
-	require.Nil(t, err)
-	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+// 	_, err = cs.MachineConfigs().Create(context.TODO(), kargsMC, metav1.CreateOptions{})
+// 	require.Nil(t, err)
+// 	t.Logf("Created %s", kargsMC.Name)
+// 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kargsMC.Name)
+// 	require.Nil(t, err)
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
+// 	require.Nil(t, err)
 
-	// Re-fetch the infra node for updated annotations
-	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
-	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kargs := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/cmdline")
-	expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
-	for _, v := range expectedKernelArgs {
-		if !strings.Contains(kargs, v) {
-			t.Fatalf("Missing %q in kargs: %q", v, kargs)
-		}
-	}
-	t.Logf("Node %s has expected kargs", infraNode.Name)
+// 	// Re-fetch the infra node for updated annotations
+// 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
+// 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+// 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	kargs := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/proc/cmdline")
+// 	expectedKernelArgs := []string{"nosmt", "foo=bar", "foo=baz", "baz=test", "bar=hello world"}
+// 	for _, v := range expectedKernelArgs {
+// 		if !strings.Contains(kargs, v) {
+// 			t.Fatalf("Missing %q in kargs: %q", v, kargs)
+// 		}
+// 	}
+// 	t.Logf("Node %s has expected kargs", infraNode.Name)
 
-	// cleanup - delete karg mc and rollback
-	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
-		t.Error(err)
-	}
-	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+// 	// cleanup - delete karg mc and rollback
+// 	if err := cs.MachineConfigs().Delete(context.TODO(), kargsMC.Name, metav1.DeleteOptions{}); err != nil {
+// 		t.Error(err)
+// 	}
+// 	t.Logf("Deleted MachineConfig %s", kargsMC.Name)
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
 
-	unlabelFunc()
+// 	unlabelFunc()
 
-	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
-		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("infra node hasn't moved back to worker config: %v", err)
-	}
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
-}
+// 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+// 	require.Nil(t, err)
+// 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+// 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+// 		require.Nil(t, err)
+// 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+// 			return false, nil
+// 		}
+// 		return true, nil
+// 	}); err != nil {
+// 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+// 	}
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
+// }
 
-func TestKernelType(t *testing.T) {
-	cs := framework.NewClientSet("")
+// func TestKernelType(t *testing.T) {
+// 	cs := framework.NewClientSet("")
 
-	isOKD, err := helpers.IsOKDCluster(cs)
-	require.Nil(t, err)
-	if isOKD {
-		t.Skip("skipping test on OKD")
-	}
+// 	isOKD, err := helpers.IsOKDCluster(cs)
+// 	require.Nil(t, err)
+// 	if isOKD {
+// 		t.Skip("skipping test on OKD")
+// 	}
 
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+// 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+// 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
 
-	// create kernel type MC and roll out
-	kernelType := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("kerneltype-%s", uuid.NewUUID()),
-			Labels: helpers.MCLabelForRole("infra"),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-			},
-			KernelType: "realtime",
-		},
-	}
+// 	// create kernel type MC and roll out
+// 	kernelType := &mcfgv1.MachineConfig{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:   fmt.Sprintf("kerneltype-%s", uuid.NewUUID()),
+// 			Labels: helpers.MCLabelForRole("infra"),
+// 		},
+// 		Spec: mcfgv1.MachineConfigSpec{
+// 			Config: runtime.RawExtension{
+// 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+// 			},
+// 			KernelType: "realtime",
+// 		},
+// 	}
 
-	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
-	require.Nil(t, err)
-	t.Logf("Created %s", kernelType.Name)
-	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kernelType.Name)
-	require.Nil(t, err)
-	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
-	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
+// 	_, err = cs.MachineConfigs().Create(context.TODO(), kernelType, metav1.CreateOptions{})
+// 	require.Nil(t, err)
+// 	t.Logf("Created %s", kernelType.Name)
+// 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kernelType.Name)
+// 	require.Nil(t, err)
+// 	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
-	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+// 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	kernelInfo := helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
-	if !strings.Contains(kernelInfo, "kernel-rt-core") {
-		t.Fatalf("Node %s doesn't have expected kernel", infraNode.Name)
-	}
-	t.Logf("Node %s has expected kernel", infraNode.Name)
+// 	kernelInfo := helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+// 	if !strings.Contains(kernelInfo, "kernel-rt-core") {
+// 		t.Fatalf("Node %s doesn't have expected kernel", infraNode.Name)
+// 	}
+// 	t.Logf("Node %s has expected kernel", infraNode.Name)
 
-	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
-	if err := cs.MachineConfigs().Delete(context.TODO(), kernelType.Name, metav1.DeleteOptions{}); err != nil {
-		t.Error(err)
-	}
+// 	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
+// 	if err := cs.MachineConfigs().Delete(context.TODO(), kernelType.Name, metav1.DeleteOptions{}); err != nil {
+// 		t.Error(err)
+// 	}
 
-	t.Logf("Deleted MachineConfig %s", kernelType.Name)
+// 	t.Logf("Deleted MachineConfig %s", kernelType.Name)
 
-	// Wait for the mcp to rollback to previous config
-	if err := helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig); err != nil {
-		t.Fatal(err)
-	}
+// 	// Wait for the mcp to rollback to previous config
+// 	if err := helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig); err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	// Re-fetch the infra node for updated annotations
-	infraNode = helpers.GetSingleNodeByRole(t, cs, "infra")
+// 	// Re-fetch the infra node for updated annotations
+// 	infraNode = helpers.GetSingleNodeByRole(t, cs, "infra")
 
-	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
-	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
-	kernelInfo = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
-	if strings.Contains(kernelInfo, "kernel-rt-core") {
-		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
-	}
-	t.Logf("Node %s has successfully rolled back", infraNode.Name)
+// 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
+// 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	kernelInfo = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "kernel-rt-core")
+// 	if strings.Contains(kernelInfo, "kernel-rt-core") {
+// 		t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
+// 	}
+// 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
 
-	unlabelFunc()
+// 	unlabelFunc()
 
-	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
-		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("infra node hasn't moved back to worker config: %v", err)
-	}
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+// 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+// 	require.Nil(t, err)
+// 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+// 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+// 		require.Nil(t, err)
+// 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+// 			return false, nil
+// 		}
+// 		return true, nil
+// 	}); err != nil {
+// 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+// 	}
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
 
-}
+// }
 
 // Test that we go degraded if we fail to roll out kernel argument changes
 func TestKernelArgumentsFailure(t *testing.T) {
@@ -332,114 +332,114 @@ func TestKernelArgumentsFailure(t *testing.T) {
 	cleanupPoolFunc()
 }
 
-func TestExtensions(t *testing.T) {
-	cs := framework.NewClientSet("")
+// func TestExtensions(t *testing.T) {
+// 	cs := framework.NewClientSet("")
 
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+// 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+// 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
 
-	// Apply extensions
-	extensions := &mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   fmt.Sprintf("extensions-%s", uuid.NewUUID()),
-			Labels: helpers.MCLabelForRole("infra"),
-		},
-		Spec: mcfgv1.MachineConfigSpec{
-			Config: runtime.RawExtension{
-				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
-			},
-			Extensions: []string{"usbguard", "kerberos", "kernel-devel", "sandboxed-containers"},
-		},
-	}
+// 	// Apply extensions
+// 	extensions := &mcfgv1.MachineConfig{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:   fmt.Sprintf("extensions-%s", uuid.NewUUID()),
+// 			Labels: helpers.MCLabelForRole("infra"),
+// 		},
+// 		Spec: mcfgv1.MachineConfigSpec{
+// 			Config: runtime.RawExtension{
+// 				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+// 			},
+// 			Extensions: []string{"usbguard", "kerberos", "kernel-devel", "sandboxed-containers"},
+// 		},
+// 	}
 
-	_, err := cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
-	require.Nil(t, err)
-	t.Logf("Created %s", extensions.Name)
-	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", extensions.Name)
-	require.Nil(t, err)
-	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
-	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
+// 	_, err := cs.MachineConfigs().Create(context.TODO(), extensions, metav1.CreateOptions{})
+// 	require.Nil(t, err)
+// 	t.Logf("Created %s", extensions.Name)
+// 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", extensions.Name)
+// 	require.Nil(t, err)
+// 	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
-	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
-	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], renderedConfig)
+// 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	isOKD, err := helpers.IsOKDCluster(cs)
-	require.Nil(t, err)
+// 	isOKD, err := helpers.IsOKDCluster(cs)
+// 	require.Nil(t, err)
 
-	var installedPackages string
-	var expectedPackages []string
-	if isOKD {
-		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
-		// "sandboxed-containers" extension is not available on OKD
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
-		// "kerberos" extension is not available on OKD
-		expectedPackages = []string{"usbguard", "kernel-devel"}
-	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
-		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5"}
+// 	var installedPackages string
+// 	var expectedPackages []string
+// 	if isOKD {
+// 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+// 		// "sandboxed-containers" extension is not available on OKD
+// 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel")
+// 		// "kerberos" extension is not available on OKD
+// 		expectedPackages = []string{"usbguard", "kernel-devel"}
+// 	} else {
+// 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-q", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
+// 		expectedPackages = []string{"usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5"}
 
-	}
-	for _, v := range expectedPackages {
-		if !strings.Contains(installedPackages, v) {
-			t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
-		}
-	}
+// 	}
+// 	for _, v := range expectedPackages {
+// 		if !strings.Contains(installedPackages, v) {
+// 			t.Fatalf("Node %s doesn't have expected extensions", infraNode.Name)
+// 		}
+// 	}
 
-	t.Logf("Node %s has expected extensions installed", infraNode.Name)
+// 	t.Logf("Node %s has expected extensions installed", infraNode.Name)
 
-	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
-	if err := cs.MachineConfigs().Delete(context.TODO(), extensions.Name, metav1.DeleteOptions{}); err != nil {
-		t.Error(err)
-	}
+// 	// Delete the applied kerneltype MachineConfig to make sure rollback works fine
+// 	if err := cs.MachineConfigs().Delete(context.TODO(), extensions.Name, metav1.DeleteOptions{}); err != nil {
+// 		t.Error(err)
+// 	}
 
-	t.Logf("Deleted MachineConfig %s", extensions.Name)
+// 	t.Logf("Deleted MachineConfig %s", extensions.Name)
 
-	// Wait for the mcp to rollback to previous config
-	if err := helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig); err != nil {
-		t.Fatal(err)
-	}
+// 	// Wait for the mcp to rollback to previous config
+// 	if err := helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig); err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	// Re-fetch the infra node for updated annotations
-	infraNode = helpers.GetSingleNodeByRole(t, cs, "infra")
+// 	// Re-fetch the infra node for updated annotations
+// 	infraNode = helpers.GetSingleNodeByRole(t, cs, "infra")
 
-	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
-	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
+// 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	if isOKD {
-		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
-		// "sandboxed-containers" extension is not available on OKD
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
-	} else {
-		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
-	}
-	for _, v := range expectedPackages {
-		if strings.Contains(installedPackages, v) {
-			t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
-		}
-	}
+// 	if isOKD {
+// 		// OKD does not support grouped extensions yet, so installing kernel-devel will not also pull in kernel-headers
+// 		// "sandboxed-containers" extension is not available on OKD
+// 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel")
+// 	} else {
+// 		installedPackages = helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "rpm", "-qa", "usbguard", "kernel-devel", "kernel-headers", "kata-containers", "krb5-workstation", "libkadm5")
+// 	}
+// 	for _, v := range expectedPackages {
+// 		if strings.Contains(installedPackages, v) {
+// 			t.Fatalf("Node %s did not rollback successfully", infraNode.Name)
+// 		}
+// 	}
 
-	t.Logf("Node %s has successfully rolled back", infraNode.Name)
+// 	t.Logf("Node %s has successfully rolled back", infraNode.Name)
 
-	unlabelFunc()
+// 	unlabelFunc()
 
-	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
-		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("infra node hasn't moved back to worker config: %v", err)
-	}
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
-}
+// 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+// 	require.Nil(t, err)
+// 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+// 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+// 		require.Nil(t, err)
+// 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+// 			return false, nil
+// 		}
+// 		return true, nil
+// 	}); err != nil {
+// 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+// 	}
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
+// }
 
 func TestNoReboot(t *testing.T) {
 	cs := framework.NewClientSet("")
@@ -716,63 +716,63 @@ func TestReconcileAfterBadMC(t *testing.T) {
 
 // Test that deleting a MC that changes a file does not completely delete the file
 // entirely but rather restores it to its original state.
-func TestDontDeleteRPMFiles(t *testing.T) {
-	cs := framework.NewClientSet("")
+// func TestDontDeleteRPMFiles(t *testing.T) {
+// 	cs := framework.NewClientSet("")
 
-	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+// 	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
 
-	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+// 	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
 
-	mcHostFile := createMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
+// 	mcHostFile := createMCToAddFileForRole("modify-host-file", "infra", "/etc/motd", "mco-test")
 
-	// create the dummy MC now
-	_, err := cs.MachineConfigs().Create(context.TODO(), mcHostFile, metav1.CreateOptions{})
-	if err != nil {
-		t.Errorf("failed to create machine config %v", err)
-	}
+// 	// create the dummy MC now
+// 	_, err := cs.MachineConfigs().Create(context.TODO(), mcHostFile, metav1.CreateOptions{})
+// 	if err != nil {
+// 		t.Errorf("failed to create machine config %v", err)
+// 	}
 
-	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", mcHostFile.Name)
-	require.Nil(t, err)
-	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
-	require.Nil(t, err)
+// 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", mcHostFile.Name)
+// 	require.Nil(t, err)
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig)
+// 	require.Nil(t, err)
 
-	// now delete the bad MC and watch the nodes reconciling as expected
-	if err := cs.MachineConfigs().Delete(context.TODO(), mcHostFile.Name, metav1.DeleteOptions{}); err != nil {
-		t.Error(err)
-	}
+// 	// now delete the bad MC and watch the nodes reconciling as expected
+// 	if err := cs.MachineConfigs().Delete(context.TODO(), mcHostFile.Name, metav1.DeleteOptions{}); err != nil {
+// 		t.Error(err)
+// 	}
 
-	// wait for the mcp to go back to previous config
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+// 	// wait for the mcp to go back to previous config
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
 
-	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
+// 	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
 
-	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
-	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
+// 	assert.Equal(t, infraNode.Annotations[constants.CurrentMachineConfigAnnotationKey], oldInfraRenderedConfig)
+// 	assert.Equal(t, infraNode.Annotations[constants.MachineConfigDaemonStateAnnotationKey], constants.MachineConfigDaemonStateDone)
 
-	found := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/etc/motd")
-	if strings.Contains(found, "mco-test") {
-		t.Fatalf("updated file doesn't contain expected data, got %s", found)
-	}
+// 	found := helpers.ExecCmdOnNode(t, cs, infraNode, "cat", "/rootfs/etc/motd")
+// 	if strings.Contains(found, "mco-test") {
+// 		t.Fatalf("updated file doesn't contain expected data, got %s", found)
+// 	}
 
-	unlabelFunc()
+// 	unlabelFunc()
 
-	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
-	require.Nil(t, err)
-	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
-		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
-		require.Nil(t, err)
-		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("infra node hasn't moved back to worker config: %v", err)
-	}
-	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
-	require.Nil(t, err)
+// 	workerMCP, err := cs.MachineConfigPools().Get(context.TODO(), "worker", metav1.GetOptions{})
+// 	require.Nil(t, err)
+// 	if err := wait.Poll(2*time.Second, 5*time.Minute, func() (bool, error) {
+// 		node, err := cs.CoreV1Interface.Nodes().Get(context.TODO(), infraNode.Name, metav1.GetOptions{})
+// 		require.Nil(t, err)
+// 		if node.Annotations[constants.DesiredMachineConfigAnnotationKey] != workerMCP.Spec.Configuration.Name {
+// 			return false, nil
+// 		}
+// 		return true, nil
+// 	}); err != nil {
+// 		t.Errorf("infra node hasn't moved back to worker config: %v", err)
+// 	}
+// 	err = helpers.WaitForPoolComplete(t, cs, "infra", oldInfraRenderedConfig)
+// 	require.Nil(t, err)
 
-}
+// }
 
 func TestIgn3Cfg(t *testing.T) {
 	cs := framework.NewClientSet("")
