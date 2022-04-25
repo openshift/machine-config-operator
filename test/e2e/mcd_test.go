@@ -268,6 +268,70 @@ func TestKernelType(t *testing.T) {
 
 }
 
+// Test that we go degraded if we fail to roll out kernel argument changes
+func TestKernelArgumentsFailure(t *testing.T) {
+	cs := framework.NewClientSet("")
+	var err error
+	unlabelFunc := helpers.LabelRandomNodeFromPool(t, cs, "worker", "node-role.kubernetes.io/infra")
+	cleanupPoolFunc := helpers.CreateMCP(t, cs, "infra")
+	oldInfraRenderedConfig := helpers.GetMcName(t, cs, "infra")
+
+	infraNode := helpers.GetSingleNodeByRole(t, cs, "infra")
+	// Break changes to the bootloader config
+	helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "/bin/sh", "-c", "mount -o remount,rw /boot; chattr +i /boot")
+	kargMc := &mcfgv1.MachineConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   fmt.Sprintf("kargs-failure-%s", uuid.NewUUID()),
+			Labels: helpers.MCLabelForRole("infra"),
+		},
+		Spec: mcfgv1.MachineConfigSpec{
+			Config: runtime.RawExtension{
+				Raw: helpers.MarshalOrDie(ctrlcommon.NewIgnConfig()),
+			},
+			KernelArguments: []string{"karg-that-shouldfail"},
+		},
+	}
+
+	_, err = cs.MachineConfigs().Create(context.TODO(), kargMc, metav1.CreateOptions{})
+	require.Nil(t, err)
+	t.Logf("Created %s", kargMc.Name)
+	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kargMc.Name)
+	t.Logf("Targeting %s", renderedConfig)
+	require.Nil(t, err)
+
+	// verify the pool goes degraded
+	if err := wait.PollImmediate(2*time.Second, 5*time.Minute, func() (bool, error) {
+		mcp, err := cs.MachineConfigPools().Get(context.TODO(), "infra", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		if mcfgv1.IsMachineConfigPoolConditionTrue(mcp.Status.Conditions, mcfgv1.MachineConfigPoolDegraded) {
+			return true, nil
+		}
+		return false, nil
+	}); err != nil {
+		t.Errorf("machine config pool never switched to Degraded for TestKernelArgumentsFailure: %v", err)
+	}
+
+	// Undo our hack on the node
+	helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "/bin/sh", "-c", "mount -o remount,rw /boot; chattr -i /boot")
+
+	// Wait for the mcp to finish
+	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete the MC
+	if err := cs.MachineConfigs().Delete(context.TODO(), kargMc.Name, metav1.DeleteOptions{}); err != nil {
+		t.Error(err)
+	}
+
+	t.Logf("Deleted MachineConfig %s", kargMc.Name)
+
+	unlabelFunc()
+	cleanupPoolFunc()
+}
+
 func TestExtensions(t *testing.T) {
 	cs := framework.NewClientSet("")
 
