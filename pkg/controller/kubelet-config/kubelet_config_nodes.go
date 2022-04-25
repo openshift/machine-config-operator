@@ -354,33 +354,34 @@ func (ctrl *Controller) updateNodeConfigStatus(pool *mcfgv1.MachineConfigPool, n
 
 // updateMCOStatus updates the MCO specific status condition present in the node config CR
 func (ctrl *Controller) updateMCOStatus(nodeConfig *osev1.Node, nodeConfigCondition metav1.Condition) error {
-	var (
-		index     int
-		isPresent bool
-	)
+
 	var kubeletConditionTypes = []string{
 		osev1.KubeletProgressing,
 		osev1.KubeletComplete,
 		osev1.KubeletDegraded,
 	}
-	for index = range nodeConfig.Status.WorkerLatencyProfileStatus.Conditions {
+
+	var kubeletConditions []metav1.Condition
+
+	for indx := range nodeConfig.Status.WorkerLatencyProfileStatus.Conditions {
+		currentCondition := nodeConfig.Status.WorkerLatencyProfileStatus.Conditions[indx]
 		for _, conditionType := range kubeletConditionTypes {
-			if nodeConfig.Status.WorkerLatencyProfileStatus.Conditions[index].Type == conditionType {
-				isPresent = true
-				break
+			if conditionType == currentCondition.Type {
+				kubeletConditions = append(kubeletConditions, currentCondition)
 			}
 		}
-		if isPresent {
-			break
-		}
 	}
-	if isPresent {
-		nodeConfig.Status.WorkerLatencyProfileStatus.Conditions[index] = *nodeConfigCondition.DeepCopy()
-	} else {
+
+	lastKubeletCondition := kubeletConditions[len(kubeletConditions)-1]
+
+	if lastKubeletCondition.Status != nodeConfigCondition.Status && lastKubeletCondition.Message != nodeConfigCondition.Message && lastKubeletCondition.Reason != nodeConfigCondition.Reason {
+		lastKubeletCondition.Status = metav1.ConditionFalse
 		nodeConfig.Status.WorkerLatencyProfileStatus.Conditions = append(nodeConfig.Status.WorkerLatencyProfileStatus.Conditions, nodeConfigCondition)
+		_, err := ctrl.configClient.ConfigV1().Nodes().UpdateStatus(context.TODO(), nodeConfig, metav1.UpdateOptions{})
+		return err
 	}
-	_, err := ctrl.configClient.ConfigV1().Nodes().UpdateStatus(context.TODO(), nodeConfig, metav1.UpdateOptions{})
-	return err
+
+	return nil
 }
 
 func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
