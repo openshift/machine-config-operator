@@ -16,6 +16,9 @@ contents:
       NM_CONN_PATH="$NM_CONN_UNDERLAY"
     fi
 
+    # this flag tracks if any config change was made
+    nm_config_changed=0
+
     MANAGED_NM_CONN_SUFFIX="-slave-ovs-clone"
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
@@ -80,7 +83,7 @@ contents:
           if [ -f "$file_path" ]; then
             rm -f "$file_path"
             echo "Removed nmconnection file $file_path"
-            nm_conn_files_removed=1
+            nm_config_changed=1
           fi
         done
       done
@@ -140,6 +143,10 @@ contents:
         echo "Networking already configured and up for ${bridge-name}!"
         return
       fi
+
+      # flag to reload NM to account for all the configuration changes
+      # going forward
+      nm_config_changed=1
 
       if [ -z "$iface" ]; then
         echo "ERROR: Unable to find default gateway interface"
@@ -367,9 +374,15 @@ contents:
       echo "OVS configuration successfully reverted"
     }
 
-    # Reloads NetworkManager
+    # Reloads NetworkManager if any configuration change was done
     reload_nm() {
-      echo "Reloading NetworkManager..."
+      if [ $nm_config_changed -eq 0 ]; then
+        # no config was changed, no need to reload
+        return
+      fi
+      nm_config_changed=0
+      
+      echo "Reloading NetworkManager after configuration changes..."
 
       # set network off, so that auto-connect priority is evaluated when turning
       # it back on
@@ -399,17 +412,11 @@ contents:
 
     # Removes all configuration and reloads NM if necessary
     rollback_nm() {
-      # This will be set to 1 if remove_all_ovn_bridges actually changes anything
-      nm_conn_files_removed=0
-
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       remove_all_ovn_bridges
       
-      # Reload only if we removed connection profiles
-      if [ $nm_conn_files_removed -eq 1 ]; then
-        echo "OVS configuration was cleaned up, will reload NetworkManager"
-        reload_nm
-      fi
+      # Reload NM if necessary
+      reload_nm
     }
 
     # Activates a NM connection profile
