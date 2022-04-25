@@ -266,18 +266,10 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	glog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
-// isReadyforUpdate returns a boolean based on the condition statuses present in the node config CR.
-// The node config resource is considered to be not-ready if any status condition
-// of any operator type is "Progressing". Otherwise, the resource is ready for the update.
+// isReadyforUpdate returns a boolean to indicate if the node config is ready for update.
+// The node config is considered not-ready if any status condition of kubelet rollout is
+// either still in progress or failed. Otherwise, the node config is ready for the update.
 func isReadyforUpdate(nodeConfig *osev1.Node) bool {
-	var conditionTypes = []string{
-		osev1.KubeAPIServerProgressing,
-		osev1.KubeControllerManagerProgressing,
-		osev1.KubeletProgressing,
-		osev1.KubeAPIServerDegraded,
-		osev1.KubeControllerManagerDegraded,
-		osev1.KubeletDegraded,
-	}
 	// if the node config resource is empty, it is ready for the update
 	// to hold the new configuration update request.
 	if nodeConfig == nil {
@@ -285,10 +277,8 @@ func isReadyforUpdate(nodeConfig *osev1.Node) bool {
 	}
 	if len(nodeConfig.Status.WorkerLatencyProfileStatus.Conditions) > 0 {
 		for _, condition := range nodeConfig.Status.WorkerLatencyProfileStatus.Conditions {
-			for _, conditionType := range conditionTypes {
-				if conditionType == condition.Type {
-					return false
-				}
+			if condition.Type == osev1.KubeletProgressing || condition.Type == osev1.KubeletDegraded {
+				return false
 			}
 		}
 	}
