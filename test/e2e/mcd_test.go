@@ -297,6 +297,7 @@ func TestKernelArgumentsFailure(t *testing.T) {
 	t.Logf("Created %s", kargMc.Name)
 	renderedConfig, err := helpers.WaitForRenderedConfig(t, cs, "infra", kargMc.Name)
 	t.Logf("Targeting %s", renderedConfig)
+	assert.NotEqual(t, renderedConfig, oldInfraRenderedConfig)
 	require.Nil(t, err)
 
 	// verify the pool goes degraded
