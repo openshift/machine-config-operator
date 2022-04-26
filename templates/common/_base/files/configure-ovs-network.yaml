@@ -25,35 +25,24 @@ contents:
     # Workaround to ensure OVS is installed due to bug in systemd Requires:
     # https://bugzilla.redhat.com/show_bug.cgi?id=1888017
     copy_nm_conn_files() {
-      local src_path="$NM_CONN_PATH"
       local dst_path="$1"
-      if [ "$src_path" = "$dst_path" ]; then
-        echo "No need to copy configuration files, source and destination are the same"
-        return
-      fi
-      if [ -d "$src_path" ]; then
-        echo "$src_path exists"
-        local files=("${MANAGED_NM_CONN_FILES[@]}")
-        shopt -s nullglob
-        files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection $src_path/*${MANAGED_NM_CONN_SUFFIX})
-        shopt -u nullglob
-        for file in "${files[@]}"; do
-          file="$(basename $file)"
-          if [ -f "$src_path/$file" ]; then
-            if [ ! -f "$dst_path/$file" ]; then
-              echo "Copying configuration $file"
-              cp "$src_path/$file" "$dst_path/$file"
-            elif ! cmp --silent "$src_path/$file" "$dst_path/$file"; then
-              echo "Copying updated configuration $file"
-              cp -f "$src_path/$file" "$dst_path/$file"
-            else
-              echo "Skipping $file since it's equal at destination"
-            fi
+      for src in "${MANAGED_NM_CONN_FILES[@]}"; do
+        src_path=$(dirname "$src")
+        file=$(basename "$src")
+        if [ -f "$src_path/$file" ]; then
+          if [ ! -f "$dst_path/$file" ]; then
+            echo "Copying configuration $file"
+            cp "$src_path/$file" "$dst_path/$file"
+          elif ! cmp --silent "$src_path/$file" "$dst_path/$file"; then
+            echo "Copying updated configuration $file"
+            cp -f "$src_path/$file" "$dst_path/$file"
           else
-            echo "Skipping $file since it does not exist at source"
+            echo "Skipping $file since it's equal at destination"
           fi
-        done
-      fi
+        else
+          echo "Skipping $file since it does not exist at source"
+        fi
+      done
     }
 
     persist_nm_conn_files() {
@@ -67,27 +56,21 @@ contents:
       ovs_interface="ovs-if-${bridge_name}"
       default_port_name="ovs-port-${port_name}" # ovs-port-phys0
       bridge_interface_name="ovs-if-${port_name}" # ovs-if-phys0
-    # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
-      MANAGED_NM_CONN_FILES=($(echo {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"} {"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}.nmconnection))
+      # In RHEL7 files in /{etc,run}/NetworkManager/system-connections end without the suffix '.nmconnection', whereas in RHCOS they end with the suffix.
+      MANAGED_NM_CONN_FILES=($(echo "${NM_CONN_PATH}"/{"$bridge_name","$ovs_interface","$ovs_port","$bridge_interface_name","$default_port_name"}{,.nmconnection}))
+      shopt -s nullglob
+      MANAGED_NM_CONN_FILES+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
+      shopt -u nullglob
     }
 
     # Used to remove files managed by configure-ovs
     rm_nm_conn_files() {
-      local files=("${MANAGED_NM_CONN_FILES[@]}")
-      shopt -s nullglob
-      files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
-      shopt -u nullglob
-      for file in "${files[@]}"; do
-        file="$(basename $file)"
-        # Also remove files in underlay
-        for path in "${NM_CONN_PATH}" "${NM_CONN_UNDERLAY}"; do
-          file_path="${path}/$file"
-          if [ -f "$file_path" ]; then
-            rm -f "$file_path"
-            echo "Removed nmconnection file $file_path"
-            nm_config_changed=1
-          fi
-        done
+      for file in "${MANAGED_NM_CONN_FILES[@]}"; do
+        if [ -f "$file" ]; then
+          rm -f "$file"
+          echo "Removed nmconnection file $file"
+          nm_config_changed=1
+        fi
       done
     }
 
@@ -109,7 +92,7 @@ contents:
     replace_connection_master() {
       local old="$1"
       local new="$2"
-      for conn_uuid in $(nmcli -g UUID connection show) ; do
+      for conn_uuid in $(nmcli -g UUID connection show --active) ; do
         if [ "$(nmcli -g connection.master connection show uuid "$conn_uuid")" != "$old" ]; then
           continue
         fi
@@ -178,21 +161,18 @@ contents:
       # create bridge
       if ! nmcli connection show "$bridge_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-br "$bridge_name"
-        nmcli c add type ovs-bridge \
-            con-name "$bridge_name" \
-            conn.interface "$bridge_name" \
-            802-3-ethernet.mtu ${iface_mtu}
+        add_nm_conn type ovs-bridge con-name "$bridge_name" conn.interface "$bridge_name" 802-3-ethernet.mtu ${iface_mtu}
       fi
 
       # find default port to add to bridge
       if ! nmcli connection show "$default_port_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-port "$bridge_name" ${iface}
-        nmcli c add type ovs-port conn.interface ${iface} master "$bridge_name" con-name "$default_port_name"
+        add_nm_conn type ovs-port conn.interface ${iface} master "$bridge_name" con-name "$default_port_name"
       fi
 
       if ! nmcli connection show "$ovs_port" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-port "$bridge_name" "$bridge_name"
-        nmcli c add type ovs-port conn.interface "$bridge_name" master "$bridge_name" con-name "$ovs_port"
+        add_nm_conn type ovs-port conn.interface "$bridge_name" master "$bridge_name" con-name "$ovs_port"
       fi
 
       extra_phys_args=()
@@ -232,8 +212,9 @@ contents:
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
-        nmcli c add type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
-        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
+        add_nm_conn type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
+        connection.autoconnect-priority 100 connection.autoconnect-slaves 1 802-3-ethernet.mtu ${iface_mtu} \
+        ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuid
@@ -282,6 +263,8 @@ contents:
           # modify file to work with OVS and have unique settings
           sed -i '/^\[connection\]$/,/^\[/ s/^uuid=.*$/uuid='"$br_iface_uuid"'/' ${new_conn_file}
           sed -i '/^multi-connect=.*$/d' ${new_conn_file}
+          sed -i '/^autoconnect=.*$/d' ${new_conn_file}
+          sed -i '/^\[connection\]$/a autoconnect=false' ${new_conn_file}
           sed -i '/^\[connection\]$/,/^\[/ s/^type=.*$/type=ovs-interface/' ${new_conn_file}
           sed -i '/^\[connection\]$/,/^\[/ s/^id=.*$/id='"$ovs_interface"'/' ${new_conn_file}
           sed -i '/^\[connection\]$/a slave-type=ovs-port' ${new_conn_file}
@@ -338,7 +321,7 @@ contents:
             extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
           fi
 
-          nmcli c add type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
+          add_nm_conn type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
             ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC" ${extra_if_brex_args}
         fi
@@ -373,65 +356,105 @@ contents:
       echo "OVS configuration successfully reverted"
     }
 
-    # Reloads NetworkManager if any configuration change was done
-    reload_nm() {
+    # Reloads NM NetworkManager profiles if any configuration change was done.
+    # Accepts a list of devices that should be re-connect after reload.
+    reload_profiles_nm() {
       if [ $nm_config_changed -eq 0 ]; then
         # no config was changed, no need to reload
         return
       fi
+
+      # reload profiles
+      nmcli connection reload
+
+      # precautionary sleep of 10s (default timeout of NM to bring down devices)
+      sleep 10
+    
+      # After reload, devices that were already connected should connect again
+      # if any profile is available. If no profile is available, a device can
+      # remain disconnected and we have to explicitly connect it so that a
+      # profile is generated. This can happen for physical devices but should
+      # not happen for software devices as those always require a profile.
+      for dev in $@; do
+        # Only attempt to connect a disconnected device
+        local connected_state=$(nmcli -g GENERAL.STATE device show "$dev" || echo "")
+        if [[ "$connected_state" =~ "disconnected" ]]; then
+          # keep track if a profile by the same name as the device existed 
+          # before we attempt activation
+          local named_profile_existed=$([ -f "${NM_CONN_PATH}/${dev}" ] || [ -f "${NM_CONN_PATH}/${dev}.nmconnection" ] && echo "yes")
+          
+          for i in {1..10}; do
+              echo "Attempt $i to connect device $dev"
+              nmcli device connect "$dev" && break
+              sleep 5
+          done
+
+          # if a profile did not exist before but does now, it was generated
+          # but we want it to be ephemeral, so move it back to /run
+          if [ ! "$named_profile_existed" = "yes" ]; then
+            local dst="/run/NetworkManager/system-connections/"
+            MANAGED_NM_CONN_FILES=("${NM_CONN_PATH}/${dev}" "${NM_CONN_PATH}/${dev}.nmconnection")
+            copy_nm_conn_files "${dst}"
+            rm_nm_conn_files
+            # reload profiles so that NM notices that some might have been moved
+            nmcli connection reload
+          fi
+        fi
+
+        echo "Waiting for interface $dev to activate..."
+        if ! timeout 60 bash -c "while ! nmcli -g DEVICE,STATE c | grep "'"'"$dev":activated'"'"; do sleep 5; done"; then
+          echo "Warning: $dev did not activate"
+        fi
+      done
+
       nm_config_changed=0
-      
-      echo "Reloading NetworkManager after configuration changes..."
-
-      # set network off, so that auto-connect priority is evaluated when turning
-      # it back on
-      nmcli network off
-      
-      # restart NetworkManager to reload profiles, including generating
-      # transient profiles for devices that don't have any
-      systemctl restart NetworkManager
-
-      # turn network back on triggering auto-connects 
-      nmcli network on
-
-      # Wait until all profiles auto-connect
-      if nm-online -s -t 60; then
-        echo "NetworkManager has activated all suitable profiles after reload"
-      else
-        echo "NetworkManager has not activated all suitable profiles after reload"
-      fi
-
-      # Check if we have any type of connectivity
-      if nm-online -t 0; then
-        echo "NetworkManager has connectivity after reload"
-      else
-        echo "NetworkManager does not have connectivity after reload"
-      fi
     }
 
     # Removes all configuration and reloads NM if necessary
     rollback_nm() {
+      phys0=$(get_bridge_physical_interface ovs-if-phys0)
+
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       remove_all_ovn_bridges
       
-      # Reload NM if necessary
-      reload_nm
+      # reload profiles so that NM notices that some were removed
+      reload_profiles_nm "$phys0"
+    }
+
+    # Add a deactivated connection profile
+    add_nm_conn() {
+      nmcli c add "$@" connection.autoconnect no
     }
 
     # Activates a NM connection profile
     activate_nm_conn() {
       local conn="$1"
-      for i in {1..10}; do
-        echo "Attempt $i to bring up connection $conn"
-        nmcli conn up "$conn" && s=0 && break || s=$?
-        sleep 5
-      done
-      if [ $s -eq 0 ]; then
-        echo "Brought up connection $conn successfully"
+      local active_state="$(nmcli -g GENERAL.STATE conn show $conn)"
+      if [ "$active_state" != "activated" ]; then
+        for i in {1..10}; do
+          echo "Attempt $i to bring up connection $conn"
+          nmcli conn up "$conn" && s=0 && break || s=$?
+          sleep 5
+        done
+        if [ $s -eq 0 ]; then
+          echo "Brought up connection $conn successfully"
+        else
+          echo "ERROR: Cannot bring up connection $conn after $i attempts"
+          return $s
+        fi
       else
-        echo "ERROR: Cannot bring up connection $conn after $i attempts"
+        echo "Connection $conn already activated"
       fi
-      return $s
+      nmcli c mod "$conn" connection.autoconnect yes
+    }
+
+    # Accepts parameters $bridge_interface (e.g. ovs-port-phys0)
+    # Returns the physical interface name if $bridge_interface exists, "" otherwise
+    get_bridge_physical_interface() {
+      local bridge_interface="$1"
+      local physical_interface=""
+      physical_interface=$(nmcli -g connection.interface-name conn show "${bridge_interface}" 2>/dev/null || echo "")
+      echo "${physical_interface}"
     }
 
     # Used to print network state
@@ -528,11 +551,11 @@ contents:
 
       # Remove bridges created by openshift-sdn
       ovs-vsctl --timeout=30 --if-exists del-br br0
-      
-      # Recycle NM connections
-      reload_nm
 
       # Make sure everything is activated
+      for connection in $(nmcli -g NAME c | grep -- "$MANAGED_NM_CONN_SUFFIX"); do
+        activate_nm_conn "$connection"
+      done
       activate_nm_conn ovs-if-phys0
       activate_nm_conn ovs-if-br-ex
     elif [ "$1" == "OpenShiftSDN" ]; then
