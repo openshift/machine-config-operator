@@ -317,11 +317,6 @@ func TestKernelArgumentsFailure(t *testing.T) {
 	// Undo our hack on the node
 	helpers.ExecCmdOnNode(t, cs, infraNode, "chroot", "/rootfs", "/bin/sh", "-c", "mount -o remount,rw /boot; chattr -i /boot")
 
-	// Wait for the mcp to finish
-	if err := helpers.WaitForPoolComplete(t, cs, "infra", renderedConfig); err != nil {
-		t.Fatal(err)
-	}
-
 	// Delete the MC
 	if err := cs.MachineConfigs().Delete(context.TODO(), kargMc.Name, metav1.DeleteOptions{}); err != nil {
 		t.Error(err)
