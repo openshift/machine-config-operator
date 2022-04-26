@@ -387,8 +387,8 @@ contents:
       nmcli connection reload
       nmcli network on
       
-      # restart NetworkManager so that we can wait on `nm-online -s`
-      systemctl restart NetworkManager
+      # Ensure that new state is loaded
+      systemctl reload NetworkManager
 
       # Wait until all profiles auto-connect
       echo "Waiting for profiles to activate..."
