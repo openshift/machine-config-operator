@@ -93,13 +93,63 @@ spec:
             severity: warning
           annotations:
             message: "System memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 95% of the reservation. Reserved memory ensures system processes can function even when the node is fully allocated and protects against workload out of memory events impacting the proper functioning of the node. The default reservation is expected to be sufficient for most configurations and should be increased (https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-managing.html) when running nodes with high numbers of pods (either due to rate of change or at steady state)."
-    - name: master-nodes-high-memory-usage
+    - name: high-overall-control-plane-memory
       rules:
-        - alert: MasterNodesHighMemoryUsage
+        - alert: HighOverallControlPlaneMemory
           expr: |
-            ((sum(node_memory_MemTotal_bytes AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )) - sum(node_memory_MemFree_bytes + node_memory_Buffers_bytes + node_memory_Cached_bytes AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" ))) / sum(node_memory_MemTotal_bytes AND on (instance) label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )) * 100) > 90
-          for: 15m
+            (
+              1
+              -
+              sum (
+                node_memory_MemFree_bytes
+                + node_memory_Buffers_bytes
+                + node_memory_Cached_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              ) / sum (
+                node_memory_MemTotal_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              )
+            ) * 100 > 60
+          for: 1h
           labels:
             severity: warning
           annotations:
-            message: "Memory usage of {{ $value | humanize }} on {{ $labels.node }} exceeds 90%. Master nodes starved of memory could result in degraded performance of the control plane."
+            summary: >-
+              Memory utilization across all control plane nodes is high, and could impact responsiveness and stability.
+            description: >-
+              Given three control plane nodes, the overall memory utilization may only be about 2/3 of all available capacity.
+              This is because if a single control plane node fails, the kube-apiserver and etcd my be slow to respond.
+              To fix this, increase memory of the control plane nodes.
+    - name: extremely-high-individual-control-plane-memory
+      rules:
+        - alert: ExtremelyHighIndividualControlPlaneMemory
+          expr: |
+            (
+              1
+              -
+              sum by (instance) (
+                node_memory_MemFree_bytes
+                + node_memory_Buffers_bytes
+                + node_memory_Cached_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              ) / sum by (instance) (
+                node_memory_MemTotal_bytes
+                AND on (instance)
+                label_replace( kube_node_role{role="master"}, "instance", "$1", "node", "(.+)" )
+              )
+            ) * 100 > 90
+          for: 45m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              Extreme memory utilization per node within control plane nodes is extremely high, and could impact responsiveness and stability.
+            description: >-
+              The memory utilization per instance within control plane nodes influence the stability, and responsiveness of the cluster.
+              This can lead to cluster instability and slow responses from kube-apiserver or failing requests specially on etcd.
+              Moreover, OOM kill is expected which negatively influences the pod scheduling.
+              If this happens on container level, the descheduler will not be able to detect it, as it works on the pod level.
+              To fix this, increase memory of the affected node of control plane nodes.
