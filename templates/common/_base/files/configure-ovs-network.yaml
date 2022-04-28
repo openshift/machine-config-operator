@@ -553,6 +553,40 @@ contents:
       echo "${iface}"
     }
 
+    # set_nodenet_override verifies if there is a default route on br-ex
+    # for the given address family. If there is, it will choose the first global
+    # scope IP address that it can find on that interface and it will tell kubelet
+    # to use that IP address. If there is no valid default route or valid IP address
+    # for the preferred address family, try the same with the alternative address family.
+    set_nodenet_override(){
+      # We are on a baremetal system if nodeip-configuration is enabled
+      if [ "$(systemctl is-enabled nodeip-configuration 2> /dev/null)" == "enabled" ]; then
+        local primary_af=inet
+        local secondary_af=inet6
+        local def_route=""
+        local ip_address=""
+
+        {{if eq .IPFamilies "IPv6" -}}
+        primary_af=inet6
+        secondary_af=inet4
+        {{end -}}
+        for af in "${primary_af}" "${secondary_af}"; do
+          def_route=$(ip -f "${af}" route show default dev br-ex)
+          if [ "${def_route}" == "" ]; then
+            continue
+          fi
+          # pick the first global scope IP address (exclude IPv6 link local)
+          ip_address=$(ip -j a show dev br-ex | jq -r '.[0].addr_info | map(select(.family == "'"${af}"'")) | map(select(.scope == "global"))[0].local')
+          if [ "${ip_address}" != "" ] && [ "${ip_address}" != "null" ]; then
+            echo '[Service]' |> /etc/systemd/system/kubelet.service.d/98-nodenet-override.conf
+            echo 'Environment="KUBELET_NODE_IP='"${ip_address}"'"' >> /etc/systemd/system/kubelet.service.d/98-nodenet-override.conf
+            systemctl daemon-reload
+            return
+          fi
+        done
+      fi
+    }
+
     # Used to print network state
     print_state() {
       echo "Current device, connection, interface and routing state:"
@@ -710,6 +744,8 @@ contents:
         activate_nm_conn ovs-if-phys1
         activate_nm_conn ovs-if-br-ex1
       fi
+
+      set_nodenet_override
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm
