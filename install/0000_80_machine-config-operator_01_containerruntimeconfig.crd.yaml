@@ -75,7 +75,7 @@ spec:
                   overlaySize:
                     description: 'overlaySize specifies the maximum size of a container
                       image. This flag can be used to set quota on the size of container
-                      images. (default: 10GB)'
+                      images.'
                     type: string
                   pidsLimit:
                     description: pidsLimit specifies the maximum number of processes
