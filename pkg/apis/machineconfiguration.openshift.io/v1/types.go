@@ -471,7 +471,7 @@ type ContainerRuntimeConfiguration struct {
 	LogSizeMax resource.Quantity `json:"logSizeMax,omitempty"`
 
 	// overlaySize specifies the maximum size of a container image.
-	// This flag can be used to set quota on the size of container images. (default: 10GB)
+	// This flag can be used to set quota on the size of container images.
 	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
 }
 
