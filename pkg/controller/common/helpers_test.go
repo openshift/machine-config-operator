@@ -7,6 +7,7 @@ import (
 
 	"github.com/clarketm/json"
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
+	ign3 "github.com/coreos/ignition/v2/config/v3_2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/stretchr/testify/assert"
@@ -450,12 +451,35 @@ func TestRemoveIgnDuplicateFilesAndUnits(t *testing.T) {
 	assert.Equal(t, expectedIgn2Config, convertedIgn2Config)
 }
 
+// TestIgnitionMergeCompressed tests https://github.com/coreos/butane/issues/332
+func TestIgnitionMergeCompressed(t *testing.T) {
+	testIgn3Config := ign3types.Config{}
+	testIgn3Config.Ignition.Version = "3.2.0"
+	mode := 420
+	testfiledata := "data:;base64,H4sIAAAAAAAAA0vLz+cCAKhlMn4EAAAA"
+	compression := "gzip"
+	tempFile := ign3types.File{Node: ign3types.Node{Path: "/etc/testfileconfig"},
+		FileEmbedded1: ign3types.FileEmbedded1{Contents: ign3types.Resource{Source: &testfiledata, Compression: &compression}, Mode: &mode}}
+	testIgn3Config.Storage.Files = append(testIgn3Config.Storage.Files, tempFile)
+
+	testIgn3Config2 := ign3types.Config{}
+	testIgn3Config2.Ignition.Version = "3.2.0"
+	testIgn3Config2.Storage.Files = append(testIgn3Config2.Storage.Files, NewIgnFile("/etc/testfileconfig", "hello world"))
+
+	merged := ign3.Merge(testIgn3Config, testIgn3Config2)
+	assert.NotNil(t, merged)
+	mergedFile := merged.Storage.Files[0]
+	contents, err := DecodeIgnitionFileContents(mergedFile.Contents.Source, mergedFile.Contents.Compression)
+	require.NoError(t, err)
+	assert.Equal(t, string(contents), "hello world")
+}
+
 func TestCalculateConfigFileDiffs(t *testing.T) {
 	var testIgn3ConfigOld ign3types.Config
 	var testIgn3ConfigNew ign3types.Config
 
-	oldTempFile := helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "oldcertificates")
-	newTempFile := helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "newcertificates")
+	oldTempFile := NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "oldcertificates")
+	newTempFile := NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "newcertificates")
 
 	// Make an "old" config with the existing file in it
 	testIgn3ConfigOld.Ignition.Version = "3.2.0"

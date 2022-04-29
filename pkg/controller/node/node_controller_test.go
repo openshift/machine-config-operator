@@ -959,8 +959,8 @@ func TestAlertOnPausedKubeletCA(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v1")
 
 	mcfiles := []ign3types.File{
-		helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", TestKubeletCABundle),
-		helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "newcertificates"),
+		ctrlcommon.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", TestKubeletCABundle),
+		ctrlcommon.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "newcertificates"),
 	}
 
 	mcs := []*mcfgv1.MachineConfig{
