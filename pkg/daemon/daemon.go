@@ -1759,6 +1759,40 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	return dn.update(currentConfig, desiredConfig)
 }
 
+// validateKernelArguments checks that the current boot has all arguments specified
+// in the target machineconfig.
+func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineConfig) error {
+	rpmostreeKargsBytes, err := runGetOut("rpm-ostree", "kargs")
+	if err != nil {
+		return err
+	}
+	rpmostreeKargs := strings.TrimSpace(string(rpmostreeKargsBytes))
+	foundArgsArray := strings.Split(rpmostreeKargs, " ")
+	foundArgs := make(map[string]bool)
+	for _, arg := range foundArgsArray {
+		foundArgs[arg] = true
+	}
+	expected := parseKernelArguments(currentConfig.Spec.KernelArguments)
+	missing := []string{}
+	for _, karg := range expected {
+		if _, ok := foundArgs[karg]; !ok {
+			missing = append(missing, karg)
+		}
+	}
+	if len(missing) > 0 {
+		cmdlinebytes, err := ioutil.ReadFile(CmdLineFile)
+		if err != nil {
+			glog.Warningf("Failed to read %s: %v", CmdLineFile, err)
+		} else {
+			glog.Infof("Booted command line: %s", string(cmdlinebytes))
+		}
+		glog.Infof("Current ostree kargs: %s", rpmostreeKargs)
+		glog.Infof("Expected MachineConfig kargs: %v", expected)
+		return fmt.Errorf("Missing expected kernel arguments: %v", missing)
+	}
+	return nil
+}
+
 // validateOnDiskState compares the on-disk state against what a configuration
 // specifies.  If for example an admin ssh'd into a node, or another operator
 // is stomping on our files, we want to highlight that and mark the system
@@ -1768,6 +1802,13 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if !osMatch {
 		return fmt.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+	}
+
+	if dn.os.IsCoreOSVariant() {
+		coreOSDaemon := CoreOSDaemon{dn}
+		if err := coreOSDaemon.validateKernelArguments(currentConfig); err != nil {
+			return err
+		}
 	}
 
 	return validateOnDiskState(currentConfig, pathSystemd)
