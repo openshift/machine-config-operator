@@ -45,6 +45,11 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
+// strToPtr converts the input string to a pointer to itself
+func strToPtr(s string) *string {
+	return &s
+}
+
 // MergeMachineConfigs combines multiple machineconfig objects into one object.
 // It sorts all the configs in increasing order of their name.
 // It uses the Ignition config from first object as base and appends all the rest.
@@ -763,6 +768,48 @@ func CalculateConfigFileDiffs(oldIgnConfig, newIgnConfig *ign3types.Config) []st
 		}
 	}
 	return diffFileSet
+}
+
+// NewIgnFile returns a simple ignition3 file from just path and file contents.
+// It also ensures the compression field is set to the empty string, which is
+// currently required for ensuring child configs that may be merged layer
+// know that the input is not compressed.
+//
+// Note the default Ignition file mode is 0644, owned by root/root.
+func NewIgnFile(path, contents string) ign3types.File {
+	return NewIgnFileBytes(path, []byte(contents))
+}
+
+// NewIgnFileBytes is like NewIgnFile, but accepts binary data
+func NewIgnFileBytes(path string, contents []byte) ign3types.File {
+	return ign3types.File{
+		Node: ign3types.Node{
+			Path: path,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source:      strToPtr(dataurl.EncodeBytes(contents)),
+				Compression: strToPtr(""),
+			},
+		},
+	}
+}
+
+// NewIgnFileBytesOverwriting is like NewIgnFileBytes, but overwrites existing files by default
+func NewIgnFileBytesOverwriting(path string, contents []byte) ign3types.File {
+	overwrite := true
+	return ign3types.File{
+		Node: ign3types.Node{
+			Path:      path,
+			Overwrite: &overwrite,
+		},
+		FileEmbedded1: ign3types.FileEmbedded1{
+			Contents: ign3types.Resource{
+				Source:      strToPtr(dataurl.EncodeBytes(contents)),
+				Compression: strToPtr(""), // See https://github.com/coreos/butane/issues/332
+			},
+		},
+	}
 }
 
 // GetIgnitionFileDataByPath retrieves the file data for a specified path from a given ignition config

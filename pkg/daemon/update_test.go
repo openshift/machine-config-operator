@@ -571,18 +571,18 @@ func TestDropinCheck(t *testing.T) {
 // i.e. whether we need to reboot and what actions need to be taken if no reboot is needed
 func TestCalculatePostConfigChangeAction(t *testing.T) {
 	files := map[string]ign3types.File{
-		"pullsecret1":     helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
-		"pullsecret2":     helpers.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
-		"registries1":     helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 1\n"),
-		"registries2":     helpers.NewIgnFile("/etc/containers/registries.conf", "registries content 2\n"),
-		"randomfile1":     helpers.NewIgnFile("/etc/random-reboot-file", "test\n"),
-		"randomfile2":     helpers.NewIgnFile("/etc/random-reboot-file", "test 2\n"),
-		"kubeletCA1":      helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
-		"kubeletCA2":      helpers.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
-		"policy1":         helpers.NewIgnFile("/etc/containers/policy.json", "policy1"),
-		"policy2":         helpers.NewIgnFile("/etc/containers/policy.json", "policy2"),
-		"containers-gpg1": helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
-		"containers-gpg2": helpers.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
+		"pullsecret1":     ctrlcommon.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 1\n"),
+		"pullsecret2":     ctrlcommon.NewIgnFile("/var/lib/kubelet/config.json", "kubelet conf 2\n"),
+		"registries1":     ctrlcommon.NewIgnFile("/etc/containers/registries.conf", "registries content 1\n"),
+		"registries2":     ctrlcommon.NewIgnFile("/etc/containers/registries.conf", "registries content 2\n"),
+		"randomfile1":     ctrlcommon.NewIgnFile("/etc/random-reboot-file", "test\n"),
+		"randomfile2":     ctrlcommon.NewIgnFile("/etc/random-reboot-file", "test 2\n"),
+		"kubeletCA1":      ctrlcommon.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA1\n"),
+		"kubeletCA2":      ctrlcommon.NewIgnFile("/etc/kubernetes/kubelet-ca.crt", "kubeletCA2\n"),
+		"policy1":         ctrlcommon.NewIgnFile("/etc/containers/policy.json", "policy1"),
+		"policy2":         ctrlcommon.NewIgnFile("/etc/containers/policy.json", "policy2"),
+		"containers-gpg1": ctrlcommon.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg1"),
+		"containers-gpg2": ctrlcommon.NewIgnFile("/etc/machine-config-daemon/no-reboot/containers-gpg.pub", "containers-gpg2"),
 	}
 
 	tests := []struct {
