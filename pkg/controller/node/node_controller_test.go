@@ -1082,30 +1082,52 @@ func TestShouldDoNothing(t *testing.T) {
 }
 
 func TestSortNodeList(t *testing.T) {
-	old_node_nozone := newNode("node-4", "v1", "v1")
+	node_zoneQQQ := newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"})
+	node_zoneQQQ.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
+
+	older_node_zoneRRR := newNodeWithLabel("node-2", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"})
+	older_node_zoneRRR.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
+
+	newer_node_zoneRRR := newNodeWithLabel("node-3", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"})
+	newer_node_zoneRRR.CreationTimestamp = metav1.NewTime(time.Unix(100, 30))
+
+	older_node_zoneZZZ := newNodeWithLabel("node-4", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
+	older_node_zoneZZZ.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
+
+	newer_node_zoneZZZ := newNodeWithLabel("node-5", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
+	newer_node_zoneZZZ.CreationTimestamp = metav1.NewTime(time.Unix(100, 30))
+
+	newest_node_zoneZZZ := newNodeWithLabel("node-6", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"})
+	newest_node_zoneZZZ.CreationTimestamp = metav1.NewTime(time.Unix(1500, 30))
+
+	old_node_nozone := newNode("node-7", "v1", "v1")
 	old_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(0, 42))
 
-	newer_node_nozone := newNode("node-5", "v1", "v1")
+	newer_node_nozone := newNode("node-8", "v1", "v1")
 	newer_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(200, 30))
 
-	newest_node_nozone := newNode("node-6", "v1", "v1")
+	newest_node_nozone := newNode("node-9", "v1", "v1")
 	newest_node_nozone.CreationTimestamp = metav1.NewTime(time.Unix(900, 30))
 
 	nodes := []*corev1.Node{
-		newNodeWithLabel("node-3", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
+		newer_node_zoneZZZ,
+		newest_node_zoneZZZ,
+		older_node_zoneZZZ,
+		newer_node_zoneRRR,
 		newer_node_nozone,
-		newNodeWithLabel("node-2", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
+		older_node_zoneRRR,
 		newest_node_nozone,
 		old_node_nozone,
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"}),
+		node_zoneQQQ,
 	}
 
 	sorted_nodes := []*corev1.Node{
-		newNodeWithLabel("node-0", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "QQQ"}),
-		newNodeWithLabel("node-1", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
-		newNodeWithLabel("node-2", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "RRR"}),
-		newNodeWithLabel("node-3", "v1", "v1", map[string]string{"topology.kubernetes.io/zone": "ZZZ"}),
+		node_zoneQQQ,
+		older_node_zoneRRR,
+		newer_node_zoneRRR,
+		older_node_zoneZZZ,
+		newer_node_zoneZZZ,
+		newest_node_zoneZZZ,
 		old_node_nozone,
 		newer_node_nozone,
 		newest_node_nozone,
