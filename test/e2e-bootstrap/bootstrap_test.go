@@ -47,6 +47,8 @@ const (
 	componentNamespace       = "openshift-machine-config-operator"
 	pollInterval             = 200 * time.Millisecond
 	pollTimeout              = 30 * time.Second
+	seccompMCMaster          = "99-master-generated-crio-seccomp-use-default"
+	seccompMCWorker          = "99-worker-generated-crio-seccomp-use-default"
 )
 
 var (
@@ -89,6 +91,13 @@ func TestE2EBootstrap(t *testing.T) {
 
 	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
+			Name: componentNamespace,
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: openshiftConfigNamespace,
 		},
 	}, metav1.CreateOptions{})
@@ -115,8 +124,8 @@ metadata:
 spec:
   featureSet: TechPreviewNoUpgrade`),
 			},
-			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
-			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-crio-seccomp-use-default", "99-master-generated-registries", "98-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-crio-seccomp-use-default", "99-worker-generated-registries", "98-worker-generated-kubelet"},
 		},
 		{
 			name: "With a featuregate manifest and master kubelet config manifest",
@@ -198,6 +207,19 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			objs := append([]runtime.Object{}, baseTestManifests...)
 			objs = append(objs, loadRawManifests(t, tc.manifests)...)
+
+			seccompRawIgnition := []byte(`{"ignition":{"version":"3.2.0"},"storage":{"files":[{"overwrite":true,"path":"/etc/crio/crio.conf.d/01-mc-seccompUseDefault","contents":{"source":"data:text/plain,%5Bcrio%5D%0A%20%20%5Bcrio.runtime%5D%0A%20%20%20%20seccomp_use_default_when_empty%20%3D%20false%0A"},"mode":420}]}}`)
+			masterSeccompMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("master", seccompMCMaster, seccompRawIgnition)
+			require.NoError(t, err)
+
+			workerSeccompMC, err := ctrlcommon.MachineConfigFromRawIgnConfig("worker", seccompMCWorker, seccompRawIgnition)
+			require.NoError(t, err)
+
+			_, err = clientSet.MachineConfigs().Create(ctx, masterSeccompMC, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			_, err = clientSet.MachineConfigs().Create(ctx, workerSeccompMC, metav1.CreateOptions{})
+			require.NoError(t, err)
 
 			fixture := newTestFixture(t, cfg, objs)
 			// Defer stop after cleanup so that the cleanup happens after the stop (defer unwrapping order)
@@ -330,6 +352,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 		),
 		containerruntimeconfig.New(
 			templatesDir,
+			componentNamespace,
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ContainerRuntimeConfigs(),
@@ -495,7 +518,8 @@ func checkCleanEnvironment(t *testing.T, clientSet *framework.ClientSet) {
 
 	mcList, err := clientSet.MachineConfigs().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
-	require.Len(t, mcList.Items, 0)
+	// 2 99-poolname-generated-crio-seccomp-use-default mc should exist
+	require.Len(t, mcList.Items, 2)
 	// ######################################
 	// END: machineconfiguration.openshift.io
 	// ######################################
