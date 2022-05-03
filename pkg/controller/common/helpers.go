@@ -798,7 +798,7 @@ func NewIgnFileBytes(path string, contents []byte) ign3types.File {
 		FileEmbedded1: ign3types.FileEmbedded1{
 			Contents: ign3types.Resource{
 				Source:      strToPtr(dataurl.EncodeBytes(contents)),
-				Compression: strToPtr(""),
+				Compression: strToPtr(""), // See https://github.com/coreos/butane/issues/332
 			},
 		},
 	}
@@ -807,18 +807,9 @@ func NewIgnFileBytes(path string, contents []byte) ign3types.File {
 // NewIgnFileBytesOverwriting is like NewIgnFileBytes, but overwrites existing files by default
 func NewIgnFileBytesOverwriting(path string, contents []byte) ign3types.File {
 	overwrite := true
-	return ign3types.File{
-		Node: ign3types.Node{
-			Path:      path,
-			Overwrite: &overwrite,
-		},
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Contents: ign3types.Resource{
-				Source:      strToPtr(dataurl.EncodeBytes(contents)),
-				Compression: strToPtr(""), // See https://github.com/coreos/butane/issues/332
-			},
-		},
-	}
+	r := NewIgnFileBytes(path, contents)
+	r.Node.Overwrite = &overwrite
+	return r
 }
 
 // GetIgnitionFileDataByPath retrieves the file data for a specified path from a given ignition config
