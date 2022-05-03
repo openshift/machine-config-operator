@@ -20,7 +20,6 @@ import (
 	apicfgv1 "github.com/openshift/api/config/v1"
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/runtime-utils/pkg/registries"
-	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -108,29 +107,13 @@ type updateConfigFunc func(data []byte, internal *mcfgv1.ContainerRuntimeConfigu
 // updated data.
 func createNewIgnition(configs []generatedConfigFile) ign3types.Config {
 	tempIgnConfig := ctrlcommon.NewIgnConfig()
-	mode := 0644
-	overwrite := true
 	// Create ignitions
 	for _, ignConf := range configs {
 		// If the file is not included, the data will be nil so skip over
 		if ignConf.data == nil {
 			continue
 		}
-		configdu := dataurl.New(ignConf.data, "text/plain")
-		configdu.Encoding = dataurl.EncodingASCII
-		configduStr := configdu.String()
-		configTempFile := ign3types.File{
-			Node: ign3types.Node{
-				Path:      ignConf.filePath,
-				Overwrite: &overwrite,
-			},
-			FileEmbedded1: ign3types.FileEmbedded1{
-				Mode: &mode,
-				Contents: ign3types.Resource{
-					Source: &(configduStr),
-				},
-			},
-		}
+		configTempFile := ctrlcommon.NewIgnFileBytesOverwriting(ignConf.filePath, ignConf.data)
 		tempIgnConfig.Storage.Files = append(tempIgnConfig.Storage.Files, configTempFile)
 	}
 

@@ -11,7 +11,6 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
-	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -50,48 +49,14 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	}
 
 	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\n", autoNodeSizing, systemReservedMemory, systemReservedCPU)
-
-	mode := 0644
-	overwrite := true
-	du := dataurl.New([]byte(config), "text/plain")
-	du.Encoding = dataurl.EncodingASCII
-	duStr := du.String()
-
-	return &ign3types.File{
-		Node: ign3types.Node{
-			Path:      "/etc/node-sizing-enabled.env",
-			Overwrite: &overwrite,
-		},
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Mode: &mode,
-			Contents: ign3types.Resource{
-				Source: &(duStr),
-			},
-		},
-	}
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/node-sizing-enabled.env", []byte(config))
+	return &r
 }
 
 func createNewKubeletLogLevelIgnition(level int32) *ign3types.File {
 	config := fmt.Sprintf("[Service]\nEnvironment=\"KUBELET_LOG_LEVEL=%d\"\n", level)
-
-	mode := 0644
-	overwrite := true
-	du := dataurl.New([]byte(config), "text/plain")
-	du.Encoding = dataurl.EncodingASCII
-	duStr := du.String()
-
-	return &ign3types.File{
-		Node: ign3types.Node{
-			Path:      "/etc/systemd/system/kubelet.service.d/20-logging.conf",
-			Overwrite: &overwrite,
-		},
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Mode: &mode,
-			Contents: ign3types.Resource{
-				Source: &(duStr),
-			},
-		},
-	}
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/systemd/system/kubelet.service.d/20-logging.conf", []byte(config))
+	return &r
 }
 
 func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
@@ -99,24 +64,8 @@ func createNewKubeletIgnition(jsonConfig []byte) *ign3types.File {
 	buf := new(bytes.Buffer)
 	json.Indent(buf, jsonConfig, "", "  ")
 
-	mode := 0644
-	overwrite := true
-	du := dataurl.New(buf.Bytes(), "text/plain")
-	du.Encoding = dataurl.EncodingASCII
-	duStr := du.String()
-
-	return &ign3types.File{
-		Node: ign3types.Node{
-			Path:      "/etc/kubernetes/kubelet.conf",
-			Overwrite: &overwrite,
-		},
-		FileEmbedded1: ign3types.FileEmbedded1{
-			Mode: &mode,
-			Contents: ign3types.Resource{
-				Source: &(duStr),
-			},
-		},
-	}
+	r := ctrlcommon.NewIgnFileBytesOverwriting("/etc/kubernetes/kubelet.conf", buf.Bytes())
+	return &r
 }
 
 func createNewDefaultFeatureGate() *osev1.FeatureGate {
