@@ -595,6 +595,9 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		return err
 	}
 
+	// At this point, we write the now expected to be "current" config to /etc.
+	// When we reboot, we'll find this file and validate that we're in this state,
+	// and that completes an update.
 	if err := dn.storeCurrentConfigOnDisk(newConfig); err != nil {
 		return err
 	}
