@@ -38,18 +38,6 @@ var (
 	testKubeConfig = fmt.Sprintf("%s/kubeconfig", testDir)
 )
 
-func TestStringDecode(t *testing.T) {
-	inp := "data:,Hello%2C%20world!"
-	exp := "Hello, world!"
-	dec, err := getDecodedContent(inp)
-	if err != nil {
-		t.Errorf("expected error to be nil, received: %v", err)
-	}
-	if exp != dec {
-		t.Errorf("string decode failed. exp: %s, got: %s", exp, dec)
-	}
-}
-
 func TestStringEncode(t *testing.T) {
 	inp := "Hello, world!"
 	exp := "data:,Hello%2C%20world!"
@@ -315,7 +303,7 @@ func TestClusterServer(t *testing.T) {
 		}
 		foundEncapsulated = true
 		encapMc := new(mcfgv1.MachineConfig)
-		contents, err := getDecodedContent(*f.Contents.Source)
+		contents, err := ctrlcommon.DecodeIgnitionFileContents(f.Contents.Source, f.Contents.Compression)
 		assert.Nil(t, err)
 		err = yaml.Unmarshal([]byte(contents), encapMc)
 		assert.Nil(t, err)

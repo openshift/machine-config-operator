@@ -178,15 +178,6 @@ func appendFileToIgnition(conf *igntypes.Config, outPath, contents string) error
 	return nil
 }
 
-func getDecodedContent(inp string) (string, error) {
-	d, err := dataurl.DecodeString(inp)
-	if err != nil {
-		return "", err
-	}
-
-	return string(d.Data), nil
-}
-
 func getEncodedContent(inp string) string {
 	return (&url.URL{
 		Scheme: "data",
