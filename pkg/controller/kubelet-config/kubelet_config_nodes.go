@@ -12,6 +12,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/version"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -120,17 +121,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		// checking if the Node spec is empty and accordingly returning from here.
 		if reflect.DeepEqual(nodeConfig.Spec, osev1.NodeSpec{}) {
 			glog.V(2).Info("empty Node resource found")
-			ctrl.updateNodeConfigStatus(pool, nodeConfig)
 			return nil
-		}
-		// updating the nodeConfig status based on the machineconfigpool status
-		err = ctrl.updateNodeConfigStatus(pool, nodeConfig)
-		if err != nil {
-			return err
-		}
-		// restricting the sync if the nodeConfig status condition is still Progressing.
-		if !isReadyforUpdate(nodeConfig) {
-			return fmt.Errorf("unable to modify the kubelet configuration on the node, node condition status not ready")
 		}
 		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
 		if err != nil {
@@ -169,12 +160,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			return fmt.Errorf("Could not Create/Update MachineConfig, error: %w", err)
 		}
 		glog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
-
-		// updating the nodeConfig status based on the machineconfigpool status
-		err = ctrl.updateNodeConfigStatus(pool, nodeConfig)
-		if err != nil {
-			return err
-		}
 	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
@@ -214,8 +199,8 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 	}
 	if newNode.Name != ctrlcommon.ClusterNodeInstanceName {
 		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", newNode.Name, newNode.Name, ctrlcommon.ClusterNodeInstanceName)
+		ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", message)
 		glog.V(2).Infof(message)
-		ctrl.updateNodeConfigDegradedStatus(newNode, message, "UpdateProhibited")
 		return
 	}
 	if !reflect.DeepEqual(oldNode.Spec, newNode.Spec) {
@@ -224,8 +209,8 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 		// Restricting the request for now until this process is automated in future.
 		if (oldNode.Spec.WorkerLatencyProfile == osev1.DefaultUpdateDefaultReaction && newNode.Spec.WorkerLatencyProfile == osev1.LowUpdateSlowReaction) || (oldNode.Spec.WorkerLatencyProfile == osev1.LowUpdateSlowReaction && newNode.Spec.WorkerLatencyProfile == osev1.DefaultUpdateDefaultReaction) {
 			message := fmt.Sprintf("Skipping the Update Node event, name: %s, transition not allowed from old WorkerLatencyProfile: %s to new WorkerLatencyProfile: %s", newNode.Name, oldNode.Spec.WorkerLatencyProfile, newNode.Spec.WorkerLatencyProfile)
+			ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", message)
 			glog.Infof(message)
-			ctrl.updateNodeConfigDegradedStatus(newNode, message, "UpdateSkipped")
 			return
 		}
 		glog.V(4).Infof("Updating the node config resource, name: %s", newNode.Name)
@@ -242,7 +227,7 @@ func (ctrl *Controller) addNodeConfig(obj interface{}) {
 	if nodeConfig.Name != ctrlcommon.ClusterNodeInstanceName {
 		message := fmt.Sprintf("The node.config.openshift.io \"%v\" is invalid: metadata.name Invalid value: \"%v\" : must be \"%v\"", nodeConfig.Name, nodeConfig.Name, ctrlcommon.ClusterNodeInstanceName)
 		glog.V(2).Infof(message)
-		ctrl.updateNodeConfigDegradedStatus(nodeConfig, message, "UpdateProhibited")
+		ctrl.eventRecorder.Eventf(nodeConfig, corev1.EventTypeNormal, "ActionProhibited", message)
 		return
 	}
 	glog.V(4).Infof("Adding the node config resource, name: %s", nodeConfig.Name)
@@ -264,113 +249,6 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 		}
 	}
 	glog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
-}
-
-// isReadyforUpdate returns a boolean to indicate if the node config is ready for update.
-// The node config is considered not-ready if any status condition of kubelet rollout is
-// either still in progress or failed. Otherwise, the node config is ready for the update.
-func isReadyforUpdate(nodeConfig *osev1.Node) bool {
-	// if the node config resource is empty, it is ready for the update
-	// to hold the new configuration update request.
-	if nodeConfig == nil {
-		return true
-	}
-	if len(nodeConfig.Status.WorkerLatencyProfileStatus.Conditions) > 0 {
-		for _, condition := range nodeConfig.Status.WorkerLatencyProfileStatus.Conditions {
-			if condition.Type == osev1.KubeletProgressing || condition.Type == osev1.KubeletDegraded {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// updateNodeConfigDegradedStatus updates the degraded status of the node config based on the message and reason
-func (ctrl *Controller) updateNodeConfigDegradedStatus(nodeConfig *osev1.Node, message, reason string) error {
-	if nodeConfig == nil {
-		return fmt.Errorf("unable to update the node config status")
-	}
-	var nodeConfigCondition metav1.Condition
-
-	nodeConfigCondition.Type = osev1.KubeletDegraded
-	nodeConfigCondition.Status = metav1.ConditionUnknown
-	nodeConfigCondition.LastTransitionTime = metav1.Now()
-	nodeConfigCondition.Reason = reason
-	nodeConfigCondition.Message = message
-	return ctrl.updateMCOStatus(nodeConfig, nodeConfigCondition)
-}
-
-// updateNodeConfigStatus updates the status of the node config object based on the machineconfigpool status
-func (ctrl *Controller) updateNodeConfigStatus(pool *mcfgv1.MachineConfigPool, nodeConfig *osev1.Node) error {
-	if pool == nil || nodeConfig == nil {
-		return fmt.Errorf("unable to update the nodeConfig status, incomplete data, machineConfigpool : %v, nodeConfig: %v", pool, nodeConfig)
-	}
-	var nodeConfigCondition metav1.Condition
-
-	nodeConfigCondition.Type = osev1.KubeletComplete
-	nodeConfigCondition.LastTransitionTime = metav1.Now()
-	nodeConfigCondition.Status = metav1.ConditionUnknown
-	nodeConfigCondition.Reason = "ConditionUnknown"
-	nodeConfigCondition.Message = "Condition Unknown"
-
-	switch {
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded):
-		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolRenderDegraded)
-		nodeConfigCondition.Type = osev1.KubeletDegraded
-		nodeConfigCondition.Status = metav1.ConditionStatus(cond.Status)
-		nodeConfigCondition.Reason = "MachineConfigPoolRenderDegraded"
-		nodeConfigCondition.Message = "Machine Config Pool Render Degraded"
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolNodeDegraded):
-		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolNodeDegraded)
-		nodeConfigCondition.Type = osev1.KubeletDegraded
-		nodeConfigCondition.Status = metav1.ConditionStatus(cond.Status)
-		nodeConfigCondition.Reason = "MachineConfigPoolNodeDegraded"
-		nodeConfigCondition.Message = "Machine Config Pool Node Degraded"
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdated):
-		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolUpdated)
-		nodeConfigCondition.Type = osev1.KubeletComplete
-		nodeConfigCondition.Status = metav1.ConditionStatus(cond.Status)
-		nodeConfigCondition.Reason = "MachineConfigPoolUpdated"
-		nodeConfigCondition.Message = "Machine Config Pool Updated"
-	case mcfgv1.IsMachineConfigPoolConditionTrue(pool.Status.Conditions, mcfgv1.MachineConfigPoolUpdating):
-		cond := mcfgv1.GetMachineConfigPoolCondition(pool.Status, mcfgv1.MachineConfigPoolUpdating)
-		nodeConfigCondition.Type = osev1.KubeletProgressing
-		nodeConfigCondition.Status = metav1.ConditionStatus(cond.Status)
-		nodeConfigCondition.Reason = "MachineConfigPoolUpdating"
-		nodeConfigCondition.Message = fmt.Sprintf("%d (ready %d) out of %d nodes are updating to latest configuration %s", pool.Status.UpdatedMachineCount, pool.Status.ReadyMachineCount, pool.Status.MachineCount, pool.Spec.Configuration.Name)
-	}
-	return ctrl.updateMCOStatus(nodeConfig, nodeConfigCondition)
-}
-
-// updateMCOStatus updates the MCO specific status condition present in the node config CR
-func (ctrl *Controller) updateMCOStatus(nodeConfig *osev1.Node, nodeConfigCondition metav1.Condition) error {
-	var (
-		index     int
-		isPresent bool
-	)
-	var kubeletConditionTypes = []string{
-		osev1.KubeletProgressing,
-		osev1.KubeletComplete,
-		osev1.KubeletDegraded,
-	}
-	for index = range nodeConfig.Status.WorkerLatencyProfileStatus.Conditions {
-		for _, conditionType := range kubeletConditionTypes {
-			if nodeConfig.Status.WorkerLatencyProfileStatus.Conditions[index].Type == conditionType {
-				isPresent = true
-				break
-			}
-		}
-		if isPresent {
-			break
-		}
-	}
-	if isPresent {
-		nodeConfig.Status.WorkerLatencyProfileStatus.Conditions[index] = *nodeConfigCondition.DeepCopy()
-	} else {
-		nodeConfig.Status.WorkerLatencyProfileStatus.Conditions = append(nodeConfig.Status.WorkerLatencyProfileStatus.Conditions, nodeConfigCondition)
-	}
-	_, err := ctrl.configClient.ConfigV1().Nodes().UpdateStatus(context.TODO(), nodeConfig, metav1.UpdateOptions{})
-	return err
 }
 
 func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
