@@ -290,7 +290,7 @@ func (dn *Daemon) ClusterConnect(
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-) {
+) error {
 	dn.name = name
 	dn.kubeClient = kubeClient
 
@@ -317,7 +317,11 @@ func (dn *Daemon) ClusterConnect(
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
 
-	dn.nodeWriter = newNodeWriter(dn.name, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister)
+	nw, err := newNodeWriter(dn.name, dn.stopCh)
+	if err != nil {
+		return err
+	}
+	dn.nodeWriter = nw
 	go dn.nodeWriter.Run(dn.stopCh)
 
 	dn.enqueueNode = dn.enqueueDefault
@@ -344,6 +348,8 @@ func (dn *Daemon) ClusterConnect(
 		ErrOut: writer{glog.Error},
 		Ctx:    context.TODO(),
 	}
+
+	return nil
 }
 
 // HypershiftConnect sets up a simplified daemon for Hypershift updates
@@ -375,7 +381,7 @@ func (dn *Daemon) HypershiftConnect(
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNodeHypershift
 
-	nw, err := newNodeWriter(dn.name)
+	nw, err := newNodeWriter(dn.name, dn.stopCh)
 	if err != nil {
 		return err
 	}
