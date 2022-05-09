@@ -297,9 +297,6 @@ func (dn *Daemon) ClusterConnect(
 	dn.name = name
 	dn.kubeClient = kubeClient
 
-	dn.nodeWriter = newNodeWriter()
-	go dn.nodeWriter.Run(dn.stopCh)
-
 	// Other controllers start out with the default controller limiter which retries
 	// in milliseconds; since any change here will involve rebooting the node
 	// we don't need to react in milliseconds.  See also updateDelay above.
@@ -322,6 +319,9 @@ func (dn *Daemon) ClusterConnect(
 	dn.nodeListerSynced = nodeInformer.Informer().HasSynced
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
+
+	dn.nodeWriter = newNodeWriter(dn.name, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister)
+	go dn.nodeWriter.Run(dn.stopCh)
 
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNode
@@ -441,9 +441,9 @@ type unreconcilableErr struct {
 func (dn *Daemon) updateErrorState(err error) {
 	var uErr *unreconcilableErr
 	if errors.As(err, &uErr) {
-		dn.nodeWriter.SetUnreconcilable(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+		dn.nodeWriter.SetUnreconcilable(err)
 	} else {
-		dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+		dn.nodeWriter.SetDegraded(err)
 	}
 }
 
@@ -1037,7 +1037,7 @@ func (dn *Daemon) runLoginMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 }
 
 func (dn *Daemon) applySSHAccessedAnnotation() error {
-	if err := dn.nodeWriter.SetSSHAccessed(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
+	if err := dn.nodeWriter.SetSSHAccessed(); err != nil {
 		return fmt.Errorf("error: cannot apply annotation for SSH access due to: %w", err)
 	}
 	return nil
@@ -1559,7 +1559,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		if dn.recorder != nil {
 			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
 		}
-		if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.pendingConfig.GetName()); err != nil {
+		if err := dn.nodeWriter.SetDone(state.pendingConfig.GetName()); err != nil {
 			return true, fmt.Errorf("error setting node's state to Done: %w", err)
 		}
 		if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
@@ -1592,7 +1592,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		// If we're degraded here, it means we got an error likely on startup and we retried.
 		// If that's the case, clear it out.
 		if state.state == constants.MachineConfigDaemonStateDegraded {
-			if err := dn.nodeWriter.SetDone(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name, state.currentConfig.GetName()); err != nil {
+			if err := dn.nodeWriter.SetDone(state.currentConfig.GetName()); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
 				MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
 				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
@@ -1618,7 +1618,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		// NOTE: This case expects a cluster to exists already.
 		current, desired, err := dn.prepUpdateFromCluster()
 		if err != nil {
-			dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+			dn.nodeWriter.SetDegraded(err)
 			return err
 		}
 		if current == nil || desired == nil {
@@ -1626,7 +1626,7 @@ func (dn *Daemon) runOnceFromMachineConfig(machineConfig mcfgv1.MachineConfig, c
 		}
 		// At this point we have verified we need to update
 		if err := dn.triggerUpdateWithMachineConfig(current, &machineConfig); err != nil {
-			dn.nodeWriter.SetDegraded(err, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name)
+			dn.nodeWriter.SetDegraded(err)
 			return err
 		}
 		return nil
