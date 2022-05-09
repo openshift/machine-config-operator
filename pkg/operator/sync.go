@@ -359,8 +359,6 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 				if infraStatus.PlatformStatus.VSphere.APIServerInternalIP != "" {
 					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIP, securePortStr)
 				}
-			} else {
-				glog.Warning("Warning: PlatformStatus.VSphere should not be nil")
 			}
 		}
 	}
