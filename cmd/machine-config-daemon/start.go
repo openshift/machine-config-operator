@@ -234,7 +234,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
 	// which need to come from the container and not the chroot.
-	dn.ClusterConnect(
+	err = dn.ClusterConnect(
 		startOpts.nodeName,
 		kubeClient,
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
@@ -242,6 +242,9 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		startOpts.kubeletHealthzEnabled,
 		startOpts.kubeletHealthzEndpoint,
 	)
+	if err != nil {
+		glog.Fatalf("Failed to initialize: %v", err)
+	}
 
 	ctx.KubeInformerFactory.Start(stopCh)
 	ctx.InformerFactory.Start(stopCh)
