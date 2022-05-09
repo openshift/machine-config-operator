@@ -3,8 +3,16 @@ package daemon
 import (
 	"fmt"
 
+	"k8s.io/client-go/tools/cache"
+
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -19,6 +27,8 @@ const (
 	machineConfigDaemonSSHAccessAnnotationKey = "machineconfiguration.openshift.io/ssh"
 	// MachineConfigDaemonSSHAccessValue is the annotation value applied when ssh access is detected
 	machineConfigDaemonSSHAccessValue = "accessed"
+
+	nodeWriterKubeconfigPath = "/var/lib/kubelet/kubeconfig"
 )
 
 // message wraps a client and responseChannel
@@ -29,10 +39,12 @@ type message struct {
 
 // clusterNodeWriter is a single writer to Kubernetes to prevent race conditions
 type clusterNodeWriter struct {
-	nodeName string
-	writer   chan message
-	client   corev1client.NodeInterface
-	lister   corev1lister.NodeLister
+	nodeName         string
+	writer           chan message
+	client           corev1client.NodeInterface
+	lister           corev1lister.NodeLister
+	nodeListerSynced cache.InformerSynced
+	kubeClient       kubernetes.Interface
 }
 
 // NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
@@ -46,19 +58,57 @@ type NodeWriter interface {
 	SetAnnotations(annos map[string]string) error
 }
 
+func (nw *clusterNodeWriter) handleNodeWriterEvent(node interface{}) {
+	// TODO - change the daemon to watch this for node events
+	// n := node.(*corev1.Node)
+	// if n.Name != nw.nodeName {
+	// 	return
+	// }
+}
+
 // newNodeWriter Create a new NodeWriter
-func newNodeWriter(nodeName string, client corev1client.NodeInterface, lister corev1lister.NodeLister) NodeWriter {
-	return &clusterNodeWriter{
-		nodeName: nodeName,
-		client:   client,
-		lister:   lister,
-		writer:   make(chan message, defaultWriterQueue),
+func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", nodeWriterKubeconfigPath)
+	if err != nil {
+		return &clusterNodeWriter{}, err
 	}
+	kubeClient, err := kubernetes.NewForConfig(rest.AddUserAgent(config, "machine-config-daemon"))
+	if err != nil {
+		return &clusterNodeWriter{}, err
+	}
+
+	glog.Infof("NodeWriter initialized with credentials from %s", nodeWriterKubeconfigPath)
+	informer := informers.NewSharedInformerFactory(kubeClient, ctrlcommon.DefaultResyncPeriod()())
+	nodeInformer := informer.Core().V1().Nodes()
+	nodeLister := nodeInformer.Lister()
+	nodeListerSynced := nodeInformer.Informer().HasSynced
+
+	nw := &clusterNodeWriter{
+		nodeName:         nodeName,
+		client:           kubeClient.CoreV1().Nodes(),
+		lister:           nodeLister,
+		nodeListerSynced: nodeListerSynced,
+		writer:           make(chan message, defaultWriterQueue),
+		kubeClient:       kubeClient,
+	}
+
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    nw.handleNodeWriterEvent,
+		UpdateFunc: func(oldObj, newObj interface{}) { nw.handleNodeWriterEvent(newObj) },
+	})
+
+	informer.Start(stopCh)
+
+	return nw, nil
 }
 
 // Run reads from the writer channel and sets the node annotation. It will
 // return if the stop channel is closed. Intended to be run via a goroutine.
 func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
+	if !cache.WaitForCacheSync(stop, nw.nodeListerSynced) {
+		glog.Fatal("failed to sync initial listers cache")
+	}
+
 	for {
 		select {
 		case <-stop:
