@@ -32,6 +32,11 @@ func resyncPeriod() func() time.Duration {
 	}
 }
 
+// DefaultResyncPeriod returns a function which generates a random resync period
+func DefaultResyncPeriod() func() time.Duration {
+	return resyncPeriod()
+}
+
 // ControllerContext stores all the informers for a variety of kubernetes objects.
 type ControllerContext struct {
 	ClientBuilder *clients.Builder
