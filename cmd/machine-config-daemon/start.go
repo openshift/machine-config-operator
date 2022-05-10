@@ -207,12 +207,15 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if startOpts.hypershiftDesiredConfigMap != "" {
 		// This is a hypershift-mode daemon
 		ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
-		dn.HypershiftConnect(
+		err := dn.HypershiftConnect(
 			startOpts.nodeName,
 			kubeClient,
 			ctx.KubeInformerFactory.Core().V1().Nodes(),
 			startOpts.hypershiftDesiredConfigMap,
 		)
+		if err != nil {
+			ctrlcommon.WriteTerminationError(err)
+		}
 
 		ctx.KubeInformerFactory.Start(stopCh)
 		close(ctx.InformersStarted)

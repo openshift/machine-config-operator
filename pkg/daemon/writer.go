@@ -43,6 +43,7 @@ type NodeWriter interface {
 	SetUnreconcilable(err error) error
 	SetDegraded(err error) error
 	SetSSHAccessed() error
+	SetAnnotations(annos map[string]string) error
 }
 
 // newNodeWriter Create a new NodeWriter
@@ -159,6 +160,16 @@ func (nw *clusterNodeWriter) SetSSHAccessed() error {
 		responseChannel: respChan,
 	}
 	return <-respChan
+}
+
+func (nw *clusterNodeWriter) SetAnnotations(annos map[string]string) error {
+	respChan := make(chan error, 1)
+	nw.writer <- message{
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	err := <-respChan
+	return err
 }
 
 func setNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) (*corev1.Node, error) {
