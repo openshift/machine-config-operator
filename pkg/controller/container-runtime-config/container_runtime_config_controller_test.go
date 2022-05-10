@@ -353,6 +353,10 @@ func (f *fixture) expectUpdateContainerRuntimeConfig(config *mcfgv1.ContainerRun
 	f.actions = append(f.actions, core.NewRootUpdateSubresourceAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, "status", config))
 }
 
+func (f *fixture) expectUpdateContainerRuntimeConfigRoot(config *mcfgv1.ContainerRuntimeConfig) {
+	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, config))
+}
+
 func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, releaseImageReg string, verifyPolicyJSON, verifySearchRegsDropin bool) {
 	icsps := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
 	if icsp != nil {
@@ -454,6 +458,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectGetMachineConfigAction(mcs1)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
+			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs1)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
@@ -490,6 +495,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			f.expectGetMachineConfigAction(mcs)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
+			f.expectUpdateContainerRuntimeConfigRoot(ctrcfg1)
 			f.expectCreateMachineConfigAction(mcs)
 			f.expectPatchContainerRuntimeConfig(ctrcfg1, ctrcfgPatchBytes)
 			f.expectUpdateContainerRuntimeConfig(ctrcfg1)
@@ -1067,11 +1073,76 @@ func TestCtrruntimeConfigMultiCreate(t *testing.T) {
 				f.expectGetMachineConfigAction(mcs)
 				f.expectGetMachineConfigAction(mcsDeprecated)
 				f.expectGetMachineConfigAction(mcs)
+				f.expectUpdateContainerRuntimeConfigRoot(ccr)
 				f.expectCreateMachineConfigAction(mcs)
 				f.expectPatchContainerRuntimeConfig(ccr, []byte(expectedPatch))
 				f.expectUpdateContainerRuntimeConfig(ccr)
 				f.run(poolName)
 			}
+		})
+	}
+}
+
+func TestContainerruntimeConfigResync(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			ccr2 := newContainerRuntimeConfig("log-level-2", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+
+			ctrConfigKey, _ := getManagedKeyCtrCfg(mcp, f.client, ccr1)
+			mcs := helpers.NewMachineConfig(ctrConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedKeyCtrCfgDeprecated(mcp)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.mccrLister = append(f.mccrLister, ccr1)
+			f.objects = append(f.objects, ccr1)
+
+			c := f.newController()
+			err := c.syncHandler(getKey(ccr1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			f.mccrLister = append(f.mccrLister, ccr2)
+			f.objects = append(f.objects, ccr2)
+
+			c = f.newController()
+			err = c.syncHandler(getKey(ccr2, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+
+			val := ccr2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "1", val)
+
+			val = ccr1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+
+			// resync kc1 and kc2
+			c = f.newController()
+			err = c.syncHandler(getKey(ccr1, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+			val = ccr1.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "", val)
+
+			c = f.newController()
+			err = c.syncHandler(getKey(ccr2, t))
+			if err != nil {
+				t.Errorf("syncHandler returned: %v", err)
+			}
+			val = ccr2.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
+			require.Equal(t, "1", val)
 		})
 	}
 }

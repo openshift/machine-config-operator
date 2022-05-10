@@ -194,23 +194,28 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 			continue
 		}
 		val, ok := ctrcfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
-		// If we find a matching ctrcfg and it is the only one in the list, then return the default MC name with no suffix
-		if !ok && len(ctrcfgList) < 2 {
-			return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+		if !ok {
+			break
 		}
-		// Otherwise if an MC name suffix exists, append it to the default MC name and return that as this ctrcfg exists and
+		// if an MC name suffix exists, append it to the default MC name and return that as this containerruntime config exists and
 		// we are probably doing an update action on it
 		if val != "" {
 			return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, val), nil
 		}
+		// if the suffix val is "", mc name should not suffixed the cfg to be updated is the first containerruntime config has been created
+		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 	}
 
-	// If we are here, this means that a new ctrcfg was created, so we have to calculate the suffix value for its MC name
+	// If we are here, this means that a new containerruntime config was created, so we have to calculate the suffix value for its MC name
+	// if the containerruntime config is the only one in the list, mc name should not suffixed since cfg is the first containerruntime config to be created
+	if len(ctrcfgList) == 1 {
+		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+	}
 	suffixNum := 0
 	// Go through the list of ctrcfg objects created and get the max suffix value currently created
 	for _, item := range ctrcfgList {
 		val, ok := item.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
-		if ok {
+		if ok && val != "" {
 			// Convert the suffix value to int so we can look through the list and grab the max suffix created so far
 			intVal, err := strconv.Atoi(val)
 			if err != nil {
