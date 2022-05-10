@@ -61,6 +61,11 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			if err != nil {
 				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
 			}
+			// the first managed key value 99-poolname-generated-containerruntime does not have a suffix
+			// set "" as suffix annotation to the containerruntime config object
+			cfg.SetAnnotations(map[string]string{
+				ctrlcommon.MCNameSuffixAnnotationKey: "",
+			})
 			mc, err := ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ctrRuntimeConfigIgn)
 			if err != nil {
 				return nil, fmt.Errorf("could not create MachineConfig from new Ignition config: %w", err)
