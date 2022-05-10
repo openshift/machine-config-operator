@@ -1,6 +1,7 @@
 package resourcemerge
 
 import (
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 )
@@ -8,21 +9,21 @@ import (
 // EnsureMachineConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureMachineConfig(modified *bool, existing *mcfgv1.MachineConfig, required mcfgv1.MachineConfig) {
-	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 	ensureMachineConfigSpec(modified, &existing.Spec, required.Spec)
 }
 
 // EnsureControllerConfig ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureControllerConfig(modified *bool, existing *mcfgv1.ControllerConfig, required mcfgv1.ControllerConfig) {
-	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 	ensureControllerConfigSpec(modified, &existing.Spec, required.Spec)
 }
 
 // EnsureMachineConfigPool ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool, required mcfgv1.MachineConfigPool) {
-	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 
 	if existing.Spec.MachineConfigSelector == nil {
 		*modified = true
@@ -44,8 +45,8 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 }
 
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {
-	setStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
-	setStringIfSet(modified, &existing.KernelType, required.KernelType)
+	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
+	resourcemerge.SetStringIfSet(modified, &existing.KernelType, required.KernelType)
 
 	if !equality.Semantic.DeepEqual(existing.KernelArguments, required.KernelArguments) {
 		*modified = true
@@ -66,12 +67,12 @@ func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec,
 }
 
 func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfigSpec, required mcfgv1.ControllerConfigSpec) {
-	setStringIfSet(modified, &existing.ClusterDNSIP, required.ClusterDNSIP)
-	setStringIfSet(modified, &existing.CloudProviderConfig, required.CloudProviderConfig)
-	setStringIfSet(modified, &existing.Platform, required.Platform)
-	setStringIfSet(modified, &existing.EtcdDiscoveryDomain, required.EtcdDiscoveryDomain)
-	setStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
-	setStringIfSet(modified, &existing.NetworkType, required.NetworkType)
+	resourcemerge.SetStringIfSet(modified, &existing.ClusterDNSIP, required.ClusterDNSIP)
+	resourcemerge.SetStringIfSet(modified, &existing.CloudProviderConfig, required.CloudProviderConfig)
+	resourcemerge.SetStringIfSet(modified, &existing.Platform, required.Platform)
+	resourcemerge.SetStringIfSet(modified, &existing.EtcdDiscoveryDomain, required.EtcdDiscoveryDomain)
+	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
+	resourcemerge.SetStringIfSet(modified, &existing.NetworkType, required.NetworkType)
 
 	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)
 	setBytesIfSet(modified, &existing.RootCAData, required.RootCAData)
@@ -110,5 +111,5 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 		existing.Network = required.Network
 	}
 
-	mergeMap(modified, &existing.Images, required.Images)
+	resourcemerge.MergeMap(modified, &existing.Images, required.Images)
 }
