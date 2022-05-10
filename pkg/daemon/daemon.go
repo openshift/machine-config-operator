@@ -24,9 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -35,7 +33,6 @@ import (
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
 
@@ -355,7 +352,7 @@ func (dn *Daemon) HypershiftConnect(
 	kubeClient kubernetes.Interface,
 	nodeInformer coreinformersv1.NodeInformer,
 	configMap string,
-) {
+) error {
 	dn.name = name
 	dn.kubeClient = kubeClient
 	dn.hypershiftConfigMap = configMap
@@ -378,11 +375,20 @@ func (dn *Daemon) HypershiftConnect(
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNodeHypershift
 
+	nw, err := newNodeWriter(dn.name)
+	if err != nil {
+		return err
+	}
+	dn.nodeWriter = nw
+	go dn.nodeWriter.Run(dn.stopCh)
+
 	// TODO the event broadcasting is being rejected by the server
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.V(2).Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
 	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
+
+	return nil
 }
 
 // writer implements io.Writer interface as a pass-through for klog.
@@ -455,7 +461,7 @@ func (dn *Daemon) updateErrorStateHypershift(err error) {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	if annoErr := dn.HypershiftSetAnnotation(annos); annoErr != nil {
+	if annoErr := dn.nodeWriter.SetAnnotations(annos); annoErr != nil {
 		glog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
 	}
 }
@@ -776,7 +782,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.CurrentMachineConfigAnnotationKey:      targetHash,
 			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
 		}
-		if err := dn.HypershiftSetAnnotation(annos); err != nil {
+		if err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		glog.Infof("The pod has completed update. Awaiting removal.")
@@ -798,7 +804,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
 			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 		}
-		if err := dn.HypershiftSetAnnotation(annos); err != nil {
+		if err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		// Wait for a future sync to perform post-drain actions
@@ -821,43 +827,6 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
-}
-
-// HypershiftSetAnnotation sets the necessary communication annotations between nodepool controller
-// and the daemon.
-func (dn *Daemon) HypershiftSetAnnotation(annotations map[string]string) error {
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		oldNode, err := json.Marshal(n)
-		if err != nil {
-			return err
-		}
-
-		nodeClone := n.DeepCopy()
-		for k, v := range annotations {
-			nodeClone.Annotations[k] = v
-		}
-
-		newNode, err := json.Marshal(nodeClone)
-		if err != nil {
-			return err
-		}
-
-		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
-		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %w", dn.name, err)
-		}
-
-		_, err = dn.kubeClient.CoreV1().Nodes().Patch(context.TODO(), dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
-		return err
-	}); err != nil {
-		// may be conflict if max retries were hit
-		return fmt.Errorf("unable to update node %s: %w", dn.name, err)
-	}
-	return nil
 }
 
 // RunOnceFrom is the primary entrypoint for the non-cluster case
