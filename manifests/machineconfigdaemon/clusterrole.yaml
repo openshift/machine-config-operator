@@ -20,7 +20,7 @@ rules:
   verbs: ["create"]
 - apiGroups: ["machineconfiguration.openshift.io"]
   resources: ["machineconfigs"]
-  verbs: ["*"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["security.openshift.io"]
   resourceNames: ["privileged"]
   resources: ["securitycontextconstraints"]
