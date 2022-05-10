@@ -199,6 +199,12 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	imageClient := cb.ImageClientOrDie(componentName)
+	err = dn.WritePullSecret()
+	if err != nil {
+		glog.Fatalf("Could not write pull secret: %s", err)
+	} else {
+		glog.Infof("Wrote Pull secret!")
+	}
 
 	// This channel is used to ensure all spawned goroutines exit when we exit.
 	stopCh := make(chan struct{})
