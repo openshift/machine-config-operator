@@ -3,7 +3,8 @@ package resourceapply
 import (
 	"context"
 
-	"github.com/openshift/machine-config-operator/lib/resourcemerge"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
+	mcoResourceMerge "github.com/openshift/machine-config-operator/lib/resourcemerge"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientv1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,7 +23,7 @@ func ApplyMachineConfig(client mcfgclientv1.MachineConfigsGetter, required *mcfg
 	}
 
 	modified := resourcemerge.BoolPtr(false)
-	resourcemerge.EnsureMachineConfig(modified, existing, *required)
+	mcoResourceMerge.EnsureMachineConfig(modified, existing, *required)
 	if !*modified {
 		return existing, false, nil
 	}
@@ -43,7 +44,7 @@ func ApplyMachineConfigPool(client mcfgclientv1.MachineConfigPoolsGetter, requir
 	}
 
 	modified := resourcemerge.BoolPtr(false)
-	resourcemerge.EnsureMachineConfigPool(modified, existing, *required)
+	mcoResourceMerge.EnsureMachineConfigPool(modified, existing, *required)
 	if !*modified {
 		return existing, false, nil
 	}
@@ -64,7 +65,7 @@ func ApplyControllerConfig(client mcfgclientv1.ControllerConfigsGetter, required
 	}
 
 	modified := resourcemerge.BoolPtr(false)
-	resourcemerge.EnsureControllerConfig(modified, existing, *required)
+	mcoResourceMerge.EnsureControllerConfig(modified, existing, *required)
 	if !*modified {
 		return existing, false, nil
 	}

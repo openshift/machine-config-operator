@@ -1,6 +1,7 @@
 package resourcemerge
 
 import (
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 )
@@ -8,15 +9,15 @@ import (
 // EnsureConfigMap ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func EnsureConfigMap(modified *bool, existing *corev1.ConfigMap, required corev1.ConfigMap) {
-	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 
-	mergeMap(modified, &existing.Data, required.Data)
+	resourcemerge.MergeMap(modified, &existing.Data, required.Data)
 }
 
 // ensurePodTemplateSpec ensures that the existing matches the required.
 // modified is set to true when existing had to be updated with required.
 func ensurePodTemplateSpec(modified *bool, existing *corev1.PodTemplateSpec, required corev1.PodTemplateSpec) {
-	EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
+	resourcemerge.EnsureObjectMeta(modified, &existing.ObjectMeta, required.ObjectMeta)
 
 	ensurePodSpec(modified, &existing.Spec, required.Spec)
 }
@@ -79,19 +80,19 @@ func ensurePodSpec(modified *bool, existing *corev1.PodSpec, required corev1.Pod
 		}
 	}
 
-	setStringIfSet(modified, &existing.ServiceAccountName, required.ServiceAccountName)
+	resourcemerge.SetStringIfSet(modified, &existing.ServiceAccountName, required.ServiceAccountName)
 	setBool(modified, &existing.HostNetwork, required.HostNetwork)
-	mergeMap(modified, &existing.NodeSelector, required.NodeSelector)
+	resourcemerge.MergeMap(modified, &existing.NodeSelector, required.NodeSelector)
 	ensurePodSecurityContextPtr(modified, &existing.SecurityContext, required.SecurityContext)
 	ensureAffinityPtr(modified, &existing.Affinity, required.Affinity)
 	ensureTolerations(modified, &existing.Tolerations, required.Tolerations)
-	setStringIfSet(modified, &existing.PriorityClassName, required.PriorityClassName)
+	resourcemerge.SetStringIfSet(modified, &existing.PriorityClassName, required.PriorityClassName)
 	setInt32Ptr(modified, &existing.Priority, required.Priority)
 }
 
 func ensureContainer(modified *bool, existing *corev1.Container, required corev1.Container) {
-	setStringIfSet(modified, &existing.Name, required.Name)
-	setStringIfSet(modified, &existing.Image, required.Image)
+	resourcemerge.SetStringIfSet(modified, &existing.Name, required.Name)
+	resourcemerge.SetStringIfSet(modified, &existing.Image, required.Image)
 
 	// This previously didn't properly sync the cpu and memory request fields, which caused a payload rejection
 	// https://github.com/openshift/machine-config-operator/pull/3027
@@ -103,7 +104,7 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 	setStringSliceIfSet(modified, &existing.Command, required.Command)
 	setStringSliceIfSet(modified, &existing.Args, required.Args)
 
-	setStringIfSet(modified, &existing.WorkingDir, required.WorkingDir)
+	resourcemerge.SetStringIfSet(modified, &existing.WorkingDir, required.WorkingDir)
 
 	// also sync the env vars here, added to handle proxy
 	// use a map to keep track of removed vars, with empty values
@@ -459,10 +460,10 @@ func ensureSELinuxOptionsPtr(modified *bool, existing **corev1.SELinuxOptions, r
 }
 
 func ensureSELinuxOptions(modified *bool, existing *corev1.SELinuxOptions, required corev1.SELinuxOptions) {
-	setStringIfSet(modified, &existing.User, required.User)
-	setStringIfSet(modified, &existing.Role, required.Role)
-	setStringIfSet(modified, &existing.Type, required.Type)
-	setStringIfSet(modified, &existing.Level, required.Level)
+	resourcemerge.SetStringIfSet(modified, &existing.User, required.User)
+	resourcemerge.SetStringIfSet(modified, &existing.Role, required.Role)
+	resourcemerge.SetStringIfSet(modified, &existing.Type, required.Type)
+	resourcemerge.SetStringIfSet(modified, &existing.Level, required.Level)
 }
 
 func setBool(modified *bool, existing *bool, required bool) {
