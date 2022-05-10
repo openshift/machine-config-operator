@@ -1981,9 +1981,9 @@ func stripUnverifiedPrefix(containerImageReference string) (string, error) {
 	return containerURLTokens[1], nil
 }
 
-func getOstreeFileDataReadFunc(stateroot, commit string) ReadFileFunc {
+func getOstreeFileDataReadFunc(stateroot, commit string, serial int) ReadFileFunc {
 	return func(path string) ([]byte, error) {
-		return Cat(stateroot, commit, path)
+		return Cat(stateroot, commit, serial, path)
 	}
 }
 
@@ -2052,40 +2052,28 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 			if err := client.RebaseLayered(desiredImageReference); err != nil {
 				return err
 			}
+		}
 
-			state, err := client.GetStatusStructured()
-			if err != nil {
-				return err
-			}
-			staged = state.getStagedDeployment()
+		state, err := client.GetStatusStructured()
+		if err != nil {
+			return err
+		}
+		staged = state.getStagedDeployment()
 
-			// since we reboot whenever kargs change, we can get old kargs from live-applied or booted
-			oldContentBytes, err := Cat(booted.Osname, booted.Checksum, render.MCDContentPath)
-			if err != nil {
-				return err
+		oldContent, newContent, err := dn.getMCDContent(booted, staged)
+		if err != nil {
+			return err
+		}
+		// this shouldn't break transactionality because
+		// 1. if power is lost, rpm-ostree won't have changed the bootloader entry yet, so we'll reboot into the old image, and the rebase will be run again
+		// 2. we can't have graceful shutdown, because the MCO installs a SIGTERM handler
+		if err := dn.updateKernelArguments(oldContent.KernelArguments, newContent.KernelArguments); err != nil {
+			glog.Infof("Rolling back layered update since applying kernel arguments failed with: %v", err)
+			if cleanupErr := removePendingDeployment(); err != nil {
+				// at this point we have broken transactionality, but it's unlikely enough that we'll ignore for now
+				return fmt.Errorf("failed to rollback layered update: %w", cleanupErr)
 			}
-			newContentBytes, err := Cat(staged.Osname, staged.Checksum, render.MCDContentPath)
-			if err != nil {
-				return err
-			}
-			var oldContent, newContent render.MCDContent
-			if err := json.Unmarshal(oldContentBytes, &oldContent); err != nil {
-				return err
-			}
-			if err := json.Unmarshal(newContentBytes, &newContent); err != nil {
-				return err
-			}
-			// this shouldn't break transactionality because
-			// 1. if power is lost, rpm-ostree won't have changed the bootloader entry yet, so we'll reboot into the old image, and the rebase will be run again
-			// 2. we can't have graceful shutdown, because the MCO installs a SIGTERM handler
-			if err := dn.updateKernelArguments(oldContent.KernelArguments, newContent.KernelArguments); err != nil {
-				glog.Infof("Rolling back layered update since applying kernel arguments failed with: %v", err)
-				if cleanupErr := removePendingDeployment(); err != nil {
-					// at this point we have broken transactionality, but it's unlikely enough that we'll ignore for now
-					return fmt.Errorf("failed to rollback layered update: %w", cleanupErr)
-				}
-				return fmt.Errorf("failed to update kernel arguments: %w", err)
-			}
+			return fmt.Errorf("failed to update kernel arguments: %w", err)
 		}
 
 		// Ideally we would want to update kernelArguments only via MachineConfigs.
@@ -2132,28 +2120,14 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 			// This "defaults" those previous files to what is in /usr/etc so
 			// when the ostree "3-way merge" happens on apply-live/reboot, the new
 			// files win the merge.
-			for _, diffFile := range diffFileSet {
-				checkUsrFileExists := filepath.Join("/usr", diffFile)
-				// If the file is present in /usr in our current image
-				if fileStat, err := os.Stat(checkUsrFileExists); err == nil {
-					// Reset the /etc file to the default in /usr/etc
-					if !fileStat.IsDir() {
-						err = runCmdSync("cp", checkUsrFileExists, diffFile)
-						if err != nil {
-							return err
-						}
-						// Fix the selinux context just in case it had special context
-						err = runCmdSync("restorecon", "-Fv", diffFile)
-						if err != nil {
-							return err
-						}
-					}
-				}
+			if err := resetEtcFileSetToUsrEtcDefaults(diffFileSet); err != nil {
+				return err
 			}
-		
+
+			// For now we always live apply so our config is functional again after we "defaulted it" above
+			// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
+			// perform the '3 way merge' from scratch again after it sets its checkpoint
 			if !ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
-				// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
-				// perform the '3 way merge' from scratch again after it sets its checkpoint
 				err := client.ApplyLive()
 				if err != nil {
 					glog.Warningf("apply-live returned an error: %s", err)
@@ -2185,4 +2159,76 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 	}
 
 	return nil
+}
+
+// resetEtcFileSetToUsrEtcDefaults resets the supplied list of files to their defaults in /usr/etc if
+// such a default exists. This is a hack to make sure that files in the new image take precedence over the old
+// image. ostree will not overwrite /etc/ files as part of the 3-way merge on reboot/live-apply unless they are
+// set to the /usr/etc/ default, so we set them to their /usr/etc default.
+func resetEtcFileSetToUsrEtcDefaults(diffFileSet []string) error {
+	for _, diffFile := range diffFileSet {
+		checkUsrFileExists := filepath.Join("/usr", diffFile)
+		// If the file is present in /usr in our current image
+		if fileStat, err := os.Stat(checkUsrFileExists); err == nil {
+			// Reset the /etc file to the default in /usr/etc
+			if !fileStat.IsDir() {
+				err = runCmdSync("cp", checkUsrFileExists, diffFile)
+				if err != nil {
+					return err
+				}
+				// Fix the selinux context just in case it had special context
+				err = runCmdSync("restorecon", "-Fv", diffFile)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// getMCDContent retrieves the on-disk contents of the MCDContent file created by our machineconfig-to-ignition code (which contains
+// things like kargs and FIPS that are machineconfig-specific) from both the booted and the staged deployment (if any). The point of this
+// is to be able to compare existing vs new configuration for things like kernel args where we need to remove all the "old" kernel args and
+// then add the "new" kernel args
+func (dn *Daemon) getMCDContent(booted, staged Deployment) (render.MCDContent, render.MCDContent, error) {
+
+	var oldContent, newContent render.MCDContent
+	// See if our booted deployment has our machineconfig-to-ignition MCDContent (fips, kargs)
+	oldContentBytes, err := Cat(booted.Osname, booted.Checksum, booted.Serial, render.MCDContentPath)
+	// If it doesn't, it might be because it's the first time we've rebased to an image
+	if errors.Is(err, os.ErrNotExist) {
+		// Yes, this probably a conversion from a non-layered to a layered, we don't have structured kernel args yet
+		glog.Infof("This appears to be a machineconfig to image conversion, extracting machineconfig kernel args")
+
+		// So we're going to cheat for now and read the old kargs out of currentconfig
+		currentConfig, err := dn.getCurrentConfigOnDisk()
+		if err != nil {
+			return render.MCDContent{}, render.MCDContent{}, fmt.Errorf("reading currentconfig: %w", err)
+		}
+
+		// Use the old content from our "currentConfig" machineconfig on disk
+		oldContent = render.MCDContent{
+			KernelArguments: currentConfig.Spec.KernelArguments,
+			FIPS:            currentConfig.Spec.FIPS,
+		}
+
+	} else if err != nil {
+		// Whatever happened here, it was something other than it not being found
+		return render.MCDContent{}, render.MCDContent{}, fmt.Errorf("Failed to get booted content for %s:%s:%s: %w", booted.Osname, booted.Checksum, render.MCDContentPath, err)
+	} else if err := json.Unmarshal(oldContentBytes, &oldContent); err != nil {
+		return render.MCDContent{}, render.MCDContent{}, err
+	}
+
+	newContentBytes, err := Cat(staged.Osname, staged.Checksum, staged.Serial, render.MCDContentPath)
+	if err != nil {
+		glog.Errorf("Failed to get staged content for %s:%s:%s: %s", staged.Osname, staged.Checksum, render.MCDContentPath, err)
+		return render.MCDContent{}, render.MCDContent{}, err
+	}
+
+	if err := json.Unmarshal(newContentBytes, &newContent); err != nil {
+		return render.MCDContent{}, render.MCDContent{}, err
+	}
+
+	return oldContent, newContent, nil
 }
