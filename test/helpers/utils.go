@@ -313,7 +313,7 @@ func LabelRandomNodeFromPool(t *testing.T, cs *framework.ClientSet, pool, label 
 		_, err = cs.CoreV1Interface.Nodes().Update(context.TODO(), infraNode, metav1.UpdateOptions{})
 		return err
 	})
-	require.Nil(t, err, "unable to label worker node %s with infra: %s", infraNode.Name, err)
+	require.Nil(t, err, "unable to label %s node %s with infra: %s", pool, infraNode.Name, err)
 
 	return func() {
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
