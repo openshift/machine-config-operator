@@ -442,7 +442,8 @@ func (dn *Daemon) calculatePostConfigChangeActionFromFiles(diffFileSet []string)
 	filesPostConfigChangeActionNone := []string{
 		"/etc/kubernetes/kubelet-ca.crt",
 		"/var/lib/kubelet/config.json",
-		"/etc/machine-config-daemon/currentconfig",
+		"/etc/machine-config-daemon/currentconfig", // Since this comes with the image now, and we need it to make config drift happy
+		"/etc/pki/entitlement/entitlement.pem",     // For layering right now, so if our entitlements expire we can refresh them
 	}
 	if dn.os.IsFCOS() {
 		filesPostConfigChangeActionNone = append(filesPostConfigChangeActionNone, fcosAuthKeyPath)
@@ -2119,28 +2120,44 @@ func (dn *CoreOSDaemon) experimentalUpdateLayeredConfig() error {
 				return err
 			}
 
-			// I write this in the image build now, so config checker still works AND I don't get stuck on it
-			os.Remove(dn.currentConfigPath)
-
-			// TODO(jkyros): This is a hack until we figure out file "owners"/layers/precedence
-			// When you add files to an image (like we with ignition-liveapply), they get stuffed into /usr/etc/, so they are
-			// essentially "default files"
-			// This defaults the files we added to /etc/ so we know the 3-way merge will update them with the container versions from machineconfig
-			_, err = runGetOut("rsync", "-avh", "/usr/etc/", "/etc/")
-			if err != nil {
-				return err
-			}
-
+			// TODO(jkyros): If the drain fails here, we already blanked currentconfigpath, which makes us degrade forever, it's not great.
 			// Check and perform node drain if required
-			if err := dn.drainIfRequired(actions, diffFileSet, getOstreeFileDataReadFunc(booted.Osname, activeChecksum), getOstreeFileDataReadFunc(staged.Osname, staged.Checksum)); err != nil {
+			if err := dn.drainIfRequired(actions, diffFileSet, getOstreeFileDataReadFunc(booted.Osname, activeChecksum, booted.Serial), getOstreeFileDataReadFunc(staged.Osname, staged.Checksum, staged.Serial)); err != nil {
 				return err
 			}
-			// For now we always live apply so our config is functional again after we "defaulted it" above
-			// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
-			// perform the '3 way merge' from scratch again after it sets its checkpoint
 
+			// TODO(jkyros): is there a special case for live-apply here?
+			// There are some files coming in with the new image that need
+			// to take precedence over the files that came with the last image
+			// This "defaults" those previous files to what is in /usr/etc so
+			// when the ostree "3-way merge" happens on apply-live/reboot, the new
+			// files win the merge.
+			for _, diffFile := range diffFileSet {
+				checkUsrFileExists := filepath.Join("/usr", diffFile)
+				// If the file is present in /usr in our current image
+				if fileStat, err := os.Stat(checkUsrFileExists); err == nil {
+					// Reset the /etc file to the default in /usr/etc
+					if !fileStat.IsDir() {
+						err = runCmdSync("cp", checkUsrFileExists, diffFile)
+						if err != nil {
+							return err
+						}
+						// Fix the selinux context just in case it had special context
+						err = runCmdSync("restorecon", "-Fv", diffFile)
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
+		
 			if !ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
-				client.ApplyLive()
+				// TODO(jkyros): This seems like it might be dangerous because if the first apply-live fails, it looks like you're stranded and it won't
+				// perform the '3 way merge' from scratch again after it sets its checkpoint
+				err := client.ApplyLive()
+				if err != nil {
+					glog.Warningf("apply-live returned an error: %s", err)
+				}
 			}
 			// might reboot
 			if err := dn.performPostConfigChangeAction(actions, desiredImageReference); err != nil {
