@@ -110,7 +110,7 @@ func (dn *Daemon) drain() error {
 	case <-time.After(1 * time.Hour):
 		done <- true
 		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedToDrain", failMsg)
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
 		MCDDrainErr.Set(1)
 		return fmt.Errorf(failMsg)
 	case <-drainer():
@@ -128,11 +128,11 @@ func (dn *Daemon) performDrain() error {
 		return err
 	}
 	dn.logSystem("Node has been successfully cordoned")
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
 
 	if !dn.drainRequired() {
 		dn.logSystem("Drain not required, skipping")
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Drain not required, skipping")
 		return nil
 	}
 
@@ -140,7 +140,7 @@ func (dn *Daemon) performDrain() error {
 	dn.logSystem("Update prepared; beginning drain")
 	startTime := time.Now()
 
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Drain", "Draining node to update config.")
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
 	if err := dn.drain(); err != nil {
 		return err
