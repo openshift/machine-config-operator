@@ -3,6 +3,9 @@ package daemon
 import (
 	"fmt"
 
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
+
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/client-go/informers"
@@ -45,6 +48,9 @@ type clusterNodeWriter struct {
 	lister           corev1lister.NodeLister
 	nodeListerSynced cache.InformerSynced
 	kubeClient       kubernetes.Interface
+	// cached reference to node object - TODO change the daemon to read this too
+	node     *corev1.Node
+	recorder record.EventRecorder
 }
 
 // NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
@@ -56,14 +62,15 @@ type NodeWriter interface {
 	SetDegraded(err error) error
 	SetSSHAccessed() error
 	SetAnnotations(annos map[string]string) error
+	Eventf(eventtype, reason, messageFmt string, args ...interface{})
 }
 
 func (nw *clusterNodeWriter) handleNodeWriterEvent(node interface{}) {
-	// TODO - change the daemon to watch this for node events
-	// n := node.(*corev1.Node)
-	// if n.Name != nw.nodeName {
-	// 	return
-	// }
+	n := node.(*corev1.Node)
+	if n.Name != nw.nodeName {
+		return
+	}
+	nw.node = n
 }
 
 // newNodeWriter Create a new NodeWriter
@@ -83,11 +90,16 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 	nodeLister := nodeInformer.Lister()
 	nodeListerSynced := nodeInformer.Informer().HasSynced
 
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.V(2).Infof)
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+
 	nw := &clusterNodeWriter{
 		nodeName:         nodeName,
 		client:           kubeClient.CoreV1().Nodes(),
 		lister:           nodeLister,
 		nodeListerSynced: nodeListerSynced,
+		recorder:         eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName}),
 		writer:           make(chan message, defaultWriterQueue),
 		kubeClient:       kubeClient,
 	}
@@ -220,6 +232,13 @@ func (nw *clusterNodeWriter) SetAnnotations(annos map[string]string) error {
 	}
 	err := <-respChan
 	return err
+}
+
+func (nw *clusterNodeWriter) Eventf(eventtype, reason, messageFmt string, args ...interface{}) {
+	if nw.node == nil {
+		return
+	}
+	nw.recorder.Eventf(getNodeRef(nw.node), eventtype, reason, messageFmt, args...)
 }
 
 func setNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) (*corev1.Node, error) {
