@@ -53,16 +53,36 @@ func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node 
 
 	start := time.Now()
 
+	ctx := context.Background()
+
 	err := wait.PollImmediate(2*time.Second, 1*time.Minute, func() (bool, error) {
 		mcdPod, err := helpers.MCDForNode(cs, &node)
 		require.Nil(t, err)
 
 		logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 			Container: "machine-config-daemon",
-		}).DoRaw(context.TODO())
+		}).DoRaw(ctx)
 		require.Nil(t, err)
 
-		return strings.Contains(string(logs), configDriftMonitorStartupMsg), nil
+		splitLogs := strings.Split(string(logs), "\n")
+
+		// Scan the logs from the bottom up, looking for either a shutdown or startup message.
+		for i := len(splitLogs) - 1; i >= 0; i-- {
+			line := splitLogs[i]
+
+			if strings.Contains(line, configDriftMonitorShutdownMsg) {
+				// We've found a shutdown message before we found a startup message,
+				// this means the Config Drift Monitor is not running.
+				return false, nil
+			}
+
+			if strings.Contains(line, configDriftMonitorStartupMsg) {
+				// We've found a startup message. This means the Config Drift Monitor is running.
+				return true, nil
+			}
+		}
+
+		return false, nil
 	})
 
 	end := time.Since(start)
