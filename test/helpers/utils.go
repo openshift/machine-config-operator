@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
@@ -516,6 +518,45 @@ func CreateIgn3File(path, content string, mode int) ign3types.File {
 
 func MCDForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
 	return mcdForNode(cs, node)
+}
+
+// Returns the node's uptime expressed as the total number of seconds the
+// system has been up.
+// See: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html/deployment_guide/s2-proc-uptime
+func GetNodeUptime(t *testing.T, cs *framework.ClientSet, node corev1.Node) float64 {
+	output := ExecCmdOnNode(t, cs, node, "cat", "/rootfs/proc/uptime")
+	uptimeString := strings.Split(output, " ")[0]
+	uptime, err := strconv.ParseFloat(uptimeString, 64)
+	require.Nil(t, err)
+	return uptime
+}
+
+// Asserts that a node has rebooted, given an initial uptime value.
+//
+// To Use:
+//
+// initialUptime := GetNodeUptime(t, cs, node)
+// // do stuff that should cause a reboot
+// AssertNodeReboot(t, cs, node, initialUptime)
+//
+// Returns the result of the assertion as is the convention for the testify/assert
+func AssertNodeReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, initialUptime float64) bool {
+	current := GetNodeUptime(t, cs, node)
+	return assert.Greater(t, initialUptime, current, "node %s did not reboot as expected; initial uptime: %d, current uptime: %d", node.Name, initialUptime, current)
+}
+
+// Asserts that a node has not rebooted, given an initial uptime value.
+//
+// To Use:
+//
+// initialUptime := GetNodeUptime(t, cs, node)
+// // do stuff that should not cause a reboot
+// AssertNodeNotReboot(t, cs, node, initialUptime)
+//
+// Returns the result of the assertion as is the convention for the testify/assert
+func AssertNodeNotReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, initialUptime float64) bool {
+	current := GetNodeUptime(t, cs, node)
+	return assert.Greater(t, current, initialUptime, "node %s rebooted unexpectedly; initial uptime: %d, current uptime: %d", node.Name, initialUptime, current)
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {
