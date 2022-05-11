@@ -122,8 +122,8 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionNone, postConfigChangeActions) {
-		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
 		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
 	}
@@ -132,14 +132,14 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 		serviceName := "crio"
 
 		if err := reloadService(serviceName); err != nil {
-			if dn.recorder != nil {
-				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedServiceReload", fmt.Sprintf("Reloading %s service failed. Error: %v", serviceName, err))
 			}
 			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
 		}
 
-		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot. Service %s was reloaded.", serviceName)
 		}
 		dn.logSystem("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, configName)
 	}
@@ -174,8 +174,8 @@ func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr 
 	}
 	defer func() {
 		if retErr != nil {
-			if dn.recorder != nil {
-				dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfigRollBack", fmt.Sprintf("Rolling back pending config %s: %v", newConfig.GetName(), retErr))
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "PendingConfigRollBack", fmt.Sprintf("Rolling back pending config %s: %v", newConfig.GetName(), retErr))
 			}
 			if out, err := dn.storePendingState(newConfig, 0); err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, retErr})
@@ -184,8 +184,8 @@ func (dn *Daemon) finalizeBeforeReboot(newConfig *mcfgv1.MachineConfig) (retErr 
 			}
 		}
 	}()
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "PendingConfig", fmt.Sprintf("Written pending config %s", newConfig.GetName()))
 	}
 
 	return nil
@@ -332,8 +332,8 @@ func removePendingDeployment() error {
 func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
 
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
 	}
 
 	var osImageContentDir string
@@ -353,8 +353,8 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			}
 		}
 		// We emitted this event before, so keep it
-		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
 		var err error
 		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
@@ -414,8 +414,8 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		return err
 	}
 
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "OSUpdateStaged", "Changes to OS staged")
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStaged", "Changes to OS staged")
 	}
 	return nil
 
@@ -509,13 +509,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	if reconcilableError != nil {
 		wrappedErr := fmt.Errorf("can't reconcile config %s with %s: %w", oldConfigName, newConfigName, reconcilableError)
-		if dn.recorder != nil {
-			mcRef := &corev1.ObjectReference{
-				Kind: "MachineConfig",
-				Name: newConfig.GetName(),
-				UID:  newConfig.GetUID(),
-			}
-			dn.recorder.Eventf(mcRef, corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
 		return &unreconcilableErr{wrappedErr}
 	}
@@ -2019,8 +2014,8 @@ func (dn *Daemon) reboot(rationale string) error {
 	}
 
 	// We'll only have a recorder if we're cluster driven
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Reboot", rationale)
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Reboot", rationale)
 	}
 	dn.logSystem("initiating reboot: %s", rationale)
 

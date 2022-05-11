@@ -28,11 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubectl/pkg/drain"
 
@@ -69,9 +67,6 @@ type Daemon struct {
 
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
-
-	// recorder sends events to the apiserver
-	recorder record.EventRecorder
 
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corev1lister.NodeLister
@@ -301,11 +296,6 @@ func (dn *Daemon) ClusterConnect(
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
 		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
 
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
-	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
-
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -387,12 +377,6 @@ func (dn *Daemon) HypershiftConnect(
 	}
 	dn.nodeWriter = nw
 	go dn.nodeWriter.Run(dn.stopCh)
-
-	// TODO the event broadcasting is being rejected by the server
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
-	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
 
 	return nil
 }
@@ -604,7 +588,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	start := time.Now()
 
 	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
 		glog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
 	}
@@ -1020,7 +1004,7 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 
 // Called whenever the on-disk config has drifted from the current machineconfig.
 func (dn *Daemon) onConfigDrift(err error) {
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
+	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
 	glog.Error(err)
 	dn.updateErrorState(err)
 }
@@ -1053,7 +1037,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 		return
 	}
 
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
 		"Config Drift Monitor started, watching against %s", currentConfig.Name)
 
 	go func() {
@@ -1062,7 +1046,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 			// Stop the Config Drift Monitor, if it's not already stopped.
 			dn.configDriftMonitor.Stop()
 			// Report that we've shut down
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "ConfigDriftMonitorStopped", "Config Drift Monitor stopped")
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStopped", "Config Drift Monitor stopped")
 		}
 
 		for {
@@ -1503,7 +1487,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	if err := dn.validateOnDiskState(expectedConfig); err != nil {
 		wErr := fmt.Errorf("unexpected on-disk state validating against %s: %w", expectedConfig.GetName(), err)
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
 		return wErr
 	}
 
@@ -1518,8 +1502,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return nil
 	}
 
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
@@ -1531,8 +1515,8 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	// In the case where we had a pendingConfig, make that now currentConfig.
 	// We update the node annotation, delete the state file, etc.
 	if state.pendingConfig != nil {
-		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
 		}
 		if err := dn.nodeWriter.SetDone(state.pendingConfig.GetName()); err != nil {
 			return true, fmt.Errorf("error setting node's state to Done: %w", err)
@@ -1701,7 +1685,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 	}
 
 	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
 }
