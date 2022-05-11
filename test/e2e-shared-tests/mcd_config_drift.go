@@ -28,6 +28,7 @@ const (
 	configDriftFileContents              string = "expected-file-data"
 	configDriftMCPrefix                  string = "mcd-config-drift"
 	configDriftMonitorStartupMsg         string = "Config Drift Monitor started"
+	configDriftMonitorShutdownMsg        string = "Config Drift Monitor has shut down"
 )
 
 // This test does the following:
@@ -170,26 +171,30 @@ func (c configDriftTest) Run(t *testing.T) {
 	assertKernelArgsEqual(t, c.ClientSet, c.node, kargs, c.mc.Spec.KernelArguments)
 
 	testCases := []struct {
-		name     string
-		testFunc func(t *testing.T)
+		name           string
+		rebootExpected bool
+		testFunc       func(t *testing.T)
 	}{
 		// 1. Mutates a file on the node.
 		// 2. Verifies that we can recover from it by reverting the contents to
 		// their original state.
 		{
-			name: "revert file content recovery for ignition file",
+			name:           "revert file content recovery for ignition file",
+			rebootExpected: false,
 			testFunc: func(t *testing.T) {
 				c.runDegradeAndRecoverContentRevert(t, configDriftFilename, configDriftFileContents)
 			},
 		},
 		{
-			name: "revert file content recovery for systemd dropin",
+			name:           "revert file content recovery for systemd dropin",
+			rebootExpected: false,
 			testFunc: func(t *testing.T) {
 				c.runDegradeAndRecoverContentRevert(t, configDriftSystemdDropinFilename, configDriftSystemdDropinFileContents)
 			},
 		},
 		{
-			name: "revert file content recovery for systemd unit",
+			name:           "revert file content recovery for systemd unit",
+			rebootExpected: false,
 			testFunc: func(t *testing.T) {
 				c.runDegradeAndRecoverContentRevert(t, configDriftSystemdUnitFilename, configDriftSystemdUnitFileContents)
 			},
@@ -197,7 +202,8 @@ func (c configDriftTest) Run(t *testing.T) {
 		// Targets a regression identified by:
 		// https://bugzilla.redhat.com/show_bug.cgi?id=2032565
 		{
-			name: "revert file content recovery for compressed file",
+			name:           "revert file content recovery for compressed file",
+			rebootExpected: false,
 			testFunc: func(t *testing.T) {
 				c.runDegradeAndRecoverContentRevert(t, configDriftCompressedFilename, configDriftFileContents)
 			},
@@ -205,7 +211,8 @@ func (c configDriftTest) Run(t *testing.T) {
 		// 1. Mutates a file on the node.
 		// 2. Creates the forcefile to cause recovery.
 		{
-			name: "forcefile recovery",
+			name:           "forcefile recovery",
+			rebootExpected: true,
 			testFunc: func(t *testing.T) {
 				if c.SkipForcefile {
 					t.Skip()
@@ -221,6 +228,9 @@ func (c configDriftTest) Run(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
+			// Get the node's uptime to check for reboots.
+			initialUptime := helpers.GetNodeUptime(t, c.ClientSet, c.node)
+
 			// With the way that the Config Drift Monitor is wired into the MCD,
 			// "machineconfiguration.openshift.io/state" gets set to "Done" before the
 			// Config Drift Monitor is started.
@@ -230,6 +240,13 @@ func (c configDriftTest) Run(t *testing.T) {
 
 			// Ensure that we have our kernel args post-test
 			assertKernelArgsEqual(t, c.ClientSet, c.node, kargs, c.mc.Spec.KernelArguments)
+
+			// Verify our reboot expectations
+			if testCase.rebootExpected {
+				helpers.AssertNodeReboot(t, c.ClientSet, c.node, initialUptime)
+			} else {
+				helpers.AssertNodeNotReboot(t, c.ClientSet, c.node, initialUptime)
+			}
 		})
 	}
 }
