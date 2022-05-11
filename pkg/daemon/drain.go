@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"time"
@@ -12,9 +13,8 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
-	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/kubectl/pkg/drain"
 )
 
 func (dn *Daemon) drainRequired() bool {
@@ -26,109 +26,11 @@ func (dn *Daemon) drainRequired() bool {
 	return !isSingleNodeTopology(dn.getControlPlaneTopology())
 }
 
-func (dn *Daemon) cordonOrUncordonNode(desired bool) error {
-	verb := "cordon"
-	if !desired {
-		verb = "uncordon"
-	}
-
-	backoff := wait.Backoff{
-		Steps:    5,
-		Duration: 10 * time.Second,
-		Factor:   2,
-	}
-	var lastErr error
-	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
-		// Log has been added to ensure that MCO is correctly performing cordon/uncordon.
-		// This should help us with debugging bugs like https://bugzilla.redhat.com/show_bug.cgi?id=2022387
-		glog.Infof("Initiating %s on node (currently schedulable: %t)", verb, !dn.node.Spec.Unschedulable)
-		err := drain.RunCordonOrUncordon(dn.drainer, dn.node, desired)
-		if err != nil {
-			lastErr = err
-			glog.Infof("%s failed with: %v, retrying", verb, err)
-			return false, nil
-		}
-
-		// Re-fetch node so that we are not using cached information
-		var node *corev1.Node
-		if node, err = dn.nodeLister.Get(dn.node.GetName()); err != nil {
-			lastErr = err
-			glog.Errorf("Failed to fetch node %v, retrying", err)
-			return false, nil
-		}
-
-		if node.Spec.Unschedulable != desired {
-			// See https://bugzilla.redhat.com/show_bug.cgi?id=2022387
-			glog.Infof("RunCordonOrUncordon() succeeded but node is still not in %s state, retrying", verb)
-			return false, nil
-		}
-
-		glog.Infof("%s succeeded on node (currently schedulable: %t)", verb, !node.Spec.Unschedulable)
-		return true, nil
-	}); err != nil {
-		if err == wait.ErrWaitTimeout {
-			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("failed to %s node (%d tries): %w", verb, backoff.Steps, errs)
-		}
-		return fmt.Errorf("failed to %s node: %w", verb, err)
-	}
-
-	return nil
-}
-
-func (dn *Daemon) drain() error {
-	failedDrains := 0
-	done := make(chan bool, 1)
-
-	drainer := func() chan error {
-		ret := make(chan error)
-		go func() {
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					if err := drain.RunNodeDrain(dn.drainer, dn.node.Name); err != nil {
-						glog.Infof("Draining failed with: %v, retrying", err)
-						failedDrains++
-						if failedDrains > 5 {
-							time.Sleep(5 * time.Minute)
-						} else {
-							time.Sleep(1 * time.Minute)
-						}
-						continue
-					}
-					close(ret)
-					return
-				}
-			}
-		}()
-		return ret
-	}
-
-	select {
-	case <-time.After(1 * time.Hour):
-		done <- true
-		failMsg := fmt.Sprintf("failed to drain node : %s after 1 hour", dn.node.Name)
-		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
-		MCDDrainErr.Set(1)
-		return fmt.Errorf(failMsg)
-	case <-drainer():
-		return nil
-	}
-}
-
 func (dn *Daemon) performDrain() error {
 	// Skip drain process when we're not cluster driven
 	if dn.kubeClient == nil {
 		return nil
 	}
-
-	if err := dn.cordonOrUncordonNode(true); err != nil {
-		return err
-	}
-	dn.logSystem("Node has been successfully cordoned")
-	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
 
 	if !dn.drainRequired() {
 		dn.logSystem("Drain not required, skipping")
@@ -137,13 +39,40 @@ func (dn *Daemon) performDrain() error {
 	}
 
 	// We are here, that means we need to cordon and drain node
-	dn.logSystem("Update prepared; beginning drain")
+	dn.logSystem("Update prepared; requesting cordon and drain via annotation to controller")
 	startTime := time.Now()
 
+	// We probably don't need to separate out cordon and drain, but we sort of do it today for various scenarios
+	// TODO (jerzhang): revisit
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
-	if err := dn.drain(); err != nil {
+	desiredConfigName, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
+	if err != nil {
 		return err
+	}
+	// TODO (jerzhang): definitely don't have to block here, but as an initial PoC, this is easier
+	if err := dn.nodeWriter.SetDesiredDrainer(fmt.Sprintf("%s-%s", "drain", desiredConfigName)); err != nil {
+		return fmt.Errorf("Could not set drain annotation: %w", err)
+	}
+
+	if err := wait.Poll(10*time.Second, 1*time.Hour, func() (bool, error) {
+		node, getErr := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+		if getErr != nil {
+			return false, fmt.Errorf("Could not poll node status. Assuming something went wrong")
+		}
+		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			failMsg := fmt.Sprintf("failed to drain node: %s after 1 hour. Please see machine-config-controller logs for more information", dn.node.Name)
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
+			MCDDrainErr.Set(1)
+			return fmt.Errorf(failMsg)
+		}
+		return fmt.Errorf("Something went wrong while attempting to drain node: %v", err)
 	}
 
 	dn.logSystem("drain complete")

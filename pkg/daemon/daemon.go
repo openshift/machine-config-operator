@@ -32,7 +32,6 @@ import (
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubectl/pkg/drain"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -113,8 +112,6 @@ type Daemon struct {
 	currentConfigPath string
 
 	loggerSupportsJournal bool
-
-	drainer *drain.Helper
 
 	// Config Drift Monitor
 	configDriftMonitor ConfigDriftMonitor
@@ -319,25 +316,6 @@ func (dn *Daemon) ClusterConnect(
 
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
-
-	dn.drainer = &drain.Helper{
-		Client:              dn.kubeClient,
-		Force:               true,
-		IgnoreAllDaemonSets: true,
-		DeleteEmptyDirData:  true,
-		GracePeriodSeconds:  -1,
-		Timeout:             90 * time.Second,
-		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
-			verbStr := "Deleted"
-			if usingEviction {
-				verbStr = "Evicted"
-			}
-			glog.Infof("%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
-		},
-		Out:    writer{glog.Info},
-		ErrOut: writer{glog.Error},
-		Ctx:    context.TODO(),
-	}
 
 	return nil
 }
@@ -1680,8 +1658,27 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
 func (dn *Daemon) completeUpdate(desiredConfigName string) error {
-	if err := dn.cordonOrUncordonNode(false); err != nil {
-		return err
+	if err := dn.nodeWriter.SetDesiredDrainer(fmt.Sprintf("%s-%s", "uncordon", desiredConfigName)); err != nil {
+		return fmt.Errorf("Could not set drain annotation: %w", err)
+	}
+
+	if err := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
+		node, getErr := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+		if getErr != nil {
+			return false, fmt.Errorf("Could not poll node status. Assuming something went wrong")
+		}
+		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			failMsg := fmt.Sprintf("failed to uncordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
+			MCDDrainErr.Set(1)
+			return fmt.Errorf(failMsg)
+		}
+		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
 	}
 
 	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
