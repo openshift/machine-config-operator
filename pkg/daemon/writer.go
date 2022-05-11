@@ -67,6 +67,7 @@ type NodeWriter interface {
 	SetDegraded(err error) error
 	SetSSHAccessed() error
 	SetAnnotations(annos map[string]string) (*corev1.Node, error)
+	SetDesiredDrainer(value string) error
 	Eventf(eventtype, reason, messageFmt string, args ...interface{})
 }
 
@@ -240,6 +241,19 @@ func (nw *clusterNodeWriter) SetAnnotations(annos map[string]string) (*corev1.No
 	}
 	resp := <-respChan
 	return resp.node, resp.err
+}
+
+func (nw *clusterNodeWriter) SetDesiredDrainer(value string) error {
+	annos := map[string]string{
+		constants.DesiredDrainerAnnotationKey: value,
+	}
+	respChan := make(chan response, 1)
+	nw.writer <- message{
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	r := <-respChan
+	return r.err
 }
 
 func (nw *clusterNodeWriter) Eventf(eventtype, reason, messageFmt string, args ...interface{}) {

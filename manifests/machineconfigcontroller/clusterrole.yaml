@@ -24,6 +24,18 @@ rules:
 - apiGroups: ["operator.openshift.io"]
   resources: ["etcds"]
   verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/eviction"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+- apiGroups: ["extensions"]
+  resources: ["daemonsets"]
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets"]
+  verbs: ["get"]
 - apiGroups:
   - authentication.k8s.io
   resources:
