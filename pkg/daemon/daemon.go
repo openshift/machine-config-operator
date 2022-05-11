@@ -451,7 +451,7 @@ func (dn *Daemon) updateErrorStateHypershift(err error) {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	if annoErr := dn.nodeWriter.SetAnnotations(annos); annoErr != nil {
+	if _, annoErr := dn.nodeWriter.SetAnnotations(annos); annoErr != nil {
 		glog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
 	}
 }
@@ -772,7 +772,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.CurrentMachineConfigAnnotationKey:      targetHash,
 			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
 		}
-		if err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		glog.Infof("The pod has completed update. Awaiting removal.")
@@ -794,7 +794,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
 			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 		}
-		if err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		// Wait for a future sync to perform post-drain actions
