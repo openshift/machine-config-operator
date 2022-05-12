@@ -404,8 +404,8 @@ func ParseDiff(stdout []byte) []string {
 	return paths.walk()
 }
 
-func Cat(stateroot, commit, path string) ([]byte, error) {
-	return ioutil.ReadFile(filepath.Join(fmt.Sprintf("/ostree/deploy/%s/deploy/%s.0", stateroot, commit), path))
+func Cat(stateroot, commit string, serial int, path string) ([]byte, error) {
+	return ioutil.ReadFile(filepath.Join(fmt.Sprintf("/ostree/deploy/%s/deploy/%s.%d", stateroot, commit, serial), path))
 }
 
 // truncate a string using runes/codepoints as limits.

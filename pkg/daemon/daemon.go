@@ -48,6 +48,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+
+	imageclientset "github.com/openshift/client-go/image/clientset/versioned"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -74,6 +76,9 @@ type Daemon struct {
 
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
+
+	// imageClient allows interaction with openshift api Image objects
+	imageClient imageclientset.Interface
 
 	// recorder sends events to the apiserver
 	recorder record.EventRecorder
@@ -279,6 +284,7 @@ func New(
 func (dn *Daemon) ClusterConnect(
 	name string,
 	kubeClient kubernetes.Interface,
+	imageClient imageclientset.Interface,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
@@ -286,6 +292,7 @@ func (dn *Daemon) ClusterConnect(
 ) {
 	dn.name = name
 	dn.kubeClient = kubeClient
+	dn.imageClient = imageClient
 
 	dn.nodeWriter = newNodeWriter()
 	go dn.nodeWriter.Run(dn.stopCh)
@@ -488,6 +495,7 @@ func (dn *Daemon) syncNode(key string) error {
 	}
 
 	// Pass to the shared update prep method
+
 	current, desired, err := dn.prepUpdateFromCluster()
 	if err != nil {
 		return errors.Wrapf(err, "prepping update")
@@ -1372,6 +1380,24 @@ func (dn *Daemon) handleNodeEvent(node interface{}) {
 // flows that expect the cluster to already be available. Returns true if an
 // update is required, false otherwise.
 func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.MachineConfig, error) {
+
+	// TODO(jkyros): do this better
+	if dn.isDesiredConfigAnImage() {
+		desiredImageName, err := getNodeAnnotationExt(dn.node, constants.CurrentImageConfigAnnotationKey, true)
+		if err != nil {
+			return nil, nil, err
+		}
+		currentImageName, err := getNodeAnnotationExt(dn.node, constants.DesiredImageConfigAnnotationKey, true)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if currentImageName != desiredImageName {
+			return &mcfgv1.MachineConfig{}, &mcfgv1.MachineConfig{}, nil
+		}
+		return nil, nil, nil
+	}
+
 	desiredConfigName, err := getNodeAnnotationExt(dn.node, constants.DesiredMachineConfigAnnotationKey, true)
 	if err != nil {
 		return nil, nil, err
@@ -1475,20 +1501,39 @@ func (dn *Daemon) removeUpdateInProgressTaint(ctx context.Context) error {
 }
 
 func (dn *Daemon) shouldUpdateLayered() (*CoreOSDaemon, error) {
-	_, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]
-	if ok {
+	if dn.isDesiredConfigAnImage() {
 		// sanity check that we're on CoreOS. The controller checks if a node runs CoreOS before setting desired image
 		if dn.os.IsCoreOSVariant() {
+			glog.V(4).Infof("Node is capable of image update")
 			return &CoreOSDaemon{dn}, nil
 		}
+
 		return nil, fmt.Errorf("can't treat a non-CoreOS node as layered")
 	}
 	return nil, nil
+}
+func (dn *Daemon) isDesiredConfigAnImage() bool {
+	if desiredImageName, ok := dn.node.Annotations[constants.DesiredImageConfigAnnotationKey]; ok {
+		glog.V(4).Infof("Image update requested: %s", desiredImageName)
+		return true
+	}
+	return false
 }
 
 // triggerUpdateWithMachineConfig starts the update. It queries the cluster for
 // the current and desired config if they weren't passed.
 func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *mcfgv1.MachineConfig) error {
+
+	// Hack in our layered node workflow for pools labeled as "layered"
+	coreOSDaemon, err := dn.shouldUpdateLayered()
+	if err != nil {
+		return err
+	}
+	if coreOSDaemon != nil {
+		dn.stopConfigDriftMonitor()
+		return coreOSDaemon.experimentalUpdateLayeredConfig()
+	}
+
 	if currentConfig == nil {
 		ccAnnotation, err := getNodeAnnotation(dn.node, constants.CurrentMachineConfigAnnotationKey)
 		if err != nil {
@@ -1514,15 +1559,6 @@ func (dn *Daemon) triggerUpdateWithMachineConfig(currentConfig, desiredConfig *m
 	// Shut down the Config Drift Monitor since we'll be performing an update
 	// and the config will "drift" while the update is occurring.
 	dn.stopConfigDriftMonitor()
-
-	// Hack in our layered node workflow for pools labeled as "layered"
-	coreOSDaemon, err := dn.shouldUpdateLayered()
-	if err != nil {
-		return err
-	}
-	if coreOSDaemon != nil {
-		return coreOSDaemon.experimentalUpdateLayeredConfig()
-	}
 
 	// run the update process. this function doesn't currently return.
 	return dn.update(currentConfig, desiredConfig)
@@ -1667,6 +1703,42 @@ func forceFileExists() bool {
 	return false
 }
 
+func (dn *Daemon) getServiceAccountToken() ([]byte, error) {
+	// Retrieve our service account token
+	return ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+
+}
+
+// genPullSecretFromServiceAccountToken packs the service account token into a compatible docker config so it can be used to login
+// to the container registry.
+// TODO(jkyros): I wrote this before I found where the default dockercfg secrets were generated, and controller-manager
+// does the same thing (albeit more elegantly). I still don't think we want the serviceaccount token on disk.
+// https://github.com/openshift/openshift-controller-manager/blob/aca2e4f51451e7036e53e88c7f64c75c2a20fa3d/pkg/serviceaccounts/controllers/create_dockercfg_secrets.go#L468
+func (dn *Daemon) genPullSecretFromServiceAccountToken() ([]byte, error) {
+	internalRegistryName := "image-registry.openshift-image-registry.svc:5000"
+	satoken, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	if err != nil {
+		return nil, err
+	}
+
+	c := credentialprovider.DockerConfigEntry{
+		Username: "machine-config-daemon",
+		Password: string(satoken),
+	}
+
+	dockerConfigJSON := credentialprovider.DockerConfigJSON{
+		Auths: map[string]credentialprovider.DockerConfigEntry{
+			internalRegistryName: c,
+		},
+	}
+	authfileData, err := json.Marshal(dockerConfigJSON)
+	if err != nil {
+		return nil, fmt.Errorf("Error trying to marshal docker secrets: %s", authfileData)
+	}
+
+	return authfileData, nil
+}
+
 // getPullSecret retrieves the pull secret for the machine-config-daemon service account. It should probably be a
 // a more generic helper function that is centrally located somewhere. The image pull secret names are generated, so we can't
 // request them directly without fuzzy string matching on the list of secrets, so we get their names off of the serviceaccount they
@@ -1706,7 +1778,7 @@ func (dn *Daemon) getPullSecret() ([]byte, error) {
 }
 
 func (dn *Daemon) WritePullSecret() error {
-	pullSecret, err := dn.getPullSecret()
+	pullSecret, err := dn.genPullSecretFromServiceAccountToken()
 	if err != nil {
 		return err
 	}

@@ -198,6 +198,14 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("Cannot initialize kubeClient: %v", err)
 	}
 
+	imageClient := cb.ImageClientOrDie(componentName)
+	err = dn.WritePullSecret()
+	if err != nil {
+		glog.Fatalf("Could not write pull secret: %s", err)
+	} else {
+		glog.Infof("Wrote Pull secret!")
+	}
+
 	// This channel is used to ensure all spawned goroutines exit when we exit.
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -211,6 +219,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	dn.ClusterConnect(
 		startOpts.nodeName,
 		kubeClient,
+		imageClient,
 		ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 		ctx.KubeInformerFactory.Core().V1().Nodes(),
 		startOpts.kubeletHealthzEnabled,
@@ -221,6 +230,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	ctx.KubeInformerFactory.Start(stopCh)
+	ctx.ImageNamespacedInformerFactory.Start(stopCh)
 	ctx.InformerFactory.Start(stopCh)
 	close(ctx.InformersStarted)
 

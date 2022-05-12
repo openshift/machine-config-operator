@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
 	"github.com/openshift/machine-config-operator/internal/clients"
+	"github.com/openshift/machine-config-operator/pkg/controller/build"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
@@ -64,7 +65,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.OpenShiftConfigKubeNamespacedInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.ConfigInformerFactory.Start(ctrlctx.Stop)
 		ctrlctx.OperatorInformerFactory.Start(ctrlctx.Stop)
-		ctrlctx.ImageInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.ImageNamespacedInformerFactory.Start(ctrlctx.Stop)
+		ctrlctx.BuildNamespacedInformerFactory.Start(ctrlctx.Stop)
 
 		close(ctrlctx.InformersStarted)
 
@@ -135,11 +137,9 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
-			ctx.ImageInformerFactory.Image().V1().ImageStreams(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 			ctx.ClientBuilder.ImageClientOrDie("render-controller"),
-			ctx.ClientBuilder.BuildClientOrDie("render-controller"),
 		),
 		// The node controller consumes data written by the above
 		node.New(
@@ -149,6 +149,20 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.ConfigInformerFactory.Config().V1().Schedulers(),
 			ctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
+		),
+
+		// TODO(jkyros):  I'd feel better about this if it were properly featuregated and
+		// only started when the feature gate was active
+		build.New(
+			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
+			ctx.ImageNamespacedInformerFactory.Image().V1().ImageStreams(),
+			ctx.BuildNamespacedInformerFactory.Build().V1().BuildConfigs(),
+			ctx.BuildNamespacedInformerFactory.Build().V1().Builds(),
+			ctx.ClientBuilder.MachineConfigClientOrDie("build-controller"),
+			ctx.ClientBuilder.KubeClientOrDie("build-controller"),
+			ctx.ClientBuilder.ImageClientOrDie("build-controller"),
+			ctx.ClientBuilder.BuildClientOrDie("build-controller"),
 		),
 	)
 

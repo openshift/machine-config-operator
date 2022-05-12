@@ -34,7 +34,13 @@ func MachineConfigToIgnition(mcSpec *mcSpecv1.MachineConfigSpec) (ign3types.Conf
 	// Extensions
 	supportedExtensions := ctrlcommon.GetSupportedExtensions()
 	for _, mcSpecExtension := range mcSpec.Extensions {
-		treeFile.Packages = append(treeFile.Packages, supportedExtensions[mcSpecExtension]...)
+		// It's an actual extension, so explode it into its actual packages
+		if extensionPackages, ok := supportedExtensions[mcSpecExtension]; ok {
+			treeFile.Packages = append(treeFile.Packages, extensionPackages...)
+		} else {
+			// It's just a package not an extension, just add it to the package list
+			treeFile.Packages = append(treeFile.Packages, mcSpecExtension)
+		}
 	}
 
 	// KernelType

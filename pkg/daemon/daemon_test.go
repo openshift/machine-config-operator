@@ -29,6 +29,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	"github.com/openshift/machine-config-operator/test/helpers"
+
+	imagefake "github.com/openshift/client-go/image/clientset/versioned/fake"
 )
 
 var pathtests = []struct {
@@ -112,8 +114,9 @@ func TestValidateFiles(t *testing.T) {
 type fixture struct {
 	t *testing.T
 
-	client     *fake.Clientset
-	kubeclient *k8sfake.Clientset
+	client      *fake.Clientset
+	kubeclient  *k8sfake.Clientset
+	imageclient *imagefake.Clientset
 
 	mcLister   []*mcfgv1.MachineConfig
 	nodeLister []*corev1.Node
@@ -121,8 +124,9 @@ type fixture struct {
 	kubeactions []core.Action
 	actions     []core.Action
 
-	objects     []runtime.Object
-	kubeobjects []runtime.Object
+	objects      []runtime.Object
+	kubeobjects  []runtime.Object
+	imageobjects []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -140,6 +144,7 @@ var (
 
 func (f *fixture) newController() *Daemon {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	f.imageclient = imagefake.NewSimpleClientset(f.imageobjects...)
 	f.kubeclient = k8sfake.NewSimpleClientset(f.kubeobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
@@ -151,6 +156,7 @@ func (f *fixture) newController() *Daemon {
 	}
 	d.ClusterConnect("node_name_test",
 		f.kubeclient,
+		f.imageclient,
 		i.Machineconfiguration().V1().MachineConfigs(),
 		k8sI.Core().V1().Nodes(),
 		false,

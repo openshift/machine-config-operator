@@ -27,6 +27,7 @@ type message struct {
 	lister          corev1lister.NodeLister
 	node            string
 	annos           map[string]string
+	removeannos     map[string]string
 	responseChannel chan error
 }
 
@@ -61,7 +62,7 @@ func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			_, err := setNodeAnnotations(msg.client, msg.lister, msg.node, msg.annos)
+			_, err := setNodeAnnotations(msg.client, msg.lister, msg.node, msg.annos, msg.removeannos)
 			msg.responseChannel <- err
 		}
 	}
@@ -75,6 +76,12 @@ func (nw *clusterNodeWriter) SetLayeredDone(client corev1client.NodeInterface, l
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
+
+	// Clean up the machineconfig annotations so there isn't conflict with other code paths
+	removeannos := map[string]string{
+		constants.CurrentMachineConfigAnnotationKey: "",
+		constants.DesiredMachineConfigAnnotationKey: "",
+	}
 	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
 	respChan := make(chan error, 1)
 	nw.writer <- message{
@@ -82,6 +89,7 @@ func (nw *clusterNodeWriter) SetLayeredDone(client corev1client.NodeInterface, l
 		lister:          lister,
 		node:            node,
 		annos:           annos,
+		removeannos:     removeannos,
 		responseChannel: respChan,
 	}
 	return <-respChan
@@ -194,10 +202,13 @@ func (nw *clusterNodeWriter) SetSSHAccessed(client corev1client.NodeInterface, l
 	return <-respChan
 }
 
-func setNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) (*corev1.Node, error) {
+func setNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, add, remove map[string]string) (*corev1.Node, error) {
 	node, err := internal.UpdateNodeRetry(client, lister, nodeName, func(node *corev1.Node) {
-		for k, v := range m {
+		for k, v := range add {
 			node.Annotations[k] = v
+		}
+		for k := range remove {
+			delete(node.Annotations, k)
 		}
 	})
 	return node, err

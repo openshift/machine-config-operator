@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	buildinformers "github.com/openshift/client-go/build/informers/externalversions"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	imageinformers "github.com/openshift/client-go/image/informers/externalversions"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
@@ -46,7 +47,8 @@ type ControllerContext struct {
 	APIExtInformerFactory                               apiextinformers.SharedInformerFactory
 	ConfigInformerFactory                               configinformers.SharedInformerFactory
 	OperatorInformerFactory                             operatorinformers.SharedInformerFactory
-	ImageInformerFactory                                imageinformers.SharedInformerFactory
+	ImageNamespacedInformerFactory                      imageinformers.SharedInformerFactory
+	BuildNamespacedInformerFactory                      buildinformers.SharedInformerFactory
 	KubeMAOSharedInformer                               informers.SharedInformerFactory
 
 	AvailableResources map[schema.GroupVersionResource]bool
@@ -66,6 +68,7 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 	configClient := cb.ConfigClientOrDie("config-shared-informer")
 	operatorClient := cb.OperatorClientOrDie("operator-shared-informer")
 	imageClient := cb.ImageClientOrDie("image-shared-informer")
+	buildClient := cb.BuildClientOrDie("build-shared-informer")
 	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
 	sharedNamespacedInformers := mcfginformers.NewFilteredSharedInformerFactory(client, resyncPeriod()(), targetNamespace, nil)
 	kubeSharedInformer := informers.NewSharedInformerFactory(kubeClient, resyncPeriod()())
@@ -94,7 +97,9 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 		apiextinformers.WithNamespace(targetNamespace), apiextinformers.WithTweakListOptions(assignFilterLabels))
 	configSharedInformer := configinformers.NewSharedInformerFactory(configClient, resyncPeriod()())
 	operatorSharedInformer := operatorinformers.NewSharedInformerFactory(operatorClient, resyncPeriod()())
-	imageSharedInformer := imageinformers.NewSharedInformerFactory(imageClient, resyncPeriod()())
+	// only watch build and image things inside the MCO namespace, there are potentially a lot of them outside
+	imageNamespacedSharedInformer := imageinformers.NewFilteredSharedInformerFactory(imageClient, resyncPeriod()(), MCONamespace, nil)
+	buildNamespacedSharedInformer := buildinformers.NewFilteredSharedInformerFactory(buildClient, resyncPeriod()(), MCONamespace, nil)
 
 	return &ControllerContext{
 		ClientBuilder:                                       cb,
@@ -107,7 +112,8 @@ func CreateControllerContext(cb *clients.Builder, stop <-chan struct{}, targetNa
 		APIExtInformerFactory:                               apiExtSharedInformer,
 		ConfigInformerFactory:                               configSharedInformer,
 		OperatorInformerFactory:                             operatorSharedInformer,
-		ImageInformerFactory:                                imageSharedInformer,
+		ImageNamespacedInformerFactory:                      imageNamespacedSharedInformer,
+		BuildNamespacedInformerFactory:                      buildNamespacedSharedInformer,
 		Stop:                                                stop,
 		InformersStarted:                                    make(chan struct{}),
 		ResyncPeriod:                                        resyncPeriod(),
