@@ -477,7 +477,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 			return err
 		}
 		if state != constants.MachineConfigDaemonStateDegraded && state != constants.MachineConfigDaemonStateUnreconcilable {
-			if err := dn.nodeWriter.SetWorking(dn.kubeClient.CoreV1().Nodes(), dn.nodeLister, dn.name); err != nil {
+			if err := dn.nodeWriter.SetWorking(); err != nil {
 				return fmt.Errorf("error setting node's state to Working: %w", err)
 			}
 		}
