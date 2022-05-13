@@ -132,9 +132,12 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 			return err
 		}); err != nil {
-			return fmt.Errorf("Could not Create/Update MachineConfig: %w", err)
+			return fmt.Errorf("could not Create/Update MachineConfig: %w", err)
 		}
 		glog.Infof("Applied FeatureSet %v on MachineConfigPool %v", key, pool.Name)
+	}
+	if err := ctrl.cleanUpDuplicatedMC(managedFeaturesKeyPrefix); err != nil {
+		return err
 	}
 
 	return nil
