@@ -900,7 +900,7 @@ func TestRegistriesValidation(t *testing.T) {
 				{
 					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
 						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
-							{Source: "blah.io/payload", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+							{Source: "blah.io", Mirrors: []string{"mirror-1.io", "mirror-2.io"}},
 						},
 					},
 				},
