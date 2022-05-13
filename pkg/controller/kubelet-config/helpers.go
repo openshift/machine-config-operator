@@ -27,7 +27,10 @@ import (
 )
 
 const (
-	emptyInput = ""
+	emptyInput                    = ""
+	managedNodeConfigKeyPrefix    = "97"
+	managedFeaturesKeyPrefix      = "98"
+	managedKubeletConfigKeyPrefix = "99"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
@@ -221,7 +224,7 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 
 	// If there is no kubelet config in the list, return the default MC name with no suffix
 	if kcListAll == nil || len(kcListAll.Items) == 0 {
-		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+		return ctrlcommon.GetManagedKey(pool, client, managedKubeletConfigKeyPrefix, "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
 
 	var kcList []mcfgv1.KubeletConfig
@@ -247,16 +250,16 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 		// if an MC name suffix exists, append it to the default MC name and return that as this kubelet config exists and
 		// we are probably doing an update action on it
 		if val != "" {
-			return fmt.Sprintf("99-%s-generated-kubelet-%s", pool.Name, val), nil
+			return fmt.Sprintf("%s-%s-generated-kubelet-%s", managedKubeletConfigKeyPrefix, pool.Name, val), nil
 		}
 		// if the suffix val is "", mc name should not suffixed the cfg to be updated is the first kubelet config has been created
-		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+		return ctrlcommon.GetManagedKey(pool, client, managedKubeletConfigKeyPrefix, "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
 
 	// If we are here, this means that a new kubelet config was created, so we have to calculate the suffix value for its MC name
 	// if the kubelet config is the only one in the list, mc name should not suffixed since cfg is the first kubelet config to be created
 	if len(kcList) == 1 {
-		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+		return ctrlcommon.GetManagedKey(pool, client, managedKubeletConfigKeyPrefix, "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
 	suffixNum := 0
 	// Go through the list of kubelet config objects created and get the max suffix value currently created
@@ -282,25 +285,25 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 		return "", fmt.Errorf("max number of supported kubelet config (10) has been reached. Please delete old kubelet configs before retrying")
 	}
 	// Return the default MC name with the suffixNum+1 value appended to it
-	return fmt.Sprintf("99-%s-generated-kubelet-%s", pool.Name, strconv.Itoa(suffixNum+1)), nil
+	return fmt.Sprintf("%s-%s-generated-kubelet-%s", managedKubeletConfigKeyPrefix, pool.Name, strconv.Itoa(suffixNum+1)), nil
 }
 
 func getManagedFeaturesKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "98", "kubelet", getManagedFeaturesKeyDeprecated(pool))
+	return ctrlcommon.GetManagedKey(pool, client, managedFeaturesKeyPrefix, "kubelet", getManagedFeaturesKeyDeprecated(pool))
 }
 
 // Deprecated: use getManagedFeaturesKey
 func getManagedFeaturesKeyDeprecated(pool *mcfgv1.MachineConfigPool) string {
-	return fmt.Sprintf("98-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
+	return fmt.Sprintf("%s-%s-%s-kubelet", managedFeaturesKeyPrefix, pool.Name, pool.ObjectMeta.UID)
 }
 
 func getManagedNodeConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "97", "kubelet", fmt.Sprintf("97-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID))
+	return ctrlcommon.GetManagedKey(pool, client, managedNodeConfigKeyPrefix, "kubelet", fmt.Sprintf("%s-%s-%s-kubelet", managedNodeConfigKeyPrefix, pool.Name, pool.ObjectMeta.UID))
 }
 
 // Deprecated: use getManagedKubeletConfigKey
 func getManagedKubeletConfigKeyDeprecated(pool *mcfgv1.MachineConfigPool) string {
-	return fmt.Sprintf("99-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
+	return fmt.Sprintf("%s-%s-%s-kubelet", managedKubeletConfigKeyPrefix, pool.Name, pool.ObjectMeta.UID)
 }
 
 // validates a KubeletConfig and returns an error if invalid
