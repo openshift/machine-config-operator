@@ -239,6 +239,31 @@ location = "example.com/repo/test-img"
 				},
 			},
 		}}),
+		"mc11": helpers.NewMachineConfig("11-test", nil, "dummy://", []ign3types.File{{
+			Node: ign3types.Node{
+				Path: "/etc/containers/registries.conf",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+unqualified-search-registries = ["example.com", "foo.com"]
+
+[[registry]]
+prefix = ""
+location = "example.com/repo1/test-img"
+mirror-by-digest-only = true
+
+[[registry.mirror]]
+location = "mirror.com/repo1/test-img"
+
+[[registry]]
+prefix = "bar.com"
+location = "example.com/repo/test-img"
+blocked = true
+`))),
+				},
+			},
+		}}),
 	}
 
 	tests := []struct {
@@ -295,6 +320,13 @@ location = "example.com/repo/test-img"
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc1"],
 			newConfig:      machineConfigs["mc2"],
+			expectedAction: false,
+		},
+		{
+			// skip drain: only new mirrors are added to registry with mirror-by-digest-only=true while existing registries with mirror-by-digest-only=false are unchanged
+			actions:        []string{postConfigChangeActionReloadCrio},
+			oldConfig:      machineConfigs["mc9"],
+			newConfig:      machineConfigs["mc11"],
 			expectedAction: false,
 		},
 		{
