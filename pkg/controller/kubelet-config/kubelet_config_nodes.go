@@ -170,6 +170,9 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		}
 		glog.Infof("Applied Node configuration %v on MachineConfigPool %v", key, pool.Name)
 	}
+	if err := ctrl.cleanUpDuplicatedMC(managedNodeConfigKeyPrefix); err != nil {
+		return err
+	}
 	// fetch the kubeletconfigs
 	kcs, err := ctrl.mckLister.List(labels.Everything())
 	if err != nil {

@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -210,6 +211,75 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				if !originalKubeConfig.FeatureGates["CSIMigration"] {
 					t.Errorf("template FeatureGates should contain CSIMigration: %v", originalKubeConfig.FeatureGates)
 				}
+			}
+		})
+	}
+}
+
+func TestFeaturesCustomNoUpgradeRemoveUnmanagedMC(t *testing.T) {
+	for _, platform := range []configv1.PlatformType{configv1.AWSPlatformType, configv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+			f.newController()
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			mcp3 := helpers.NewMachineConfigPool("custom", nil, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "node-role/custom", ""), "v0")
+			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kc2 := newKubeletConfig("bigger-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 250}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			kubeletConfigKey1, err := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			require.NoError(t, err)
+			kubeletConfigKey2, err := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			require.NoError(t, err)
+
+			featureKeyCustom, err := getManagedFeaturesKey(mcp3, f.client)
+			require.NoError(t, err)
+			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
+			mcs3 := helpers.NewMachineConfig(featureKeyCustom, map[string]string{}, "dummy://", []ign3types.File{{}})
+			mcsDeprecated := mcs.DeepCopy()
+			mcsDeprecated.Name = getManagedFeaturesKeyDeprecated(mcp)
+			mcs2Deprecated := mcs2.DeepCopy()
+			mcs2Deprecated.Name = getManagedFeaturesKeyDeprecated(mcp2)
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			features := &osev1.FeatureGate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: ctrlcommon.ClusterFeatureInstanceName,
+				},
+				Spec: osev1.FeatureGateSpec{
+					FeatureGateSelection: osev1.FeatureGateSelection{
+						FeatureSet: osev1.CustomNoUpgrade,
+						CustomNoUpgrade: &osev1.CustomFeatureGates{
+							Enabled: []string{"CSIMigration"},
+						},
+					},
+				},
+			}
+
+			f.featLister = append(f.featLister, features)
+			c := f.newController()
+
+			mcCustom, err := c.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mcs3, metav1.CreateOptions{})
+			require.NoError(t, err)
+			require.Equal(t, featureKeyCustom, mcCustom.Name)
+
+			mcList, err := c.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+			require.NoError(t, err)
+			require.Len(t, mcList.Items, 1)
+			require.Equal(t, featureKeyCustom, mcList.Items[0].Name)
+
+			err = c.syncFeatureHandler(features.Name)
+			require.NoError(t, err)
+
+			mcList, err = c.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+			require.NoError(t, err)
+			require.Len(t, mcList.Items, 2)
+			for _, mc := range mcList.Items {
+				require.NotEqual(t, featureKeyCustom, mc.Name)
 			}
 		})
 	}
