@@ -629,36 +629,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 		glog.Infof("Applied ContainerRuntimeConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
-	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
-		return err
-	}
 
 	return ctrl.syncStatusOnly(cfg, nil)
-}
-
-// cleanUpDuplicatedMC removes the MC of uncorrected version if format of its name contains 'generated-xxx'.
-// BZ 1955517: upgrade when there are more than one configs, these generated MC will be duplicated
-// by upgraded MC with number suffixed name (func getManagedKeyCtrCfg()) and fails the upgrade.
-func (ctrl *Controller) cleanUpDuplicatedMC() error {
-	generatedCtrCfg := "generated-containerruntime"
-	// Get all machine configs
-	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("error listing containerruntime machine configs: %w", err)
-	}
-	for _, mc := range mcList.Items {
-		if !strings.Contains(mc.Name, generatedCtrCfg) {
-			continue
-		}
-		// delete the containerruntime mc if its degraded
-		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
-			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
-				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
-			}
-
-		}
-	}
-	return nil
 }
 
 // mergeConfigChanges retrieves the original/default config data from the templates, decodes it and merges in the changes given by the Custom Resource.
