@@ -135,6 +135,12 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+// logNode emits a log message at informational level, prefixed with the node name in a consistent fashion.
+func (ctrl *Controller) logNode(node *corev1.Node, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	glog.Infof("node %s: %s", node.Name, msg)
+}
+
 func (ctrl *Controller) handleNodeEvent(node interface{}) {
 	n := node.(*corev1.Node)
 	glog.V(4).Infof("Updating Node %s", n.Name)
@@ -255,7 +261,7 @@ func (ctrl *Controller) syncNode(key string) error {
 			if usingEviction {
 				verbStr = "Evicted"
 			}
-			glog.Infof("Node: %s, %s pod %s/%s", node.Name, verbStr, pod.Namespace, pod.Name)
+			ctrl.logNode(node, "%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
 		},
 		AdditionalFilters: []drain.PodFilter{
 			func(pod corev1.Pod) drain.PodDeleteStatus {
@@ -273,7 +279,7 @@ func (ctrl *Controller) syncNode(key string) error {
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
 	case daemonconsts.DrainerStateUncordon:
-		glog.Infof("node %v to be uncordoned", key)
+		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
@@ -286,7 +292,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		// This is a bit problematic in practice since we don't really have a previous state.
 		// TODO (jerzhang) consider using a new CRD for coordination
 
-		glog.Infof("node %v to be drained", key)
+		ctrl.logNode(node, "initiating drain")
 		ongoingDrain := false
 		for k, v := range ctrl.ongoingDrains {
 			if k != node.Name {
@@ -297,13 +303,13 @@ func (ctrl *Controller) syncNode(key string) error {
 			glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
 			if duration > drainTimeoutDuration {
 				// TODO (jerzhang): handle error better
-				return fmt.Errorf("Drain exceeded timeout: %v", drainTimeoutDuration)
+				return fmt.Errorf("node %s: drain exceeded timeout: %v", node.Name, drainTimeoutDuration)
 			}
 			break
 		}
 		if !ongoingDrain {
 			// TODO probably have this detect the updated status instead
-			glog.Infof("node %v to be cordoned", key)
+			ctrl.logNode(node, "cordoning")
 			// perform uncordon
 			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
 				return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
@@ -313,7 +319,7 @@ func (ctrl *Controller) syncNode(key string) error {
 
 		// Attempt drain
 		if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
-			glog.Infof("Drain failed, but overall timeout has not been reached. Waiting 1 minute then retrying. Error message from drain: %v", err)
+			ctrl.logNode(node, "Drain failed, but overall timeout has not been reached. Waiting 1 minute then retrying. Error message from drain: %v", err)
 			ctrl.enqueueAfter(node, drainRequeueDelay)
 			return nil
 		}
@@ -321,7 +327,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		// Drain was successful. Delete the ongoing drain, then set the annotation
 		delete(ctrl.ongoingDrains, node.Name)
 	default:
-		return fmt.Errorf("non-recognized drain verb detected %s", desiredVerb)
+		return fmt.Errorf("node %s: non-recognized drain verb detected %s", node.Name, desiredVerb)
 	}
 
 	glog.Infof("Operation successful! Writing annotation then finishing.")
@@ -330,7 +336,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		daemonconsts.LastAppliedDrainerAnnotationKey: desiredState,
 	}
 	if err := ctrl.setNodeAnnotations(node.Name, annotations); err != nil {
-		return fmt.Errorf("failed to set node uncordoned annotation for node %v: %w", node.Name, err)
+		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %w", node.Name, err)
 	}
 
 	return nil
@@ -360,14 +366,14 @@ func (ctrl *Controller) setNodeAnnotations(nodeName string, annotations map[stri
 
 		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
 		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
+			return fmt.Errorf("node %s: failed to create patch for: %w", nodeName, err)
 		}
 
 		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
-		return fmt.Errorf("unable to update node %s: %w", nodeName, err)
+		return fmt.Errorf("node %s: unable to update: %w", nodeName, err)
 	}
 	return nil
 }
@@ -389,7 +395,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		// Log has been added to ensure that MCO is correctly performing cordon/uncordon.
 		// This should help us with debugging bugs like https://bugzilla.redhat.com/show_bug.cgi?id=2022387
-		glog.Infof("Initiating %s on node (currently schedulable: %t)", verb, !node.Spec.Unschedulable)
+		ctrl.logNode(node, "initiating %s (currently schedulable: %t)", verb, !node.Spec.Unschedulable)
 		err := drain.RunCordonOrUncordon(drainer, node, desired)
 		if err != nil {
 			lastErr = err
@@ -407,18 +413,18 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 
 		if node.Spec.Unschedulable != desired {
 			// See https://bugzilla.redhat.com/show_bug.cgi?id=2022387
-			glog.Infof("RunCordonOrUncordon() succeeded but node is still not in %s state, retrying", verb)
+			ctrl.logNode(node, "RunCordonOrUncordon() succeeded but node is still not in %s state, retrying", verb)
 			return false, nil
 		}
 
-		glog.Infof("%s succeeded on node (currently schedulable: %t)", verb, !updatedNode.Spec.Unschedulable)
+		ctrl.logNode(node, "%s succeeded (currently schedulable: %t)", verb, !updatedNode.Spec.Unschedulable)
 		return true, nil
 	}); err != nil {
 		if err == wait.ErrWaitTimeout {
 			errs := kubeErrs.NewAggregate([]error{err, lastErr})
-			return fmt.Errorf("failed to %s node (%d tries): %w", verb, backoff.Steps, errs)
+			return fmt.Errorf("node %s: failed to %s (%d tries): %w", node.Name, verb, backoff.Steps, errs)
 		}
-		return fmt.Errorf("failed to %s node: %w", verb, err)
+		return fmt.Errorf("node %s: failed to %s: %w", node.Name, verb, err)
 	}
 
 	return nil
