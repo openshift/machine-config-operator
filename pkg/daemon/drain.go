@@ -57,9 +57,10 @@ func (dn *Daemon) performDrain() error {
 	}
 
 	if err := wait.Poll(10*time.Second, 1*time.Hour, func() (bool, error) {
-		node, getErr := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
-		if getErr != nil {
-			return false, fmt.Errorf("Could not poll node status. Assuming something went wrong")
+		node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+		if err != nil {
+			glog.Warningf("Failed to get node: %v", err)
+			return false, nil
 		}
 		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
 			return false, nil
