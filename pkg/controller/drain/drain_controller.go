@@ -312,7 +312,7 @@ func (ctrl *Controller) syncNode(key string) error {
 			ctrl.logNode(node, "cordoning")
 			// perform uncordon
 			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
-				return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
+				return fmt.Errorf("node %s: failed to uncordon: %w", node.Name, err)
 			}
 			ctrl.ongoingDrains[node.Name] = time.Now()
 		}
@@ -330,7 +330,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		return fmt.Errorf("node %s: non-recognized drain verb detected %s", node.Name, desiredVerb)
 	}
 
-	glog.Infof("Operation successful! Writing annotation then finishing.")
+	ctrl.logNode(node, "operation successful; applying completion annotation")
 	// write annotation for either cordon+drain or uncordon success
 	annotations := map[string]string{
 		daemonconsts.LastAppliedDrainerAnnotationKey: desiredState,
