@@ -3,8 +3,19 @@ package daemon
 import (
 	"fmt"
 
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
+
+	"k8s.io/client-go/tools/cache"
+
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	corev1 "k8s.io/api/core/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -19,20 +30,32 @@ const (
 	machineConfigDaemonSSHAccessAnnotationKey = "machineconfiguration.openshift.io/ssh"
 	// MachineConfigDaemonSSHAccessValue is the annotation value applied when ssh access is detected
 	machineConfigDaemonSSHAccessValue = "accessed"
+
+	nodeWriterKubeconfigPath = "/var/lib/kubelet/kubeconfig"
 )
+
+type response struct {
+	node *corev1.Node
+	err  error
+}
 
 // message wraps a client and responseChannel
 type message struct {
 	annos           map[string]string
-	responseChannel chan error
+	responseChannel chan response
 }
 
 // clusterNodeWriter is a single writer to Kubernetes to prevent race conditions
 type clusterNodeWriter struct {
-	nodeName string
-	writer   chan message
-	client   corev1client.NodeInterface
-	lister   corev1lister.NodeLister
+	nodeName         string
+	writer           chan message
+	client           corev1client.NodeInterface
+	lister           corev1lister.NodeLister
+	nodeListerSynced cache.InformerSynced
+	kubeClient       kubernetes.Interface
+	// cached reference to node object - TODO change the daemon to read this too
+	node     *corev1.Node
+	recorder record.EventRecorder
 }
 
 // NodeWriter is the interface to implement a single writer to Kubernetes to prevent race conditions
@@ -43,28 +66,74 @@ type NodeWriter interface {
 	SetUnreconcilable(err error) error
 	SetDegraded(err error) error
 	SetSSHAccessed() error
+	SetAnnotations(annos map[string]string) (*corev1.Node, error)
+	SetDesiredDrainer(value string) error
+	Eventf(eventtype, reason, messageFmt string, args ...interface{})
+}
+
+func (nw *clusterNodeWriter) handleNodeWriterEvent(node interface{}) {
+	n := node.(*corev1.Node)
+	if n.Name != nw.nodeName {
+		return
+	}
+	nw.node = n
 }
 
 // newNodeWriter Create a new NodeWriter
-func newNodeWriter(nodeName string, client corev1client.NodeInterface, lister corev1lister.NodeLister) NodeWriter {
-	return &clusterNodeWriter{
-		nodeName: nodeName,
-		client:   client,
-		lister:   lister,
-		writer:   make(chan message, defaultWriterQueue),
+func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", nodeWriterKubeconfigPath)
+	if err != nil {
+		return &clusterNodeWriter{}, err
 	}
+	kubeClient, err := kubernetes.NewForConfig(rest.AddUserAgent(config, "machine-config-daemon"))
+	if err != nil {
+		return &clusterNodeWriter{}, err
+	}
+
+	glog.Infof("NodeWriter initialized with credentials from %s", nodeWriterKubeconfigPath)
+	informer := informers.NewSharedInformerFactory(kubeClient, ctrlcommon.DefaultResyncPeriod()())
+	nodeInformer := informer.Core().V1().Nodes()
+	nodeLister := nodeInformer.Lister()
+	nodeListerSynced := nodeInformer.Informer().HasSynced
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.V(2).Infof)
+	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+
+	nw := &clusterNodeWriter{
+		nodeName:         nodeName,
+		client:           kubeClient.CoreV1().Nodes(),
+		lister:           nodeLister,
+		nodeListerSynced: nodeListerSynced,
+		recorder:         eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: nodeName}),
+		writer:           make(chan message, defaultWriterQueue),
+		kubeClient:       kubeClient,
+	}
+
+	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    nw.handleNodeWriterEvent,
+		UpdateFunc: func(oldObj, newObj interface{}) { nw.handleNodeWriterEvent(newObj) },
+	})
+
+	informer.Start(stopCh)
+
+	return nw, nil
 }
 
 // Run reads from the writer channel and sets the node annotation. It will
 // return if the stop channel is closed. Intended to be run via a goroutine.
 func (nw *clusterNodeWriter) Run(stop <-chan struct{}) {
+	if !cache.WaitForCacheSync(stop, nw.nodeListerSynced) {
+		glog.Fatal("failed to sync initial listers cache")
+	}
+
 	for {
 		select {
 		case <-stop:
 			return
 		case msg := <-nw.writer:
-			_, err := setNodeAnnotations(nw.client, nw.lister, nw.nodeName, msg.annos)
-			msg.responseChannel <- err
+			r := implSetNodeAnnotations(nw.client, nw.lister, nw.nodeName, msg.annos)
+			msg.responseChannel <- r
 		}
 	}
 }
@@ -78,12 +147,13 @@ func (nw *clusterNodeWriter) SetDone(dcAnnotation string) error {
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
 	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
-	respChan := make(chan error, 1)
+	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
 		responseChannel: respChan,
 	}
-	return <-respChan
+	r := <-respChan
+	return r.err
 }
 
 // SetWorking sets the state to Working.
@@ -92,12 +162,13 @@ func (nw *clusterNodeWriter) SetWorking() error {
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
 	MCDState.WithLabelValues(constants.MachineConfigDaemonStateWorking, "").SetToCurrentTime()
-	respChan := make(chan error, 1)
+	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
 		responseChannel: respChan,
 	}
-	return <-respChan
+	r := <-respChan
+	return r.err
 }
 
 // SetUnreconcilable sets the state to Unreconcilable.
@@ -111,16 +182,16 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
 	MCDState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, truncatedErr).SetToCurrentTime()
-	respChan := make(chan error, 1)
+	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
 		responseChannel: respChan,
 	}
-	clientErr := <-respChan
-	if clientErr != nil {
-		glog.Errorf("Error setting Unreconcilable annotation for node %s: %v", nw.nodeName, clientErr)
+	r := <-respChan
+	if r.err != nil {
+		glog.Errorf("Error setting Unreconcilable annotation for node %s: %v", nw.nodeName, r.err)
 	}
-	return clientErr
+	return r.err
 }
 
 // SetDegraded logs the error and sets the state to Degraded.
@@ -135,16 +206,16 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
 	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, truncatedErr).SetToCurrentTime()
-	respChan := make(chan error, 1)
+	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
 		responseChannel: respChan,
 	}
-	clientErr := <-respChan
-	if clientErr != nil {
-		glog.Errorf("Error setting Degraded annotation for node %s: %v", nw.nodeName, clientErr)
+	r := <-respChan
+	if r.err != nil {
+		glog.Errorf("Error setting Degraded annotation for node %s: %v", nw.nodeName, r.err)
 	}
-	return clientErr
+	return r.err
 }
 
 // SetSSHAccessed sets the ssh annotation to accessed
@@ -153,19 +224,53 @@ func (nw *clusterNodeWriter) SetSSHAccessed() error {
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}
-	respChan := make(chan error, 1)
+	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
 		responseChannel: respChan,
 	}
-	return <-respChan
+	r := <-respChan
+	return r.err
 }
 
-func setNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) (*corev1.Node, error) {
+func (nw *clusterNodeWriter) SetAnnotations(annos map[string]string) (*corev1.Node, error) {
+	respChan := make(chan response, 1)
+	nw.writer <- message{
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	resp := <-respChan
+	return resp.node, resp.err
+}
+
+func (nw *clusterNodeWriter) SetDesiredDrainer(value string) error {
+	annos := map[string]string{
+		constants.DesiredDrainerAnnotationKey: value,
+	}
+	respChan := make(chan response, 1)
+	nw.writer <- message{
+		annos:           annos,
+		responseChannel: respChan,
+	}
+	r := <-respChan
+	return r.err
+}
+
+func (nw *clusterNodeWriter) Eventf(eventtype, reason, messageFmt string, args ...interface{}) {
+	if nw.node == nil {
+		return
+	}
+	nw.recorder.Eventf(getNodeRef(nw.node), eventtype, reason, messageFmt, args...)
+}
+
+func implSetNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) response {
 	node, err := internal.UpdateNodeRetry(client, lister, nodeName, func(node *corev1.Node) {
 		for k, v := range m {
 			node.Annotations[k] = v
 		}
 	})
-	return node, err
+	return response{
+		node: node,
+		err:  err,
+	}
 }

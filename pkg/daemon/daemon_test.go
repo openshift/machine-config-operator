@@ -22,7 +22,6 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -159,7 +158,6 @@ func (f *fixture) newController() *Daemon {
 
 	d.mcListerSynced = alwaysReady
 	d.nodeListerSynced = alwaysReady
-	d.recorder = &record.FakeRecorder{}
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)

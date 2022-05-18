@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	containerruntimeconfig "github.com/openshift/machine-config-operator/pkg/controller/container-runtime-config"
+	"github.com/openshift/machine-config-operator/pkg/controller/drain"
 	kubeletconfig "github.com/openshift/machine-config-operator/pkg/controller/kubelet-config"
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
@@ -61,6 +62,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop)
 
 		controllers := createControllers(ctrlctx)
+		draincontroller := drain.New(
+			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
+			ctrlctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
+			ctrlctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
+		)
 
 		// Start the shared factory informers that you need to use in your controller
 		ctrlctx.InformerFactory.Start(ctrlctx.Stop)
@@ -74,6 +80,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		for _, c := range controllers {
 			go c.Run(2, ctrlctx.Stop)
 		}
+		go draincontroller.Run(5, ctrlctx.Stop)
 
 		select {}
 	}
