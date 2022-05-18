@@ -22,6 +22,11 @@ spec:
         - "start"
         - "--resourcelock-namespace={{.TargetNamespace}}"
         - "--v=2"
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         resources:
           requests:
             cpu: 20m

@@ -24,20 +24,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+
 	corev1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubectl/pkg/drain"
 
 	configv1 "github.com/openshift/api/config/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
@@ -72,9 +66,6 @@ type Daemon struct {
 
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
-
-	// recorder sends events to the apiserver
-	recorder record.EventRecorder
 
 	// nodeLister is used to watch for updates via the informer
 	nodeLister       corev1lister.NodeLister
@@ -121,8 +112,6 @@ type Daemon struct {
 	currentConfigPath string
 
 	loggerSupportsJournal bool
-
-	drainer *drain.Helper
 
 	// Config Drift Monitor
 	configDriftMonitor ConfigDriftMonitor
@@ -293,7 +282,7 @@ func (dn *Daemon) ClusterConnect(
 	nodeInformer coreinformersv1.NodeInformer,
 	kubeletHealthzEnabled bool,
 	kubeletHealthzEndpoint string,
-) {
+) error {
 	dn.name = name
 	dn.kubeClient = kubeClient
 
@@ -303,11 +292,6 @@ func (dn *Daemon) ClusterConnect(
 	dn.queue = workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
 		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
-
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
-	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
 
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
@@ -320,7 +304,11 @@ func (dn *Daemon) ClusterConnect(
 	dn.mcLister = mcInformer.Lister()
 	dn.mcListerSynced = mcInformer.Informer().HasSynced
 
-	dn.nodeWriter = newNodeWriter(dn.name, dn.kubeClient.CoreV1().Nodes(), dn.nodeLister)
+	nw, err := newNodeWriter(dn.name, dn.stopCh)
+	if err != nil {
+		return err
+	}
+	dn.nodeWriter = nw
 	go dn.nodeWriter.Run(dn.stopCh)
 
 	dn.enqueueNode = dn.enqueueDefault
@@ -329,24 +317,7 @@ func (dn *Daemon) ClusterConnect(
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
-	dn.drainer = &drain.Helper{
-		Client:              dn.kubeClient,
-		Force:               true,
-		IgnoreAllDaemonSets: true,
-		DeleteEmptyDirData:  true,
-		GracePeriodSeconds:  -1,
-		Timeout:             90 * time.Second,
-		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
-			verbStr := "Deleted"
-			if usingEviction {
-				verbStr = "Evicted"
-			}
-			glog.Infof("%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
-		},
-		Out:    writer{glog.Info},
-		ErrOut: writer{glog.Error},
-		Ctx:    context.TODO(),
-	}
+	return nil
 }
 
 // HypershiftConnect sets up a simplified daemon for Hypershift updates
@@ -355,7 +326,7 @@ func (dn *Daemon) HypershiftConnect(
 	kubeClient kubernetes.Interface,
 	nodeInformer coreinformersv1.NodeInformer,
 	configMap string,
-) {
+) error {
 	dn.name = name
 	dn.kubeClient = kubeClient
 	dn.hypershiftConfigMap = configMap
@@ -378,11 +349,14 @@ func (dn *Daemon) HypershiftConnect(
 	dn.enqueueNode = dn.enqueueDefault
 	dn.syncHandler = dn.syncNodeHypershift
 
-	// TODO the event broadcasting is being rejected by the server
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.V(2).Infof)
-	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: dn.kubeClient.CoreV1().Events("")})
-	dn.recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name})
+	nw, err := newNodeWriter(dn.name, dn.stopCh)
+	if err != nil {
+		return err
+	}
+	dn.nodeWriter = nw
+	go dn.nodeWriter.Run(dn.stopCh)
+
+	return nil
 }
 
 // writer implements io.Writer interface as a pass-through for klog.
@@ -455,7 +429,7 @@ func (dn *Daemon) updateErrorStateHypershift(err error) {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	if annoErr := dn.HypershiftSetAnnotation(annos); annoErr != nil {
+	if _, annoErr := dn.nodeWriter.SetAnnotations(annos); annoErr != nil {
 		glog.Fatalf("Error setting degraded annotation %v, original error %v", annoErr, err)
 	}
 }
@@ -592,7 +566,7 @@ func (dn *Daemon) runPreflightConfigDriftCheck() error {
 	start := time.Now()
 
 	if err := dn.validateOnDiskState(currentOnDisk); err != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "PreflightConfigDriftCheckFailed", err.Error())
 		glog.Errorf("Preflight config drift check failed: %v", err)
 		return &configDriftErr{err}
 	}
@@ -776,7 +750,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.CurrentMachineConfigAnnotationKey:      targetHash,
 			constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
 		}
-		if err := dn.HypershiftSetAnnotation(annos); err != nil {
+		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		glog.Infof("The pod has completed update. Awaiting removal.")
@@ -798,7 +772,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 			constants.MachineConfigDaemonReasonAnnotationKey: "",
 			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
 		}
-		if err := dn.HypershiftSetAnnotation(annos); err != nil {
+		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
 			return fmt.Errorf("failed to set Done annotation on node: %w", err)
 		}
 		// Wait for a future sync to perform post-drain actions
@@ -821,43 +795,6 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
-}
-
-// HypershiftSetAnnotation sets the necessary communication annotations between nodepool controller
-// and the daemon.
-func (dn *Daemon) HypershiftSetAnnotation(annotations map[string]string) error {
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		oldNode, err := json.Marshal(n)
-		if err != nil {
-			return err
-		}
-
-		nodeClone := n.DeepCopy()
-		for k, v := range annotations {
-			nodeClone.Annotations[k] = v
-		}
-
-		newNode, err := json.Marshal(nodeClone)
-		if err != nil {
-			return err
-		}
-
-		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldNode, newNode, corev1.Node{})
-		if err != nil {
-			return fmt.Errorf("failed to create patch for node %q: %w", dn.name, err)
-		}
-
-		_, err = dn.kubeClient.CoreV1().Nodes().Patch(context.TODO(), dn.name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
-		return err
-	}); err != nil {
-		// may be conflict if max retries were hit
-		return fmt.Errorf("unable to update node %s: %w", dn.name, err)
-	}
-	return nil
 }
 
 // RunOnceFrom is the primary entrypoint for the non-cluster case
@@ -1045,7 +982,7 @@ func (dn *Daemon) applySSHAccessedAnnotation() error {
 
 // Called whenever the on-disk config has drifted from the current machineconfig.
 func (dn *Daemon) onConfigDrift(err error) {
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
+	dn.nodeWriter.Eventf(corev1.EventTypeWarning, "ConfigDriftDetected", err.Error())
 	glog.Error(err)
 	dn.updateErrorState(err)
 }
@@ -1078,7 +1015,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 		return
 	}
 
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStarted",
 		"Config Drift Monitor started, watching against %s", currentConfig.Name)
 
 	go func() {
@@ -1087,7 +1024,7 @@ func (dn *Daemon) startConfigDriftMonitor() {
 			// Stop the Config Drift Monitor, if it's not already stopped.
 			dn.configDriftMonitor.Stop()
 			// Report that we've shut down
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "ConfigDriftMonitorStopped", "Config Drift Monitor stopped")
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "ConfigDriftMonitorStopped", "Config Drift Monitor stopped")
 		}
 
 		for {
@@ -1528,7 +1465,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	if err := dn.validateOnDiskState(expectedConfig); err != nil {
 		wErr := fmt.Errorf("unexpected on-disk state validating against %s: %w", expectedConfig.GetName(), err)
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
+		dn.nodeWriter.Eventf(corev1.EventTypeWarning, "OnDiskStateValidationFailed", wErr.Error())
 		return wErr
 	}
 
@@ -1543,8 +1480,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return nil
 	}
 
-	if dn.recorder != nil {
-		dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "BootResync", fmt.Sprintf("Booting node %s, currentConfig %s, desiredConfig %s", dn.node.Name, state.currentConfig.GetName(), state.desiredConfig.GetName()))
 	}
 	// currentConfig != desiredConfig, and we're not booting up into the desiredConfig.
 	// Kick off an update.
@@ -1556,8 +1493,8 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	// In the case where we had a pendingConfig, make that now currentConfig.
 	// We update the node annotation, delete the state file, etc.
 	if state.pendingConfig != nil {
-		if dn.recorder != nil {
-			dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
 		}
 		if err := dn.nodeWriter.SetDone(state.pendingConfig.GetName()); err != nil {
 			return true, fmt.Errorf("error setting node's state to Done: %w", err)
@@ -1721,12 +1658,32 @@ func (dn *Daemon) prepUpdateFromCluster() (*mcfgv1.MachineConfig, *mcfgv1.Machin
 // "transient state" file, which signifies that all of those prior steps have
 // been completed.
 func (dn *Daemon) completeUpdate(desiredConfigName string) error {
-	if err := dn.cordonOrUncordonNode(false); err != nil {
-		return err
+	if err := dn.nodeWriter.SetDesiredDrainer(fmt.Sprintf("%s-%s", "uncordon", desiredConfigName)); err != nil {
+		return fmt.Errorf("Could not set drain annotation: %w", err)
+	}
+
+	if err := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
+		node, err := dn.kubeClient.CoreV1().Nodes().Get(context.TODO(), dn.name, metav1.GetOptions{})
+		if err != nil {
+			glog.Warningf("Failed to get node: %v", err)
+			return false, nil
+		}
+		if node.Annotations[constants.DesiredDrainerAnnotationKey] != node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err == wait.ErrWaitTimeout {
+			failMsg := fmt.Sprintf("failed to uncordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
+			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
+			MCDDrainErr.Set(1)
+			return fmt.Errorf(failMsg)
+		}
+		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
 	}
 
 	dn.logSystem("Update completed for config %s and node has been successfully uncordoned", desiredConfigName)
-	dn.recorder.Eventf(getNodeRef(dn.node), corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
+	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Uncordon", fmt.Sprintf("Update completed for config %s and node has been uncordoned", desiredConfigName))
 
 	return nil
 }
