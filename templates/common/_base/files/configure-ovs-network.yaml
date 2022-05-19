@@ -29,7 +29,7 @@ contents:
         files+=($src_path/*${MANAGED_NM_CONN_SUFFIX}.nmconnection $src_path/*${MANAGED_NM_CONN_SUFFIX})
         shopt -u nullglob
         for file in "${files[@]}"; do
-          file="$(basename $file)"
+          file=$(basename "$file")
           if [ -f "$src_path/$file" ]; then
             if [ ! -f "$dst_path/$file" ]; then
               echo "Copying configuration $file"
@@ -65,7 +65,7 @@ contents:
       files+=(${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX}.nmconnection ${NM_CONN_PATH}/*${MANAGED_NM_CONN_SUFFIX})
       shopt -u nullglob
       for file in "${files[@]}"; do
-        file="$(basename $file)"
+        file=$(basename "$file")
         file_path="${NM_CONN_PATH}/$file"
         if [ -f "$file_path" ]; then
           rm -f "$file_path"
