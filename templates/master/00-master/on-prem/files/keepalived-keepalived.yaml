@@ -23,7 +23,7 @@ contents:
         interval 2
         weight 20
         rise 3
-        fall 2
+        fall 3
     }
 
     vrrp_script chk_ocp_both {
@@ -33,7 +33,7 @@ contents:
         # bootstrap to master by itself.
         weight 5
         rise 3
-        fall 2
+        fall 3
     }
 
     # TODO: Improve this check. The port is assumed to be alive.
