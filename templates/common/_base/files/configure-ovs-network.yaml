@@ -9,6 +9,12 @@ contents:
     touch /var/run/ovs-config-executed
     NM_CONN_PATH="/etc/NetworkManager/system-connections"
 
+    # Enable NM debug logging
+    cat <<'EOF' > /etc/NetworkManager/conf.d/95-nm-debug.conf
+    [logging]
+    domains=ALL:DEBUG
+    EOF
+
     # this flag tracks if any config change was made
     nm_config_changed=0
 
@@ -34,6 +40,20 @@ contents:
           echo "Skipping $file since it does not exist at source"
         fi
       done
+    }
+
+    debug_data() {
+      set +eu
+      echo "**** Collecting debug data... $(date)"
+      caller
+      nmcli conn show
+      nmcli -f uuid conn show | tail -n+2 | while read c ; do echo === $c === ; nmcli conn show $c |cat ; done
+      grep '' /etc/NetworkManager/system-connections/* 2>/dev/null || true
+      grep '' /etc/NetworkManager/conf.d/* 2>/dev/null || true
+      grep '' /etc/NetworkManager/* 2>/dev/null || true
+      ip route
+      ip a
+      set -eu
     }
 
     update_nm_conn_files() {
@@ -499,6 +519,7 @@ contents:
 
       # find default interface
       # the default interface might be br-ex, so check this before looking at the hint
+      debug_data
       while [ ${counter} -lt 12 ]; do
         # check ipv4
         # never use the interface that's specified in extra_bridge_file
@@ -525,6 +546,7 @@ contents:
         counter=$((counter+1))
         sleep 5
       done
+      debug_data
 
       # if the default interface does not point out of br-ex or br-ex1
       if [ "${iface}" != "br-ex" ] && [ "${iface}" != "br-ex1" ]; then
@@ -629,6 +651,8 @@ contents:
         fi
       }
 
+      debug_data
+
       ovnk_config_dir='/etc/ovnk'
       ovnk_var_dir='/var/lib/ovnk'
       extra_bridge_file="${ovnk_config_dir}/extra_bridge"
@@ -672,6 +696,7 @@ contents:
         print_state
       fi
       touch /run/configure-ovs-boot-done
+      debug_data
 
       iface=$(get_default_interface "${iface_default_hint_file}" "$extra_bridge_file")
 
@@ -723,3 +748,4 @@ contents:
       # Remove bridges created by ovn-kubernetes
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
     fi
+    debug_data
