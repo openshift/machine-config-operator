@@ -100,7 +100,10 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 	setStringIfSet(modified, &existing.WorkingDir, required.WorkingDir)
 
 	// also sync the env vars here, added to handle proxy
+	// use a map to keep track of removed vars, with empty values
+	requiredVars := make(map[string]struct{})
 	for _, required := range required.Env {
+		requiredVars[required.Name] = struct{}{}
 		var existingCurr *corev1.EnvVar
 		for j, curr := range existing.Env {
 			if curr.Name == required.Name {
@@ -114,6 +117,14 @@ func ensureContainer(modified *bool, existing *corev1.Container, required corev1
 			existingCurr = &existing.Env[len(existing.Env)-1]
 		}
 		ensureEnvVar(modified, existingCurr, required)
+	}
+
+	// any env vars we don't have anymore should be removed
+	for i := len(existing.Env) - 1; i >= 0; i-- {
+		if _, ok := requiredVars[existing.Env[i].Name]; !ok {
+			*modified = true
+			existing.Env = append(existing.Env[:i], existing.Env[i+1:]...)
+		}
 	}
 
 	// any port we specify, we require
