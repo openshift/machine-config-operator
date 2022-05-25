@@ -6,7 +6,7 @@ contents:
     kind: Pod
     metadata:
       name: apiserver-watcher
-      namespace: kube-system
+      namespace: openshift-kube-apiserver
     spec:
       containers:
       - name: apiserver-watcher
