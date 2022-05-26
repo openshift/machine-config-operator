@@ -749,4 +749,3 @@ contents:
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
     fi
     debug_data
-    journalctl --no-pager
