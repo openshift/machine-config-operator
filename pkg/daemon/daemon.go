@@ -529,6 +529,15 @@ func (dn *Daemon) syncNode(key string) error {
 		return nil
 	}
 
+	// Check if a previous drain caused us to degrade. If the drain
+	// has yet to complete and we are in a degrade state, continue
+	// to stay in this state
+	if dn.node.Annotations[constants.DesiredDrainerAnnotationKey] != "" &&
+		dn.node.Annotations[constants.DesiredDrainerAnnotationKey] != dn.node.Annotations[constants.LastAppliedDrainerAnnotationKey] {
+		glog.Infof("A previously requested drain has not yet completed. Waiting for machine-config-controller to finish draining node.")
+		return nil
+	}
+
 	// Pass to the shared update prep method
 	current, desired, err := dn.prepUpdateFromCluster()
 	if err != nil {

@@ -38,6 +38,24 @@ func (dn *Daemon) performDrain() error {
 		return nil
 	}
 
+	desiredConfigName, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
+	if err != nil {
+		return err
+	}
+	desiredDrainAnnotationValue := fmt.Sprintf("%s-%s", "drain", desiredConfigName)
+	if dn.node.Annotations[constants.LastAppliedDrainerAnnotationKey] == desiredDrainAnnotationValue {
+		// We should only enter this in one of three scenarios:
+		// A previous drain timed out, and the controller succeeded while we waited for the next sync
+		// Or the MCD restarted for some reason
+		// Or we are forcing an update
+		// In either case, we just assume the drain we want has been completed
+		// A third case we can hit this is that the node fails validation upon reboot, and then we use
+		// the forcefile. But in that case, since we never uncordoned, skipping the drain should be fine
+		dn.logSystem("drain is already completed on this node")
+		MCDDrainErr.Set(0)
+		return nil
+	}
+
 	// We are here, that means we need to cordon and drain node
 	dn.logSystem("Update prepared; requesting cordon and drain via annotation to controller")
 	startTime := time.Now()
@@ -47,12 +65,8 @@ func (dn *Daemon) performDrain() error {
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Cordon", "Cordoned node to apply update")
 	dn.nodeWriter.Eventf(corev1.EventTypeNormal, "Drain", "Draining node to update config.")
 
-	desiredConfigName, err := getNodeAnnotation(dn.node, constants.DesiredMachineConfigAnnotationKey)
-	if err != nil {
-		return err
-	}
 	// TODO (jerzhang): definitely don't have to block here, but as an initial PoC, this is easier
-	if err := dn.nodeWriter.SetDesiredDrainer(fmt.Sprintf("%s-%s", "drain", desiredConfigName)); err != nil {
+	if err := dn.nodeWriter.SetDesiredDrainer(desiredDrainAnnotationValue); err != nil {
 		return fmt.Errorf("Could not set drain annotation: %w", err)
 	}
 
