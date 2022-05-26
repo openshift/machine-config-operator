@@ -301,17 +301,16 @@ func (ctrl *Controller) syncNode(key string) error {
 			duration := time.Now().Sub(v)
 			glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
 			if duration > drainTimeoutDuration {
-				// TODO (jerzhang): handle error better
-				return fmt.Errorf("node %s: drain exceeded timeout: %v", node.Name, drainTimeoutDuration)
+				// TODO right now the daemon will alert to match previous behaviour. Consider having controller do so instead.
+				glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, drainTimeoutDuration)
 			}
 			break
 		}
 		if !ongoingDrain {
-			// TODO probably have this detect the updated status instead
 			ctrl.logNode(node, "cordoning")
-			// perform uncordon
+			// perform cordon
 			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
-				return fmt.Errorf("node %s: failed to uncordon: %w", node.Name, err)
+				return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
 			}
 			ctrl.ongoingDrains[node.Name] = time.Now()
 		}
@@ -319,7 +318,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		// Attempt drain
 		ctrl.logNode(node, "initiating drain")
 		if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
-			ctrl.logNode(node, "Drain failed, but overall timeout has not been reached. Waiting 1 minute then retrying. Error message from drain: %v", err)
+			ctrl.logNode(node, "Drain failed. Waiting 1 minute then retrying. Error message from drain: %v", err)
 			ctrl.enqueueAfter(node, drainRequeueDelay)
 			return nil
 		}
