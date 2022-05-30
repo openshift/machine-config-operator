@@ -292,7 +292,6 @@ func (ctrl *Controller) syncNode(key string) error {
 		// This is a bit problematic in practice since we don't really have a previous state.
 		// TODO (jerzhang) consider using a new CRD for coordination
 
-		ctrl.logNode(node, "initiating drain")
 		ongoingDrain := false
 		for k, v := range ctrl.ongoingDrains {
 			if k != node.Name {
@@ -318,6 +317,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		}
 
 		// Attempt drain
+		ctrl.logNode(node, "initiating drain")
 		if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
 			ctrl.logNode(node, "Drain failed, but overall timeout has not been reached. Waiting 1 minute then retrying. Error message from drain: %v", err)
 			ctrl.enqueueAfter(node, drainRequeueDelay)
