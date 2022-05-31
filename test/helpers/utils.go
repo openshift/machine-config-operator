@@ -271,10 +271,15 @@ func GetMonitoringToken(t *testing.T, cs *framework.ClientSet) (string, error) {
 		return "", fmt.Errorf("failed to retrieve service account: %w", err)
 	}
 	for _, secret := range sa.Secrets {
+		t.Logf("Parsing secret %s", secret.Name)
 		if strings.HasPrefix(secret.Name, "prometheus-k8s-token") {
+			t.Logf("Secret found %s", secret.Name)
 			sec, err := cs.Secrets("openshift-monitoring").Get(context.TODO(), secret.Name, metav1.GetOptions{})
 			if err != nil {
 				return "", fmt.Errorf("failed to retrieve monitoring secret: %w", err)
+			}
+			for k, v := range sec.Data {
+				t.Logf("In secret %s, key %s value %s", secret.Name, k, v)
 			}
 			if token, ok := sec.Data["token"]; ok {
 				return string(token), nil
