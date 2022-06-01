@@ -96,8 +96,15 @@ func newNodeWriter(nodeName string, stopCh <-chan struct{}) (NodeWriter, error) 
 	nodeLister := nodeInformer.Lister()
 	nodeListerSynced := nodeInformer.Informer().HasSynced
 
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.V(2).Infof)
+	eventBroadcaster := record.NewBroadcasterWithCorrelatorOptions(record.CorrelatorOptions{
+		MaxEvents:            99999,
+		MaxIntervalInSeconds: 1,
+		BurstSize:            99999,
+		QPS:                  99999,
+		Clock:                nil,
+		SpamKeyFunc:          nil,
+	})
+	eventBroadcaster.StartLogging(glog.V(5).Infof)
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	nw := &clusterNodeWriter{

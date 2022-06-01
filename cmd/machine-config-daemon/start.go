@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"k8s.io/klog/v2"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/google/renameio"
 	"k8s.io/client-go/tools/clientcmd"
@@ -253,4 +255,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if err := dn.Run(stopCh, exitCh); err != nil {
 		ctrlcommon.WriteTerminationError(err)
 	}
+	klog.Errorf("## sleeping for 20 secs")
+	time.Sleep(20 * time.Second)
 }

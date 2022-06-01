@@ -332,8 +332,15 @@ func removePendingDeployment() error {
 func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Extract image and add coreos-extensions repo if we have either OS update or package layering to perform
 
+	defer func() {
+		if retErr != nil {
+			dn.logSystem("## applyOSChanges() returned error: %v", retErr)
+		}
+	}()
+
 	if dn.nodeWriter != nil {
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStarted", mcDiff.osChangesString())
+		dn.logSystem("## OSUpdateStarted event fired")
 	}
 
 	var osImageContentDir string
@@ -347,14 +354,15 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		// which doesn't have a node object yet.
 		if dn.node != nil {
 			if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
-				if err := setRootDeviceSchedulerBFQ(); err != nil {
-					return err
+				if retErr = setRootDeviceSchedulerBFQ(); retErr != nil {
+					return retErr
 				}
 			}
 		}
 		// We emitted this event before, so keep it
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
+			dn.logSystem("## InClusterUpgrade event fired")
 		}
 		var err error
 		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
@@ -363,29 +371,31 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		// Delete extracted OS image once we are done.
 		defer os.RemoveAll(osImageContentDir)
 
-		if err := addExtensionsRepo(osImageContentDir); err != nil {
-			return err
+		if retErr = addExtensionsRepo(osImageContentDir); retErr != nil {
+			return retErr
 		}
 		defer os.Remove(extensionsRepo)
 	}
 
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := updateOS(newConfig, osImageContentDir); err != nil {
+		if retErr = updateOS(newConfig, osImageContentDir); retErr != nil {
 			nodeName := ""
 			if dn.node != nil {
 				nodeName = dn.node.Name
 			}
-			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
-			return err
+			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, retErr.Error()).SetToCurrentTime()
+			return retErr
 		}
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeApplied", "OS upgrade applied; new MachineConfig (%s) has new OS image (%s)", newConfig.Name, newConfig.Spec.OSImageURL)
+			dn.logSystem("## OSUpgradeApplied event fired")
 		}
 	} else { //nolint:gocritic // The nil check for dn.nodeWriter has nothing to do with an OS update being unavailable.
 		// An OS upgrade is not available
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeSkipped", "OS upgrade skipped; new MachineConfig (%s) has same OS image (%s) as old MachineConfig (%s)", newConfig.Name, newConfig.Spec.OSImageURL, oldConfig.Name)
+			dn.logSystem("## OSUpgradeSkipped event fired")
 		}
 	}
 
@@ -407,23 +417,24 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 	// Apply kargs
 	if mcDiff.kargs {
-		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
-			return err
+		if retErr = dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); retErr != nil {
+			return retErr
 		}
 	}
 
 	// Switch to real time kernel
-	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
-		return err
+	if retErr = dn.switchKernel(oldConfig, newConfig); retErr != nil {
+		return retErr
 	}
 
 	// Apply extensions
-	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
-		return err
+	if retErr = dn.applyExtensions(oldConfig, newConfig); retErr != nil {
+		return retErr
 	}
 
 	if dn.nodeWriter != nil {
 		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStaged", "Changes to OS staged")
+		dn.logSystem("## OSUpdateStaged event fired")
 	}
 	return nil
 

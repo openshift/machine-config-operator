@@ -17,8 +17,11 @@ limitations under the License.
 package record
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/exec"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -209,8 +212,10 @@ func recordToSink(sink EventSink, event *v1.Event, eventCorrelator *EventCorrela
 		utilruntime.HandleError(err)
 	}
 	if result.Skip {
+		logSystem("skipping writing event %#v", event)
 		return
 	}
+	logSystem("starting to record to sink: %#v", event)
 	tries := 0
 	for {
 		if recordEvent(sink, result.Event, result.Patch, result.Event.Count > 1, eventCorrelator) {
@@ -219,8 +224,10 @@ func recordToSink(sink EventSink, event *v1.Event, eventCorrelator *EventCorrela
 		tries++
 		if tries >= maxTriesPerEvent {
 			klog.Errorf("Unable to write event '%#v' (retry limit exceeded!)", event)
+			logSystem("Unable to write event '%#v' (retry limit exceeded!)", event)
 			break
 		}
+		logSystem("retrying event %d / %d '%#v'", tries, maxTriesPerEvent, event)
 		// Randomize the first sleep so that various clients won't all be
 		// synced up if the master goes down.
 		if tries == 1 {
@@ -228,6 +235,25 @@ func recordToSink(sink EventSink, event *v1.Event, eventCorrelator *EventCorrela
 		} else {
 			time.Sleep(sleepDuration)
 		}
+	}
+}
+
+// Log a message to the systemd journal as well as our stdout
+func logSystem(format string, a ...interface{}) {
+	message := fmt.Sprintf(format, a...)
+
+	// Since we're chrooted into the host rootfs with /run mounted,
+	// we can just talk to the journald socket.  Doing this as a
+	// subprocess rather than talking to journald in process since
+	// I worry about the golang library having a connection pre-chroot.
+	logger := exec.Command("logger")
+
+	var log bytes.Buffer
+	log.WriteString(fmt.Sprintf("### event.go: %s", message))
+
+	logger.Stdin = &log
+	if err := logger.Run(); err != nil {
+		os.Exit(99)
 	}
 }
 
@@ -248,10 +274,12 @@ func recordEvent(sink EventSink, event *v1.Event, patch []byte, updateExistingEv
 		newEvent, err = sink.Create(event)
 	}
 	if err == nil {
+		logSystem("Event is logged: '%#v'", event)
 		// we need to update our event correlator with the server returned state to handle name/resourceversion
 		eventCorrelator.UpdateState(newEvent)
 		return true
 	}
+	logSystem("Event is not logged: '%#v'", event)
 
 	// If we can't contact the server, then hold everything while we keep trying.
 	// Otherwise, something about the event is malformed and we should abandon it.
@@ -259,12 +287,15 @@ func recordEvent(sink EventSink, event *v1.Event, patch []byte, updateExistingEv
 	case *restclient.RequestConstructionError:
 		// We will construct the request the same next time, so don't keep trying.
 		klog.Errorf("Unable to construct event '%#v': '%v' (will not retry!)", event, err)
+		logSystem("Unable to construct event '%#v': '%v' (will not retry!)", event, err)
 		return true
 	case *errors.StatusError:
 		if errors.IsAlreadyExists(err) {
 			klog.V(5).Infof("Server rejected event '%#v': '%v' (will not retry!)", event, err)
+			logSystem("Server rejected event '%#v': '%v' (will not retry!)", event, err)
 		} else {
 			klog.Errorf("Server rejected event '%#v': '%v' (will not retry!)", event, err)
+			logSystem("Server rejected event '%#v': '%v' (will not retry!)", event, err)
 		}
 		return true
 	case *errors.UnexpectedObjectError:
@@ -274,6 +305,7 @@ func recordEvent(sink EventSink, event *v1.Event, patch []byte, updateExistingEv
 		// This case includes actual http transport errors. Go ahead and retry.
 	}
 	klog.Errorf("Unable to write event: '%#v': '%v'(may retry after sleeping)", event, err)
+	logSystem("Unable to write event: '%#v': '%v'(may retry after sleeping)", event, err)
 	return false
 }
 
@@ -348,7 +380,9 @@ func (recorder *recorderImpl) generateEvent(object runtime.Object, annotations m
 	// outgoing events anyway).
 	if sent := recorder.ActionOrDrop(watch.Added, event); !sent {
 		klog.Errorf("unable to record event: too many queued events, dropped event %#v", event)
+		logSystem("unable to record event: too many queued events, dropped event %#v", event)
 	}
+	logSystem("event sent to distributers %#v", event)
 }
 
 func (recorder *recorderImpl) Event(object runtime.Object, eventtype, reason, message string) {
