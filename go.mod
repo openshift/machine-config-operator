@@ -24,6 +24,7 @@ require (
 	github.com/google/go-cmp v0.5.7
 	github.com/google/renameio v0.1.0
 	github.com/imdario/mergo v0.3.12
+	github.com/nightlyone/lockfile v1.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/openshift/api v0.0.0-20220504105152-6f735e7109c8
 	github.com/openshift/client-go v0.0.0-20220504114320-6aec01bb0754
