@@ -22,5 +22,5 @@ contents:
     # See respective systemd unit metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
     cat > "${NODECONF}" <<EOF
     [Service]
-    Environment="KUBELET_PROVIDERID=aws://${AFTERBURN_AWS_AVAILABILITY_ZONE}/${AFTERBURN_AWS_INSTANCE_ID}"
+    Environment="KUBELET_PROVIDERID=aws:///${AFTERBURN_AWS_AVAILABILITY_ZONE}/${AFTERBURN_AWS_INSTANCE_ID}"
     EOF
