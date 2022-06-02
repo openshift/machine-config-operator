@@ -64,7 +64,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon"
+            message: "Drain failed on {{ $labels.node }} , updates may be blocked. For more details check MachineConfigController pod logs: oc logs -f -n {{ $labels.namespace }} machine-config-controller-xxxxx -c machine-config-controller"
     - name: mcd-pivot-error
       rules:
         - alert: MCDPivotError
