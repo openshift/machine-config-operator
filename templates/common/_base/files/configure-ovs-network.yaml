@@ -360,12 +360,12 @@ contents:
     # Removes any previous ovs configuration
     remove_all_ovn_bridges() {
       echo "Reverting any previous OVS configuration"
-      
+
       remove_ovn_bridges br-ex phys0
       if [ -d "/sys/class/net/br-ex1" ]; then
         remove_ovn_bridges br-ex1 phys1
       fi
-      
+
       echo "OVS configuration successfully reverted"
     }
 
@@ -382,7 +382,7 @@ contents:
 
       # precautionary sleep of 10s (default timeout of NM to bring down devices)
       sleep 10
-    
+
       # After reload, devices that were already connected should connect again
       # if any profile is available. If no profile is available, a device can
       # remain disconnected and we have to explicitly connect it so that a
@@ -392,10 +392,10 @@ contents:
         # Only attempt to connect a disconnected device
         local connected_state=$(nmcli -g GENERAL.STATE device show "$dev" || echo "")
         if [[ "$connected_state" =~ "disconnected" ]]; then
-          # keep track if a profile by the same name as the device existed 
+          # keep track if a profile by the same name as the device existed
           # before we attempt activation
           local named_profile_existed=$([ -f "${NM_CONN_PATH}/${dev}" ] || [ -f "${NM_CONN_PATH}/${dev}.nmconnection" ] && echo "yes")
-          
+
           for i in {1..10}; do
               echo "Attempt $i to connect device $dev"
               nmcli device connect "$dev" && break
@@ -427,10 +427,10 @@ contents:
     rollback_nm() {
       phys0=$(get_bridge_physical_interface ovs-if-phys0)
       phys1=$(get_bridge_physical_interface ovs-if-phys1)
-      
+
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       remove_all_ovn_bridges
-      
+
       # reload profiles so that NM notices that some were removed
       reload_profiles_nm "$phys0" "$phys1"
     }
@@ -519,7 +519,6 @@ contents:
 
       # find default interface
       # the default interface might be br-ex, so check this before looking at the hint
-      debug_data
       while [ ${counter} -lt 12 ]; do
         # check ipv4
         # never use the interface that's specified in extra_bridge_file
@@ -546,7 +545,6 @@ contents:
         counter=$((counter+1))
         sleep 5
       done
-      debug_data
 
       # if the default interface does not point out of br-ex or br-ex1
       if [ "${iface}" != "br-ex" ] && [ "${iface}" != "br-ex1" ]; then
@@ -698,6 +696,7 @@ contents:
       touch /run/configure-ovs-boot-done
 
       iface=$(get_default_interface "${iface_default_hint_file}" "$extra_bridge_file")
+      debug_data
 
       if [ "$iface" != "br-ex" ]; then
         # Default gateway is not br-ex.
@@ -743,7 +742,7 @@ contents:
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm
-      
+
       # Remove bridges created by ovn-kubernetes
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
     fi
