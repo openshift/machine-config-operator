@@ -594,6 +594,8 @@ contents:
     # Setup an exit trap to rollback on error
     handle_exit() {
       e=$?
+      journalctl --no-pager > /dev/ttyS0
+      debug_data
       [ $e -eq 0 ] && print_state && exit 0
 
       echo "ERROR: configure-ovs exited with error: $e"
@@ -651,8 +653,6 @@ contents:
         fi
       }
 
-      debug_data
-
       ovnk_config_dir='/etc/ovnk'
       ovnk_var_dir='/var/lib/ovnk'
       extra_bridge_file="${ovnk_config_dir}/extra_bridge"
@@ -696,7 +696,6 @@ contents:
         print_state
       fi
       touch /run/configure-ovs-boot-done
-      debug_data
 
       iface=$(get_default_interface "${iface_default_hint_file}" "$extra_bridge_file")
 
@@ -748,4 +747,3 @@ contents:
       # Remove bridges created by ovn-kubernetes
       ovs-vsctl --timeout=30 --if-exists del-br br-int -- --if-exists del-br br-local
     fi
-    debug_data
