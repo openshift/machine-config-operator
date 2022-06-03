@@ -9,6 +9,10 @@ contents:
     touch /var/run/ovs-config-executed
     NM_CONN_PATH="/etc/NetworkManager/system-connections"
 
+    # Send whole journal to console
+    echo "ForwardToConsole=yes" >> /etc/systemd/journald.conf
+    systemctl force-reload systemd-journald
+
     # Enable NM debug logging
     cat <<'EOF' > /etc/NetworkManager/conf.d/95-nm-debug.conf
     [logging]
