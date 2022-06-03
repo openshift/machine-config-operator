@@ -234,7 +234,7 @@ func (ctrl *Controller) syncNode(key string) error {
 	}
 
 	// First check if a drain request is needed for this node
-	node, err := ctrl.nodeLister.Get(name)
+	node, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		glog.V(2).Infof("node %v has been deleted", key)
 		return nil
@@ -245,7 +245,7 @@ func (ctrl *Controller) syncNode(key string) error {
 
 	desiredState := node.Annotations[daemonconsts.DesiredDrainerAnnotationKey]
 	if desiredState == node.Annotations[daemonconsts.LastAppliedDrainerAnnotationKey] {
-		glog.V(4).Infof("Node %v has the correct drain", key)
+		glog.V(2).Infof("Node %v has the correct drain", key)
 		return nil
 	}
 
@@ -279,7 +279,6 @@ func (ctrl *Controller) syncNode(key string) error {
 	desiredVerb := strings.Split(desiredState, "-")[0]
 	switch desiredVerb {
 	case daemonconsts.DrainerStateUncordon:
-		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
 		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
@@ -307,8 +306,6 @@ func (ctrl *Controller) syncNode(key string) error {
 			break
 		}
 		if !ongoingDrain {
-			ctrl.logNode(node, "cordoning")
-			// perform cordon
 			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
 				return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
 			}
