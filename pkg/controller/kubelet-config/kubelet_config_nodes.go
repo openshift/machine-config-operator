@@ -187,6 +187,7 @@ func (ctrl *Controller) enqueueNodeConfig(nodeConfig *osev1.Node) {
 }
 
 func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
+	var isValidWorkerLatencyProfleTransition = true
 	oldNode, ok := old.(*osev1.Node)
 	if !ok {
 		utilruntime.HandleError(fmt.Errorf("Couldn't retrieve the old object from the Update Node Config event %#v", old))
@@ -207,9 +208,19 @@ func (ctrl *Controller) updateNodeConfig(old, cur interface{}) {
 		// skipping the update in case of the Worker-Latency-Profile type transition from "Default" to "LowUpdateSlowReaction" and vice-versa
 		// (TODO) Ideally the user request has to be honoured, the transition need to be from Default -> Medium -> Low or vice-versa.
 		// Restricting the request for now until this process is automated in future.
-		if (oldNode.Spec.WorkerLatencyProfile == osev1.DefaultUpdateDefaultReaction && newNode.Spec.WorkerLatencyProfile == osev1.LowUpdateSlowReaction) || (oldNode.Spec.WorkerLatencyProfile == osev1.LowUpdateSlowReaction && newNode.Spec.WorkerLatencyProfile == osev1.DefaultUpdateDefaultReaction) {
-			message := fmt.Sprintf("Skipping the Update Node event, name: %s, transition not allowed from old WorkerLatencyProfile: %s to new WorkerLatencyProfile: %s", newNode.Name, oldNode.Spec.WorkerLatencyProfile, newNode.Spec.WorkerLatencyProfile)
-			ctrl.eventRecorder.Eventf(oldNode, corev1.EventTypeNormal, "ActionProhibited", message)
+		if oldNode.Spec.WorkerLatencyProfile == osev1.LowUpdateSlowReaction {
+			if newNode.Spec.WorkerLatencyProfile == osev1.DefaultUpdateDefaultReaction || newNode.Spec.WorkerLatencyProfile == "" {
+				isValidWorkerLatencyProfleTransition = false
+			}
+		}
+		if newNode.Spec.WorkerLatencyProfile == osev1.LowUpdateSlowReaction {
+			if oldNode.Spec.WorkerLatencyProfile == osev1.DefaultUpdateDefaultReaction || oldNode.Spec.WorkerLatencyProfile == "" {
+				isValidWorkerLatencyProfleTransition = false
+			}
+		}
+		if !isValidWorkerLatencyProfleTransition {
+			message := fmt.Sprintf("Skipping the Update Node event, name: %s, transition not allowed from old WorkerLatencyProfile: \"%s\" to new WorkerLatencyProfile: \"%s\"", newNode.Name, oldNode.Spec.WorkerLatencyProfile, newNode.Spec.WorkerLatencyProfile)
+			ctrl.eventRecorder.Eventf(newNode, corev1.EventTypeNormal, "ActionProhibited", message)
 			glog.Infof(message)
 			return
 		}
