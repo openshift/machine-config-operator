@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -18,6 +19,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/client-go/tools/leaderelection"
 )
 
@@ -48,6 +50,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
+	// This is 'main' context that we thread through the controller context and
+	// the leader elections. Cancelling this is "stop everything, we are shutting down".
+	runContext, runCancel := context.WithCancel(context.Background())
+
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
@@ -56,6 +62,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlcommon.WriteTerminationError(fmt.Errorf("creating clients: %w", err))
 	}
 	run := func(ctx context.Context) {
+		go common.SignalHandler(runCancel)
+
 		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentName)
 
 		// Start the metrics handler
@@ -82,20 +90,23 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		}
 		go draincontroller.Run(5, ctrlctx.Stop)
 
-		select {}
+		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
+		<-ctx.Done()
 	}
 
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
-		Lock:          common.CreateResourceLock(cb, startOpts.resourceLockNamespace, componentName),
-		LeaseDuration: leaderElectionCfg.LeaseDuration.Duration,
-		RenewDeadline: leaderElectionCfg.RenewDeadline.Duration,
-		RetryPeriod:   leaderElectionCfg.RetryPeriod.Duration,
+	leaderelection.RunOrDie(runContext, leaderelection.LeaderElectionConfig{
+		Lock:            common.CreateResourceLock(cb, startOpts.resourceLockNamespace, componentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Fatalf("leaderelection lost")
+				glog.Infof("Stopped leading. Terminating.")
+				os.Exit(0)
 			},
 		},
 	})
