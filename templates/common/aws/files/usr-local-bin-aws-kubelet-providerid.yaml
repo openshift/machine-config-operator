@@ -1,0 +1,26 @@
+mode: 0755
+path: "/usr/local/bin/aws-kubelet-providerid"
+contents:
+  inline: |
+    #!/bin/bash
+    set -e -o pipefail
+
+    NODECONF=/etc/systemd/system/kubelet.service.d/20-aws-providerid.conf
+
+    if [ -e "${NODECONF}" ]; then
+        echo "Not replacing existing ${NODECONF}"
+        exit 0
+    fi
+
+    # Due to a potential mismatch between Hostname and PrivateDNSName with clusters that use custom DHCP Option Sets
+    # which can cause issues in cloud controller manager node syncing
+    # (see: https://github.com/kubernetes/cloud-provider-aws/issues/384),
+    # set KUBELET_PROVIDERID to be a fully qualified AWS instace provider id.
+    # This new variable is later used to populate the kubelet's `provider-id` flag, later set on the Node .spec
+    # and used by the cloud controller manager's node controller to retrieve the Node's backing instance.
+    # This is obtained by using afterburn service variables, in turn obtained from metadata retrival.
+    # See respective systemd unit metadata related afterburn doc: https://coreos.github.io/afterburn/usage/attributes/
+    cat > "${NODECONF}" <<EOF
+    [Service]
+    Environment="KUBELET_PROVIDERID=aws:///${AFTERBURN_AWS_AVAILABILITY_ZONE}/${AFTERBURN_AWS_INSTANCE_ID}"
+    EOF
