@@ -81,14 +81,10 @@ const (
 
 	# clean up. We want to be particularly strict so that live apply works
 	RUN rm /etc/machine-config-ignition.json
-	# TODO remove these hacks once we have
+	# TODO remove this hack once we have
 	# https://github.com/coreos/rpm-ostree/pull/3544
-	# and
-	# https://github.com/coreos/ignition/issues/1339 is fixed
 	# don't fail if wildcard has no matches
 	RUN bash -c "rm /usr/share/rpm/__db.*"; true
-	# to keep live apply working
-	RUN bash -c "if [[ -e /etc/systemd/system-preset/20-ignition.preset ]]; then sort /etc/systemd/system-preset/20-ignition.preset -o /etc/systemd/system-preset/20-ignition.preset; fi"
 
 	# This is so we can get the machineconfig injected
 	ARG machineconfig=unknown
