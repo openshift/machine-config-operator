@@ -44,7 +44,12 @@ contents:
     }
 
     persist_nm_conn_files() {
+      update_nm_conn_files br-ex phys0
       copy_nm_conn_files "$NM_CONN_UNDERLAY"
+      if [ -f "$extra_bridge_file" ]; then
+        update_nm_conn_files br-ex1 phys1
+        copy_nm_conn_files "$NM_CONN_UNDERLAY"
+      fi
     }
 
     update_nm_conn_files() {
@@ -326,8 +331,6 @@ contents:
       fi
 
       configure_driver_options "${iface}"
-      update_nm_conn_files "$bridge_name" "$port_name"
-      persist_nm_conn_files
     }
 
     # Used to remove a bridge
@@ -587,6 +590,7 @@ contents:
         activate_nm_conn ovs-if-phys1
         activate_nm_conn ovs-if-br-ex1
       fi
+      persist_nm_conn_files
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm
