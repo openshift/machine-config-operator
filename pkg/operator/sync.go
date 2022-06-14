@@ -712,6 +712,10 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				if syncerr != nil {
 					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 				}
+				// If we don't account for pause here, we will spin in this loop until we hit the 10 minute timeout because paused pools can't sync.
+				if pool.Spec.Paused {
+					return false, fmt.Errorf("Required MachineConfigPool '%s' is paused and can not sync until it is unpaused", pool.Name)
+				}
 				return false, nil
 			}
 		}
