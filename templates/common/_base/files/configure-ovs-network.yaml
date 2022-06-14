@@ -220,8 +220,9 @@ contents:
         ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
-      # Get the new connection uuid
+      # Get the new connection uuids
       new_conn=$(nmcli -g connection.uuid conn show "$bridge_interface_name")
+      ovs_port_conn=$(nmcli -g connection.uuid conn show "$ovs_port")
 
       # Update connections with master property set to use the new connection
       replace_connection_master $old_conn $new_conn
@@ -231,45 +232,23 @@ contents:
         ovs-vsctl --timeout=30 --if-exists destroy interface "$bridge_name"
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
           echo "Static IP addressing detected on default gateway connection: ${old_conn}"
-          # find and copy the old connection to get the address settings
-          if egrep -l "^uuid=$old_conn" ${NM_CONN_PATH}/*; then
-            old_conn_file=$(egrep -l "^uuid=$old_conn" ${NM_CONN_PATH}/*)
-            cloned=false
-          else
-            echo "WARN: unable to find NM configuration file for conn: ${old_conn}. Attempting to clone conn"
-            nmcli conn clone ${old_conn} ${old_conn}-clone
-            shopt -s nullglob
-            old_conn_files=(${NM_CONN_PATH}/"${old_conn}"-clone*)
-            shopt -u nullglob
-            if [ ${#old_conn_files[@]} -ne 1 ]; then
-              echo "ERROR: unable to locate cloned conn file for ${old_conn}-clone"
-              exit 1
-            fi
-            old_conn_file="${old_conn_files[0]}"
-            cloned=true
-            echo "Successfully cloned conn to ${old_conn_file}"
+          # clone the old connection to get the address settings
+          # clone is better than file copy since the resulting file will inherit proper
+          # NM selinux attributes vs using restorecon on systemConnectionsMerged
+          nmcli conn clone "${old_conn}" "${ovs_interface}"
+          shopt -s nullglob
+          new_conn_files=(${NM_CONN_PATH}/"${ovs_interface}"*)
+          shopt -u nullglob
+          if [ ${#new_conn_files[@]} -ne 1 ] || [ ! -f "${new_conn_files[0]}" ]; then
+            echo "ERROR: could not find ${ovs_interface} conn file after cloning from ${old_conn}"
+            exit 1
           fi
-          echo "old connection file found at: ${old_conn_file}"
-          old_basename=$(basename "${old_conn_file}" .nmconnection)
-          new_conn_file="${old_conn_file/${NM_CONN_PATH}\/$old_basename/${NM_CONN_PATH}/$ovs_interface}"
-          if [ -f "$new_conn_file" ]; then
-            echo "WARN: existing $bridge_name interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
-          fi
-          cp -f "${old_conn_file}" ${new_conn_file}
-          restorecon ${new_conn_file}
-          if $cloned; then
-            nmcli conn delete ${old_conn}-clone
-            rm -f "${old_conn_file}"
-          fi
-          ovs_port_conn=$(nmcli --fields connection.uuid conn show "$ovs_port" | awk '{print $2}')
-          br_iface_uuid=$(cat /proc/sys/kernel/random/uuid)
+          new_conn_file="${new_conn_files[0]}"
           # modify file to work with OVS and have unique settings
-          sed -i '/^\[connection\]$/,/^\[/ s/^uuid=.*$/uuid='"$br_iface_uuid"'/' ${new_conn_file}
           sed -i '/^multi-connect=.*$/d' ${new_conn_file}
           sed -i '/^autoconnect=.*$/d' ${new_conn_file}
           sed -i '/^\[connection\]$/a autoconnect=false' ${new_conn_file}
           sed -i '/^\[connection\]$/,/^\[/ s/^type=.*$/type=ovs-interface/' ${new_conn_file}
-          sed -i '/^\[connection\]$/,/^\[/ s/^id=.*$/id='"$ovs_interface"'/' ${new_conn_file}
           sed -i '/^\[connection\]$/a slave-type=ovs-port' ${new_conn_file}
           sed -i '/^\[connection\]$/a master='"$ovs_port_conn" ${new_conn_file}
           if grep 'interface-name=' ${new_conn_file} &> /dev/null; then
@@ -324,7 +303,7 @@ contents:
             extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
           fi
 
-          add_nm_conn type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
+          add_nm_conn type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port_conn" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
             ipv4.route-metric "$BRIDGE_METRIC" ipv6.route-metric "$BRIDGE_METRIC" ${extra_if_brex_args}
         fi
