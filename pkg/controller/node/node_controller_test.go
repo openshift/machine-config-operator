@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -125,7 +126,7 @@ func (f *fixture) runExpectError(pool string) {
 func (f *fixture) runController(pool string, expectError bool) {
 	c := f.newController()
 
-	err := c.syncHandler(pool)
+	err := c.syncHandler(context.TODO(), pool)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing machineconfigpool: %v", err)
 	} else if expectError && err == nil {
@@ -778,7 +779,7 @@ func TestSetDesiredMachineConfigAnnotation(t *testing.T) {
 
 			c := f.newController()
 
-			err := c.setDesiredMachineConfigAnnotation(test.node.Name, "v1")
+			err := c.setDesiredMachineConfigAnnotation(context.TODO(), test.node.Name, "v1")
 			if !assert.Nil(t, err) {
 				return
 			}

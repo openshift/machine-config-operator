@@ -79,11 +79,13 @@ var kubeAPIToKubeletSignerNamePrefixes = []string{"openshift-kube-apiserver-oper
 
 // Controller defines the node controller.
 type Controller struct {
+	name string
+
 	client        mcfgclientset.Interface
 	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler              func(mcp string) error
+	syncHandler              func(ctx context.Context, mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
 	ccLister   mcfglistersv1.ControllerConfigLister
@@ -100,6 +102,10 @@ type Controller struct {
 	schedulerListerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
+
+	// This is set to TODO() and gets assigned to whatever gets passed to the Run() function. Prefer passing the context when possible, but there are some functions (like event handlers) that can't
+	// receive a context, so we can have them fish it out of the controller.
+	ctx context.Context
 }
 
 // New returns a new node controller.
@@ -117,6 +123,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
+		name:          "NodeController",
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"}),
@@ -157,11 +164,14 @@ func New(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
+	// Assign this here so our event handlers can use it
+	ctrl.ctx = ctx
+
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.mcpListerSynced, ctrl.nodeListerSynced, ctrl.schedulerListerSynced) {
 		return
 	}
 
@@ -169,10 +179,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-NodeController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.worker, time.Second)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
@@ -186,7 +196,7 @@ func (ctrl *Controller) getCurrentMasters() ([]*corev1.Node, error) {
 // checkMasterNodesOnAdd makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
 // cluster is created
 func (ctrl *Controller) checkMasterNodesOnAdd(obj interface{}) {
-	ctrl.reconcileMasters()
+	ctrl.reconcileMasters(ctrl.ctx)
 }
 
 // checkMasterNodesOnDelete makes the master nodes schedulable/unschedulable whenever scheduler config CR with name
@@ -204,7 +214,9 @@ func (ctrl *Controller) checkMasterNodesOnDelete(obj interface{}) {
 		return
 	}
 	// On deletion make all masters unschedulable to restore default behaviour
-	errs := ctrl.makeMastersUnSchedulable(currentMasters)
+	// TODO(jkyros): can't change the event handler interface, need to get the context from somewhere
+	// since we're doing work here.
+	errs := ctrl.makeMastersUnSchedulable(ctrl.ctx, currentMasters)
 	if len(errs) > 0 {
 		err = v1helpers.NewMultiLineAggregate(errs)
 		err = fmt.Errorf("reconciling to make nodes schedulable/unschedulable failed: %w", err)
@@ -230,14 +242,14 @@ func (ctrl *Controller) checkMasterNodesOnUpdate(old, cur interface{}) {
 		return
 	}
 
-	ctrl.reconcileMasters()
+	ctrl.reconcileMasters(ctrl.ctx)
 }
 
 // makeMastersUnSchedulable makes all the masters in the cluster unschedulable
-func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) []error {
+func (ctrl *Controller) makeMastersUnSchedulable(ctx context.Context, currentMasters []*corev1.Node) []error {
 	var errs []error
 	for _, node := range currentMasters {
-		if err := ctrl.makeMasterNodeUnSchedulable(node); err != nil {
+		if err := ctrl.makeMasterNodeUnSchedulable(ctx, node); err != nil {
 			errs = append(errs, fmt.Errorf("failed making node %v schedulable with error %w", node.Name, err))
 		}
 	}
@@ -247,8 +259,8 @@ func (ctrl *Controller) makeMastersUnSchedulable(currentMasters []*corev1.Node) 
 
 // makeMasterNodeUnSchedulable makes master node unschedulable by removing worker label and adding `NoSchedule`
 // master taint to the master node
-func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
-	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+func (ctrl *Controller) makeMasterNodeUnSchedulable(ctx context.Context, node *corev1.Node) error {
+	_, err := internal.UpdateNodeRetry(ctx, ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Remove worker label
 		newLabels := node.Labels
 		if _, hasWorkerLabel := newLabels[WorkerLabel]; hasWorkerLabel {
@@ -277,8 +289,8 @@ func (ctrl *Controller) makeMasterNodeUnSchedulable(node *corev1.Node) error {
 
 // makeMasterNodeSchedulable makes master node schedulable by removing NoSchedule master taint and
 // adding worker label
-func (ctrl *Controller) makeMasterNodeSchedulable(node *corev1.Node) error {
-	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+func (ctrl *Controller) makeMasterNodeSchedulable(ctx context.Context, node *corev1.Node) error {
+	_, err := internal.UpdateNodeRetry(ctx, ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Add worker label
 		newLabels := node.Labels
 		if _, hasWorkerLabel := newLabels[WorkerLabel]; !hasWorkerLabel {
@@ -368,7 +380,7 @@ func isWindows(node *corev1.Node) bool {
 }
 
 // Given a master Node, ensure it reflects the current mastersSchedulable setting
-func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
+func (ctrl *Controller) reconcileMaster(ctx context.Context, node *corev1.Node) {
 	mastersSchedulable, err := ctrl.getMastersSchedulable()
 	if err != nil {
 		err = fmt.Errorf("getting scheduler config failed: %w", err)
@@ -376,14 +388,14 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 		return
 	}
 	if mastersSchedulable {
-		err = ctrl.makeMasterNodeSchedulable(node)
+		err = ctrl.makeMasterNodeSchedulable(ctx, node)
 		if err != nil {
 			err = fmt.Errorf("failed making master Node schedulable: %w", err)
 			glog.Error(err)
 			return
 		}
 	} else if !mastersSchedulable {
-		err = ctrl.makeMasterNodeUnSchedulable(node)
+		err = ctrl.makeMasterNodeUnSchedulable(ctx, node)
 		if err != nil {
 			err = fmt.Errorf("failed making master Node unschedulable: %w", err)
 			glog.Error(err)
@@ -394,7 +406,7 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 
 // Get a list of current masters and apply scheduler config to them
 // TODO: Taint reconciliation should happen elsewhere, in a generic taint/label reconciler
-func (ctrl *Controller) reconcileMasters() {
+func (ctrl *Controller) reconcileMasters(ctx context.Context) {
 	currentMasters, err := ctrl.getCurrentMasters()
 	if err != nil {
 		err = fmt.Errorf("reconciling to make master nodes schedulable/unschedulable failed: %w", err)
@@ -402,7 +414,7 @@ func (ctrl *Controller) reconcileMasters() {
 		return
 	}
 	for _, node := range currentMasters {
-		ctrl.reconcileMaster(node)
+		ctrl.reconcileMaster(ctx, node)
 	}
 }
 
@@ -414,7 +426,7 @@ func (ctrl *Controller) addNode(obj interface{}) {
 	}
 
 	if ctrl.isMaster(node) {
-		ctrl.reconcileMaster(node)
+		ctrl.reconcileMaster(ctrl.ctx, node)
 	}
 
 	pools, err := ctrl.getPoolsForNode(node)
@@ -455,7 +467,7 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 	}
 
 	if ctrl.isMaster(curNode) {
-		ctrl.reconcileMaster(curNode)
+		ctrl.reconcileMaster(ctrl.ctx, curNode)
 	}
 
 	pool, err := ctrl.getPrimaryPoolForNode(curNode)
@@ -693,19 +705,19 @@ func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(ctx, key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
@@ -731,7 +743,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncMachineConfigPool(key string) error {
+func (ctrl *Controller) syncMachineConfigPool(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
@@ -771,7 +783,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 	}
 
 	if pool.DeletionTimestamp != nil {
-		return ctrl.syncStatusOnly(pool)
+		return ctrl.syncStatusOnly(ctx, pool)
 	}
 
 	if pool.Spec.Paused {
@@ -783,7 +795,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		if pool.Spec.Configuration.Name != pool.Status.Configuration.Name {
 			ctrl.setPendingFileMetrics(pool)
 		}
-		return ctrl.syncStatusOnly(pool)
+		return ctrl.syncStatusOnly(ctx, pool)
 	}
 
 	// We aren't paused anymore, so reset the metrics
@@ -791,7 +803,7 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
-		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+		if syncErr := ctrl.syncStatusOnly(ctx, pool); syncErr != nil {
 			errs := kubeErrs.NewAggregate([]error{syncErr, err})
 			return fmt.Errorf("error getting nodes for pool %q, sync error: %w", pool.Name, errs)
 		}
@@ -800,18 +812,17 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 
 	maxunavail, err := maxUnavailable(pool, nodes)
 	if err != nil {
-		if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+		if syncErr := ctrl.syncStatusOnly(ctx, pool); syncErr != nil {
 			errs := kubeErrs.NewAggregate([]error{syncErr, err})
 			return fmt.Errorf("error getting max unavailable count for pool %q, sync error: %w", pool.Name, errs)
 		}
 		return err
 	}
 
-	if err := ctrl.setClusterConfigAnnotation(nodes); err != nil {
+	if err := ctrl.setClusterConfigAnnotation(ctx, nodes); err != nil {
 		return fmt.Errorf("error setting clusterConfig Annotation for node in pool %q, error: %w", pool.Name, err)
 	}
 	// Taint all the nodes in the node pool, irrespective of their upgrade status.
-	ctx := context.TODO()
 	for _, node := range nodes {
 		// All the nodes that need to be upgraded should have `NodeUpdateInProgressTaint` so that they're less likely
 		// to be chosen during the scheduling cycle.
@@ -843,15 +854,15 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 			}
 		}
 		ctrl.logPool(pool, "%d candidate nodes in %d zones for update, capacity: %d", len(candidates), len(zones), capacity)
-		if err := ctrl.updateCandidateMachines(pool, candidates, capacity); err != nil {
-			if syncErr := ctrl.syncStatusOnly(pool); syncErr != nil {
+		if err := ctrl.updateCandidateMachines(ctx, pool, candidates, capacity); err != nil {
+			if syncErr := ctrl.syncStatusOnly(ctx, pool); syncErr != nil {
 				errs := kubeErrs.NewAggregate([]error{syncErr, err})
 				return fmt.Errorf("error setting desired machine config annotation for pool %q, sync error: %w", pool.Name, errs)
 			}
 			return err
 		}
 	}
-	return ctrl.syncStatusOnly(pool)
+	return ctrl.syncStatusOnly(ctx, pool)
 }
 
 // checkIfNodeHasInProgressTaint checks if the given node has in progress taint
@@ -896,7 +907,7 @@ func (ctrl *Controller) getNodesForPool(pool *mcfgv1.MachineConfigPool) ([]*core
 // setClusterConfigAnnotation reads cluster configs set into controllerConfig
 // and add/updates required annotation to node such as ControlPlaneTopology
 // from infrastructure object.
-func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
+func (ctrl *Controller) setClusterConfigAnnotation(ctx context.Context, nodes []*corev1.Node) error {
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return err
@@ -905,7 +916,7 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	for _, node := range nodes {
 		if node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] != string(cc.Spec.Infra.Status.ControlPlaneTopology) {
 			oldAnn := node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey]
-			_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+			_, err := internal.UpdateNodeRetry(ctx, ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 				node.Annotations[daemonconsts.ClusterControlPlaneTopologyAnnotationKey] = string(cc.Spec.Infra.Status.ControlPlaneTopology)
 			})
 			if err != nil {
@@ -917,9 +928,9 @@ func (ctrl *Controller) setClusterConfigAnnotation(nodes []*corev1.Node) error {
 	return nil
 }
 
-func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfig string) error {
+func (ctrl *Controller) setDesiredMachineConfigAnnotation(ctx context.Context, nodeName, currentConfig string) error {
 	return clientretry.RetryOnConflict(constants.NodeUpdateBackoff, func() error {
-		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		oldNode, err := ctrl.kubeClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -946,7 +957,7 @@ func (ctrl *Controller) setDesiredMachineConfigAnnotation(nodeName, currentConfi
 		if err != nil {
 			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
-		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	})
 }
@@ -1022,7 +1033,7 @@ func (ctrl *Controller) filterControlPlaneCandidateNodes(pool *mcfgv1.MachineCon
 }
 
 // updateCandidateMachines sets the desiredConfig annotation the candidate machines
-func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
+func (ctrl *Controller) updateCandidateMachines(ctx context.Context, pool *mcfgv1.MachineConfigPool, candidates []*corev1.Node, capacity uint) error {
 	if pool.Name == ctrlcommon.MachineConfigPoolMaster {
 		var err error
 		candidates, capacity, err = ctrl.filterControlPlaneCandidateNodes(pool, candidates, capacity)
@@ -1043,7 +1054,7 @@ func (ctrl *Controller) updateCandidateMachines(pool *mcfgv1.MachineConfigPool, 
 	targetConfig := pool.Spec.Configuration.Name
 	for _, node := range candidates {
 		ctrl.logPool(pool, "Setting node %s target to %s", node.Name, targetConfig)
-		if err := ctrl.setDesiredMachineConfigAnnotation(node.Name, targetConfig); err != nil {
+		if err := ctrl.setDesiredMachineConfigAnnotation(ctx, node.Name, targetConfig); err != nil {
 			return fmt.Errorf("setting desired config for node %s: %w", node.Name, err)
 		}
 	}
@@ -1286,4 +1297,9 @@ func (ctrl *Controller) getNewestAPIToKubeletSignerCertificate(statusIgnConfig *
 	}
 
 	return newestCertificate, nil
+}
+
+// Name() returns the name of this controller
+func (ctrl *Controller) Name() string {
+	return ctrl.name
 }

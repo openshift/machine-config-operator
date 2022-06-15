@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) syncStatusOnly(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
 	nodes, err := ctrl.getNodesForPool(pool)
 	if err != nil {
 		return err
@@ -26,7 +26,7 @@ func (ctrl *Controller) syncStatusOnly(pool *mcfgv1.MachineConfigPool) error {
 
 	newPool := pool
 	newPool.Status = newStatus
-	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), newPool, metav1.UpdateOptions{})
+	_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, newPool, metav1.UpdateOptions{})
 	if pool.Spec.Configuration.Name != newPool.Spec.Configuration.Name {
 		ctrl.eventRecorder.Eventf(pool, corev1.EventTypeNormal, "Updating", "Pool %s now targeting %s", pool.Name, newPool.Spec.Configuration.Name)
 	}
