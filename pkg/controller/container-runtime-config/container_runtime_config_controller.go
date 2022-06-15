@@ -69,14 +69,16 @@ var updateBackoff = wait.Backoff{
 
 // Controller defines the container runtime config controller.
 type Controller struct {
+	name string
+
 	templatesDir string
 
 	client        mcfgclientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler                   func(mcp string) error
-	syncImgHandler                func(mcp string) error
+	syncHandler                   func(ctx context.Context, mcp string) error
+	syncImgHandler                func(ctx context.Context, mcp string) error
 	enqueueContainerRuntimeConfig func(*mcfgv1.ContainerRuntimeConfig)
 
 	ccLister       mcfglistersv1.ControllerConfigLister
@@ -99,6 +101,8 @@ type Controller struct {
 
 	queue    workqueue.RateLimitingInterface
 	imgQueue workqueue.RateLimitingInterface
+
+	ctx context.Context
 }
 
 // New returns a new container runtime config controller
@@ -119,6 +123,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
+		name:          "ContainerRuntimeController",
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		configClient:  configClient,
@@ -171,12 +176,13 @@ func New(
 }
 
 // Run executes the container runtime config controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.imgQueue.ShutDown()
+	ctrl.ctx = ctx
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
 		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
@@ -185,13 +191,13 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-ContainerRuntimeConfigController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.worker, time.Second)
 	}
 
 	// Just need one worker for the image config
-	go wait.Until(ctrl.imgWorker, time.Second, stopCh)
+	go wait.UntilWithContext(ctx, ctrl.imgWorker, time.Second)
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func ctrConfigTriggerObjectChange(old, new *mcfgv1.ContainerRuntimeConfig) bool {
@@ -258,23 +264,23 @@ func (ctrl *Controller) deleteContainerRuntimeConfig(obj interface{}) {
 			return
 		}
 	}
-	if err := ctrl.cascadeDelete(cfg); err != nil {
+	if err := ctrl.cascadeDelete(ctrl.ctx, cfg); err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
 		glog.V(4).Infof("Deleted ContainerRuntimeConfig %s and restored default config", cfg.Name)
 	}
 }
 
-func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.ContainerRuntimeConfig) error {
+func (ctrl *Controller) cascadeDelete(ctx context.Context, cfg *mcfgv1.ContainerRuntimeConfig) error {
 	if len(cfg.GetFinalizers()) == 0 {
 		return nil
 	}
 	mcName := cfg.GetFinalizers()[0]
-	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mcName, metav1.DeleteOptions{})
+	err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(ctx, mcName, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
-	if err := ctrl.popFinalizerFromContainerRuntimeConfig(cfg); err != nil {
+	if err := ctrl.popFinalizerFromContainerRuntimeConfig(ctx, cfg); err != nil {
 		return err
 	}
 	return nil
@@ -300,37 +306,37 @@ func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.ContainerRuntimeConfig) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) imgWorker() {
-	for ctrl.processNextImgWorkItem() {
+func (ctrl *Controller) imgWorker(ctx context.Context) {
+	for ctrl.processNextImgWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(ctx, key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
 }
 
-func (ctrl *Controller) processNextImgWorkItem() bool {
+func (ctrl *Controller) processNextImgWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.imgQueue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.imgQueue.Done(key)
 
-	err := ctrl.syncImgHandler(key.(string))
+	err := ctrl.syncImgHandler(ctx, key.(string))
 	ctrl.handleImgErr(err, key)
 
 	return true
@@ -417,7 +423,7 @@ func generateOriginalContainerRuntimeConfigs(templateDir string, cc *mcfgv1.Cont
 	return gmcStorageConfig, gmcRegistriesConfig, gmcPolicyJSON, nil
 }
 
-func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
+func (ctrl *Controller) syncStatusOnly(ctx context.Context, cfg *mcfgv1.ContainerRuntimeConfig, err error, args ...interface{}) error {
 	statusUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
 		if getErr != nil {
@@ -437,7 +443,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 		} else if newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1].Message == newStatusCondition.Message {
 			newcfg.Status.Conditions[len(newcfg.Status.Conditions)-1] = newStatusCondition
 		}
-		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
+		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().UpdateStatus(ctx, newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
 	// If an error occurred in updating the status just log it
@@ -449,7 +455,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.ContainerRuntimeConfig, err e
 }
 
 // addAnnotation adds the annotions for a ctrcfg object with the given annotationKey and annotationVal
-func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annotationKey, annotationVal string) error {
+func (ctrl *Controller) addAnnotation(ctx context.Context, cfg *mcfgv1.ContainerRuntimeConfig, annotationKey, annotationVal string) error {
 	annotationUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mccrLister.Get(cfg.Name)
 		if getErr != nil {
@@ -458,7 +464,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annota
 		newcfg.SetAnnotations(map[string]string{
 			annotationKey: annotationVal,
 		})
-		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Update(context.TODO(), newcfg, metav1.UpdateOptions{})
+		_, updateErr := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Update(ctx, newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
 	if annotationUpdateErr != nil {
@@ -470,7 +476,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.ContainerRuntimeConfig, annota
 // syncContainerRuntimeConfig will sync the ContainerRuntimeconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 // nolint: gocyclo
-func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
+func (ctrl *Controller) syncContainerRuntimeConfig(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing ContainerRuntimeconfig %q (%v)", key, startTime)
 	defer func() {
@@ -498,14 +504,14 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	// Check for Deleted ContainerRuntimeConfig and optionally delete finalizers
 	if cfg.DeletionTimestamp != nil {
 		if len(cfg.GetFinalizers()) > 0 {
-			return ctrl.cascadeDelete(cfg)
+			return ctrl.cascadeDelete(ctx, cfg)
 		}
 		return nil
 	}
 
 	// Validate the ContainerRuntimeConfig CR
 	if err := validateUserContainerRuntimeConfig(cfg); err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	// Get ControllerConfig
@@ -517,26 +523,26 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.getPoolsForContainerRuntimeConfig(cfg)
 	if err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	if len(mcpPools) == 0 {
 		err := fmt.Errorf("containerRuntimeConfig %v does not match any MachineConfigPools", key)
 		glog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	for _, pool := range mcpPools {
 		role := pool.Name
 		// Get MachineConfig
-		managedKey, err := getManagedKeyCtrCfg(pool, ctrl.client, cfg)
+		managedKey, err := getManagedKeyCtrCfg(ctx, pool, ctrl.client, cfg)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not get ctrcfg key: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not get ctrcfg key: %v", err)
 		}
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(ctx, managedKey, metav1.GetOptions{})
 		isNotFound := errors.IsNotFound(err)
 		if err != nil && !isNotFound {
-			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		// If we have seen this generation and the sync didn't fail, then skip
 		if !isNotFound && cfg.Status.ObservedGeneration >= cfg.Generation && cfg.Status.Conditions[len(cfg.Status.Conditions)-1].Type == mcfgv1.ContainerRuntimeConfigSuccess {
@@ -549,7 +555,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		// Generate the original ContainerRuntimeConfig
 		originalStorageIgn, _, _, err := generateOriginalContainerRuntimeConfigs(ctrl.templatesDir, controllerConfig, role)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not generate origin ContainerRuntime Configs: %v", err)
 		}
 
 		var configFileList []generatedConfigFile
@@ -558,10 +564,10 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			storageTOML, err := mergeConfigChanges(originalStorageIgn, cfg, updateStorageConfig)
 			if err != nil {
 				glog.V(2).Infoln(cfg, err, "error merging user changes to storage.conf: %v", err)
-				ctrl.syncStatusOnly(cfg, err)
+				ctrl.syncStatusOnly(ctx, cfg, err)
 			} else {
 				configFileList = append(configFileList, generatedConfigFile{filePath: storageConfigPath, data: storageTOML})
-				ctrl.syncStatusOnly(cfg, nil)
+				ctrl.syncStatusOnly(ctx, cfg, nil)
 			}
 		}
 
@@ -575,15 +581,15 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			tempIgnCfg := ctrlcommon.NewIgnConfig()
 			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, tempIgnCfg)
 			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
+				return ctrl.syncStatusOnly(ctx, cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 			}
 			_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
 			arr := strings.Split(managedKey, "-")
 			// the first managed key value 99-poolname-generated-containerruntime does not have a suffix
 			// set "" as suffix annotation to the containerruntime config object
 			if _, err := strconv.Atoi(arr[len(arr)-1]); err != nil && !ok {
-				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
-					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerruntimeConfig")
+				if err := ctrl.addAnnotation(ctx, cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
+					return ctrl.syncStatusOnly(ctx, cfg, err, "could not update annotation for containerruntimeConfig")
 				}
 			}
 			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
@@ -591,8 +597,8 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 			if len(arr) > 4 && !ok {
 				_, err := strconv.Atoi(arr[len(arr)-1])
 				if err == nil {
-					if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
-						return ctrl.syncStatusOnly(cfg, err, "could not update annotation for containerRuntimeConfig")
+					if err := ctrl.addAnnotation(ctx, cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+						return ctrl.syncStatusOnly(ctx, cfg, err, "could not update annotation for containerRuntimeConfig")
 					}
 				}
 			}
@@ -601,7 +607,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		ctrRuntimeConfigIgn := createNewIgnition(configFileList)
 		rawCtrRuntimeConfigIgn, err := json.Marshal(ctrRuntimeConfigIgn)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "error marshalling container runtime config Ignition: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "error marshalling container runtime config Ignition: %v", err)
 		}
 		mc.Spec.Config.Raw = rawCtrRuntimeConfigIgn
 
@@ -615,34 +621,34 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(ctx, mc, metav1.UpdateOptions{})
 			}
 			return err
 		}); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not Create/Update MachineConfig: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not Create/Update MachineConfig: %v", err)
 		}
 		// Add Finalizers to the ContainerRuntimeConfigs
-		if err := ctrl.addFinalizerToContainerRuntimeConfig(cfg, mc); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to ContainerRuntimeConfig: %v", err)
+		if err := ctrl.addFinalizerToContainerRuntimeConfig(ctx, cfg, mc); err != nil {
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not add finalizers to ContainerRuntimeConfig: %v", err)
 		}
 		glog.Infof("Applied ContainerRuntimeConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
-	if err := ctrl.cleanUpDuplicatedMC(); err != nil {
+	if err := ctrl.cleanUpDuplicatedMC(ctx); err != nil {
 		return err
 	}
 
-	return ctrl.syncStatusOnly(cfg, nil)
+	return ctrl.syncStatusOnly(ctx, cfg, nil)
 }
 
 // cleanUpDuplicatedMC removes the MC of uncorrected version if format of its name contains 'generated-xxx'.
 // BZ 1955517: upgrade when there are more than one configs, these generated MC will be duplicated
 // by upgraded MC with number suffixed name (func getManagedKeyCtrCfg()) and fails the upgrade.
-func (ctrl *Controller) cleanUpDuplicatedMC() error {
+func (ctrl *Controller) cleanUpDuplicatedMC(ctx context.Context) error {
 	generatedCtrCfg := "generated-containerruntime"
 	// Get all machine configs
-	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("error listing containerruntime machine configs: %w", err)
 	}
@@ -652,7 +658,7 @@ func (ctrl *Controller) cleanUpDuplicatedMC() error {
 		}
 		// delete the containerruntime mc if its degraded
 		if mc.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] != version.Hash {
-			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.Name, metav1.DeleteOptions{}); err != nil {
+			if err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(ctx, mc.Name, metav1.DeleteOptions{}); err != nil {
 				return fmt.Errorf("error deleting degraded containerruntime machine config %s: %w", mc.Name, err)
 			}
 
@@ -678,7 +684,7 @@ func mergeConfigChanges(origFile *ign3types.File, cfg *mcfgv1.ContainerRuntimeCo
 	return cfgTOML, nil
 }
 
-func (ctrl *Controller) syncImageConfig(key string) error {
+func (ctrl *Controller) syncImageConfig(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing ImageConfig %q (%v)", key, startTime)
 	defer func() {
@@ -754,7 +760,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		applied := true
 		role := pool.Name
 		// Get MachineConfig
-		managedKey, err := getManagedKeyReg(pool, ctrl.client)
+		managedKey, err := getManagedKeyReg(ctx, pool, ctrl.client)
 		if err != nil {
 			return err
 		}
@@ -769,7 +775,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			if err != nil {
 				return fmt.Errorf("could not encode registries Ignition config: %w", err)
 			}
-			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+			mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(ctx, managedKey, metav1.GetOptions{})
 			if err != nil && !errors.IsNotFound(err) {
 				return fmt.Errorf("could not find MachineConfig: %w", err)
 			}
@@ -804,9 +810,9 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 			}
 			// Create or Update, on conflict retry
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(ctx, mc, metav1.UpdateOptions{})
 			}
 
 			return err
@@ -875,7 +881,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
-func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgCfg *apicfgv1.Image) ([]*mcfgv1.MachineConfig, error) {
+func RunImageBootstrap(ctx context.Context, templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgCfg *apicfgv1.Image) ([]*mcfgv1.MachineConfig, error) {
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
 		err                                                                     error
@@ -897,7 +903,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	var res []*mcfgv1.MachineConfig
 	for _, pool := range mcpPools {
 		role := pool.Name
-		managedKey, err := getManagedKeyReg(pool, nil)
+		managedKey, err := getManagedKeyReg(ctx, pool, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -924,7 +930,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 	return res, nil
 }
 
-func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig) error {
+func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctx context.Context, ctrCfg *mcfgv1.ContainerRuntimeConfig) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, err := ctrl.mccrLister.Get(ctrCfg.Name)
 		if errors.IsNotFound(err) {
@@ -951,16 +957,16 @@ func (ctrl *Controller) popFinalizerFromContainerRuntimeConfig(ctrCfg *mcfgv1.Co
 		if err != nil {
 			return err
 		}
-		return ctrl.patchContainerRuntimeConfigs(ctrCfg.Name, patch)
+		return ctrl.patchContainerRuntimeConfigs(ctx, ctrCfg.Name, patch)
 	})
 }
 
-func (ctrl *Controller) patchContainerRuntimeConfigs(name string, patch []byte) error {
-	_, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Patch(context.TODO(), name, types.MergePatchType, patch, metav1.PatchOptions{})
+func (ctrl *Controller) patchContainerRuntimeConfigs(ctx context.Context, name string, patch []byte) error {
+	_, err := ctrl.client.MachineconfigurationV1().ContainerRuntimeConfigs().Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
 }
 
-func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig) error {
+func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctx context.Context, ctrCfg *mcfgv1.ContainerRuntimeConfig, mc *mcfgv1.MachineConfig) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, err := ctrl.mccrLister.Get(ctrCfg.Name)
 		if errors.IsNotFound(err) {
@@ -993,7 +999,7 @@ func (ctrl *Controller) addFinalizerToContainerRuntimeConfig(ctrCfg *mcfgv1.Cont
 		if err != nil {
 			return err
 		}
-		return ctrl.patchContainerRuntimeConfigs(ctrCfg.Name, patch)
+		return ctrl.patchContainerRuntimeConfigs(ctx, ctrCfg.Name, patch)
 	})
 }
 
@@ -1022,4 +1028,9 @@ func (ctrl *Controller) getPoolsForContainerRuntimeConfig(config *mcfgv1.Contain
 	}
 
 	return pools, nil
+}
+
+// Name() returns the name of this controller
+func (ctrl *Controller) Name() string {
+	return ctrl.name
 }

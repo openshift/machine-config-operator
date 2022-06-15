@@ -169,15 +169,15 @@ func getManagedKeyCtrCfgDeprecated(pool *mcfgv1.MachineConfigPool) string {
 }
 
 // nolint: dupl
-func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.ContainerRuntimeConfig) (string, error) {
+func getManagedKeyCtrCfg(ctx context.Context, pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.ContainerRuntimeConfig) (string, error) {
 	// Get all the ctrcfg CRs
-	ctrcfgListAll, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(context.TODO(), metav1.ListOptions{})
+	ctrcfgListAll, err := client.MachineconfigurationV1().ContainerRuntimeConfigs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error listing container runtime configs: %w", err)
 	}
 	// If there is no ctrcfg in the list, return the default MC name with no suffix
 	if ctrcfgListAll == nil || len(ctrcfgListAll.Items) == 0 {
-		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+		return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 	}
 
 	var ctrcfgList []mcfgv1.ContainerRuntimeConfig
@@ -206,13 +206,13 @@ func getManagedKeyCtrCfg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.In
 			return fmt.Sprintf("99-%s-generated-containerruntime-%s", pool.Name, val), nil
 		}
 		// if the suffix val is "", mc name should not suffixed the cfg to be updated is the first containerruntime config has been created
-		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+		return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 	}
 
 	// If we are here, this means that a new containerruntime config was created, so we have to calculate the suffix value for its MC name
 	// if the containerruntime config is the only one in the list, mc name should not suffixed since cfg is the first containerruntime config to be created
 	if len(ctrcfgList) == 1 {
-		return ctrlcommon.GetManagedKey(pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
+		return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "containerruntime", getManagedKeyCtrCfgDeprecated(pool))
 	}
 	suffixNum := 0
 	// Go through the list of ctrcfg objects created and get the max suffix value currently created
@@ -246,8 +246,8 @@ func getManagedKeyRegDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("99-%s-%s-registries", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedKeyReg(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
+func getManagedKeyReg(ctx context.Context, pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "registries", getManagedKeyRegDeprecated(pool))
 }
 
 func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRuntimeConfigCondition {

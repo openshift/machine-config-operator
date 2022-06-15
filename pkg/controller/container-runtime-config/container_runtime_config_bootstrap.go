@@ -1,6 +1,7 @@
 package containerruntimeconfig
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/golang/glog"
@@ -12,7 +13,7 @@ import (
 )
 
 // RunContainerRuntimeBootstrap generates ignition configs at bootstrap
-func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunContainerRuntimeBootstrap(ctx context.Context, templateDir string, crconfigs []*mcfgv1.ContainerRuntimeConfig, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	var res []*mcfgv1.MachineConfig
 	managedKeyExist := make(map[string]bool)
 	for _, cfg := range crconfigs {
@@ -57,7 +58,7 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 			if err != nil {
 				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
 			}
-			managedKey, err := generateBootstrapManagedKeyContainerConfig(pool, managedKeyExist)
+			managedKey, err := generateBootstrapManagedKeyContainerConfig(ctx, pool, managedKeyExist)
 			if err != nil {
 				return nil, fmt.Errorf("could not marshal container runtime ignition: %w", err)
 			}
@@ -90,11 +91,11 @@ func RunContainerRuntimeBootstrap(templateDir string, crconfigs []*mcfgv1.Contai
 // Note: Only one ContainerConfig manifest per pool is allowed for bootstrap mode for the following reason:
 // if you provide multiple per pool, they would overwrite each other and not merge, potentially confusing customers post install;
 // we can simplify the logic for the bootstrap generation and avoid some edge cases.
-func generateBootstrapManagedKeyContainerConfig(pool *mcfgv1.MachineConfigPool, managedKeyExist map[string]bool) (string, error) {
+func generateBootstrapManagedKeyContainerConfig(ctx context.Context, pool *mcfgv1.MachineConfigPool, managedKeyExist map[string]bool) (string, error) {
 	if _, ok := managedKeyExist[pool.Name]; ok {
 		return "", fmt.Errorf("Error found multiple ContainerConfig targeting MachineConfigPool %v. Please apply only one ContainerConfig manifest for each pool during installation", pool.Name)
 	}
-	managedKey, err := ctrlcommon.GetManagedKey(pool, nil, "99", "containerruntime", "")
+	managedKey, err := ctrlcommon.GetManagedKey(ctx, pool, nil, "99", "containerruntime", "")
 	if err != nil {
 		return "", err
 	}

@@ -1,6 +1,7 @@
 package containerruntimeconfig
 
 import (
+	"context"
 	"testing"
 
 	apicfgv1 "github.com/openshift/api/config/v1"
@@ -29,7 +30,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mccrLister = append(f.mccrLister, ctrcfg)
 			f.objects = append(f.objects, ctrcfg)
 
-			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools)
+			mcs, err := RunContainerRuntimeBootstrap(context.TODO(), "../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 
@@ -39,14 +40,14 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mccrLister = append(f.mccrLister, ctrcfg1)
 			f.objects = append(f.objects, ctrcfg1)
 			c := f.newController()
-			err = c.syncHandler(getKey(ctrcfg1, t))
+			err = c.syncHandler(context.TODO(), getKey(ctrcfg1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
 			// resync ctrcfg and check the managedKey
 			c = f.newController()
-			err = c.syncHandler(getKey(ctrcfg, t))
+			err = c.syncHandler(context.TODO(), getKey(ctrcfg, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}

@@ -242,14 +242,14 @@ func (f *fixture) runExpectError(mcpname string) {
 func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController()
 
-	err := c.syncImgHandler(mcpname)
+	err := c.syncImgHandler(context.TODO(), mcpname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing image config: %v", err)
 	} else if expectError && err == nil {
 		f.t.Error("expected error syncing image config, got nil")
 	}
 
-	err = c.syncHandler(mcpname)
+	err = c.syncHandler(context.TODO(), mcpname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing containerruntimeconfigs: %v", err)
 	} else if expectError && err == nil {
@@ -444,7 +444,7 @@ func TestContainerRuntimeConfigCreate(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			ctrCfgKey, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg1)
+			ctrCfgKey, _ := getManagedKeyCtrCfg(context.TODO(), mcp, f.client, ctrcfg1)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := mcs1.DeepCopy()
 			mcs2.Name = ctrCfgKey
@@ -481,7 +481,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ctrcfg1 := newContainerRuntimeConfig("set-log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug", LogSizeMax: resource.MustParse("9k"), OverlaySize: resource.MustParse("3G")}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			keyCtrCfg, _ := getManagedKeyCtrCfg(mcp, f.client, ctrcfg1)
+			keyCtrCfg, _ := getManagedKeyCtrCfg(context.TODO(), mcp, f.client, ctrcfg1)
 			mcs := helpers.NewMachineConfig(getManagedKeyCtrCfgDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcsUpdate := mcs.DeepCopy()
 			mcsUpdate.Name = keyCtrCfg
@@ -504,7 +504,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			c := f.newController()
 			stopCh := make(chan struct{})
 
-			err := c.syncHandler(getKey(ctrcfg1, t))
+			err := c.syncHandler(context.TODO(), getKey(ctrcfg1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned %v", err)
 			}
@@ -531,7 +531,7 @@ func TestContainerRuntimeConfigUpdate(t *testing.T) {
 			glog.Info("Applying update")
 
 			// Apply update
-			err = c.syncHandler(getKey(ctrcfgUpdate, t))
+			err = c.syncHandler(context.TODO(), getKey(ctrcfgUpdate, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -562,8 +562,8 @@ func TestImageConfigCreate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			keyReg1, _ := getManagedKeyReg(mcp, nil)
-			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			keyReg1, _ := getManagedKeyReg(context.TODO(), mcp, nil)
+			keyReg2, _ := getManagedKeyReg(context.TODO(), mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(keyReg1, map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(keyReg2, map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 
@@ -604,8 +604,8 @@ func TestImageConfigUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}, AllowedRegistries: []string{"allow.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			keyReg1, _ := getManagedKeyReg(mcp, nil)
-			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			keyReg1, _ := getManagedKeyReg(context.TODO(), mcp, nil)
+			keyReg2, _ := getManagedKeyReg(context.TODO(), mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			mcs1Update := mcs1.DeepCopy()
@@ -632,7 +632,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			c := f.newController()
 			stopCh := make(chan struct{})
 
-			err := c.syncImgHandler("cluster")
+			err := c.syncImgHandler(context.TODO(), "cluster")
 			if err != nil {
 				t.Errorf("syncImgHandler returned %v", err)
 			}
@@ -665,7 +665,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			glog.Info("Applying update")
 
 			// Apply update
-			err = c.syncImgHandler("")
+			err = c.syncImgHandler(context.TODO(), "")
 			if err != nil {
 				t.Errorf("syncImgHandler returned: %v", err)
 			}
@@ -700,8 +700,8 @@ func TestICSPUpdate(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
 			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
-			keyReg1, _ := getManagedKeyReg(mcp, nil)
-			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			keyReg1, _ := getManagedKeyReg(context.TODO(), mcp, nil)
+			keyReg2, _ := getManagedKeyReg(context.TODO(), mcp2, nil)
 			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
 			icsp := newICSP("built-in", []apioperatorsv1alpha1.RepositoryDigestMirrors{
@@ -733,7 +733,7 @@ func TestICSPUpdate(t *testing.T) {
 			c := f.newController()
 			stopCh := make(chan struct{})
 
-			err := c.syncImgHandler("cluster")
+			err := c.syncImgHandler(context.TODO(), "cluster")
 			if err != nil {
 				t.Errorf("syncImgHandler returned %v", err)
 			}
@@ -770,7 +770,7 @@ func TestICSPUpdate(t *testing.T) {
 			glog.Info("Applying update")
 
 			// Apply update
-			err = c.syncImgHandler("")
+			err = c.syncImgHandler(context.TODO(), "")
 			if err != nil {
 				t.Errorf("syncImgHandler returned: %v", err)
 			}
@@ -811,12 +811,12 @@ func TestRunImageBootstrap(t *testing.T) {
 			// both registries.conf and policy.json as blocked
 			imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 
-			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules, imgCfg)
+			mcs, err := RunImageBootstrap(context.TODO(), "../../../templates", cc, pools, icspRules, imgCfg)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(pools))
 
 			for i := range pools {
-				keyReg, _ := getManagedKeyReg(pools[i], nil)
+				keyReg, _ := getManagedKeyReg(context.TODO(), pools[i], nil)
 				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], keyReg, imgCfg, icspRules, cc.Spec.ReleaseImage, true, true)
 			}
 		})
@@ -1076,7 +1076,7 @@ func TestCleanUpDuplicatedMC(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, mcList.Items, 3)
 
-	ctrl.cleanUpDuplicatedMC()
+	ctrl.cleanUpDuplicatedMC(context.TODO())
 	// successful test: ony custom and upgraded MCs stay
 	mcList, err = ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
 	require.NoError(t, err)
@@ -1153,7 +1153,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ccr2 := newContainerRuntimeConfig("log-level-2", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 
-			ctrConfigKey, _ := getManagedKeyCtrCfg(mcp, f.client, ccr1)
+			ctrConfigKey, _ := getManagedKeyCtrCfg(context.TODO(), mcp, f.client, ccr1)
 			mcs := helpers.NewMachineConfig(ctrConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKeyCtrCfgDeprecated(mcp)
@@ -1165,7 +1165,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f.objects = append(f.objects, ccr1)
 
 			c := f.newController()
-			err := c.syncHandler(getKey(ccr1, t))
+			err := c.syncHandler(context.TODO(), getKey(ccr1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -1174,7 +1174,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f.objects = append(f.objects, ccr2)
 
 			c = f.newController()
-			err = c.syncHandler(getKey(ccr2, t))
+			err = c.syncHandler(context.TODO(), getKey(ccr2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -1187,7 +1187,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 
 			// resync kc1 and kc2
 			c = f.newController()
-			err = c.syncHandler(getKey(ccr1, t))
+			err = c.syncHandler(context.TODO(), getKey(ccr1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -1195,7 +1195,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			require.Equal(t, "", val)
 
 			c = f.newController()
-			err = c.syncHandler(getKey(ccr2, t))
+			err = c.syncHandler(context.TODO(), getKey(ccr2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
