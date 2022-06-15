@@ -673,16 +673,16 @@ func MachineConfigFromRawIgnConfig(role, name string, rawIgnCfg []byte) (*mcfgv1
 }
 
 // GetManagedKey returns the managed key for sub-controllers, handling any migration needed
-func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, prefix, suffix, deprecatedKey string) (string, error) {
+func GetManagedKey(ctx context.Context, pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, prefix, suffix, deprecatedKey string) (string, error) {
 	managedKey := fmt.Sprintf("%s-%s-generated-%s", prefix, pool.Name, suffix)
 	// if we don't have a client, we're installing brand new, and we don't need to adjust for backward compatibility
 	if client == nil {
 		return managedKey, nil
 	}
-	if _, err := client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{}); err == nil {
+	if _, err := client.MachineconfigurationV1().MachineConfigs().Get(ctx, managedKey, metav1.GetOptions{}); err == nil {
 		return managedKey, nil
 	}
-	old, err := client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), deprecatedKey, metav1.GetOptions{})
+	old, err := client.MachineconfigurationV1().MachineConfigs().Get(ctx, deprecatedKey, metav1.GetOptions{})
 	if err != nil && !kerr.IsNotFound(err) {
 		return "", fmt.Errorf("could not get MachineConfig %q: %w", deprecatedKey, err)
 	}
@@ -695,11 +695,11 @@ func GetManagedKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interfac
 	if err != nil {
 		return "", err
 	}
-	_, err = client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+	_, err = client.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
 	if err != nil {
 		return "", err
 	}
-	err = client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), deprecatedKey, metav1.DeleteOptions{})
+	err = client.MachineconfigurationV1().MachineConfigs().Delete(ctx, deprecatedKey, metav1.DeleteOptions{})
 	return managedKey, err
 }
 
