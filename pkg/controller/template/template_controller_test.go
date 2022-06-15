@@ -1,6 +1,7 @@
 package template
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -147,7 +148,7 @@ func (f *fixture) runExpectError(ccname string) {
 func (f *fixture) runController(ccname string, expectError bool) {
 	c := f.newController()
 
-	err := c.syncHandler(ccname)
+	err := c.syncHandler(context.TODO(), ccname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing controllerconfig: %v", err)
 	} else if expectError && err == nil {

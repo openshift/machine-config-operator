@@ -49,13 +49,15 @@ var controllerKind = mcfgv1.SchemeGroupVersion.WithKind("ControllerConfig")
 
 // Controller defines the template controller
 type Controller struct {
+	name string
+
 	templatesDir string
 
 	client        mcfgclientset.Interface
 	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler             func(ccKey string) error
+	syncHandler             func(ctx context.Context, ccKey string) error
 	enqueueControllerConfig func(*mcfgv1.ControllerConfig)
 
 	ccLister   mcfglistersv1.ControllerConfigLister
@@ -85,6 +87,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&corev1clientset.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
+		name:          "TemplateController",
 		templatesDir:  templatesDir,
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
@@ -227,11 +230,11 @@ func (ctrl *Controller) deleteFeature(obj interface{}) {
 }
 
 // Run executes the template controller
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced, ctrl.featListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.ccListerSynced, ctrl.mcListerSynced, ctrl.secretsInformerSynced, ctrl.featListerSynced) {
 		return
 	}
 
@@ -239,10 +242,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-TemplateController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.worker, time.Second)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (ctrl *Controller) addControllerConfig(obj interface{}) {
@@ -393,19 +396,19 @@ func (ctrl *Controller) enqueueAfter(controllerconfig *mcfgv1.ControllerConfig, 
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(ctx, key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
@@ -431,7 +434,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 
 // syncControllerConfig will sync the controller config with the given key.
 // This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncControllerConfig(key string) error {
+func (ctrl *Controller) syncControllerConfig(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing controllerconfig %q (%v)", key, startTime)
 	defer func() {
@@ -456,20 +459,20 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	cfg := controllerconfig.DeepCopy()
 
 	if cfg.GetGeneration() != cfg.Status.ObservedGeneration {
-		if err := ctrl.syncRunningStatus(cfg); err != nil {
+		if err := ctrl.syncRunningStatus(ctx, cfg); err != nil {
 			return err
 		}
 	}
 
 	var pullSecretRaw []byte
 	if cfg.Spec.PullSecret != nil {
-		secret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(context.TODO(), cfg.Spec.PullSecret.Name, metav1.GetOptions{})
+		secret, err := ctrl.kubeClient.CoreV1().Secrets(cfg.Spec.PullSecret.Namespace).Get(ctx, cfg.Spec.PullSecret.Name, metav1.GetOptions{})
 		if err != nil {
-			return ctrl.syncFailingStatus(cfg, err)
+			return ctrl.syncFailingStatus(ctx, cfg, err)
 		}
 
 		if secret.Type != corev1.SecretTypeDockerConfigJson {
-			return ctrl.syncFailingStatus(cfg, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, secret.Type))
+			return ctrl.syncFailingStatus(ctx, cfg, fmt.Errorf("expected secret type %s found %s", corev1.SecretTypeDockerConfigJson, secret.Type))
 		}
 		pullSecretRaw = secret.Data[corev1.DockerConfigJsonKey]
 	}
@@ -478,24 +481,24 @@ func (ctrl *Controller) syncControllerConfig(key string) error {
 	if err != nil && !errors.IsNotFound(err) {
 		err := fmt.Errorf("could not fetch FeatureGate: %w", err)
 		glog.V(2).Infof("%v", err)
-		return ctrl.syncFailingStatus(cfg, err)
+		return ctrl.syncFailingStatus(ctx, cfg, err)
 	}
 	mcs, err := getMachineConfigsForControllerConfig(ctrl.templatesDir, cfg, pullSecretRaw, fg)
 	if err != nil {
-		return ctrl.syncFailingStatus(cfg, err)
+		return ctrl.syncFailingStatus(ctx, cfg, err)
 	}
 
 	for _, mc := range mcs {
-		_, updated, err := mcoResourceApply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), mc)
+		_, updated, err := mcoResourceApply.ApplyMachineConfig(ctx, ctrl.client.MachineconfigurationV1(), mc)
 		if err != nil {
-			return ctrl.syncFailingStatus(cfg, err)
+			return ctrl.syncFailingStatus(ctx, cfg, err)
 		}
 		if updated {
 			glog.V(4).Infof("Machineconfig %s was updated", mc.Name)
 		}
 	}
 
-	return ctrl.syncCompletedStatus(cfg)
+	return ctrl.syncCompletedStatus(ctx, cfg)
 }
 
 func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate) ([]*mcfgv1.MachineConfig, error) {
@@ -525,4 +528,9 @@ func getMachineConfigsForControllerConfig(templatesDir string, config *mcfgv1.Co
 // RunBootstrap runs the tempate controller in boostrap mode.
 func RunBootstrap(templatesDir string, config *mcfgv1.ControllerConfig, pullSecretRaw []byte, featureGate *configv1.FeatureGate) ([]*mcfgv1.MachineConfig, error) {
 	return getMachineConfigsForControllerConfig(templatesDir, config, pullSecretRaw, featureGate)
+}
+
+// Name() returns the name of this controller
+func (ctrl *Controller) Name() string {
+	return ctrl.name
 }

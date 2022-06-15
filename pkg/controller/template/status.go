@@ -17,7 +17,7 @@ import (
 // - sets `running` condition to `true`.
 // - reset the `available` condition to `false` when we are syncing to new generation.
 // - does not modify `failing` condition.
-func (ctrl *Controller) syncRunningStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
+func (ctrl *Controller) syncRunningStatus(ctx context.Context, ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := fmt.Sprintf("syncing towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Raw)
 		rcond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerRunning, corev1.ConditionTrue, "", reason)
@@ -29,13 +29,13 @@ func (ctrl *Controller) syncRunningStatus(ctrlconfig *mcfgv1.ControllerConfig) e
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
 	}
-	return updateControllerConfigStatus(ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc)
+	return updateControllerConfigStatus(ctx, ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc)
 }
 
 // - resets `running` condition to `false`
 // - resets `completed` condition to `false`
 // - sets the `failing` condition to `true` using the `oerr`
-func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, oerr error) error {
+func (ctrl *Controller) syncFailingStatus(ctx context.Context, ctrlconfig *mcfgv1.ControllerConfig, oerr error) error {
 	if oerr == nil {
 		return nil
 	}
@@ -50,7 +50,7 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
 	}
-	if err := updateControllerConfigStatus(ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc); err != nil {
+	if err := updateControllerConfigStatus(ctx, ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc); err != nil {
 		return fmt.Errorf("failed to sync status for %v", oerr)
 	}
 	return oerr
@@ -59,7 +59,7 @@ func (ctrl *Controller) syncFailingStatus(ctrlconfig *mcfgv1.ControllerConfig, o
 // - resets `running` condition to `false`
 // - resets `failing` condition to `false`
 // - sets the `completed` condition to `true`
-func (ctrl *Controller) syncCompletedStatus(ctrlconfig *mcfgv1.ControllerConfig) error {
+func (ctrl *Controller) syncCompletedStatus(ctx context.Context, ctrlconfig *mcfgv1.ControllerConfig) error {
 	updateFunc := func(cfg *mcfgv1.ControllerConfig) error {
 		reason := fmt.Sprintf("sync completed towards (%d) generation using controller version %s", cfg.GetGeneration(), version.Raw)
 		acond := mcfgv1.NewControllerConfigStatusCondition(mcfgv1.TemplateControllerCompleted, corev1.ConditionTrue, "", reason)
@@ -71,12 +71,12 @@ func (ctrl *Controller) syncCompletedStatus(ctrlconfig *mcfgv1.ControllerConfig)
 		cfg.Status.ObservedGeneration = ctrlconfig.GetGeneration()
 		return nil
 	}
-	return updateControllerConfigStatus(ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc)
+	return updateControllerConfigStatus(ctx, ctrlconfig.GetName(), ctrl.ccLister.Get, ctrl.client.MachineconfigurationV1().ControllerConfigs(), updateFunc)
 }
 
 type updateControllerConfigStatusFunc func(*mcfgv1.ControllerConfig) error
 
-func updateControllerConfigStatus(name string,
+func updateControllerConfigStatus(ctx context.Context, name string,
 	controllerConfigGetter func(name string) (*mcfgv1.ControllerConfig, error),
 	client mcfgclientv1.ControllerConfigInterface,
 	updateFuncs ...updateControllerConfigStatusFunc) error {
@@ -95,7 +95,7 @@ func updateControllerConfigStatus(name string,
 		if equality.Semantic.DeepEqual(old, new) {
 			return nil
 		}
-		_, err = client.UpdateStatus(context.TODO(), new, metav1.UpdateOptions{})
+		_, err = client.UpdateStatus(ctx, new, metav1.UpdateOptions{})
 		return err
 	})
 }
