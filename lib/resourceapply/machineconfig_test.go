@@ -1,6 +1,7 @@
 package resourceapply
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -285,7 +286,7 @@ func TestApplyMachineConfig(t *testing.T) {
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("test#%d", idx), func(t *testing.T) {
 			client := fake.NewSimpleClientset(test.existing...)
-			_, actualModified, err := ApplyMachineConfig(client.MachineconfigurationV1(), test.input)
+			_, actualModified, err := ApplyMachineConfig(context.TODO(), client.MachineconfigurationV1(), test.input)
 			if err != nil {
 				t.Fatal(err)
 			}
