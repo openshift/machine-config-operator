@@ -305,7 +305,7 @@ spec:
 
 			// Run the bootstrap
 			bootstrapper := bootstrap.New(templatesDir, srcDir, filepath.Join(bootstrapTestDataDir, "/machineconfigcontroller-pull-secret"))
-			err = bootstrapper.Run(destDir)
+			err = bootstrapper.Run(context.TODO(), destDir)
 			require.NoError(t, err)
 
 			// Compare the rendered configs
@@ -364,7 +364,7 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	close(ctrlctx.InformersStarted)
 
 	for _, c := range controllers {
-		go c.Run(2, ctrlctx.Stop)
+		go c.Run(context.TODO(), 2)
 	}
 
 	return &fixture{
