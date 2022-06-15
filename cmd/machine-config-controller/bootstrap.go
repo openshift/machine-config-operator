@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	"github.com/golang/glog"
@@ -43,7 +44,7 @@ func runbootstrapCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("--dest-dir or --manifest-dir not set")
 	}
 
-	if err := bootstrap.New(rootOpts.templates, bootstrapOpts.manifestsDir, bootstrapOpts.pullSecretFile).Run(bootstrapOpts.destinationDir); err != nil {
+	if err := bootstrap.New(rootOpts.templates, bootstrapOpts.manifestsDir, bootstrapOpts.pullSecretFile).Run(context.TODO(), bootstrapOpts.destinationDir); err != nil {
 		glog.Fatalf("error running MCC[BOOTSTRAP]: %v", err)
 	}
 }

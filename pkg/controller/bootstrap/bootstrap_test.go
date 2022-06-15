@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -165,7 +166,7 @@ func TestBootstrapRun(t *testing.T) {
 	defer os.RemoveAll(destDir)
 
 	bootstrap := New("../../../templates", "testdata/bootstrap", "testdata/bootstrap/machineconfigcontroller-pull-secret")
-	err = bootstrap.Run(destDir)
+	err = bootstrap.Run(context.TODO(), destDir)
 	require.NoError(t, err)
 
 	for _, poolName := range []string{"master", "worker"} {

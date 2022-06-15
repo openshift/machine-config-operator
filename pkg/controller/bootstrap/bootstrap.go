@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -49,7 +50,7 @@ func New(templatesDir, manifestDir, pullSecretFile string) *Bootstrap {
 // Run runs boostrap for Machine Config Controller
 // It writes all the assets to destDir
 // nolint:gocyclo
-func (b *Bootstrap) Run(destDir string) error {
+func (b *Bootstrap) Run(ctx context.Context, destDir string) error {
 	infos, err := ioutil.ReadDir(b.manifestDir)
 	if err != nil {
 		return err
@@ -146,7 +147,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, imgCfg)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(ctx, b.templatesDir, cconfig, pools, icspRules, imgCfg)
 	if err != nil {
 		return err
 	}
@@ -154,14 +155,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	configs = append(configs, rconfigs...)
 
 	if len(crconfigs) > 0 {
-		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
+		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(ctx, b.templatesDir, crconfigs, cconfig, pools)
 		if err != nil {
 			return err
 		}
 		configs = append(configs, containerRuntimeConfigs...)
 	}
 	if featureGate != nil {
-		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(b.templatesDir, featureGate, nodeConfig, cconfig, pools)
+		featureConfigs, err := kubeletconfig.RunFeatureGateBootstrap(ctx, b.templatesDir, featureGate, nodeConfig, cconfig, pools)
 		if err != nil {
 			return err
 		}
@@ -169,14 +170,14 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 
 	if nodeConfig != nil {
-		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(b.templatesDir, featureGate, cconfig, nodeConfig, pools)
+		nodeConfigs, err := kubeletconfig.RunNodeConfigBootstrap(ctx, b.templatesDir, featureGate, cconfig, nodeConfig, pools)
 		if err != nil {
 			return err
 		}
 		configs = append(configs, nodeConfigs...)
 	}
 	if len(kconfigs) > 0 {
-		kconfigs, err := kubeletconfig.RunKubeletBootstrap(b.templatesDir, kconfigs, cconfig, featureGate, nodeConfig, pools)
+		kconfigs, err := kubeletconfig.RunKubeletBootstrap(ctx, b.templatesDir, kconfigs, cconfig, featureGate, nodeConfig, pools)
 		if err != nil {
 			return err
 		}
