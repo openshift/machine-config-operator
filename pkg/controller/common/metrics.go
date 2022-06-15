@@ -39,7 +39,7 @@ func RegisterMCCMetrics() error {
 }
 
 // StartMetricsListener is metrics listener via http on localhost
-func StartMetricsListener(addr string, stopCh <-chan struct{}) {
+func StartMetricsListener(addr string, stopCh <-chan struct{}) error {
 	if addr == "" {
 		addr = DefaultBindAddress
 	}
@@ -48,7 +48,7 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}) {
 	if err := RegisterMCCMetrics(); err != nil {
 		glog.Errorf("unable to register metrics: %v", err)
 		// No sense in continuing starting the listener if this fails
-		return
+		return err
 	}
 
 	glog.Infof("Starting metrics listener on %s", addr)
@@ -62,7 +62,14 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}) {
 		}
 	}()
 	<-stopCh
-	if err := s.Shutdown(context.Background()); err != http.ErrServerClosed {
-		glog.Errorf("error stopping metrics listener: %v", err)
+	if err := s.Shutdown(context.Background()); err != nil {
+		if err != http.ErrServerClosed {
+			glog.Errorf("error stopping metrics listener: %v", err)
+			return err
+		}
+	} else {
+		glog.Infof("Metrics listener successfully stopped")
 	}
+
+	return nil
 }
