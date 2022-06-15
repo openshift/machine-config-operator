@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/cmd/common"
@@ -12,6 +13,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/operator"
 	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/spf13/cobra"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/leaderelection"
 )
 
@@ -35,9 +37,23 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.imagesFile, "images-json", "", "images.json file for MCO.")
 }
 
+type asyncResult struct {
+	name  string
+	error error
+}
+
 func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
+
+	// This is the context that signals whether the operator should be running and doing work
+	runContext, runCancel := context.WithCancel(context.Background())
+	// This is the context that signals whether we should release our leader lease
+	leaderContext, leaderCancel := context.WithCancel(context.Background())
+
+	// So we can collect status of our goroutines
+	resultChannel := make(chan asyncResult, 1)
+	resultChannelCount := 0
 
 	// To help debugging, immediately log version
 	glog.Infof("Version: %s (Raw: %s, Hash: %s)", os.Getenv("RELEASE_VERSION"), version.Raw, version.Hash)
@@ -50,8 +66,11 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		glog.Fatalf("error creating clients: %v", err)
 	}
-	run := func(ctx context.Context) {
-		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), ctrlcommon.MCONamespace)
+	run := func(_ context.Context) {
+
+		go common.SignalHandler(runCancel)
+
+		ctrlctx := ctrlcommon.CreateControllerContext(cb, runContext.Done(), ctrlcommon.MCONamespace)
 		controller := operator.New(
 			ctrlcommon.MCONamespace, componentName,
 			startOpts.imagesFile,
@@ -89,22 +108,69 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx.KubeMAOSharedInformer.Start(ctrlctx.Stop)
 		close(ctrlctx.InformersStarted)
 
-		go controller.Run(2, ctrlctx.Stop)
+		resultChannelCount++
+		go func() {
+			defer utilruntime.HandleCrash()
+			controller.Run(runContext, 2)
+			resultChannel <- asyncResult{name: "main operator", error: err}
+		}()
 
-		select {}
+		// TODO(jkyros); This might be overkill for the operator, it only has one goroutine
+		var shutdownTimer *time.Timer
+		for resultChannelCount > 0 {
+			glog.Infof("Waiting on %d outstanding goroutines.", resultChannelCount)
+			if shutdownTimer == nil { // running
+				select {
+				case <-runContext.Done():
+					glog.Info("Run context completed; beginning two-minute graceful shutdown period.")
+					shutdownTimer = time.NewTimer(2 * time.Minute)
+
+				case result := <-resultChannel:
+					// TODO(jkyros): one of our goroutines puked early, this means we shut down everything.
+					resultChannelCount--
+					if result.error == nil {
+						glog.Infof("Collected %s goroutine.", result.name)
+					} else {
+						glog.Errorf("Collected %s goroutine: %v", result.name, result.error)
+						runCancel() // this will cause shutdownTimer initialization in the next loop
+					}
+				}
+			} else { // shutting down
+				select {
+				case <-shutdownTimer.C: // never triggers after the channel is stopped, although it would not matter much if it did because subsequent cancel calls do nothing.
+					leaderCancel()
+					shutdownTimer.Stop()
+				case result := <-resultChannel:
+					resultChannelCount--
+					if result.error == nil {
+						glog.Infof("Collected %s goroutine.", result.name)
+					} else {
+						glog.Errorf("Collected %s goroutine: %v", result.name, result.error)
+					}
+					if resultChannelCount == 0 {
+						glog.Info("That was the last one, cancelling the leader lease.")
+						leaderCancel()
+					}
+				}
+			}
+		}
+		glog.Info("Finished collecting operator goroutines.")
 	}
 
-	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
+	// TODO(jkyros): should this be a different "pre-run" context here?
+	leaderElectionCfg := common.GetLeaderElectionConfig(runContext, cb.GetBuilderConfig())
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
-		Lock:          common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
-		LeaseDuration: leaderElectionCfg.LeaseDuration.Duration,
-		RenewDeadline: leaderElectionCfg.RenewDeadline.Duration,
-		RetryPeriod:   leaderElectionCfg.RetryPeriod.Duration,
+	leaderelection.RunOrDie(leaderContext, leaderelection.LeaderElectionConfig{
+		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Fatalf("leaderelection lost")
+				glog.Infof("Stopped leading. Terminating.")
+				os.Exit(0)
 			},
 		},
 	})
