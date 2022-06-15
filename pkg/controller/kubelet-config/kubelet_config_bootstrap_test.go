@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestRunKubeletBootstrap(t *testing.T) {
 				},
 			}
 
-			mcs, err := RunKubeletBootstrap("../../../templates", cfgs, cc, nil, nil, pools)
+			mcs, err := RunKubeletBootstrap(context.TODO(), "../../../templates", cfgs, cc, nil, nil, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(cfgs))
 
@@ -135,7 +136,7 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			"99-master-generated-kubelet", // kubeletconfig apply to master pool, expected managedKey for master pool
 		},
 	} {
-		res, err := generateBootstrapManagedKeyKubelet(tc.pool, managedKeyExist)
+		res, err := generateBootstrapManagedKeyKubelet(context.TODO(), tc.pool, managedKeyExist)
 		require.NoError(t, err)
 		require.Equal(t, tc.expectedManagedKey, res)
 	}
@@ -188,7 +189,7 @@ func TestGenerateDefaultManagedKeyKubelet(t *testing.T) {
 			fmt.Errorf("Error found multiple KubeletConfigs targeting MachineConfigPool master. Please apply only one KubeletConfig manifest for each pool during installation"),
 		},
 	} {
-		res, err := generateBootstrapManagedKeyKubelet(tc.pool, managedKeyExist)
+		res, err := generateBootstrapManagedKeyKubelet(context.TODO(), tc.pool, managedKeyExist)
 		require.Equal(t, tc.expectedErr, err)
 		require.Equal(t, tc.expectedManagedKey, res)
 	}
@@ -212,7 +213,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, nil, nil, pools)
+			mcs, err := RunKubeletBootstrap(context.TODO(), "../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, nil, nil, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 
@@ -222,14 +223,14 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc1)
 			f.objects = append(f.objects, kc1)
 			c := f.newController()
-			err = c.syncHandler(getKey(kc1, t))
+			err = c.syncHandler(context.TODO(), getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
 
 			// resync kc and check the managedKey
 			c = f.newController()
-			err = c.syncHandler(getKey(kc, t))
+			err = c.syncHandler(context.TODO(), getKey(kc, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}

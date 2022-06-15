@@ -73,13 +73,15 @@ var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set
 
 // Controller defines the kubelet config controller.
 type Controller struct {
+	name string
+
 	templatesDir string
 
 	client        mcfgclientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler          func(mcp string) error
+	syncHandler          func(ctx context.Context, mcp string) error
 	enqueueKubeletConfig func(*mcfgv1.KubeletConfig)
 
 	ccLister       mcfglistersv1.ControllerConfigLister
@@ -103,6 +105,8 @@ type Controller struct {
 	queue           workqueue.RateLimitingInterface
 	featureQueue    workqueue.RateLimitingInterface
 	nodeConfigQueue workqueue.RateLimitingInterface
+
+	ctx context.Context
 }
 
 // New returns a new kubelet config controller
@@ -118,11 +122,13 @@ func New(
 	mcfgClient mcfgclientset.Interface,
 	configclient configclientset.Interface,
 ) *Controller {
+
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
+		name:            "KubeletConfigController",
 		templatesDir:    templatesDir,
 		client:          mcfgClient,
 		configClient:    configclient,
@@ -175,13 +181,14 @@ func New(
 }
 
 // Run executes the kubelet config controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 	defer ctrl.featureQueue.ShutDown()
 	defer ctrl.nodeConfigQueue.ShutDown()
+	ctrl.ctx = ctx
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.mckListerSynced, ctrl.ccListerSynced, ctrl.featListerSynced, ctrl.apiserverListerSynced) {
 		return
 	}
 
@@ -189,18 +196,18 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-KubeletConfigController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.worker, time.Second)
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.featureWorker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.featureWorker, time.Second)
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.nodeConfigWorker, time.Second)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func kubeletConfigTriggerObjectChange(old, new *mcfgv1.KubeletConfig) bool {
@@ -243,32 +250,32 @@ func (ctrl *Controller) deleteKubeletConfig(obj interface{}) {
 			return
 		}
 	}
-	if err := ctrl.cascadeDelete(cfg); err != nil {
+	if err := ctrl.cascadeDelete(ctrl.ctx, cfg); err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't delete object %#v: %w", cfg, err))
 	} else {
 		glog.V(4).Infof("Deleted KubeletConfig %s and restored default config", cfg.Name)
 	}
 }
 
-func (ctrl *Controller) cascadeDelete(cfg *mcfgv1.KubeletConfig) error {
+func (ctrl *Controller) cascadeDelete(ctx context.Context, cfg *mcfgv1.KubeletConfig) error {
 	if len(cfg.GetFinalizers()) == 0 {
 		return nil
 	}
 	finalizerName := cfg.GetFinalizers()[0]
-	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
+	mcs, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	for _, mc := range mcs.Items {
 		if string(mc.ObjectMeta.GetUID()) == finalizerName || mc.GetName() == finalizerName {
-			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(context.TODO(), mc.GetName(), metav1.DeleteOptions{})
+			err := ctrl.client.MachineconfigurationV1().MachineConfigs().Delete(ctx, mc.GetName(), metav1.DeleteOptions{})
 			if err != nil && !macherrors.IsNotFound(err) {
 				return err
 			}
 			break
 		}
 	}
-	if err := ctrl.popFinalizerFromKubeletConfig(cfg); err != nil {
+	if err := ctrl.popFinalizerFromKubeletConfig(ctx, cfg); err != nil {
 		return err
 	}
 	return nil
@@ -294,19 +301,19 @@ func (ctrl *Controller) enqueueRateLimited(cfg *mcfgv1.KubeletConfig) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(ctx, key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
@@ -404,7 +411,7 @@ func generateOriginalKubeletConfigIgn(cc *mcfgv1.ControllerConfig, templatesDir,
 	return nil, fmt.Errorf("could not generate old kubelet config")
 }
 
-func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
+func (ctrl *Controller) syncStatusOnly(ctx context.Context, cfg *mcfgv1.KubeletConfig, err error, args ...interface{}) error {
 	statusUpdateError := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
 		if getErr != nil {
@@ -417,7 +424,7 @@ func (ctrl *Controller) syncStatusOnly(cfg *mcfgv1.KubeletConfig, err error, arg
 		// reflect the latest time stamp from the new status message.
 		newStatusCondition := wrapErrorWithCondition(err, args...)
 		cleanUpStatusConditions(&newcfg.Status.Conditions, newStatusCondition)
-		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(context.TODO(), newcfg, metav1.UpdateOptions{})
+		_, lerr := ctrl.client.MachineconfigurationV1().KubeletConfigs().UpdateStatus(ctx, newcfg, metav1.UpdateOptions{})
 		return lerr
 	})
 	if statusUpdateError != nil {
@@ -441,7 +448,7 @@ func cleanUpStatusConditions(statusConditions *[]mcfgv1.KubeletConfigCondition, 
 }
 
 // addAnnotation adds the annotions for a kubeletconfig object with the given annotationKey and annotationVal
-func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, annotationVal string) error {
+func (ctrl *Controller) addAnnotation(ctx context.Context, cfg *mcfgv1.KubeletConfig, annotationKey, annotationVal string) error {
 	annotationUpdateErr := retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, getErr := ctrl.mckLister.Get(cfg.Name)
 		if getErr != nil {
@@ -450,7 +457,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 		newcfg.SetAnnotations(map[string]string{
 			annotationKey: annotationVal,
 		})
-		_, updateErr := ctrl.client.MachineconfigurationV1().KubeletConfigs().Update(context.TODO(), newcfg, metav1.UpdateOptions{})
+		_, updateErr := ctrl.client.MachineconfigurationV1().KubeletConfigs().Update(ctx, newcfg, metav1.UpdateOptions{})
 		return updateErr
 	})
 	if annotationUpdateErr != nil {
@@ -462,7 +469,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 //nolint:gocyclo
-func (ctrl *Controller) syncKubeletConfig(key string) error {
+func (ctrl *Controller) syncKubeletConfig(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing kubeletconfig %q (%v)", key, startTime)
 	defer func() {
@@ -495,7 +502,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	// Check for Deleted KubeletConfig and optionally delete finalizers
 	if cfg.DeletionTimestamp != nil {
 		if len(cfg.GetFinalizers()) > 0 {
-			return ctrl.cascadeDelete(cfg)
+			return ctrl.cascadeDelete(ctx, cfg)
 		}
 		return nil
 	}
@@ -507,19 +514,19 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 	// Validate the KubeletConfig CR
 	if err := validateUserKubeletConfig(cfg); err != nil {
-		return ctrl.syncStatusOnly(cfg, newForgetError(err))
+		return ctrl.syncStatusOnly(ctx, cfg, newForgetError(err))
 	}
 
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.getPoolsForKubeletConfig(cfg)
 	if err != nil {
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	if len(mcpPools) == 0 {
 		err := fmt.Errorf("KubeletConfig %v does not match any MachineConfigPools", key)
 		glog.V(2).Infof("%v", err)
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
@@ -528,7 +535,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	} else if err != nil {
 		glog.V(2).Infof("%v", err)
 		err := fmt.Errorf("could not fetch FeatureGates: %w", err)
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	// Fetch the NodeConfig
@@ -537,7 +544,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		nodeConfig = createNewDefaultNodeconfig()
 	} else if err != nil {
 		err := fmt.Errorf("could not fetch Node: %v", err)
-		return ctrl.syncStatusOnly(cfg, err)
+		return ctrl.syncStatusOnly(ctx, cfg, err)
 	}
 
 	for _, pool := range mcpPools {
@@ -551,13 +558,13 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		}
 		role := pool.Name
 		// Get MachineConfig
-		managedKey, err := getManagedKubeletConfigKey(pool, ctrl.client, cfg)
+		managedKey, err := getManagedKubeletConfigKey(ctx, pool, ctrl.client, cfg)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not get kubelet config key: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not get kubelet config key: %v", err)
 		}
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(ctx, managedKey, metav1.GetOptions{})
 		if err != nil && !macherrors.IsNotFound(err) {
-			return ctrl.syncStatusOnly(cfg, err, "could not find MachineConfig: %v", managedKey)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not find MachineConfig: %v", managedKey)
 		}
 		isNotFound := macherrors.IsNotFound(err)
 
@@ -569,7 +576,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 		originalKubeConfig, err := generateOriginalKubeletConfigWithFeatureGates(cc, ctrl.templatesDir, role, features)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not get original kubelet config: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not get original kubelet config: %v", err)
 		}
 		// updating the originalKubeConfig based on the nodeConfig on a worker node
 		if role == ctrlcommon.MachineConfigPoolWorker {
@@ -580,7 +587,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		var profile *configv1.TLSSecurityProfile
 		if apiServerSettings, err := ctrl.apiserverLister.Get(defaultOpenshiftTLSSecurityProfileConfig); err != nil {
 			if !macherrors.IsNotFound(err) {
-				return ctrl.syncStatusOnly(cfg, err, "could not get the TLSSecurityProfile from %v: %v", defaultOpenshiftTLSSecurityProfileConfig, err)
+				return ctrl.syncStatusOnly(ctx, cfg, err, "could not get the TLSSecurityProfile from %v: %v", defaultOpenshiftTLSSecurityProfileConfig, err)
 			}
 		} else {
 			profile = apiServerSettings.Spec.TLSSecurityProfile
@@ -595,14 +602,14 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 		kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, err := generateKubeletIgnFiles(cfg, originalKubeConfig)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err)
+			return ctrl.syncStatusOnly(ctx, cfg, err)
 		}
 
 		if isNotFound {
 			ignConfig := ctrlcommon.NewIgnConfig()
 			mc, err = ctrlcommon.MachineConfigFromIgnConfig(role, managedKey, ignConfig)
 			if err != nil {
-				return ctrl.syncStatusOnly(cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
+				return ctrl.syncStatusOnly(ctx, cfg, err, "could not create MachineConfig from new Ignition config: %v", err)
 			}
 			mc.ObjectMeta.UID = uuid.NewUUID()
 			_, ok := cfg.GetAnnotations()[ctrlcommon.MCNameSuffixAnnotationKey]
@@ -610,8 +617,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			// the first managed key value 99-poolname-generated-kubelet does not have a suffix
 			// set "" as suffix annotation to the kubelet config object
 			if _, err := strconv.Atoi(arr[len(arr)-1]); err != nil && !ok {
-				if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
-					return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
+				if err := ctrl.addAnnotation(ctx, cfg, ctrlcommon.MCNameSuffixAnnotationKey, ""); err != nil {
+					return ctrl.syncStatusOnly(ctx, cfg, err, "could not update annotation for kubeletConfig")
 				}
 			}
 			// If the MC name suffix annotation does not exist and the managed key value returned has a suffix, then add the MC name
@@ -619,8 +626,8 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			if len(arr) > 4 && !ok {
 				_, err := strconv.Atoi(arr[len(arr)-1])
 				if err == nil {
-					if err := ctrl.addAnnotation(cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
-						return ctrl.syncStatusOnly(cfg, err, "could not update annotation for kubeletConfig")
+					if err := ctrl.addAnnotation(ctx, cfg, ctrlcommon.MCNameSuffixAnnotationKey, arr[len(arr)-1]); err != nil {
+						return ctrl.syncStatusOnly(ctx, cfg, err, "could not update annotation for kubeletConfig")
 					}
 				}
 			}
@@ -639,7 +646,7 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 
 		rawIgn, err := json.Marshal(tempIgnConfig)
 		if err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not marshal kubelet config Ignition: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not marshal kubelet config Ignition: %v", err)
 		}
 		mc.Spec.Config.Raw = rawIgn
 
@@ -653,24 +660,25 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(ctx, mc, metav1.UpdateOptions{})
 			}
 			return err
 		}); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not Create/Update MachineConfig: %v", err)
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not Create/Update MachineConfig: %v", err)
 		}
 		// Add Finalizers to the KubletConfig
-		if err := ctrl.addFinalizerToKubeletConfig(cfg, mc); err != nil {
-			return ctrl.syncStatusOnly(cfg, err, "could not add finalizers to KubeletConfig: %v", err)
+		if err := ctrl.addFinalizerToKubeletConfig(ctx, cfg, mc); err != nil {
+			return ctrl.syncStatusOnly(ctx, cfg, err, "could not add finalizers to KubeletConfig: %v", err)
 		}
 		glog.Infof("Applied KubeletConfig %v on MachineConfigPool %v", key, pool.Name)
 	}
-	return ctrl.syncStatusOnly(cfg, nil)
+	return ctrl.syncStatusOnly(ctx, cfg, nil)
 }
 
-func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) error {
+func (ctrl *Controller) popFinalizerFromKubeletConfig(ctx context.Context, kc *mcfgv1.KubeletConfig) error {
+	// TODO(jkyros): what about here? This doesn't support a context for cancelling this directly,
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, err := ctrl.mckLister.Get(kc.Name)
 		if macherrors.IsNotFound(err) {
@@ -697,16 +705,16 @@ func (ctrl *Controller) popFinalizerFromKubeletConfig(kc *mcfgv1.KubeletConfig) 
 		if err != nil {
 			return err
 		}
-		return ctrl.patchKubeletConfigs(newcfg.Name, patch)
+		return ctrl.patchKubeletConfigs(ctx, newcfg.Name, patch)
 	})
 }
 
-func (ctrl *Controller) patchKubeletConfigs(name string, patch []byte) error {
-	_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(context.TODO(), name, types.MergePatchType, patch, metav1.PatchOptions{})
+func (ctrl *Controller) patchKubeletConfigs(ctx context.Context, name string, patch []byte) error {
+	_, err := ctrl.client.MachineconfigurationV1().KubeletConfigs().Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
 }
 
-func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
+func (ctrl *Controller) addFinalizerToKubeletConfig(ctx context.Context, kc *mcfgv1.KubeletConfig, mc *mcfgv1.MachineConfig) error {
 	return retry.RetryOnConflict(updateBackoff, func() error {
 		newcfg, err := ctrl.mckLister.Get(kc.Name)
 		if macherrors.IsNotFound(err) {
@@ -748,7 +756,7 @@ func (ctrl *Controller) addFinalizerToKubeletConfig(kc *mcfgv1.KubeletConfig, mc
 		if err != nil {
 			return err
 		}
-		return ctrl.patchKubeletConfigs(newcfg.Name, patch)
+		return ctrl.patchKubeletConfigs(ctx, newcfg.Name, patch)
 	})
 }
 
@@ -806,4 +814,9 @@ func getSecurityProfileCiphers(profile *configv1.TLSSecurityProfile) (string, []
 
 	// need to remap all Ciphers to their respective IANA names used by Go
 	return string(profileSpec.MinTLSVersion), crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers)
+}
+
+// Name() returns the name of this controller
+func (ctrl *Controller) Name() string {
+	return ctrl.name
 }

@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -54,9 +55,9 @@ func TestFeaturesDefault(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc2 := newKubeletConfig("bigger-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 250}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey1, err := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey1, err := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			require.NoError(t, err)
-			kubeletConfigKey2, err := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			kubeletConfigKey2, err := getManagedKubeletConfigKey(context.TODO(), mcp2, f.client, kc2)
 			require.NoError(t, err)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
@@ -95,9 +96,9 @@ func TestFeaturesCustomNoUpgrade(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc2 := newKubeletConfig("bigger-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 250}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey1, err := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey1, err := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			require.NoError(t, err)
-			kubeletConfigKey2, err := getManagedKubeletConfigKey(mcp2, f.client, kc2)
+			kubeletConfigKey2, err := getManagedKubeletConfigKey(context.TODO(), mcp2, f.client, kc2)
 			require.NoError(t, err)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey1, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcs2 := helpers.NewMachineConfig(kubeletConfigKey2, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
@@ -150,7 +151,7 @@ func TestBootstrapFeaturesDefault(t *testing.T) {
 
 			features := createNewDefaultFeatureGate()
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", features, nil, cc, mcps)
+			mcs, err := RunFeatureGateBootstrap(context.TODO(), "../../../templates", features, nil, cc, mcps)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}
@@ -184,7 +185,7 @@ func TestBootstrapFeaturesCustomNoUpgrade(t *testing.T) {
 				},
 			}
 
-			mcs, err := RunFeatureGateBootstrap("../../../templates", features, nil, cc, mcps)
+			mcs, err := RunFeatureGateBootstrap(context.TODO(), "../../../templates", features, nil, cc, mcps)
 			if err != nil {
 				t.Errorf("could not run feature gate bootstrap: %v", err)
 			}

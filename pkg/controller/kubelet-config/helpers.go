@@ -131,16 +131,16 @@ func findKubeletConfig(mc *mcfgv1.MachineConfig) (*ign3types.File, error) {
 }
 
 // nolint: dupl
-func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.KubeletConfig) (string, error) {
+func getManagedKubeletConfigKey(ctx context.Context, pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface, cfg *mcfgv1.KubeletConfig) (string, error) {
 	// Get all the kubelet config CRs
-	kcListAll, err := client.MachineconfigurationV1().KubeletConfigs().List(context.TODO(), metav1.ListOptions{})
+	kcListAll, err := client.MachineconfigurationV1().KubeletConfigs().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error listing kubelet configs: %w", err)
 	}
 
 	// If there is no kubelet config in the list, return the default MC name with no suffix
 	if kcListAll == nil || len(kcListAll.Items) == 0 {
-		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+		return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
 
 	var kcList []mcfgv1.KubeletConfig
@@ -169,13 +169,13 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 			return fmt.Sprintf("99-%s-generated-kubelet-%s", pool.Name, val), nil
 		}
 		// if the suffix val is "", mc name should not suffixed the cfg to be updated is the first kubelet config has been created
-		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+		return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
 
 	// If we are here, this means that a new kubelet config was created, so we have to calculate the suffix value for its MC name
 	// if the kubelet config is the only one in the list, mc name should not suffixed since cfg is the first kubelet config to be created
 	if len(kcList) == 1 {
-		return ctrlcommon.GetManagedKey(pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
+		return ctrlcommon.GetManagedKey(ctx, pool, client, "99", "kubelet", getManagedKubeletConfigKeyDeprecated(pool))
 	}
 	suffixNum := 0
 	// Go through the list of kubelet config objects created and get the max suffix value currently created
@@ -204,8 +204,8 @@ func getManagedKubeletConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclien
 	return fmt.Sprintf("99-%s-generated-kubelet-%s", pool.Name, strconv.Itoa(suffixNum+1)), nil
 }
 
-func getManagedFeaturesKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "98", "kubelet", getManagedFeaturesKeyDeprecated(pool))
+func getManagedFeaturesKey(ctx context.Context, pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(ctx, pool, client, "98", "kubelet", getManagedFeaturesKeyDeprecated(pool))
 }
 
 // Deprecated: use getManagedFeaturesKey
@@ -213,8 +213,8 @@ func getManagedFeaturesKeyDeprecated(pool *mcfgv1.MachineConfigPool) string {
 	return fmt.Sprintf("98-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID)
 }
 
-func getManagedNodeConfigKey(pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
-	return ctrlcommon.GetManagedKey(pool, client, "97", "kubelet", fmt.Sprintf("97-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID))
+func getManagedNodeConfigKey(ctx context.Context, pool *mcfgv1.MachineConfigPool, client mcfgclientset.Interface) (string, error) {
+	return ctrlcommon.GetManagedKey(ctx, pool, client, "97", "kubelet", fmt.Sprintf("97-%s-%s-kubelet", pool.Name, pool.ObjectMeta.UID))
 }
 
 // Deprecated: use getManagedKubeletConfigKey

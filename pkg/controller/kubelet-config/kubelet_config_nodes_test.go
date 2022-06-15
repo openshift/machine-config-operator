@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -50,7 +51,7 @@ func TestNodeConfigDefault(t *testing.T) {
 			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/worker", ""))
-			kubeletConfigKey, err := getManagedKubeletConfigKey(mcp, f.client, kc)
+			kubeletConfigKey, err := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc)
 			require.NoError(t, err)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/worker": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
@@ -84,7 +85,7 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 			features := createNewDefaultFeatureGate()
 			configNode := createNewDefaultNodeconfig()
 
-			mcs, err := RunNodeConfigBootstrap("../../../templates", features, cc, configNode, mcps)
+			mcs, err := RunNodeConfigBootstrap(context.TODO(), "../../../templates", features, cc, configNode, mcps)
 			if err != nil {
 				t.Errorf("could not run node config bootstrap: %v", err)
 			}
@@ -103,7 +104,7 @@ func TestBootstrapNoNodeConfig(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			mcps := []*mcfgv1.MachineConfigPool{mcp}
 
-			mcs, err := RunNodeConfigBootstrap("../../../templates", nil, cc, nil, mcps)
+			mcs, err := RunNodeConfigBootstrap(context.TODO(), "../../../templates", nil, cc, nil, mcps)
 			if err == nil {
 				t.Errorf("expected an error while generating the kubelet config with no node config")
 			}

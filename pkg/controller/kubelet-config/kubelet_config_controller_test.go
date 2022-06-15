@@ -1,6 +1,7 @@
 package kubeletconfig
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -253,7 +254,7 @@ func (f *fixture) runExpectError(mcpname string) {
 func (f *fixture) runController(mcpname string, expectError bool) {
 	c := f.newController()
 
-	err := c.syncHandler(mcpname)
+	err := c.syncHandler(context.TODO(), mcpname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing kubeletconfigs: %v", err)
 	} else if expectError && err == nil {
@@ -266,7 +267,7 @@ func (f *fixture) runController(mcpname string, expectError bool) {
 func (f *fixture) runFeatureController(featname string, expectError bool) {
 	c := f.newController()
 
-	err := c.syncFeatureHandler(featname)
+	err := c.syncFeatureHandler(context.TODO(), featname)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing kubeletconfigs: %v", err)
 	} else if expectError && err == nil {
@@ -278,7 +279,7 @@ func (f *fixture) runFeatureController(featname string, expectError bool) {
 
 func (f *fixture) runNodeController(nodename string, expectError bool) {
 	c := f.newController()
-	err := c.syncNodeConfigHandler(nodename)
+	err := c.syncNodeConfigHandler(context.TODO(), nodename)
 	if !expectError && err != nil {
 		f.t.Errorf("error syncing node configs: %v", err)
 	} else if expectError && err == nil {
@@ -415,7 +416,7 @@ func TestKubeletConfigCreate(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -507,7 +508,7 @@ func TestKubeletConfigAutoSizingReserved(t *testing.T) {
 				},
 				Status: mcfgv1.KubeletConfigStatus{},
 			}
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -549,7 +550,7 @@ func TestKubeletConfigLogFile(t *testing.T) {
 				},
 				Status: mcfgv1.KubeletConfigStatus{},
 			}
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -583,7 +584,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -605,7 +606,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			c := f.newController()
 			stopCh := make(chan struct{})
 
-			err := c.syncHandler(getKey(kc1, t))
+			err := c.syncHandler(context.TODO(), getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -641,7 +642,7 @@ func TestKubeletConfigUpdates(t *testing.T) {
 			glog.Info("Applying update")
 
 			// Apply update
-			err = c.syncHandler(getKey(kcUpdate, t))
+			err = c.syncHandler(context.TODO(), getKey(kcUpdate, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -739,7 +740,7 @@ func TestKubeletFeatureExists(t *testing.T) {
 			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -884,7 +885,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			kc1 := newKubeletConfig("smaller-max-pods", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 100}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			kc2 := newKubeletConfig("smaller-max-pods-2", &kubeletconfigv1beta1.KubeletConfiguration{MaxPods: 200}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 
-			kubeletConfigKey, _ := getManagedKubeletConfigKey(mcp, f.client, kc1)
+			kubeletConfigKey, _ := getManagedKubeletConfigKey(context.TODO(), mcp, f.client, kc1)
 			mcs := helpers.NewMachineConfig(kubeletConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
 			mcsDeprecated := mcs.DeepCopy()
 			mcsDeprecated.Name = getManagedKubeletConfigKeyDeprecated(mcp)
@@ -896,7 +897,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			f.objects = append(f.objects, kc1)
 
 			c := f.newController()
-			err := c.syncHandler(getKey(kc1, t))
+			err := c.syncHandler(context.TODO(), getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -905,7 +906,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			f.objects = append(f.objects, kc2)
 
 			c = f.newController()
-			err = c.syncHandler(getKey(kc2, t))
+			err = c.syncHandler(context.TODO(), getKey(kc2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -918,7 +919,7 @@ func TestKubeletConfigResync(t *testing.T) {
 
 			// resync kc1 and kc2
 			c = f.newController()
-			err = c.syncHandler(getKey(kc1, t))
+			err = c.syncHandler(context.TODO(), getKey(kc1, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}
@@ -926,7 +927,7 @@ func TestKubeletConfigResync(t *testing.T) {
 			require.Equal(t, "", val)
 
 			c = f.newController()
-			err = c.syncHandler(getKey(kc2, t))
+			err = c.syncHandler(context.TODO(), getKey(kc2, t))
 			if err != nil {
 				t.Errorf("syncHandler returned: %v", err)
 			}

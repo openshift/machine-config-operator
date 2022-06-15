@@ -21,19 +21,19 @@ import (
 	"k8s.io/client-go/util/retry"
 )
 
-func (ctrl *Controller) nodeConfigWorker() {
-	for ctrl.processNextNodeConfigWorkItem() {
+func (ctrl *Controller) nodeConfigWorker(ctx context.Context) {
+	for ctrl.processNextNodeConfigWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextNodeConfigWorkItem() bool {
+func (ctrl *Controller) processNextNodeConfigWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.nodeConfigQueue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.nodeConfigQueue.Done(key)
 
-	err := ctrl.syncNodeConfigHandler(key.(string))
+	err := ctrl.syncNodeConfigHandler(ctx, key.(string))
 	ctrl.handleNodeConfigErr(err, key)
 	return true
 }
@@ -59,7 +59,7 @@ func (ctrl *Controller) handleNodeConfigErr(err error, key interface{}) {
 // syncNodeConfigHandler syncs whenever there is a change on the nodes.config.openshift.io resource
 // nodes.config.openshift.io object holds the cluster-wide information about the
 // node specific features such as cgroup modes, workerlatencyprofiles, etc.
-func (ctrl *Controller) syncNodeConfigHandler(key string) error {
+func (ctrl *Controller) syncNodeConfigHandler(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing nodeConfig handler %q (%v)", key, startTime)
 	defer func() {
@@ -102,11 +102,11 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 			continue
 		}
 		// Get MachineConfig
-		key, err := getManagedNodeConfigKey(pool, ctrl.client)
+		key, err := getManagedNodeConfigKey(ctx, pool, ctrl.client)
 		if err != nil {
 			return err
 		}
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), key, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(ctx, key, metav1.GetOptions{})
 		isNotFound := errors.IsNotFound(err)
 		if err != nil && !isNotFound {
 			return err
@@ -151,9 +151,9 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(ctx, mc, metav1.UpdateOptions{})
 			}
 			return err
 		}); err != nil {
@@ -168,7 +168,7 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	}
 	for _, kc := range kcs {
 		// updating the existing kubeletconfigs with the updated nodeconfig
-		err := ctrl.syncKubeletConfig(kc.Name)
+		err := ctrl.syncKubeletConfig(ctx, kc.Name)
 		if err != nil {
 			return fmt.Errorf("could not update KubeletConfig %v, err: %w", kc, err)
 		}
@@ -262,7 +262,7 @@ func (ctrl *Controller) deleteNodeConfig(obj interface{}) {
 	glog.V(4).Infof("Deleted node config %s and restored default config", nodeConfig.Name)
 }
 
-func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunNodeConfigBootstrap(ctx context.Context, templateDir string, features *osev1.FeatureGate, cconfig *mcfgv1.ControllerConfig, nodeConfig *osev1.Node, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	configs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -271,7 +271,7 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 			continue
 		}
 		// Get MachineConfig
-		key, err := getManagedNodeConfigKey(pool, nil)
+		key, err := getManagedNodeConfigKey(ctx, pool, nil)
 		if err != nil {
 			return nil, err
 		}

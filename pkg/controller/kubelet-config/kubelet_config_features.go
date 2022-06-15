@@ -29,24 +29,24 @@ var (
 	}
 )
 
-func (ctrl *Controller) featureWorker() {
-	for ctrl.processNextFeatureWorkItem() {
+func (ctrl *Controller) featureWorker(ctx context.Context) {
+	for ctrl.processNextFeatureWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextFeatureWorkItem() bool {
+func (ctrl *Controller) processNextFeatureWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.featureQueue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.featureQueue.Done(key)
 
-	err := ctrl.syncFeatureHandler(key.(string))
+	err := ctrl.syncFeatureHandler(ctx, key.(string))
 	ctrl.handleFeatureErr(err, key)
 	return true
 }
 
-func (ctrl *Controller) syncFeatureHandler(key string) error {
+func (ctrl *Controller) syncFeatureHandler(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing feature handler %q (%v)", key, startTime)
 	defer func() {
@@ -93,11 +93,11 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 			}
 		}
 		// Get MachineConfig
-		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
+		managedKey, err := getManagedFeaturesKey(ctx, pool, ctrl.client)
 		if err != nil {
 			return err
 		}
-		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), managedKey, metav1.GetOptions{})
+		mc, err := ctrl.client.MachineconfigurationV1().MachineConfigs().Get(ctx, managedKey, metav1.GetOptions{})
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
@@ -126,9 +126,9 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			var err error
 			if isNotFound {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), mc, metav1.CreateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, mc, metav1.CreateOptions{})
 			} else {
-				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(context.TODO(), mc, metav1.UpdateOptions{})
+				_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Update(ctx, mc, metav1.UpdateOptions{})
 			}
 			return err
 		}); err != nil {
@@ -250,7 +250,7 @@ func generateKubeConfigIgnFromFeatures(cc *mcfgv1.ControllerConfig, templatesDir
 	return rawCfgIgn, nil
 }
 
-func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
+func RunFeatureGateBootstrap(ctx context.Context, templateDir string, features *osev1.FeatureGate, nodeConfig *osev1.Node, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool) ([]*mcfgv1.MachineConfig, error) {
 	machineConfigs := []*mcfgv1.MachineConfig{}
 
 	for _, pool := range mcpPools {
@@ -271,7 +271,7 @@ func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, no
 		}
 
 		// Get MachineConfig
-		managedKey, err := getManagedFeaturesKey(pool, nil)
+		managedKey, err := getManagedFeaturesKey(ctx, pool, nil)
 		if err != nil {
 			return nil, err
 		}
