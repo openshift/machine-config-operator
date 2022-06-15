@@ -52,10 +52,12 @@ var (
 
 // Controller defines the render controller.
 type Controller struct {
+	name string
+
 	client        mcfgclientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler              func(mcp string) error
+	syncHandler              func(ctx context.Context, mcp string) error
 	enqueueMachineConfigPool func(*mcfgv1.MachineConfigPool)
 
 	mcpLister mcfglistersv1.MachineConfigPoolLister
@@ -83,6 +85,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
+		name:          "RenderController",
 		client:        mcfgClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-rendercontroller"}),
 		queue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-rendercontroller"),
@@ -113,11 +116,11 @@ func New(
 }
 
 // Run executes the render controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.mcpListerSynced, ctrl.mcListerSynced, ctrl.ccListerSynced) {
 		return
 	}
 
@@ -125,10 +128,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-RenderController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.worker, time.Second)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (ctrl *Controller) addMachineConfigPool(obj interface{}) {
@@ -349,19 +352,19 @@ func (ctrl *Controller) enqueueDefault(pool *mcfgv1.MachineConfigPool) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(ctx, key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
@@ -387,7 +390,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 
 // syncMachineConfigPool will sync the machineconfig pool with the given key.
 // This function is not meant to be invoked concurrently with the same key.
-func (ctrl *Controller) syncMachineConfigPool(key string) error {
+func (ctrl *Controller) syncMachineConfigPool(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing machineconfigpool %q (%v)", key, startTime)
 	defer func() {
@@ -431,32 +434,32 @@ func (ctrl *Controller) syncMachineConfigPool(key string) error {
 		return err
 	}
 	if len(mcs) == 0 {
-		return ctrl.syncFailingStatus(pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
+		return ctrl.syncFailingStatus(ctx, pool, fmt.Errorf("no MachineConfigs found matching selector %v", selector))
 	}
 
-	if err := ctrl.syncGeneratedMachineConfig(pool, mcs); err != nil {
-		return ctrl.syncFailingStatus(pool, err)
+	if err := ctrl.syncGeneratedMachineConfig(ctx, pool, mcs); err != nil {
+		return ctrl.syncFailingStatus(ctx, pool, err)
 	}
 
-	return ctrl.syncAvailableStatus(pool)
+	return ctrl.syncAvailableStatus(ctx, pool)
 }
 
-func (ctrl *Controller) syncAvailableStatus(pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) syncAvailableStatus(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
 	if mcfgv1.IsMachineConfigPoolConditionFalse(pool.Status.Conditions, mcfgv1.MachineConfigPoolRenderDegraded) {
 		return nil
 	}
 	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionFalse, "", "")
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); err != nil {
+	if _, err := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, pool, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err error) error {
+func (ctrl *Controller) syncFailingStatus(ctx context.Context, pool *mcfgv1.MachineConfigPool, err error) error {
 	sdegraded := mcfgv1.NewMachineConfigPoolCondition(mcfgv1.MachineConfigPoolRenderDegraded, corev1.ConditionTrue, "", fmt.Sprintf("Failed to render configuration for pool %s: %v", pool.Name, err))
 	mcfgv1.SetMachineConfigPoolCondition(&pool.Status, *sdegraded)
-	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(context.TODO(), pool, metav1.UpdateOptions{}); updateErr != nil {
+	if _, updateErr := ctrl.client.MachineconfigurationV1().MachineConfigPools().UpdateStatus(ctx, pool, metav1.UpdateOptions{}); updateErr != nil {
 		glog.Errorf("Error updating MachineConfigPool %s: %v", pool.Name, updateErr)
 	}
 	return err
@@ -466,13 +469,13 @@ func (ctrl *Controller) syncFailingStatus(pool *mcfgv1.MachineConfigPool, err er
 // see https://github.com/openshift/machine-config-operator/issues/301
 // It will probably involve making sure we're only GCing a config after all nodes don't have it
 // in either desired or current config.
-func (ctrl *Controller) garbageCollectRenderedConfigs(pool *mcfgv1.MachineConfigPool) error {
+func (ctrl *Controller) garbageCollectRenderedConfigs(ctx context.Context, pool *mcfgv1.MachineConfigPool) error {
 	// Temporarily until https://github.com/openshift/machine-config-operator/pull/318
 	// which depends on the strategy for https://github.com/openshift/machine-config-operator/issues/301
 	return nil
 }
 
-func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
+func (ctrl *Controller) syncGeneratedMachineConfig(ctx context.Context, pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig) error {
 	if len(configs) == 0 {
 		return nil
 	}
@@ -494,7 +497,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 
 	_, err = ctrl.mcLister.Get(generated.Name)
 	if apierrors.IsNotFound(err) {
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), generated, metav1.CreateOptions{})
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigs().Create(ctx, generated, metav1.CreateOptions{})
 		if err != nil {
 			return err
 		}
@@ -510,23 +513,23 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	newPool.Spec.Configuration.Source = source
 
 	if pool.Spec.Configuration.Name == generated.Name {
-		_, _, err = mcoResourceApply.ApplyMachineConfig(ctrl.client.MachineconfigurationV1(), generated)
+		_, _, err = mcoResourceApply.ApplyMachineConfig(ctx, ctrl.client.MachineconfigurationV1(), generated)
 		if err != nil {
 			return err
 		}
-		_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
+		_, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(ctx, newPool, metav1.UpdateOptions{})
 		return err
 	}
 
 	newPool.Spec.Configuration.Name = generated.Name
 	// TODO(walters) Use subresource or JSON patch, but the latter isn't supported by the unit test mocks
-	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(context.TODO(), newPool, metav1.UpdateOptions{})
+	pool, err = ctrl.client.MachineconfigurationV1().MachineConfigPools().Update(ctx, newPool, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
 	glog.V(2).Infof("Pool %s: now targeting: %s", pool.Name, pool.Spec.Configuration.Name)
 
-	if err := ctrl.garbageCollectRenderedConfigs(pool); err != nil {
+	if err := ctrl.garbageCollectRenderedConfigs(ctx, pool); err != nil {
 		return err
 	}
 
@@ -629,4 +632,9 @@ func getMachineConfigsForPool(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.
 		return nil, fmt.Errorf("couldn't find any MachineConfigs for pool: %v", pool.Name)
 	}
 	return out, nil
+}
+
+// Name() returns the name of this controller
+func (ctrl *Controller) Name() string {
+	return ctrl.name
 }
