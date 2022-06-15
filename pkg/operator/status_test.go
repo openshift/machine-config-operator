@@ -241,7 +241,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("got err") },
+							fn:   func(ctx context.Context, config *renderConfig) error { return errors.New("got err") },
 						},
 					},
 					expectOperatorFail: true,
@@ -270,7 +270,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -303,7 +303,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -330,7 +330,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -363,7 +363,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -396,7 +396,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -426,7 +426,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("mock error") },
+							fn:   func(ctx context.Context, config *renderConfig) error { return errors.New("mock error") },
 						},
 					},
 				},
@@ -461,7 +461,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("error") },
+							fn:   func(ctx context.Context, config *renderConfig) error { return errors.New("error") },
 						},
 					},
 				},
@@ -492,7 +492,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("error") },
+							fn:   func(ctx context.Context, config *renderConfig) error { return errors.New("error") },
 						},
 					},
 				},
@@ -525,7 +525,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -554,7 +554,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return errors.New("error") },
+							fn:   func(ctx context.Context, config *renderConfig) error { return errors.New("error") },
 						},
 					},
 				},
@@ -581,7 +581,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 					syncFuncs: []syncFunc{
 						{
 							name: "fn1",
-							fn:   func(config *renderConfig) error { return nil },
+							fn:   func(ctx context.Context, config *renderConfig) error { return nil },
 						},
 					},
 				},
@@ -635,7 +635,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 				optr.vStore.Set("operator", "test-version")
 			}
 			optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
-			err := optr.syncAll(sync.syncFuncs)
+			err := optr.syncAll(context.TODO(), sync.syncFuncs)
 			if sync.expectOperatorFail {
 				assert.NotNil(t, err, "test case %d, sync call %d, expected an error", idx, j)
 			} else {
@@ -695,18 +695,18 @@ func TestInClusterBringUpStayOnErr(t *testing.T) {
 	optr.configClient = fakeconfigclientset.NewSimpleClientset(co, kasOperator)
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	fn1 := func(ctx context.Context, config *renderConfig) error {
 		return errors.New("mocked fn1")
 	}
-	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err := optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.NotNil(t, err, "expected syncAll to fail")
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(ctx context.Context, config *renderConfig) error {
 		return nil
 	}
-	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err = optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)
@@ -751,18 +751,18 @@ func TestKubeletSkewUnSupported(t *testing.T) {
 	optr.configClient = fakeClient
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	fn1 := func(ctx context.Context, config *renderConfig) error {
 		return errors.New("mocked fn1")
 	}
-	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err := optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.NotNil(t, err, "expected syncAll to fail")
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(ctx context.Context, config *renderConfig) error {
 		return nil
 	}
-	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err = optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)
@@ -839,18 +839,18 @@ func TestCustomPoolKubeletSkewUnSupported(t *testing.T) {
 	optr.configClient = fakeClient
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	fn1 := func(ctx context.Context, config *renderConfig) error {
 		return errors.New("mocked fn1")
 	}
-	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err := optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.NotNil(t, err, "expected syncAll to fail")
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(ctx context.Context, config *renderConfig) error {
 		return nil
 	}
-	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err = optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)
@@ -925,18 +925,18 @@ func TestKubeletSkewSupported(t *testing.T) {
 	optr.configClient = fakeClient
 	optr.inClusterBringup = true
 
-	fn1 := func(config *renderConfig) error {
+	fn1 := func(ctx context.Context, config *renderConfig) error {
 		return errors.New("mocked fn1")
 	}
-	err := optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err := optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.NotNil(t, err, "expected syncAll to fail")
 
 	assert.True(t, optr.inClusterBringup)
 
-	fn1 = func(config *renderConfig) error {
+	fn1 = func(ctx context.Context, config *renderConfig) error {
 		return nil
 	}
-	err = optr.syncAll([]syncFunc{{name: "mock1", fn: fn1}})
+	err = optr.syncAll(context.TODO(), []syncFunc{{name: "mock1", fn: fn1}})
 	assert.Nil(t, err, "expected syncAll to pass")
 
 	assert.False(t, optr.inClusterBringup)

@@ -94,7 +94,7 @@ const (
 
 type syncFunc struct {
 	name string
-	fn   func(config *renderConfig) error
+	fn   func(ctx context.Context, config *renderConfig) error
 }
 
 type syncError struct {
@@ -102,8 +102,8 @@ type syncError struct {
 	err  error
 }
 
-func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
-	if err := optr.syncProgressingStatus(); err != nil {
+func (optr *Operator) syncAll(ctx context.Context, syncFuncs []syncFunc) error {
+	if err := optr.syncProgressingStatus(ctx); err != nil {
 		return fmt.Errorf("error syncing progressing status: %w", err)
 	}
 
@@ -112,7 +112,7 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		startTime := time.Now()
 		syncErr = syncError{
 			task: sf.name,
-			err:  sf.fn(optr.renderConfig),
+			err:  sf.fn(ctx, optr.renderConfig),
 		}
 		if optr.inClusterBringup {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
@@ -120,28 +120,28 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 		if syncErr.err != nil {
 			break
 		}
-		if err := optr.clearDegradedStatus(sf.name); err != nil {
+		if err := optr.clearDegradedStatus(ctx, sf.name); err != nil {
 			return fmt.Errorf("error clearing degraded status: %w", err)
 		}
 	}
 
-	if err := optr.syncDegradedStatus(syncErr); err != nil {
+	if err := optr.syncDegradedStatus(ctx, syncErr); err != nil {
 		return fmt.Errorf("error syncing degraded status: %w", err)
 	}
 
-	if err := optr.syncAvailableStatus(syncErr); err != nil {
+	if err := optr.syncAvailableStatus(ctx, syncErr); err != nil {
 		return fmt.Errorf("error syncing available status: %w", err)
 	}
 
-	if err := optr.syncUpgradeableStatus(); err != nil {
+	if err := optr.syncUpgradeableStatus(ctx); err != nil {
 		return fmt.Errorf("error syncing upgradeble status: %w", err)
 	}
 
-	if err := optr.syncVersion(); err != nil {
+	if err := optr.syncVersion(ctx); err != nil {
 		return fmt.Errorf("error syncing version: %w", err)
 	}
 
-	if err := optr.syncRelatedObjects(); err != nil {
+	if err := optr.syncRelatedObjects(ctx); err != nil {
 		return fmt.Errorf("error syncing relatedObjects: %w", err)
 	}
 
@@ -200,15 +200,15 @@ func (optr *Operator) syncCloudConfig(spec *mcfgv1.ControllerConfigSpec, infra *
 }
 
 //nolint:gocyclo
-func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
-	if err := optr.syncCustomResourceDefinitions(); err != nil {
+func (optr *Operator) syncRenderConfig(ctx context.Context, _ *renderConfig) error {
+	if err := optr.syncCustomResourceDefinitions(ctx); err != nil {
 		return err
 	}
 
 	if optr.inClusterBringup {
 		glog.V(4).Info("Starting inClusterBringup informers cache sync")
 		// sync now our own informers after having installed the CRDs
-		if !cache.WaitForCacheSync(optr.stopCh, optr.ccListerSynced) {
+		if !cache.WaitForCacheSync(ctx.Done(), optr.ccListerSynced) {
 			return fmt.Errorf("failed to sync caches for informers")
 		}
 		glog.V(4).Info("Finished inClusterBringup informers cache sync")
@@ -366,7 +366,7 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 	return ignitionHost, nil
 }
 
-func (optr *Operator) syncCustomResourceDefinitions() error {
+func (optr *Operator) syncCustomResourceDefinitions(ctx context.Context) error {
 	crds := []string{
 		"manifests/controllerconfig.crd.yaml",
 	}
@@ -377,12 +377,12 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 			return fmt.Errorf("error getting asset %s: %w", crd, err)
 		}
 		c := resourceread.ReadCustomResourceDefinitionV1OrDie(crdBytes)
-		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(context.TODO(), optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
+		_, updated, err := resourceapply.ApplyCustomResourceDefinitionV1(ctx, optr.apiExtClient.ApiextensionsV1(), optr.libgoRecorder, c)
 		if err != nil {
 			return err
 		}
 		if updated {
-			if err := optr.waitForCustomResourceDefinition(c); err != nil {
+			if err := optr.waitForCustomResourceDefinition(ctx, c); err != nil {
 				return err
 			}
 		}
@@ -391,7 +391,7 @@ func (optr *Operator) syncCustomResourceDefinitions() error {
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigPools(ctx context.Context, config *renderConfig) error {
 	mcps := []string{
 		"manifests/master.machineconfigpool.yaml",
 		"manifests/worker.machineconfigpool.yaml",
@@ -403,7 +403,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 			return err
 		}
 		p := mcoResourceRead.ReadMachineConfigPoolV1OrDie(mcpBytes)
-		_, _, err = mcoResourceApply.ApplyMachineConfigPool(optr.client.MachineconfigurationV1(), p)
+		_, _, err = mcoResourceApply.ApplyMachineConfigPool(ctx, optr.client.MachineconfigurationV1(), p)
 		if err != nil {
 			return err
 		}
@@ -436,7 +436,7 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 			return err
 		}
 		p := resourceread.ReadSecretV1OrDie(userdataBytes)
-		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, p)
+		_, _, err = resourceapply.ApplySecret(ctx, optr.kubeClient.CoreV1(), optr.libgoRecorder, p)
 		if err != nil {
 			return err
 		}
@@ -445,14 +445,14 @@ func (optr *Operator) syncMachineConfigPools(config *renderConfig) error {
 	return nil
 }
 
-func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) error {
+func (optr *Operator) applyManifests(ctx context.Context, config *renderConfig, paths manifestPaths) error {
 	for _, path := range paths.clusterRoles {
 		crBytes, err := renderAsset(config, path)
 		if err != nil {
 			return err
 		}
 		cr := resourceread.ReadClusterRoleV1OrDie(crBytes)
-		_, _, err = resourceapply.ApplyClusterRole(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
+		_, _, err = resourceapply.ApplyClusterRole(ctx, optr.kubeClient.RbacV1(), optr.libgoRecorder, cr)
 		if err != nil {
 			return err
 		}
@@ -464,7 +464,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		rb := resourceread.ReadRoleBindingV1OrDie(rbBytes)
-		_, _, err = resourceapply.ApplyRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, rb)
+		_, _, err = resourceapply.ApplyRoleBinding(ctx, optr.kubeClient.RbacV1(), optr.libgoRecorder, rb)
 		if err != nil {
 			return err
 		}
@@ -476,7 +476,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		crb := resourceread.ReadClusterRoleBindingV1OrDie(crbBytes)
-		_, _, err = resourceapply.ApplyClusterRoleBinding(context.TODO(), optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
+		_, _, err = resourceapply.ApplyClusterRoleBinding(ctx, optr.kubeClient.RbacV1(), optr.libgoRecorder, crb)
 		if err != nil {
 			return err
 		}
@@ -488,7 +488,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		sa := resourceread.ReadServiceAccountV1OrDie(saBytes)
-		_, _, err = resourceapply.ApplyServiceAccount(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
+		_, _, err = resourceapply.ApplyServiceAccount(ctx, optr.kubeClient.CoreV1(), optr.libgoRecorder, sa)
 		if err != nil {
 			return err
 		}
@@ -500,7 +500,7 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		s := resourceread.ReadSecretV1OrDie(sBytes)
-		_, _, err = resourceapply.ApplySecret(context.TODO(), optr.kubeClient.CoreV1(), optr.libgoRecorder, s)
+		_, _, err = resourceapply.ApplySecret(ctx, optr.kubeClient.CoreV1(), optr.libgoRecorder, s)
 		if err != nil {
 			return err
 		}
@@ -512,19 +512,19 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 			return err
 		}
 		d := resourceread.ReadDaemonSetV1OrDie(dBytes)
-		_, updated, err := mcoResourceApply.ApplyDaemonSet(optr.kubeClient.AppsV1(), d)
+		_, updated, err := mcoResourceApply.ApplyDaemonSet(ctx, optr.kubeClient.AppsV1(), d)
 		if err != nil {
 			return err
 		}
 		if updated {
-			return optr.waitForDaemonsetRollout(d)
+			return optr.waitForDaemonsetRollout(ctx, d)
 		}
 	}
 
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigController(ctx context.Context, config *renderConfig) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mccClusterRoleManifestPath,
@@ -541,7 +541,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			mccServiceAccountManifestPath,
 		},
 	}
-	if err := optr.applyManifests(config, paths); err != nil {
+	if err := optr.applyManifests(ctx, config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config controller manifests: %w", err)
 	}
 
@@ -551,12 +551,12 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	}
 	mcc := resourceread.ReadDeploymentV1OrDie(mccBytes)
 
-	_, updated, err := mcoResourceApply.ApplyDeployment(optr.kubeClient.AppsV1(), mcc)
+	_, updated, err := mcoResourceApply.ApplyDeployment(ctx, optr.kubeClient.AppsV1(), mcc)
 	if err != nil {
 		return err
 	}
 	if updated {
-		if err := optr.waitForDeploymentRollout(mcc); err != nil {
+		if err := optr.waitForDeploymentRollout(ctx, mcc); err != nil {
 			return err
 		}
 	}
@@ -576,14 +576,14 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	optrVersion, _ := optr.vStore.Get("operator")
 	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
 
-	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
+	_, _, err = mcoResourceApply.ApplyControllerConfig(ctx, optr.client.MachineconfigurationV1(), cc)
 	if err != nil {
 		return err
 	}
-	return optr.waitForControllerConfigToBeCompleted(cc)
+	return optr.waitForControllerConfigToBeCompleted(ctx, cc)
 }
 
-func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigDaemon(ctx context.Context, config *renderConfig) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcdClusterRoleManifestPath,
@@ -603,21 +603,21 @@ func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
 	}
 
 	// Only generate a new proxy cookie secret if the secret does not exist or if it has been deleted.
-	_, err := optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get(context.TODO(), "cookie-secret", metav1.GetOptions{})
+	_, err := optr.kubeClient.CoreV1().Secrets(config.TargetNamespace).Get(ctx, "cookie-secret", metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		paths.secrets = []string{"manifests/machineconfigdaemon/cookie-secret.yaml"}
 	} else if err != nil {
 		return err
 	}
 
-	if err := optr.applyManifests(config, paths); err != nil {
+	if err := optr.applyManifests(ctx, config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config daemon manifests: %w", err)
 	}
 
 	return nil
 }
 
-func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
+func (optr *Operator) syncMachineConfigServer(ctx context.Context, config *renderConfig) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
 			mcsClusterRoleManifestPath,
@@ -636,7 +636,7 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 		},
 		daemonset: mcsDaemonsetManifestPath,
 	}
-	if err := optr.applyManifests(config, paths); err != nil {
+	if err := optr.applyManifests(ctx, config, paths); err != nil {
 		return fmt.Errorf("failed to apply machine config server manifests: %w", err)
 	}
 
@@ -645,11 +645,11 @@ func (optr *Operator) syncMachineConfigServer(config *renderConfig) error {
 
 // syncRequiredMachineConfigPools ensures that all the nodes in machineconfigpools labeled with requiredForUpgradeMachineConfigPoolLabelKey
 // have updated to the latest configuration.
-func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
+func (optr *Operator) syncRequiredMachineConfigPools(ctx context.Context, _ *renderConfig) error {
 	var lastErr error
 	if err := wait.Poll(time.Second, 10*time.Minute, func() (bool, error) {
 		if lastErr != nil {
-			co, err := optr.fetchClusterOperator()
+			co, err := optr.fetchClusterOperator(ctx)
 			if err != nil {
 				errs := kubeErrs.NewAggregate([]error{err, lastErr})
 				lastErr = fmt.Errorf("failed to fetch clusteroperator: %w", errs)
@@ -678,7 +678,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 			if degraded {
 				lastErr = fmt.Errorf("error pool %s is not ready, retrying. Status: (pool degraded: %v total: %d, ready %d, updated: %d, unavailable: %d)", pool.Name, degraded, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount)
 				glog.Errorf("Error syncing Required MachineConfigPools: %q", lastErr)
-				syncerr := optr.syncUpgradeableStatus()
+				syncerr := optr.syncUpgradeableStatus(ctx)
 				if syncerr != nil {
 					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 				}
@@ -696,7 +696,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 				releaseVersion, _ := optr.vStore.Get("operator")
 				if err := isMachineConfigPoolConfigurationValid(pool, version.Hash, releaseVersion, opURL, optr.mcLister.Get); err != nil {
 					lastErr = fmt.Errorf("pool %s has not progressed to latest configuration: %w, retrying", pool.Name, err)
-					syncerr := optr.syncUpgradeableStatus()
+					syncerr := optr.syncUpgradeableStatus(ctx)
 					if syncerr != nil {
 						glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 					}
@@ -708,7 +708,7 @@ func (optr *Operator) syncRequiredMachineConfigPools(_ *renderConfig) error {
 					continue
 				}
 				lastErr = fmt.Errorf("error required pool %s is not ready, retrying. Status: (total: %d, ready %d, updated: %d, unavailable: %d, degraded: %d)", pool.Name, pool.Status.MachineCount, pool.Status.ReadyMachineCount, pool.Status.UpdatedMachineCount, pool.Status.UnavailableMachineCount, pool.Status.DegradedMachineCount)
-				syncerr := optr.syncUpgradeableStatus()
+				syncerr := optr.syncUpgradeableStatus(ctx)
 				if syncerr != nil {
 					glog.Errorf("Error syncingUpgradeableStatus: %q", syncerr)
 				}
@@ -745,9 +745,10 @@ const (
 	controllerConfigCompletedTimeout  = 5 * time.Minute
 )
 
-func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomResourceDefinition) error {
+func (optr *Operator) waitForCustomResourceDefinition(ctx context.Context, resource *apiextv1.CustomResourceDefinition) error {
 	var lastErr error
-	if err := wait.Poll(customResourceReadyInterval, customResourceReadyTimeout, func() (bool, error) {
+
+	if err := wait.PollWithContext(ctx, customResourceReadyInterval, customResourceReadyTimeout, func(context.Context) (bool, error) {
 		crd, err := optr.crdLister.Get(resource.Name)
 		if err != nil {
 			lastErr = fmt.Errorf("error getting CustomResourceDefinition %s: %w", resource.Name, err)
@@ -772,9 +773,9 @@ func (optr *Operator) waitForCustomResourceDefinition(resource *apiextv1.CustomR
 }
 
 //nolint:dupl
-func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) error {
+func (optr *Operator) waitForDeploymentRollout(ctx context.Context, resource *appsv1.Deployment) error {
 	var lastErr error
-	if err := wait.Poll(deploymentRolloutPollInterval, deploymentRolloutTimeout, func() (bool, error) {
+	if err := wait.PollWithContext(ctx, deploymentRolloutPollInterval, deploymentRolloutTimeout, func(context.Context) (bool, error) {
 		d, err := optr.deployLister.Deployments(resource.Namespace).Get(resource.Name)
 		if apierrors.IsNotFound(err) {
 			// exit early to recreate the deployment.
@@ -807,9 +808,9 @@ func (optr *Operator) waitForDeploymentRollout(resource *appsv1.Deployment) erro
 }
 
 //nolint:dupl
-func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error {
+func (optr *Operator) waitForDaemonsetRollout(ctx context.Context, resource *appsv1.DaemonSet) error {
 	var lastErr error
-	if err := wait.Poll(daemonsetRolloutPollInterval, daemonsetRolloutTimeout, func() (bool, error) {
+	if err := wait.PollWithContext(ctx, daemonsetRolloutPollInterval, daemonsetRolloutTimeout, func(context.Context) (bool, error) {
 		d, err := optr.daemonsetLister.DaemonSets(resource.Namespace).Get(resource.Name)
 		if apierrors.IsNotFound(err) {
 			// exit early to recreate the daemonset.
@@ -841,9 +842,9 @@ func (optr *Operator) waitForDaemonsetRollout(resource *appsv1.DaemonSet) error 
 	return nil
 }
 
-func (optr *Operator) waitForControllerConfigToBeCompleted(resource *mcfgv1.ControllerConfig) error {
+func (optr *Operator) waitForControllerConfigToBeCompleted(ctx context.Context, resource *mcfgv1.ControllerConfig) error {
 	var lastErr error
-	if err := wait.Poll(controllerConfigCompletedInterval, controllerConfigCompletedTimeout, func() (bool, error) {
+	if err := wait.PollWithContext(ctx, controllerConfigCompletedInterval, controllerConfigCompletedTimeout, func(context.Context) (bool, error) {
 		if err := mcfgv1.IsControllerConfigCompleted(resource.GetName(), optr.ccLister.Get); err != nil {
 			lastErr = fmt.Errorf("controllerconfig is not completed: %w", err)
 			return false, nil

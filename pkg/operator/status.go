@@ -23,8 +23,8 @@ import (
 )
 
 // syncVersion handles reporting the version to the clusteroperator
-func (optr *Operator) syncVersion() error {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) syncVersion(ctx context.Context) error {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -50,13 +50,13 @@ func (optr *Operator) syncVersion() error {
 	co.Status.Versions = optr.vStore.GetAll()
 	// TODO(runcom): abstract below with updateStatus
 	optr.setOperatorStatusExtension(&co.Status, nil)
-	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+	_, err = optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(ctx, co, metav1.UpdateOptions{})
 	return err
 }
 
 // syncRelatedObjects handles reporting the relatedObjects to the clusteroperator
-func (optr *Operator) syncRelatedObjects() error {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) syncRelatedObjects(ctx context.Context) error {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (optr *Operator) syncRelatedObjects() error {
 	}
 
 	if !equality.Semantic.DeepEqual(coCopy.Status.RelatedObjects, co.Status.RelatedObjects) {
-		_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+		_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(ctx, co, metav1.UpdateOptions{})
 		return err
 	}
 
@@ -92,8 +92,8 @@ func (optr *Operator) syncRelatedObjects() error {
 }
 
 // syncAvailableStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncAvailableStatus(ierr syncError) error {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) syncAvailableStatus(ctx context.Context, ierr syncError) error {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -126,12 +126,12 @@ func (optr *Operator) syncAvailableStatus(ierr syncError) error {
 		Message: message,
 	}
 
-	return optr.updateStatus(co, coStatus)
+	return optr.updateStatus(ctx, co, coStatus)
 }
 
 // syncProgressingStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncProgressingStatus() error {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) syncProgressingStatus(ctx context.Context) error {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -170,13 +170,13 @@ func (optr *Operator) syncProgressingStatus() error {
 		coStatus.Status = configv1.ConditionTrue
 	}
 
-	return optr.updateStatus(co, coStatus)
+	return optr.updateStatus(ctx, co, coStatus)
 }
 
-func (optr *Operator) updateStatus(co *configv1.ClusterOperator, status configv1.ClusterOperatorStatusCondition) error {
+func (optr *Operator) updateStatus(ctx context.Context, co *configv1.ClusterOperator, status configv1.ClusterOperatorStatusCondition) error {
 	cov1helpers.SetStatusCondition(&co.Status.Conditions, status)
 	optr.setOperatorStatusExtension(&co.Status, nil)
-	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+	_, err := optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(ctx, co, metav1.UpdateOptions{})
 	return err
 }
 
@@ -184,8 +184,8 @@ const (
 	asExpectedReason = "AsExpected"
 )
 
-func (optr *Operator) clearDegradedStatus(task string) error {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) clearDegradedStatus(ctx context.Context, task string) error {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -202,12 +202,12 @@ func (optr *Operator) clearDegradedStatus(task string) error {
 	if degradedStatusCondition.Reason != task+"Failed" {
 		return nil
 	}
-	return optr.syncDegradedStatus(syncError{})
+	return optr.syncDegradedStatus(ctx, syncError{})
 }
 
 // syncDegradedStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) syncDegradedStatus(ctx context.Context, ierr syncError) (err error) {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 		Reason:  reason,
 	}
 
-	return optr.updateStatus(co, coStatus)
+	return optr.updateStatus(ctx, co, coStatus)
 }
 
 const (
@@ -271,8 +271,8 @@ const (
 )
 
 // syncUpgradeableStatus applies the new condition to the mco's ClusterOperator object.
-func (optr *Operator) syncUpgradeableStatus() error {
-	co, err := optr.fetchClusterOperator()
+func (optr *Operator) syncUpgradeableStatus(ctx context.Context) error {
+	co, err := optr.fetchClusterOperator(ctx)
 	if err != nil {
 		return err
 	}
@@ -318,18 +318,18 @@ func (optr *Operator) syncUpgradeableStatus() error {
 
 	// don't overwrite status if updating or degraded
 	if !updating && !degraded {
-		skewStatus, status, err := optr.isKubeletSkewSupported(pools)
+		skewStatus, status, err := optr.isKubeletSkewSupported(ctx, pools)
 		if err != nil {
 			glog.Errorf("Error checking version skew: %v, kubelet skew status: %v, status reason: %v, status message: %v", err, skewStatus, status.Reason, status.Message)
 			coStatus.Reason = status.Reason
 			coStatus.Message = status.Message
-			return optr.updateStatus(co, coStatus)
+			return optr.updateStatus(ctx, co, coStatus)
 		}
 		switch skewStatus {
 		case skewUnchecked:
 			coStatus.Reason = status.Reason
 			coStatus.Message = status.Message
-			return optr.updateStatus(co, coStatus)
+			return optr.updateStatus(ctx, co, coStatus)
 		case skewUnsupported:
 			coStatus.Reason = status.Reason
 			coStatus.Message = status.Message
@@ -341,22 +341,22 @@ func (optr *Operator) syncUpgradeableStatus() error {
 			}
 			glog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
 			optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, coStatus.Reason, coStatus.Message)
-			return optr.updateStatus(co, coStatus)
+			return optr.updateStatus(ctx, co, coStatus)
 		case skewPresent:
 			coStatus.Reason = status.Reason
 			coStatus.Message = status.Message
 			glog.Infof("kubelet skew status: %v, status reason: %v", skewStatus, status.Reason)
-			return optr.updateStatus(co, coStatus)
+			return optr.updateStatus(ctx, co, coStatus)
 		}
 	}
-	return optr.updateStatus(co, coStatus)
+	return optr.updateStatus(ctx, co, coStatus)
 }
 
 // isKubeletSkewSupported checks the version skew of kube-apiserver and node kubelet version.
 // Returns the skew status. version skew > 2 is not supported.
-func (optr *Operator) isKubeletSkewSupported(pools []*v1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
+func (optr *Operator) isKubeletSkewSupported(ctx context.Context, pools []*v1.MachineConfigPool) (skewStatus string, coStatus configv1.ClusterOperatorStatusCondition, err error) {
 	coStatus = configv1.ClusterOperatorStatusCondition{}
-	kubeAPIServerStatus, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "kube-apiserver", metav1.GetOptions{})
+	kubeAPIServerStatus, err := optr.configClient.ConfigV1().ClusterOperators().Get(ctx, "kube-apiserver", metav1.GetOptions{})
 	if err != nil {
 		coStatus.Reason = skewUnchecked
 		coStatus.Message = fmt.Sprintf("An error occurred when checking kubelet version skew: %v", err)
@@ -478,13 +478,13 @@ func getMinimalSkewSupportNodeVersion(version string) string {
 	return version
 }
 
-func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), optr.name, metav1.GetOptions{})
+func (optr *Operator) fetchClusterOperator(ctx context.Context) (*configv1.ClusterOperator, error) {
+	co, err := optr.configClient.ConfigV1().ClusterOperators().Get(ctx, optr.name, metav1.GetOptions{})
 	if meta.IsNoMatchError(err) {
 		return nil, nil
 	}
 	if apierrors.IsNotFound(err) {
-		return optr.initializeClusterOperator()
+		return optr.initializeClusterOperator(ctx)
 	}
 	if err != nil {
 		return nil, err
@@ -493,8 +493,8 @@ func (optr *Operator) fetchClusterOperator() (*configv1.ClusterOperator, error) 
 	return coCopy, nil
 }
 
-func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, error) {
-	co, err := optr.configClient.ConfigV1().ClusterOperators().Create(context.TODO(), &configv1.ClusterOperator{
+func (optr *Operator) initializeClusterOperator(ctx context.Context) (*configv1.ClusterOperator, error) {
+	co, err := optr.configClient.ConfigV1().ClusterOperators().Create(ctx, &configv1.ClusterOperator{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: optr.name,
 		},
@@ -523,7 +523,7 @@ func (optr *Operator) initializeClusterOperator() (*configv1.ClusterOperator, er
 	// For both normal runs and upgrades, this code isn't hit and we get the right version every
 	// time. This also only contains the operator RELEASE_VERSION when we're here.
 	co.Status.Versions = optr.vStore.GetAll()
-	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(context.TODO(), co, metav1.UpdateOptions{})
+	return optr.configClient.ConfigV1().ClusterOperators().UpdateStatus(ctx, co, metav1.UpdateOptions{})
 }
 
 // setOperatorStatusExtension sets the raw extension field of the clusteroperator. Today, we set

@@ -70,7 +70,7 @@ type Operator struct {
 	eventRecorder record.EventRecorder
 	libgoRecorder events.Recorder
 
-	syncHandler func(ic string) error
+	syncHandler func(ctx context.Context, ic string) error
 
 	crdLister        apiextlistersv1.CustomResourceDefinitionLister
 	mcpLister        mcfglistersv1.MachineConfigPoolLister
@@ -109,7 +109,7 @@ type Operator struct {
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
 
-	stopCh <-chan struct{}
+	ctx context.Context
 
 	renderConfig *renderConfig
 }
@@ -226,12 +226,12 @@ func New(
 }
 
 // Run runs the machine config operator.
-func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
+func (optr *Operator) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer optr.queue.ShutDown()
 
 	apiClient := optr.apiExtClient.ApiextensionsV1()
-	_, err := apiClient.CustomResourceDefinitions().Get(context.TODO(), "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
+	_, err := apiClient.CustomResourceDefinitions().Get(ctx, "controllerconfigs.machineconfiguration.openshift.io", metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			glog.Infof("Couldn't find controllerconfig CRD, in cluster bringup mode")
@@ -241,7 +241,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 		}
 	}
 
-	if !cache.WaitForCacheSync(stopCh,
+	if !cache.WaitForCacheSync(ctx.Done(),
 		optr.crdListerSynced,
 		optr.deployListerSynced,
 		optr.daemonsetListerSynced,
@@ -265,7 +265,7 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 
 	// these can only be synced after CRDs are installed
 	if !optr.inClusterBringup {
-		if !cache.WaitForCacheSync(stopCh,
+		if !cache.WaitForCacheSync(ctx.Done(),
 			optr.ccListerSynced,
 		) {
 			glog.Error("failed to sync caches")
@@ -276,13 +276,13 @@ func (optr *Operator) Run(workers int, stopCh <-chan struct{}) {
 	glog.Info("Starting MachineConfigOperator")
 	defer glog.Info("Shutting down MachineConfigOperator")
 
-	optr.stopCh = stopCh
+	optr.ctx = ctx
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(optr.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, optr.worker, time.Second)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (optr *Operator) enqueue(obj interface{}) {
@@ -309,19 +309,19 @@ func (optr *Operator) eventHandler() cache.ResourceEventHandler {
 	}
 }
 
-func (optr *Operator) worker() {
-	for optr.processNextWorkItem() {
+func (optr *Operator) worker(ctx context.Context) {
+	for optr.processNextWorkItem(ctx) {
 	}
 }
 
-func (optr *Operator) processNextWorkItem() bool {
+func (optr *Operator) processNextWorkItem(ctx context.Context) bool {
 	key, quit := optr.queue.Get()
 	if quit {
 		return false
 	}
 	defer optr.queue.Done(key)
 
-	err := optr.syncHandler(key.(string))
+	err := optr.syncHandler(ctx, key.(string))
 	optr.handleErr(err, key)
 
 	return true
@@ -345,7 +345,7 @@ func (optr *Operator) handleErr(err error, key interface{}) {
 	optr.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (optr *Operator) sync(key string) error {
+func (optr *Operator) sync(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing operator %q (%v)", key, startTime)
 	defer func() {
@@ -365,5 +365,5 @@ func (optr *Operator) sync(key string) error {
 		// this check must always run last since it makes sure the pools are in sync/upgrading correctly
 		{"RequiredPools", optr.syncRequiredMachineConfigPools},
 	}
-	return optr.syncAll(syncFuncs)
+	return optr.syncAll(ctx, syncFuncs)
 }
