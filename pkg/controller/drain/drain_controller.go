@@ -50,11 +50,13 @@ const (
 
 // Controller defines the node controller.
 type Controller struct {
+	name string
+
 	client        mcfgclientset.Interface
 	kubeClient    clientset.Interface
 	eventRecorder record.EventRecorder
 
-	syncHandler func(node string) error
+	syncHandler func(ctx context.Context, node string) error
 	enqueueNode func(*corev1.Node)
 
 	nodeLister       corelisterv1.NodeLister
@@ -76,6 +78,7 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
+		name:          "DrainController",
 		client:        mcfgClient,
 		kubeClient:    kubeClient,
 		eventRecorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-nodecontroller"}),
@@ -108,11 +111,11 @@ func (w writer) Write(p []byte) (n int, err error) {
 }
 
 // Run executes the drain controller.
-func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
+func (ctrl *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	defer ctrl.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.nodeListerSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), ctrl.nodeListerSynced) {
 		return
 	}
 
@@ -129,10 +132,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer glog.Info("Shutting down MachineConfigController-DrainController")
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(ctrl.worker, time.Second, stopCh)
+		go wait.UntilWithContext(ctx, ctrl.worker, time.Second)
 	}
 
-	<-stopCh
+	<-ctx.Done()
 }
 
 // logNode emits a log message at informational level, prefixed with the node name in a consistent fashion.
@@ -185,19 +188,19 @@ func (ctrl *Controller) enqueueDefault(node *corev1.Node) {
 
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
-func (ctrl *Controller) worker() {
-	for ctrl.processNextWorkItem() {
+func (ctrl *Controller) worker(ctx context.Context) {
+	for ctrl.processNextWorkItem(ctx) {
 	}
 }
 
-func (ctrl *Controller) processNextWorkItem() bool {
+func (ctrl *Controller) processNextWorkItem(ctx context.Context) bool {
 	key, quit := ctrl.queue.Get()
 	if quit {
 		return false
 	}
 	defer ctrl.queue.Done(key)
 
-	err := ctrl.syncHandler(key.(string))
+	err := ctrl.syncHandler(ctx, key.(string))
 	ctrl.handleErr(err, key)
 
 	return true
@@ -221,7 +224,7 @@ func (ctrl *Controller) handleErr(err error, key interface{}) {
 	ctrl.queue.AddAfter(key, 1*time.Minute)
 }
 
-func (ctrl *Controller) syncNode(key string) error {
+func (ctrl *Controller) syncNode(ctx context.Context, key string) error {
 	startTime := time.Now()
 	glog.V(4).Infof("Started syncing node %q (%v)", key, startTime)
 	defer func() {
@@ -273,7 +276,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		},
 		Out:    writer{glog.Info},
 		ErrOut: writer{glog.Error},
-		Ctx:    context.TODO(),
+		Ctx:    ctx,
 	}
 
 	desiredVerb := strings.Split(desiredState, "-")[0]
@@ -281,7 +284,7 @@ func (ctrl *Controller) syncNode(key string) error {
 	case daemonconsts.DrainerStateUncordon:
 		ctrl.logNode(node, "uncordoning")
 		// perform uncordon
-		if err := ctrl.cordonOrUncordonNode(false, node, drainer); err != nil {
+		if err := ctrl.cordonOrUncordonNode(ctx, false, node, drainer); err != nil {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
 		}
 	case daemonconsts.DrainerStateDrain:
@@ -309,7 +312,7 @@ func (ctrl *Controller) syncNode(key string) error {
 		if !ongoingDrain {
 			ctrl.logNode(node, "cordoning")
 			// perform cordon
-			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
+			if err := ctrl.cordonOrUncordonNode(ctx, true, node, drainer); err != nil {
 				return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
 			}
 			ctrl.ongoingDrains[node.Name] = time.Now()
@@ -334,17 +337,17 @@ func (ctrl *Controller) syncNode(key string) error {
 	annotations := map[string]string{
 		daemonconsts.LastAppliedDrainerAnnotationKey: desiredState,
 	}
-	if err := ctrl.setNodeAnnotations(node.Name, annotations); err != nil {
+	if err := ctrl.setNodeAnnotations(ctx, node.Name, annotations); err != nil {
 		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %w", node.Name, err)
 	}
 
 	return nil
 }
 
-func (ctrl *Controller) setNodeAnnotations(nodeName string, annotations map[string]string) error {
+func (ctrl *Controller) setNodeAnnotations(ctx context.Context, nodeName string, annotations map[string]string) error {
 	// TODO dedupe
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		n, err := ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		n, err := ctrl.kubeClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -368,7 +371,7 @@ func (ctrl *Controller) setNodeAnnotations(nodeName string, annotations map[stri
 			return fmt.Errorf("node %s: failed to create patch for: %w", nodeName, err)
 		}
 
-		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		_, err = ctrl.kubeClient.CoreV1().Nodes().Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
@@ -377,7 +380,7 @@ func (ctrl *Controller) setNodeAnnotations(nodeName string, annotations map[stri
 	return nil
 }
 
-func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, drainer *drain.Helper) error {
+func (ctrl *Controller) cordonOrUncordonNode(ctx context.Context, desired bool, node *corev1.Node, drainer *drain.Helper) error {
 	// Copied over from daemon
 	// TODO this code has some sync issues
 	verb := "cordon"
@@ -404,7 +407,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 
 		// Re-fetch node so that we are not using cached information
 		var updatedNode *corev1.Node
-		if updatedNode, err = ctrl.kubeClient.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{}); err != nil {
+		if updatedNode, err = ctrl.kubeClient.CoreV1().Nodes().Get(ctx, node.Name, metav1.GetOptions{}); err != nil {
 			lastErr = err
 			glog.Errorf("Failed to fetch node %v, retrying", err)
 			return false, nil
@@ -427,4 +430,9 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 	}
 
 	return nil
+}
+
+// Name() returns the name of this controller
+func (ctrl *Controller) Name() string {
+	return ctrl.name
 }
