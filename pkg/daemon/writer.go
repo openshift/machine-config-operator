@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 
 	"k8s.io/client-go/kubernetes/scheme"
@@ -264,7 +265,7 @@ func (nw *clusterNodeWriter) Eventf(eventtype, reason, messageFmt string, args .
 }
 
 func implSetNodeAnnotations(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, m map[string]string) response {
-	node, err := internal.UpdateNodeRetry(client, lister, nodeName, func(node *corev1.Node) {
+	node, err := internal.UpdateNodeRetry(context.TODO(), client, lister, nodeName, func(node *corev1.Node) {
 		for k, v := range m {
 			node.Annotations[k] = v
 		}
