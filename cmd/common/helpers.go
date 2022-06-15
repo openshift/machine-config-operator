@@ -2,6 +2,8 @@ package common
 
 import (
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/golang/glog"
 	"github.com/openshift/machine-config-operator/internal/clients"
@@ -50,7 +52,7 @@ func CreateResourceLock(cb *clients.Builder, componentNamespace, componentName s
 }
 
 // GetLeaderElectionConfig returns leader election configs defaults based on the cluster topology
-func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
+func GetLeaderElectionConfig(ctx context.Context, restcfg *rest.Config) configv1.LeaderElection {
 
 	// Defaults follow conventions
 	// https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#high-availability
@@ -59,7 +61,7 @@ func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 		"", "",
 	)
 
-	if infra, err := clusterstatus.GetClusterInfraStatus(context.TODO(), restcfg); err == nil && infra != nil {
+	if infra, err := clusterstatus.GetClusterInfraStatus(ctx, restcfg); err == nil && infra != nil {
 		if infra.ControlPlaneTopology == configv1.SingleReplicaTopologyMode {
 			return leaderelection.LeaderElectionSNOConfig(defaultLeaderElection)
 		}
@@ -68,4 +70,24 @@ func GetLeaderElectionConfig(restcfg *rest.Config) configv1.LeaderElection {
 	}
 
 	return defaultLeaderElection
+}
+
+// SignalHandler catches SIGINT/SIGTERM signals and makes sure the passed context gets cancelled when those signals happen. This allows us to use a
+// context to shut down our operations cleanly when we are signalled to shutdown.
+func SignalHandler(runCancel context.CancelFunc) {
+
+	// make a signal handling channel for os signals
+	ch := make(chan os.Signal, 1)
+	// stop listening for signals when we leave this function
+	defer func() { signal.Stop(ch) }()
+	// catch SIGINT and SIGTERM
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	sig := <-ch
+	glog.Infof("Shutting down due to: %s", sig)
+	// if we're shutting down, cancel the context so everything else will stop
+	runCancel()
+	glog.Infof("Context cancelled")
+	sig = <-ch
+	glog.Fatalf("Received shutdown signal twice, exiting: %s", sig)
+
 }
