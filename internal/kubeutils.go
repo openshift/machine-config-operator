@@ -19,7 +19,7 @@ import (
 // number of times.
 // f will be called each time since the node object will likely have changed if
 // a retry is necessary.
-func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, f func(*corev1.Node)) (*corev1.Node, error) {
+func UpdateNodeRetry(ctx context.Context, client corev1client.NodeInterface, lister corev1lister.NodeLister, nodeName string, f func(*corev1.Node)) (*corev1.Node, error) {
 	var node *corev1.Node
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		n, err := lister.Get(nodeName)
@@ -44,7 +44,7 @@ func UpdateNodeRetry(client corev1client.NodeInterface, lister corev1lister.Node
 			return fmt.Errorf("failed to create patch for node %q: %w", nodeName, err)
 		}
 
-		node, err = client.Patch(context.TODO(), nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+		node, err = client.Patch(ctx, nodeName, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
 	}); err != nil {
 		// may be conflict if max retries were hit
