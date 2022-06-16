@@ -246,33 +246,24 @@ contents:
             exit 1
           fi
           new_conn_file="${new_conn_files[0]}"
-          # modify file to work with OVS and have unique settings
+
+          # modify basic connection settings, some of which can't be modified through nmcli
           sed -i '/^multi-connect=.*$/d' ${new_conn_file}
           sed -i '/^autoconnect=.*$/d' ${new_conn_file}
           sed -i '/^\[connection\]$/a autoconnect=false' ${new_conn_file}
           sed -i '/^\[connection\]$/,/^\[/ s/^type=.*$/type=ovs-interface/' ${new_conn_file}
           sed -i '/^\[connection\]$/a slave-type=ovs-port' ${new_conn_file}
           sed -i '/^\[connection\]$/a master='"$ovs_port_conn" ${new_conn_file}
-          if grep 'interface-name=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[connection\]$/,/^\[/ s/^interface-name=.*$/interface-name='"$bridge_name"'/' ${new_conn_file}
-          else
-            sed -i '/^\[connection\]$/a interface-name='"$bridge_name" ${new_conn_file}
-          fi
-          if ! grep 'cloned-mac-address=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[ethernet\]$/a cloned-mac-address='"$iface_mac" ${new_conn_file}
-          else
-            sed -i '/^\[ethernet\]$/,/^\[/ s/^cloned-mac-address=.*$/cloned-mac-address='"$iface_mac"'/' ${new_conn_file}
-          fi
-          if grep 'mtu=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[ethernet\]$/,/^\[/ s/^mtu=.*$/mtu='"$iface_mtu"'/' ${new_conn_file}
-          else
-            sed -i '/^\[ethernet\]$/a mtu='"$iface_mtu" ${new_conn_file}
-          fi
           cat <<EOF >> ${new_conn_file}
     [ovs-interface]
     type=internal
     EOF
+
+          # reload the connection and modify some more settings through nmcli
           nmcli c load ${new_conn_file}
+          nmcli c mod "${ovs_interface}" conn.interface "$bridge_name" \
+            802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}"
           echo "Loaded new $ovs_interface connection file: ${new_conn_file}"
         else
           extra_if_brex_args=""
