@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -102,6 +104,24 @@ func StartMetricsListener(addr string, stopCh chan struct{}) {
 	if addr == "" {
 		addr = DefaultBindAddress
 	}
+
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		timeout := 1 * time.Second
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_, err := net.DialTimeout("tcp", "172.30.0.1:443", timeout)
+				if err != nil {
+					glog.Infof("## k8 api unreachable, error: ", err)
+				}
+				glog.Infof("## k8 api reachable")
+			case <-stopCh:
+				return
+			}
+		}
+	}()
 
 	glog.Info("Registering Prometheus metrics")
 	if err := registerMCDMetrics(); err != nil {
