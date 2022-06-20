@@ -316,12 +316,12 @@ func TestMergeMachineConfigs(t *testing.T) {
 
 	// Now merge all of the above
 	inMachineConfigs = []*mcfgv1.MachineConfig{
-		machineConfigFIPS,
 		machineConfigOSImageURL,
 		machineConfigKernelArgs,
 		machineConfigKernelType,
 		machineConfigExtensions,
 		machineConfigIgn,
+		machineConfigFIPS,
 	}
 	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, osImageURL)
 	require.Nil(t, err)
