@@ -93,17 +93,12 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 		return nil, err
 	}
 
-	// sets the KernelType if specified in any of the MachineConfig
-	// Setting kerneType to realtime in any of MachineConfig takes priority
-	// also if any of the config has FIPS enabled, it'll be set
+	// Setting FIPS to true or kerneType to realtime in any MachineConfig takes priority in setting that field
 	for _, cfg := range configs {
 		if cfg.Spec.FIPS {
 			fips = true
 		}
 		if cfg.Spec.KernelType == KernelTypeRealtime {
-			kernelType = cfg.Spec.KernelType
-			break
-		} else if kernelType == KernelTypeDefault {
 			kernelType = cfg.Spec.KernelType
 		}
 	}
