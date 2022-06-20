@@ -247,50 +247,53 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 	// Check for modified registry
 	for regLoc, newReg := range newRegHashMap {
 		oldReg, ok := oldRegHashMap[regLoc]
-		if ok && !reflect.DeepEqual(oldReg, newReg) {
-			// Registry is available in both old and new config and some changes has been found.
-			// Check that changes made are safe or not.
-			if oldReg.Prefix != newReg.Prefix {
-				glog.Infof("%s: prefix value for registry %s has changed from %s to %s",
-					constants.ContainerRegistryConfPath, regLoc, oldReg.Prefix, newReg.Prefix)
-				return false, nil
-			}
-			if oldReg.Location != newReg.Location {
-				glog.Infof("%s: location value for registry %s has changed from %s to %s",
-					constants.ContainerRegistryConfPath, regLoc, oldReg.Location, newReg.Location)
-				return false, nil
-			}
-			if oldReg.Blocked != newReg.Blocked {
-				glog.Infof("%s: blocked value for registry %s has changed from %t to %t",
-					constants.ContainerRegistryConfPath, regLoc, oldReg.Blocked, newReg.Blocked)
-				return false, nil
-			}
-			if oldReg.Insecure != newReg.Insecure {
-				glog.Infof("%s: insecure value for registry %s has changed from %t to %t",
-					constants.ContainerRegistryConfPath, regLoc, oldReg.Insecure, newReg.Insecure)
-				return false, nil
-			}
-			if oldReg.MirrorByDigestOnly == newReg.MirrorByDigestOnly {
-				// Ensure that all the old mirrors are present
-				for _, m := range oldReg.Mirrors {
-					if !searchRegistryMirror(m.Location, newReg.Mirrors) {
-						glog.Infof("%s: mirror %s has been removed in registry %s",
-							constants.ContainerRegistryConfPath, m.Location, regLoc)
-						return false, nil
-					}
+		if ok {
+			// Registry is available in both old and new config.
+			if !reflect.DeepEqual(oldReg, newReg) {
+				// Registry has been changed in the new config.
+				// Check that changes made are safe or not.
+				if oldReg.Prefix != newReg.Prefix {
+					glog.Infof("%s: prefix value for registry %s has changed from %s to %s",
+						constants.ContainerRegistryConfPath, regLoc, oldReg.Prefix, newReg.Prefix)
+					return false, nil
 				}
-				// Ensure that any added mirror has mirror-by-digest-only set to true
-				for _, m := range newReg.Mirrors {
-					if !searchRegistryMirror(m.Location, oldReg.Mirrors) && !newReg.MirrorByDigestOnly {
-						glog.Infof("%s: mirror %s has been added in registry %s that has mirror-by-digest-only set to %t ",
-							constants.ContainerRegistryConfPath, m.Location, regLoc, newReg.MirrorByDigestOnly)
-						return false, nil
-					}
+				if oldReg.Location != newReg.Location {
+					glog.Infof("%s: location value for registry %s has changed from %s to %s",
+						constants.ContainerRegistryConfPath, regLoc, oldReg.Location, newReg.Location)
+					return false, nil
 				}
-			} else {
-				glog.Infof("%s: mirror-by-digest-only value for registry %s has changed from %t to %t",
-					constants.ContainerRegistryConfPath, regLoc, oldReg.MirrorByDigestOnly, newReg.MirrorByDigestOnly)
-				return false, nil
+				if oldReg.Blocked != newReg.Blocked {
+					glog.Infof("%s: blocked value for registry %s has changed from %t to %t",
+						constants.ContainerRegistryConfPath, regLoc, oldReg.Blocked, newReg.Blocked)
+					return false, nil
+				}
+				if oldReg.Insecure != newReg.Insecure {
+					glog.Infof("%s: insecure value for registry %s has changed from %t to %t",
+						constants.ContainerRegistryConfPath, regLoc, oldReg.Insecure, newReg.Insecure)
+					return false, nil
+				}
+				if oldReg.MirrorByDigestOnly == newReg.MirrorByDigestOnly {
+					// Ensure that all the old mirrors are present
+					for _, m := range oldReg.Mirrors {
+						if !searchRegistryMirror(m.Location, newReg.Mirrors) {
+							glog.Infof("%s: mirror %s has been removed in registry %s",
+								constants.ContainerRegistryConfPath, m.Location, regLoc)
+							return false, nil
+						}
+					}
+					// Ensure that any added mirror has mirror-by-digest-only set to true
+					for _, m := range newReg.Mirrors {
+						if !searchRegistryMirror(m.Location, oldReg.Mirrors) && !newReg.MirrorByDigestOnly {
+							glog.Infof("%s: mirror %s has been added in registry %s that has mirror-by-digest-only set to %t ",
+								constants.ContainerRegistryConfPath, m.Location, regLoc, newReg.MirrorByDigestOnly)
+							return false, nil
+						}
+					}
+				} else {
+					glog.Infof("%s: mirror-by-digest-only value for registry %s has changed from %t to %t",
+						constants.ContainerRegistryConfPath, regLoc, oldReg.MirrorByDigestOnly, newReg.MirrorByDigestOnly)
+					return false, nil
+				}
 			}
 		} else if !newReg.MirrorByDigestOnly {
 			// New mirrors added into registry but mirror-by-digest-only has been set to false
