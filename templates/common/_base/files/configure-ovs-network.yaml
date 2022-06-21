@@ -90,6 +90,7 @@ contents:
 
         nmcli conn mod uuid $new_uuid connection.master "$new"
         nmcli conn mod $new_uuid connection.autoconnect-priority 100
+        nmcli conn mod $new_uuid connection.autoconnect no
         echo "Replaced master $old with $new for slave profile $new_uuid"
       done
     }
@@ -185,6 +186,11 @@ contents:
         bond_opts=$(nmcli --get-values bond.options conn show ${old_conn})
         if [ -n "$bond_opts" ]; then
           extra_phys_args+=( bond.options "${bond_opts}" )
+          MODE_REGEX="(^|,)mode=active-backup(,|$)"
+          MAC_REGEX="(^|,)fail_over_mac=(1|active|2|follow)(,|$)"
+          if [[ $bond_opts =~ $MODE_REGEX ]] && [[ $bond_opts =~ $MAC_REGEX ]]; then
+            clone_mac=0
+          fi
         fi
       elif [ $(nmcli --get-values connection.type conn show ${old_conn}) == "team" ]; then
         iface_type=team
@@ -193,17 +199,36 @@ contents:
         if [ -n "$team_config_opts" ]; then
           # team.config is json, remove spaces to avoid problems later on
           extra_phys_args+=( team.config "${team_config_opts//[[:space:]]/}" )
+          team_mode=$(echo "${team_config_opts}" | jq -r ".runner.name // empty")
+          team_mac_policy=$(echo "${team_config_opts}" | jq -r ".runner.hwaddr_policy // empty")
+          MAC_REGEX="(by_active|only_active)"
+          if [ "$team_mode" = "activebackup" ] && [[ "$team_mac_policy" =~ $MAC_REGEX ]]; then
+            clone_mac=0
+          fi
         fi
       else
         iface_type=802-3-ethernet
+      fi
+
+      if [ ! "${clone_mac:-}" = "0" ]; then
+        # In active-backup link aggregation, with fail_over_mac mode enabled,
+        # cloning the mac address is not supported. It is possible then that
+        # br-ex has a different mac address than the bond which might be
+        # troublesome on some platforms where the nic won't accept packets with
+        # a different destination mac. But nobody has complained so far so go on
+        # with what we got. 
+        
+        # Do set it though for other link aggregation configurations where the
+        # mac address would otherwise depend on enslave order for which we have
+        # no control going forward.
+        extra_phys_args+=( 802-3-ethernet.cloned-mac-address "${iface_mac}" )
       fi
 
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
         add_nm_conn type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
-        connection.autoconnect-priority 100 802-3-ethernet.cloned-mac-address "${iface_mac}" 802-3-ethernet.mtu ${iface_mtu}  \
-        ${extra_phys_args[@]+"${extra_phys_args[@]}"}
+        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuids
