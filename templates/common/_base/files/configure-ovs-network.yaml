@@ -421,26 +421,45 @@ contents:
       nmcli c add "$@" connection.autoconnect no
     }
 
-    # Activates a NM connection profile
-    activate_nm_conn() {
-      local conn="$1"
-      local active_state="$(nmcli -g GENERAL.STATE conn show $conn)"
-      if [ "$active_state" != "activated" ]; then
-        for i in {1..10}; do
-          echo "Attempt $i to bring up connection $conn"
-          nmcli conn up "$conn" && s=0 && break || s=$?
-          sleep 5
-        done
-        if [ $s -eq 0 ]; then
-          echo "Brought up connection $conn successfully"
-        else
-          echo "ERROR: Cannot bring up connection $conn after $i attempts"
-          return $s
+    # Activates an ordered set of NM connection profiles
+    activate_nm_connections() {
+      local connections=("$@")
+      
+      # make sure to set bond or team slaves autoconnect, otherwise as we
+      # activate one slave, the other slave might get implicitly re-activated
+      # with the old profile, activating the old master, interfering and
+      # causing the former activation to fail.
+      # we don't want to set autoconnect on all the other profiles just yet
+      # though as that would activate them which is what we want to do next.
+      # note that these slaves should already be activated with their original
+      # profiles and setting autoconnect won't implicitly activate them again.
+      for conn in "${connections[@]}"; do
+        local slave_type=$(nmcli -g connection.slave-type connection show "$conn")
+        if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
+          nmcli c mod "$conn" connection.autoconnect yes
         fi
-      else
-        echo "Connection $conn already activated"
-      fi
-      nmcli c mod "$conn" connection.autoconnect yes
+      done
+
+      # Then activate all the connections
+      for conn in "${connections[@]}"; do
+        local active_state=$(nmcli -g GENERAL.STATE conn show "$conn")
+        if [ "$active_state" != "activated" ]; then
+          for i in {1..10}; do
+            echo "Attempt $i to bring up connection $conn"
+            nmcli conn up "$conn" && s=0 && break || s=$?
+            sleep 5
+          done
+          if [ $s -eq 0 ]; then
+            echo "Brought up connection $conn successfully"
+          else
+            echo "ERROR: Cannot bring up connection $conn after $i attempts"
+            return $s
+          fi
+        else
+          echo "Connection $conn already activated"
+        fi
+        nmcli c mod "$conn" connection.autoconnect yes
+      done
     }
 
     # Accepts parameters $bridge_interface (e.g. ovs-port-phys0)
@@ -548,11 +567,12 @@ contents:
       ovs-vsctl --timeout=30 --if-exists del-br br0
 
       # Make sure everything is activated
+      connections=()
       for connection in $(nmcli -g NAME c | grep -- "$MANAGED_NM_CONN_SUFFIX"); do
-        activate_nm_conn "$connection"
+        connections+=("$connection")
       done
-      activate_nm_conn ovs-if-phys0
-      activate_nm_conn ovs-if-br-ex
+      connections+=(ovs-if-phys0 ovs-if-br-ex)
+      activate_nm_connections "${connections[@]}"
       persist_nm_conn_files
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
