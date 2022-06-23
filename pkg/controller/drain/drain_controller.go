@@ -46,6 +46,12 @@ const (
 
 	// drainRequeueDelay specifies the delay before we retry the drain
 	drainRequeueDelay = 1 * time.Minute
+
+	// drainRequeueFailingThreshold specifies the time after which we slow down retries
+	drainRequeueFailingThreshold = 10 * time.Minute
+	// drainRequeueFailingDelay specifies the delay before we retry the drain,
+	// if a node drain has been failing for > drainRequeueFailingThreshold time
+	drainRequeueFailingDelay = 5 * time.Minute
 )
 
 // Controller defines the node controller.
@@ -293,12 +299,13 @@ func (ctrl *Controller) syncNode(key string) error {
 		// TODO (jerzhang) consider using a new CRD for coordination
 
 		ongoingDrain := false
+		var duration time.Duration
 		for k, v := range ctrl.ongoingDrains {
 			if k != node.Name {
 				continue
 			}
 			ongoingDrain = true
-			duration := time.Now().Sub(v)
+			duration = time.Now().Sub(v)
 			glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
 			if duration > drainTimeoutDuration {
 				// TODO right now the daemon will alert to match previous behaviour. Consider having controller do so instead.
@@ -318,8 +325,19 @@ func (ctrl *Controller) syncNode(key string) error {
 		// Attempt drain
 		ctrl.logNode(node, "initiating drain")
 		if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
-			ctrl.logNode(node, "Drain failed. Waiting 1 minute then retrying. Error message from drain: %v", err)
-			ctrl.enqueueAfter(node, drainRequeueDelay)
+			// To mimic our old daemon logic, we should probably have a more nuanced backoff.
+			// However since the controller is processing all drains, it is less deterministic how soon the next drain will retry,
+			// Anywhere between instant (if a node change happened) or up to hours (if there are many nodes competing for resources)
+			// For now, let's say if a node has been trying for a set amount of time, we make it less prioritized.
+			if duration > drainRequeueFailingThreshold {
+				ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
+					"Error message from drain: %v", drainRequeueFailingThreshold.Minutes(), drainRequeueFailingDelay.Minutes(), err)
+				ctrl.enqueueAfter(node, drainRequeueFailingDelay)
+			} else {
+				ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
+					drainRequeueDelay.Minutes(), err)
+				ctrl.enqueueAfter(node, drainRequeueDelay)
+			}
 			return nil
 		}
 
