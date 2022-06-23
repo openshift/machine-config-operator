@@ -62,7 +62,12 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}) {
 		}
 	}()
 	<-stopCh
-	if err := s.Shutdown(context.Background()); err != http.ErrServerClosed {
-		glog.Errorf("error stopping metrics listener: %v", err)
+	if err := s.Shutdown(context.Background()); err != nil {
+		if err != http.ErrServerClosed {
+			glog.Errorf("error stopping metrics listener: %v", err)
+		}
+	} else {
+		glog.Infof("Metrics listener successfully stopped")
 	}
+
 }
