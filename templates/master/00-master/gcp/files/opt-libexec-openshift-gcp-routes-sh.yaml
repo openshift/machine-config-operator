@@ -115,11 +115,13 @@ contents:
     add_rules() {
         for vip in "${!vips[@]}"; do
             echo "ensuring rule for ${vip} for external clients"
-            ensure_rule nat "${CHAIN_NAME}" --dst "${vip}" -j REDIRECT
+            ensure_rule nat "${CHAIN_NAME}" -m tcp -p tcp --dport 6443 --dst "${vip}" -j REDIRECT
+            ensure_rule nat "${CHAIN_NAME}" -m udp -p udp --dport 6443 --dst "${vip}" -j REDIRECT
 
             if [[ "${vips[${vip}]}" != down ]]; then
                 echo "ensuring rule for ${vip} for internal clients"
-                ensure_rule nat "${CHAIN_NAME}-local" --dst "${vip}" -j REDIRECT
+                ensure_rule nat "${CHAIN_NAME}-local" -m tcp -p tcp --dport 6443 --dst "${vip}" -j REDIRECT
+                ensure_rule nat "${CHAIN_NAME}-local" -m udp -p udp --dport 6443 --dst "${vip}" -j REDIRECT
             fi
         done
     }
@@ -144,7 +146,7 @@ contents:
                     if [[ -e "${RUN_DIR}/${fwip}.down" ]]; then
                         echo "${fwip} is manually marked as down, skipping for internal clients..."
                         vips[${fwip}]="down"
-                    else
+                    elif [[ -e "${RUN_DIR}/${fwip}.up" ]]; then
                         echo "Processing route for NIC ${vif}${hw_addr} for ${fwip}"
                         vips[${fwip}]="${fwip}"
                     fi
