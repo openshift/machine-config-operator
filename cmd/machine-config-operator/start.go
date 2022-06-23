@@ -39,6 +39,10 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
+	// This is 'main' context that we thread through the controller context and
+	// the leader elections. Cancelling this is "stop everything, we are shutting down".
+	runContext, runCancel := context.WithCancel(context.Background())
+
 	// To help debugging, immediately log version
 	glog.Infof("Version: %s (Raw: %s, Hash: %s)", os.Getenv("RELEASE_VERSION"), version.Raw, version.Hash)
 
@@ -51,6 +55,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		glog.Fatalf("error creating clients: %v", err)
 	}
 	run := func(ctx context.Context) {
+		go common.SignalHandler(runCancel)
+
 		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), ctrlcommon.MCONamespace)
 		controller := operator.New(
 			ctrlcommon.MCONamespace, componentName,
@@ -91,20 +97,23 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 		go controller.Run(2, ctrlctx.Stop)
 
-		select {}
+		// wait here in this function until the context gets cancelled (which tells us whe were being shut down)
+		<-ctx.Done()
 	}
 
 	leaderElectionCfg := common.GetLeaderElectionConfig(cb.GetBuilderConfig())
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
-		Lock:          common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
-		LeaseDuration: leaderElectionCfg.LeaseDuration.Duration,
-		RenewDeadline: leaderElectionCfg.RenewDeadline.Duration,
-		RetryPeriod:   leaderElectionCfg.RetryPeriod.Duration,
+	leaderelection.RunOrDie(runContext, leaderelection.LeaderElectionConfig{
+		Lock:            common.CreateResourceLock(cb, ctrlcommon.MCONamespace, componentName),
+		ReleaseOnCancel: true,
+		LeaseDuration:   leaderElectionCfg.LeaseDuration.Duration,
+		RenewDeadline:   leaderElectionCfg.RenewDeadline.Duration,
+		RetryPeriod:     leaderElectionCfg.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: run,
 			OnStoppedLeading: func() {
-				glog.Fatalf("leaderelection lost")
+				glog.Info("Stopped leading. Terminating.")
+				os.Exit(0)
 			},
 		},
 	})
