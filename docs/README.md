@@ -60,78 +60,8 @@ containing [Ignition configuration](https://github.com/coreos/ignition),
 systemd units can be provided, arbitrary files can be laid down into writable
 locations (i.e. `/etc` and `/var`).
 
-One known ergonomic issue right now for supplying files is that you must encode file contents
-via [`data:` URIs](https://en.wikipedia.org/wiki/Data_URI_scheme). This is part of
-the current Ignition specification.  The easiest way to encode file contents using this
-scheme is via `base64`.  See the example MachineConfig below on how to provide `base64`
-encoded file contents
-
-In the example below, the `mode` is in octal (notice the leading `0`); however, decimal is the canonical representation for `mode` when inspecting `MachineConfigs` (in the example, it's `420` below).
-
-This example MachineConfig object replaces `/etc/chrony.conf` with some
-custom NTP time servers; see
-[the chrony docs](https://chrony.tuxfamily.org/manual.html#Dial_002dup-configuration).
-
-```yaml
-# This example MachineConfig replaces /etc/chrony.conf
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfig
-metadata:
-  labels:
-    machineconfiguration.openshift.io/role: worker
-  name: 50-examplecorp-chrony
-spec:
-  config:
-    ignition:
-      version: 2.2.0
-    storage:
-      files:
-      - contents:
-          source: data:text/plain;charset=utf-8;base64,c2VydmVyIGZvby5leGFtcGxlLm5ldCBtYXhkZWxheSAwLjQgb2ZmbGluZQpzZXJ2ZXIgYmFyLmV4YW1wbGUubmV0IG1heGRlbGF5IDAuNCBvZmZsaW5lCnNlcnZlciBiYXouZXhhbXBsZS5uZXQgbWF4ZGVsYXkgMC40IG9mZmxpbmUKZHJpZnRmaWxlIC92YXIvbGliL2Nocm9ueS9kcmlmdAptYWtlc3RlcCAxLjAgMwpydGNzeW5jCmxvZ2RpciAvdmFyL2xvZy9jaHJvbnkK
-        filesystem: root
-        mode: 0644
-        path: /etc/chrony.conf
-```
-
-```yaml
-# oc get machineconfigs -o yaml 50-examplecorp-chrony
-apiVersion: machineconfiguration.openshift.io/v1
-kind: MachineConfig
-metadata:
-  creationTimestamp: 2019-03-25T18:25:39Z
-  generation: 1
-  labels:
-    machineconfiguration.openshift.io/role: worker
-  name: 50-examplecorp-chrony
-  resourceVersion: "186713"
-  selfLink: /apis/machineconfiguration.openshift.io/v1/machineconfigs/50-examplecorp-chrony
-  uid: 6445154f-4f2b-11e9-91e1-021aaf2ce4c0
-spec:
-  config:
-    ignition:
-      version: 2.2.0
-    storage:
-      files:
-      - contents:
-          source: data:text/plain;charset=utf-8;base64,c2VydmVyIGZvby5leGFtcGxlLm5ldCBtYXhkZWxheSAwLjQgb2ZmbGluZQpzZXJ2ZXIgYmFyLmV4YW1wbGUubmV0IG1heGRlbGF5IDAuNCBvZmZsaW5lCnNlcnZlciBiYXouZXhhbXBsZS5uZXQgbWF4ZGVsYXkgMC40IG9mZmxpbmUKZHJpZnRmaWxlIC92YXIvbGliL2Nocm9ueS9kcmlmdAptYWtlc3RlcCAxLjAgMwpydGNzeW5jCmxvZ2RpciAvdmFyL2xvZy9jaHJvbnkK
-        filesystem: root
-        mode: 420
-        path: /etc/chrony.conf
-```
-
-The controller will notice the new MachineConfig and generate a new
-"rendered" version that looks like `worker-<hash>`.  Use
-`oc describe machineconfigpool/worker` to monitor the status of the rollout
-of the new rendered config to each node.
-
-Note this configuration only applies to workers (see the `role: worker` label);
-currently if you want to apply to both master and workers, you must create two
-separate MachineConfig objects.
-
-Practically speaking, one may find it useful to generate your
-custom MachineConfig objects from a higher level tool.  Although
-in the future ergonomic improvements are planned such as having
-a single MC apply to multiple labels, inline file encoding, etc.
+See the [OCP product documentation](https://docs.openshift.com/container-platform/4.10/post_installation_configuration/machine-configuration-tasks.html)
+for more information.
 
 # What to look at after creating a MachineConfig
 
