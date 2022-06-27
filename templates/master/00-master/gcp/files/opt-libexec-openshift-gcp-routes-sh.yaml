@@ -138,21 +138,41 @@ contents:
         done
 
         local net_path="network-interfaces/"
-        for vif in $(curler ${net_path}); do
-            local hw_addr; hw_addr=$(curler "${net_path}${vif}mac")
-            local fwip_path; fwip_path="${net_path}${vif}forwarded-ips/"
-            for level in $(curler "${fwip_path}"); do
-                for fwip in $(curler "${fwip_path}${level}"); do
-                    if [[ -e "${RUN_DIR}/${fwip}.down" ]]; then
-                        echo "${fwip} is manually marked as down, skipping for internal clients..."
-                        vips[${fwip}]="down"
-                    elif [[ -e "${RUN_DIR}/${fwip}.up" ]]; then
-                        echo "Processing route for NIC ${vif}${hw_addr} for ${fwip}"
-                        vips[${fwip}]="${fwip}"
-                    fi
-                done
-            done
-        done
+        # WIP
+        local internal_api_vip; internal_api_vip="10.0.0.2"
+        local external_api_vip; external_api_vip=$(curler "${net_path}0/forwarded-ips/1")
+        if [[ "${external_api_vip}}" != $"34."* ]]; then
+            external_api_vip=$(curler "${net_path}0/forwarded-ips/2")
+        fi
+        if [[ -e "${RUN_DIR}/${internal_api_vip}.down" ]]; then
+            echo "${internal_api_vip} is manually marked as down, skipping for internal clients..."
+            vips[${internal_api_vip}]="down"
+        else
+            echo "Processing route for NIC ${internal_api_vip}"
+            vips[${internal_api_vip}]="${internal_api_vip}"
+        fi
+        if [[ -e "${RUN_DIR}/${external_api_vip}.down" ]]; then
+            echo "${external_api_vip} is manually marked as down, skipping for internal clients..."
+            vips[${external_api_vip}]="down"
+        else
+            echo "Processing route for NIC ${external_api_vip}"
+            vips[${external_api_vip}]="${external_api_vip}"
+        fi
+        #for vif in $(curler ${net_path}); do
+        #    local hw_addr; hw_addr=$(curler "${net_path}${vif}mac")
+        #    local fwip_path; fwip_path="${net_path}${vif}forwarded-ips/"
+        #    for level in $(curler "${fwip_path}"); do
+        #        for fwip in $(curler "${fwip_path}${level}"); do
+        #            if [[ -e "${RUN_DIR}/${fwip}.down" ]]; then
+        #                echo "${fwip} is manually marked as down, skipping for internal clients..."
+        #                vips[${fwip}]="down"
+        #            elif [[ -e "${RUN_DIR}/${fwip}.up" ]]; then
+        #                echo "Processing route for NIC ${vif}${hw_addr} for ${fwip}"
+        #                vips[${fwip}]="${fwip}"
+        #            fi
+        #        done
+        #    done
+        #done
     }
 
     sleep_or_watch() {
