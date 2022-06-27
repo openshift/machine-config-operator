@@ -8,4 +8,8 @@ contents:
     [connection]
     ipv6.dhcp-duid=ll
     ipv6.dhcp-iaid=mac
+    # temporarily sneaking in logging config
+    [logging]
+    level=TRACE
+    domains=ALL
     {{ end -}}

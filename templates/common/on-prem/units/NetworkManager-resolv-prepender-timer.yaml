@@ -1,0 +1,12 @@
+name: NetworkManager-resolv-prepender.timer
+enabled: {{if (onPremPlatformAPIServerInternalIP .)}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Run resolv-prepender periodically
+
+  [Timer]
+  OnUnitInactiveSec=30s
+  AccuracySec=1s
+
+  [Install]
+  WantedBy=timers.target

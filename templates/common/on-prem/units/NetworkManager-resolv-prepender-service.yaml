@@ -1,0 +1,9 @@
+name: NetworkManager-resolv-prepender.service
+contents: |
+  [Unit]
+  Description=Set nameservers on /etc/resolv.conf
+
+  [Service]
+  Type=oneshot
+  EnvironmentFile=-/run/mco/resolv-prepender.conf
+  ExecStart=/usr/local/bin/nm-resolv-prepender.sh

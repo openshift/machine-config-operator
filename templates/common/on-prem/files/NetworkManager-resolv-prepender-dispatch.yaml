@@ -1,0 +1,46 @@
+mode: 0755
+path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
+contents:
+  inline: |
+    #!/bin/bash
+    set -eo pipefail
+    IFACE=$1
+    ACTION=$2
+
+    >&2 echo "NM resolv-prepender dispatcher script triggered for iface: ${IFACE} action: ${ACTION}."
+
+    CONF_DIR="/run/mco"
+    CONF="${CONF_DIR}/resolv-prepender.conf"
+
+    # save new values
+    NEW_DHCP6_FQDN_FQDN="${DHCP6_FQDN_FQDN:-}"
+    NEW_IP4_DOMAINS="${IP4_DOMAINS:-}"
+    NEW_IP6_DOMAINS="${IP6_DOMAINS:-}"
+
+    # reset passed values
+    DHCP6_FQDN_FQDN=""
+    IP4_DOMAINS=""
+    IP6_DOMAINS=""
+
+    # read old values
+    [ -f "$CONF" ] && . "$CONF"
+
+    WRITE_CONF=0
+    if [ -n "${NEW_DHCP6_FQDN_FQDN}" ] && [ "${NEW_DHCP6_FQDN_FQDN}" != "${DHCP6_FQDN_FQDN:-}" ]; then
+        WRITE_CONF=1
+    fi
+    if [[ "$ACTION" == dhcp* ]] || [ "$ACTION" = "up" ]; then
+        if [ "${NEW_IP4_DOMAINS}" != "${IP4_DOMAINS:-}" ] || [ "${NEW_IP6_DOMAINS}" != "${IP6_DOMAINS:-}" ]; then
+            WRITE_CONF=1
+        fi
+    fi
+
+    [ $WRITE_CONF -ne 1 ] && exit
+
+    # write new values
+    NEW_CONF=$(mktemp)
+    echo "DHCP6_FQDN_FQDN=${NEW_DHCP6_FQDN_FQDN:-$DHCP6_FQDN_FQDN}" >> "$NEW_CONF"
+    echo "IP4_DOMAINS=${NEW_IP4_DOMAINS:-$IP4_DOMAINS}" >> "$NEW_CONF"
+    echo "IP6_DOMAINS=${NEW_IP6_DOMAINS:-$IP6_DOMAINS}" >> "$NEW_CONF"
+    mkdir -p "$CONF_DIR"
+    mv -f "$NEW_CONF" "$CONF"

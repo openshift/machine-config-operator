@@ -1,0 +1,13 @@
+name: NetworkManager-resolv-prepender.path
+enabled: {{if (onPremPlatformAPIServerInternalIP .)}}true{{else}}false{{end}}
+contents: |
+  [Unit]
+  Description=Monitor resolv-prepender configuration for changes
+  StartLimitIntervalSec=0
+
+  [Path]
+  PathChanged=/run/NetworkManager/resolv.conf
+  PathChanged=/run/mco/resolv-prepender.conf
+
+  [Install]
+  WantedBy=paths.target
