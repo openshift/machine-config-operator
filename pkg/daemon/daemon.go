@@ -293,8 +293,6 @@ func (dn *Daemon) ClusterConnect(
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(updateDelay), 1)},
 		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, maxUpdateBackoff)), "machineconfigdaemon")
 
-	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
-
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dn.handleNodeEvent,
 		UpdateFunc: func(oldObj, newObj interface{}) { dn.handleNodeEvent(newObj) },
@@ -316,6 +314,8 @@ func (dn *Daemon) ClusterConnect(
 
 	dn.kubeletHealthzEnabled = kubeletHealthzEnabled
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
+
+	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
 
 	return nil
 }
