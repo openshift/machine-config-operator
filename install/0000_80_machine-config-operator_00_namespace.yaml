@@ -27,6 +27,7 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-openstack-infra
+    openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
 ---
 apiVersion: v1
 kind: Namespace
@@ -39,6 +40,7 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-kni-infra
+    openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
 ---
 apiVersion: v1
 kind: Namespace
@@ -51,6 +53,7 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-ovirt-infra
+    openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
 ---
 apiVersion: v1
 kind: Namespace
@@ -63,6 +66,7 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-vsphere-infra
+    openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
 ---
 apiVersion: v1
 kind: Namespace
@@ -75,4 +79,5 @@ metadata:
     workload.openshift.io/allowed: "management"
   labels:
     name: openshift-nutanix-infra
+    openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
 
