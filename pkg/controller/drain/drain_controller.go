@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -68,7 +67,6 @@ type Controller struct {
 
 	queue         workqueue.RateLimitingInterface
 	ongoingDrains map[string]time.Time
-	podName       string
 }
 
 // New returns a new node controller.
@@ -121,12 +119,6 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	if !cache.WaitForCacheSync(stopCh, ctrl.nodeListerSynced) {
 		return
 	}
-
-	podName, ok := os.LookupEnv("POD_NAME")
-	if !ok || podName == "" {
-		glog.Fatalf("pod name is required for controller drainer")
-	}
-	ctrl.podName = podName
 
 	ongoingDrains := make(map[string]time.Time)
 	ctrl.ongoingDrains = ongoingDrains
@@ -268,14 +260,6 @@ func (ctrl *Controller) syncNode(key string) error {
 				verbStr = "Evicted"
 			}
 			ctrl.logNode(node, "%s pod %s/%s", verbStr, pod.Namespace, pod.Name)
-		},
-		AdditionalFilters: []drain.PodFilter{
-			func(pod corev1.Pod) drain.PodDeleteStatus {
-				if pod.Name == ctrl.podName {
-					return drain.MakePodDeleteStatusSkip()
-				}
-				return drain.MakePodDeleteStatusOkay()
-			},
 		},
 		Out:    writer{glog.Info},
 		ErrOut: writer{glog.Error},
