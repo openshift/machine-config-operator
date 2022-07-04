@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -423,10 +424,40 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 	}
 
 	if dn.nodeWriter != nil {
-		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStaged", "Changes to OS staged")
+		var nodeName string
+		var nodeObjRef corev1.ObjectReference
+		if dn.node != nil {
+			nodeName = dn.node.ObjectMeta.GetName()
+			nodeObjRef = corev1.ObjectReference{
+				Kind: "Node",
+				Name: dn.node.GetName(),
+				UID:  dn.node.GetUID(),
+			}
+		}
+		// We send out the event OSUpdateStaged synchronously to ensure it is recorded.
+		// Remove this when we can ensure all events are sent before exiting.
+		t := metav1.NewTime(time.Now())
+		event := &corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%v.%x", nodeName, t.UnixNano()),
+				Namespace: metav1.NamespaceDefault,
+			},
+			InvolvedObject: nodeObjRef,
+			Reason:         "OSUpdateStaged",
+			Type:           corev1.EventTypeNormal,
+			Message:        "Changes to OS staged",
+			FirstTimestamp: t,
+			LastTimestamp:  t,
+			Count:          1,
+			Source:         corev1.EventSource{Component: "machineconfigdaemon", Host: dn.name},
+		}
+		// its ok to create a unique event for this low volume event
+		if _, err := dn.kubeClient.CoreV1().Events(metav1.NamespaceDefault).Create(context.TODO(),
+			event, metav1.CreateOptions{}); err != nil {
+			glog.Errorf("Failed to create event with reason 'OSUpdateStaged': %v", err)
+		}
 	}
 	return nil
-
 }
 
 func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions []string) {
