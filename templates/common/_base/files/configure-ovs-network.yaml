@@ -490,6 +490,33 @@ contents:
       echo ""
     }
 
+    get_interface_from_ip_hint() {
+      local ip_hint=${NODE_IP:-""}
+      local extra_bridge="$1"
+      local iface=""
+      if [ "${ip_hint}" != "" ]; then
+      # check ipv4
+        if [ "${extra_bridge}" != "" ]; then
+          iface=$(ip route show | grep -v "br-ex1" | grep -v "${extra_bridge}" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        else
+          iface=$(ip route show | grep -v "br-ex1" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        fi
+        if [[ -n "${iface}" ]]; then
+          echo "${iface}"
+          return
+        fi
+        if [ "${extra_bridge}" != "" ]; then
+          iface=$(ip -6 route show | grep -v "br-ex1" | grep -v "${extra_bridge}" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        else
+          iface=$(ip -6 route show | grep -v "br-ex1" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        fi
+        if [[ -n "${iface}" ]]; then
+          echo "${iface}"
+          return
+        fi
+      fi
+    }
+
     # Accepts parameters $bridge_interface (e.g. ovs-port-phys0)
     # Returns the physical interface name if $bridge_interface exists, "" otherwise
     get_bridge_physical_interface() {
@@ -516,6 +543,13 @@ contents:
 
       if [ -f "${extra_bridge_file}" ]; then
         extra_bridge=$(cat ${extra_bridge_file})
+      fi
+
+      # if node ip was set, we should search for interface that matches it
+      iface=$(get_interface_from_ip_hint "${extra_bridge}")
+      if [[ -n "${iface}" ]]; then
+        echo "${iface}"
+        return
       fi
 
       # find default interface

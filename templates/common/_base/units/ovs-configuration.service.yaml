@@ -18,5 +18,9 @@ contents: |
   StandardOutput=journal+console
   StandardError=journal+console
 
+  EnvironmentFile=-/etc/default/node_ip
+
   [Install]
   WantedBy=network-online.target
+
+
