@@ -213,7 +213,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mckLister = append(f.mckLister, kc)
 			f.objects = append(f.objects, kc)
 
-			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, nil, nil, pools)
+			mcs, err := RunKubeletBootstrap("../../../templates", []*mcfgv1.KubeletConfig{kc}, cc, nil, pools)
 			require.NoError(t, err)
 			require.Len(t, mcs, 1)
 

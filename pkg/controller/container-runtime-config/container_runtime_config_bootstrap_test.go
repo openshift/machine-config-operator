@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
+func TestAddContainerRuntimeCfgAfterBootstrapContainerRuntimeCfg(t *testing.T) {
 	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
 		t.Run(string(platform), func(t *testing.T) {
 			f := newFixture(t)
@@ -21,6 +21,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			pools := []*mcfgv1.MachineConfigPool{
 				helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0"),
 			}
+			cm := newConfigMap("crio-seccomp-use-default-when-empty")
 			// ctrcfg for bootstrap mode
 			ctrcfg := newContainerRuntimeConfig("log-level", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 
@@ -28,6 +29,7 @@ func TestAddKubeletCfgAfterBootstrapKubeletCfg(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, pools[0])
 			f.mccrLister = append(f.mccrLister, ctrcfg)
 			f.objects = append(f.objects, ctrcfg)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			mcs, err := RunContainerRuntimeBootstrap("../../../templates", []*mcfgv1.ContainerRuntimeConfig{ctrcfg}, cc, pools)
 			require.NoError(t, err)

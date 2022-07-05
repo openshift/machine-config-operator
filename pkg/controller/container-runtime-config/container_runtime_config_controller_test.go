@@ -1124,6 +1124,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
 			ccr1 := newContainerRuntimeConfig("log-level-1", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
 			ccr2 := newContainerRuntimeConfig("log-level-2", &mcfgv1.ContainerRuntimeConfiguration{LogLevel: "debug"}, metav1.AddLabelToSelector(&metav1.LabelSelector{}, "pools.operator.machineconfiguration.openshift.io/master", ""))
+			cm := newConfigMap("crio-seccomp-use-default-when-empty")
 
 			ctrConfigKey, _ := getManagedKeyCtrCfg(mcp, f.client, ccr1)
 			mcs := helpers.NewMachineConfig(ctrConfigKey, map[string]string{"node-role/master": ""}, "dummy://", []ign3types.File{{}})
@@ -1135,6 +1136,7 @@ func TestContainerruntimeConfigResync(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp2)
 			f.mccrLister = append(f.mccrLister, ccr1)
 			f.objects = append(f.objects, ccr1)
+			f.k8sObjects = append(f.k8sObjects, cm)
 
 			c := f.newController()
 			err := c.syncHandler(getKey(ccr1, t))
