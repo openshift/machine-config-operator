@@ -508,11 +508,19 @@ contents:
     # If there is no valid hint, use the default interface that we found during the step
     # earlier. Write the default interface to the hint file.
     get_default_interface() {
-      local iface=""
+      local iface=${KUBELET_INTERFACE:-""}
       local counter=0
       local iface_default_hint_file="$1"
       local extra_bridge_file="$2"
       local extra_bridge=""
+
+      # if interface was set by external service, take it
+      # nodeip-configuration service will set KUBELET_INTERFACE
+      # ovs should take it for bridge configuration
+      if [[ -n "${iface}" ]]; then
+        echo "${iface}"
+        return
+      fi
 
       if [ -f "${extra_bridge_file}" ]; then
         extra_bridge=$(cat ${extra_bridge_file})
