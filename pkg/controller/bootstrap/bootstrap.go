@@ -192,7 +192,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	encoder := codecFactory.EncoderForVersion(serializer, mcfgv1.GroupVersion)
 
 	poolsdir := filepath.Join(destDir, "machine-pools")
-	if err := os.MkdirAll(poolsdir, 0764); err != nil {
+	if err := os.MkdirAll(poolsdir, 0o764); err != nil {
 		return err
 	}
 	for _, p := range fpools {
@@ -205,13 +205,13 @@ func (b *Bootstrap) Run(destDir string) error {
 		// Disable gosec here to avoid throwing
 		// G306: Expect WriteFile permissions to be 0600 or less
 		// #nosec
-		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
+		if err := ioutil.WriteFile(path, buf.Bytes(), 0o664); err != nil {
 			return err
 		}
 	}
 
 	configdir := filepath.Join(destDir, "machine-configs")
-	if err := os.MkdirAll(configdir, 0764); err != nil {
+	if err := os.MkdirAll(configdir, 0o764); err != nil {
 		return err
 	}
 	for _, c := range gconfigs {
@@ -224,7 +224,7 @@ func (b *Bootstrap) Run(destDir string) error {
 		// Disable gosec here to avoid throwing
 		// G306: Expect WriteFile permissions to be 0600 or less
 		// #nosec
-		if err := ioutil.WriteFile(path, buf.Bytes(), 0664); err != nil {
+		if err := ioutil.WriteFile(path, buf.Bytes(), 0o664); err != nil {
 			return err
 		}
 	}

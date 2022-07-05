@@ -185,7 +185,7 @@ func writeVipStateFile(vip, state string) error {
 	// Disable gosec here to avoid throwing
 	// G306: Expect WriteFile permissions to be 0600 or less
 	// #nosec
-	err := ioutil.WriteFile(file, nil, 0644)
+	err := ioutil.WriteFile(file, nil, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to create file (%s): %v", file, err)
 	}

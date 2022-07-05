@@ -35,9 +35,9 @@ import (
 
 const (
 	// defaultDirectoryPermissions houses the default mode to use when no directory permissions are provided
-	defaultDirectoryPermissions os.FileMode = 0755
+	defaultDirectoryPermissions os.FileMode = 0o755
 	// defaultFilePermissions houses the default mode to use when no file permissions are provided
-	defaultFilePermissions os.FileMode = 0644
+	defaultFilePermissions os.FileMode = 0o644
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
@@ -299,7 +299,7 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
 		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
 	}
-	if err = os.MkdirAll(osImageContentBaseDir, 0755); err != nil {
+	if err = os.MkdirAll(osImageContentBaseDir, 0o755); err != nil {
 		err = fmt.Errorf("error creating directory %s: %w", osImageContentBaseDir, err)
 		return
 	}
@@ -1660,7 +1660,7 @@ func createOrigFile(fromPath, fpath string) error {
 		// create a noorig file that tells the MCD that the file wasn't present on disk before MCD
 		// took over so it can just remove it when deleting stale data, as opposed as restoring a file
 		// that was shipped _with_ the underlying OS (e.g. a default chrony config).
-		if makeErr := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0755); makeErr != nil {
+		if makeErr := os.MkdirAll(filepath.Dir(noOrigFileStampName(fpath)), 0o755); makeErr != nil {
 			return fmt.Errorf("creating no orig parent dir: %w", makeErr)
 		}
 		return writeFileAtomicallyWithDefaults(noOrigFileStampName(fpath), nil)
@@ -1677,7 +1677,7 @@ func createOrigFile(fromPath, fpath string) error {
 		// the orig file is already there and we avoid creating a new one to preserve the real default
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(origFileName(fpath)), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(origFileName(fpath)), 0o755); err != nil {
 		return fmt.Errorf("creating orig parent dir: %w", err)
 	}
 	if out, err := exec.Command("cp", "-a", "--reflink=auto", fromPath, origFileName(fpath)).CombinedOutput(); err != nil {
@@ -1751,7 +1751,7 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", authKeyPath)
 
-	if err := writeFileAtomically(authKeyPath, []byte(keys), os.FileMode(0700), os.FileMode(0600), uid, gid); err != nil {
+	if err := writeFileAtomically(authKeyPath, []byte(keys), os.FileMode(0o700), os.FileMode(0o600), uid, gid); err != nil {
 		return err
 	}
 
