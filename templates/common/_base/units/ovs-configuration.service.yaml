@@ -18,5 +18,7 @@ contents: |
   StandardOutput=journal+console
   StandardError=journal+console
 
+  EnvironmentFile=-/run/nodeip-configuration/interface
+
   [Install]
   WantedBy=network-online.target
