@@ -364,7 +364,7 @@ contents:
 
       # precautionary sleep of 10s (default timeout of NM to bring down devices)
       sleep 10
-    
+
       # After reload, devices that were already connected should connect again
       # if any profile is available. If no profile is available, a device can
       # remain disconnected and we have to explicitly connect it so that a
@@ -490,6 +490,40 @@ contents:
       echo ""
     }
 
+    get_interface_from_ip_hint() {
+      local ip_hint=""
+      local ip_hint_file="$1"
+      local extra_bridge="$2"
+      local iface=""
+
+      if [ ! -f "${ip_hint_file}" ]; then
+        return
+      fi
+
+      ip_hint=$(cat ${ip_hint_file})
+      if [ "${ip_hint}" != "" ]; then
+      # check ipv4
+        if [ "${extra_bridge}" != "" ]; then
+          iface=$(ip route show | grep -v "br-ex1" | grep -v "${extra_bridge}" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        else
+          iface=$(ip route show | grep -v "br-ex1" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        fi
+        if [[ -n "${iface}" ]]; then
+          echo "${iface}"
+          return
+        fi
+        if [ "${extra_bridge}" != "" ]; then
+          iface=$(ip -6 route show | grep -v "br-ex1" | grep -v "${extra_bridge}" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        else
+          iface=$(ip -6 route show | grep -v "br-ex1" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
+        fi
+        if [[ -n "${iface}" ]]; then
+          echo "${iface}"
+          return
+        fi
+      fi
+    }
+
     # Accepts parameters $bridge_interface (e.g. ovs-port-phys0)
     # Returns the physical interface name if $bridge_interface exists, "" otherwise
     get_bridge_physical_interface() {
@@ -512,10 +546,18 @@ contents:
       local counter=0
       local iface_default_hint_file="$1"
       local extra_bridge_file="$2"
+      local ip_hint_file="$3"
       local extra_bridge=""
 
       if [ -f "${extra_bridge_file}" ]; then
         extra_bridge=$(cat ${extra_bridge_file})
+      fi
+
+      # if node ip was set, we should search for interface that matches it
+      iface=$(get_interface_from_ip_hint "${ip_hint_file}" "${extra_bridge}")
+      if [[ -n "${iface}" ]]; then
+        echo "${iface}"
+        return
       fi
 
       # find default interface
@@ -654,6 +696,7 @@ contents:
       ovnk_var_dir='/var/lib/ovnk'
       extra_bridge_file="${ovnk_config_dir}/extra_bridge"
       iface_default_hint_file="${ovnk_var_dir}/iface_default_hint"
+      ip_hint_file="/run/nodeip-configuration/primary-ip"
 
       # make sure to create ovnk_config_dir if it does not exist, yet
       mkdir -p "${ovnk_config_dir}"
@@ -694,7 +737,7 @@ contents:
       fi
       touch /run/configure-ovs-boot-done
 
-      iface=$(get_default_interface "${iface_default_hint_file}" "$extra_bridge_file")
+      iface=$(get_default_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}")
 
       if [ "$iface" != "br-ex" ]; then
         # Default gateway is not br-ex.

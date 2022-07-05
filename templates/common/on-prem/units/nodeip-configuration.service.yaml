@@ -8,7 +8,7 @@ contents: |
   # different subnet or a deprecated address
   Wants=network-online.target crio-wipe.service
   After=network-online.target ignition-firstboot-complete.service crio-wipe.service
-  Before=kubelet.service crio.service
+  Before=kubelet.service crio.service ovs-configuration.service
 
   [Service]
   # Need oneshot to delay kubelet
@@ -23,6 +23,7 @@ contents: |
     --net=host \
     --security-opt label=disable \
     --volume /etc/systemd/system:/etc/systemd/system \
+    --volume /run:/run \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
