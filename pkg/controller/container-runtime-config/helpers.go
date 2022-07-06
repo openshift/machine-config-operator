@@ -278,7 +278,7 @@ func wrapErrorWithCondition(err error, args ...interface{}) mcfgv1.ContainerRunt
 // back into a TOML format. It returns the bytes of the encoded data
 func updateStorageConfig(data []byte, internal *mcfgv1.ContainerRuntimeConfiguration) ([]byte, error) {
 	tomlConf := new(tomlConfigStorage)
-	if _, err := toml.DecodeReader(bytes.NewBuffer(data), tomlConf); err != nil {
+	if _, err := toml.NewDecoder(bytes.NewBuffer(data)).Decode(tomlConf); err != nil {
 		return nil, fmt.Errorf("error decoding crio config: %w", err)
 	}
 

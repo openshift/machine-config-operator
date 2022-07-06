@@ -62,7 +62,7 @@ func init() {
 // service account tokens after chrooting.  This function must be called before chroot.
 func bindPodMounts(rootMount string) error {
 	targetSecrets := filepath.Join(rootMount, "/run/secrets")
-	if err := os.MkdirAll(targetSecrets, 0755); err != nil {
+	if err := os.MkdirAll(targetSecrets, 0o755); err != nil {
 		return err
 	}
 	// This will only affect our mount namespace, not the host
@@ -79,7 +79,7 @@ func selfCopyToHost() error {
 		return fmt.Errorf("opening our binary: %w", err)
 	}
 	defer selfExecutableFd.Close()
-	if err := os.MkdirAll(filepath.Dir(daemonconsts.HostSelfBinary), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(daemonconsts.HostSelfBinary), 0o755); err != nil {
 		return err
 	}
 	t, err := renameio.TempFile(filepath.Dir(daemonconsts.HostSelfBinary), daemonconsts.HostSelfBinary)
@@ -87,7 +87,7 @@ func selfCopyToHost() error {
 		return err
 	}
 	defer t.Cleanup()
-	var mode os.FileMode = 0755
+	var mode os.FileMode = 0o755
 	if err := t.Chmod(mode); err != nil {
 		return err
 	}
