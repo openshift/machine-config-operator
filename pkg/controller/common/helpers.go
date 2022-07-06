@@ -188,7 +188,7 @@ func WriteTerminationError(err error) {
 	// Disable gosec here to avoid throwing
 	// G306: Expect WriteFile permissions to be 0600 or less
 	// #nosec
-	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0644)
+	ioutil.WriteFile("/dev/termination-log", []byte(msg), 0o644)
 	glog.Fatal(msg)
 }
 
@@ -777,7 +777,7 @@ func NewIgnFile(path, contents string) ign3types.File {
 
 // NewIgnFileBytes is like NewIgnFile, but accepts binary data
 func NewIgnFileBytes(path string, contents []byte) ign3types.File {
-	mode := 0644
+	mode := 0o644
 	return ign3types.File{
 		Node: ign3types.Node{
 			Path: path,
@@ -794,7 +794,7 @@ func NewIgnFileBytes(path string, contents []byte) ign3types.File {
 
 // NewIgnFileBytesOverwriting is like NewIgnFileBytes, but overwrites existing files by default
 func NewIgnFileBytesOverwriting(path string, contents []byte) ign3types.File {
-	mode := 0644
+	mode := 0o644
 	overwrite := true
 	return ign3types.File{
 		Node: ign3types.Node{
