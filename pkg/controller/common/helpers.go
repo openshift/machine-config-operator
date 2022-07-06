@@ -777,11 +777,13 @@ func NewIgnFile(path, contents string) ign3types.File {
 
 // NewIgnFileBytes is like NewIgnFile, but accepts binary data
 func NewIgnFileBytes(path string, contents []byte) ign3types.File {
+	mode := 0644
 	return ign3types.File{
 		Node: ign3types.Node{
 			Path: path,
 		},
 		FileEmbedded1: ign3types.FileEmbedded1{
+			Mode: &mode,
 			Contents: ign3types.Resource{
 				Source:      strToPtr(dataurl.EncodeBytes(contents)),
 				Compression: strToPtr(""),
@@ -792,6 +794,7 @@ func NewIgnFileBytes(path string, contents []byte) ign3types.File {
 
 // NewIgnFileBytesOverwriting is like NewIgnFileBytes, but overwrites existing files by default
 func NewIgnFileBytesOverwriting(path string, contents []byte) ign3types.File {
+	mode := 0644
 	overwrite := true
 	return ign3types.File{
 		Node: ign3types.Node{
@@ -799,6 +802,7 @@ func NewIgnFileBytesOverwriting(path string, contents []byte) ign3types.File {
 			Overwrite: &overwrite,
 		},
 		FileEmbedded1: ign3types.FileEmbedded1{
+			Mode: &mode,
 			Contents: ign3types.Resource{
 				Source:      strToPtr(dataurl.EncodeBytes(contents)),
 				Compression: strToPtr(""), // See https://github.com/coreos/butane/issues/332
