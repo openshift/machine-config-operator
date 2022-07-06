@@ -28,6 +28,7 @@ require (
 	github.com/openshift/api v0.0.0-20220504105152-6f735e7109c8
 	github.com/openshift/client-go v0.0.0-20220504114320-6aec01bb0754
 	github.com/openshift/library-go v0.0.0-20211220195323-eca2c467c492
+	github.com/openshift/machine-config-operator/pkg/apis v0.0.0-00010101000000-000000000000
 	github.com/openshift/runtime-utils v0.0.0-20220513161558-c736ec4e99ce
 	github.com/prometheus/client_golang v1.12.1
 	github.com/spf13/cobra v1.2.1
@@ -301,3 +302,5 @@ replace (
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.23.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.23.0
 )
+
+replace github.com/openshift/machine-config-operator/pkg/apis => ./pkg/apis
