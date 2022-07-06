@@ -20,10 +20,16 @@ type GlobalOption string
 const (
 	// Nosec global option for #nosec directive
 	Nosec GlobalOption = "nosec"
+	// ShowIgnored defines whether nosec issues are counted as finding or not
+	ShowIgnored GlobalOption = "show-ignored"
 	// Audit global option which indicates that gosec runs in audit mode
 	Audit GlobalOption = "audit"
 	// NoSecAlternative global option alternative for #nosec directive
 	NoSecAlternative GlobalOption = "#nosec"
+	// ExcludeRules global option for some rules  should not be load
+	ExcludeRules GlobalOption = "exclude"
+	// IncludeRules global option for  should be load
+	IncludeRules GlobalOption = "include"
 )
 
 // Config is used to provide configuration and customization to each of the rules.
