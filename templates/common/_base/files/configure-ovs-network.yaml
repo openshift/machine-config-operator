@@ -497,6 +497,12 @@ contents:
         extra_bridge=$(cat ${extra_bridge_file})
       fi
 
+
+      iface=$(iface_with_kubelet_ip ${KUBELET_NODE_IP})
+      if [ ! -z $iface ]; then
+        echo ${iface}
+        return
+      fi
       # find default interface
       # the default interface might be br-ex, so check this before looking at the hint
       while [ ${counter} -lt 12 ]; do
@@ -555,6 +561,18 @@ contents:
         if [ "${iface}" != "" ]; then
           write_iface_default_hint "${iface_default_hint_file}" "${iface}"
         fi
+      fi
+      echo "${iface}"
+    }
+
+    iface_with_kubelet_ip() {
+      local iface=""
+      local kubelet_ip="$1"
+      if [ ! -z "$kubelet_ip" ]; then
+        iface=$(
+          ip -j addr | \
+            jq "map(.addr_info[]+{\"ifname\": .ifname}) | map(select(.local == \"${kubelet_ip}\")| .ifname) | .[]"
+        )
       fi
       echo "${iface}"
     }
