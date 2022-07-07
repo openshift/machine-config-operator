@@ -333,7 +333,7 @@ var skipKeyValidate = regexp.MustCompile(`^[_a-z]\w*$`)
 
 // Keys labelled with skip ie. {{skip "key"}}, don't need to be templated in now because at Ignition request they will be templated in with query params
 func skipMissing(key string) (interface{}, error) {
-	if !skipKeyValidate.Match([]byte(key)) {
+	if !skipKeyValidate.MatchString(key) {
 		return nil, fmt.Errorf("invalid key for skipKey")
 	}
 

@@ -12,21 +12,30 @@ import (
 )
 
 // ExportedRule lints given else constructs.
-type ExportedRule struct{}
+type ExportedRule struct {
+	configured             bool
+	checkPrivateReceivers  bool
+	disableStutteringCheck bool
+	stuttersMsg            string
+}
 
 // Apply applies the rule to given file.
 func (r *ExportedRule) Apply(file *lint.File, args lint.Arguments) []lint.Failure {
 	var failures []lint.Failure
 
-	if isTest(file) {
+	if file.IsTest() {
 		return failures
 	}
 
-	checkPrivateReceivers, disableStutteringCheck, sayRepetitiveInsteadOfStutters := r.getConf(args)
+	if !r.configured {
+		var sayRepetitiveInsteadOfStutters bool
+		r.checkPrivateReceivers, r.disableStutteringCheck, sayRepetitiveInsteadOfStutters = r.getConf(args)
+		r.stuttersMsg = "stutters"
+		if sayRepetitiveInsteadOfStutters {
+			r.stuttersMsg = "is repetitive"
+		}
 
-	stuttersMsg := "stutters"
-	if sayRepetitiveInsteadOfStutters {
-		stuttersMsg = "is repetitive"
+		r.configured = true
 	}
 
 	fileAst := file.AST
@@ -37,9 +46,9 @@ func (r *ExportedRule) Apply(file *lint.File, args lint.Arguments) []lint.Failur
 			failures = append(failures, failure)
 		},
 		genDeclMissingComments: make(map[*ast.GenDecl]bool),
-		checkPrivateReceivers:  checkPrivateReceivers,
-		disableStutteringCheck: disableStutteringCheck,
-		stuttersMsg:            stuttersMsg,
+		checkPrivateReceivers:  r.checkPrivateReceivers,
+		disableStutteringCheck: r.disableStutteringCheck,
+		stuttersMsg:            r.stuttersMsg,
 	}
 
 	ast.Walk(&walker, fileAst)
@@ -52,7 +61,7 @@ func (r *ExportedRule) Name() string {
 	return "exported"
 }
 
-func (r *ExportedRule) getConf(args lint.Arguments) (checkPrivateReceivers bool, disableStutteringCheck bool, sayRepetitiveInsteadOfStutters bool) {
+func (r *ExportedRule) getConf(args lint.Arguments) (checkPrivateReceivers, disableStutteringCheck, sayRepetitiveInsteadOfStutters bool) {
 	// if any, we expect a slice of strings as configuration
 	if len(args) < 1 {
 		return
@@ -100,7 +109,7 @@ func (w *lintExported) lintFuncDoc(fn *ast.FuncDecl) {
 		// method
 		kind = "method"
 		recv := receiverType(fn)
-		if !ast.IsExported(recv) && !w.checkPrivateReceivers {
+		if !w.checkPrivateReceivers && !ast.IsExported(recv) {
 			// receiver is unexported
 			return
 		}
@@ -250,7 +259,7 @@ func (w *lintExported) lintValueSpecDoc(vs *ast.ValueSpec, gd *ast.GenDecl, genD
 		return
 	}
 	// If this GenDecl has parens and a comment, we don't check its comment form.
-	if gd.Lparen.IsValid() && gd.Doc != nil {
+	if gd.Doc != nil && gd.Lparen.IsValid() {
 		return
 	}
 	// The relevant text to check will be on either vs.Doc or gd.Doc.

@@ -197,13 +197,13 @@ func RenderBootstrap(
 
 		path := filepath.Join(destinationDir, m.filename)
 		dirname := filepath.Dir(path)
-		if err := os.MkdirAll(dirname, 0755); err != nil {
+		if err := os.MkdirAll(dirname, 0o755); err != nil {
 			return err
 		}
 		// Disable gosec here to avoid throwing
 		// G306: Expect WriteFile permissions to be 0600 or less
 		// #nosec
-		if err := ioutil.WriteFile(path, b, 0644); err != nil {
+		if err := ioutil.WriteFile(path, b, 0o644); err != nil {
 			return err
 		}
 	}
