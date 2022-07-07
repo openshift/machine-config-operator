@@ -50,7 +50,7 @@ func setRootDeviceSchedulerBFQ() error {
 		return nil
 	}
 
-	f, err := os.OpenFile(schedulerPath, os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(schedulerPath, os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
