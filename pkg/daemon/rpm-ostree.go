@@ -31,15 +31,18 @@ type rpmOstreeState struct {
 
 // RpmOstreeDeployment represents a single deployment on a node
 type RpmOstreeDeployment struct {
-	ID           string   `json:"id"`
-	OSName       string   `json:"osname"`
-	Serial       int32    `json:"serial"`
-	Checksum     string   `json:"checksum"`
-	Version      string   `json:"version"`
-	Timestamp    uint64   `json:"timestamp"`
-	Booted       bool     `json:"booted"`
-	Origin       string   `json:"origin"`
-	CustomOrigin []string `json:"custom-origin"`
+	ID                      string   `json:"id"`
+	OSName                  string   `json:"osname"`
+	Serial                  int32    `json:"serial"`
+	Checksum                string   `json:"checksum"`
+	Version                 string   `json:"version"`
+	Timestamp               uint64   `json:"timestamp"`
+	Booted                  bool     `json:"booted"`
+	Staged                  bool     `json:"staged"`
+	LiveReplaced            string   `json:"live-replaced,omitempty"`
+	Origin                  string   `json:"origin"`
+	CustomOrigin            []string `json:"custom-origin"`
+	ContainerImageReference string   `json:"container-image-reference"`
 }
 
 // imageInspection is a public implementation of
@@ -64,7 +67,9 @@ type NodeUpdaterClient interface {
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
 	Rebase(string, string) (bool, error)
-	GetBootedDeployment() (*RpmOstreeDeployment, error)
+	RebaseLayered(string) error
+	IsBootableImage(string) (bool, error)
+	GetBootedAndStagedDeployment() (*RpmOstreeDeployment, *RpmOstreeDeployment, error)
 }
 
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
@@ -105,20 +110,16 @@ func (r *RpmOstreeClient) Initialize() error {
 }
 
 // GetBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) GetBootedDeployment() (*RpmOstreeDeployment, error) {
+func (r *RpmOstreeClient) GetBootedAndStagedDeployment() (booted, staged *RpmOstreeDeployment, err error) {
 	status, err := r.loadStatus()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	for _, deployment := range status.Deployments {
-		if deployment.Booted {
-			deployment := deployment
-			return &deployment, nil
-		}
-	}
+	booted, err = status.getBootedDeployment()
+	staged = status.getStagedDeployment()
 
-	return nil, fmt.Errorf("not currently booted in a deployment")
+	return
 }
 
 // GetStatus returns multi-line human-readable text describing system status
@@ -135,7 +136,7 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 // Returns the empty string if the host doesn't have a custom origin that matches pivot://
 // (This could be the case for e.g. FCOS, or a future RHCOS which comes not-pivoted by default)
 func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
-	bootedDeployment, err := r.GetBootedDeployment()
+	bootedDeployment, _, err := r.GetBootedAndStagedDeployment()
 	if err != nil {
 		return "", "", err
 	}
@@ -148,6 +149,14 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 		}
 	}
 
+	// we have container images now, make sure we can parse those too
+	if bootedDeployment.ContainerImageReference != "" {
+		// right now they start with "ostree-unverified-registry:", so scrape that off
+		tokens := strings.SplitN(bootedDeployment.ContainerImageReference, ":", 2)
+		if len(tokens) > 1 {
+			osImageURL = tokens[1]
+		}
+	}
 	return osImageURL, bootedDeployment.Version, nil
 }
 
@@ -189,7 +198,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 		ostreeCsum    string
 		ostreeVersion string
 	)
-	defaultDeployment, err := r.GetBootedDeployment()
+	defaultDeployment, _, err := r.GetBootedAndStagedDeployment()
 	if err != nil {
 		return
 	}
@@ -275,6 +284,39 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	return
 }
 
+// IsBootableImage determines if the image is a bootable (new container formet) image, or a wrapper (old container format)
+func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
+
+	// TODO(jkyros): This is duplicated-ish from Rebase(), do we still need to carry this around?
+	var isBootableImage string
+	var imageData *types.ImageInspectInfo
+	var err error
+	if imageData, err = imageInspect(imgURL); err != nil {
+		if err != nil {
+			var podmanImgData *imageInspection
+			glog.Infof("Falling back to using podman inspect")
+
+			if podmanImgData, err = podmanInspect(imgURL); err != nil {
+				return false, err
+			}
+			isBootableImage = podmanImgData.Labels["ostree.bootable"]
+		}
+	} else {
+		isBootableImage = imageData.Labels["ostree.bootable"]
+	}
+	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
+	defer exec.Command("podman", "rmi", imgURL).Run()
+
+	return isBootableImage == "true", nil
+}
+
+// RebaseLayered rebases system or errors if already rebased
+func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
+	glog.Infof("Executing rebase to %s", imgURL)
+
+	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
+}
+
 // truncate a string using runes/codepoints as limits.
 // This specifically will avoid breaking a UTF-8 value.
 func truncate(input string, limit int) string {
@@ -302,4 +344,24 @@ func runGetOut(command string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("error running %s %s: %s%s", command, strings.Join(args, " "), err, errtext)
 	}
 	return rawOut, nil
+}
+
+func (state *rpmOstreeState) getBootedDeployment() (*RpmOstreeDeployment, error) {
+	for num := range state.Deployments {
+		deployment := state.Deployments[num]
+		if deployment.Booted {
+			return &deployment, nil
+		}
+	}
+	return &RpmOstreeDeployment{}, fmt.Errorf("not currently booted in a deployment")
+}
+
+func (state *rpmOstreeState) getStagedDeployment() *RpmOstreeDeployment {
+	for num := range state.Deployments {
+		deployment := state.Deployments[num]
+		if deployment.Staged {
+			return &deployment
+		}
+	}
+	return &RpmOstreeDeployment{}
 }
