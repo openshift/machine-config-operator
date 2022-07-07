@@ -100,38 +100,7 @@ func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
 }
 
 func (r *RpmOstreeClient) Initialize() error {
-	// This replicates https://github.com/coreos/rpm-ostree/pull/2945
-	// and can be removed when we have a new enough rpm-ostree with
-	// that PR.
-	err := runCmdSync("systemctl", "start", "rpm-ostreed")
-	if err != nil {
-		// If this fails for some reason, let's dump the unit status
-		// into our logs to aid future debugging.
-		cmd := exec.Command("systemctl", "status", "rpm-ostreed")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		_ = cmd.Run()
-		return err
-	}
-
-	status, err := r.loadStatus()
-	if err != nil {
-		return err
-	}
-
-	// If there's an active transaction when the MCD starts up,
-	// it's possible that we hit
-	// https://bugzilla.redhat.com/show_bug.cgi?id=1982389
-	// This is fixed upstream, but we need a newer RHEL for that,
-	// so let's just restart the service as a workaround.
-	if status.Transaction != nil {
-		glog.Warningf("Detected active transaction during daemon startup, restarting to clear it")
-		err := runCmdSync("systemctl", "restart", "rpm-ostreed")
-		if err != nil {
-			return err
-		}
-	}
-
+	// This used to have some workarounds for rpm-ostree bugs, but we no longer need those.
 	return nil
 }
 
