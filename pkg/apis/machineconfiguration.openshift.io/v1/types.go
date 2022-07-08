@@ -75,6 +75,9 @@ type ControllerConfigSpec struct {
 	// BaseOperatingSystemContainer is the new-format container image for operating system updates.
 	BaseOperatingSystemContainer string `json:"baseOperatingSystemContainer"`
 
+	// BaseOperatingSystemExtensionsContainer is the matching extensions container for the new-format container
+	BaseOperatingSystemExtensionsContainer string `json:"baseOperatingSystemExtensionsContainer"`
+
 	// OSImageURL is the old-format container image that contains the OS update payload.
 	OSImageURL string `json:"osImageURL"`
 
