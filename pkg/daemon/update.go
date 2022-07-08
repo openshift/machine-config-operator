@@ -1962,6 +1962,22 @@ PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
 	return logger.CombinedOutput()
 }
 
+// Synchronously invoke a command, writing its stdout to our stdout,
+// and gathering stderr into a buffer which will be returned in err
+// in case of error.
+func runCmdSync(cmdName string, args ...string) error {
+	glog.Infof("Running: %s %s", cmdName, strings.Join(args, " "))
+	cmd := exec.Command(cmdName, args...)
+	var stderr bytes.Buffer
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("error running %s %s: %s: %w", cmdName, strings.Join(args, " "), string(stderr.Bytes()), err)
+	}
+
+	return nil
+}
+
 // Log a message to the systemd journal as well as our stdout
 func (dn *Daemon) logSystem(format string, a ...interface{}) {
 	message := fmt.Sprintf(format, a...)
