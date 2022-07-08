@@ -75,6 +75,9 @@ type ControllerConfigSpec struct {
 	// BaseOperatingSystemContainer is the new-format container image for operating system updates.
 	BaseOperatingSystemContainer string `json:"baseOperatingSystemContainer"`
 
+	// BaseOperatingSystemExtensionsContainer is the matching extensions container for the new-format container
+	BaseOperatingSystemExtensionsContainer string `json:"baseOperatingSystemExtensionsContainer"`
+
 	// OSImageURL is the old-format container image that contains the OS update payload.
 	OSImageURL string `json:"osImageURL"`
 
@@ -197,6 +200,14 @@ type MachineConfigSpec struct {
 	// OSImageURL specifies the remote location that will be used to
 	// fetch the OS.
 	OSImageURL string `json:"osImageURL"`
+
+	// BaseOperatingSystemContainer specifies the remote location that will be used
+	// to fetch the new-format OS image
+	BaseOperatingSystemContainer string `json:"baseOperatingSystemContainer"`
+	// BaseOperatingSystemExtensionContainer specifies the remote location that will be used
+	// to fetch the extensions container matching the new-format OS image
+	BaseOperatingSystemExtensionsContainer string `json:"baseOperatingSystemExtensionsContainer"`
+
 	// Config is a Ignition Config object.
 	Config runtime.RawExtension `json:"config"`
 

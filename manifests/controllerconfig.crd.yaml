@@ -922,6 +922,10 @@ spec:
                 description: baseOperatingSystemContainer is the new format operating system update image.
                   See https://github.com/openshift/enhancements/pull/1032
                 type: string
+              baseOperatingSystemExtensionsContainer:
+                description: baseOperatingSystemExtensionsContainer is the extensions container matching new format operating system update image.
+                  See https://github.com/openshift/enhancements/pull/1032
+                type: string
               platform:
                 description: platform is deprecated, use Infra.Status.PlatformStatus.Type
                   instead

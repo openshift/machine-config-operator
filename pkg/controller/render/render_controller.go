@@ -558,7 +558,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		}
 	}
 
-	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig.Spec.OSImageURL)
+	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig)
 	if err != nil {
 		return nil, err
 	}

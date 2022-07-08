@@ -339,3 +339,11 @@ spec:
                 description: OSImageURL specifies the remote location that will be used
                   to fetch the OS
                 type: string
+              baseOperatingSystemContainer:
+                description: baseOperatingSystemContainer specifies the remote location that will be used
+                  to fetch the new-format OS image
+                type: string
+              baseOperatingSystemExtensionsContainer:
+                description: baseOperatingSystemExtensionContainer specifies the remote location that will be used
+                  to fetch the extensions container matching the new-format OS image
+                type: string

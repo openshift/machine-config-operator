@@ -47,6 +47,8 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {
 	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
 	resourcemerge.SetStringIfSet(modified, &existing.KernelType, required.KernelType)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOperatingSystemContainer, required.BaseOperatingSystemContainer)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOperatingSystemExtensionsContainer, required.BaseOperatingSystemExtensionsContainer)
 
 	if !equality.Semantic.DeepEqual(existing.KernelArguments, required.KernelArguments) {
 		*modified = true
@@ -72,6 +74,8 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	resourcemerge.SetStringIfSet(modified, &existing.Platform, required.Platform)
 	resourcemerge.SetStringIfSet(modified, &existing.EtcdDiscoveryDomain, required.EtcdDiscoveryDomain)
 	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOperatingSystemContainer, required.BaseOperatingSystemContainer)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOperatingSystemExtensionsContainer, required.BaseOperatingSystemExtensionsContainer)
 	resourcemerge.SetStringIfSet(modified, &existing.NetworkType, required.NetworkType)
 
 	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)

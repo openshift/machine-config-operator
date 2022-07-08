@@ -55,7 +55,7 @@ func strToPtr(s string) *string {
 // It uses the Ignition config from first object as base and appends all the rest.
 // Kernel arguments are concatenated.
 // It uses only the OSImageURL provided by the CVO and ignores any MC provided OSImageURL.
-func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*mcfgv1.MachineConfig, error) {
+func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	if len(configs) == 0 {
 		return nil, nil
 	}
@@ -127,7 +127,11 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 
 	return &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:      osImageURL,
+			// TODO(jkyros): for the cconfig fields, sure seems to me like this is just a hacky way to attach these to the pool
+			OSImageURL:                             cconfig.Spec.OSImageURL,
+			BaseOperatingSystemContainer:           cconfig.Spec.BaseOperatingSystemContainer,
+			BaseOperatingSystemExtensionsContainer: cconfig.Spec.BaseOperatingSystemExtensionsContainer,
+
 			KernelArguments: kargs,
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
