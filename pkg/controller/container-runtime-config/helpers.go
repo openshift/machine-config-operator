@@ -654,3 +654,124 @@ func validateRegistriesConfScopes(insecure, blocked, allowed []string, icspRules
 	}
 	return nil
 }
+
+var CreatedICSPLabelKey = "operator.machineconfiguration.containerruntime"
+
+func idmsRulesLists(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet) (map[string]*apicfgv1.ImageDigestMirrorSet, map[string]*apicfgv1.ImageDigestMirrorSet, map[string]*apicfgv1.ImageDigestMirrorSet) {
+
+	idmsRulesDel := make(map[string]*apicfgv1.ImageDigestMirrorSet)
+	idmsUpdateFromICSP := make(map[string]*apicfgv1.ImageDigestMirrorSet)
+	idmsCreateFromICSP := make(map[string]*apicfgv1.ImageDigestMirrorSet)
+
+	icspNames := make(map[string]*apicfgv1.ImageDigestMirrorSet)
+	for _, icsp := range icspRules {
+		idms := convertICSPToIDMS(icsp)
+		icspNames[icsp.Name] = idms
+	}
+	for _, idms := range idmsRules {
+		if _, ok := idms.Labels[CreatedICSPLabelKey]; !ok {
+			continue
+		}
+		if idmsfromicsp, ok := icspNames[idms.Name]; ok {
+			// if idmsfromicsp.ResourceVersion != "" {
+			// idms was created from icsp, icsp maight be updated
+			v := idms.GetResourceVersion()
+			idmsfromicsp.SetResourceVersion(v)
+			idmsUpdateFromICSP[idms.Name] = idmsfromicsp
+			// }
+			continue
+		}
+
+		idmsRulesDel[idms.Name] = idms
+
+		// idmsRulesLeft = append(idmsRulesLeft, idms)
+	}
+	//create idms from icsp, if the icsp is not in the idmsRulesDel and idmsUpdateFromICSP
+	for icspname, idms := range icspNames {
+		if _, isUpdate := idmsUpdateFromICSP[icspname]; isUpdate {
+			continue
+		}
+		if _, isDel := idmsRulesDel[icspname]; isDel {
+			continue
+		}
+		idmsCreateFromICSP[icspname] = idms
+
+	}
+
+	return idmsUpdateFromICSP, idmsCreateFromICSP, idmsRulesDel
+}
+
+// convertICSPtoIDMS creates idmsRules of type ImageDigestMirrorSet using icspRules
+func convertICSPRulestoIDMSRules(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) []*apicfgv1.ImageDigestMirrorSet {
+	idmsRules := []*apicfgv1.ImageDigestMirrorSet{}
+	if len(icspRules) == 0 {
+		return idmsRules
+	}
+
+	for _, icsp := range icspRules {
+		var imageDigestMirrors []apicfgv1.ImageDigestMirrors
+
+		for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
+			var mirrors []apicfgv1.ImageMirror
+			for _, mirror := range mirrorSet.Mirrors {
+				mirrors = append(mirrors, apicfgv1.ImageMirror(mirror))
+			}
+			imageDigestMirror := apicfgv1.ImageDigestMirrors{
+				Source:  mirrorSet.Source,
+				Mirrors: mirrors,
+			}
+			imageDigestMirrors = append(imageDigestMirrors, imageDigestMirror)
+		}
+		if len(icsp.Labels) == 0 {
+			icsp.Labels = map[string]string{CreatedICSPLabelKey: "true"}
+		} else {
+			icsp.Labels[CreatedICSPLabelKey] = "true"
+		}
+		idmsRule := &apicfgv1.ImageDigestMirrorSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            icsp.Name,
+				Labels:          icsp.Labels,
+				ResourceVersion: icsp.ResourceVersion,
+			},
+			Spec: apicfgv1.ImageDigestMirrorSetSpec{
+				ImageDigestMirrors: imageDigestMirrors,
+			},
+		}
+		idmsRules = append(idmsRules, idmsRule)
+	}
+
+	return idmsRules
+}
+
+func convertICSPToIDMS(icsp *apioperatorsv1alpha1.ImageContentSourcePolicy) *apicfgv1.ImageDigestMirrorSet {
+	var imageDigestMirrors []apicfgv1.ImageDigestMirrors
+
+	for _, mirrorSet := range icsp.Spec.RepositoryDigestMirrors {
+		var mirrors []apicfgv1.ImageMirror
+		for _, mirror := range mirrorSet.Mirrors {
+			mirrors = append(mirrors, apicfgv1.ImageMirror(mirror))
+		}
+		imageDigestMirror := apicfgv1.ImageDigestMirrors{
+			Source:  mirrorSet.Source,
+			Mirrors: mirrors,
+		}
+		imageDigestMirrors = append(imageDigestMirrors, imageDigestMirror)
+	}
+	if len(icsp.Labels) == 0 {
+		icsp.Labels = map[string]string{CreatedICSPLabelKey: "true"}
+	} else {
+		icsp.Labels[CreatedICSPLabelKey] = "true"
+	}
+	idmsRule := &apicfgv1.ImageDigestMirrorSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   icsp.Name,
+			Labels: icsp.Labels,
+			// ResourceVersion: icsp.ResourceVersion,
+		},
+		Spec: apicfgv1.ImageDigestMirrorSetSpec{
+			ImageDigestMirrors: imageDigestMirrors,
+		},
+	}
+	return idmsRule
+}

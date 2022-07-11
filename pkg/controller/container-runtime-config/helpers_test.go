@@ -17,6 +17,7 @@ import (
 	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 )
 
@@ -609,5 +610,82 @@ func TestGetValidBlockAndAllowedRegistries(t *testing.T) {
 			require.Equal(t, tt.expectedPolicyBlocked, gotPolicy)
 			require.Equal(t, tt.expectedAllowed, gotAllowed)
 		})
+	}
+}
+
+func TestConvertICSPtoIDMS(t *testing.T) {
+	for _, tc := range []struct {
+		icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		idmsRules []*apicfgv1.ImageDigestMirrorSet
+		expected  []*apicfgv1.ImageDigestMirrorSet
+	}{
+		{
+			// convert icsp rules to apicfgv1.ImageDigestMirrorSet, expect idmsRules
+			// no existing idms
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "icsp-0",
+					},
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "registry-a.com/ns-a", Mirrors: []string{"mirror-a-1.com/ns-a", "mirror-a-2.com/ns-a"}},
+							{Source: "registry-b/ns-b/ns1-b", Mirrors: []string{"mirror-b-1.com/ns-b", "mirror-b-2.com/ns-b"}},
+							{Source: "registry-c/ns-c", Mirrors: []string{"mirror-c-1.com/ns-c", "mirror-c-2.com/ns-c/ns1-c", "mirror-c-3.com/ns-c/ns1-c"}},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "icsp-1",
+					},
+					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+							{Source: "other.com/ns-o3", Mirrors: []string{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{},
+			expected: []*apicfgv1.ImageDigestMirrorSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "icsp-0",
+						Labels: map[string]string{CreatedICSPLabelKey: "true"},
+					},
+
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "registry-a.com/ns-a", Mirrors: []apicfgv1.ImageMirror{"mirror-a-1.com/ns-a", "mirror-a-2.com/ns-a"}},
+							{Source: "registry-b/ns-b/ns1-b", Mirrors: []apicfgv1.ImageMirror{"mirror-b-1.com/ns-b", "mirror-b-2.com/ns-b"}},
+							{Source: "registry-c/ns-c", Mirrors: []apicfgv1.ImageMirror{"mirror-c-1.com/ns-c", "mirror-c-2.com/ns-c/ns1-c", "mirror-c-3.com/ns-c/ns1-c"}},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "icsp-1",
+						Labels: map[string]string{CreatedICSPLabelKey: "true"},
+					},
+
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "other.com/ns-o3", Mirrors: []apicfgv1.ImageMirror{"insecure.com/ns-i2", "blocked.com/ns-b/ns3-b", "foo.insecure-example.com/bar"}},
+						},
+					},
+				},
+			},
+		},
+		{
+			// no existing icspRules
+			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{},
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{},
+			expected:  []*apicfgv1.ImageDigestMirrorSet{},
+		},
+	} {
+		res := convertICSPtoIDMS(tc.icspRules)
+		if !reflect.DeepEqual(res, tc.expected) {
+			t.Errorf("mergeICSPtoIDMS Diff:\n %s", diff.ObjectGoPrintDiff(tc.expected, res))
+		}
 	}
 }

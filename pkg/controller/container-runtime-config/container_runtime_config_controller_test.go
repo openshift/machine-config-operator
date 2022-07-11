@@ -187,6 +187,7 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		ci.Config().V1().Images(),
+		ci.Config().V1().ImageDigestMirrorSets(),
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
 		k8sfake.NewSimpleClientset(), f.client, f.imgClient)

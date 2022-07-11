@@ -91,6 +91,9 @@ type Controller struct {
 	icspLister       operatorlistersv1alpha1.ImageContentSourcePolicyLister
 	icspListerSynced cache.InformerSynced
 
+	idmsLister       cligolistersv1.ImageDigestMirrorSetLister
+	idmsListerSynced cache.InformerSynced
+
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
@@ -108,6 +111,7 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
+	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
@@ -145,6 +149,12 @@ func New(
 		DeleteFunc: ctrl.icspConfDeleted,
 	})
 
+	idmsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.idmsConfAdded,
+		UpdateFunc: ctrl.idmsConfUpdated,
+		DeleteFunc: ctrl.idmsConfDeleted,
+	})
+
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
@@ -164,6 +174,9 @@ func New(
 	ctrl.icspLister = icspInformer.Lister()
 	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
 
+	ctrl.idmsLister = idmsInformer.Lister()
+	ctrl.idmsListerSynced = idmsInformer.Informer().HasSynced
+
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
@@ -177,7 +190,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.imgQueue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.clusterVersionListerSynced) {
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -225,6 +238,18 @@ func (ctrl *Controller) icspConfUpdated(oldObj, newObj interface{}) {
 }
 
 func (ctrl *Controller) icspConfDeleted(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) idmsConfAdded(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) idmsConfUpdated(oldObj, newObj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) idmsConfDeleted(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -688,6 +713,15 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		return err
 	}
 
+	idmsRules, err := ctrl.idmsLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		idmsRules = []*apicfgv1.ImageDigestMirrorSet{}
+	} else if err != nil {
+		return err
+	}
+
+	ctrl.migrateICSPtoIDMS(icspRules, idmsRules)
+
 	var (
 		registriesBlocked, policyBlocked, allowedRegs []string
 		releaseImage                                  string
@@ -791,6 +825,36 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	}
 
 	return nil
+}
+
+func (ctrl *Controller) migrateICSPtoIDMS(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet) {
+	idmsRulesUpdateFromICSP, idmsRulesCreateFromICSP, idmsRulesDel := idmsRulesLists(icspRules, idmsRules)
+	// delete idms if the corresponding icsp has been deleted
+	for _, idms := range idmsRulesDel {
+		glog.Info("calling deleting: ", idms.Name)
+		if err := ctrl.configClient.ConfigV1().ImageDigestMirrorSets().Delete(context.TODO(), idms.Name, metav1.DeleteOptions{}); err != nil {
+			glog.Infof("error deleting idms: %v\n", err)
+		}
+
+	}
+
+	for _, idms := range idmsRulesUpdateFromICSP {
+		glog.Info("Calling update idms: ", idms.Name)
+		if _, err := ctrl.configClient.ConfigV1().ImageDigestMirrorSets().Update(context.TODO(), idms, metav1.UpdateOptions{}); err != nil {
+			glog.Infof("error while updating object: %v\n", err)
+		}
+	}
+
+	// create idms from existing icsp
+	for _, idms := range idmsRulesCreateFromICSP {
+		glog.Info("Calling create idms: ", idms.Name)
+		resp, err := ctrl.configClient.ConfigV1().ImageDigestMirrorSets().Create(context.TODO(), idms, metav1.CreateOptions{})
+		if err != nil && !errors.IsAlreadyExists(err) {
+			glog.Infof("error while creating object: %v\n", err)
+		} else {
+			glog.Infof("object created: %v\n", resp)
+		}
+	}
 }
 
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
