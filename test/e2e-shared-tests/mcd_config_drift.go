@@ -151,7 +151,7 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 		[]ign3types.SSHAuthorizedKey{},
 		[]string{},
 		false,
-		[]string{"foo=bar", "foo=baz"},
+		[]string{},
 		"",
 		"",
 	)
@@ -164,12 +164,6 @@ func (c configDriftTest) Teardown(t *testing.T) {
 
 // Runs the Config Drift Test
 func (c configDriftTest) Run(t *testing.T) {
-	// Get our kernel args for future verification
-	kargs := getKernelArgs(t, c.ClientSet, c.node)
-
-	// Check that we have our kernel args pre-test
-	assertKernelArgsEqual(t, c.ClientSet, c.node, kargs, c.mc.Spec.KernelArguments)
-
 	testCases := []struct {
 		name           string
 		rebootExpected bool
@@ -237,9 +231,6 @@ func (c configDriftTest) Run(t *testing.T) {
 			waitForConfigDriftMonitorStart(t, c.ClientSet, c.node)
 
 			testCase.testFunc(t)
-
-			// Ensure that we have our kernel args post-test
-			assertKernelArgsEqual(t, c.ClientSet, c.node, kargs, c.mc.Spec.KernelArguments)
 
 			// Verify our reboot expectations
 			if testCase.rebootExpected {
