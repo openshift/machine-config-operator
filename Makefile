@@ -54,6 +54,7 @@ test-unit:
 #    make update
 update:
 	hack/update-codegen.sh
+	hack/update-templates.sh
 
 go-deps:
 	go mod tidy
@@ -72,6 +73,7 @@ install-tools:
 verify: install-tools
 	golangci-lint run --build-tags=$(GOTAGS)
 	hack/verify-codegen.sh
+	hack/verify-templates.sh
 
 # Template for defining build targets for binaries.
 define target_template =

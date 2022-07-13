@@ -1,3 +1,4 @@
+//go:build tools
 // +build tools
 
 // tools is a dummy package that will be ignored for builds, but included for dependencies.
@@ -13,6 +14,9 @@ import (
 	_ "k8s.io/code-generator/cmd/defaulter-gen"
 	_ "k8s.io/code-generator/cmd/informer-gen"
 	_ "k8s.io/code-generator/cmd/lister-gen"
+
 	// TODO: Investigate openapi-gen
 	// _ "k8s.io/code-generator/cmd/openapi-gen"
+
+	_ "github.com/containers/kubensmnt/utils/systemd"
 )
