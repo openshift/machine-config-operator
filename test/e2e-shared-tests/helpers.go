@@ -12,7 +12,6 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kubeErrs "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -20,22 +19,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-func assertKernelArgsEqual(t *testing.T, cs *framework.ClientSet, target corev1.Node, startKargs string, expectedKargs []string) {
-	t.Helper()
-
-	kargs := getKernelArgs(t, cs, target)
-
-	for _, karg := range expectedKargs {
-		assert.Contains(t, kargs, karg, "Missing karg %s", karg)
-	}
-
-	assert.Equal(t, kargs, startKargs)
-}
-
-func getKernelArgs(t *testing.T, cs *framework.ClientSet, target corev1.Node) string {
-	return helpers.ExecCmdOnNode(t, cs, target, "cat", "/proc/cmdline")
-}
 
 func waitForConfigDriftMonitorStart(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
 	t.Helper()

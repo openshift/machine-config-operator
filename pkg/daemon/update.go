@@ -720,6 +720,20 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 	return nil
 }
 
+// removeRollback removes the rpm-ostree rollback deployment.
+// It takes up space and can cause issues when /boot contains multiple
+// initramfs images: https://bugzilla.redhat.com/show_bug.cgi?id=2104619.
+// We don't generally expect administrators to use this versus e.g. removing
+// broken configuration. We only remove the rollback once the MCD pod has
+// landed on a node, so we know kubelet is working.
+func (dn *Daemon) removeRollback() error {
+	if !dn.os.IsCoreOSVariant() {
+		// do not attempt to rollback on non-RHCOS/FCOS machines
+		return nil
+	}
+	return runRpmOstree("cleanup", "-r")
+}
+
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
 // At some point this may change into holding just the files/units that changed
 // and the MCO would just operate on that.  For now we're just doing this to get
