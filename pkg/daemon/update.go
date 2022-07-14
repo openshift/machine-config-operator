@@ -1796,6 +1796,15 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 	// Once Users are supported fully this should be writing to PasswdUser.HomeDir
 	glog.Infof("Writing SSHKeys at %q", authKeyPath)
 
+	// Creating coreUserSSHPath in advance if it doesn't exist in order to ensure it is owned by core user
+	// See https://bugzilla.redhat.com/show_bug.cgi?id=2107113
+	if _, err := os.Stat(coreUserSSHPath); os.IsNotExist(err) {
+		mkdirCoreCommand := exec.Command("runuser", "-u", constants.CoreUserName, "--", "mkdir", "-m", "0700", "-p", coreUserSSHPath)
+		if err := mkdirCoreCommand.Run(); err != nil {
+			return err
+		}
+	}
+
 	if err := writeFileAtomically(authKeyPath, []byte(keys), os.FileMode(0o700), os.FileMode(0o600), uid, gid); err != nil {
 		return err
 	}
