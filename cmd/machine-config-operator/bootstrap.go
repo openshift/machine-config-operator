@@ -23,29 +23,31 @@ var (
 	}
 
 	bootstrapOpts struct {
-		baremetalRuntimeCfgImage  string
-		cloudConfigFile           string
-		configFile                string
-		cloudProviderCAFile       string
-		corednsImage              string
-		destinationDir            string
-		haproxyImage              string
-		imagesConfigMapFile       string
-		infraConfigFile           string
-		infraImage                string
-		releaseImage              string
-		keepalivedImage           string
-		kubeCAFile                string
-		mcoImage                  string
-		oauthProxyImage           string
-		networkConfigFile         string
-		oscontentImage            string
-		pullSecretFile            string
-		rootCAFile                string
-		proxyConfigFile           string
-		additionalTrustBundleFile string
-		dnsConfigFile             string
-		imageReferences           string
+		baremetalRuntimeCfgImage               string
+		cloudConfigFile                        string
+		configFile                             string
+		cloudProviderCAFile                    string
+		corednsImage                           string
+		destinationDir                         string
+		haproxyImage                           string
+		imagesConfigMapFile                    string
+		infraConfigFile                        string
+		infraImage                             string
+		releaseImage                           string
+		keepalivedImage                        string
+		kubeCAFile                             string
+		mcoImage                               string
+		oauthProxyImage                        string
+		networkConfigFile                      string
+		oscontentImage                         string
+		pullSecretFile                         string
+		rootCAFile                             string
+		proxyConfigFile                        string
+		additionalTrustBundleFile              string
+		dnsConfigFile                          string
+		imageReferences                        string
+		baseOperatingSystemContainer           string
+		baseOperatingSystemExtensionsContainer string
 	}
 )
 
@@ -127,16 +129,26 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.oauthProxyImage = findImageOrDie(imgstream, "oauth-proxy")
 		bootstrapOpts.infraImage = findImageOrDie(imgstream, "pod")
 		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
+		bootstrapOpts.baseOperatingSystemContainer, err = findImage(imgstream, "rhel-coreos-8")
+		if err != nil {
+			glog.Warningf("Base OS container not found: %s", err)
+		}
+		bootstrapOpts.baseOperatingSystemExtensionsContainer, err = findImage(imgstream, "rhel-coreos-8-extensions")
+		if err != nil {
+			glog.Warningf("Base OS extensions container not found: %s", err)
+		}
 	}
 
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{
-			MachineConfigOperator:        bootstrapOpts.mcoImage,
-			MachineOSContent:             bootstrapOpts.oscontentImage,
-			KeepalivedBootstrap:          bootstrapOpts.keepalivedImage,
-			CorednsBootstrap:             bootstrapOpts.corednsImage,
-			BaremetalRuntimeCfgBootstrap: bootstrapOpts.baremetalRuntimeCfgImage,
-			OauthProxy:                   bootstrapOpts.oauthProxyImage,
+			MachineConfigOperator:                  bootstrapOpts.mcoImage,
+			MachineOSContent:                       bootstrapOpts.oscontentImage,
+			KeepalivedBootstrap:                    bootstrapOpts.keepalivedImage,
+			CorednsBootstrap:                       bootstrapOpts.corednsImage,
+			BaremetalRuntimeCfgBootstrap:           bootstrapOpts.baremetalRuntimeCfgImage,
+			OauthProxy:                             bootstrapOpts.oauthProxyImage,
+			BaseOperatingSystemContainer:           bootstrapOpts.baseOperatingSystemContainer,
+			BaseOperatingSystemExtensionsContainer: bootstrapOpts.baseOperatingSystemExtensionsContainer,
 		},
 		ControllerConfigImages: operator.ControllerConfigImages{
 			InfraImage:          bootstrapOpts.infraImage,
