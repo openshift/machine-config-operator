@@ -883,6 +883,7 @@ func (optr *Operator) getOsImageURLs(namespace string) (string, string, string, 
 
 	if hasNewFormat && !hasNewExtensions {
 		// TODO(jkyros): This is okay for now because it's not required, but someday this will be bad
+		glog.Warningf("New format image specified, but no matchine extensions image present")
 	}
 
 	// If we don't have a new format image, and we can't fall back to the old one
