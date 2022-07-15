@@ -34,8 +34,8 @@ contents: |
 {{- end}}
         --address=${KUBELET_NODE_IP} \
         --minimum-container-ttl-duration=6m0s \
-        --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \

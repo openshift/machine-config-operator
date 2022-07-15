@@ -36,8 +36,8 @@ contents: |
         --node-ip=${KUBELET_NODE_IP} \
 {{- end}}
         --minimum-container-ttl-duration=6m0s \
-        --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
         --hostname-override=${KUBELET_NODE_NAME} \
         --provider-id=${KUBELET_PROVIDERID} \

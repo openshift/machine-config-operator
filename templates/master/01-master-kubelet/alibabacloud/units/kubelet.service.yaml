@@ -36,8 +36,8 @@ contents: |
         --node-ip=${KUBELET_NODE_IP} \
 {{- end}}
         --minimum-container-ttl-duration=6m0s \
-        --cloud-provider={{cloudProvider .}} \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
+        --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
         --provider-id=alicloud://${KUBELET_NODE_NAME} \
         --register-with-taints=node-role.kubernetes.io/master=:NoSchedule \
