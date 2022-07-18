@@ -63,6 +63,7 @@ type NodeUpdaterClient interface {
 	Initialize() error
 	GetStatus() (string, error)
 	GetBootedOSImageURL() (string, string, error)
+	CleanupRollback() error
 	Rebase(string, string) (bool, error)
 	GetBootedDeployment() (*RpmOstreeDeployment, error)
 }
@@ -160,6 +161,16 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// CleanupRollback removes the rpm-ostree rollback deployment.
+// It takes up space and can cause issues when /boot contains multiple
+// initramfs images: https://bugzilla.redhat.com/show_bug.cgi?id=2104619.
+// We don't generally expect administrators to use this versus e.g. removing
+// broken configuration. We only remove the rollback once the MCD pod has
+// landed on a node, so we know kubelet is working.
+func (r *RpmOstreeClient) CleanupRollback() error {
+	return runRpmOstree("cleanup", "-r")
 }
 
 // GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)

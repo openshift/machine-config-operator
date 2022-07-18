@@ -372,6 +372,9 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 	// Update OS
 	if mcDiff.osUpdate {
+		if err := dn.NodeUpdaterClient.CleanupRollback(); err != nil {
+			return err
+		}
 		if err := updateOS(newConfig, osImageContentDir); err != nil {
 			nodeName := ""
 			if dn.node != nil {
@@ -718,20 +721,6 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 
 	glog.Info("Successfully completed Hypershift config update")
 	return nil
-}
-
-// removeRollback removes the rpm-ostree rollback deployment.
-// It takes up space and can cause issues when /boot contains multiple
-// initramfs images: https://bugzilla.redhat.com/show_bug.cgi?id=2104619.
-// We don't generally expect administrators to use this versus e.g. removing
-// broken configuration. We only remove the rollback once the MCD pod has
-// landed on a node, so we know kubelet is working.
-func (dn *Daemon) removeRollback() error {
-	if !dn.os.IsCoreOSVariant() {
-		// do not attempt to rollback on non-RHCOS/FCOS machines
-		return nil
-	}
-	return runRpmOstree("cleanup", "-r")
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
