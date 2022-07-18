@@ -90,6 +90,7 @@ contents:
 
         nmcli conn mod uuid $new_uuid connection.master "$new"
         nmcli conn mod $new_uuid connection.autoconnect-priority 100
+        nmcli conn mod $new_uuid connection.autoconnect no
         echo "Replaced master $old with $new for slave profile $new_uuid"
       done
     }
@@ -185,6 +186,11 @@ contents:
         bond_opts=$(nmcli --get-values bond.options conn show ${old_conn})
         if [ -n "$bond_opts" ]; then
           extra_phys_args+=( bond.options "${bond_opts}" )
+          MODE_REGEX="(^|,)mode=active-backup(,|$)"
+          MAC_REGEX="(^|,)fail_over_mac=(1|active|2|follow)(,|$)"
+          if [[ $bond_opts =~ $MODE_REGEX ]] && [[ $bond_opts =~ $MAC_REGEX ]]; then
+            clone_mac=0
+          fi
         fi
       elif [ $(nmcli --get-values connection.type conn show ${old_conn}) == "team" ]; then
         iface_type=team
@@ -193,21 +199,41 @@ contents:
         if [ -n "$team_config_opts" ]; then
           # team.config is json, remove spaces to avoid problems later on
           extra_phys_args+=( team.config "${team_config_opts//[[:space:]]/}" )
+          team_mode=$(echo "${team_config_opts}" | jq -r ".runner.name // empty")
+          team_mac_policy=$(echo "${team_config_opts}" | jq -r ".runner.hwaddr_policy // empty")
+          MAC_REGEX="(by_active|only_active)"
+          if [ "$team_mode" = "activebackup" ] && [[ "$team_mac_policy" =~ $MAC_REGEX ]]; then
+            clone_mac=0
+          fi
         fi
       else
         iface_type=802-3-ethernet
+      fi
+
+      if [ ! "${clone_mac:-}" = "0" ]; then
+        # In active-backup link aggregation, with fail_over_mac mode enabled,
+        # cloning the mac address is not supported. It is possible then that
+        # br-ex has a different mac address than the bond which might be
+        # troublesome on some platforms where the nic won't accept packets with
+        # a different destination mac. But nobody has complained so far so go on
+        # with what we got. 
+        
+        # Do set it though for other link aggregation configurations where the
+        # mac address would otherwise depend on enslave order for which we have
+        # no control going forward.
+        extra_phys_args+=( 802-3-ethernet.cloned-mac-address "${iface_mac}" )
       fi
 
       # use ${extra_phys_args[@]+"${extra_phys_args[@]}"} instead of ${extra_phys_args[@]} to be compatible with bash 4.2 in RHEL7.9
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
         add_nm_conn type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
-        connection.autoconnect-priority 100 connection.autoconnect-slaves 1 802-3-ethernet.mtu ${iface_mtu} \
-        ${extra_phys_args[@]+"${extra_phys_args[@]}"}
+        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
-      # Get the new connection uuid
+      # Get the new connection uuids
       new_conn=$(nmcli -g connection.uuid conn show "$bridge_interface_name")
+      ovs_port_conn=$(nmcli -g connection.uuid conn show "$ovs_port")
 
       # Update connections with master property set to use the new connection
       replace_connection_master $old_conn $new_conn
@@ -217,69 +243,35 @@ contents:
         ovs-vsctl --timeout=30 --if-exists destroy interface "$bridge_name"
         if nmcli --fields ipv4.method,ipv6.method conn show $old_conn | grep manual; then
           echo "Static IP addressing detected on default gateway connection: ${old_conn}"
-          # find and copy the old connection to get the address settings
-          if egrep -l "^uuid=$old_conn" ${NM_CONN_PATH}/*; then
-            old_conn_file=$(egrep -l "^uuid=$old_conn" ${NM_CONN_PATH}/*)
-            cloned=false
-          else
-            echo "WARN: unable to find NM configuration file for conn: ${old_conn}. Attempting to clone conn"
-            nmcli conn clone ${old_conn} ${old_conn}-clone
-            shopt -s nullglob
-            old_conn_files=(${NM_CONN_PATH}/"${old_conn}"-clone*)
-            shopt -u nullglob
-            if [ ${#old_conn_files[@]} -ne 1 ]; then
-              echo "ERROR: unable to locate cloned conn file for ${old_conn}-clone"
-              exit 1
-            fi
-            old_conn_file="${old_conn_files[0]}"
-            cloned=true
-            echo "Successfully cloned conn to ${old_conn_file}"
+          # clone the old connection to get the address settings
+          # prefer cloning vs copying the connection file to avoid problems with selinux
+          nmcli conn clone "${old_conn}" "${ovs_interface}"
+          shopt -s nullglob
+          new_conn_files=(${NM_CONN_PATH}/"${ovs_interface}"*)
+          shopt -u nullglob
+          if [ ${#new_conn_files[@]} -ne 1 ] || [ ! -f "${new_conn_files[0]}" ]; then
+            echo "ERROR: could not find ${ovs_interface} conn file after cloning from ${old_conn}"
+            exit 1
           fi
-          echo "old connection file found at: ${old_conn_file}"
-          old_basename=$(basename "${old_conn_file}" .nmconnection)
-          new_conn_file="${old_conn_file/${NM_CONN_PATH}\/$old_basename/${NM_CONN_PATH}/$ovs_interface}"
-          if [ -f "$new_conn_file" ]; then
-            echo "WARN: existing $bridge_name interface file found: $new_conn_file, which is not loaded in NetworkManager...overwriting"
-          fi
-          cp -f "${old_conn_file}" ${new_conn_file}
-          restorecon ${new_conn_file}
-          if $cloned; then
-            nmcli conn delete ${old_conn}-clone
-            rm -f "${old_conn_file}"
-          fi
-          ovs_port_conn=$(nmcli --fields connection.uuid conn show "$ovs_port" | awk '{print $2}')
-          br_iface_uuid=$(cat /proc/sys/kernel/random/uuid)
-          # modify file to work with OVS and have unique settings
-          sed -i '/^\[connection\]$/,/^\[/ s/^uuid=.*$/uuid='"$br_iface_uuid"'/' ${new_conn_file}
+          new_conn_file="${new_conn_files[0]}"
+
+          # modify basic connection settings, some of which can't be modified through nmcli
           sed -i '/^multi-connect=.*$/d' ${new_conn_file}
           sed -i '/^autoconnect=.*$/d' ${new_conn_file}
           sed -i '/^\[connection\]$/a autoconnect=false' ${new_conn_file}
           sed -i '/^\[connection\]$/,/^\[/ s/^type=.*$/type=ovs-interface/' ${new_conn_file}
-          sed -i '/^\[connection\]$/,/^\[/ s/^id=.*$/id='"$ovs_interface"'/' ${new_conn_file}
           sed -i '/^\[connection\]$/a slave-type=ovs-port' ${new_conn_file}
           sed -i '/^\[connection\]$/a master='"$ovs_port_conn" ${new_conn_file}
-          if grep 'interface-name=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[connection\]$/,/^\[/ s/^interface-name=.*$/interface-name='"$bridge_name"'/' ${new_conn_file}
-          else
-            sed -i '/^\[connection\]$/a interface-name='"$bridge_name" ${new_conn_file}
-          fi
-          if ! grep 'cloned-mac-address=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[ethernet\]$/a cloned-mac-address='"$iface_mac" ${new_conn_file}
-          else
-            sed -i '/^\[ethernet\]$/,/^\[/ s/^cloned-mac-address=.*$/cloned-mac-address='"$iface_mac"'/' ${new_conn_file}
-          fi
-          if grep 'mtu=' ${new_conn_file} &> /dev/null; then
-            sed -i '/^\[ethernet\]$/,/^\[/ s/^mtu=.*$/mtu='"$iface_mtu"'/' ${new_conn_file}
-          else
-            sed -i '/^\[ethernet\]$/a mtu='"$iface_mtu" ${new_conn_file}
-          fi
           cat <<EOF >> ${new_conn_file}
     [ovs-interface]
     type=internal
     EOF
+
+          # reload the connection and modify some more settings through nmcli
           nmcli c load ${new_conn_file}
-          # Set interface metric in the static route case. For the DHCP route case, see below.
-          nmcli c mod "${ovs_interface}" ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}"
+          nmcli c mod "${ovs_interface}" conn.interface "$bridge_name" \
+            802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
+            ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}"
           echo "Loaded new $ovs_interface connection file: ${new_conn_file}"
         else
           extra_if_brex_args=""
@@ -312,7 +304,7 @@ contents:
             extra_if_brex_args+="ipv6.addr-gen-mode ${ipv6_addr_gen_mode} "
           fi
 
-          add_nm_conn type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port" con-name \
+          add_nm_conn type ovs-interface slave-type ovs-port conn.interface "$bridge_name" master "$ovs_port_conn" con-name \
             "$ovs_interface" 802-3-ethernet.mtu ${iface_mtu} 802-3-ethernet.cloned-mac-address ${iface_mac} \
             ipv4.route-metric "${bridge_metric}" ipv6.route-metric "${bridge_metric}" ${extra_if_brex_args}
         fi
@@ -420,26 +412,45 @@ contents:
       nmcli c add "$@" connection.autoconnect no
     }
 
-    # Activates a NM connection profile
-    activate_nm_conn() {
-      local conn="$1"
-      local active_state="$(nmcli -g GENERAL.STATE conn show $conn)"
-      if [ "$active_state" != "activated" ]; then
-        for i in {1..10}; do
-          echo "Attempt $i to bring up connection $conn"
-          nmcli conn up "$conn" && s=0 && break || s=$?
-          sleep 5
-        done
-        if [ $s -eq 0 ]; then
-          echo "Brought up connection $conn successfully"
-        else
-          echo "ERROR: Cannot bring up connection $conn after $i attempts"
-          return $s
+    # Activates an ordered set of NM connection profiles
+    activate_nm_connections() {
+      local connections=("$@")
+      
+      # make sure to set bond or team slaves autoconnect, otherwise as we
+      # activate one slave, the other slave might get implicitly re-activated
+      # with the old profile, activating the old master, interfering and
+      # causing the former activation to fail.
+      # we don't want to set autoconnect on all the other profiles just yet
+      # though as that would activate them which is what we want to do next.
+      # note that these slaves should already be activated with their original
+      # profiles and setting autoconnect won't implicitly activate them again.
+      for conn in "${connections[@]}"; do
+        local slave_type=$(nmcli -g connection.slave-type connection show "$conn")
+        if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
+          nmcli c mod "$conn" connection.autoconnect yes
         fi
-      else
-        echo "Connection $conn already activated"
-      fi
-      nmcli c mod "$conn" connection.autoconnect yes
+      done
+
+      # Then activate all the connections
+      for conn in "${connections[@]}"; do
+        local active_state=$(nmcli -g GENERAL.STATE conn show "$conn")
+        if [ "$active_state" != "activated" ]; then
+          for i in {1..10}; do
+            echo "Attempt $i to bring up connection $conn"
+            nmcli conn up "$conn" && s=0 && break || s=$?
+            sleep 5
+          done
+          if [ $s -eq 0 ]; then
+            echo "Brought up connection $conn successfully"
+          else
+            echo "ERROR: Cannot bring up connection $conn after $i attempts"
+            return $s
+          fi
+        else
+          echo "Connection $conn already activated"
+        fi
+        nmcli c mod "$conn" connection.autoconnect yes
+      done
     }
 
     # Accepts parameters $iface_default_hint_file, $iface
@@ -707,15 +718,15 @@ contents:
       ovs-vsctl --timeout=30 --if-exists del-br br0
 
       # Make sure everything is activated
+      connections=()
       for connection in $(nmcli -g NAME c | grep -- "$MANAGED_NM_CONN_SUFFIX"); do
-        activate_nm_conn "$connection"
+        connections+=("$connection")
       done
-      activate_nm_conn ovs-if-phys0
-      activate_nm_conn ovs-if-br-ex
+      connections+=(ovs-if-phys0 ovs-if-br-ex)
       if [ -f "$extra_bridge_file" ]; then
-        activate_nm_conn ovs-if-phys1
-        activate_nm_conn ovs-if-br-ex1
+        connections+=(ovs-if-phys1 ovs-if-br-ex1)
       fi
+      activate_nm_connections "${connections[@]}"
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm
