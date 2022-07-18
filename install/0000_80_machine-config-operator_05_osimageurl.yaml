@@ -12,4 +12,4 @@ data:
   # The OS payload used for 4.10 and below; more information in
   # https://github.com/openshift/machine-config-operator/blob/master/docs/OSUpgrades.md
   # (The original issue was  https://github.com/openshift/machine-config-operator/issues/183 )
-  osImageURL: "registry.svc.ci.openshift.org/openshift:machine-os-content"
+  osImageURL: "placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-os-content"

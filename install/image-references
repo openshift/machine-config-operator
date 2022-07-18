@@ -7,35 +7,35 @@ spec:
   - name: machine-config-operator
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:machine-config-operator
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator
   - name: pod
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:pod
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:pod
   - name: oauth-proxy
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:oauth-proxy
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy
   # This one is special, it's the OS payload
   # https://github.com/openshift/machine-config-operator/issues/183
   # See the machine-config-osimageurl configmap.
   - name: machine-os-content
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:machine-os-content
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-os-content
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:keepalived-ipfailover
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:keepalived-ipfailover
   - name: coredns
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:coredns
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:coredns
   - name: haproxy-router
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:haproxy-router
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router
   - name: baremetal-runtimecfg
     from:
       kind: DockerImage
-      name: registry.svc.ci.openshift.org/openshift:baremetal-runtimecfg
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg
