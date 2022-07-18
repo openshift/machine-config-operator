@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
       - name: machine-config-operator
-        image: registry.svc.ci.openshift.org/openshift:machine-config-operator
+        image: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator
         args:
         - "start"
         - "--images-json=/etc/mco/images/images.json"

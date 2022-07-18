@@ -11,11 +11,11 @@ data:
   images.json: >
     {
       "releaseVersion": "0.0.1-snapshot",
-      "machineConfigOperator": "registry.svc.ci.openshift.org/openshift:machine-config-operator",
-      "infraImage": "registry.svc.ci.openshift.org/openshift:pod",
-      "keepalivedImage": "registry.svc.ci.openshift.org/openshift:keepalived-ipfailover",
-      "corednsImage": "registry.svc.ci.openshift.org/openshift:coredns",
-      "haproxyImage": "registry.svc.ci.openshift.org/openshift:haproxy-router",
-      "baremetalRuntimeCfgImage": "registry.svc.ci.openshift.org/openshift:baremetal-runtimecfg",
-      "oauthProxy": "registry.svc.ci.openshift.org/openshift:oauth-proxy"
+      "machineConfigOperator": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator",
+      "infraImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:pod",
+      "keepalivedImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:keepalived-ipfailover",
+      "corednsImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:coredns",
+      "haproxyImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router",
+      "baremetalRuntimeCfgImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg",
+      "oauthProxy": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:oauth-proxy"
     }
