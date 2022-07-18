@@ -1406,25 +1406,44 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 
 	// Bootstrapping state is when we have the node annotations file
 	if state.bootstrapping {
-		targetOSImageURL := state.currentConfig.Spec.OSImageURL
-		osMatch := dn.checkOS(targetOSImageURL)
-		if !osMatch {
-			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
-			// This only returns on error
-			osImageContentDir, err := ExtractOSImage(targetOSImageURL)
-			if err != nil {
-				return err
+		// TODO(jkyros): probably need to clean this up, the weird checkOS vs applyOSChanges thing is probably not super clear
+		if state.currentConfig.Spec.BaseOperatingSystemContainer != "" {
+			glog.Infof("New format image is populated: %s ", state.currentConfig.Spec.BaseOperatingSystemContainer)
+			osMatch := dn.checkOS(state.currentConfig.Spec.BaseOperatingSystemContainer)
+			if !osMatch {
+				if err := updateBootableOS(state.currentConfig); err != nil {
+					return err
+				}
+
+				if err := dn.finalizeBeforeReboot(state.currentConfig); err != nil {
+					return err
+				}
+				return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 			}
-			if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
-				return err
+		} else {
+
+			targetOSImageURL := state.currentConfig.Spec.OSImageURL
+			osMatch := dn.checkOS(targetOSImageURL)
+			// TODO(jkyros): if we don't apply the new image on startup, update() won't try it later
+			// because it won't have changed -- update reacts to diffs and changes
+			if !osMatch {
+				glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
+				// This only returns on error
+				osImageContentDir, err := ExtractOSImage(targetOSImageURL)
+				if err != nil {
+					return err
+				}
+				if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
+					return err
+				}
+				if err := os.RemoveAll(osImageContentDir); err != nil {
+					return err
+				}
+				if err := dn.finalizeBeforeReboot(state.currentConfig); err != nil {
+					return err
+				}
+				return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 			}
-			if err := os.RemoveAll(osImageContentDir); err != nil {
-				return err
-			}
-			if err := dn.finalizeBeforeReboot(state.currentConfig); err != nil {
-				return err
-			}
-			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
 		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
 

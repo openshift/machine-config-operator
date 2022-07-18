@@ -1889,6 +1889,18 @@ func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	return nil
 }
 
+// updateBootableOS updates the system OS to the one specified in newConfig
+func updateBootableOS(config *mcfgv1.MachineConfig) error {
+	newURL := config.Spec.BaseOperatingSystemContainer
+	glog.Infof("Updating OS to layered image %s", newURL)
+	client := NewNodeUpdaterClient()
+	if err := client.RebaseLayered(newURL); err != nil {
+		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
+	}
+
+	return nil
+}
+
 func (dn *Daemon) getPendingStateLegacyLogger() (*journalMsg, error) {
 	glog.Info("logger doesn't support --jounald, grepping the journal")
 
