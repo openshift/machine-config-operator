@@ -1792,10 +1792,19 @@ func (dn *CoreOSDaemon) validateKernelArguments(currentConfig *mcfgv1.MachineCon
 // is stomping on our files, we want to highlight that and mark the system
 // degraded.
 func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error {
+
 	// Be sure we're booted into the OS we expect
-	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
-	if !osMatch {
-		return fmt.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+	if currentConfig.Spec.BaseOperatingSystemContainer != "" {
+		osMatch := dn.checkOS(currentConfig.Spec.BaseOperatingSystemContainer)
+		if !osMatch {
+			return fmt.Errorf("expected target BaseOperatingSystemContainer %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+		}
+	} else {
+
+		osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
+		if !osMatch {
+			return fmt.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+		}
 	}
 
 	if dn.os.IsCoreOSVariant() {
