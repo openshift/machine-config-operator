@@ -1,0 +1,12 @@
+# Note: This compatibility wrapper is needed to bridge the gap from OCP 4.11->4.12 when the new 'kubensenter' script is being introduced.
+# It can be removed (and the kubelet.service should call kubensenter directly) when 4.11 is no longer a release we must upgrade from.
+mode: 0755
+path: "/usr/local/bin/kubenswrapper"
+contents:
+  inline: |
+    #!/bin/sh
+    if [ -x /usr/bin/kubensenter ]; then
+      exec /usr/bin/kubensenter "$@"
+    else
+      exec "$@"
+    fi
