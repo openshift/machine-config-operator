@@ -21,8 +21,8 @@ contents: |
   EnvironmentFile=-/etc/kubernetes/kubelet-env
   EnvironmentFile=/etc/node-sizing.env
 
-  ExecStart=/usr/bin/hyperkube \
-      kubelet \
+  ExecStart=/usr/local/bin/kubenswrapper \
+      /usr/bin/kubelet \
         --config=/etc/kubernetes/kubelet.conf \
         --bootstrap-kubeconfig=/etc/kubernetes/kubeconfig \
         --kubeconfig=/var/lib/kubelet/kubeconfig \

@@ -54,3 +54,11 @@ echo "Updating templates from vendor/github.com/containers/kubensmnt/utils/syste
 write_service_yaml kubens.service "false" ${KUBENS_VENDOR}/kubens.service ${UNITS}/kubens.service.yaml
 write_dropin_yaml kubelet.service 01-kubens.conf ${KUBENS_VENDOR}/kubens-dropin.conf ${UNITS}/kubelet.service-kubens.yaml
 write_dropin_yaml crio.service 01-kubens.conf ${KUBENS_VENDOR}/kubens-dropin.conf ${UNITS}/crio.service-kubens.yaml
+
+log_cp() {
+    echo "Copying $1 => $2"
+    cp $1 $2
+}
+
+echo "Copying worker templates from equivalent master templates"
+log_cp templates/master/01-master-kubelet/_base/files/kubenswrapper.yaml templates/worker/01-worker-kubelet/_base/files/kubenswrapper.yaml
