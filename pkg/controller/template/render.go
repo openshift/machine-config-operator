@@ -312,6 +312,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
+	funcs["platformString"] = templatePlatformString
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -360,6 +361,10 @@ func cloudProvider(cfg RenderConfig) (interface{}, error) {
 	} else {
 		return "", nil
 	}
+}
+
+func templatePlatformString(cfg RenderConfig) (interface{}, error) {
+	return platformStringFromControllerConfigSpec(cfg.ControllerConfigSpec)
 }
 
 // Process the {{cloudConfigFlag .}}

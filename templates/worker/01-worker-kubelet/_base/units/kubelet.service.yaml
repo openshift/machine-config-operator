@@ -14,7 +14,7 @@ contents: |
   ExecStartPre=/bin/mkdir --parents /etc/kubernetes/manifests
   ExecStartPre=/bin/rm -f /var/lib/kubelet/cpu_manager_state
   ExecStartPre=/bin/rm -f /var/lib/kubelet/memory_manager_state
-{{- if eq .IPFamilies "IPv6"}}
+{{- if and (ne (platformString .) "on-prem") (eq .IPFamilies "IPv6") }}
   Environment="KUBELET_NODE_IP=::"
 {{- end}}
   EnvironmentFile=/etc/os-release
@@ -36,12 +36,21 @@ contents: |
 {{- else}}
         --node-ip=${KUBELET_NODE_IP} \
 {{- end}}
+{{- if eq (platformString .) "on-prem" }}
+        --address=${KUBELET_NODE_IP} \
+{{- end}}
         --minimum-container-ttl-duration=6m0s \
         --volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec \
         --cloud-provider={{cloudProvider .}} \
         {{cloudConfigFlag . }} \
+{{- if ne (platformString .) "alibabacloud" }}
         --hostname-override=${KUBELET_NODE_NAME} \
+{{- end}}
+{{- if eq  (platformString .) "alibabacloud" }}
+        --provider-id=alicloud://${KUBELET_NODE_NAME} \
+{{- else if ne (platformString .) "on-prem" }}
         --provider-id=${KUBELET_PROVIDERID} \
+{{- end}}
         --pod-infra-container-image={{.Images.infraImageKey}} \
         --system-reserved=cpu=${SYSTEM_RESERVED_CPU},memory=${SYSTEM_RESERVED_MEMORY} \
         --v=${KUBELET_LOG_LEVEL}
