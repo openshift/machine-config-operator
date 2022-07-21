@@ -23,6 +23,14 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-os-content
+  - name: rhel-coreos-8
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-8
+  - name: rhel-coreos-8-extensions
+    from:
+      kind: DockerImage
+      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-8-extensions
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
