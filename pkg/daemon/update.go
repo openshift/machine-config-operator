@@ -358,21 +358,34 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
 		}
 		var err error
-		if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
-			return err
-		}
-		// Delete extracted OS image once we are done.
-		defer os.RemoveAll(osImageContentDir)
 
-		if err := addExtensionsRepo(osImageContentDir); err != nil {
-			return err
+		// If we don't have a "new format" image, do things the old way where we extract the image locally
+		if newConfig.Spec.BaseOperatingSystemContainer == "" {
+			if osImageContentDir, err = ExtractOSImage(newConfig.Spec.OSImageURL); err != nil {
+				return err
+			}
+			// Delete extracted OS image once we are done.
+			defer os.RemoveAll(osImageContentDir)
+
+			if err := addExtensionsRepo(osImageContentDir); err != nil {
+				return err
+			}
+			defer os.Remove(extensionsRepo)
 		}
-		defer os.Remove(extensionsRepo)
 	}
 
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := updateOS(newConfig, osImageContentDir); err != nil {
+		var err error
+		if newConfig.Spec.BaseOperatingSystemContainer != "" {
+			// if we have a "new format" image, apply the new way
+			err = dn.applyLayeredOSImage(mcDiff, oldConfig, newConfig)
+		} else {
+			// otherwise do it the old way
+			err = updateOS(newConfig, osImageContentDir)
+		}
+
+		if err != nil {
 			nodeName := ""
 			if dn.node != nil {
 				nodeName = dn.node.Name
@@ -380,6 +393,7 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
 			return err
 		}
+
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeApplied", "OS upgrade applied; new MachineConfig (%s) has new OS image (%s)", newConfig.Name, newConfig.Spec.OSImageURL)
 		}
@@ -1214,6 +1228,83 @@ func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig)
 		}
 	}
 
+	return nil
+}
+
+func (dn *CoreOSDaemon) applyLayeredOSImage(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+
+	newURL := newConfig.Spec.BaseOperatingSystemContainer
+	glog.Infof("Updating OS to layered image %s", newURL)
+	client := NewNodeUpdaterClient()
+
+	isBootable, err := client.IsBootableImage(newURL)
+	if err != nil {
+		return err
+	}
+
+	if !isBootable {
+		return fmt.Errorf("Image %s is NOT a bootable container image", newURL)
+	}
+
+	booted, staged, err := client.GetBootedAndStagedDeployment()
+	if err != nil {
+		return err
+	}
+
+	// TODO(jkyros): this is ignoring live-apply for now, but since MCD behavior is "the usual", we don't need it yet
+	onDesired, _ := onDesiredImage(newURL, booted, staged)
+
+	if !onDesired {
+		if err := client.RebaseLayered(newURL); err != nil {
+			nodeName := ""
+			if dn.node != nil {
+				nodeName = dn.node.Name
+			}
+			MCDPivotErr.WithLabelValues(nodeName, newURL, err.Error()).SetToCurrentTime()
+			return err
+		}
+		if dn.nodeWriter != nil {
+			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpgradeApplied", "OS upgrade applied; new MachineConfig (%s) has new OS image (%s)", newConfig.Name, newConfig.Spec.OSImageURL)
+		}
+
+		defer func() {
+			// Operations performed by rpm-ostree on the booted system are available
+			// as staged deployment. It gets applied only when we reboot the system.
+			// In case of an error during any rpm-ostree transaction, removing pending deployment
+			// should be sufficient to discard any applied changes.
+			if retErr != nil {
+				// Print out the error now so that if we fail to cleanup -p, we don't lose it.
+				glog.Infof("Rolling back applied changes to OS due to error: %v", retErr)
+				if err := removePendingDeployment(); err != nil {
+					errs := kubeErrs.NewAggregate([]error{err, retErr})
+					retErr = fmt.Errorf("error removing staged deployment: %w", errs)
+					return
+				}
+			}
+		}()
+
+	} else {
+		glog.Infof("Already on desired image %s", newURL)
+	}
+
+	// Apply kargs, we can still do this the "old" way since they aren't packed into the image yet
+	if mcDiff.kargs {
+		if err := dn.updateKernelArguments(oldConfig.Spec.KernelArguments, newConfig.Spec.KernelArguments); err != nil {
+			return err
+		}
+	}
+
+	// Switch to real time kernel
+	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+		return err
+	}
+
+	// TODO(jkyros): This is where we will handle Joseph's extensions container
+	glog.Infof("Can't apply extensions, not supported yet")
+
+	if dn.nodeWriter != nil {
+		dn.nodeWriter.Eventf(corev1.EventTypeNormal, "OSUpdateStaged", "Changes to OS staged")
+	}
 	return nil
 }
 
