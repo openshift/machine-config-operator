@@ -1,22 +1,26 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"path/filepath"
+	"time"
 
 	yaml "github.com/ghodss/yaml"
+	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	rest "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 
-	v1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
 const (
@@ -35,9 +39,24 @@ var _ = Server(&clusterServer{})
 type clusterServer struct {
 	// machineClient is used to interact with the
 	// machine config, pool objects.
-	machineClient v1.MachineconfigurationV1Interface
+	machineConfigPoolLister v1.MachineConfigPoolLister
+	machineConfigLister     v1.MachineConfigLister
 
 	kubeconfigFunc kubeconfigFunc
+}
+
+const (
+	minResyncPeriod = 20 * time.Minute
+)
+
+func resyncPeriod() func() time.Duration {
+	return func() time.Duration {
+		// Disable gosec here to avoid throwing
+		// G404: Use of weak random number generator (math/rand instead of crypto/rand)
+		// #nosec
+		factor := rand.Float64() + 1
+		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
+	}
 }
 
 // NewClusterServer is used to initialize the machine config
@@ -47,22 +66,43 @@ type clusterServer struct {
 // run from within a cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
 func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
-	restConfig, err := getClientConfig(kubeConfig)
+	cb, err := clients.NewBuilder(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create Kubernetes rest client: %v", err)
 	}
 
-	mc := v1.NewForConfigOrDie(restConfig)
+	client := cb.MachineConfigClientOrDie("machine-config-shared-informer")
+	sharedInformers := mcfginformers.NewSharedInformerFactory(client, resyncPeriod()())
+
+	mcpInformer := sharedInformers.Machineconfiguration().V1().MachineConfigPools()
+	mcInformer := sharedInformers.Machineconfiguration().V1().MachineConfigs()
+
+	mcpLister := mcpInformer.Lister()
+	mcLister := mcInformer.Lister()
+
+	mcpListerHasSynced := mcpInformer.Informer().HasSynced
+	mcListerHasSynced := mcInformer.Informer().HasSynced
+
+	
+
+	var stopCh chan struct{}
+	go sharedInformers.Start(stopCh)
+
+	if !cache.WaitForCacheSync(stopCh, mcpListerHasSynced, mcListerHasSynced) {
+		return nil, errors.New("failed to wait for cache sync")
+	}
+
 	return &clusterServer{
-		machineClient:  mc,
-		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
+		machineConfigPoolLister: mcpLister,
+		machineConfigLister:     mcLister,
+		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
 }
 
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
 func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
-	mp, err := cs.machineClient.MachineConfigPools().Get(context.TODO(), cr.machineConfigPool, metav1.GetOptions{})
+	mp, err := cs.machineConfigPoolLister.Get(cr.machineConfigPool)
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %v", err)
 	}
@@ -78,7 +118,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		currConf = mp.Status.Configuration.Name
 	}
 
-	mc, err := cs.machineClient.MachineConfigs().Get(context.TODO(), currConf, metav1.GetOptions{})
+	mc, err := cs.machineConfigLister.Get(currConf)
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch config %s, err: %v", currConf, err)
 	}
