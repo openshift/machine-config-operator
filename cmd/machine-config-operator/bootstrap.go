@@ -35,6 +35,7 @@ var (
 		infraImage                             string
 		releaseImage                           string
 		keepalivedImage                        string
+		frrImage                               string
 		kubeCAFile                             string
 		mcoImage                               string
 		oauthProxyImage                        string
@@ -75,6 +76,7 @@ func init() {
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.dnsConfigFile, "dns-config-file", "/assets/manifests/cluster-dns-02-config.yml", "File containing dns.config.openshift.io manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.additionalTrustBundleFile, "additional-trust-bundle-config-file", "/assets/manifests/user-ca-bundle-config.yaml", "File containing the additional user provided CA bundle manifest.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.keepalivedImage, "keepalived-image", "", "Image for Keepalived.")
+	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.frrImage, "frr-image", "", "Image for FRR.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.corednsImage, "coredns-image", "", "Image for CoreDNS.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.haproxyImage, "haproxy-image", "", "Image for haproxy.")
 	bootstrapCmd.PersistentFlags().StringVar(&bootstrapOpts.baremetalRuntimeCfgImage, "baremetal-runtimecfg-image", "", "Image for baremetal-runtimecfg.")
@@ -151,6 +153,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 			MachineConfigOperator:                  bootstrapOpts.mcoImage,
 			MachineOSContent:                       bootstrapOpts.oscontentImage,
 			KeepalivedBootstrap:                    bootstrapOpts.keepalivedImage,
+			FrrBootstrap:                           bootstrapOpts.frrImage,
 			CorednsBootstrap:                       bootstrapOpts.corednsImage,
 			BaremetalRuntimeCfgBootstrap:           bootstrapOpts.baremetalRuntimeCfgImage,
 			OauthProxy:                             bootstrapOpts.oauthProxyImage,
@@ -160,6 +163,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		ControllerConfigImages: operator.ControllerConfigImages{
 			InfraImage:          bootstrapOpts.infraImage,
 			Keepalived:          bootstrapOpts.keepalivedImage,
+			Frr:                 bootstrapOpts.frrImage,
 			Coredns:             bootstrapOpts.corednsImage,
 			Haproxy:             bootstrapOpts.haproxyImage,
 			BaremetalRuntimeCfg: bootstrapOpts.baremetalRuntimeCfgImage,

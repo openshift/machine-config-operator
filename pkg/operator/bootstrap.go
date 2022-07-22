@@ -235,6 +235,9 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 		)
 	}
 
+	// Here we'll choose which manifests to load whether or not Keepalived or BGP is enabled
+	// for the VIP where we'll introduce a new parameter in OCP API
+	// into infra.Status.PlatformStatus.OpenStack
 	if infra.Status.PlatformStatus.OpenStack != nil {
 		manifests = append(manifests,
 			manifest{
@@ -252,6 +255,10 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 			manifest{
 				name:     "manifests/on-prem/keepalived.conf.tmpl",
 				filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
+			},
+			manifest{
+				name:     "manifests/on-prem/frr.yaml",
+				filename: "openstack/manifests/frr.yaml",
 			},
 		)
 	}

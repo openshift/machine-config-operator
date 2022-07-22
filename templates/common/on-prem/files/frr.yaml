@@ -1,0 +1,84 @@
+mode: 0644
+path: {{ if (onPremPlatformAPIServerInternalIP .) }} "/etc/kubernetes/manifests/frr.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/frr.yaml" {{ end }}
+contents:
+  inline: |
+    kind: Pod
+    apiVersion: v1
+    metadata:
+      name: frr
+      namespace: openshift-{{ onPremPlatformShortName . }}-infra
+      creationTimestamp:
+      deletionGracePeriodSeconds: 65
+      labels:
+        app: {{ onPremPlatformShortName . }}-infra-bgp
+    spec:
+      volumes:
+      - name: resource-dir
+        hostPath:
+          path: "/etc/kubernetes/static-pod-resources/frr"
+      - name: kubeconfig
+        hostPath:
+          path: "/etc/kubernetes"
+      - name: kubeconfigvarlib
+        hostPath:
+          path: "/var/lib/kubelet"
+      - name: run-dir
+        empty-dir: {}
+      - name: chroot-host
+        hostPath:
+          path: "/"
+      containers:
+      - name: frr
+        securityContext:
+          privileged: true
+        image: quay.io/emilien/frr:latest
+        env:
+          - name: NSS_SDB_USE_CACHE
+            value: "no"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          cat > /etc/frr/frr.conf << EOF
+          log file /var/log/frr/frr.log
+          service integrated-vtysh-config
+          line vty
+          frr version 7.0
+          
+          debug bfd peer
+          debug bfd network
+          debug bfd zebra
+          
+          debug bgp graceful-restart
+          debug bgp neighbor-events
+          debug bgp updates
+          debug bgp update-groups
+          EOF
+          /usr/lib/frr/frr start && exec /bin/sleep infinity
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: run-dir
+          mountPath: "/var/run/frr"
+        - name: chroot-host
+          mountPath: "/host"
+        - name: kubeconfigvarlib
+          mountPath: "/var/lib/kubelet"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              exit 0
+          initialDelaySeconds: 20
+          timeoutSeconds: 5
+        terminationMessagePolicy: FallbackToLogsOnError
+        imagePullPolicy: IfNotPresent
+      hostNetwork: true
+      tolerations:
+      - operator: Exists
+      priorityClassName: system-node-critical
+    status: {}

@@ -14,6 +14,7 @@ data:
       "machineConfigOperator": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:machine-config-operator",
       "infraImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:pod",
       "keepalivedImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:keepalived-ipfailover",
+      "frrImage": "quay.io/emilien/frr:latest",
       "corednsImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:coredns",
       "haproxyImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:haproxy-router",
       "baremetalRuntimeCfgImage": "placeholder.url.oc.will.replace.this.org/placeholdernamespace:baremetal-runtimecfg",

@@ -1,0 +1,76 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: frr
+  namespace: openshift-{{ onPremPlatformShortName .ControllerConfig }}-infra
+  creationTimestamp:
+  deletionGracePeriodSeconds: 65
+  labels:
+    app: {{ onPremPlatformShortName .ControllerConfig }}-infra-bgp
+  annotations:
+    target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+spec:
+  volumes:
+  - name: resource-dir
+    hostPath:
+      path: "/etc/kubernetes/static-pod-resources/frr"
+  - name: kubeconfig
+    hostPath:
+      path: "/etc/kubernetes/kubeconfig"
+  - name: manifests
+    hostPath:
+      path: "/opt/openshift/manifests"
+  - name: run-dir
+    empty-dir: {}
+  containers:
+  - name: frr
+    securityContext:
+      privileged: true
+    image: quay.io/emilien/frr:latest
+    env:
+      - name: NSS_SDB_USE_CACHE
+        value: "no"
+    command:
+    - /bin/bash
+    - -c
+    - |
+      cat > /etc/frr/frr.conf << EOF
+      log file /var/log/frr/frr.log
+      service integrated-vtysh-config
+      line vty
+      frr version 7.0
+      
+      debug bfd peer
+      debug bfd network
+      debug bfd zebra
+      
+      debug bgp graceful-restart
+      debug bgp neighbor-events
+      debug bgp updates
+      debug bgp update-groups
+      EOF
+      /usr/lib/frr/frr start && exec /bin/sleep infinity
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+    volumeMounts:
+    - name: run-dir
+      mountPath: "/var/run/frr"
+    livenessProbe:
+      exec:
+        command:
+        - /bin/bash
+        - -c
+        - |
+          exit 0
+          config_files:
+      initialDelaySeconds: 20
+    terminationMessagePolicy: FallbackToLogsOnError
+    imagePullPolicy: IfNotPresent
+  hostNetwork: true
+  tolerations:
+  - operator: Exists
+  priorityClassName: system-node-critical
+status: {}

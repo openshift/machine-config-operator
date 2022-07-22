@@ -13,6 +13,9 @@ const (
 	// KeepalivedKey is the key that references the keepalived-ipfailover image in the controller
 	KeepalivedKey string = "keepalivedImage"
 
+	// FrrKey is the key that references the frr image in the controller
+	FrrKey string = "frrImage"
+
 	// CorednsKey is the key that references the coredns image in the controller
 	CorednsKey string = "corednsImage"
 

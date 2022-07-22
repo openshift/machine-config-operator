@@ -25,6 +25,7 @@ type RenderConfigImages struct {
 	// or we get errors about ambiguous selectors because both structs are
 	// combined in the Images struct.
 	KeepalivedBootstrap          string `json:"keepalived"`
+	FrrBootstrap                 string `json:"frr"`
 	CorednsBootstrap             string `json:"coredns"`
 	BaremetalRuntimeCfgBootstrap string `json:"baremetalRuntimeCfg"`
 	OauthProxy                   string `json:"oauthProxy"`
@@ -34,6 +35,7 @@ type RenderConfigImages struct {
 type ControllerConfigImages struct {
 	InfraImage          string `json:"infraImage"`
 	Keepalived          string `json:"keepalivedImage"`
+	Frr                 string `json:"frrImage"`
 	Coredns             string `json:"corednsImage"`
 	Haproxy             string `json:"haproxyImage"`
 	BaremetalRuntimeCfg string `json:"baremetalRuntimeCfgImage"`

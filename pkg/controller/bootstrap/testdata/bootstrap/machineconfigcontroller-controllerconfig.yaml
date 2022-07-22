@@ -14,6 +14,7 @@ spec:
     haproxyImage: ""
     infraImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     keepalivedImage: ""
+    frrImage: "quay.io/emilien/frr:latest"
     kubeClientAgentImageKey: registry.product.example.org/ocp/4.2-DATE-VERSION@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   infra:
     apiVersion: config.openshift.io/v1
