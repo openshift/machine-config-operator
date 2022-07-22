@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -20,12 +19,11 @@ import (
 	yaml "github.com/ghodss/yaml"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
-	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 )
 
 const (
@@ -120,15 +118,15 @@ func TestEncapsulated(t *testing.T) {
 // when it's running in bootstrap mode.
 // The test does the following:
 //
-// 1. Fetch the MachineConfigPool from the testdata.
-// 2. Fetch the MachineConfig from the testdata.
-// 3. Manually update the ignition config from Step 2 by adding
-//    the NodeAnnotations file, the kubeconfig file (which is read
-//    from the testdata). This Ignition config is then
-//    labeled as expected Ignition config.
-// 4. Call the Bootstrap GetConfig method by passing the reference to the
-//    MachineConfigPool present in the testdata folder.
-// 5. Compare the Ignition configs from Step 3 and Step 4.
+//  1. Fetch the MachineConfigPool from the testdata.
+//  2. Fetch the MachineConfig from the testdata.
+//  3. Manually update the ignition config from Step 2 by adding
+//     the NodeAnnotations file, the kubeconfig file (which is read
+//     from the testdata). This Ignition config is then
+//     labeled as expected Ignition config.
+//  4. Call the Bootstrap GetConfig method by passing the reference to the
+//     MachineConfigPool present in the testdata folder.
+//  5. Compare the Ignition configs from Step 3 and Step 4.
 func TestBootstrapServer(t *testing.T) {
 	mp, err := getTestMachineConfigPool()
 	if err != nil {
@@ -205,20 +203,60 @@ func TestBootstrapServer(t *testing.T) {
 	}
 }
 
+type mockMCPLister struct {
+	pools []*mcfgv1.MachineConfigPool
+}
+
+func (mcpl *mockMCPLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfigPool, err error) {
+	return mcpl.pools, nil
+}
+func (mcpl *mockMCPLister) Get(name string) (ret *mcfgv1.MachineConfigPool, err error) {
+	if mcpl.pools == nil {
+		return nil, nil
+	}
+	for _, pool := range mcpl.pools {
+		if pool.Name == name {
+			return pool, nil
+		}
+
+	}
+	return nil, nil
+}
+
+type mockMCLister struct {
+	configs []*mcfgv1.MachineConfig
+}
+
+func (mcpl *mockMCLister) List(selector labels.Selector) (ret []*mcfgv1.MachineConfig, err error) {
+	return mcpl.configs, nil
+}
+func (mcpl *mockMCLister) Get(name string) (ret *mcfgv1.MachineConfig, err error) {
+	if mcpl.configs == nil {
+		return nil, nil
+	}
+	for _, pool := range mcpl.configs {
+		if pool.Name == name {
+			return pool, nil
+		}
+
+	}
+	return nil, nil
+}
+
 // TestClusterServer tests the behavior of the machine config server
 // when it's running within the cluster.
 // The test does the following:
 //
-// 1. Fetch the MachineConfigPool from the testdata.
-// 2. Fetch the MachineConfig from the testdata, call this origMC.
-// 3. Manually update the ignition config from Step 2 by adding
-//    the NodeAnnotations file, the kubeconfig file (which is read
-//    from the testdata). This Ignition config is then
-//    labeled as expected Ignition config (mc).
-// 4. Use the Kubernetes fake client to Create the MachineConfigPool
-//    and the MachineConfig objects from Step 1, 2 inside the cluster.
-// 5. Call the Cluster GetConfig method.
-// 6. Compare the Ignition configs from Step 3 and Step 5.
+//  1. Fetch the MachineConfigPool from the testdata.
+//  2. Fetch the MachineConfig from the testdata, call this origMC.
+//  3. Manually update the ignition config from Step 2 by adding
+//     the NodeAnnotations file, the kubeconfig file (which is read
+//     from the testdata). This Ignition config is then
+//     labeled as expected Ignition config (mc).
+//  4. Use the Kubernetes fake client to Create the MachineConfigPool
+//     and the MachineConfig objects from Step 1, 2 inside the cluster.
+//  5. Call the Cluster GetConfig method.
+//  6. Compare the Ignition configs from Step 3 and Step 5.
 func TestClusterServer(t *testing.T) {
 	mp, err := getTestMachineConfigPool()
 	if err != nil {
@@ -236,19 +274,25 @@ func TestClusterServer(t *testing.T) {
 		t.Fatalf("unexpected error while unmarshaling machine-config: %s, err: %v", mcPath, err)
 	}
 
-	cs := fake.NewSimpleClientset()
-	_, err = cs.MachineconfigurationV1().MachineConfigPools().Create(context.TODO(), mp, metav1.CreateOptions{})
-	if err != nil {
-		t.Logf("err: %v", err)
-	}
-	_, err = cs.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), origMC, metav1.CreateOptions{})
-	if err != nil {
-		t.Logf("err: %v", err)
+	mcpLister := &mockMCPLister{
+		pools: []*mcfgv1.MachineConfigPool{
+			mp,
+		},
 	}
 
+	mcLister := &mockMCLister{
+		configs: []*mcfgv1.MachineConfig{
+			origMC,
+		},
+	}
+
+	// machineClient:  cs.MachineconfigurationV1(),
 	csc := &clusterServer{
-		machineClient:  cs.MachineconfigurationV1(),
-		kubeconfigFunc: func() ([]byte, []byte, error) { return getKubeConfigContent(t) },
+		machineConfigPoolLister: mcpLister,
+		machineConfigLister: mcLister,
+		kubeconfigFunc: func() ([]byte, []byte, error) {
+			return getKubeConfigContent(t)
+		},
 	}
 
 	mc := new(mcfgv1.MachineConfig)
