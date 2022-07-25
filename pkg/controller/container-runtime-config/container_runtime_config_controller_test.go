@@ -36,7 +36,6 @@ import (
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/fake"
 	informers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
-	"github.com/openshift/machine-config-operator/pkg/version"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -1035,61 +1034,6 @@ func getKey(config *mcfgv1.ContainerRuntimeConfig, t *testing.T) string {
 		return ""
 	}
 	return key
-}
-
-// TestCleanUpDuplicatedMC test the function removes the MC from the MC list
-// if the MC is of old version.
-func TestCleanUpDuplicatedMC(t *testing.T) {
-	v := version.Hash
-	version.Hash = "3.2.0"
-	versionDegrade := "3.1.0"
-	defer func() {
-		version.Hash = v
-	}()
-	f := newFixture(t)
-	ctrl := f.newController()
-	// wrong version needs to be removed
-	machineConfigDegrade := mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "generated-containerruntime", UID: types.UID(utilrand.String(5))},
-	}
-	machineConfigDegrade.Annotations = make(map[string]string)
-	machineConfigDegrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
-	ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegrade, metav1.CreateOptions{})
-
-	// not generated machine config should stay
-	machineConfigDegradeNotGen := mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "custom-containerruntime", UID: types.UID(utilrand.String(5))},
-	}
-	machineConfigDegradeNotGen.Annotations = make(map[string]string)
-	machineConfigDegradeNotGen.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = versionDegrade
-	ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigDegradeNotGen, metav1.CreateOptions{})
-
-	// upgraded MC
-	machineConfigUpgrade := mcfgv1.MachineConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "generated-containerruntime-1", UID: types.UID(utilrand.String(5))},
-	}
-	machineConfigUpgrade.Annotations = make(map[string]string)
-	machineConfigUpgrade.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
-	ctrl.client.MachineconfigurationV1().MachineConfigs().Create(context.TODO(), &machineConfigUpgrade, metav1.CreateOptions{})
-
-	mcList, err := ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
-	require.NoError(t, err)
-	require.Len(t, mcList.Items, 3)
-
-	ctrl.cleanUpDuplicatedMC()
-	// successful test: ony custom and upgraded MCs stay
-	mcList, err = ctrl.client.MachineconfigurationV1().MachineConfigs().List(context.TODO(), metav1.ListOptions{})
-	require.NoError(t, err)
-	require.Len(t, mcList.Items, 2)
-	actual := make(map[string]mcfgv1.MachineConfig)
-	for _, mc := range mcList.Items {
-		require.GreaterOrEqual(t, len(mc.Annotations), 1)
-		actual[mc.Name] = mc
-	}
-	_, ok := actual[machineConfigDegradeNotGen.Name]
-	require.True(t, ok, "expect custom-containerruntime in the list, but got false")
-	_, ok = actual[machineConfigUpgrade.Name]
-	require.True(t, ok, "expect generated-containerruntime-1 in the list, but got false")
 }
 
 func generateManagedKey(ctrcfg *mcfgv1.ContainerRuntimeConfig, generation uint64) string {
