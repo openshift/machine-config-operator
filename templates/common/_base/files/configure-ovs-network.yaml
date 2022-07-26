@@ -511,8 +511,6 @@ contents:
         sleep 5
       done
 
-      extra_bridge_file='/etc/ovnk/extra_bridge'
-
       if [ "$iface" != "br-ex" ]; then
         # Default gateway is not br-ex.
         echo "Bridge br-ex is not active, restoring previous configuration before proceeding..."
