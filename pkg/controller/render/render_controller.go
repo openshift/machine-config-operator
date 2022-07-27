@@ -487,6 +487,11 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
+	// Emit an event so it's more visible that OSImageURL was overridden.
+	if generated.Spec.OSImageURL != cc.Spec.OSImageURL {
+		ctrl.eventRecorder.Eventf(generated, corev1.EventTypeNormal, "OSImageURLOverridden", "OSImageURL was overridden via machineconfig in %s (was: %s is: %s)", generated.Name, cc.Spec.OSImageURL, generated.Spec.OSImageURL)
+	}
+
 	source := []corev1.ObjectReference{}
 	for _, cfg := range configs {
 		source = append(source, corev1.ObjectReference{Kind: machineconfigKind.Kind, Name: cfg.GetName(), APIVersion: machineconfigKind.GroupVersion().String()})
@@ -569,6 +574,12 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 	}
 	merged.Annotations[ctrlcommon.GeneratedByControllerVersionAnnotationKey] = version.Hash
 	merged.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = cconfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]
+
+	// Make it obvious that the OSImageURL has been overridden. If we log this in MergeMachineConfigs, we don't know the name yet, so we're
+	// logging out here instead so it's actually helpful.
+	if merged.Spec.OSImageURL != cconfig.Spec.OSImageURL {
+		glog.Infof("OSImageURL has been overridden via machineconfig in %s (was: %s is: %s)", merged.Name, cconfig.Spec.OSImageURL, merged.Spec.OSImageURL)
+	}
 
 	return merged, nil
 }
