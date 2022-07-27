@@ -1387,6 +1387,10 @@ type IngressControllerTuningOptions struct {
 	// a default for all routes, but may be overridden per-route by the route annotation
 	// "router.openshift.io/haproxy.health.check.interval".
 	//
+	// Expects an unsigned duration string of decimal numbers, each with optional
+	// fraction and a unit suffix, eg "300ms", "1.5h" or "2h45m".
+	// Valid time units are "ns", "us" (or "µs" U+00B5 or "μs" U+03BC), "ms", "s", "m", "h".
+	//
 	// Setting this to less than 5s can cause excess traffic due to too frequent
 	// TCP health checks and accompanying SYN packet storms.  Alternatively, setting
 	// this too high can result in increased latency, due to backend servers that are no
@@ -1400,7 +1404,8 @@ type IngressControllerTuningOptions struct {
 	// 2147483647ms (24.85 days).  Both are subject to change over time.
 	//
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:validation:Pattern=^0|([0-9]+(\.[0-9]+)?(ns|us|µs|μs|ms|s|m|h))+$
+	// +kubebuilder:validation:Type:=string
 	// +optional
 	HealthCheckInterval *metav1.Duration `json:"healthCheckInterval,omitempty"`
 
