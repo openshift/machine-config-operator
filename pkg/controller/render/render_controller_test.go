@@ -370,7 +370,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.run(getKey(mcp, t))
 }
 
-func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
+func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 	mcp := helpers.NewMachineConfigPool("test-cluster-master", helpers.MasterSelector, nil, "")
 	mcs := []*mcfgv1.MachineConfig{
 		helpers.NewMachineConfig("00-test-cluster-master", map[string]string{"node-role/master": ""}, "dummy-test-1", []ign3types.File{}),
@@ -383,7 +383,7 @@ func TestGenerateMachineConfigNoOverrideOSImageURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "dummy", gmc.Spec.OSImageURL)
+	assert.Equal(t, "dummy-change", gmc.Spec.OSImageURL)
 }
 
 func TestVersionSkew(t *testing.T) {

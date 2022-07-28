@@ -273,11 +273,12 @@ func TestMergeMachineConfigs(t *testing.T) {
 
 	// Test that all other configs can also be set properly
 
-	// osImageURL should be set from the passed variable, make sure that
-	// setting it via a MachineConfig doesn't do anything
+	// we previously prevented OSImageURL from being overridden via
+	// machineconfig, but now that we're doing layering, we want to
+	// give that functionality back, so make sure we can override it
 	machineConfigOSImageURL := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: "badURL",
+			OSImageURL: "overriddenURL",
 		},
 	}
 	machineConfigKernelArgs := &mcfgv1.MachineConfig{
@@ -328,7 +329,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 
 	expectedMachineConfig = &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:      osImageURL,
+			OSImageURL:      "overriddenURL",
 			KernelArguments: kargs,
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
