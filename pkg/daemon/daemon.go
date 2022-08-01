@@ -1410,16 +1410,30 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
 			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
-			// This only returns on error
-			osImageContentDir, err := ExtractOSImage(targetOSImageURL)
+
+			// Check to see if we have a layered/new format image
+			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
 			if err != nil {
-				return err
+				return fmt.Errorf("Error checking type of target image: %w", err)
 			}
-			if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
-				return err
-			}
-			if err := os.RemoveAll(osImageContentDir); err != nil {
-				return err
+
+			if isLayeredImage {
+				// If this is a new format image, we don't have to extract it,
+				// we can just update it the proper way
+				if err := updateLayeredOS(state.currentConfig); err != nil {
+					return err
+				}
+			} else {
+				osImageContentDir, err := ExtractOSImage(targetOSImageURL)
+				if err != nil {
+					return err
+				}
+				if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
+					return err
+				}
+				if err := os.RemoveAll(osImageContentDir); err != nil {
+					return err
+				}
 			}
 			if err := dn.finalizeBeforeReboot(state.currentConfig); err != nil {
 				return err
