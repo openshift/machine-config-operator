@@ -47,12 +47,13 @@ contents:
         fi
 
 
-        NAMESERVER_IP=$(/usr/bin/podman run --rm \
+        NAMESERVER_IP=$(timeout 20s /usr/bin/podman run --rm \
             --authfile /var/lib/kubelet/config.json \
             --net=host \
             {{ .Images.baremetalRuntimeCfgImage }} \
             node-ip \
             show \
+            --retry-on-failure \
             "{{ onPremPlatformAPIServerInternalIP . }}" \
             "{{ onPremPlatformIngressIP . }}")
         DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
