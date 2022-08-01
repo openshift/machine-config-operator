@@ -32,7 +32,7 @@ contents:
         >&2 echo "NM resolv-prepender triggered by ${1} ${2}."
 
         # In DHCP connections, the resolv.conf content may be late, thus we wait for nameservers
-        timeout 45s /bin/bash <<EOF
+        timeout 20s /bin/bash <<EOF
             if [[ "$STATUS" == dhcp* ]]; then
                 >&2 echo  "NM resolv-prepender: Checking for nameservers in /var/run/NetworkManager/resolv.conf"
                 while ! grep nameserver /var/run/NetworkManager/resolv.conf; do
