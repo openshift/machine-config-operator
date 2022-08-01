@@ -21,7 +21,12 @@ contents:
     {{end -}}
 
     # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
-    [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] && hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+    if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]]; then
+        # run with systemd-run to avoid selinux problems
+        systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
+            hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+    fi
+    
     case "$STATUS" in
         up|dhcp4-change|dhcp6-change)
         >&2 echo "NM resolv-prepender triggered by ${1} ${2}."
