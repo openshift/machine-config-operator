@@ -33,13 +33,11 @@ contents:
 
         # In DHCP connections, the resolv.conf content may be late, thus we wait for nameservers
         timeout 20s /bin/bash <<EOF
-            if [[ "$STATUS" == dhcp* ]]; then
-                >&2 echo  "NM resolv-prepender: Checking for nameservers in /var/run/NetworkManager/resolv.conf"
-                while ! grep nameserver /var/run/NetworkManager/resolv.conf; do
-                    >&2 echo  "NM resolv-prepender: NM resolv.conf still empty of nameserver"
-                    sleep 0.5
-                done
-            fi
+            >&2 echo  "NM resolv-prepender: Checking for nameservers in /var/run/NetworkManager/resolv.conf"
+            while ! grep nameserver /var/run/NetworkManager/resolv.conf; do
+                >&2 echo  "NM resolv-prepender: NM resolv.conf still empty of nameserver"
+                sleep 0.5
+            done
     EOF
         # Ensure resolv.conf exists and contains nameservers before we try to run podman
         if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
