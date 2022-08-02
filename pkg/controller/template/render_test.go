@@ -61,7 +61,7 @@ func TestCloudProvider(t *testing.T) {
 	}, {
 		platform:    configv1.OpenStackPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "openstack",
+		res:         "external",
 	}, {
 		platform:    configv1.NutanixPlatformType,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
@@ -71,7 +71,7 @@ func TestCloudProvider(t *testing.T) {
 		res:      "aws",
 	}, {
 		platform: configv1.OpenStackPlatformType,
-		res:      "openstack",
+		res:      "external",
 	}, {
 		platform: configv1.BareMetalPlatformType,
 		res:      "",
@@ -171,7 +171,7 @@ func TestCloudConfigFlag(t *testing.T) {
 [dummy-config]
     option = a
 `,
-		res: "--cloud-config=/etc/kubernetes/cloud.conf",
+		res: "",
 	}, {
 		platform: configv1.GCPPlatformType,
 		content: `
@@ -211,7 +211,7 @@ func TestCloudConfigFlag(t *testing.T) {
     option = a
 `,
 		featureGate: newFeatures("cluster", "CustomNoUpgrade", nil, []string{cloudprovider.ExternalCloudProviderFeature}),
-		res:         "--cloud-config=/etc/kubernetes/cloud.conf",
+		res:         "",
 	}, {
 		platform: configv1.AWSPlatformType,
 		content: `
