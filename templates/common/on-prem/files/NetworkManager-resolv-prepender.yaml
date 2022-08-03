@@ -20,11 +20,16 @@ contents:
     {{end -}}
     {{end -}}
 
-    # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
-    if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]]; then
-        # run with systemd-run to avoid selinux problems
-        systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
-            hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+    # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain and static hostname was not already set
+    if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] ; then
+       STATIC_HOSTNAME="$(test ! -e /etc/hostname && echo -n || cat /etc/hostname | xargs)"
+
+       if [[ -z "$STATIC_HOSTNAME" || "$STATIC_HOSTNAME" == "localhost.localdomain" ]] ; then
+ 
+          # run with systemd-run to avoid selinux problems
+          systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
+              hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+       fi
     fi
     
     case "$STATUS" in
