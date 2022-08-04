@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -314,7 +315,34 @@ func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 	glog.Infof("Executing rebase to %s", imgURL)
 
+	// For now, just let ostree use the kublet config.json,
+	err = useKubeletConfigSecrets()
+	if err != nil {
+		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
+	}
+
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
+}
+
+// useKubeletConfigSecrets gives the rpm-ostree client access to secrets in the kubelet config.json by symlinking so that
+// rpm-ostree can use those secrets to pull images. It does this by symlinking the kubelet's config.json into /run/ostree.
+func useKubeletConfigSecrets() error {
+	if _, err := os.Stat("/run/ostree/auth.json"); err != nil {
+
+		if errors.Is(err, os.ErrNotExist) {
+
+			err := os.MkdirAll("/run/ostree", 0o544)
+			if err != nil {
+				return err
+			}
+
+			err = os.Symlink(kubeletAuthFile, "/run/ostree/auth.json")
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // truncate a string using runes/codepoints as limits.
