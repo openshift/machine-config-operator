@@ -27,6 +27,8 @@ spec:
     tlsConfig:
       caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
       serverName: machine-config-controller.openshift-machine-config-operator.svc
+      certFile: /etc/prometheus/secrets/metrics-client-certs/tls.crt
+      keyFile: /etc/prometheus/secrets/metrics-client-certs/tls.key
   namespaceSelector:
     matchNames:
     - openshift-machine-config-operator
@@ -63,6 +65,8 @@ spec:
     tlsConfig:
       caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
       serverName: machine-config-daemon.openshift-machine-config-operator.svc
+      certFile: /etc/prometheus/secrets/metrics-client-certs/tls.crt
+      keyFile: /etc/prometheus/secrets/metrics-client-certs/tls.key
   namespaceSelector:
     matchNames:
     - openshift-machine-config-operator
