@@ -715,8 +715,7 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 	targetHash := string(targetHashBytes)
 
-	// TODO probably have to compress this in the future
-	ignConfig, err := ctrlcommon.ParseAndConvertConfig(ignServedConfigBytes)
+	ignConfig, err := ctrlcommon.ParseAndConvertGzippedConfig(ignServedConfigBytes)
 	if err != nil {
 		return fmt.Errorf("failed to parse Ignition from configmap data.config: %w", err)
 	}
