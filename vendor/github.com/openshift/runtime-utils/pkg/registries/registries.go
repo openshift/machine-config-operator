@@ -248,7 +248,6 @@ func EditRegistriesConfig(config *sysregistriesv2.V2RegistriesConf, insecureScop
 			// So, if there is any mirror defined for a more specific sub-scope of mirrorSet.Source,
 			// it must already exist with non-empty reg.Mirrors.
 			if scope != mirroredScope && ScopeIsNestedInsideScope(scope, mirroredScope) && len(reg.Mirrors) == 0 {
-				reg.MirrorByDigestOnly = mirroredReg.MirrorByDigestOnly
 				updated, err := mirrorsAdjustedForNestedScope(mirroredScope, scope, mirroredReg.Mirrors)
 				if err != nil {
 					return err
@@ -277,4 +276,17 @@ func IsValidRegistriesConfScope(scope string) bool {
 		return true
 	}
 	return false
+}
+
+// RejectMultiUpdateMirrorSetObjs returns error if icsp objects exist with imagedigestmirrorset or imagetagmirrorset objects
+// to avoid existing mirror settings get updated by others
+func RejectMultiUpdateMirrorSetObjs(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) error {
+	if len(icspRules) > 0 && len(idmsRules) > 0 {
+		return fmt.Errorf("error: both imagecontentsourcepolicy and imagedigestmirrorset exist")
+	}
+	if len(icspRules) > 0 && len(itmsRules) > 0 {
+		return fmt.Errorf("error: both imagecontentsourcepolicy and imagetagmirrorset exist")
+	}
+	return nil
 }

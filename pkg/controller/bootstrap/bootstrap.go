@@ -80,6 +80,8 @@ func (b *Bootstrap) Run(destDir string) error {
 	var configs []*mcfgv1.MachineConfig
 	var crconfigs []*mcfgv1.ContainerRuntimeConfig
 	var icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
+	var idmsRules []*apicfgv1.ImageDigestMirrorSet
+	var itmsRules []*apicfgv1.ImageTagMirrorSet
 	var imgCfg *apicfgv1.Image
 	for _, info := range infos {
 		if info.IsDir() {
@@ -121,6 +123,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				kconfigs = append(kconfigs, obj)
 			case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 				icspRules = append(icspRules, obj)
+			case *apicfgv1.ImageDigestMirrorSet:
+				idmsRules = append(idmsRules, obj)
+			case *apicfgv1.ImageTagMirrorSet:
+				itmsRules = append(itmsRules, obj)
 			case *apicfgv1.Image:
 				imgCfg = obj
 			case *apicfgv1.FeatureGate:
@@ -146,7 +152,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	}
 	configs = append(configs, iconfigs...)
 
-	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, imgCfg)
+	rconfigs, err := containerruntimeconfig.RunImageBootstrap(b.templatesDir, cconfig, pools, icspRules, idmsRules, itmsRules, imgCfg)
 	if err != nil {
 		return err
 	}

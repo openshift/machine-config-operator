@@ -16,7 +16,7 @@ rules:
   resources: ["images", "clusterversions", "featuregates", "nodes", "nodes/status"]
   verbs: ["*"]
 - apiGroups: ["config.openshift.io"]
-  resources: ["schedulers", "apiservers", "infrastructures"]
+  resources: ["schedulers", "apiservers", "infrastructures", "imagedigestmirrorsets", "imagetagmirrorsets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["operator.openshift.io"]
   resources: ["imagecontentsourcepolicies"]
