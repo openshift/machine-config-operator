@@ -26,7 +26,6 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
   prefix = ""
   location = "example.com/repo/test-img"
-  mirror-by-digest-only = true
 
   [[registry.mirror]]
     location = "mirror.com/repo/test-img"
@@ -34,10 +33,10 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
   prefix = ""
   location = "example.com/repo1/test-img1"
-  mirror-by-digest-only = true
 
   [[registry.mirror]]
     location = "mirror.com/repo1/test-img1"
+	pull-from-mirror= "digest-only"				
 `))),
 				},
 			},
@@ -55,7 +54,6 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
 prefix = ""
 location = "example.com/repo/test-img"
-mirror-by-digest-only = true
 
 [[registry.mirror]]
 	location = "mirror.com/repo/test-img"
@@ -63,13 +61,14 @@ mirror-by-digest-only = true
 [[registry]]
 prefix = ""
 location = "example.com/repo1/test-img1"
-mirror-by-digest-only = true
 
 [[registry.mirror]]
 	location = "mirror.com/repo1/test-img1"
+	pull-from-mirror = "digest-only"
 
 [[registry.mirror]]
 	location = "mirror1.com/repo1/test-img1"
+	pull-from-mirror = "digest-only"
 `))),
 				},
 			},
@@ -87,7 +86,6 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
 	prefix = ""
 	location = "example.com/repo/test-img"
-	mirror-by-digest-only = true
 
 	[[registry.mirror]]
 	location = "mirror.com/repo/test-img"
@@ -108,10 +106,10 @@ unqualified-search-registries = ["example.com", "foo.com", "bar.com"]
 [[registry]]
 	prefix = ""
 	location = "example.com/repo/test-img"
-	mirror-by-digest-only = true
 
 	[[registry.mirror]]
 	location = "mirror.com/repo/test-img"
+	pull-from-mirror = "digest-only"
 `))),
 				},
 			},
@@ -129,10 +127,10 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
 	prefix = ""
 	location = "example.com/repo/test-img"
-	mirror-by-digest-only = true
 
 	[[registry.mirror]]
 	location = "mirror.com/repo/test-img"
+	pull-from-mirror = "digest-only"
 `))),
 				},
 			},
@@ -150,15 +148,14 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
 prefix = ""
 location = "example.com/repo/test-img"
-mirror-by-digest-only = true
 
 [[registry.mirror]]
 location = "mirror.com/repo/test-img"
+pull-from-mirror = "digest-only"
 
 [[registry]]
 prefix = ""
 location = "example.com/repo1/test-img1"
-mirror-by-digest-only = false
 `))),
 				},
 			},
@@ -176,15 +173,17 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
 prefix = ""
 location = "example.com/repo/test-img"
-mirror-by-digest-only = true
+
+[[registry.mirror]]
+location = "mirror.com/repo/test-img"
+pull-from-mirror= "digest-only"
 
 [[registry]]
 prefix = ""
 location = "example.com/repo1/test-img1"
-mirror-by-digest-only = false
 
 [[registry.mirror]]
-location = "mirror.com/repo/test-img"
+location = "mirror.com/repo1/test-img1"
 `))),
 				},
 			},
@@ -251,15 +250,86 @@ unqualified-search-registries = ["example.com", "foo.com"]
 [[registry]]
 prefix = ""
 location = "example.com/repo1/test-img"
-mirror-by-digest-only = true
 
 [[registry.mirror]]
 location = "mirror.com/repo1/test-img"
+pull-from-mirror= "digest-only"
 
 [[registry]]
 prefix = "bar.com"
 location = "example.com/repo/test-img"
 blocked = true
+`))),
+				},
+			},
+		}}),
+		"mc12": helpers.NewMachineConfig("12-test", nil, "dummy://", []ign3types.File{{
+			Node: ign3types.Node{
+				Path: "/etc/containers/registries.conf",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+unqualified-search-registries = ["example.com", "foo.com"]
+
+[[registry]]
+prefix = ""
+location = "example.com/repo/test-img"
+mirror-by-digest-only = true
+
+[[registry.mirror]]
+location = "mirror.com/repo/test-img"
+`))),
+				},
+			},
+		}}),
+		"mc13": helpers.NewMachineConfig("13-test", nil, "dummy://", []ign3types.File{{
+			Node: ign3types.Node{
+				Path: "/etc/containers/registries.conf",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+unqualified-search-registries = ["example.com", "foo.com"]
+
+[[registry]]
+prefix = ""
+location = "example.com/repo/test-img"
+mirror-by-digest-only = true
+
+[[registry.mirror]]
+location = "mirror.com/repo/test-img"
+[[registry.mirror]]
+location = "mirror.com/repo/test-img-13"
+`))),
+				},
+			},
+		}}),
+		"mc14": helpers.NewMachineConfig("14-test", nil, "dummy://", []ign3types.File{{
+			Node: ign3types.Node{
+				Path: "/etc/containers/registries.conf",
+			},
+			FileEmbedded1: ign3types.FileEmbedded1{
+				Contents: ign3types.Resource{
+					Source: helpers.StrToPtr(dataurl.EncodeBytes([]byte(`
+unqualified-search-registries = ["example.com", "foo.com"]
+
+[[registry]]
+prefix = ""
+location = "example.com/repo/test-img"
+mirror-by-digest-only = true
+
+[[registry.mirror]]
+location = "mirror.com/repo/test-img"
+
+[[registry]]
+prefix = ""
+location = "example.com/repo/test-img-14"
+mirror-by-digest-only = false
+
+[[registry.mirror]]
+location = "mirror.com/repo/test-img-14"
+
 `))),
 				},
 			},
@@ -295,7 +365,7 @@ blocked = true
 			expectedAction: false,
 		},
 		{
-			// skip drain: only new registry added with mirror-by-digest-only set to true
+			// skip drain: only new registry added with pull-from-mirror=digest-only
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc3"],
 			newConfig:      machineConfigs["mc1"],
@@ -316,14 +386,14 @@ blocked = true
 			expectedAction: true,
 		},
 		{
-			// skip drain: only new mirrors got added to the registry with mirror-by-digest-only set to true for registry
+			// skip drain: only new mirrors got added to the registry with pull-from-mirror=digest-only
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc1"],
 			newConfig:      machineConfigs["mc2"],
 			expectedAction: false,
 		},
 		{
-			// skip drain: only new mirrors are added to registry with mirror-by-digest-only=true while existing registries with mirror-by-digest-only=false are unchanged
+			// skip drain: only new mirrors are added to registry with pull-from-mirror=digest-only while existing registries with mirror-by-digest-only=false are unchanged
 			actions:        []string{postConfigChangeActionReloadCrio},
 			oldConfig:      machineConfigs["mc9"],
 			newConfig:      machineConfigs["mc11"],
@@ -377,6 +447,13 @@ blocked = true
 			oldConfig:      machineConfigs["mc1"],
 			newConfig:      machineConfigs["mc6"],
 			expectedAction: true,
+		},
+		{
+			// skip drain: only new mirror added to registry with mirror-by-digest-only set to true
+			actions:        []string{postConfigChangeActionReloadCrio},
+			oldConfig:      machineConfigs["mc12"],
+			newConfig:      machineConfigs["mc13"],
+			expectedAction: false,
 		},
 	}
 

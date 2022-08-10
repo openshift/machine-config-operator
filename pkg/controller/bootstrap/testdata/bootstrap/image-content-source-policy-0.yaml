@@ -7,4 +7,4 @@ spec:
   repositoryDigestMirrors:
   - mirrors:
     - registry.mirror.example.com/ocp
-    source: registry.product.example.org/ocp/4.2-DATE-VERSION
+    source: registry.product.example.org/ocp/4.2-date-version

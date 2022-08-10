@@ -122,8 +122,8 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 // help MCD to decide whether we can skip node drain for applied changes into container
 // registry.
 // Currently, we consider following container registry config changes as safe to skip node drain:
-// 1. A new mirror is added to an existing registry that has `mirror-by-digest-only=true`
-// 2. A new registry has been added that has `mirror-by-digest-only=true`
+// 1. A new mirror that has 'pull-from-mirror=digest-only' is added
+// 2. A new registry has been added that has all mirrors with 'pull-from-mirror=digest-only'
 // See https://bugzilla.redhat.com/show_bug.cgi?id=1943315
 //
 //nolint:gocyclo
@@ -215,33 +215,39 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 						constants.ContainerRegistryConfPath, regLoc, oldReg.Insecure, newReg.Insecure)
 					return false, nil
 				}
-				if oldReg.MirrorByDigestOnly == newReg.MirrorByDigestOnly {
-					// Ensure that all the old mirrors are present
-					for _, m := range oldReg.Mirrors {
-						if !searchRegistryMirror(m.Location, newReg.Mirrors) {
-							glog.Infof("%s: mirror %s has been removed in registry %s",
-								constants.ContainerRegistryConfPath, m.Location, regLoc)
+
+				// Ensure that all the old mirrors are present
+				for _, m := range oldReg.Mirrors {
+					if found, _ := searchRegistryMirror(m.Location, newReg.Mirrors); !found {
+						glog.Infof("%s: mirror %s has been removed in registry %s",
+							constants.ContainerRegistryConfPath, m.Location, regLoc)
+						return false, nil
+					}
+				}
+				for _, m := range newReg.Mirrors {
+					// Ensure that any change to current does not unset pull-from-mirror="digest-only"
+					if found, oldMirror := searchRegistryMirror(m.Location, oldReg.Mirrors); found {
+						if m.PullFromMirror != oldMirror.PullFromMirror && m.PullFromMirror != sysregistriesv2.MirrorByDigestOnly {
+							glog.Infof("%s: pull-from-mirror value for mirror %s has changed from %s to %s ",
+								constants.ContainerRegistryConfPath, m.Location, oldMirror.PullFromMirror, m.PullFromMirror)
 							return false, nil
 						}
 					}
-					// Ensure that any added mirror has mirror-by-digest-only set to true
-					for _, m := range newReg.Mirrors {
-						if !searchRegistryMirror(m.Location, oldReg.Mirrors) && !newReg.MirrorByDigestOnly {
-							glog.Infof("%s: mirror %s has been added in registry %s that has mirror-by-digest-only set to %t ",
-								constants.ContainerRegistryConfPath, m.Location, regLoc, newReg.MirrorByDigestOnly)
+					// Ensure that any added mirror has set pull-from-mirror="digest-only"
+					if found, _ := searchRegistryMirror(m.Location, oldReg.Mirrors); !found {
+						if m.PullFromMirror != sysregistriesv2.MirrorByDigestOnly && !newReg.MirrorByDigestOnly {
+							glog.Infof("%s: mirror %s has been added in registry %s that has pull-from-mirror set to %s ",
+								constants.ContainerRegistryConfPath, m.Location, regLoc, m.PullFromMirror)
 							return false, nil
 						}
+
 					}
-				} else {
-					glog.Infof("%s: mirror-by-digest-only value for registry %s has changed from %t to %t",
-						constants.ContainerRegistryConfPath, regLoc, oldReg.MirrorByDigestOnly, newReg.MirrorByDigestOnly)
-					return false, nil
 				}
 			}
-		} else if !newReg.MirrorByDigestOnly {
-			// New mirrors added into registry but mirror-by-digest-only has been set to false
-			glog.Infof("%s: registry %s has been added with mirror-by-digest-only set to %t",
-				constants.ContainerRegistryConfPath, regLoc, newReg.MirrorByDigestOnly)
+		} else if !allDigestOnlyMirror(newReg) {
+			// Ensure that each mirror under the newReg has pull-from-mirror=digest-only
+			glog.Infof("%s: registry %s has been added with mirror does not set pull-from-mirror=digest-only",
+				constants.ContainerRegistryConfPath, regLoc)
 			return false, nil
 		}
 	}
@@ -250,15 +256,27 @@ func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Con
 	return true, nil
 }
 
-// searchRegistryMirror does lookup of a mirror in the mirroList specified for a registry
+// searchRegistryMirror does lookup of a mirror in the mirrorList specified for a registry
 // Returns true if found
-func searchRegistryMirror(loc string, mirrors []sysregistriesv2.Endpoint) bool {
+func searchRegistryMirror(loc string, mirrors []sysregistriesv2.Endpoint) (bool, sysregistriesv2.Endpoint) {
 	found := false
 	for _, m := range mirrors {
 		if m.Location == loc {
 			found = true
-			break
+			return found, m
 		}
 	}
-	return found
+	return found, sysregistriesv2.Endpoint{}
+}
+
+func allDigestOnlyMirror(reg sysregistriesv2.Registry) bool {
+	if len(reg.Mirrors) == 0 {
+		return reg.MirrorByDigestOnly
+	}
+	for _, m := range reg.Mirrors {
+		if m.PullFromMirror != sysregistriesv2.MirrorByDigestOnly {
+			return false
+		}
+	}
+	return true
 }
