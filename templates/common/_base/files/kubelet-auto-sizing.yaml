@@ -95,6 +95,6 @@ contents:
     elif [ $1 == "false" ]; then
         static_node_sizing $2 $3
     else
-        echo "Unrecongnized command line option. Valid options are \"true\" or \"false\""
+        echo "Unrecognized command line option. Valid options are \"true\" or \"false\""
     fi
 
