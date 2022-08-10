@@ -65,6 +65,8 @@ type fixture struct {
 	imgLister  []*apicfgv1.Image
 	cvLister   []*apicfgv1.ClusterVersion
 	icspLister []*apioperatorsv1alpha1.ImageContentSourcePolicy
+	idmsLister []*apicfgv1.ImageDigestMirrorSet
+	itmsLister []*apicfgv1.ImageTagMirrorSet
 
 	actions               []core.Action
 	skipActionsValidation bool
@@ -162,6 +164,26 @@ func newICSP(name string, mirrors []apioperatorsv1alpha1.RepositoryDigestMirrors
 	}
 }
 
+func newIDMS(name string, mirrors []apicfgv1.ImageDigestMirrors) *apicfgv1.ImageDigestMirrorSet {
+	return &apicfgv1.ImageDigestMirrorSet{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apioperatorsv1alpha1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Spec: apicfgv1.ImageDigestMirrorSetSpec{
+			ImageDigestMirrors: mirrors,
+		},
+	}
+}
+
+func newITMS(name string, mirrors []apicfgv1.ImageTagMirrors) *apicfgv1.ImageTagMirrorSet {
+	return &apicfgv1.ImageTagMirrorSet{
+		TypeMeta:   metav1.TypeMeta{APIVersion: apioperatorsv1alpha1.SchemeGroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(utilrand.String(5)), Generation: 1},
+		Spec: apicfgv1.ImageTagMirrorSetSpec{
+			ImageTagMirrors: mirrors,
+		},
+	}
+}
+
 func newClusterVersionConfig(name, desiredImage string) *apicfgv1.ClusterVersion {
 	return &apicfgv1.ClusterVersion{
 		TypeMeta:   metav1.TypeMeta{APIVersion: apicfgv1.SchemeGroupVersion.String()},
@@ -187,6 +209,8 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().ContainerRuntimeConfigs(),
 		ci.Config().V1().Images(),
+		ci.Config().V1().ImageDigestMirrorSets(),
+		ci.Config().V1().ImageTagMirrorSets(),
 		oi.Operator().V1alpha1().ImageContentSourcePolicies(),
 		ci.Config().V1().ClusterVersions(),
 		k8sfake.NewSimpleClientset(), f.client, f.imgClient)
@@ -196,6 +220,8 @@ func (f *fixture) newController() *Controller {
 	c.ccListerSynced = alwaysReady
 	c.imgListerSynced = alwaysReady
 	c.icspListerSynced = alwaysReady
+	c.idmsListerSynced = alwaysReady
+	c.itmsListerSynced = alwaysReady
 	c.clusterVersionListerSynced = alwaysReady
 	c.eventRecorder = &record.FakeRecorder{}
 
@@ -225,6 +251,12 @@ func (f *fixture) newController() *Controller {
 	}
 	for _, c := range f.icspLister {
 		oi.Operator().V1alpha1().ImageContentSourcePolicies().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.idmsLister {
+		ci.Config().V1().ImageDigestMirrorSets().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.itmsLister {
+		ci.Config().V1().ImageTagMirrorSets().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -356,24 +388,35 @@ func (f *fixture) expectUpdateContainerRuntimeConfigRoot(config *mcfgv1.Containe
 	f.actions = append(f.actions, core.NewRootUpdateAction(schema.GroupVersionResource{Version: "v1", Group: "machineconfiguration.openshift.io", Resource: "containerruntimeconfigs"}, config))
 }
 
-func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, releaseImageReg string, verifyPolicyJSON, verifySearchRegsDropin bool) {
+func (f *fixture) verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mcName string, imgcfg *apicfgv1.Image, icsp *apioperatorsv1alpha1.ImageContentSourcePolicy, idms *apicfgv1.ImageDigestMirrorSet, itms *apicfgv1.ImageTagMirrorSet, releaseImageReg string, verifyPolicyJSON, verifySearchRegsDropin bool) {
 	icsps := []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
 	if icsp != nil {
 		icsps = append(icsps, icsp)
 	}
+	idmss := []*apicfgv1.ImageDigestMirrorSet{}
+	if idms != nil {
+		idmss = append(idmss, idms)
+	}
+	itmss := []*apicfgv1.ImageTagMirrorSet{}
+	if itms != nil {
+		itmss = append(itmss, itms)
+	}
 	updatedMC, err := f.client.MachineconfigurationV1().MachineConfigs().Get(context.TODO(), mcName, metav1.GetOptions{})
 	require.NoError(t, err)
-	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, releaseImageReg, verifyPolicyJSON, verifySearchRegsDropin)
+	verifyRegistriesConfigAndPolicyJSONContents(t, updatedMC, mcName, imgcfg, icsps, idmss, itmss, releaseImageReg, verifyPolicyJSON, verifySearchRegsDropin)
 }
 
-func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, releaseImageReg string, verifyPolicyJSON, verifySearchRegsDropin bool) {
+func verifyRegistriesConfigAndPolicyJSONContents(t *testing.T, mc *mcfgv1.MachineConfig, mcName string, imgcfg *apicfgv1.Image, icsps []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmss []*apicfgv1.ImageDigestMirrorSet, itmss []*apicfgv1.ImageTagMirrorSet, releaseImageReg string, verifyPolicyJSON, verifySearchRegsDropin bool) {
 	// This is not testing updateRegistriesConfig, which has its own tests; this verifies the created object contains the expected
 	// configuration file.
 	// First get the valid blocked registries to ensure we don't block the registry where the release image is from
-	registriesBlocked, policyBlocked, allowed, _ := getValidBlockedAndAllowedRegistries(releaseImageReg, &imgcfg.Spec, icsps)
+	for _, icsp := range icsps {
+		idmss = append(idmss, convertICSPToIDMS(icsp))
+	}
+	registriesBlocked, policyBlocked, allowed, _ := getValidBlockedAndAllowedRegistries(releaseImageReg, &imgcfg.Spec, idmss)
 	expectedRegistriesConf, err := updateRegistriesConfig(templateRegistriesConfig,
 		imgcfg.Spec.RegistrySources.InsecureRegistries,
-		registriesBlocked, icsps)
+		registriesBlocked, idmss, itmss)
 	require.NoError(t, err)
 	assert.Equal(t, mcName, mc.ObjectMeta.Name)
 
@@ -585,7 +628,7 @@ func TestImageConfigCreate(t *testing.T) {
 			f.run("cluster")
 
 			for _, mcName := range []string{mcs1.Name, mcs2.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, cc.Spec.ReleaseImage, true, true)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, nil, cc.Spec.ReleaseImage, true, true)
 			}
 		})
 	}
@@ -640,7 +683,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, cc.Spec.ReleaseImage, true, true)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, nil, cc.Spec.ReleaseImage, true, true)
 			}
 
 			// Perform Update
@@ -681,7 +724,7 @@ func TestImageConfigUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfgUpdate, nil, cc.Spec.ReleaseImage, true, true)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfgUpdate, nil, nil, nil, cc.Spec.ReleaseImage, true, true)
 			}
 		})
 	}
@@ -741,7 +784,7 @@ func TestICSPUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icsp, cc.Spec.ReleaseImage, false, false)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icsp, nil, nil, cc.Spec.ReleaseImage, false, false)
 			}
 
 			// Perform Update
@@ -786,7 +829,213 @@ func TestICSPUpdate(t *testing.T) {
 			close(stopCh)
 
 			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
-				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icspUpdate, cc.Spec.ReleaseImage, false, false)
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, icspUpdate, nil, nil, cc.Spec.ReleaseImage, false, false)
+			}
+		})
+	}
+}
+
+func TestTIDMSUpdate(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			keyReg1, _ := getManagedKeyReg(mcp, nil)
+			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			idms := newIDMS("built-in", []apicfgv1.ImageDigestMirrors{
+				{Source: "built-in-source.example.com", Mirrors: []apicfgv1.ImageMirror{"built-in-mirror.example.com"}},
+			})
+			mcs1Update := mcs1.DeepCopy()
+			mcs2Update := mcs2.DeepCopy()
+			mcs1Update.Name = keyReg1
+			mcs2Update.Name = keyReg2
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.idmsLister = append(f.idmsLister, idms)
+			f.cvLister = append(f.cvLister, cvcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.operatorObjects = append(f.operatorObjects, idms)
+
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectCreateMachineConfigAction(mcs2)
+
+			c := f.newController()
+			stopCh := make(chan struct{})
+
+			err := c.syncImgHandler("cluster")
+			if err != nil {
+				t.Errorf("syncImgHandler returned %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, idms, nil, cc.Spec.ReleaseImage, false, false)
+			}
+
+			// Perform Update
+			f = newFixture(t)
+
+			// Modify IDMS
+			idmsUpdate := idms.DeepCopy()
+			idmsUpdate.Spec.ImageDigestMirrors = append(idmsUpdate.Spec.ImageDigestMirrors, apicfgv1.ImageDigestMirrors{
+				Source: "built-in-source.example.com", Mirrors: []apicfgv1.ImageMirror{"local-mirror.local"},
+			})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.idmsLister = append(f.idmsLister, idmsUpdate)
+			f.cvLister = append(f.cvLister, cvcfg1)
+			f.objects = append(f.objects, mcs1Update, mcs2Update)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.operatorObjects = append(f.operatorObjects, idmsUpdate)
+
+			c = f.newController()
+			stopCh = make(chan struct{})
+
+			glog.Info("Applying update")
+
+			// Apply update
+			err = c.syncImgHandler("")
+			if err != nil {
+				t.Errorf("syncImgHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectUpdateMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectUpdateMachineConfigAction(mcs2Update)
+
+			f.validateActions()
+
+			close(stopCh)
+
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, idmsUpdate, nil, cc.Spec.ReleaseImage, false, false)
+			}
+		})
+	}
+}
+
+func TestTITMSUpdate(t *testing.T) {
+	for _, platform := range []apicfgv1.PlatformType{apicfgv1.AWSPlatformType, apicfgv1.NonePlatformType, "unrecognized"} {
+		t.Run(string(platform), func(t *testing.T) {
+			f := newFixture(t)
+
+			cc := newControllerConfig(ctrlcommon.ControllerConfigName, platform)
+			mcp := helpers.NewMachineConfigPool("master", nil, helpers.MasterSelector, "v0")
+			mcp2 := helpers.NewMachineConfigPool("worker", nil, helpers.WorkerSelector, "v0")
+			imgcfg1 := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"blah.io"}})
+			cvcfg1 := newClusterVersionConfig("version", "test.io/myuser/myimage:test")
+			keyReg1, _ := getManagedKeyReg(mcp, nil)
+			keyReg2, _ := getManagedKeyReg(mcp2, nil)
+			mcs1 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp), map[string]string{"node-role": "master"}, "dummy://", []ign3types.File{{}})
+			mcs2 := helpers.NewMachineConfig(getManagedKeyRegDeprecated(mcp2), map[string]string{"node-role": "worker"}, "dummy://", []ign3types.File{{}})
+			itms := newITMS("built-in", []apicfgv1.ImageTagMirrors{
+				{Source: "built-in-source.example.com", Mirrors: []apicfgv1.ImageMirror{"built-in-mirror.example.com"}},
+			})
+			mcs1Update := mcs1.DeepCopy()
+			mcs2Update := mcs2.DeepCopy()
+			mcs1Update.Name = keyReg1
+			mcs2Update.Name = keyReg2
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.itmsLister = append(f.itmsLister, itms)
+			f.cvLister = append(f.cvLister, cvcfg1)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.operatorObjects = append(f.operatorObjects, itms)
+
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs1)
+			f.expectCreateMachineConfigAction(mcs1)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectGetMachineConfigAction(mcs2)
+			f.expectCreateMachineConfigAction(mcs2)
+
+			c := f.newController()
+			stopCh := make(chan struct{})
+
+			err := c.syncImgHandler("cluster")
+			if err != nil {
+				t.Errorf("syncImgHandler returned %v", err)
+			}
+
+			f.validateActions()
+			close(stopCh)
+
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, itms, cc.Spec.ReleaseImage, false, false)
+			}
+
+			// Perform Update
+			f = newFixture(t)
+
+			// Modify ITMS
+			itmsUpdate := itms.DeepCopy()
+			itmsUpdate.Spec.ImageTagMirrors = append(itmsUpdate.Spec.ImageTagMirrors, apicfgv1.ImageTagMirrors{
+				Source: "built-in-source.example.com", Mirrors: []apicfgv1.ImageMirror{"local-mirror.local"},
+			})
+
+			f.ccLister = append(f.ccLister, cc)
+			f.mcpLister = append(f.mcpLister, mcp)
+			f.mcpLister = append(f.mcpLister, mcp2)
+			f.imgLister = append(f.imgLister, imgcfg1)
+			f.itmsLister = append(f.itmsLister, itmsUpdate)
+			f.cvLister = append(f.cvLister, cvcfg1)
+			f.objects = append(f.objects, mcs1Update, mcs2Update)
+			f.imgObjects = append(f.imgObjects, imgcfg1)
+			f.operatorObjects = append(f.operatorObjects, itmsUpdate)
+
+			c = f.newController()
+			stopCh = make(chan struct{})
+
+			glog.Info("Applying update")
+
+			// Apply update
+			err = c.syncImgHandler("")
+			if err != nil {
+				t.Errorf("syncImgHandler returned: %v", err)
+			}
+
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs1Update)
+			f.expectUpdateMachineConfigAction(mcs1Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectGetMachineConfigAction(mcs2Update)
+			f.expectUpdateMachineConfigAction(mcs2Update)
+
+			f.validateActions()
+
+			close(stopCh)
+
+			for _, mcName := range []string{mcs1Update.Name, mcs2Update.Name} {
+				f.verifyRegistriesConfigAndPolicyJSONContents(t, mcName, imgcfg1, nil, nil, itmsUpdate, cc.Spec.ReleaseImage, false, false)
 			}
 		})
 	}
@@ -810,13 +1059,13 @@ func TestRunImageBootstrap(t *testing.T) {
 			// both registries.conf and policy.json as blocked
 			imgCfg := newImageConfig("cluster", &apicfgv1.RegistrySources{InsecureRegistries: []string{"insecure-reg-1.io", "insecure-reg-2.io"}, BlockedRegistries: []string{"blocked-reg.io", "release-reg.io"}, ContainerRuntimeSearchRegistries: []string{"search-reg.io"}})
 
-			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules, imgCfg)
+			mcs, err := RunImageBootstrap("../../../templates", cc, pools, icspRules, nil, nil, imgCfg)
 			require.NoError(t, err)
 			require.Len(t, mcs, len(pools))
 
 			for i := range pools {
 				keyReg, _ := getManagedKeyReg(pools[i], nil)
-				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], keyReg, imgCfg, icspRules, cc.Spec.ReleaseImage, true, true)
+				verifyRegistriesConfigAndPolicyJSONContents(t, mcs[i], keyReg, imgCfg, icspRules, nil, nil, cc.Spec.ReleaseImage, true, true)
 			}
 		})
 	}
@@ -828,7 +1077,7 @@ func TestRegistriesValidation(t *testing.T) {
 	failureTests := []struct {
 		name      string
 		config    *apicfgv1.RegistrySources
-		icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		idmsRules []*apicfgv1.ImageDigestMirrorSet
 	}{
 		{
 			name: "adding registry used by payload to blocked registries",
@@ -843,11 +1092,11 @@ func TestRegistriesValidation(t *testing.T) {
 				BlockedRegistries:  []string{"blah.io", "docker.io"},
 				InsecureRegistries: []string{"test.io"},
 			},
-			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
 				{
-					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
-						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
-							{Source: "blah.io/myuser", Mirrors: []string{"mirror-1.io/myuser", "mirror-2.io/myuser"}},
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "blah.io/myuser", Mirrors: []apicfgv1.ImageMirror{"mirror-1.io/myuser", "mirror-2.io/myuser"}},
 						},
 					},
 				},
@@ -859,7 +1108,7 @@ func TestRegistriesValidation(t *testing.T) {
 		name                                                              string
 		expectedRegistriesBlocked, expectedPolicyBlocked, expectedAllowed []string
 		config                                                            *apicfgv1.RegistrySources
-		icspRules                                                         []*apioperatorsv1alpha1.ImageContentSourcePolicy
+		idmsRules                                                         []*apicfgv1.ImageDigestMirrorSet
 	}{
 		{
 			name: "adding registry used by payload to insecure registries",
@@ -876,11 +1125,11 @@ func TestRegistriesValidation(t *testing.T) {
 				BlockedRegistries:  []string{"blah.io", "docker.io"},
 				InsecureRegistries: []string{"test.io"},
 			},
-			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
 				{
-					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
-						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
-							{Source: "blah.io/payload", Mirrors: []string{"mirror-1.io/payload", "mirror-2.io/payload"}},
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "blah.io/payload", Mirrors: []apicfgv1.ImageMirror{"mirror-1.io/payload", "mirror-2.io/payload"}},
 						},
 					},
 				},
@@ -895,11 +1144,11 @@ func TestRegistriesValidation(t *testing.T) {
 				BlockedRegistries:  []string{"blah.io/payload", "docker.io"},
 				InsecureRegistries: []string{"test.io"},
 			},
-			icspRules: []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+			idmsRules: []*apicfgv1.ImageDigestMirrorSet{
 				{
-					Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
-						RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
-							{Source: "blah.io", Mirrors: []string{"mirror-1.io", "mirror-2.io"}},
+					Spec: apicfgv1.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []apicfgv1.ImageDigestMirrors{
+							{Source: "blah.io", Mirrors: []apicfgv1.ImageMirror{"mirror-1.io", "mirror-2.io"}},
 						},
 					},
 				},
@@ -914,7 +1163,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range failureTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/payload/myimage@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0")
-		registriesBlocked, _, _, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules)
+		registriesBlocked, _, _, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.idmsRules)
 		if err == nil {
 			t.Errorf("%s: failed", test.name)
 		}
@@ -929,7 +1178,7 @@ func TestRegistriesValidation(t *testing.T) {
 	for _, test := range successTests {
 		imgcfg := newImageConfig(test.name, test.config)
 		cvcfg := newClusterVersionConfig("version", "blah.io/payload/myimage@sha256:4207ba569ff014931f1b5d125fe3751936a768e119546683c899eb09f3cdceb0")
-		registriesBlocked, policyBlocked, allowed, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.icspRules)
+		registriesBlocked, policyBlocked, allowed, err := getValidBlockedAndAllowedRegistries(cvcfg.Status.Desired.Image, &imgcfg.Spec, test.idmsRules)
 		if err != nil {
 			t.Errorf("%s: failed", test.name)
 		}

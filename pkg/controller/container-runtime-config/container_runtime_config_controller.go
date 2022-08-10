@@ -91,6 +91,12 @@ type Controller struct {
 	icspLister       operatorlistersv1alpha1.ImageContentSourcePolicyLister
 	icspListerSynced cache.InformerSynced
 
+	idmsLister       cligolistersv1.ImageDigestMirrorSetLister
+	idmsListerSynced cache.InformerSynced
+
+	itmsLister       cligolistersv1.ImageTagMirrorSetLister
+	itmsListerSynced cache.InformerSynced
+
 	mcpLister       mcfglistersv1.MachineConfigPoolLister
 	mcpListerSynced cache.InformerSynced
 
@@ -108,6 +114,8 @@ func New(
 	ccInformer mcfginformersv1.ControllerConfigInformer,
 	mcrInformer mcfginformersv1.ContainerRuntimeConfigInformer,
 	imgInformer cligoinformersv1.ImageInformer,
+	idmsInformer cligoinformersv1.ImageDigestMirrorSetInformer,
+	itmsInformer cligoinformersv1.ImageTagMirrorSetInformer,
 	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	clusterVersionInformer cligoinformersv1.ClusterVersionInformer,
 	kubeClient clientset.Interface,
@@ -145,6 +153,18 @@ func New(
 		DeleteFunc: ctrl.icspConfDeleted,
 	})
 
+	idmsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.idmsConfAdded,
+		UpdateFunc: ctrl.idmsConfUpdated,
+		DeleteFunc: ctrl.idmsConfDeleted,
+	})
+
+	itmsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.itmsConfAdded,
+		UpdateFunc: ctrl.itmsConfUpdated,
+		DeleteFunc: ctrl.itmsConfDeleted,
+	})
+
 	ctrl.syncHandler = ctrl.syncContainerRuntimeConfig
 	ctrl.syncImgHandler = ctrl.syncImageConfig
 	ctrl.enqueueContainerRuntimeConfig = ctrl.enqueue
@@ -164,6 +184,12 @@ func New(
 	ctrl.icspLister = icspInformer.Lister()
 	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
 
+	ctrl.idmsLister = idmsInformer.Lister()
+	ctrl.idmsListerSynced = idmsInformer.Informer().HasSynced
+
+	ctrl.itmsLister = itmsInformer.Lister()
+	ctrl.itmsListerSynced = itmsInformer.Informer().HasSynced
+
 	ctrl.clusterVersionLister = clusterVersionInformer.Lister()
 	ctrl.clusterVersionListerSynced = clusterVersionInformer.Informer().HasSynced
 
@@ -177,7 +203,7 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 	defer ctrl.imgQueue.ShutDown()
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.mcpListerSynced, ctrl.mccrListerSynced, ctrl.ccListerSynced,
-		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.clusterVersionListerSynced) {
+		ctrl.imgListerSynced, ctrl.icspListerSynced, ctrl.idmsListerSynced, ctrl.itmsListerSynced, ctrl.clusterVersionListerSynced) {
 		return
 	}
 
@@ -225,6 +251,30 @@ func (ctrl *Controller) icspConfUpdated(oldObj, newObj interface{}) {
 }
 
 func (ctrl *Controller) icspConfDeleted(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) idmsConfAdded(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) idmsConfUpdated(oldObj, newObj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) idmsConfDeleted(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) itmsConfAdded(obj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) itmsConfUpdated(oldObj, newObj interface{}) {
+	ctrl.imgQueue.Add("openshift-config")
+}
+
+func (ctrl *Controller) itmsConfDeleted(obj interface{}) {
 	ctrl.imgQueue.Add("openshift-config")
 }
 
@@ -687,6 +737,25 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	} else if err != nil {
 		return err
 	}
+	// Find all ImageDigestMirrorSet objects
+	idmsRules, err := ctrl.idmsLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		idmsRules = []*apicfgv1.ImageDigestMirrorSet{}
+	} else if err != nil {
+		return err
+	}
+	// Migrate existing ImageContentSourcePolicy objects to ImageDigestMirrorSet objects
+	idmsRules, err = ctrl.migrateICSPtoIDMS(icspRules, idmsRules)
+	if err != nil {
+		return fmt.Errorf("could not migrate ImageContentSourcePolicy objects to ImageDigestMirrorSet objects %w", err)
+	}
+
+	itmsRules, err := ctrl.itmsLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		itmsRules = []*apicfgv1.ImageTagMirrorSet{}
+	} else if err != nil {
+		return err
+	}
 
 	var (
 		registriesBlocked, policyBlocked, allowedRegs []string
@@ -698,7 +767,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		// has been recovered
 		releaseImage = clusterVersionCfg.Status.Desired.Image
 		// Go through the registries in the image spec to get and validate the blocked registries
-		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(releaseImage, &imgcfg.Spec, icspRules)
+		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(releaseImage, &imgcfg.Spec, idmsRules)
 		if err != nil && err != errParsingReference {
 			glog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {
@@ -733,7 +802,7 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 		if err := retry.RetryOnConflict(updateBackoff, func() error {
 			registriesIgn, err := registriesConfigIgnition(ctrl.templatesDir, controllerConfig, role, releaseImage,
 				imgcfg.Spec.RegistrySources.InsecureRegistries, registriesBlocked, policyBlocked, allowedRegs,
-				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, icspRules)
+				imgcfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries, idmsRules, itmsRules)
 			if err != nil {
 				return err
 			}
@@ -793,8 +862,45 @@ func (ctrl *Controller) syncImageConfig(key string) error {
 	return nil
 }
 
+func (ctrl *Controller) migrateICSPtoIDMS(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, idmsRules []*apicfgv1.ImageDigestMirrorSet) ([]*apicfgv1.ImageDigestMirrorSet, error) {
+	idmsRulesUpdateFromICSP, idmsRulesCreateFromICSP, idmsRulesDel := idmsRulesLists(icspRules, idmsRules)
+	// delete idms if the corresponding icsp has been deleted
+	for _, idms := range idmsRulesDel {
+		glog.Info("deleting idms: ", idms.Name)
+		if err := ctrl.configClient.ConfigV1().ImageDigestMirrorSets().Delete(context.TODO(), idms.Name, metav1.DeleteOptions{}); err != nil {
+			return nil, fmt.Errorf("error deleting idms object %v: %w\n", idms.Name, err)
+		}
+	}
+
+	for _, idms := range idmsRulesUpdateFromICSP {
+		glog.Info("updating idms: ", idms.Name)
+		if _, err := ctrl.configClient.ConfigV1().ImageDigestMirrorSets().Update(context.TODO(), idms, metav1.UpdateOptions{}); err != nil {
+			return nil, fmt.Errorf("error while updating idms object %v: %w\n", idms.Name, err)
+		}
+	}
+
+	// create idms from existing icsp
+	for _, idms := range idmsRulesCreateFromICSP {
+		glog.Info("creating idms: ", idms.Name)
+		resp, err := ctrl.configClient.ConfigV1().ImageDigestMirrorSets().Create(context.TODO(), idms, metav1.CreateOptions{})
+		if err != nil && !errors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("error while creating idms object %v: %w\n", idms.Name, err)
+		} else {
+			glog.Infof("idms object created: %v\n", resp)
+		}
+	}
+	idmsRules, err := ctrl.idmsLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		idmsRules = []*apicfgv1.ImageDigestMirrorSet{}
+	} else if err != nil {
+		return nil, err
+	}
+	return idmsRules, nil
+}
+
 func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.ControllerConfig, role, releaseImage string,
-	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (*ign3types.Config, error) {
+	insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet) (*ign3types.Config, error) {
 
 	var (
 		registriesTOML []byte
@@ -807,7 +913,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		return nil, fmt.Errorf("could not generate original ContainerRuntime Configs: %w", err)
 	}
 
-	if insecureRegs != nil || registriesBlocked != nil || len(icspRules) != 0 {
+	if insecureRegs != nil || registriesBlocked != nil || len(idmsRules) != 0 || len(itmsRules) != 0 {
 		if originalRegistriesIgn.Contents.Source == nil {
 			return nil, fmt.Errorf("original registries config is empty")
 		}
@@ -815,7 +921,7 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 		if err != nil {
 			return nil, fmt.Errorf("could not decode original registries config: %w", err)
 		}
-		registriesTOML, err = updateRegistriesConfig(contents, insecureRegs, registriesBlocked, icspRules)
+		registriesTOML, err = updateRegistriesConfig(contents, insecureRegs, registriesBlocked, idmsRules, itmsRules)
 		if err != nil {
 			return nil, fmt.Errorf("could not update registries config with new changes: %w", err)
 		}
@@ -847,17 +953,23 @@ func registriesConfigIgnition(templateDir string, controllerConfig *mcfgv1.Contr
 
 // RunImageBootstrap generates MachineConfig objects for mcpPools that would have been generated by syncImageConfig,
 // except that mcfgv1.Image is not available.
-func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy, imgCfg *apicfgv1.Image) ([]*mcfgv1.MachineConfig, error) {
+func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerConfig, mcpPools []*mcfgv1.MachineConfigPool, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy,
+	idmsRules []*apicfgv1.ImageDigestMirrorSet, itmsRules []*apicfgv1.ImageTagMirrorSet, imgCfg *apicfgv1.Image) ([]*mcfgv1.MachineConfig, error) {
+
 	var (
 		insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs []string
 		err                                                                     error
 	)
 
+	for _, icsp := range icspRules {
+		idmsRules = append(idmsRules, convertICSPToIDMS(icsp))
+	}
+
 	// Read the search, insecure, blocked, and allowed registries from the cluster-wide Image CR if it is not nil
 	if imgCfg != nil {
 		insecureRegs = imgCfg.Spec.RegistrySources.InsecureRegistries
 		searchRegs = imgCfg.Spec.RegistrySources.ContainerRuntimeSearchRegistries
-		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec, icspRules)
+		registriesBlocked, policyBlocked, allowedRegs, err = getValidBlockedAndAllowedRegistries(controllerConfig.Spec.ReleaseImage, &imgCfg.Spec, idmsRules)
 		if err != nil && err != errParsingReference {
 			glog.V(2).Infof("%v, skipping....", err)
 		} else if err == errParsingReference {
@@ -874,7 +986,7 @@ func RunImageBootstrap(templateDir string, controllerConfig *mcfgv1.ControllerCo
 			return nil, err
 		}
 		registriesIgn, err := registriesConfigIgnition(templateDir, controllerConfig, role, controllerConfig.Spec.ReleaseImage,
-			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, icspRules)
+			insecureRegs, registriesBlocked, policyBlocked, allowedRegs, searchRegs, idmsRules, itmsRules)
 		if err != nil {
 			return nil, err
 		}
