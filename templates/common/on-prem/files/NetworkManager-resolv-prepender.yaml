@@ -21,20 +21,23 @@ contents:
     {{end -}}
 
     # If $DHCP6_FQDN_FQDN is not empty and is not localhost.localdomain
-    [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]] && hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+    if [[ -n "$DHCP6_FQDN_FQDN" && "$DHCP6_FQDN_FQDN" != "localhost.localdomain" && "$DHCP6_FQDN_FQDN" =~ "." ]]; then
+        # run with systemd-run to avoid selinux problems
+        systemd-run --property=Type=oneshot --unit resolve-prepender-hostnamectl -Pq \
+            hostnamectl set-hostname --static --transient $DHCP6_FQDN_FQDN
+    fi
+    
     case "$STATUS" in
         up|dhcp4-change|dhcp6-change)
         >&2 echo "NM resolv-prepender triggered by ${1} ${2}."
 
         # In DHCP connections, the resolv.conf content may be late, thus we wait for nameservers
-        timeout 45s /bin/bash <<EOF
-            if [[ "$STATUS" == dhcp* ]]; then
-                >&2 echo  "NM resolv-prepender: Checking for nameservers in /var/run/NetworkManager/resolv.conf"
-                while ! grep nameserver /var/run/NetworkManager/resolv.conf; do
-                    >&2 echo  "NM resolv-prepender: NM resolv.conf still empty of nameserver"
-                    sleep 0.5
-                done
-            fi
+        timeout 20s /bin/bash <<EOF
+            >&2 echo  "NM resolv-prepender: Checking for nameservers in /var/run/NetworkManager/resolv.conf"
+            while ! grep nameserver /var/run/NetworkManager/resolv.conf; do
+                >&2 echo  "NM resolv-prepender: NM resolv.conf still empty of nameserver"
+                sleep 0.5
+            done
     EOF
         # Ensure resolv.conf exists and contains nameservers before we try to run podman
         if [[ ! -e /etc/resolv.conf ]] || ! grep -q nameserver /etc/resolv.conf; then
@@ -42,12 +45,13 @@ contents:
         fi
 
 
-        NAMESERVER_IP=$(/usr/bin/podman run --rm \
+        NAMESERVER_IP=$(timeout 20s /usr/bin/podman run --rm \
             --authfile /var/lib/kubelet/config.json \
             --net=host \
             {{ .Images.baremetalRuntimeCfgImage }} \
             node-ip \
             show \
+            --retry-on-failure \
             "{{ onPremPlatformAPIServerInternalIP . }}" \
             "{{ onPremPlatformIngressIP . }}")
         DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
