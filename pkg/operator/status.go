@@ -464,12 +464,16 @@ func getMinorKubeletVersion(version string) (int, error) {
 // getMinimalSkewSupportNodeVersion returns the minimal supported node kubelet version.
 func getMinimalSkewSupportNodeVersion(version string) string {
 	// drop the pre-release and commit hash
-	if strings.Contains(version, "-") {
-		version = version[:strings.Index(version, "-")]
+	idx := strings.Index(version, "-")
+	if idx >= 0 {
+		version = version[:idx]
 	}
-	if strings.Contains(version, "+") {
-		version = version[:strings.Index(version, "+")]
+
+	idx = strings.Index(version, "+")
+	if idx >= 0 {
+		version = version[:idx]
 	}
+
 	tokens := strings.Split(version, ".")
 	if minorVersion, err := strconv.ParseInt(tokens[1], 10, 32); err == nil {
 		tokens[1] = strconv.Itoa(int(minorVersion) - 2)
