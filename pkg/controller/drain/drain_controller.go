@@ -412,7 +412,7 @@ func (ctrl *Controller) cordonOrUncordonNode(desired bool, node *corev1.Node, dr
 			return false, nil
 		}
 
-		if node.Spec.Unschedulable != desired {
+		if updatedNode.Spec.Unschedulable != desired {
 			// See https://bugzilla.redhat.com/show_bug.cgi?id=2022387
 			ctrl.logNode(node, "RunCordonOrUncordon() succeeded but node is still not in %s state, retrying", verb)
 			return false, nil
