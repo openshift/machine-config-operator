@@ -17,21 +17,27 @@ type OperatingSystem struct {
 	VersionID string
 }
 
-// IsRHCOS is true if the OS is RHEL CoreOS
-func (os OperatingSystem) IsRHCOS() bool {
-	return os.ID == "rhcos"
+// IsEL is true if the OS is an Enterprise Linux variant,
+// i.e. RHEL CoreOS (RHCOS) or CentOS Stream CoreOS (SCOS)
+func (os OperatingSystem) IsEL() bool {
+	return os.ID == "rhcos" || os.ID == "scos"
 }
 
-// IsFCOS is true if the OS is RHEL CoreOS
+// IsEL9 is true if the OS is RHCOS 9 or SCOS 9
+func (os OperatingSystem) IsEL9() bool {
+	return os.IsEL() && os.VersionID == "9"
+}
+
+// IsFCOS is true if the OS is Fedora CoreOS
 func (os OperatingSystem) IsFCOS() bool {
 	return os.ID == "fedora" && os.VariantID == "coreos"
 }
 
 // IsCoreOSVariant is true if the OS is FCOS or a derivative (ostree+Ignition)
-// which includes RHCOS.
+// which includes SCOS and RHCOS.
 func (os OperatingSystem) IsCoreOSVariant() bool {
-	// We should probably add VARIANT_ID=coreos to RHCOS too and key off that
-	return os.IsFCOS() || os.IsRHCOS()
+	// In RHCOS8 the variant id is not specified. SCOS (future RHCOS9) and FCOS have VARIANT_ID=coreos.
+	return os.VariantID == "coreos" || os.IsEL()
 }
 
 // IsLikeTraditionalRHEL7 is true if the OS is traditional RHEL7 or CentOS7:
