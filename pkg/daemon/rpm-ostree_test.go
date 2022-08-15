@@ -46,3 +46,15 @@ func (r RpmOstreeClientMock) GetStatus() (string, error) {
 func (r RpmOstreeClientMock) GetBootedDeployment() (*RpmOstreeDeployment, error) {
 	return &RpmOstreeDeployment{}, nil
 }
+
+func (r RpmOstreeClientMock) GetBootedAndStagedDeployment() (booted, staged *RpmOstreeDeployment, err error) {
+	return nil, nil, nil
+}
+
+func (r RpmOstreeClientMock) IsBootableImage(string) (bool, error) {
+	return false, nil
+}
+
+func (r RpmOstreeClientMock) RebaseLayered(string) error {
+	return nil
+}
