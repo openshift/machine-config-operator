@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -105,8 +106,35 @@ func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
 	return &rosState, nil
 }
 
+// See https://bugzilla.redhat.com/show_bug.cgi?id=2111817
+func bug2111817Workaround() error {
+	targetUnit := "/run/systemd/system/rpm-ostreed.service.d/bug2111817.conf"
+	// Do nothing if the file exists
+	if _, err := os.Stat(targetUnit); err == nil {
+		return nil
+	}
+	err := os.MkdirAll(filepath.Dir(targetUnit), 0o755)
+	if err != nil {
+		return err
+	}
+	dropin := `[Service]
+InaccessiblePaths=
+`
+	if err := writeFileAtomicallyWithDefaults(targetUnit, []byte(dropin)); err != nil {
+		return err
+	}
+	if err := runCmdSync("systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	glog.Infof("Enabled workaround for bug 2111817")
+	return nil
+}
+
 func (r *RpmOstreeClient) Initialize() error {
-	// This used to have some workarounds for rpm-ostree bugs, but we no longer need those.
+	if err := bug2111817Workaround(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
