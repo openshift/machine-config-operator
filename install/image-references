@@ -27,10 +27,11 @@ spec:
     from:
       kind: DockerImage
       name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-8
-  - name: rhel-coreos-8-extensions
-    from:
-      kind: DockerImage
-      name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-8-extensions
+  # Uncomment this after https://issues.redhat.com/browse/COS-1646 lands
+  # - name: rhel-coreos-8-extensions
+  #   from:
+  #     kind: DockerImage
+  #     name: placeholder.url.oc.will.replace.this.org/placeholdernamespace:rhel-coreos-8-extensions
   - name: keepalived-ipfailover
     from:
       kind: DockerImage
