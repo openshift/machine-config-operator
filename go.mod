@@ -303,3 +303,7 @@ replace (
 	github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
 	github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
 )
+
+replace github.com/openshift/client-go => github.com/QiWang19/client-go v0.0.0-20220816021350-764cef084fac
+
+
