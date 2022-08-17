@@ -112,6 +112,13 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	// To help debugging, immediately log version
 	glog.Infof("Version: %+v (%s)", version.Raw, version.Hash)
 
+	baseOSContainerImageTag := "rhel-coreos-8"
+	if version.IsFCOS() {
+		baseOSContainerImageTag = "fedora-coreos"
+	} else if version.IsSCOS() {
+		baseOSContainerImageTag = "centos-stream-coreos-9"
+	}
+
 	if bootstrapOpts.imageReferences != "" {
 		imageRefData, err := ioutil.ReadFile(bootstrapOpts.imageReferences)
 		if err != nil {
@@ -129,11 +136,11 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		bootstrapOpts.oauthProxyImage = findImageOrDie(imgstream, "oauth-proxy")
 		bootstrapOpts.infraImage = findImageOrDie(imgstream, "pod")
 		bootstrapOpts.haproxyImage = findImageOrDie(imgstream, "haproxy-router")
-		bootstrapOpts.baseOperatingSystemContainer, err = findImage(imgstream, "rhel-coreos-8")
+		bootstrapOpts.baseOperatingSystemContainer, err = findImage(imgstream, baseOSContainerImageTag)
 		if err != nil {
 			glog.Warningf("Base OS container not found: %s", err)
 		}
-		bootstrapOpts.baseOperatingSystemExtensionsContainer, err = findImage(imgstream, "rhel-coreos-8-extensions")
+		bootstrapOpts.baseOperatingSystemExtensionsContainer, err = findImage(imgstream, fmt.Sprintf("%s-extensions", baseOSContainerImageTag))
 		if err != nil {
 			glog.Warningf("Base OS extensions container not found: %s", err)
 		}
