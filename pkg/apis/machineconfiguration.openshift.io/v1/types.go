@@ -481,7 +481,19 @@ type ContainerRuntimeConfiguration struct {
 	// overlaySize specifies the maximum size of a container image.
 	// This flag can be used to set quota on the size of container images.
 	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
+
+	// defaultRuntime is the name of the OCI runtime to be used as the default.
+	DefaultRuntime ContainerRuntimeDefaultRuntime `json:"defaultRuntime,omitempty"`
 }
+
+type ContainerRuntimeDefaultRuntime string
+
+const (
+	ContainerRuntimeDefaultRuntimeEmpty   = ""
+	ContainerRuntimeDefaultRuntimeRunc    = "runc"
+	ContainerRuntimeDefaultRuntimeCrun    = "crun"
+	ContainerRuntimeDefaultRuntimeDefault = ContainerRuntimeDefaultRuntimeRunc
+)
 
 // ContainerRuntimeConfigStatus defines the observed state of a ContainerRuntimeConfig
 type ContainerRuntimeConfigStatus struct {

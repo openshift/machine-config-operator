@@ -41,9 +41,10 @@ const (
 	policyConfigPath        = "/etc/containers/policy.json"
 	// CRIODropInFilePathLogLevel is the path at which changes to the crio config for log-level
 	// will be dropped in this is exported so that we can use it in the e2e-tests
-	CRIODropInFilePathLogLevel   = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
-	crioDropInFilePathPidsLimit  = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
-	crioDropInFilePathLogSizeMax = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	CRIODropInFilePathLogLevel       = "/etc/crio/crio.conf.d/01-ctrcfg-logLevel"
+	crioDropInFilePathPidsLimit      = "/etc/crio/crio.conf.d/01-ctrcfg-pidsLimit"
+	crioDropInFilePathLogSizeMax     = "/etc/crio/crio.conf.d/01-ctrcfg-logSizeMax"
+	CRIODropInFilePathDefaultRuntime = "/etc/crio/crio.conf.d/01-ctrcfg-defaultRuntime"
 )
 
 var errParsingReference = errors.New("error parsing reference of release image")
@@ -91,6 +92,17 @@ type tomlConfigCRIOLogSizeMax struct {
 	Crio struct {
 		Runtime struct {
 			LogSizeMax int64 `toml:"log_size_max,omitempty"`
+		} `toml:"runtime"`
+	} `toml:"crio"`
+}
+
+// tomlConfigCRIODefaultRuntime is used for conversions when default-runtime is changed
+// TOML-friendly (it has all of the explicit tables). It's just used for
+// conversions.
+type tomlConfigCRIODefaultRuntime struct {
+	Crio struct {
+		Runtime struct {
+			DefaultRuntime string `toml:"default_runtime,omitempty"`
 		} `toml:"runtime"`
 	} `toml:"crio"`
 }
@@ -343,6 +355,14 @@ func createCRIODropinFiles(cfg *mcfgv1.ContainerRuntimeConfig) []generatedConfig
 			glog.V(2).Infoln(cfg, err, "error updating user changes for log-size-max to crio.conf.d: %v", err)
 		}
 	}
+	if ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
+		tomlConf := tomlConfigCRIODefaultRuntime{}
+		tomlConf.Crio.Runtime.DefaultRuntime = string(ctrcfg.DefaultRuntime)
+		generatedConfigFileList, err = addTOMLgeneratedConfigFile(generatedConfigFileList, CRIODropInFilePathDefaultRuntime, tomlConf)
+		if err != nil {
+			glog.V(2).Infoln(cfg, err, "error updating user changes for default-runtime to crio.conf.d: %v", err)
+		}
+	}
 	return generatedConfigFileList
 }
 
@@ -486,6 +506,12 @@ func validateUserContainerRuntimeConfig(cfg *mcfgv1.ContainerRuntimeConfig) erro
 		if !validLogLevels[ctrcfg.LogLevel] {
 			return fmt.Errorf("invalid LogLevel %q, must be one of error, fatal, panic, warn, info, debug, or trace", ctrcfg.LogLevel)
 		}
+	}
+
+	switch ctrcfg.DefaultRuntime {
+	case mcfgv1.ContainerRuntimeDefaultRuntimeEmpty, mcfgv1.ContainerRuntimeDefaultRuntimeRunc, mcfgv1.ContainerRuntimeDefaultRuntimeCrun:
+	default:
+		return fmt.Errorf("invalid DefaultRuntime %q, must be one of %s, %s", ctrcfg.DefaultRuntime, mcfgv1.ContainerRuntimeDefaultRuntimeCrun, mcfgv1.ContainerRuntimeDefaultRuntimeRunc)
 	}
 
 	return nil

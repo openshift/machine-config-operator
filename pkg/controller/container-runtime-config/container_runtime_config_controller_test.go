@@ -976,6 +976,12 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 				LogLevel: "invalid",
 			},
 		},
+		{
+			name: "invalid value of default runtime",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				DefaultRuntime: "invalid",
+			},
+		},
 	}
 
 	successTests := []struct {
@@ -1004,6 +1010,12 @@ func TestContainerRuntimeConfigOptions(t *testing.T) {
 			name: "valid log level",
 			config: &mcfgv1.ContainerRuntimeConfiguration{
 				LogLevel: "debug",
+			},
+		},
+		{
+			name: "valid value of default runtime",
+			config: &mcfgv1.ContainerRuntimeConfiguration{
+				DefaultRuntime: "crun",
 			},
 		},
 	}
