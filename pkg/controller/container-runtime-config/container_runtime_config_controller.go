@@ -566,7 +566,7 @@ func (ctrl *Controller) syncContainerRuntimeConfig(key string) error {
 		}
 
 		// Create the cri-o drop-in files
-		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || !ctrcfg.LogSizeMax.IsZero() {
+		if ctrcfg.LogLevel != "" || ctrcfg.PidsLimit != nil || !ctrcfg.LogSizeMax.IsZero() || ctrcfg.DefaultRuntime != mcfgv1.ContainerRuntimeDefaultRuntimeEmpty {
 			crioFileConfigs := createCRIODropinFiles(cfg)
 			configFileList = append(configFileList, crioFileConfigs...)
 		}
