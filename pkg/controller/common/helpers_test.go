@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/openshift/machine-config-operator/pkg/controller/common/fixtures"
 	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
@@ -501,5 +502,44 @@ func TestCalculateConfigFileDiffs(t *testing.T) {
 
 	if !reflect.DeepEqual(unchangedDiffFileset, []string{}) {
 		t.Errorf("File changes detected where there should have been none: %s", unchangedDiffFileset)
+	}
+}
+
+func TestParseAndConvertGzippedConfig(t *testing.T) {
+	testCases := []struct {
+		name     string
+		ignBytes []byte
+	}{
+		{
+			name:     "Compressed and Encoded Ignition",
+			ignBytes: fixtures.CompressedAndEncodedIgnConfig,
+		},
+		{
+			name:     "Compressed Ignition",
+			ignBytes: fixtures.CompressedIgnConfig,
+		},
+		{
+			name:     "Uncompressed Ignition",
+			ignBytes: fixtures.IgnConfig,
+		},
+	}
+
+	expectedIgnition := ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{
+				helpers.CreateIgn3File("/etc/hello-worker", "data:,hello%20world%0A", 420),
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsedIgn, err := ParseAndConvertGzippedConfig(testCase.ignBytes)
+			assert.Nil(t, err)
+			assert.Equal(t, expectedIgnition, parsedIgn)
+		})
 	}
 }

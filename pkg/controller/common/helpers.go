@@ -1,11 +1,14 @@
 package common
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -513,6 +516,90 @@ func ParseAndConvertConfig(rawIgn []byte) (ign3types.Config, error) {
 	default:
 		return ign3types.Config{}, fmt.Errorf("unexpected type for ignition config: %v", typedConfig)
 	}
+}
+
+// Internal error used for base64-decoding and gunzipping Ignition configs
+var errConfigNotGzipped = fmt.Errorf("ignition config not gzipped")
+
+// Decode, decompress, and deserialize an Ignition config file.
+func ParseAndConvertGzippedConfig(rawIgn []byte) (ign3types.Config, error) {
+	// Try to decode and decompress our payload
+	out, err := decodeAndDecompressPayload(bytes.NewReader(rawIgn))
+	if err == nil {
+		// Our payload was decoded and decompressed, so parse it as Ignition.
+		glog.V(2).Info("ignition config was base64-decoded and gunzipped successfully")
+		return ParseAndConvertConfig(out)
+	}
+
+	// Our Ignition config is not base64-encoded, which means it might only be gzipped:
+	// e.g.: $ gzip -9 ign_config.json
+	var base64Err base64.CorruptInputError
+	if errors.As(err, &base64Err) {
+		glog.V(2).Info("ignition config was not base64 encoded, trying to gunzip ignition config")
+		out, err = decompressPayload(bytes.NewReader(rawIgn))
+		if err == nil {
+			// We were able to decompress our payload, so let's try parsing it
+			glog.V(2).Info("ignition config was gunzipped successfully")
+			return ParseAndConvertConfig(out)
+		}
+	}
+
+	// Our Ignition config is not gzipped, so let's try to serialize the raw Ignition directly.
+	if errors.Is(err, errConfigNotGzipped) {
+		glog.V(2).Info("ignition config was not gzipped")
+		return ParseAndConvertConfig(rawIgn)
+	}
+
+	return ign3types.Config{}, fmt.Errorf("unable to read ignition config: %w", err)
+}
+
+// Attempts to base64-decode and/or decompresses a given byte array.
+func decodeAndDecompressPayload(r io.Reader) ([]byte, error) {
+	// Wrap the io.Reader in a base64 decoder (which implements io.Reader)
+	base64Dec := base64.NewDecoder(base64.StdEncoding, r)
+	out, err := decompressPayload(base64Dec)
+	if err == nil {
+		return out, nil
+	}
+
+	return nil, fmt.Errorf("unable to decode and decompress payload: %w", err)
+}
+
+// Checks if a given io.Reader contains known gzip headers and if so, gunzips
+// the contents.
+func decompressPayload(r io.Reader) ([]byte, error) {
+	// Wrap our io.Reader in a bufio.Reader. This allows us to peek ahead to
+	// determine if we have a valid gzip archive.
+	in := bufio.NewReader(r)
+	headerBytes, err := in.Peek(2)
+	if err != nil {
+		return nil, fmt.Errorf("could not peek: %w", err)
+	}
+
+	// gzipped files have a header in the first two bytes which contain a magic
+	// number that indicate they are gzipped. We check if these magic numbers are
+	// present as a quick and easy way to determine if our payload is gzipped.
+	//
+	// See: https://cs.opensource.google/go/go/+/refs/tags/go1.19:src/compress/gzip/gunzip.go;l=20-21
+	if headerBytes[0] != 0x1f && headerBytes[1] != 0x8b {
+		return nil, errConfigNotGzipped
+	}
+
+	out := bytes.NewBuffer([]byte{})
+
+	gz, err := gzip.NewReader(in)
+	if err != nil {
+		return nil, fmt.Errorf("initialize gzip reader failed: %w", err)
+	}
+
+	defer gz.Close()
+
+	// Decompress our payload.
+	if _, err := io.Copy(out, gz); err != nil {
+		return nil, fmt.Errorf("decompression failed: %w", err)
+	}
+
+	return out.Bytes(), nil
 }
 
 // Function to remove duplicated files/units/users from a V2 MC, since the translator
