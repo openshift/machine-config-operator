@@ -1047,7 +1047,7 @@ func (dn *Daemon) generateExtensionsArgs(oldConfig, newConfig *mcfgv1.MachineCon
 
 	extArgs := []string{"update"}
 
-	if dn.os.IsRHCOS() {
+	if dn.os.IsEL() {
 		extensions := getSupportedExtensions()
 		for _, ext := range added {
 			for _, pkg := range extensions[ext] {
@@ -1116,7 +1116,7 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 	}
 
 	// Validate extensions allowlist on RHCOS nodes
-	if err := validateExtensions(newConfig.Spec.Extensions); err != nil && dn.os.IsRHCOS() {
+	if err := validateExtensions(newConfig.Spec.Extensions); err != nil && dn.os.IsEL() {
 		return err
 	}
 
@@ -1128,8 +1128,8 @@ func (dn *CoreOSDaemon) applyExtensions(oldConfig, newConfig *mcfgv1.MachineConf
 // switchKernel updates kernel on host with the kernelType specified in MachineConfig.
 // Right now it supports default (traditional) and realtime kernel
 func (dn *CoreOSDaemon) switchKernel(oldConfig, newConfig *mcfgv1.MachineConfig) error {
-	// We support Kernel update only on RHCOS nodes
-	if !dn.os.IsRHCOS() {
+	// We support Kernel update only on RHCOS and SCOS nodes
+	if !dn.os.IsEL() {
 		glog.Info("updating kernel on non-RHCOS nodes is not supported")
 		return nil
 	}
@@ -1746,7 +1746,9 @@ func (dn *Daemon) atomicallyWriteSSHKey(keys string) error {
 	}
 
 	var authKeyPath string
-	if dn.os.IsFCOS() {
+	if dn.os.IsEL9() || dn.os.IsFCOS() {
+		// In FCOS and EL9, ignition writes the SSH key to ~/.ssh/authorized_keys.d/ignition,
+		// and the ssh-key-dir sshd AuthorizedKeysCommand binary reads it from there.
 		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys.d", "ignition")
 	} else {
 		authKeyPath = filepath.Join(coreUserSSHPath, "authorized_keys")
