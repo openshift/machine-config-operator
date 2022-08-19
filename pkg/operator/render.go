@@ -62,7 +62,6 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
-	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
@@ -239,19 +238,6 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 		}
 	} else {
 		return ""
-	}
-}
-
-func onPremPlatformKeepalivedEnableUnicast(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
-	if cfg.Infra.Status.PlatformStatus != nil {
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
-			return "yes", nil
-		default:
-			return "no", nil
-		}
-	} else {
-		return "no", nil
 	}
 }
 

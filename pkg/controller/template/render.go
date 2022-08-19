@@ -309,7 +309,6 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
-	funcs["onPremPlatformKeepalivedEnableUnicast"] = onPremPlatformKeepalivedEnableUnicast
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
@@ -421,19 +420,6 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 		}
 	} else {
 		return ""
-	}
-}
-
-func onPremPlatformKeepalivedEnableUnicast(cfg RenderConfig) (interface{}, error) {
-	if cfg.Infra.Status.PlatformStatus != nil {
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.BareMetalPlatformType:
-			return "yes", nil
-		default:
-			return "no", nil
-		}
-	} else {
-		return "no", nil
 	}
 }
 
