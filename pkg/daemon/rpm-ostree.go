@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/containers/image/v5/types"
+	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
@@ -23,31 +24,6 @@ const (
 	// Pull secret.  Written by the machine-config-operator
 	kubeletAuthFile = "/var/lib/kubelet/config.json"
 )
-
-// rpmOstreeState houses zero or more RpmOstreeDeployments
-// Subset of `rpm-ostree status --json`
-// https://github.com/projectatomic/rpm-ostree/blob/bce966a9812df141d38e3290f845171ec745aa4e/src/daemon/rpmostreed-deployment-utils.c#L227
-type rpmOstreeState struct {
-	Deployments []RpmOstreeDeployment
-	Transaction *[]string
-}
-
-// RpmOstreeDeployment represents a single deployment on a node
-type RpmOstreeDeployment struct {
-	ID                      string   `json:"id"`
-	OSName                  string   `json:"osname"`
-	Serial                  int32    `json:"serial"`
-	Checksum                string   `json:"checksum"`
-	BaseChecksum            string   `json:"base-checksum,omitempty"`
-	Version                 string   `json:"version"`
-	Timestamp               uint64   `json:"timestamp"`
-	Booted                  bool     `json:"booted"`
-	Staged                  bool     `json:"staged"`
-	LiveReplaced            string   `json:"live-replaced,omitempty"`
-	Origin                  string   `json:"origin"`
-	CustomOrigin            []string `json:"custom-origin"`
-	ContainerImageReference string   `json:"container-image-reference"`
-}
 
 // imageInspection is a public implementation of
 // https://github.com/containers/skopeo/blob/82186b916faa9c8c70cfa922229bafe5ae024dec/cmd/skopeo/inspect.go#L20-L31
@@ -64,27 +40,19 @@ type imageInspection struct {
 	Layers        []string
 }
 
-// NodeUpdaterClient is an interface describing how to interact with the host
-// around content deployment
-type NodeUpdaterClient interface {
-	Initialize() error
-	GetStatus() (string, error)
-	GetBootedOSImageURL() (string, string, string, error)
-	Rebase(string, string) (bool, error)
-	RebaseLayered(string) error
-	IsBootableImage(string) (bool, error)
-	GetBootedAndStagedDeployment() (*RpmOstreeDeployment, *RpmOstreeDeployment, error)
-}
-
 // RpmOstreeClient provides all RpmOstree related methods in one structure.
 // This structure implements DeploymentClient
 //
 // TODO(runcom): make this private to pkg/daemon!!!
-type RpmOstreeClient struct{}
+type RpmOstreeClient struct {
+	client rpmostreeclient.Client
+}
 
-// NewNodeUpdaterClient returns a new instance of the default DeploymentClient (RpmOstreeClient)
-func NewNodeUpdaterClient() NodeUpdaterClient {
-	return &RpmOstreeClient{}
+// NewNodeUpdaterClient is a wrapper to create an RpmOstreeClient
+func NewNodeUpdaterClient() RpmOstreeClient {
+	return RpmOstreeClient{
+		client: rpmostreeclient.NewClient("machine-config-daemon"),
+	}
 }
 
 // Synchronously invoke rpm-ostree, writing its stdout to our stdout,
@@ -92,20 +60,6 @@ func NewNodeUpdaterClient() NodeUpdaterClient {
 // in case of error.
 func runRpmOstree(args ...string) error {
 	return runCmdSync("rpm-ostree", args...)
-}
-
-func (r *RpmOstreeClient) loadStatus() (*rpmOstreeState, error) {
-	var rosState rpmOstreeState
-	output, err := runGetOut("rpm-ostree", "status", "--json")
-	if err != nil {
-		return nil, err
-	}
-
-	if err := json.Unmarshal(output, &rosState); err != nil {
-		return nil, fmt.Errorf("failed to parse `rpm-ostree status --json` output (%s): %w", truncate(string(output), 30), err)
-	}
-
-	return &rosState, nil
 }
 
 // See https://bugzilla.redhat.com/show_bug.cgi?id=2111817
@@ -147,15 +101,19 @@ func (r *RpmOstreeClient) Initialize() error {
 	return nil
 }
 
+func (r *RpmOstreeClient) Peel() *rpmostreeclient.Client {
+	return &r.client
+}
+
 // GetBootedDeployment returns the current deployment found
-func (r *RpmOstreeClient) GetBootedAndStagedDeployment() (booted, staged *RpmOstreeDeployment, err error) {
-	status, err := r.loadStatus()
+func (r *RpmOstreeClient) GetBootedAndStagedDeployment() (booted, staged *rpmostreeclient.Deployment, err error) {
+	status, err := r.client.QueryStatus()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	booted, err = status.getBootedDeployment()
-	staged = status.getStagedDeployment()
+	booted, err = status.GetBootedDeployment()
+	staged = status.GetStagedDeployment()
 
 	return
 }
@@ -201,13 +159,7 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) 
 		}
 	}
 
-	// BaseChecksum is populated if the system has been modified in a way that changes the base checksum
-	// (like via an RPM install) so prefer BaseCheksum that if it's present, otherwise just use Checksum.
-	baseChecksum := bootedDeployment.Checksum
-	if bootedDeployment.BaseChecksum != "" {
-		baseChecksum = bootedDeployment.BaseChecksum
-	}
-
+	baseChecksum := bootedDeployment.GetBaseChecksum()
 	return osImageURL, bootedDeployment.Version, baseChecksum, nil
 }
 
@@ -456,24 +408,4 @@ func runGetOut(command string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("error running %s %s: %s%s", command, strings.Join(args, " "), err, errtext)
 	}
 	return rawOut, nil
-}
-
-func (state *rpmOstreeState) getBootedDeployment() (*RpmOstreeDeployment, error) {
-	for num := range state.Deployments {
-		deployment := state.Deployments[num]
-		if deployment.Booted {
-			return &deployment, nil
-		}
-	}
-	return &RpmOstreeDeployment{}, fmt.Errorf("not currently booted in a deployment")
-}
-
-func (state *rpmOstreeState) getStagedDeployment() *RpmOstreeDeployment {
-	for num := range state.Deployments {
-		deployment := state.Deployments[num]
-		if deployment.Staged {
-			return &deployment
-		}
-	}
-	return &RpmOstreeDeployment{}
 }
