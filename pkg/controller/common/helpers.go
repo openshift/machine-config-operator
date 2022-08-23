@@ -585,8 +585,6 @@ func decompressPayload(r io.Reader) ([]byte, error) {
 		return nil, errConfigNotGzipped
 	}
 
-	out := bytes.NewBuffer([]byte{})
-
 	gz, err := gzip.NewReader(in)
 	if err != nil {
 		return nil, fmt.Errorf("initialize gzip reader failed: %w", err)
@@ -594,12 +592,12 @@ func decompressPayload(r io.Reader) ([]byte, error) {
 
 	defer gz.Close()
 
-	// Decompress our payload.
-	if _, err := io.Copy(out, gz); err != nil {
+	data, err := ioutil.ReadAll(gz)
+	if err != nil {
 		return nil, fmt.Errorf("decompression failed: %w", err)
 	}
 
-	return out.Bytes(), nil
+	return data, nil
 }
 
 // Function to remove duplicated files/units/users from a V2 MC, since the translator
