@@ -14,4 +14,20 @@ var (
 
 	// String is the human-friendly representation of the version.
 	String = fmt.Sprintf("MachineConfigOperator %s", Raw)
+
+	// FCOS is a setting to enable Fedora CoreOS-only modifications
+	FCOS = false
+
+	// SCOS is a setting to enable CentOS Stream CoreOS-only modifications
+	SCOS = false
 )
+
+// IsFCOS returns true if Fedora CoreOS-only modifications are enabled
+func IsFCOS() bool {
+	return FCOS
+}
+
+// IsSCOS returns true if CentOS Stream CoreOS-only modifications are enabled
+func IsSCOS() bool {
+	return SCOS
+}
