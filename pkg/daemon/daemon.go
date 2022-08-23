@@ -1418,7 +1418,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			if isLayeredImage {
 				// If this is a new format image, we don't have to extract it,
 				// we can just update it the proper way
-				if err := updateLayeredOS(state.currentConfig); err != nil {
+				if err := dn.updateLayeredOS(state.currentConfig); err != nil {
 					return err
 				}
 			} else {
@@ -1426,7 +1426,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 				if err != nil {
 					return err
 				}
-				if err := updateOS(state.currentConfig, osImageContentDir); err != nil {
+				if err := dn.updateOS(state.currentConfig, osImageContentDir); err != nil {
 					return err
 				}
 				if err := os.RemoveAll(osImageContentDir); err != nil {

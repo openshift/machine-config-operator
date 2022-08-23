@@ -1840,11 +1840,10 @@ func (dn *Daemon) updateSSHKeys(newUsers []ign3types.PasswdUser) error {
 }
 
 // updateOS updates the system OS to the one specified in newConfig
-func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
+func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 	newURL := config.Spec.OSImageURL
 	glog.Infof("Updating OS to %s", newURL)
-	client := NewNodeUpdaterClient()
-	if _, err := client.Rebase(newURL, osImageContentDir); err != nil {
+	if _, err := dn.NodeUpdaterClient.Rebase(newURL, osImageContentDir); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}
 
@@ -1852,11 +1851,10 @@ func updateOS(config *mcfgv1.MachineConfig, osImageContentDir string) error {
 }
 
 // updateLayeredOS updates the system OS to the one specified in newConfig
-func updateLayeredOS(config *mcfgv1.MachineConfig) error {
+func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	glog.Infof("Updating OS to layered image %s", newURL)
-	client := NewNodeUpdaterClient()
-	if err := client.RebaseLayered(newURL); err != nil {
+	if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}
 
@@ -2069,7 +2067,7 @@ func (dn *Daemon) reboot(rationale string) error {
 func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := updateLayeredOS(newConfig); err != nil {
+		if err := dn.updateLayeredOS(newConfig); err != nil {
 			nodeName := ""
 			if dn.node != nil {
 				nodeName = dn.node.Name
@@ -2142,7 +2140,7 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 
 	// Update OS
 	if mcDiff.osUpdate {
-		if err := updateOS(newConfig, osImageContentDir); err != nil {
+		if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
 			nodeName := ""
 			if dn.node != nil {
 				nodeName = dn.node.Name
