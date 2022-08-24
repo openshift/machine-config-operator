@@ -8,6 +8,7 @@ metadata:
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-gate: TechPreviewNoUpgrade
 spec:
   group: machineconfiguration.openshift.io
   names:
@@ -85,7 +86,7 @@ spec:
                   defaultRuntime:
                     description: defaultRuntime is the name of the OCI runtime to be used as the default.
                     type: string
-                    pattern: ^$|^runc$
+                    pattern: ^$|^(runc|crun)$
               machineConfigPoolSelector:
                 description: A label selector is a label query over a set of resources.
                   The result of matchLabels and matchExpressions are ANDed. An empty
