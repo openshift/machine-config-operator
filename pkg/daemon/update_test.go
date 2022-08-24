@@ -99,8 +99,10 @@ func TestUpdateOS(t *testing.T) {
 		},
 	}
 
+	d := newMockDaemon()
+
 	// should return an error
-	if err := updateOS(differentMcfg, ""); err == expectedError {
+	if err := d.updateOS(differentMcfg, ""); err == expectedError {
 		t.Error("Expected an error. Got none.")
 	}
 }
@@ -164,8 +166,8 @@ func TestReconcilable(t *testing.T) {
 	// Verify Raid changes react as expected
 	oldIgnCfg.Storage.Raid = []ign3types.Raid{
 		{
-			Name:  "data",
-			Level: "stripe",
+			Name:    "data",
+			Level:   "stripe",
 			Devices: []ign3types.Device{"/dev/vda", "/dev/vdb"},
 		},
 	}
