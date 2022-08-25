@@ -46,6 +46,8 @@ import (
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
+
+	osev1 "github.com/openshift/api/config/v1"
 )
 
 // strToPtr converts the input string to a pointer to itself
@@ -970,4 +972,36 @@ func GetLongestValidCertificate(certificateList []*x509.Certificate, subjectPref
 		}
 	}
 	return nil
+}
+
+// IsFeatureGateEnabled checks to see if a particular feature gate is enabled given a feature gate config. This function like something
+// that should already exist somewhere in a proper library, maybe I missed it?
+func IsFeatureGateEnabled(featureGates *osev1.FeatureGate, featureGate string) bool {
+	// If we have feature gates at all
+	if featureGates != nil {
+		// See if there's a feature set
+		if featureGates.Spec.FeatureSet != "" {
+			// See if we can look up that set's features
+			if features, ok := osev1.FeatureSets[featureGates.Spec.FeatureSet]; ok {
+				// If we can, go through the features and see if it's in the list
+				for _, feature := range features.Enabled {
+					if feature == featureGate {
+						glog.V(2).Infof("Feature %s is present as part of featureSet %s", feature, featureGates.Spec.FeatureSet)
+						return true
+					}
+				}
+			}
+		}
+
+		// But also, these could be supplied singly, outside of the set in customnoupgrade
+		// TODO(jkyros): it is probably bad form to specify one
+		for _, feature := range featureGates.Spec.CustomNoUpgrade.Enabled {
+			if feature == featureGate {
+				glog.V(2).Infof("Feature %s is present in CustomNoUpgrade section", feature)
+				return true
+			}
+		}
+	}
+	return false
+
 }

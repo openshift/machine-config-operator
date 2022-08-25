@@ -24,6 +24,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
+	oseconfigfake "github.com/openshift/client-go/config/clientset/versioned/fake"
+	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
@@ -41,7 +43,8 @@ var (
 type fixture struct {
 	t *testing.T
 
-	client *fake.Clientset
+	client    *fake.Clientset
+	oseclient *oseconfigfake.Clientset
 
 	mcpLister []*mcfgv1.MachineConfigPool
 	mcLister  []*mcfgv1.MachineConfig
@@ -49,7 +52,8 @@ type fixture struct {
 
 	actions []core.Action
 
-	objects []runtime.Object
+	objects    []runtime.Object
+	oseobjects []runtime.Object
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -61,11 +65,13 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) newController() *Controller {
 	f.client = fake.NewSimpleClientset(f.objects...)
+	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, noResyncPeriodFunc())
+	fi := oseinformersv1.NewSharedInformerFactory(f.oseclient, noResyncPeriodFunc())
 
 	c := New(i.Machineconfiguration().V1().MachineConfigPools(), i.Machineconfiguration().V1().MachineConfigs(),
-		i.Machineconfiguration().V1().ControllerConfigs(), k8sfake.NewSimpleClientset(), f.client)
+		i.Machineconfiguration().V1().ControllerConfigs(), fi.Config().V1().FeatureGates(), k8sfake.NewSimpleClientset(), f.client)
 
 	c.mcpListerSynced = alwaysReady
 	c.mcListerSynced = alwaysReady
@@ -290,7 +296,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 
 	// verify that an invalid ignition config (here a config with content and an empty version,
@@ -302,7 +308,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	require.Nil(t, err)
 	mcs[1].Spec.Config.Raw = rawIgnCfg
 
-	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.NotNil(t, err)
 
 	// verify that a machine config with no ignition content will not fail validation
@@ -311,7 +317,7 @@ func TestIgnValidationGenerateRenderedMachineConfig(t *testing.T) {
 	require.Nil(t, err)
 	mcs[1].Spec.Config.Raw = rawEmptyIgnCfg
 	mcs[1].Spec.KernelArguments = append(mcs[1].Spec.KernelArguments, "test1")
-	_, err = generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err = generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 
 }
@@ -334,7 +340,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +359,7 @@ func TestUpdatesGeneratedMachineConfig(t *testing.T) {
 	f.mcLister = append(f.mcLister, gmc)
 	f.objects = append(f.objects, gmc)
 
-	expmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	expmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +385,7 @@ func TestGenerateMachineConfigOverrideOSImageURL(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,12 +401,12 @@ func TestVersionSkew(t *testing.T) {
 
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = "different-version"
-	_, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	_, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.NotNil(t, err)
 
 	// Now the same thing without overriding the version
 	cc = newControllerConfig(ctrlcommon.ControllerConfigName)
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	require.Nil(t, err)
 	require.NotNil(t, gmc)
 }
@@ -423,7 +429,7 @@ func TestDoNothing(t *testing.T) {
 	}
 	cc := newControllerConfig(ctrlcommon.ControllerConfigName)
 
-	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc)
+	gmc, err := generateRenderedMachineConfig(mcp, mcs, cc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

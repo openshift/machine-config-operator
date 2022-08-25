@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	osev1 "github.com/openshift/api/config/v1"
+	oseinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	oselistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -68,6 +71,9 @@ type Controller struct {
 	ccListerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
+
+	featLister       oselistersv1.FeatureGateLister
+	featListerSynced cache.InformerSynced
 }
 
 // New returns a new render controller.
@@ -75,6 +81,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	featureInformer oseinformersv1.FeatureGateInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -108,6 +115,9 @@ func New(
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+
+	ctrl.featLister = featureInformer.Lister()
+	ctrl.featListerSynced = featureInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -482,7 +492,14 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	generated, err := generateRenderedMachineConfig(pool, configs, cc)
+	// TODO(jkyros): right now we don't sync every time features change, should we? Or maybe since we care when controllerconfig
+	// changes we could cheat and just put the featuregates in there?
+	fg, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	generated, err := generateRenderedMachineConfig(pool, configs, cc, fg)
 	if err != nil {
 		return err
 	}
@@ -539,7 +556,7 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 }
 
 // generateRenderedMachineConfig takes all MCs for a given pool and returns a single rendered MC. For ex master-XXXX or worker-XXXX
-func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
+func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, featureGate *osev1.FeatureGate) (*mcfgv1.MachineConfig, error) {
 	// Suppress rendered config generation until a corresponding new controller can roll out too.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
 	if genver, ok := cconfig.Annotations[daemonconsts.GeneratedByVersionAnnotationKey]; ok {
@@ -563,7 +580,15 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		}
 	}
 
-	merged, err := ctrlcommon.MergeMachineConfigs(configs, cconfig.Spec.OSImageURL)
+	defaultImageURL := cconfig.Spec.OSImageURL
+	// TODO(jkyros): For now, default to the new format image only if the feature gate is enabled, we will
+	// come back for this to remove it when the machine-os-content is retired from the payload
+	if ctrlcommon.IsFeatureGateEnabled(featureGate, "MCONewContainerImageFormat") {
+		glog.Warningf("Defaulting to OSImageURL %s (instead of: %s) because of feature gate %s", cconfig.Spec.BaseOperatingSystemContainer, defaultImageURL, "MCONewContainerImageFormat")
+		defaultImageURL = cconfig.Spec.BaseOperatingSystemContainer
+	}
+
+	merged, err := ctrlcommon.MergeMachineConfigs(configs, defaultImageURL)
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +608,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 
 	// Make it obvious that the OSImageURL has been overridden. If we log this in MergeMachineConfigs, we don't know the name yet, so we're
 	// logging out here instead so it's actually helpful.
-	if merged.Spec.OSImageURL != cconfig.Spec.OSImageURL {
+	if merged.Spec.OSImageURL != defaultImageURL {
 		glog.Infof("OSImageURL has been overridden via machineconfig in %s (was: %s is: %s)", merged.Name, cconfig.Spec.OSImageURL, merged.Spec.OSImageURL)
 	}
 
@@ -593,7 +618,7 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 // RunBootstrap runs the render controller in bootstrap mode.
 // For each pool, it matches the machineconfigs based on label selector and
 // returns the generated machineconfigs and pool with CurrentMachineConfig status field set.
-func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
+func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig, featureGate *osev1.FeatureGate) ([]*mcfgv1.MachineConfigPool, []*mcfgv1.MachineConfig, error) {
 	var (
 		opools   []*mcfgv1.MachineConfigPool
 		oconfigs []*mcfgv1.MachineConfig
@@ -604,7 +629,7 @@ func RunBootstrap(pools []*mcfgv1.MachineConfigPool, configs []*mcfgv1.MachineCo
 			return nil, nil, err
 		}
 
-		generated, err := generateRenderedMachineConfig(pool, pcs, cconfig)
+		generated, err := generateRenderedMachineConfig(pool, pcs, cconfig, featureGate)
 		if err != nil {
 			return nil, nil, err
 		}

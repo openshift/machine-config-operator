@@ -294,7 +294,10 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
 	}
 	// And inject the osimageurl here
-	mcfg.Spec.OSImageURL = config.OSImageURL
+	// TODO(jkyros): if we include this here, we can't tell if a user did it or not, it bites us when we're
+	// trying to switch between oldformat/newformat. We can safely exclude it because it gets superceded by what's in
+	// controllerconfig when we merge configs anyway
+	//mcfg.Spec.OSImageURL = config.OSImageURL
 
 	return mcfg, nil
 }
