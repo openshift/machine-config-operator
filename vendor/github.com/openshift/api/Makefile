@@ -11,7 +11,8 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	targets/openshift/crd-schema-gen.mk \
 )
 
-GO_PACKAGES :=$(addsuffix ...,$(addprefix ./,$(filter-out vendor/,$(filter-out hack/,$(wildcard */)))))
+EXCLUDE_DIRS := _output/ dependencymagnet/ hack/ third_party/ tls/ vendor/
+GO_PACKAGES :=$(addsuffix ...,$(addprefix ./,$(filter-out $(EXCLUDE_DIRS), $(wildcard */))))
 GO_BUILD_PACKAGES :=$(GO_PACKAGES)
 GO_BUILD_PACKAGES_EXPANDED :=$(GO_BUILD_PACKAGES)
 # LDFLAGS are not needed for dummy builds (saving time on calling git commands)
@@ -44,12 +45,14 @@ $(call add-crd-gen,operatorcontrolplane,./operatorcontrolplane/v1alpha1,./operat
 $(call add-crd-gen,machine-beta,./machine/v1beta1,./machine/v1beta1,./machine/v1beta1)
 $(call add-crd-gen,machine,./machine/v1,./machine/v1,./machine/v1)
 $(call add-crd-gen,monitoring-alpha,./monitoring/v1alpha1,./monitoring/v1alpha1,./monitoring/v1alpha1)
+$(call add-crd-gen,route,./route/v1,./route/v1,./route/v1)
 
 RUNTIME ?= podman
-RUNTIME_IMAGE_NAME ?= openshift-api-generator
+RUNTIME_IMAGE_NAME ?= registry.ci.openshift.org/openshift/release:rhel-8-release-golang-1.18-openshift-4.12
 
 verify-scripts:
 	bash -x hack/verify-deepcopy.sh
+	bash -x hack/verify-openapi.sh
 	bash -x hack/verify-protobuf.sh
 	bash -x hack/verify-swagger-docs.sh
 	hack/verify-crds.sh
@@ -63,14 +66,13 @@ verify: verify-scripts verify-codegen-crds
 update-scripts:
 	hack/update-deepcopy.sh
 	hack/update-compatibility.sh
+	hack/update-openapi.sh
 	hack/update-protobuf.sh
 	hack/update-swagger-docs.sh
 .PHONY: update-scripts
 
-verify-with-container: Dockerfile.build
-	$(RUNTIME) build -t $(RUNTIME_IMAGE_NAME) -f Dockerfile.build .
+verify-with-container:
 	$(RUNTIME) run -ti --rm -v $(PWD):/go/src/github.com/openshift/api:z -w /go/src/github.com/openshift/api $(RUNTIME_IMAGE_NAME) make verify
 
-generate-with-container: Dockerfile.build
-	$(RUNTIME) build -t $(RUNTIME_IMAGE_NAME) -f Dockerfile.build .
+generate-with-container:
 	$(RUNTIME) run -ti --rm -v $(PWD):/go/src/github.com/openshift/api:z -w /go/src/github.com/openshift/api $(RUNTIME_IMAGE_NAME) make update
