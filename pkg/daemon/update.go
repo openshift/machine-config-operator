@@ -2116,15 +2116,14 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 		}
 	}
 
-	// TODO(jkyros): We can't currently switch kernels on layered images, so only allow it if they're both default. We'll come back for this when it's supported.
-	// If you did try to switch kernels when using layered image, you would get a "No enabled repositories" error.
-	if !(canonicalizeKernelType(oldConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault && canonicalizeKernelType(newConfig.Spec.KernelType) == ctrlcommon.KernelTypeDefault) {
-		return fmt.Errorf("Non-default kernels are not currently supported for layered images. (old: %s new %s)", oldConfig.Spec.KernelType, newConfig.Spec.KernelType)
+	// Switch to real time kernel
+	if err := dn.switchKernel(oldConfig, newConfig); err != nil {
+		return err
 	}
 
-	// TODO(jkyros): This is where we will handle Joseph's extensions container
-	if len(newConfig.Spec.Extensions) > 0 {
-		return fmt.Errorf("Extensions are not currently supported with layered images, but extensions were supplied: %s", strings.Join(newConfig.Spec.Extensions, " "))
+	// Apply extensions
+	if err := dn.applyExtensions(oldConfig, newConfig); err != nil {
+		return err
 	}
 
 	return nil
