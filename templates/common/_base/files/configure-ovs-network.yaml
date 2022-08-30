@@ -598,9 +598,11 @@ contents:
 
       # Make sure everything is activated
       connections=()
-      for connection in $(nmcli -g NAME c | grep -- "$MANAGED_NM_CONN_SUFFIX"); do
-        connections+=("$connection")
-      done
+      while IFS= read -r connection; do
+        if [[ $connection == *"$MANAGED_NM_CONN_SUFFIX" ]]; then
+          connections+=("$connection")
+        fi
+      done < <(nmcli -g NAME c)
       connections+=(ovs-if-phys0 ovs-if-br-ex)
       if [ -f "$extra_bridge_file" ]; then
         connections+=(ovs-if-phys1 ovs-if-br-ex1)
