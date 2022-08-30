@@ -135,6 +135,13 @@ func (r *RpmOstreeClient) Initialize() error {
 		return err
 	}
 
+	// Commands like update and rebase need the pull secrets to pull images and manifests,
+	// make sure we get access to them when we Initialize
+	err := useKubeletConfigSecrets()
+	if err != nil {
+		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
+	}
+
 	return nil
 }
 
@@ -342,13 +349,6 @@ func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 // RebaseLayered rebases system or errors if already rebased
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 	glog.Infof("Executing rebase to %s", imgURL)
-
-	// For now, just let ostree use the kublet config.json,
-	err = useKubeletConfigSecrets()
-	if err != nil {
-		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
-	}
-
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
 }
 
