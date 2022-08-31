@@ -248,15 +248,15 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
-			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs[0], nil
 		case configv1.OvirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs[0], nil
 		case configv1.NutanixPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
@@ -277,10 +277,8 @@ func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, err
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
 		case configv1.VSpherePlatformType:
 			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
-// 		case configv1.KubevirtPlatformType:
-// 			return cfg.Infra.Status.PlatformStatus.Kubevirt.IngressIP, nil
-// 		case configv1.NutanixPlatformType:
-// 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
@@ -294,15 +292,15 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
-			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], nil
 		case configv1.OvirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs[0], nil
 		case configv1.NutanixPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
@@ -323,10 +321,8 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
 		case configv1.VSpherePlatformType:
 			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
-// 		case configv1.KubevirtPlatformType:
-// 			return cfg.Infra.Status.PlatformStatus.Kubevirt.APIServerInternalIP, nil
-// 		case configv1.NutanixPlatformType:
-// 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}

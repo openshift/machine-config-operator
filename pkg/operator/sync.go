@@ -360,7 +360,7 @@ func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error)
 			ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.Ovirt.APIServerInternalIPs[0], securePortStr)
 		case configv1.VSpherePlatformType:
 			if infraStatus.PlatformStatus.VSphere != nil {
-				if infraStatus.PlatformStatus.VSphere.APIServerInternalIP != "" {
+				if len(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
 					ignitionHost = net.JoinHostPort(infraStatus.PlatformStatus.VSphere.APIServerInternalIPs[0], securePortStr)
 				}
 			}
