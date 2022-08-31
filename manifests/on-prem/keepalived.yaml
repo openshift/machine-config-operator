@@ -30,6 +30,7 @@ spec:
   - name: keepalived
     securityContext:
       privileged: true
+      readOnlyRootFilesystem: false
     image: {{.Images.KeepalivedBootstrap}}
     env:
       - name: NSS_SDB_USE_CACHE

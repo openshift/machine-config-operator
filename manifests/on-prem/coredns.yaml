@@ -54,6 +54,7 @@ spec:
   - name: coredns
     securityContext:
       privileged: true
+      readOnlyRootFilesystem: false
     image: {{ .Images.CorednsBootstrap }}
     args:
     - "--conf"
