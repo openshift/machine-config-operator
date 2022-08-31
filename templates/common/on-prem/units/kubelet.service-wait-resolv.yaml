@@ -2,7 +2,7 @@ name: kubelet.service
 dropins:
   - name: 10-mco-on-prem-wait-resolv.conf
     contents: |
-      {{ if (onPremPlatformAPIServerInternalIP .) -}}
+      {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 -}}
       [Service]
       # Wait for resolv-prepender to configure nameservers, exit 255 otherwise
       # to mark the unit as failed and retry later
