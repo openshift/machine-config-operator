@@ -42,9 +42,10 @@ const (
 	// SSH Keys for user "core" will only be written at /home/core/.ssh
 	coreUserSSHPath = "/home/core/.ssh/"
 	// fipsFile is the file to check if FIPS is enabled
-	fipsFile              = "/proc/sys/crypto/fips_enabled"
-	extensionsRepo        = "/etc/yum.repos.d/coreos-extensions.repo"
-	osImageContentBaseDir = "/run/mco-machine-os-content/"
+	fipsFile                   = "/proc/sys/crypto/fips_enabled"
+	extensionsRepo             = "/etc/yum.repos.d/coreos-extensions.repo"
+	osImageContentBaseDir      = "/run/mco-machine-os-content/"
+	osExtensionsContentBaseDir = "/run/mco-extensions/"
 
 	// These are the actions for a node to take after applying config changes. (e.g. a new machineconfig is applied)
 	// "None" means no special action needs to be taken
@@ -238,6 +239,18 @@ func addExtensionsRepo(osImageContentDir string) error {
 	return nil
 }
 
+// addLayeredExtensionsRepo adds a repo into /etc/yum.repos.d/ which we use later to
+// install extensions and rt-kernel. This is separate from addExtensionsRepo because when we're
+// extracting only the extensions container (because with the new format images they are packaged separately),
+// we extract to a different location
+func addLayeredExtensionsRepo(extensionsImageContentDir string) error {
+	repoContent := "[coreos-extensions]\nenabled=1\nmetadata_expire=1m\nbaseurl=" + extensionsImageContentDir + "/usr/share/rpm-ostree/extensions/\ngpgcheck=0\nskip_if_unavailable=False\n"
+	if err := writeFileAtomicallyWithDefaults(extensionsRepo, []byte(repoContent)); err != nil {
+		return err
+	}
+	return nil
+}
+
 // podmanRemove kills and removes a container
 func podmanRemove(cid string) {
 	// Ignore errors here
@@ -318,6 +331,38 @@ func ExtractOSImage(imgURL string) (osImageContentDir string, err error) {
 		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
 		glog.Infof("Falling back to using podman cp to fetch OS image content")
 		if err = podmanCopy(imgURL, osImageContentDir); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+// ExtractExtensionsImage extracts the OS extensions content in a temporary directory under /run/machine-os-extensions
+// and returns the path on successful extraction
+func ExtractExtensionsImage(imgURL string) (osExtensionsImageContentDir string, err error) {
+	var registryConfig []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		registryConfig = append(registryConfig, "--registry-config", kubeletAuthFile)
+	}
+	if err = os.MkdirAll(osExtensionsContentBaseDir, 0o755); err != nil {
+		err = fmt.Errorf("error creating directory %s: %w", osExtensionsContentBaseDir, err)
+		return
+	}
+
+	if osExtensionsImageContentDir, err = ioutil.TempDir(osExtensionsContentBaseDir, "os-extensions-content-"); err != nil {
+		return
+	}
+
+	// Extract the image
+	args := []string{"image", "extract", "--path", "/:" + osExtensionsImageContentDir}
+	args = append(args, registryConfig...)
+	args = append(args, imgURL)
+	if _, err = pivotutils.RunExtBackground(cmdRetriesCount, "oc", args...); err != nil {
+		// Workaround fixes for the environment where oc image extract fails.
+		// See https://bugzilla.redhat.com/show_bug.cgi?id=1862979
+		glog.Infof("Falling back to using podman cp to fetch OS image content")
+		if err = podmanCopy(imgURL, osExtensionsImageContentDir); err != nil {
 			return
 		}
 	}
@@ -2074,6 +2119,26 @@ func (dn *Daemon) reboot(rationale string) error {
 }
 
 func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+
+	var osExtensionsContentDir string
+	var err error
+	if mcDiff.extensions || mcDiff.kernelType {
+
+		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
+		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
+		// to extract them to disk like we did previously.
+		if osExtensionsContentDir, err = ExtractExtensionsImage(newConfig.Spec.BaseOSExtensionsContainerImage); err != nil {
+			return err
+		}
+		// Delete extracted OS image once we are done.
+		defer os.RemoveAll(osExtensionsContentDir)
+
+		if err := addLayeredExtensionsRepo(osExtensionsContentDir); err != nil {
+			return err
+		}
+		defer os.Remove(extensionsRepo)
+	}
+
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
