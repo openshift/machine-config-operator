@@ -28,12 +28,6 @@ var tuneableRHCOSArgsAllowlist = map[string]bool{
 	"nosmt": true,
 }
 
-// tuneableFCOSArgsAllowlist contains allowed keys for tunable kernel arguments on FCOS
-var tuneableFCOSArgsAllowlist = map[string]bool{
-	"systemd.unified_cgroup_hierarchy=0": true,
-	"mitigations=auto,nosmt":             true,
-}
-
 // isArgTuneable returns if the argument provided is allowed to be modified
 func isArgTunable(arg string) (bool, error) {
 	os, err := GetHostRunningOS()
@@ -44,7 +38,7 @@ func isArgTunable(arg string) (bool, error) {
 	if os.IsRHCOS() {
 		return tuneableRHCOSArgsAllowlist[arg], nil
 	} else if os.IsFCOS() {
-		return tuneableFCOSArgsAllowlist[arg], nil
+		return true, nil
 	}
 	return false, nil
 }
