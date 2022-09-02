@@ -29,10 +29,7 @@ contents:
       APIPriorityAndFairness: true
       RotateKubeletServerCertificate: true
       DownwardAPIHugePages: true
-      PodSecurity: true
-      CSIMigrationAWS: false
       CSIMigrationAzureFile: false
-      CSIMigrationGCE: false
       CSIMigrationvSphere: false
     serverTLSBootstrap: true
     tlsMinVersion: VersionTLS12
