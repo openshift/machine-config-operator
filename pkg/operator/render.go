@@ -238,11 +238,12 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 		default:
 			return ""
 		}
-	} else {
-		return ""
 	}
+	return ""
 }
 
+// This function should be removed in 4.13 when we no longer have to worry
+// about upgrades from releases that still use it.
 //nolint:dupl
 func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -254,15 +255,17 @@ func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, erro
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs[0], nil
+			if len(cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs) > 0 {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs[0], nil
+			}
+			return nil, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
-	} else {
-		return nil, fmt.Errorf("")
 	}
+	return nil, fmt.Errorf("")
 }
 
 //nolint:dupl
@@ -282,11 +285,12 @@ func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, err
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
-	} else {
-		return nil, fmt.Errorf("")
 	}
+	return nil, fmt.Errorf("")
 }
 
+// This function should be removed in 4.13 when we no longer have to worry
+// about upgrades from releases that still use it.
 //nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -298,15 +302,17 @@ func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interfa
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs[0], nil
+			if len(cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs[0], nil
+			}
+			return nil, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
-	} else {
-		return nil, fmt.Errorf("")
 	}
+	return nil, fmt.Errorf("")
 }
 
 //nolint:dupl
@@ -326,7 +332,6 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
-	} else {
-		return nil, fmt.Errorf("")
 	}
+	return nil, fmt.Errorf("")
 }

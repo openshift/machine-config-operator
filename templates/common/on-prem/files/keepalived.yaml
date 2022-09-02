@@ -1,5 +1,5 @@
 mode: 0644
-path: {{ if (onPremPlatformAPIServerInternalIPs .) }} "/etc/kubernetes/manifests/keepalived.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/keepalived.yaml" {{ end }}
+path: {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 }} "/etc/kubernetes/manifests/keepalived.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/keepalived.yaml" {{ end }}
 contents:
   inline: |
     kind: Pod
