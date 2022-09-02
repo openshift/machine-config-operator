@@ -1,5 +1,5 @@
 name: nodeip-configuration.service
-enabled: {{if (onPremPlatformAPIServerInternalIPs .)}}true{{else}}false{{end}}
+enabled: {{if gt (len (onPremPlatformAPIServerInternalIPs .)) 0}}true{{else}}false{{end}}
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
