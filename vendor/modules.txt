@@ -745,8 +745,8 @@ github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.0.3-0.20220809190508-9ee22abf867e => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
-## explicit; go 1.16
+# github.com/openshift/api v0.0.0-20220831151723-d49c80676c90
+## explicit; go 1.18
 github.com/openshift/api
 github.com/openshift/api/apiserver
 github.com/openshift/api/apiserver/v1
@@ -772,6 +772,8 @@ github.com/openshift/api/kubecontrolplane
 github.com/openshift/api/kubecontrolplane/v1
 github.com/openshift/api/legacyconfig/v1
 github.com/openshift/api/machine
+github.com/openshift/api/machine/v1
+github.com/openshift/api/machine/v1alpha1
 github.com/openshift/api/machine/v1beta1
 github.com/openshift/api/monitoring
 github.com/openshift/api/monitoring/v1alpha1

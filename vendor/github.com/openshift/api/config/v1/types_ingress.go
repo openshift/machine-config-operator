@@ -56,6 +56,9 @@ type IngressSpec struct {
 	// .status.componentRoutes list, where participating operators write the status of
 	// configurable routes.
 	// +optional
+	// +listType=map
+	// +listMapKey=namespace
+	// +listMapKey=name
 	ComponentRoutes []ComponentRouteSpec `json:"componentRoutes,omitempty"`
 
 	// requiredHSTSPolicies specifies HSTS policies that are required to be set on newly created  or updated routes
@@ -111,6 +114,9 @@ type IngressStatus struct {
 	// componentRoutes is where participating operators place the current route status for routes whose
 	// hostnames and serving certificates can be customized by the cluster-admin.
 	// +optional
+	// +listType=map
+	// +listMapKey=namespace
+	// +listMapKey=name
 	ComponentRoutes []ComponentRouteStatus `json:"componentRoutes,omitempty"`
 
 	// defaultPlacement is set at installation time to control which
@@ -221,6 +227,8 @@ type ComponentRouteStatus struct {
 	//
 	// If Progressing is true, that means the component is taking some action related to the componentRoutes entry.
 	// +optional
+	// +listType=map
+	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// relatedObjects is a list of resources which are useful when debugging or inspecting how spec.componentRoutes is applied.
