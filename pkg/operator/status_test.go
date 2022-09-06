@@ -227,6 +227,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionFalse,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorProgressing,
@@ -255,6 +256,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 
 						{
@@ -289,6 +291,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -316,6 +319,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -349,6 +353,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -382,6 +387,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -410,6 +416,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionFalse,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -445,6 +452,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionFalse,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -476,6 +484,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionFalse,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -511,6 +520,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -538,6 +548,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionFalse,
+							Reason: "fn1Failed",
 						},
 						{
 							Type:   configv1.OperatorDegraded,
@@ -567,6 +578,7 @@ func TestOperatorSyncStatus(t *testing.T) {
 						{
 							Type:   configv1.OperatorAvailable,
 							Status: configv1.ConditionTrue,
+							Reason: asExpectedReason,
 						},
 						{
 							Type:   configv1.OperatorDegraded,
