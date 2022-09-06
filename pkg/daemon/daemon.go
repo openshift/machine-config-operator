@@ -839,7 +839,17 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 	}
 
 	// We are here, which means reboot was not needed to apply the configuration.
-	// We can return and let the next sync take care of it
+	// Complete the update and return. Future syncs should see the update has completed.
+	annos := map[string]string{
+		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDone,
+		constants.MachineConfigDaemonReasonAnnotationKey: "",
+		constants.CurrentMachineConfigAnnotationKey:      targetHash,
+		constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
+	}
+	if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+		return fmt.Errorf("failed to set Done annotation on node: %w", err)
+	}
+	glog.Info("A rebootless update was completed.")
 	return nil
 }
 
