@@ -103,6 +103,7 @@ func (optr *Operator) syncAvailableStatus(ierr syncError) error {
 
 	message := fmt.Sprintf("Cluster has deployed %s", co.Status.Versions)
 	available := configv1.ConditionTrue
+	reason := asExpectedReason
 
 	// we will only be Available = False where there is a problem syncing
 	// operands of the MCO as that points to impaired operator functionality.
@@ -116,14 +117,16 @@ func (optr *Operator) syncAvailableStatus(ierr syncError) error {
 			UID:       co.GetUID(),
 		}
 
-		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, "OperatorNotAvailable", message)
-		message = fmt.Sprintf("Cluster not available for %s", co.Status.Versions)
+		reason = taskFailed(ierr.task)
+		message = fmt.Sprintf("Cluster not available for %s: %s", co.Status.Versions, ierr.err.Error())
+		optr.eventRecorder.Eventf(mcoObjectRef, corev1.EventTypeWarning, reason, message)
 	}
 
 	coStatus := configv1.ClusterOperatorStatusCondition{
 		Type:    configv1.OperatorAvailable,
 		Status:  available,
 		Message: message,
+		Reason:  reason,
 	}
 
 	return optr.updateStatus(co, coStatus)
@@ -199,7 +202,7 @@ func (optr *Operator) clearDegradedStatus(task string) error {
 	if degradedStatusCondition == nil {
 		return nil
 	}
-	if degradedStatusCondition.Reason != task+"Failed" {
+	if degradedStatusCondition.Reason != taskFailed(task) {
 		return nil
 	}
 	return optr.syncDegradedStatus(syncError{})
@@ -227,7 +230,7 @@ func (optr *Operator) syncDegradedStatus(ierr syncError) (err error) {
 		} else {
 			message = fmt.Sprintf("Unable to apply %s: %v", optrVersion, ierr.err.Error())
 		}
-		reason = ierr.task + "Failed"
+		reason = taskFailed(ierr.task)
 		mcoObjectRef := &corev1.ObjectReference{
 			Kind:      co.Kind,
 			Name:      co.Name,
@@ -641,4 +644,8 @@ func machineConfigPoolStatus(pool *mcfgv1.MachineConfigPool) string {
 	default:
 		return "<unknown>"
 	}
+}
+
+func taskFailed(task string) string {
+	return task + "Failed"
 }
