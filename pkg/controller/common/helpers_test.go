@@ -234,7 +234,8 @@ func TestParseAndConvert(t *testing.T) {
 
 func TestMergeMachineConfigs(t *testing.T) {
 	// variable setup
-	osImageURL := "testURL"
+	cconfig := &mcfgv1.ControllerConfig{}
+	cconfig.Spec.OSImageURL = "testURL"
 	fips := true
 	kargs := []string{"testKarg"}
 	extensions := []string{"testExtensions"}
@@ -246,7 +247,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		},
 	}
 	inMachineConfigs := []*mcfgv1.MachineConfig{machineConfigFIPS}
-	mergedMachineConfig, err := MergeMachineConfigs(inMachineConfigs, osImageURL)
+	mergedMachineConfig, err := MergeMachineConfigs(inMachineConfigs, cconfig)
 	require.Nil(t, err)
 
 	// check that the outgoing config does have the version string set,
@@ -260,7 +261,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	require.Nil(t, err)
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:      osImageURL,
+			OSImageURL:      cconfig.Spec.OSImageURL,
 			KernelArguments: []string{},
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
@@ -325,7 +326,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 		machineConfigIgn,
 		machineConfigFIPS,
 	}
-	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, osImageURL)
+	mergedMachineConfig, err = MergeMachineConfigs(inMachineConfigs, cconfig)
 	require.Nil(t, err)
 
 	expectedMachineConfig = &mcfgv1.MachineConfig{
