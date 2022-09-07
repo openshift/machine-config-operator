@@ -201,7 +201,7 @@ type MachineConfigSpec struct {
 	// fetch the OS.
 	OSImageURL string `json:"osImageURL"`
 
-	// BaseOperatingSystemExtensionContainer specifies the remote location that will be used
+	// BaseOSExtensionsContainerImage specifies the remote location that will be used
 	// to fetch the extensions container matching a new-format OS image
 	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
 

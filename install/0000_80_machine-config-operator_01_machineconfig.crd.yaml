@@ -67,7 +67,7 @@ spec:
             type: object
             properties:
               baseOSExtensionsContainerImage:
-                description: baseOperatingSystemExtensionContainer specifies the remote location that will be used
+                description: baseOSExtensionsContainerImage specifies the remote location that will be used
                   to fetch the extensions container matching a new-format OS image
                 type: string
               config:
