@@ -66,6 +66,10 @@ spec:
             description: MachineConfigSpec is the spec for MachineConfig
             type: object
             properties:
+              baseOSExtensionsContainerImage:
+                description: baseOperatingSystemExtensionContainer specifies the remote location that will be used
+                  to fetch the extensions container matching a new-format OS image
+                type: string
               config:
                 description: Config is a Ignition Config object.
                 type: object
