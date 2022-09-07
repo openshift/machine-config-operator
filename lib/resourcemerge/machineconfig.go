@@ -47,6 +47,7 @@ func EnsureMachineConfigPool(modified *bool, existing *mcfgv1.MachineConfigPool,
 func ensureMachineConfigSpec(modified *bool, existing *mcfgv1.MachineConfigSpec, required mcfgv1.MachineConfigSpec) {
 	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
 	resourcemerge.SetStringIfSet(modified, &existing.KernelType, required.KernelType)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOSExtensionsContainerImage, required.BaseOSExtensionsContainerImage)
 
 	if !equality.Semantic.DeepEqual(existing.KernelArguments, required.KernelArguments) {
 		*modified = true
