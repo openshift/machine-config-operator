@@ -26,20 +26,13 @@ import (
 )
 
 func newMockDaemon() Daemon {
-	// testClient is the NodeUpdaterClient mock instance that will front
-	// calls to update the host.
-	testClient := RpmOstreeClientMock{
-		GetBootedOSImageURLReturns: []GetBootedOSImageURLReturn{},
-	}
-
 	// Create a Daemon instance with mocked clients
 	return Daemon{
-		mock:              true,
-		name:              "nodeName",
-		os:                OperatingSystem{},
-		NodeUpdaterClient: testClient,
-		kubeClient:        k8sfake.NewSimpleClientset(),
-		bootedOSImageURL:  "test",
+		mock:             true,
+		name:             "nodeName",
+		os:               OperatingSystem{},
+		kubeClient:       k8sfake.NewSimpleClientset(),
+		bootedOSImageURL: "test",
 	}
 }
 
@@ -84,27 +77,6 @@ func TestRunCmdSync(t *testing.T) {
 
 	err = runCmdSync("false", "something")
 	assert.NotNil(t, err)
-}
-
-// TestUpdateOS verifies the return errors from attempting to update the OS follow expectations
-func TestUpdateOS(t *testing.T) {
-	// expectedError is the error we will use when expecting an error to return
-	expectedError := fmt.Errorf("broken")
-
-	// differentMcfg has a different OSImageURL so it will force Daemon.UpdateOS
-	// to trigger an update of the operatingsystem (as fronted by our testClient)
-	differentMcfg := &mcfgv1.MachineConfig{
-		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL: "somethingDifferent",
-		},
-	}
-
-	d := newMockDaemon()
-
-	// should return an error
-	if err := d.updateOS(differentMcfg, ""); err == expectedError {
-		t.Error("Expected an error. Got none.")
-	}
 }
 
 // TestReconcilable attempts to verify the conditions in which configs would and would not be
