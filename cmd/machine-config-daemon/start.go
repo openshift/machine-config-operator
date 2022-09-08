@@ -223,9 +223,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		if err := dn.RunHypershift(stopCh, exitCh); err != nil {
 			ctrlcommon.WriteTerminationError(err)
 		}
-
-		// We shouldn't ever get here
-		glog.Fatalf("Unexpected error, hypershift mode state machine returned: %v", err)
+		return
 	}
 
 	// Start local metrics listener
