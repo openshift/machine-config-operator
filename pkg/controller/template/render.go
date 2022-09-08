@@ -473,7 +473,7 @@ func onPremPlatformIngressIPs(cfg RenderConfig) (interface{}, error) {
 			}
 			// VSphere UPI doesn't populate VSphere field. So it's not an error,
 			// and there is also no data
-			return nil, nil
+			return []string{}, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs, nil
 		default:
@@ -532,7 +532,7 @@ func onPremPlatformAPIServerInternalIPs(cfg RenderConfig) (interface{}, error) {
 			}
 			// VSphere UPI doesn't populate VSphere field. So it's not an error,
 			// and there is also no data
-			return nil, nil
+			return []string{}, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs, nil
 		default:
