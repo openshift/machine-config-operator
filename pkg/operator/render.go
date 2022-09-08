@@ -279,7 +279,10 @@ func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, err
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
+			if cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
+			}
+			return []string{}, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs, nil
 		default:
@@ -326,7 +329,10 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 		case configv1.OpenStackPlatformType:
 			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
+			if cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
+			}
+			return []string{}, nil
 		case configv1.NutanixPlatformType:
 			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs, nil
 		default:
