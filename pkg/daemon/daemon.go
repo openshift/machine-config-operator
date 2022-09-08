@@ -642,6 +642,7 @@ func (dn *Daemon) RunHypershift(stopCh <-chan struct{}, exitCh <-chan error) err
 	}
 }
 
+//nolint:gocyclo
 func (dn *Daemon) syncNodeHypershift(key string) error {
 	// First, get the current and desired configurations for the node
 	// current configuration will be read from on-disk state, either
@@ -767,24 +768,43 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 
 	glog.Infof("Update is reconcilable. Diff: %v", mcDiff)
 
-	// If we want to match existing MCD behaviour, we will also need to
-	// check whether we need to drain.
-	// TODO add disruptionless updates here
+	// This should be eventually de-duplicated with the update() function.
+	oldIgnConfig, err := ctrlcommon.ParseAndConvertConfig(currentConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing old Ignition config failed: %w", err)
+	}
+	newIgnConfig, err := ctrlcommon.ParseAndConvertConfig(desiredConfig.Spec.Config.Raw)
+	if err != nil {
+		return fmt.Errorf("parsing new Ignition config failed: %w", err)
+	}
+	diffFileSet := ctrlcommon.CalculateConfigFileDiffs(&oldIgnConfig, &newIgnConfig)
+	actions, err := calculatePostConfigChangeAction(mcDiff, diffFileSet)
+	if err != nil {
+		return err
+	}
 
-	targetDrainValue := fmt.Sprintf("%s-%s", constants.DrainerStateDrain, targetHash)
-	if node.Annotations[constants.DesiredDrainerAnnotationKey] != targetDrainValue {
-		// Make a request to perform drain
-		annos := map[string]string{
-			constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
-			constants.MachineConfigDaemonReasonAnnotationKey: "",
-			constants.DesiredDrainerAnnotationKey:            targetDrainValue,
+	// Check and perform node drain if required
+	drain, err := isDrainRequired(actions, diffFileSet, oldIgnConfig, newIgnConfig)
+	if err != nil {
+		return err
+	}
+
+	if drain {
+		targetDrainValue := fmt.Sprintf("%s-%s", constants.DrainerStateDrain, targetHash)
+		if node.Annotations[constants.DesiredDrainerAnnotationKey] != targetDrainValue {
+			// Make a request to perform drain
+			annos := map[string]string{
+				constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateWorking,
+				constants.MachineConfigDaemonReasonAnnotationKey: "",
+				constants.DesiredDrainerAnnotationKey:            targetDrainValue,
+			}
+			if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+				return fmt.Errorf("failed to set Done annotation on node: %w", err)
+			}
+			// Wait for a future sync to perform post-drain actions
+			glog.Info("Setting drain request via annotation to controller.")
+			return nil
 		}
-		if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
-			return fmt.Errorf("failed to set Done annotation on node: %w", err)
-		}
-		// Wait for a future sync to perform post-drain actions
-		glog.Info("Setting drain request via annotation to controller.")
-		return nil
 	}
 
 	// For us to be here, DesiredDrainerAnnotationKey == LastAppliedDrainerAnnotationKey == drain-targetHash
@@ -793,15 +813,44 @@ func (dn *Daemon) syncNodeHypershift(key string) error {
 		return fmt.Errorf("failed to update configuration: %w", err)
 	}
 
-	// Finally, once we are successful, we perform the necessary post config change action (TODO)
-
 	// write new config to disk, used for future updates
 	err = writeFileAtomicallyWithDefaults(hypershiftCurrentConfigPath, desiredConfigBytes)
 	if err != nil {
 		return fmt.Errorf("cannot store new config to disk: %w", err)
 	}
 
-	return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
+	// Finally, once we are successful, we perform the necessary post config change action
+	// TODO should be de-duplicated with update()
+	if ctrlcommon.InSlice(postConfigChangeActionReboot, actions) {
+		glog.Info("Rebooting node")
+		return dn.reboot(fmt.Sprintf("Node will reboot into config %s", desiredConfig.Name))
+	}
+
+	if ctrlcommon.InSlice(postConfigChangeActionNone, actions) {
+		glog.Infof("Node has Desired Config %s, skipping reboot", desiredConfig.Name)
+	}
+
+	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, actions) {
+		serviceName := "crio"
+		if err := reloadService(serviceName); err != nil {
+			return fmt.Errorf("could not apply update: reloading %s configuration failed. Error: %w", serviceName, err)
+		}
+		glog.Infof("%s config reloaded successfully! Desired config %s has been applied, skipping reboot", serviceName, desiredConfig.Name)
+	}
+
+	// We are here, which means reboot was not needed to apply the configuration.
+	// Complete the update and return. Future syncs should see the update has completed.
+	annos := map[string]string{
+		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDone,
+		constants.MachineConfigDaemonReasonAnnotationKey: "",
+		constants.CurrentMachineConfigAnnotationKey:      targetHash,
+		constants.DesiredDrainerAnnotationKey:            fmt.Sprintf("%s-%s", constants.DrainerStateUncordon, targetHash),
+	}
+	if _, err := dn.nodeWriter.SetAnnotations(annos); err != nil {
+		return fmt.Errorf("failed to set Done annotation on node: %w", err)
+	}
+	glog.Info("A rebootless update was completed.")
+	return nil
 }
 
 // RunOnceFrom is the primary entrypoint for the non-cluster case
