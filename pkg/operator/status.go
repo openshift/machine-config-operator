@@ -609,8 +609,16 @@ func isMachineConfigPoolConfigurationValid(pool *mcfgv1.MachineConfigPool, versi
 	if err != nil {
 		return err
 	}
+
+	// TODO(jkyros): For "Phase 0" layering, we're going to allow this check to pass once the user has "taken the wheel" by overriding OSImageURL.
+	// We will find a way to make this more visible to the user somewhere since the MCO is kind of "lying" about completing the
+	// upgrade to the new os version otherwise.
 	if renderedMC.Spec.OSImageURL != osURL {
-		return fmt.Errorf("osImageURL mismatch for %s in %s expected: %s got: %s", pool.GetName(), renderedMC.Name, osURL, renderedMC.Spec.OSImageURL)
+		// If we didn't override OSImageURL, this is still bad, because it means that we aren't on the proper OS image yet
+		_, ok := renderedMC.Annotations[ctrlcommon.OSImageURLOverriddenKey]
+		if !ok {
+			return fmt.Errorf("osImageURL mismatch for %s in %s expected: %s got: %s", pool.GetName(), renderedMC.Name, osURL, renderedMC.Spec.OSImageURL)
+		}
 	}
 
 	// check that the rendered config matches the OCP release version for cases where there is no OSImageURL change nor new MCO commit
