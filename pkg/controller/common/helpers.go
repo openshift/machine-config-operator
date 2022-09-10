@@ -48,6 +48,9 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
+// Gates whether or not the MCO uses the new format base OS container image by default
+var UseNewFormatImageByDefault = false
+
 // strToPtr converts the input string to a pointer to itself
 func strToPtr(s string) *string {
 	return &s
@@ -131,18 +134,26 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.Contro
 	// For layering, we want to let the user override OSImageURL again
 	// The template configs always match what's in controllerconfig because they get rendered from there,
 	// so the only way we get an override here is if the user adds something different
-	osImageURL := cconfig.Spec.OSImageURL
+	osImageURL := GetDefaultBaseImageContainer(&cconfig.Spec)
 	for _, cfg := range configs {
 		if cfg.Spec.OSImageURL != "" {
 			osImageURL = cfg.Spec.OSImageURL
 		}
 	}
 
+	// Allow overriding the extensions container
+	baseOSExtensionsContainerImage := cconfig.Spec.BaseOSExtensionsContainerImage
+	for _, cfg := range configs {
+		if cfg.Spec.BaseOSExtensionsContainerImage != "" {
+			baseOSExtensionsContainerImage = cfg.Spec.BaseOSExtensionsContainerImage
+		}
+	}
+
 	return &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:                             osImageURL,
-			BaseOSExtensionsContainerImage: cconfig.Spec.BaseOSExtensionsContainerImage,
-			KernelArguments:                        kargs,
+			OSImageURL:                     osImageURL,
+			BaseOSExtensionsContainerImage: baseOSExtensionsContainerImage,
+			KernelArguments:                kargs,
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
 			},
@@ -969,4 +980,13 @@ func GetLongestValidCertificate(certificateList []*x509.Certificate, subjectPref
 		}
 	}
 	return nil
+}
+
+// GetDefaultBaseImageContainer is kind of a "soft feature gate" for using the "new format" image by default, its behavior
+// is determined by the "UseNewFormatImageByDefault" boolean
+func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) string {
+	if UseNewFormatImageByDefault {
+		return cconfigspec.BaseOSContainerImage
+	}
+	return cconfigspec.OSImageURL
 }
