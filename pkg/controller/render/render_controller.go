@@ -554,10 +554,10 @@ func generateRenderedMachineConfig(pool *mcfgv1.MachineConfigPool, configs []*mc
 		return nil, fmt.Errorf("Ignoring controller config generated without %s annotation (my version: %s)", daemonconsts.GeneratedByVersionAnnotationKey, version.Raw)
 	}
 
-	if cconfig.Spec.BaseOperatingSystemContainer == "" {
-		glog.Warningf("No BaseOperatingSystemContainer set")
+	if cconfig.Spec.BaseOSContainerImage == "" {
+		glog.Warningf("No BaseOSContainerImage set")
 	} else {
-		glog.Infof("BaseOperatingSystemContainer=%s", cconfig.Spec.BaseOperatingSystemContainer)
+		glog.Infof("BaseOSContainerImage=%s", cconfig.Spec.BaseOSContainerImage)
 	}
 
 	// Before merging all MCs for a specific pool, let's make sure MachineConfigs are valid

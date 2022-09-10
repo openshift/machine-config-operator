@@ -72,8 +72,8 @@ func ensureControllerConfigSpec(modified *bool, existing *mcfgv1.ControllerConfi
 	resourcemerge.SetStringIfSet(modified, &existing.Platform, required.Platform)
 	resourcemerge.SetStringIfSet(modified, &existing.EtcdDiscoveryDomain, required.EtcdDiscoveryDomain)
 	resourcemerge.SetStringIfSet(modified, &existing.OSImageURL, required.OSImageURL)
-	resourcemerge.SetStringIfSet(modified, &existing.BaseOperatingSystemContainer, required.BaseOperatingSystemContainer)
-	resourcemerge.SetStringIfSet(modified, &existing.BaseOperatingSystemExtensionsContainer, required.BaseOperatingSystemExtensionsContainer)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOSContainerImage, required.BaseOSContainerImage)
+	resourcemerge.SetStringIfSet(modified, &existing.BaseOSExtensionsContainerImage, required.BaseOSExtensionsContainerImage)
 	resourcemerge.SetStringIfSet(modified, &existing.NetworkType, required.NetworkType)
 
 	setBytesIfSet(modified, &existing.AdditionalTrustBundle, required.AdditionalTrustBundle)
