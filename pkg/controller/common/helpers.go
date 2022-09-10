@@ -49,7 +49,7 @@ import (
 )
 
 // Gates whether or not the MCO uses the new format base OS container image by default
-var UseNewFormatImageByDefault = false
+var UseNewFormatImageByDefault = true
 
 // strToPtr converts the input string to a pointer to itself
 func strToPtr(s string) *string {
