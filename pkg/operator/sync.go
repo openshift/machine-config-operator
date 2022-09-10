@@ -260,8 +260,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		return err
 	}
 	imgs.MachineOSContent = osimageurl
-	imgs.BaseOperatingSystemContainer = oscontainer
-	imgs.BaseOperatingSystemExtensionsContainer = osextensionscontainer
+	imgs.BaseOSContainerImage = oscontainer
+	imgs.BaseOSExtensionsContainerImage = osextensionscontainer
 
 	// sync up the ControllerConfigSpec
 	infra, network, proxy, dns, err := optr.getGlobalConfig()
@@ -310,8 +310,8 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.RootCAData = bundle
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
 	spec.OSImageURL = imgs.MachineOSContent
-	spec.BaseOperatingSystemContainer = imgs.BaseOperatingSystemContainer
-	spec.BaseOperatingSystemExtensionsContainer = imgs.BaseOperatingSystemExtensionsContainer
+	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
+	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
 	spec.Images = map[string]string{
 		templatectrl.MachineConfigOperatorKey: imgs.MachineConfigOperator,
 
@@ -875,9 +875,9 @@ func (optr *Operator) getOsImageURLs(namespace string) (string, string, string, 
 		return "", "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
 	}
 
-	newextensions, hasNewExtensions := cm.Data["baseOperatingSystemExtensionsContainer"]
+	newextensions, hasNewExtensions := cm.Data["baseOSExtensionsContainerImage"]
 
-	newformat, hasNewFormat := cm.Data["baseOperatingSystemContainer"]
+	newformat, hasNewFormat := cm.Data["baseOSContainerImage"]
 
 	oldformat, hasOldFormat := cm.Data["osImageURL"]
 
@@ -888,7 +888,7 @@ func (optr *Operator) getOsImageURLs(namespace string) (string, string, string, 
 
 	// If we don't have a new format image, and we can't fall back to the old one
 	if !hasOldFormat && !hasNewFormat {
-		return "", "", "", fmt.Errorf("Missing baseOperatingSystemContainer and osImageURL from configmap")
+		return "", "", "", fmt.Errorf("Missing baseOSContainerImage and osImageURL from configmap")
 	}
 
 	return newformat, newextensions, oldformat, nil
