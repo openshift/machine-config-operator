@@ -236,6 +236,7 @@ func TestMergeMachineConfigs(t *testing.T) {
 	// variable setup
 	cconfig := &mcfgv1.ControllerConfig{}
 	cconfig.Spec.OSImageURL = "testURL"
+	cconfig.Spec.BaseOSContainerImage = "newformatURL"
 	fips := true
 	kargs := []string{"testKarg"}
 	extensions := []string{"testExtensions"}
@@ -261,7 +262,8 @@ func TestMergeMachineConfigs(t *testing.T) {
 	require.Nil(t, err)
 	expectedMachineConfig := &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:      cconfig.Spec.OSImageURL,
+			// TODO(jkyros): take this back out when we drop machine-os-content
+			OSImageURL:      GetDefaultBaseImageContainer(&cconfig.Spec),
 			KernelArguments: []string{},
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
