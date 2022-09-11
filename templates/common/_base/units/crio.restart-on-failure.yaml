@@ -1,0 +1,8 @@
+name: crio.service
+dropins:
+  - name: 01-restart.conf
+    contents: |
+      
+      [Service]
+      Restart=on-failure
+      
