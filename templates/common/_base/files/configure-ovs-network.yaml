@@ -490,37 +490,60 @@ contents:
       echo ""
     }
 
-    get_interface_from_ip_hint() {
+    get_ip_from_ip_hint_file() {
+      local ip_hint_file="$1"
+      if [[ ! -f "${ip_hint_file}" ]]; then
+        return
+      fi
+      ip_hint=$(cat "${ip_hint_file}")
+      echo "${ip_hint}"
+    }
+
+    # This function waits for ip address of br-ex to be bindable only in case of ipv6
+    # This is workaround for OCPBUGS-673 as it will not allow starting crio
+    # before address is bindable
+    try_to_bind_ipv6_address() {
+      # Retry for 1 minute
+      retries=60
+      until [[ ${retries} -eq 0 ]]; do
+        ip=$(ip -6 -j addr | jq -r "first(.[] | select(.ifname==\"br-ex\") | .addr_info[] | select(.scope==\"global\") | .local)")
+        if [[ "${ip}" == "" ]]; then
+          echo "No ipv6 ip to bind was found"
+          break
+        fi
+        random_port=$(shuf -i 50000-60000 -n 1)
+        echo "Trying to bind ${ip} on port ${random_port}"
+        exit_code=$(timeout 2s nc -l "${ip}" ${random_port}; echo $?)
+        if [[ exit_code -eq 124 ]]; then
+          echo "Address bound successfully"
+          break
+        fi
+        sleep 1
+        (( retries-- ))
+      done
+      if [[ ${retries} -eq 0 ]]; then
+        echo "Failed to bind ip"
+        exit 1
+      fi
+    }
+
+    # Get interface that matches ip from node ip hint file
+    # in case file not exists return nothing and
+    # fallback to default interface search flow
+    get_nodeip_hint_interface() {
       local ip_hint=""
       local ip_hint_file="$1"
       local extra_bridge="$2"
       local iface=""
 
-      if [ ! -f "${ip_hint_file}" ]; then
+      ip_hint=$(get_ip_from_ip_hint_file "${ip_hint_file}")
+      if [[ -z "${ip_hint}"  ]]; then
         return
       fi
 
-      ip_hint=$(cat ${ip_hint_file})
-      if [ "${ip_hint}" != "" ]; then
-      # check ipv4
-        if [ "${extra_bridge}" != "" ]; then
-          iface=$(ip route show | grep -v "br-ex1" | grep -v "${extra_bridge}" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
-        else
-          iface=$(ip route show | grep -v "br-ex1" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
-        fi
-        if [[ -n "${iface}" ]]; then
-          echo "${iface}"
-          return
-        fi
-        if [ "${extra_bridge}" != "" ]; then
-          iface=$(ip -6 route show | grep -v "br-ex1" | grep -v "${extra_bridge}" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
-        else
-          iface=$(ip -6 route show | grep -v "br-ex1" | grep -i "${ip_hint}" | awk '{ if ($4 == "dev") { print $5; exit } else if ($2 == "dev") { print $3; exit } }')
-        fi
-        if [[ -n "${iface}" ]]; then
-          echo "${iface}"
-          return
-        fi
+      iface=$(ip -j addr | jq -r "first(.[] | select(any(.addr_info[]; .local==\"${ip_hint}\") and .ifname!=\"br-ex1\" and .ifname!=\"${extra_bridge}\")) | .ifname")
+      if [[ -n "${iface}" ]]; then
+        echo "${iface}"
       fi
     }
 
@@ -533,15 +556,18 @@ contents:
       echo "${physical_interface}"
     }
 
-    # Accepts parameters $iface, $iface_default_hint_file
-    # Finds the default interface. If the default interface is br-ex, use that and return.
+    # Accepts parameters $iface, $iface_default_hint_file, $ip_hint_file
+    # Finds the nodeip interface from the interface that matches the ip address in $ip_hint_file.
+    # Otherwise fallbacks to a previously used interface or to the default interface.ç
     # Never use the interface that is provided inside extra_bridge_file for br-ex1.
     # Never use br-ex1.
+    # Read $ip_hint_file and return the interface that matches this ip.  Otherwise:
+    # If the default interface is br-ex, use that and return.
     # If the default interface is not br-ex:
     # Check if there is a valid hint inside iface_default_hint_file. If so, use that hint.
     # If there is no valid hint, use the default interface that we found during the step
     # earlier. Write the default interface to the hint file.
-    get_default_interface() {
+    get_nodeip_interface() {
       local iface=""
       local counter=0
       local iface_default_hint_file="$1"
@@ -554,7 +580,7 @@ contents:
       fi
 
       # if node ip was set, we should search for interface that matches it
-      iface=$(get_interface_from_ip_hint "${ip_hint_file}" "${extra_bridge}")
+      iface=$(get_nodeip_hint_interface "${ip_hint_file}" "${extra_bridge}")
       if [[ -n "${iface}" ]]; then
         echo "${iface}"
         return
@@ -737,7 +763,7 @@ contents:
       fi
       touch /run/configure-ovs-boot-done
 
-      iface=$(get_default_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}")
+      iface=$(get_nodeip_interface "${iface_default_hint_file}" "${extra_bridge_file}" "${ip_hint_file}")
 
       if [ "$iface" != "br-ex" ]; then
         # Default gateway is not br-ex.
@@ -782,6 +808,7 @@ contents:
         connections+=(ovs-if-phys1 ovs-if-br-ex1)
       fi
       activate_nm_connections "${connections[@]}"
+      try_to_bind_ipv6_address
     elif [ "$1" == "OpenShiftSDN" ]; then
       # Revert changes made by /usr/local/bin/configure-ovs.sh during SDN migration.
       rollback_nm

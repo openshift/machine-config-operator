@@ -23,7 +23,7 @@ contents: |
     --net=host \
     --security-opt label=disable \
     --volume /etc/systemd/system:/etc/systemd/system \
-    --volume /run:/run \
+    --volume /run/nodeip-configuration:/run/nodeip-configuration \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
@@ -32,7 +32,7 @@ contents: |
     sleep 5; \
     done"
   ExecStart=/bin/systemctl daemon-reload
-
+  ExecStartPre=/bin/mkdir -p /run/nodeip-configuration
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
