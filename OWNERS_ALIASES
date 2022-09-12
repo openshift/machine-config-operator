@@ -27,11 +27,13 @@ aliases:
     - pierreprinetti
     - stephenfin
   ovirt-approvers:
-    - Gal-Zaidman
-    - rgolangh
+    - engelmi
+    - eslutsky
+    - Darth-Mera
   ovirt-reviewers:
-    - Gal-Zaidman
-    - rgolangh
+    - engelmi
+    - eslutsky
+    - Darth-Mera
   vsphere-approvers:
     - jcpowermac
     - patrickdillon
