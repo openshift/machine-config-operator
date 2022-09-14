@@ -75,6 +75,11 @@ const (
 	// "currentConfig" state.  Create this file (empty contents is fine) if you wish the MCD
 	// to proceed and attempt to "reconcile" to the new "desiredConfig" state regardless.
 	MachineConfigDaemonForceFile = "/run/machine-config-daemon-force"
+	// MachineConfigDaemonPersistentForceOnceFile if present on firstboot will have the same
+	// effect as MachineConfigDaemonForceFile, and it will be deleted.  This allows opt-in
+	// to a force reconciliation across a reboot cycle, without introducing the possibility
+	// of unbounded "reboot loops".
+	MachineConfigDaemonPersistentForceOnceFile = "/etc/machine-config-daemon-force-once"
 
 	// coreUser is "core" and currently the only permissible user name
 	CoreUserName  = "core"

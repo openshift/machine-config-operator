@@ -108,6 +108,9 @@ type Daemon struct {
 	// booting is true when all initial synchronization to the target
 	// machineconfig is done
 	booting bool
+	// needSecondaryReboot is used for https://issues.redhat.com/browse/MCO-356
+	// when we have an old rpm-ostree and need to reboot into the new one.
+	needSecondaryReboot bool
 
 	currentConfigPath string
 
@@ -510,6 +513,9 @@ func (dn *Daemon) syncNode(key string) error {
 		// Be sure only the MCD is running now, disable -firstboot.service
 		if err := upgradeHackFor44AndBelow(); err != nil {
 			return err
+		}
+		if err := dn.convertForceFile(); err != nil {
+			return fmt.Errorf("converting force file: %w", err)
 		}
 		if err := removeIgnitionArtifacts(); err != nil {
 			return err
@@ -1156,6 +1162,20 @@ func (dn *Daemon) getHealth() error {
 	return nil
 }
 
+// convertForceFile removes the "force once persistent" file and creates the runtime version
+func (dn *Daemon) convertForceFile() error {
+	err := os.Remove(constants.MachineConfigDaemonPersistentForceOnceFile)
+	if err == nil {
+		dn.logSystem("Found %s; removing and creating %s", constants.MachineConfigDaemonPersistentForceOnceFile, constants.MachineConfigDaemonForceFile)
+		if err := os.WriteFile(constants.MachineConfigDaemonForceFile, []byte(""), 0o644); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // stateAndConfigs is the "state" node annotation plus parsed machine configs
 // referenced by the currentConfig and desiredConfig annotations.  If we have
 // a "pending" config (we're coming up after a reboot attempting to apply a config),
@@ -1407,9 +1427,11 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return err
 	}
 	var pendingConfigName, bootID string
+	var pendingSpecifiesForce bool
 	if pendingState != nil {
 		pendingConfigName = pendingState.Message
 		bootID = pendingState.BootID
+		pendingSpecifiesForce = pendingState.Force == "true"
 	}
 	// XXX: drop this
 	// we need this compatibility layer for now
@@ -1456,7 +1478,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
-			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
+			dn.logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
@@ -1487,7 +1509,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
-		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
+		dn.logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
@@ -1532,8 +1554,13 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		expectedConfig = state.currentConfig
 	}
 
-	if forceFileExists() {
-		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+	force := pendingSpecifiesForce || forceFileExists()
+	if force {
+		if pendingSpecifiesForce {
+			dn.logSystem("Skipping on-disk validation; pending config specifies forcing")
+		} else {
+			dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+		}
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
 
@@ -1543,7 +1570,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return wErr
 	}
 
-	glog.Info("Validated on-disk state")
+	dn.logSystem("Validated on-disk state")
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
