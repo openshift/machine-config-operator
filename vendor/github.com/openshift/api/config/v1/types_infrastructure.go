@@ -101,6 +101,11 @@ type InfrastructureStatus struct {
 	// +kubebuilder:default=HighlyAvailable
 	// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
 	InfrastructureTopology TopologyMode `json:"infrastructureTopology"`
+
+	// cpuPartitioning expresses that CPU partitioning is a currently enabled feature in the cluster.
+	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;AllNodes
+	CPUPartitioning CPUPartitioningMode `json:"cpuPartitioning"`
 }
 
 // TopologyMode defines the topology mode of the control/infra nodes.
@@ -121,6 +126,14 @@ const (
 	// that any of the control plane components such as kubernetes API server or etcd are visible within
 	// the cluster.
 	ExternalTopologyMode TopologyMode = "External"
+)
+
+// CPUPartitioningMode defines the mode for CPU partitioning
+type CPUPartitioningMode string
+
+const (
+	CPUPartitioningNone     CPUPartitioningMode = "None"
+	CPUPartitioningAllNodes CPUPartitioningMode = "AllNodes"
 )
 
 // PlatformType is a specific supported infrastructure provider.

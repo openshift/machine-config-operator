@@ -75,6 +75,7 @@ func (b *Bootstrap) Run(destDir string) error {
 	var cconfig *mcfgv1.ControllerConfig
 	var featureGate *apicfgv1.FeatureGate
 	var nodeConfig *apicfgv1.Node
+	var infraConfig *apicfgv1.Infrastructure
 	var kconfigs []*mcfgv1.KubeletConfig
 	var pools []*mcfgv1.MachineConfigPool
 	var configs []*mcfgv1.MachineConfig
@@ -131,6 +132,10 @@ func (b *Bootstrap) Run(destDir string) error {
 				if obj.GetName() == ctrlcommon.ClusterNodeInstanceName {
 					nodeConfig = obj
 				}
+			case *apicfgv1.Infrastructure:
+				if obj.GetName() == ctrlcommon.ClusterInfrastructureInstanceName {
+					infraConfig = obj
+				}
 			default:
 				glog.Infof("skipping %q [%d] manifest because of unhandled %T", file.Name(), idx+1, obji)
 			}
@@ -181,6 +186,14 @@ func (b *Bootstrap) Run(destDir string) error {
 			return err
 		}
 		configs = append(configs, kconfigs...)
+	}
+
+	if infraConfig.Status.CPUPartitioning != apicfgv1.CPUPartitioningNone {
+		cpuPartMCs, err := kubeletconfig.GenerateCPUPartitioningMC()
+		if err != nil {
+			return err
+		}
+		configs = append(configs, cpuPartMCs...)
 	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)

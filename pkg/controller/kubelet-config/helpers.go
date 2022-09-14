@@ -476,3 +476,59 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 
 	return kubeletIgnition, logLevelIgnition, autoSizingReservedIgnition, nil
 }
+
+func cpuPartitionMC(role string, ignitionConfig ign3types.Config) (*mcfgv1.MachineConfig, error) {
+	rawIgnition, err := json.Marshal(ignitionConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	mc := &mcfgv1.MachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: mcfgv1.GroupVersion.String(),
+			Kind:       "MachineConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("01-%s-cpu-partitioning", role),
+			Labels: map[string]string{
+				"machineconfiguration.openshift.io/role": role,
+			},
+		},
+		Spec: mcfgv1.MachineConfigSpec{},
+	}
+	mc.Spec.Config = runtime.RawExtension{Raw: rawIgnition}
+	return mc, nil
+}
+
+func GenerateCPUPartitioningMC() (mc []*mcfgv1.MachineConfig, err error) {
+	mode := 420
+	source := "data:text/plain;charset=utf-8;base64,ewogICJtYW5hZ2VtZW50IjogewogICAgImNwdXNldCI6ICIiCiAgfQp9Cg=="
+	ignitionConfig := ign3types.Config{
+		Ignition: ign3types.Ignition{
+			Version: ign3types.MaxVersion.String(),
+		},
+		Storage: ign3types.Storage{
+			Files: []ign3types.File{{
+				Node: ign3types.Node{
+					Path: "/etc/kubernetes/openshift-workload-pinning",
+				},
+				FileEmbedded1: ign3types.FileEmbedded1{
+					Contents: ign3types.Resource{
+						Source: &source,
+					},
+					Mode: &mode,
+				},
+			}},
+		},
+	}
+	masterMC, err := cpuPartitionMC("master", ignitionConfig)
+	if err != nil {
+		return nil, err
+	}
+	workerMC, err := cpuPartitionMC("worker", ignitionConfig)
+	if err != nil {
+		return nil, err
+	}
+	mc = append(mc, masterMC, workerMC)
+	return
+}

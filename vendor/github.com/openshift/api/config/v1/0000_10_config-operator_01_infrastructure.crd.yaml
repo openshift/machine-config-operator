@@ -345,6 +345,13 @@ spec:
                 - HighlyAvailable
                 - SingleReplica
                 type: string
+              cpuPartitioning:
+                default: None
+                description: cpuPartitioning expresses that CPU partitioning is a currently enabled feature in the cluster.
+                enum:
+                - None
+                - AllNodes
+                type: string
               platform:
                 description: "platform is the underlying infrastructure provider for
                   the cluster. \n Deprecated: Use platformStatus.type instead."
