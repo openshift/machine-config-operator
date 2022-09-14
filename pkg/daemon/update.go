@@ -1908,8 +1908,31 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
 	glog.Infof("Updating OS to layered image %s", newURL)
-	if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
-		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
+
+	newEnough, err := RpmOstreeIsNewEnoughForLayering()
+	if err != nil {
+		return err
+	}
+	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
+	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
+	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
+	if !newEnough {
+		dn.logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
+		err := runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", newURL, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+		if err != nil {
+			return err
+		}
+		dn.needSecondaryReboot = true
+		// We'll need to do a second reconciliation pass i.e. an extra reboot today, but that won't
+		// be necessary after we ship the newer rpm-ostree into older releases.
+		// See also https://github.com/coreos/rpm-ostree/issues/4018
+		if err := os.WriteFile(constants.MachineConfigDaemonPersistentForceOnceFile, []byte(""), 0o644); err != nil {
+			return err
+		}
+	} else {
+		if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+			return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
+		}
 	}
 
 	return nil
@@ -1957,6 +1980,7 @@ type journalMsg struct {
 	Message   string `json:"MESSAGE,omitempty"`
 	BootID    string `json:"BOOT_ID,omitempty"`
 	Pending   string `json:"PENDING,omitempty"`
+	Force     string `json:"MCO_FORCE,omitempty"`
 	OldLogger string `json:"OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK,omitempty"` // unused today
 }
 
@@ -2020,7 +2044,8 @@ func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int
 	pendingState.WriteString(fmt.Sprintf(`MESSAGE_ID=%s
 MESSAGE=%s
 BOOT_ID=%s
-PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
+MCO_FORCE=%v
+PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, dn.needSecondaryReboot, isPending))
 
 	logger.Stdin = &pendingState
 	return logger.CombinedOutput()
