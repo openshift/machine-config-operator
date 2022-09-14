@@ -26,10 +26,10 @@ require (
 	github.com/google/renameio v1.0.1
 	github.com/imdario/mergo v0.3.13
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
-	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
-	github.com/openshift/library-go v0.0.0-20220727134723-6802b30e83ba
-	github.com/openshift/runtime-utils v0.0.0-20220513161558-c736ec4e99ce
+	github.com/openshift/api v0.0.0-20220901185337-0b39f81154fa
+	github.com/openshift/client-go v0.0.0-20220831193253-4950ae70c8ea
+	github.com/openshift/library-go v0.0.0-20220902131052-245d1ca16d15
+	github.com/openshift/runtime-utils v0.0.0-20220906151503-3beb0b584526
 	github.com/prometheus/client_golang v1.13.0
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
@@ -292,7 +292,7 @@ require (
 	k8s.io/cli-runtime v0.25.0 // indirect
 	k8s.io/gengo v0.0.0-20211129171323-c02415ce4185 // indirect
 	k8s.io/klog/v2 v2.70.1 // indirect
-	k8s.io/kube-aggregator v0.24.0 // indirect
+	k8s.io/kube-aggregator v0.25.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	mvdan.cc/gofumpt v0.3.1 // indirect
 	mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed // indirect

@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,6 +113,49 @@ func (c *FakeCSISnapshotControllers) DeleteCollection(ctx context.Context, opts 
 func (c *FakeCSISnapshotControllers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.CSISnapshotController, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(csisnapshotcontrollersResource, name, pt, data, subresources...), &operatorv1.CSISnapshotController{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.CSISnapshotController), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied cSISnapshotController.
+func (c *FakeCSISnapshotControllers) Apply(ctx context.Context, cSISnapshotController *applyconfigurationsoperatorv1.CSISnapshotControllerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.CSISnapshotController, err error) {
+	if cSISnapshotController == nil {
+		return nil, fmt.Errorf("cSISnapshotController provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(cSISnapshotController)
+	if err != nil {
+		return nil, err
+	}
+	name := cSISnapshotController.Name
+	if name == nil {
+		return nil, fmt.Errorf("cSISnapshotController.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(csisnapshotcontrollersResource, *name, types.ApplyPatchType, data), &operatorv1.CSISnapshotController{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.CSISnapshotController), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeCSISnapshotControllers) ApplyStatus(ctx context.Context, cSISnapshotController *applyconfigurationsoperatorv1.CSISnapshotControllerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.CSISnapshotController, err error) {
+	if cSISnapshotController == nil {
+		return nil, fmt.Errorf("cSISnapshotController provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(cSISnapshotController)
+	if err != nil {
+		return nil, err
+	}
+	name := cSISnapshotController.Name
+	if name == nil {
+		return nil, fmt.Errorf("cSISnapshotController.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(csisnapshotcontrollersResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.CSISnapshotController{})
 	if obj == nil {
 		return nil, err
 	}

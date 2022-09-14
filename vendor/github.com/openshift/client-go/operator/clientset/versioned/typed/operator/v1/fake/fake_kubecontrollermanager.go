@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,6 +113,49 @@ func (c *FakeKubeControllerManagers) DeleteCollection(ctx context.Context, opts 
 func (c *FakeKubeControllerManagers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.KubeControllerManager, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(kubecontrollermanagersResource, name, pt, data, subresources...), &operatorv1.KubeControllerManager{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.KubeControllerManager), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied kubeControllerManager.
+func (c *FakeKubeControllerManagers) Apply(ctx context.Context, kubeControllerManager *applyconfigurationsoperatorv1.KubeControllerManagerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.KubeControllerManager, err error) {
+	if kubeControllerManager == nil {
+		return nil, fmt.Errorf("kubeControllerManager provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(kubeControllerManager)
+	if err != nil {
+		return nil, err
+	}
+	name := kubeControllerManager.Name
+	if name == nil {
+		return nil, fmt.Errorf("kubeControllerManager.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(kubecontrollermanagersResource, *name, types.ApplyPatchType, data), &operatorv1.KubeControllerManager{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.KubeControllerManager), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeKubeControllerManagers) ApplyStatus(ctx context.Context, kubeControllerManager *applyconfigurationsoperatorv1.KubeControllerManagerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.KubeControllerManager, err error) {
+	if kubeControllerManager == nil {
+		return nil, fmt.Errorf("kubeControllerManager provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(kubeControllerManager)
+	if err != nil {
+		return nil, err
+	}
+	name := kubeControllerManager.Name
+	if name == nil {
+		return nil, fmt.Errorf("kubeControllerManager.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(kubecontrollermanagersResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.KubeControllerManager{})
 	if obj == nil {
 		return nil, err
 	}
