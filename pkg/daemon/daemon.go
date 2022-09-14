@@ -108,6 +108,9 @@ type Daemon struct {
 	// booting is true when all initial synchronization to the target
 	// machineconfig is done
 	booting bool
+	// needSecondaryReboot is used for https://issues.redhat.com/browse/MCO-356
+	// when we have an old rpm-ostree and need to reboot into the new one.
+	needSecondaryReboot bool
 
 	currentConfigPath string
 
@@ -884,6 +887,31 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse MachineConfig: %w", err)
 	}
+	newEnough, err := RpmOstreeIsNewEnoughForLayering()
+	if err != nil {
+		return err
+	}
+
+	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
+	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
+	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
+	if !newEnough {
+		dn.logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
+		err := runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", mc.Spec.OSImageURL, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+		if err != nil {
+			return err
+		}
+		rebootCmd := rebootCommand("extra reboot for in-place update")
+		if err := rebootCmd.Run(); err != nil {
+			dn.logSystem("failed to run reboot: %v", err)
+			return err
+		}
+		// wait to be killed via SIGTERM
+		time.Sleep(defaultRebootTimeout)
+		return fmt.Errorf("failed to reboot for secondary in-place update")
+	}
+
+	glog.Info("rpm-ostree has container feature")
 
 	// Start with an empty config, then add our *booted* osImageURL to
 	// it, reflecting the current machine state.
@@ -1407,9 +1435,11 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return err
 	}
 	var pendingConfigName, bootID string
+	var pendingSpecifiesForce bool
 	if pendingState != nil {
 		pendingConfigName = pendingState.Message
 		bootID = pendingState.BootID
+		pendingSpecifiesForce = pendingState.Force == "true"
 	}
 	// XXX: drop this
 	// we need this compatibility layer for now
@@ -1456,7 +1486,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
-			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
+			dn.logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
@@ -1487,7 +1517,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
-		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
+		dn.logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
@@ -1532,8 +1562,13 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		expectedConfig = state.currentConfig
 	}
 
-	if forceFileExists() {
-		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+	force := pendingSpecifiesForce || forceFileExists()
+	if force {
+		if pendingSpecifiesForce {
+			dn.logSystem("Skipping on-disk validation; pending config specifies forcing")
+		} else {
+			dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+		}
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
 
@@ -1543,7 +1578,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return wErr
 	}
 
-	glog.Info("Validated on-disk state")
+	dn.logSystem("Validated on-disk state")
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool

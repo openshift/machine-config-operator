@@ -14,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -344,6 +345,47 @@ func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 	defer exec.Command("podman", "rmi", imgURL).Run()
 
 	return isBootableImage == "true", nil
+}
+
+// RpmOstreeIsNewEnoughForLayering returns true if the version of rpm-ostree on the
+// host system is new enough for layering.
+// VersionData represents the static information about rpm-ostree.
+type VersionData struct {
+	Version  string   `yaml:"Version"`
+	Features []string `yaml:"Features"`
+	Git      string   `yaml:"Git"`
+}
+
+type RpmOstreeVersionData struct {
+	Root VersionData `yaml:"rpm-ostree"`
+}
+
+// RpmOstreeVersion returns the running rpm-ostree version number
+func rpmOstreeVersion() (*VersionData, error) {
+	buf, err := runGetOut("rpm-ostree", "--version")
+	if err != nil {
+		return nil, err
+	}
+
+	var q RpmOstreeVersionData
+	if err := yaml.Unmarshal(buf, &q); err != nil {
+		return nil, fmt.Errorf("failed to parse `rpm-ostree --version` output: %w", err)
+	}
+
+	return &q.Root, nil
+}
+
+func RpmOstreeIsNewEnoughForLayering() (bool, error) {
+	verdata, err := rpmOstreeVersion()
+	if err != nil {
+		return false, err
+	}
+	for _, v := range verdata.Features {
+		if v == "container" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // RebaseLayered rebases system or errors if already rebased
