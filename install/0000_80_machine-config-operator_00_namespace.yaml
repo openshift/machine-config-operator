@@ -28,6 +28,10 @@ metadata:
   labels:
     name: openshift-openstack-infra
     openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    security.openshift.io/scc.podSecurityLabelSync: "false"
 ---
 apiVersion: v1
 kind: Namespace
@@ -41,6 +45,10 @@ metadata:
   labels:
     name: openshift-kni-infra
     openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    security.openshift.io/scc.podSecurityLabelSync: "false"
 ---
 apiVersion: v1
 kind: Namespace
@@ -54,6 +62,10 @@ metadata:
   labels:
     name: openshift-ovirt-infra
     openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    security.openshift.io/scc.podSecurityLabelSync: "false"
 ---
 apiVersion: v1
 kind: Namespace
@@ -67,6 +79,10 @@ metadata:
   labels:
     name: openshift-vsphere-infra
     openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    security.openshift.io/scc.podSecurityLabelSync: "false"
 ---
 apiVersion: v1
 kind: Namespace
@@ -80,4 +96,8 @@ metadata:
   labels:
     name: openshift-nutanix-infra
     openshift.io/run-level: "" # specify no run-level turns it off on install and upgrades
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    security.openshift.io/scc.podSecurityLabelSync: "false"
 
