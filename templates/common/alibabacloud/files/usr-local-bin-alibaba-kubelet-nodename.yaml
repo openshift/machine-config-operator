@@ -3,12 +3,12 @@ path: "/usr/local/bin/alibaba-kubelet-nodename"
 contents:
   inline: |
     #!/bin/bash
-    set -e -o pipefail
+    set -euo pipefail
 
-    NODECONF=/etc/systemd/system/kubelet.service.d/20-alibaba-node-name.conf
+    ENV_FILE=/run/kubelet-alibaba.env
 
-    if [ -e "${NODECONF}" ]; then
-        echo "Not replacing existing ${NODECONF}"
+    if [ -e "${ENV_FILE}" ]; then
+        echo "Not replacing existing ${ENV_FILE}"
         exit 0
     fi
     
@@ -20,7 +20,6 @@ contents:
     INSTANCEID=$(curl -s ${META_EP}/instance-id)
 
    
-    cat > "${NODECONF}" <<EOF
-    [Service]
-    Environment="KUBELET_NODE_NAME=${REGIONID}.${INSTANCEID}"
+    cat > "${ENV_FILE}" <<EOF
+    KUBELET_NODE_NAME=${REGIONID}.${INSTANCEID}
     EOF
