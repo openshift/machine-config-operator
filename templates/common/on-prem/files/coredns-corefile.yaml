@@ -13,29 +13,32 @@ contents:
         reload
         template IN {{`{{ .Cluster.IngressVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match .*.apps.{{ .DNS.Spec.BaseDomain }}
-            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformIngressIP . }}"
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformIngressIPs .)) 0 }}{{ index (onPremPlatformIngressIPs .) 0 }}{{ end }}"
             fallthrough
         }
         template IN {{`{{ .Cluster.IngressVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match .*.apps.{{ .DNS.Spec.BaseDomain }}
+            {{ if gt (len (onPremPlatformIngressIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (onPremPlatformIngressIPs .) 1 }}"{{ end }}
             fallthrough
         }
         template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api.{{ .DNS.Spec.BaseDomain }}
-            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP . }}"
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 }}{{ index (onPremPlatformAPIServerInternalIPs .) 0 }}{{ end }}"
             fallthrough
         }
         template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api.{{ .DNS.Spec.BaseDomain }}
+            {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (onPremPlatformAPIServerInternalIPs .) 1 }}"{{ end }}
             fallthrough
         }
         template IN {{`{{ .Cluster.APIVIPRecordType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api-int.{{ .DNS.Spec.BaseDomain }}
-            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ onPremPlatformAPIServerInternalIP . }}"
+            answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 }}{{ index (onPremPlatformAPIServerInternalIPs .) 0 }}{{ end }}"
             fallthrough
         }
         template IN {{`{{ .Cluster.APIVIPEmptyType }}`}} {{ .DNS.Spec.BaseDomain }} {
             match ^api-int.{{ .DNS.Spec.BaseDomain }}
+            {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 1 }}answer "{{`{{"{{ .Name }}"}}`}} 60 in {{`{{"{{ .Type }}"}}`}} {{ index (onPremPlatformAPIServerInternalIPs .) 1 }}"{{ end }}
             fallthrough
         }
         hosts {

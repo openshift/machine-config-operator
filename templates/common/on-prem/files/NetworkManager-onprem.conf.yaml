@@ -2,7 +2,7 @@ mode: 0644
 path: "/etc/NetworkManager/conf.d/99-{{ onPremPlatformShortName . }}.conf"
 contents:
   inline: |
-    {{ if (onPremPlatformAPIServerInternalIP .) -}}
+    {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 -}}
     [main]
     rc-manager=unmanaged
     [connection]

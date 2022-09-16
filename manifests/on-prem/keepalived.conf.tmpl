@@ -4,7 +4,8 @@
 # For more information, see installer/data/data/bootstrap/baremetal/README.md
 # in the installer repo.
 
-{{`vrrp_instance {{.Cluster.Name}}_API {
+{{`{{ range $i, $config := .Configs }}
+vrrp_instance {{.Cluster.Name}}_API_{{$i}} {
     state BACKUP
     interface {{.VRRPInterface}}
     virtual_router_id {{.Cluster.APIVirtualRouterID }}
@@ -25,4 +26,5 @@
     virtual_ipaddress {
         {{ .Cluster.APIVIP }}/{{ .Cluster.VIPNetmask }}
     }
-}`}}
+}
+{{end}}`}}

@@ -74,6 +74,10 @@ spec:
                           name:
                             description: name is the metadata.name of the referenced secret
                             type: string
+                  x-kubernetes-list-map-keys:
+                    - namespace
+                    - name
+                  x-kubernetes-list-type: map
                 domain:
                   description: "domain is used to generate a default host name for a route when the route's host name is empty. The generated host name will follow this pattern: \"<route-name>.<route-namespace>.<domain>\". \n It is also used as the default wildcard domain suffix for ingress. The default ingresscontroller domain will follow this pattern: \"*.<domain>\". \n Once set, changing domain is not currently supported."
                   type: string
@@ -211,6 +215,9 @@ spec:
                               type: string
                               maxLength: 316
                               pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        x-kubernetes-list-map-keys:
+                          - type
+                        x-kubernetes-list-type: map
                       consumingUsers:
                         description: consumingUsers is a slice of ServiceAccounts that need to have read permission on the servingCertKeyPairSecret secret.
                         type: array
@@ -268,6 +275,10 @@ spec:
                             resource:
                               description: resource of the referent.
                               type: string
+                  x-kubernetes-list-map-keys:
+                    - namespace
+                    - name
+                  x-kubernetes-list-type: map
                 defaultPlacement:
                   description: "defaultPlacement is set at installation time to control which nodes will host the ingress router pods by default. The options are control-plane nodes or worker nodes. \n This field works by dictating how the Cluster Ingress Operator will consider unset replicas and nodePlacement fields in IngressController resources when creating the corresponding Deployments. \n See the documentation for the IngressController replicas and nodePlacement fields for more information. \n When omitted, the default value is Workers"
                   type: string
