@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -118,6 +121,51 @@ func (c *FakeIngressControllers) DeleteCollection(ctx context.Context, opts v1.D
 func (c *FakeIngressControllers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.IngressController, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewPatchSubresourceAction(ingresscontrollersResource, c.ns, name, pt, data, subresources...), &operatorv1.IngressController{})
+
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.IngressController), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied ingressController.
+func (c *FakeIngressControllers) Apply(ctx context.Context, ingressController *applyconfigurationsoperatorv1.IngressControllerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.IngressController, err error) {
+	if ingressController == nil {
+		return nil, fmt.Errorf("ingressController provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(ingressController)
+	if err != nil {
+		return nil, err
+	}
+	name := ingressController.Name
+	if name == nil {
+		return nil, fmt.Errorf("ingressController.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewPatchSubresourceAction(ingresscontrollersResource, c.ns, *name, types.ApplyPatchType, data), &operatorv1.IngressController{})
+
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.IngressController), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeIngressControllers) ApplyStatus(ctx context.Context, ingressController *applyconfigurationsoperatorv1.IngressControllerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.IngressController, err error) {
+	if ingressController == nil {
+		return nil, fmt.Errorf("ingressController provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(ingressController)
+	if err != nil {
+		return nil, err
+	}
+	name := ingressController.Name
+	if name == nil {
+		return nil, fmt.Errorf("ingressController.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewPatchSubresourceAction(ingresscontrollersResource, c.ns, *name, types.ApplyPatchType, data, "status"), &operatorv1.IngressController{})
 
 	if obj == nil {
 		return nil, err
