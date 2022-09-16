@@ -109,8 +109,6 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		Disabled: []string{},
 	},
 	TechPreviewNoUpgrade: newDefaultFeatures().
-		with("CSIMigrationAWS").             // sig-storage, jsafrane, Kubernetes feature gate
-		with("CSIMigrationGCE").             // sig-storage, fbertina, Kubernetes feature gate
 		with("CSIMigrationAzureFile").       // sig-storage, fbertina, Kubernetes feature gate
 		with("CSIMigrationvSphere").         // sig-storage, fbertina, Kubernetes feature gate
 		with("ExternalCloudProvider").       // sig-cloud-provider, jspeed, OCP specific
@@ -119,6 +117,8 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with("NodeSwap").                    // sig-node, ehashman, Kubernetes feature gate
 		with("MachineAPIProviderOpenStack"). // openstack, egarcia (#forum-openstack), OCP specific
 		with("CGroupsV2").                   // sig-node, harche, OCP specific
+		with("Crun").                        // sig-node, haircommander, OCP specific
+		with("InsightsConfigAPI").           // insights, tremes (#ccx), OCP specific
 		toFeatures(),
 	LatencySensitive: newDefaultFeatures().
 		with(
