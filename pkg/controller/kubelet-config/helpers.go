@@ -12,6 +12,7 @@ import (
 	"github.com/imdario/mergo"
 	osev1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -23,6 +24,11 @@ import (
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
+)
+
+const (
+	emptyInput      = ""
+	cgroupv2Feature = "CGroupsV2"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {
@@ -93,6 +99,26 @@ func createNewDefaultNodeconfig() *osev1.Node {
 	}
 }
 
+func getFeatures(ctrl *Controller) (*osev1.FeatureGate, error) {
+	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
+	if errors.IsNotFound(err) {
+		features = createNewDefaultFeatureGate()
+	} else if err != nil {
+		return nil, err
+	}
+	return features, nil
+}
+
+func getConfigNode(ctrl *Controller, key string) (*osev1.Node, error) {
+	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+	if errors.IsNotFound(err) {
+		return nil, fmt.Errorf("missing node configuration, key: %v", key)
+	} else if err != nil {
+		return nil, err
+	}
+	return nodeConfig, nil
+}
+
 // updateOriginalKubeConfigwithNodeConfig updates the original Kubelet Configuration based on the Nodespecific configuration
 func updateOriginalKubeConfigwithNodeConfig(node *osev1.Node, originalKubeletConfig *kubeletconfigv1beta1.KubeletConfiguration) error {
 	if node == nil {
@@ -110,10 +136,83 @@ func updateOriginalKubeConfigwithNodeConfig(node *osev1.Node, originalKubeletCon
 		originalKubeletConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: osev1.LowNodeStatusUpdateFrequency}
 	case osev1.DefaultUpdateDefaultReaction:
 		originalKubeletConfig.NodeStatusUpdateFrequency = metav1.Duration{Duration: osev1.DefaultNodeStatusUpdateFrequency}
+	case emptyInput:
+		return nil
 	default:
 		return fmt.Errorf("unknown worker latency profile type found %v, failed to update the original kubelet configuration", node.Spec.WorkerLatencyProfile)
 	}
 	// The kubelet configuration can be updated based on the cgroupmode as well here.
+	return nil
+}
+
+// isTechPreviewNoUpgradeEnabled returns a boolean accordingly if a feature is enabled
+// (TODO) This can be generically used in future by passing any feature as an argument.
+func isTechPreviewNoUpgradeEnabled(features *osev1.FeatureGate) bool {
+	if features == nil {
+		return false
+	}
+	if features.Spec.FeatureGateSelection.FeatureSet == osev1.TechPreviewNoUpgrade {
+		featureSet, ok := osev1.FeatureSets[osev1.TechPreviewNoUpgrade]
+		if !ok {
+			return false
+		}
+		for _, val := range featureSet.Enabled {
+			if val == cgroupv2Feature {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// updateMachineConfigwithCgroup updates the Machine Config object based on the cgroup mode present in the Config Node resource.
+func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) error {
+	if node == nil {
+		return fmt.Errorf("node configuration not found, failed to update the machine config with the cgroup information")
+	}
+	if reflect.DeepEqual(node.Spec, osev1.NodeSpec{}) {
+		return fmt.Errorf("empty config node resource spec found")
+	}
+	if mc == nil || reflect.DeepEqual(mc.Spec, mcfgv1.MachineConfigSpec{}) {
+		return fmt.Errorf("machine config not found, failed to update the machine config with the cgroup information")
+	}
+	// updating the Machine Config resource with the relevant cgroup config
+	var (
+		kernelArgsv1       = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
+		kernelArgsv2       = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
+		kernelArgstoRemove []string
+		kernelArgstoAdd    []string
+	)
+	switch node.Spec.CgroupMode {
+	case osev1.CgroupModeV1:
+		kernelArgstoAdd = append(kernelArgstoAdd, kernelArgsv1...)
+		kernelArgstoRemove = append(kernelArgstoRemove, kernelArgsv2...)
+	case osev1.CgroupModeV2:
+		kernelArgstoAdd = append(kernelArgstoAdd, kernelArgsv2...)
+		kernelArgstoRemove = append(kernelArgstoRemove, kernelArgsv1...)
+	case emptyInput:
+		return nil
+	default:
+		return fmt.Errorf("unknown cgroup mode found %v, failed to update the machine config resource", node.Spec.CgroupMode)
+	}
+	for _, arg := range kernelArgstoRemove {
+		for key, value := range mc.Spec.KernelArguments {
+			if arg == value {
+				mc.Spec.KernelArguments = append(mc.Spec.KernelArguments[:key], mc.Spec.KernelArguments[key+1:]...)
+			}
+		}
+	}
+	for _, arg := range kernelArgstoAdd {
+		var present bool
+		for _, value := range mc.Spec.KernelArguments {
+			if arg == value {
+				present = true
+			}
+		}
+		if !present {
+			mc.Spec.KernelArguments = append(mc.Spec.KernelArguments, arg)
+		}
+	}
 	return nil
 }
 
