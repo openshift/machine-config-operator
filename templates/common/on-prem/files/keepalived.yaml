@@ -1,5 +1,5 @@
 mode: 0644
-path: {{ if (onPremPlatformAPIServerInternalIP .) }} "/etc/kubernetes/manifests/keepalived.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/keepalived.yaml" {{ end }}
+path: {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 }} "/etc/kubernetes/manifests/keepalived.yaml" {{ else }} "/etc/kubernetes/disabled-manifests/keepalived.yaml" {{ end }}
 contents:
   inline: |
     kind: Pod
@@ -40,10 +40,10 @@ contents:
         - runtimecfg
         - render
         - "/etc/kubernetes/kubeconfig"
-        - "--api-vip"
-        - "{{ onPremPlatformAPIServerInternalIP . }}"
-        - "--ingress-vip"
-        - "{{ onPremPlatformIngressIP . }}"
+        - "--api-vips"
+        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--ingress-vips"
+        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         - "/config"
         - "--out-dir"
         - "/etc/keepalived"
@@ -109,8 +109,12 @@ contents:
           set -ex
           # Ensure that we don't have stale VIPs configured
           # See https://bugzilla.redhat.com/show_bug.cgi?id=1931505
-          remove_vip "{{ onPremPlatformAPIServerInternalIP . }}"
-          remove_vip "{{ onPremPlatformIngressIP . }}"
+          {{- range onPremPlatformAPIServerInternalIPs . }}
+          remove_vip "{{.}}"
+          {{- end }}
+          {{- range onPremPlatformIngressIPs . }}
+          remove_vip "{{.}}"
+          {{- end }}
           declare -r keepalived_sock="/var/run/keepalived/keepalived.sock"
           export -f msg_handler
           export -f reload_keepalived
@@ -161,10 +165,10 @@ contents:
         - "/var/lib/kubelet/kubeconfig"
         - "/config/keepalived.conf.tmpl"
         - "/etc/keepalived/keepalived.conf"
-        - "--api-vip"
-        - "{{ onPremPlatformAPIServerInternalIP . }}"
-        - "--ingress-vip"
-        - "{{ onPremPlatformIngressIP . }}"
+        - "--api-vips"
+        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - "--ingress-vips"
+        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
         resources:
           requests:
             cpu: 100m

@@ -60,7 +60,9 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs := sprig.TxtFuncMap()
 	funcs["toYAML"] = toYAML
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
+	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
+	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 
 	a.tmpl = a.tmpl.Funcs(funcs)
@@ -236,51 +238,106 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 		default:
 			return ""
 		}
-	} else {
-		return ""
 	}
+	return ""
 }
 
+// This function should be removed in 4.13 when we no longer have to worry
+// about upgrades from releases that still use it.
 //nolint:dupl
 func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
-			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs[0], nil
 		case configv1.OvirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+			if len(cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs) > 0 {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs[0], nil
+			}
+			return nil, nil
 		case configv1.NutanixPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
-	} else {
-		return nil, fmt.Errorf("")
 	}
+	return nil, fmt.Errorf("")
 }
 
+//nolint:dupl
+func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
+			}
+			return []string{}, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for Ingress IP")
+		}
+	}
+	return nil, fmt.Errorf("")
+}
+
+// This function should be removed in 4.13 when we no longer have to worry
+// about upgrades from releases that still use it.
 //nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
-			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], nil
 		case configv1.OvirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
 		case configv1.VSpherePlatformType:
-			return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+			if len(cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs[0], nil
+			}
+			return nil, nil
 		case configv1.NutanixPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}
-	} else {
-		return nil, fmt.Errorf("")
 	}
+	return nil, fmt.Errorf("")
+}
+
+//nolint:dupl
+func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
+			}
+			return []string{}, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
+		}
+	}
+	return nil, fmt.Errorf("")
 }

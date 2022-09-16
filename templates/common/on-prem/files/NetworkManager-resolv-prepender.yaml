@@ -2,7 +2,7 @@ mode: 0755
 path: "/etc/NetworkManager/dispatcher.d/30-resolv-prepender"
 contents:
   inline: |
-    {{ if (onPremPlatformAPIServerInternalIP .) -}}
+    {{ if gt (len (onPremPlatformAPIServerInternalIPs .)) 0 -}}
     #!/bin/bash
     set -eo pipefail
     IFACE=$1
@@ -61,8 +61,8 @@ contents:
             node-ip \
             show \
             --retry-on-failure \
-            "{{ onPremPlatformAPIServerInternalIP . }}" \
-            "{{ onPremPlatformIngressIP . }}")
+            {{range onPremPlatformAPIServerInternalIPs . }}"{{.}}" {{end}} \
+            {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})
         DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
         if [[ -n "$NAMESERVER_IP" ]]; then
             if systemctl -q is-enabled systemd-resolved; then

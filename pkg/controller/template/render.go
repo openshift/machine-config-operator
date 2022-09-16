@@ -307,7 +307,9 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["cloudProvider"] = cloudProvider
 	funcs["cloudConfigFlag"] = cloudConfigFlag
 	funcs["onPremPlatformAPIServerInternalIP"] = onPremPlatformAPIServerInternalIP
+	funcs["onPremPlatformAPIServerInternalIPs"] = onPremPlatformAPIServerInternalIPs
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
+	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
@@ -423,25 +425,30 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 	}
 }
 
+// This function should be removed in 4.13 when we no longer have to worry
+// about upgrades from releases that still use it.
 //nolint:dupl
 func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
-			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs[0], nil
 		case configv1.OvirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs[0], nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
-				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIP, nil
+				if len(cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs) > 0 {
+					return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs[0], nil
+				}
+				return nil, nil
 			}
 			// VSphere UPI doesn't populate VSphere field. So it's not an error,
 			// and there is also no data
 			return nil, nil
 		case configv1.NutanixPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIP, nil
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs[0], nil
 		default:
 			return nil, fmt.Errorf("invalid platform for Ingress IP")
 		}
@@ -451,24 +458,83 @@ func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 }
 
 //nolint:dupl
+func onPremPlatformIngressIPs(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.IngressIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.IngressIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.IngressIPs, nil
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.IngressIPs, nil
+			}
+			// VSphere UPI doesn't populate VSphere field. So it's not an error,
+			// and there is also no data
+			return []string{}, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.IngressIPs, nil
+		default:
+			return nil, fmt.Errorf("invalid platform for Ingress IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+// This function should be removed in 4.13 when we no longer have to worry
+// about upgrades from releases that still use it.
+//nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.BareMetalPlatformType:
-			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs[0], nil
 		case configv1.OvirtPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs[0], nil
 		case configv1.OpenStackPlatformType:
-			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs[0], nil
 		case configv1.VSpherePlatformType:
 			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
-				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIP, nil
+				if len(cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs) > 0 {
+					return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs[0], nil
+				}
+				return nil, nil
 			}
 			// VSphere UPI doesn't populate VSphere field. So it's not an error,
 			// and there is also no data
 			return nil, nil
 		case configv1.NutanixPlatformType:
-			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIP, nil
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs[0], nil
+		default:
+			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+}
+
+//nolint:dupl
+func onPremPlatformAPIServerInternalIPs(cfg RenderConfig) (interface{}, error) {
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.BareMetalPlatformType:
+			return cfg.Infra.Status.PlatformStatus.BareMetal.APIServerInternalIPs, nil
+		case configv1.OvirtPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Ovirt.APIServerInternalIPs, nil
+		case configv1.OpenStackPlatformType:
+			return cfg.Infra.Status.PlatformStatus.OpenStack.APIServerInternalIPs, nil
+		case configv1.VSpherePlatformType:
+			if cfg.Infra.Status.PlatformStatus.VSphere != nil {
+				return cfg.Infra.Status.PlatformStatus.VSphere.APIServerInternalIPs, nil
+			}
+			// VSphere UPI doesn't populate VSphere field. So it's not an error,
+			// and there is also no data
+			return []string{}, nil
+		case configv1.NutanixPlatformType:
+			return cfg.Infra.Status.PlatformStatus.Nutanix.APIServerInternalIPs, nil
 		default:
 			return nil, fmt.Errorf("invalid platform for API Server Internal IP")
 		}

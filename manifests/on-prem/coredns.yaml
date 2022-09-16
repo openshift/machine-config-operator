@@ -30,10 +30,10 @@ spec:
     - runtimecfg
     - render
     - "/etc/kubernetes/kubeconfig"
-    - "--api-vip"
-    - "{{ onPremPlatformAPIServerInternalIP .ControllerConfig }}"
-    - "--ingress-vip"
-    - "{{ onPremPlatformIngressIP .ControllerConfig }}"
+    - "--api-vips"
+    - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs .ControllerConfig }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+    - "--ingress-vips"
+    - "{{- range $index, $ip := onPremPlatformIngressIPs .ControllerConfig }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
     - "/config"
     - "--out-dir"
     - "/etc/coredns"
