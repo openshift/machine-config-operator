@@ -38,6 +38,7 @@ type RpmOstreeDeployment struct {
 	OSName                  string   `json:"osname"`
 	Serial                  int32    `json:"serial"`
 	Checksum                string   `json:"checksum"`
+	BaseChecksum            string   `json:"base-checksum,omitempty"`
 	Version                 string   `json:"version"`
 	Timestamp               uint64   `json:"timestamp"`
 	Booted                  bool     `json:"booted"`
@@ -68,7 +69,7 @@ type imageInspection struct {
 type NodeUpdaterClient interface {
 	Initialize() error
 	GetStatus() (string, error)
-	GetBootedOSImageURL() (string, string, error)
+	GetBootedOSImageURL() (string, string, string, error)
 	Rebase(string, string) (bool, error)
 	RebaseLayered(string) error
 	IsBootableImage(string) (bool, error)
@@ -169,16 +170,21 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 	return string(output), nil
 }
 
-// GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
+// GetBootedOSImageURL returns the image URL as well as the OSTree version(for logging) and the ostree commit (for comparisons)
 // Returns the empty string if the host doesn't have a custom origin that matches pivot://
 // (This could be the case for e.g. FCOS, or a future RHCOS which comes not-pivoted by default)
-func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
+func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) {
 	bootedDeployment, _, err := r.GetBootedAndStagedDeployment()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
+	// TODO(jkyros): take this out, I just want to see when/why it's empty?
+	j, _ := json.MarshalIndent(bootedDeployment, "", "    ")
+	glog.Infof("%s", j)
+
 	// the canonical image URL is stored in the custom origin field.
+
 	osImageURL := ""
 	if len(bootedDeployment.CustomOrigin) > 0 {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
@@ -194,7 +200,15 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 			osImageURL = tokens[1]
 		}
 	}
-	return osImageURL, bootedDeployment.Version, nil
+
+	// BaseChecksum is populated if the system has been modified in a way that changes the base checksum
+	// (like via an RPM install) so prefer BaseCheksum that if it's present, otherwise just use Checksum.
+	baseChecksum := bootedDeployment.Checksum
+	if bootedDeployment.BaseChecksum != "" {
+		baseChecksum = bootedDeployment.BaseChecksum
+	}
+
+	return osImageURL, bootedDeployment.Version, baseChecksum, nil
 }
 
 func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
