@@ -1922,17 +1922,11 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 		if err != nil {
 			return err
 		}
-		dn.needSecondaryReboot = true
-		// We'll need to do a second reconciliation pass i.e. an extra reboot today, but that won't
-		// be necessary after we ship the newer rpm-ostree into older releases.
-		// See also https://github.com/coreos/rpm-ostree/issues/4018
-		if err := os.WriteFile(constants.MachineConfigDaemonPersistentForceOnceFile, []byte(""), 0o644); err != nil {
-			return err
-		}
-	} else {
-		if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
-			return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
-		}
+
+		// TODO(jkyros): we don't need to do anything special here if I teach rpm-ostree this is the same container
+
+	} else if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
+		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}
 
 	return nil
