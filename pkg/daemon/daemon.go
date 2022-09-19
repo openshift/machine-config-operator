@@ -64,6 +64,9 @@ type Daemon struct {
 	// bootedOSImageURL is the currently booted URL of the operating system
 	bootedOSImageURL string
 
+	// bootedOScommit is the commit hash of the currently booted operating system
+	bootedOSCommit string
+
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 
@@ -213,6 +216,7 @@ func New(
 	var (
 		osImageURL string
 		osVersion  string
+		osCommit   string
 		err        error
 	)
 
@@ -231,11 +235,11 @@ func New(
 		if err != nil {
 			return nil, fmt.Errorf("error initializing rpm-ostree: %w", err)
 		}
-		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
+		osImageURL, osVersion, osCommit, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %w", err)
 		}
-		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
+		glog.Infof("Booted osImageURL: %s (%s) %s", osImageURL, osVersion, osCommit)
 	}
 
 	bootID := ""
@@ -267,6 +271,7 @@ func New(
 		os:                    hostos,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
+		bootedOSCommit:        osCommit,
 		bootID:                bootID,
 		exitCh:                exitCh,
 		currentConfigPath:     currentConfigPath,
@@ -1872,7 +1877,7 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	// Be sure we're booted into the OS we expect
 	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if !osMatch {
-		return fmt.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+		return fmt.Errorf("expected target osImageURL %q, have %q (%q)", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL, dn.bootedOSCommit)
 	}
 
 	if dn.os.IsCoreOSVariant() {
@@ -1896,6 +1901,20 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	if !dn.os.IsCoreOSVariant() {
 		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true
+	}
+
+	// TODO(jkyros): the header for this functions says "if the digests match"
+	// so I'm wondering if at one point this used to work this way....
+	// TODO(jkyros): and pulling it just to check is so expensive, skopeo works now
+	// if you use the --no-tags argument (doesn't pull tags) so we should probably just do that
+	inspection, err := imageInspect(osImageURL)
+	if err != nil {
+		glog.Warningf("Unable to check manifest for matching hash: %s", err)
+	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
+		if ostreeCommit == dn.bootedOSCommit {
+			glog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
+			return true
+		}
 	}
 
 	return dn.bootedOSImageURL == osImageURL
