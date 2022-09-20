@@ -1904,6 +1904,13 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 	return nil
 }
 
+// InplaceUpdateViaNewContainer runs rpm-ostree ex deploy-via-self
+// via a privileged container.  This is needed on firstboot of old
+// nodes as well as temporarily for 4.11 -> 4.12 upgrades.
+func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
+	return runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+}
+
 // updateLayeredOS updates the system OS to the one specified in newConfig
 func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	newURL := config.Spec.OSImageURL
@@ -1918,13 +1925,9 @@ func (dn *Daemon) updateLayeredOS(config *mcfgv1.MachineConfig) error {
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
 		dn.logSystem("rpm-ostree is not new enough for layering; forcing an update via container")
-		err := runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", newURL, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
-		if err != nil {
+		if err := dn.InplaceUpdateViaNewContainer(newURL); err != nil {
 			return err
 		}
-
-		// TODO(jkyros): we don't need to do anything special here if I teach rpm-ostree this is the same container
-
 	} else if err := dn.NodeUpdaterClient.RebaseLayered(newURL); err != nil {
 		return fmt.Errorf("failed to update OS to %s : %w", newURL, err)
 	}

@@ -902,8 +902,7 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
 	if !newEnough {
 		dn.logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
-		err := runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", mc.Spec.OSImageURL, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
-		if err != nil {
+		if err := dn.InplaceUpdateViaNewContainer(mc.Spec.OSImageURL); err != nil {
 			return err
 		}
 		rebootCmd := rebootCommand("extra reboot for in-place update")
