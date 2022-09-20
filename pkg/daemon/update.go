@@ -1977,7 +1977,6 @@ type journalMsg struct {
 	Message   string `json:"MESSAGE,omitempty"`
 	BootID    string `json:"BOOT_ID,omitempty"`
 	Pending   string `json:"PENDING,omitempty"`
-	Force     string `json:"MCO_FORCE,omitempty"`
 	OldLogger string `json:"OPENSHIFT_MACHINE_CONFIG_DAEMON_LEGACY_LOG_HACK,omitempty"` // unused today
 }
 
@@ -2041,8 +2040,7 @@ func (dn *Daemon) storePendingState(pending *mcfgv1.MachineConfig, isPending int
 	pendingState.WriteString(fmt.Sprintf(`MESSAGE_ID=%s
 MESSAGE=%s
 BOOT_ID=%s
-MCO_FORCE=%v
-PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, dn.needSecondaryReboot, isPending))
+PENDING=%d`, pendingStateMessageID, pending.GetName(), dn.bootID, isPending))
 
 	logger.Stdin = &pendingState
 	return logger.CombinedOutput()
