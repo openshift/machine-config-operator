@@ -111,9 +111,6 @@ type Daemon struct {
 	// booting is true when all initial synchronization to the target
 	// machineconfig is done
 	booting bool
-	// needSecondaryReboot is used for https://issues.redhat.com/browse/MCO-356
-	// when we have an old rpm-ostree and need to reboot into the new one.
-	needSecondaryReboot bool
 
 	currentConfigPath string
 
@@ -1439,11 +1436,9 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return err
 	}
 	var pendingConfigName, bootID string
-	var pendingSpecifiesForce bool
 	if pendingState != nil {
 		pendingConfigName = pendingState.Message
 		bootID = pendingState.BootID
-		pendingSpecifiesForce = pendingState.Force == "true"
 	}
 	// XXX: drop this
 	// we need this compatibility layer for now
@@ -1566,13 +1561,8 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		expectedConfig = state.currentConfig
 	}
 
-	force := pendingSpecifiesForce || forceFileExists()
-	if force {
-		if pendingSpecifiesForce {
-			dn.logSystem("Skipping on-disk validation; pending config specifies forcing")
-		} else {
-			dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
-		}
+	if forceFileExists() {
+		dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
 
