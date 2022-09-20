@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	v1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	operatorv1alpha1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -99,6 +102,27 @@ func (c *FakeImageContentSourcePolicies) DeleteCollection(ctx context.Context, o
 func (c *FakeImageContentSourcePolicies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ImageContentSourcePolicy, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(imagecontentsourcepoliciesResource, name, pt, data, subresources...), &v1alpha1.ImageContentSourcePolicy{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1alpha1.ImageContentSourcePolicy), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied imageContentSourcePolicy.
+func (c *FakeImageContentSourcePolicies) Apply(ctx context.Context, imageContentSourcePolicy *operatorv1alpha1.ImageContentSourcePolicyApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ImageContentSourcePolicy, err error) {
+	if imageContentSourcePolicy == nil {
+		return nil, fmt.Errorf("imageContentSourcePolicy provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(imageContentSourcePolicy)
+	if err != nil {
+		return nil, err
+	}
+	name := imageContentSourcePolicy.Name
+	if name == nil {
+		return nil, fmt.Errorf("imageContentSourcePolicy.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(imagecontentsourcepoliciesResource, *name, types.ApplyPatchType, data), &v1alpha1.ImageContentSourcePolicy{})
 	if obj == nil {
 		return nil, err
 	}

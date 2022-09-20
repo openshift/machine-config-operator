@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,6 +113,49 @@ func (c *FakeEtcds) DeleteCollection(ctx context.Context, opts v1.DeleteOptions,
 func (c *FakeEtcds) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.Etcd, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(etcdsResource, name, pt, data, subresources...), &operatorv1.Etcd{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.Etcd), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied etcd.
+func (c *FakeEtcds) Apply(ctx context.Context, etcd *applyconfigurationsoperatorv1.EtcdApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.Etcd, err error) {
+	if etcd == nil {
+		return nil, fmt.Errorf("etcd provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(etcd)
+	if err != nil {
+		return nil, err
+	}
+	name := etcd.Name
+	if name == nil {
+		return nil, fmt.Errorf("etcd.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(etcdsResource, *name, types.ApplyPatchType, data), &operatorv1.Etcd{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.Etcd), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeEtcds) ApplyStatus(ctx context.Context, etcd *applyconfigurationsoperatorv1.EtcdApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.Etcd, err error) {
+	if etcd == nil {
+		return nil, fmt.Errorf("etcd provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(etcd)
+	if err != nil {
+		return nil, err
+	}
+	name := etcd.Name
+	if name == nil {
+		return nil, fmt.Errorf("etcd.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(etcdsResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.Etcd{})
 	if obj == nil {
 		return nil, err
 	}

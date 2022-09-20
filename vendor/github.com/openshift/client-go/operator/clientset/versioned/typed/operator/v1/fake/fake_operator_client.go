@@ -48,6 +48,10 @@ func (c *FakeOperatorV1) IngressControllers(namespace string) v1.IngressControll
 	return &FakeIngressControllers{c, namespace}
 }
 
+func (c *FakeOperatorV1) InsightsOperators() v1.InsightsOperatorInterface {
+	return &FakeInsightsOperators{c}
+}
+
 func (c *FakeOperatorV1) KubeAPIServers() v1.KubeAPIServerInterface {
 	return &FakeKubeAPIServers{c}
 }

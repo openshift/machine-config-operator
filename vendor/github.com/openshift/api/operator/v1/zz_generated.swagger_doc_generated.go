@@ -171,7 +171,7 @@ func (CloudCredentialStatus) SwaggerDoc() map[string]string {
 }
 
 var map_Config = map[string]string{
-	"":       "Config provides information to configure the config operator. It handles installation, migration or synchronization of cloud based cluster configurations like AWS or Azure.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"":       "Config specifies the behavior of the config operator which is responsible for creating the initial configuration of other components on the cluster.  The operator also handles installation, migration or synchronization of cloud configurations for AWS and Azure cloud based clusters\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"spec":   "spec is the specification of the desired behavior of the Config Operator.",
 	"status": "status defines the observed status of the Config Operator.",
 }
@@ -325,6 +325,16 @@ func (StatuspageProvider) SwaggerDoc() map[string]string {
 	return map_StatuspageProvider
 }
 
+var map_CSIDriverConfigSpec = map[string]string{
+	"":           "CSIDriverConfigSpec defines configuration spec that can be used to optionally configure a specific CSI Driver.",
+	"driverType": "driverType indicates type of CSI driver for which the driverConfig is being applied to.\n\nValid values are:\n\n* vSphere\n\nAllows configuration of vsphere CSI driver topology.",
+	"vSphere":    "vsphere is used to configure the vsphere CSI driver.",
+}
+
+func (CSIDriverConfigSpec) SwaggerDoc() map[string]string {
+	return map_CSIDriverConfigSpec
+}
+
 var map_ClusterCSIDriver = map[string]string{
 	"":       "ClusterCSIDriver object allows management and configuration of a CSI driver operator installed by default in OpenShift. Name of the object must be name of the CSI driver it operates. See CSIDriverName type for list of allowed values.\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"spec":   "spec holds user settable values for configuration",
@@ -346,6 +356,7 @@ func (ClusterCSIDriverList) SwaggerDoc() map[string]string {
 var map_ClusterCSIDriverSpec = map[string]string{
 	"":                  "ClusterCSIDriverSpec is the desired behavior of CSI driver operator",
 	"storageClassState": "StorageClassState determines if CSI operator should create and manage storage classes. If this field value is empty or Managed - CSI operator will continuously reconcile storage class and create if necessary. If this field value is Unmanaged - CSI operator will not reconcile any previously created storage class. If this field value is Removed - CSI operator will delete the storage class it created previously. When omitted, this means the user has no opinion and the platform chooses a reasonable default, which is subject to change over time. The current default behaviour is Managed.",
+	"driverConfig":      "driverConfig can be used to specify platform specific driver configuration. When omitted, this means no opinion and the platform is left to choose reasonable defaults. These defaults are subject to change over time.",
 }
 
 func (ClusterCSIDriverSpec) SwaggerDoc() map[string]string {
@@ -358,6 +369,15 @@ var map_ClusterCSIDriverStatus = map[string]string{
 
 func (ClusterCSIDriverStatus) SwaggerDoc() map[string]string {
 	return map_ClusterCSIDriverStatus
+}
+
+var map_VSphereCSIDriverConfigSpec = map[string]string{
+	"":                   "VSphereCSIDriverConfigSpec defines properties that can be configured for vsphere CSI driver.",
+	"topologyCategories": "topologyCategories indicates tag categories with which vcenter resources such as hostcluster or datacenter were tagged with. If cluster Infrastructure object has a topology, values specified in Infrastructure object will be used and modifications to topologyCategories will be rejected.",
+}
+
+func (VSphereCSIDriverConfigSpec) SwaggerDoc() map[string]string {
+	return map_VSphereCSIDriverConfigSpec
 }
 
 var map_CSISnapshotController = map[string]string{
@@ -785,7 +805,7 @@ var map_IngressControllerTuningOptions = map[string]string{
 	"tlsInspectDelay":             "tlsInspectDelay defines how long the router can hold data to find a matching route.\n\nSetting this too short can cause the router to fall back to the default certificate for edge-terminated or reencrypt routes even when a better matching certificate could be used.\n\nIf unset, the default inspect delay is 5s",
 	"healthCheckInterval":         "healthCheckInterval defines how long the router waits between two consecutive health checks on its configured backends.  This value is applied globally as a default for all routes, but may be overridden per-route by the route annotation \"router.openshift.io/haproxy.health.check.interval\".\n\nExpects an unsigned duration string of decimal numbers, each with optional fraction and a unit suffix, eg \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\" U+00B5 or \"μs\" U+03BC), \"ms\", \"s\", \"m\", \"h\".\n\nSetting this to less than 5s can cause excess traffic due to too frequent TCP health checks and accompanying SYN packet storms.  Alternatively, setting this too high can result in increased latency, due to backend servers that are no longer available, but haven't yet been detected as such.\n\nAn empty or zero healthCheckInterval means no opinion and IngressController chooses a default, which is subject to change over time. Currently the default healthCheckInterval value is 5s.\n\nCurrently the minimum allowed value is 1s and the maximum allowed value is 2147483647ms (24.85 days).  Both are subject to change over time.",
 	"maxConnections":              "maxConnections defines the maximum number of simultaneous connections that can be established per HAProxy process. Increasing this value allows each ingress controller pod to handle more connections but at the cost of additional system resources being consumed.\n\nPermitted values are: empty, 0, -1, and the range 2000-2000000.\n\nIf this field is empty or 0, the IngressController will use the default value of 20000, but the default is subject to change in future releases.\n\nIf the value is -1 then HAProxy will dynamically compute a maximum value based on the available ulimits in the running container. Selecting -1 (i.e., auto) will result in a large value being computed (~520000 on OpenShift >=4.10 clusters) and therefore each HAProxy process will incur significant memory usage compared to the current default of 20000.\n\nSetting a value that is greater than the current operating system limit will prevent the HAProxy process from starting.\n\nIf you choose a discrete value (e.g., 750000) and the router pod is migrated to a new node, there's no guarantee that that new node has identical ulimits configured. In such a scenario the pod would fail to start. If you have nodes with different ulimits configured (e.g., different tuned profiles) and you choose a discrete value then the guidance is to use -1 and let the value be computed dynamically at runtime.\n\nYou can monitor memory usage for router containers with the following metric: 'container_memory_working_set_bytes{container=\"router\",namespace=\"openshift-ingress\"}'.\n\nYou can monitor memory usage of individual HAProxy processes in router containers with the following metric: 'container_memory_working_set_bytes{container=\"router\",namespace=\"openshift-ingress\"}/container_processes{container=\"router\",namespace=\"openshift-ingress\"}'.",
-	"reloadInterval":              "reloadInterval defines the minimum interval at which the router is allowed to reload to accept new changes. Increasing this value can prevent the accumulation of HAProxy processes, depending on the scenario. Increasing this interval can also lessen load imbalance on a backend's servers when using the roundrobin balancing algorithm. Alternatively, decreasing this value may decrease latency since updates to HAProxy's configuration can take effect more quickly.\n\nThe value must be a time duration value; see <https://pkg.go.dev/time#ParseDuration>. Currently, the minimum value allowed is 1s, and the maximum allowed value is 120s. Minimum and maximum allowed values may change in future versions of OpenShift. Note that if a duration outside of these bounds is provided, the value of reloadInterval will be capped/floored and not rejected (e.g. a duration of over 120s will be capped to 120s; the IngressController will not reject and replace this disallowed value with the default).\n\nA zero value for reloadInterval tells the IngressController to choose the default, which is currently 5s and subject to change without notice.\n\nThis field expects an unsigned duration string of decimal numbers, each with optional fraction and a unit suffix, e.g. \"100s\", \"1m30s\". Valid time units are \"s\" and \"m\".\n\nNote: Setting a value significantly larger than the default of 5s can cause latency in observing updates to routes and their endpoints. HAProxy's configuration will be reloaded less frequently, and newly created routes will not be served until the subsequent reload.",
+	"reloadInterval":              "reloadInterval defines the minimum interval at which the router is allowed to reload to accept new changes. Increasing this value can prevent the accumulation of HAProxy processes, depending on the scenario. Increasing this interval can also lessen load imbalance on a backend's servers when using the roundrobin balancing algorithm. Alternatively, decreasing this value may decrease latency since updates to HAProxy's configuration can take effect more quickly.\n\nThe value must be a time duration value; see <https://pkg.go.dev/time#ParseDuration>. Currently, the minimum value allowed is 1s, and the maximum allowed value is 120s. Minimum and maximum allowed values may change in future versions of OpenShift. Note that if a duration outside of these bounds is provided, the value of reloadInterval will be capped/floored and not rejected (e.g. a duration of over 120s will be capped to 120s; the IngressController will not reject and replace this disallowed value with the default).\n\nA zero value for reloadInterval tells the IngressController to choose the default, which is currently 5s and subject to change without notice.\n\nThis field expects an unsigned duration string of decimal numbers, each with optional fraction and a unit suffix, e.g. \"300ms\", \"1.5h\" or \"2h45m\". Valid time units are \"ns\", \"us\" (or \"µs\" U+00B5 or \"μs\" U+03BC), \"ms\", \"s\", \"m\", \"h\".\n\nNote: Setting a value significantly larger than the default of 5s can cause latency in observing updates to routes and their endpoints. HAProxy's configuration will be reloaded less frequently, and newly created routes will not be served until the subsequent reload.",
 }
 
 func (IngressControllerTuningOptions) SwaggerDoc() map[string]string {
@@ -796,7 +816,7 @@ var map_LoadBalancerStrategy = map[string]string{
 	"":                    "LoadBalancerStrategy holds parameters for a load balancer.",
 	"scope":               "scope indicates the scope at which the load balancer is exposed. Possible values are \"External\" and \"Internal\".",
 	"providerParameters":  "providerParameters holds desired load balancer information specific to the underlying infrastructure provider.\n\nIf empty, defaults will be applied. See specific providerParameters fields for details about their defaults.",
-	"dnsManagementPolicy": "dnsManagementPolicy indicates if the lifecyle of the wildcard DNS record associated with the load balancer service will be managed by the ingress operator. It defaults to Managed. Valid values are: Managed and Unmanaged.",
+	"dnsManagementPolicy": "dnsManagementPolicy indicates if the lifecycle of the wildcard DNS record associated with the load balancer service will be managed by the ingress operator. It defaults to Managed. Valid values are: Managed and Unmanaged.",
 }
 
 func (LoadBalancerStrategy) SwaggerDoc() map[string]string {
