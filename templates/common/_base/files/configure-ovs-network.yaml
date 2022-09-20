@@ -95,8 +95,18 @@ contents:
     replace_connection_master() {
       local old="$1"
       local new="$2"
-      for conn_uuid in $(nmcli -g UUID connection show --active) ; do
+      for conn_uuid in $(nmcli -g UUID connection show) ; do
         if [ "$(nmcli -g connection.master connection show uuid "$conn_uuid")" != "$old" ]; then
+          continue
+        fi
+
+        local active_state=$(nmcli -g GENERAL.STATE connection show "$conn_uuid")
+        local autoconnect=$(nmcli -g connection.autoconnect connection show "$conn_uuid")
+        if [ "$active_state" != "activated" ] && [ "$autoconnect" != "yes" ]; then
+          # Assume that slave profiles intended to be used are those that are:
+          # - active
+          # - or inactive (which might be due to link being down) but to be autoconnected.
+          # Otherwise, ignore them.
           continue
         fi
 
