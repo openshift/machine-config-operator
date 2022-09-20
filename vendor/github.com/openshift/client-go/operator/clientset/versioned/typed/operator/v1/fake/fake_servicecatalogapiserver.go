@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,6 +113,49 @@ func (c *FakeServiceCatalogAPIServers) DeleteCollection(ctx context.Context, opt
 func (c *FakeServiceCatalogAPIServers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.ServiceCatalogAPIServer, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(servicecatalogapiserversResource, name, pt, data, subresources...), &operatorv1.ServiceCatalogAPIServer{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.ServiceCatalogAPIServer), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied serviceCatalogAPIServer.
+func (c *FakeServiceCatalogAPIServers) Apply(ctx context.Context, serviceCatalogAPIServer *applyconfigurationsoperatorv1.ServiceCatalogAPIServerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.ServiceCatalogAPIServer, err error) {
+	if serviceCatalogAPIServer == nil {
+		return nil, fmt.Errorf("serviceCatalogAPIServer provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(serviceCatalogAPIServer)
+	if err != nil {
+		return nil, err
+	}
+	name := serviceCatalogAPIServer.Name
+	if name == nil {
+		return nil, fmt.Errorf("serviceCatalogAPIServer.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(servicecatalogapiserversResource, *name, types.ApplyPatchType, data), &operatorv1.ServiceCatalogAPIServer{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.ServiceCatalogAPIServer), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeServiceCatalogAPIServers) ApplyStatus(ctx context.Context, serviceCatalogAPIServer *applyconfigurationsoperatorv1.ServiceCatalogAPIServerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.ServiceCatalogAPIServer, err error) {
+	if serviceCatalogAPIServer == nil {
+		return nil, fmt.Errorf("serviceCatalogAPIServer provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(serviceCatalogAPIServer)
+	if err != nil {
+		return nil, err
+	}
+	name := serviceCatalogAPIServer.Name
+	if name == nil {
+		return nil, fmt.Errorf("serviceCatalogAPIServer.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(servicecatalogapiserversResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.ServiceCatalogAPIServer{})
 	if obj == nil {
 		return nil, err
 	}

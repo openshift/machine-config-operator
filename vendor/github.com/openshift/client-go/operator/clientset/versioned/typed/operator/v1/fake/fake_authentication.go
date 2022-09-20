@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,6 +113,49 @@ func (c *FakeAuthentications) DeleteCollection(ctx context.Context, opts v1.Dele
 func (c *FakeAuthentications) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.Authentication, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(authenticationsResource, name, pt, data, subresources...), &operatorv1.Authentication{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.Authentication), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied authentication.
+func (c *FakeAuthentications) Apply(ctx context.Context, authentication *applyconfigurationsoperatorv1.AuthenticationApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.Authentication, err error) {
+	if authentication == nil {
+		return nil, fmt.Errorf("authentication provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(authentication)
+	if err != nil {
+		return nil, err
+	}
+	name := authentication.Name
+	if name == nil {
+		return nil, fmt.Errorf("authentication.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(authenticationsResource, *name, types.ApplyPatchType, data), &operatorv1.Authentication{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.Authentication), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeAuthentications) ApplyStatus(ctx context.Context, authentication *applyconfigurationsoperatorv1.AuthenticationApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.Authentication, err error) {
+	if authentication == nil {
+		return nil, fmt.Errorf("authentication provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(authentication)
+	if err != nil {
+		return nil, err
+	}
+	name := authentication.Name
+	if name == nil {
+		return nil, fmt.Errorf("authentication.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(authenticationsResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.Authentication{})
 	if obj == nil {
 		return nil, err
 	}

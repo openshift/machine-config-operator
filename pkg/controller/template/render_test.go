@@ -83,7 +83,7 @@ func TestCloudProvider(t *testing.T) {
 		res:      "",
 	}, {
 		platform: configv1.KubevirtPlatformType,
-		res:      "",
+		res:      "external",
 	}, {
 		platform: configv1.NonePlatformType,
 		res:      "",

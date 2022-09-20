@@ -4,8 +4,11 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -110,6 +113,49 @@ func (c *FakeOpenShiftControllerManagers) DeleteCollection(ctx context.Context, 
 func (c *FakeOpenShiftControllerManagers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.OpenShiftControllerManager, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewRootPatchSubresourceAction(openshiftcontrollermanagersResource, name, pt, data, subresources...), &operatorv1.OpenShiftControllerManager{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.OpenShiftControllerManager), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied openShiftControllerManager.
+func (c *FakeOpenShiftControllerManagers) Apply(ctx context.Context, openShiftControllerManager *applyconfigurationsoperatorv1.OpenShiftControllerManagerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.OpenShiftControllerManager, err error) {
+	if openShiftControllerManager == nil {
+		return nil, fmt.Errorf("openShiftControllerManager provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(openShiftControllerManager)
+	if err != nil {
+		return nil, err
+	}
+	name := openShiftControllerManager.Name
+	if name == nil {
+		return nil, fmt.Errorf("openShiftControllerManager.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(openshiftcontrollermanagersResource, *name, types.ApplyPatchType, data), &operatorv1.OpenShiftControllerManager{})
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*operatorv1.OpenShiftControllerManager), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakeOpenShiftControllerManagers) ApplyStatus(ctx context.Context, openShiftControllerManager *applyconfigurationsoperatorv1.OpenShiftControllerManagerApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.OpenShiftControllerManager, err error) {
+	if openShiftControllerManager == nil {
+		return nil, fmt.Errorf("openShiftControllerManager provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(openShiftControllerManager)
+	if err != nil {
+		return nil, err
+	}
+	name := openShiftControllerManager.Name
+	if name == nil {
+		return nil, fmt.Errorf("openShiftControllerManager.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewRootPatchSubresourceAction(openshiftcontrollermanagersResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.OpenShiftControllerManager{})
 	if obj == nil {
 		return nil, err
 	}
