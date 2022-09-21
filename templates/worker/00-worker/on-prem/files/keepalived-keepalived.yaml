@@ -29,6 +29,16 @@ contents:
 
     {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
 
+    {{`{{$participateInIngressVRPP := not .EnableUnicast}}`}}
+    {{`{{- if .EnableUnicast}}
+    {{- range .IngressConfig.Peers}}
+    {{- if eq $nonVirtualIP .}}
+    {{$participateInIngressVRPP = true}}
+    {{- end}}
+    {{- end}}
+    {{- end}}`}}
+
+    {{`{{if $participateInIngressVRPP}}`}}
     vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
@@ -57,3 +67,4 @@ contents:
             chk_default_ingress
         }
     }
+    {{`{{ end }}`}}
