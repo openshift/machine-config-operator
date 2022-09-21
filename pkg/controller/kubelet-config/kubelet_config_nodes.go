@@ -67,19 +67,13 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 	}()
 
 	// Fetch the Feature Gates
-	features, err := ctrl.featLister.Get(ctrlcommon.ClusterFeatureInstanceName)
-	if errors.IsNotFound(err) {
-		glog.V(2).Infof("Using the default featuregates")
-		features = createNewDefaultFeatureGate()
-	} else if err != nil {
+	features, err := getFeatures(ctrl)
+	if err != nil {
 		return err
 	}
 	// Fetch the Node
-	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
-	if errors.IsNotFound(err) {
-		glog.V(2).Infof("Node configuration %v is missing", key)
-		return fmt.Errorf("missing node configuration, key: %v", key)
-	} else if err != nil {
+	nodeConfig, err := getConfigNode(ctrl, key)
+	if err != nil {
 		err := fmt.Errorf("could not fetch Node: %w", err)
 		return err
 	}
@@ -97,10 +91,6 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 
 	for _, pool := range mcpPools {
 		role := pool.Name
-		// the workerlatencyprofile's configuration change will be applied only on the worker nodes.
-		if role != ctrlcommon.MachineConfigPoolWorker {
-			continue
-		}
 		// Get MachineConfig
 		key, err := getManagedNodeConfigKey(pool, ctrl.client)
 		if err != nil {
@@ -127,10 +117,27 @@ func (ctrl *Controller) syncNodeConfigHandler(key string) error {
 		if err != nil {
 			return err
 		}
-		// updating the kubelet configuration with the Node specific configuration.
-		err = updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
-		if err != nil {
-			return err
+		// the workerlatencyprofile's configuration change will be applied only on the worker nodes.
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			// updating the kubelet configuration with the Node specific configuration.
+			err = updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
+			if err != nil {
+				return err
+			}
+		}
+		if isTechPreviewNoUpgradeEnabled(features) {
+			if nodeConfig.Spec.CgroupMode == "" && nodeConfig.Spec.WorkerLatencyProfile != "" && role == ctrlcommon.MachineConfigPoolMaster {
+				continue
+			}
+			// updating the machine config resource with the relevant cgroup configuration
+			err := updateMachineConfigwithCgroup(nodeConfig, mc)
+			if err != nil {
+				return err
+			}
+		} else if nodeConfig.Spec.WorkerLatencyProfile == "" {
+			return nil
+		} else if role == ctrlcommon.MachineConfigPoolMaster {
+			continue
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
@@ -267,9 +274,6 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 
 	for _, pool := range mcpPools {
 		role := pool.Name
-		if role != ctrlcommon.MachineConfigPoolWorker {
-			continue
-		}
 		// Get MachineConfig
 		key, err := getManagedNodeConfigKey(pool, nil)
 		if err != nil {
@@ -284,10 +288,27 @@ func RunNodeConfigBootstrap(templateDir string, features *osev1.FeatureGate, cco
 		if err != nil {
 			return nil, err
 		}
-		// updating the kubelet configuration with the Node specific configuration.
-		err = updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
-		if err != nil {
-			return nil, err
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			// updating the kubelet configuration with the Node specific configuration.
+			err = updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// updating the machine config resource with the relevant cgroup configuration
+		if isTechPreviewNoUpgradeEnabled(features) {
+			if nodeConfig.Spec.CgroupMode == "" && nodeConfig.Spec.WorkerLatencyProfile != "" && role == ctrlcommon.MachineConfigPoolMaster {
+				continue
+			}
+			// updating the machine config resource with the relevant cgroup configuration
+			err := updateMachineConfigwithCgroup(nodeConfig, mc)
+			if err != nil {
+				return nil, err
+			}
+		} else if nodeConfig.Spec.WorkerLatencyProfile == "" {
+			return nil, nil
+		} else if role == ctrlcommon.MachineConfigPoolMaster {
+			continue
 		}
 		// Encode the new config into raw JSON
 		cfgIgn, err := kubeletConfigToIgnFile(originalKubeConfig)
