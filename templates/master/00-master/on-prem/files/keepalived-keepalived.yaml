@@ -57,6 +57,16 @@ contents:
     {{`{{ range $i, $config := .Configs }}`}}
     {{`{{$nonVirtualIP := .NonVirtualIP}}`}}
 
+    {{`{{$participateInAPIVRPP := not .EnableUnicast}}`}}
+    {{`{{- if .EnableUnicast}}
+    {{- range .LBConfig.Backends}}
+    {{- if eq $nonVirtualIP .Address}}
+    {{$participateInAPIVRPP = true}}
+    {{- end}}
+    {{- end}}
+    {{- end}}`}}
+
+    {{`{{if $participateInAPIVRPP}}`}}
     vrrp_instance {{`{{ .Cluster.Name }}`}}_API_{{`{{$i}}`}} {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
@@ -85,7 +95,18 @@ contents:
             chk_ocp_both
         }
     }
+    {{`{{end}}`}}
 
+    {{`{{$participateInIngressVRPP := not .EnableUnicast}}`}}
+    {{`{{- if .EnableUnicast}}
+    {{- range .IngressConfig.Peers}}
+    {{- if eq $nonVirtualIP .}}
+    {{$participateInIngressVRPP = true}}
+    {{- end}}
+    {{- end}}
+    {{- end}}`}}
+
+    {{`{{if $participateInIngressVRPP}}`}}
     vrrp_instance {{`{{ .Cluster.Name }}`}}_INGRESS_{{`{{$i}}`}} {
         state BACKUP
         interface {{`{{ .VRRPInterface }}`}}
@@ -114,4 +135,5 @@ contents:
             chk_default_ingress
         }
     }
+    {{`{{ end }}`}}
     {{`{{ end }}`}}
