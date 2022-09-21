@@ -535,9 +535,6 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 	nodeConfig, err := ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
 	if macherrors.IsNotFound(err) {
 		nodeConfig = createNewDefaultNodeconfig()
-	} else if err != nil {
-		err := fmt.Errorf("could not fetch Node: %v", err)
-		return ctrl.syncStatusOnly(cfg, err)
 	}
 
 	for _, pool := range mcpPools {
@@ -574,6 +571,10 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 		// updating the originalKubeConfig based on the nodeConfig on a worker node
 		if role == ctrlcommon.MachineConfigPoolWorker {
 			updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
+		}
+		// updating the machine config resource with the relevant cgroup configuration
+		if isTechPreviewNoUpgradeEnabled(features) {
+			updateMachineConfigwithCgroup(nodeConfig, mc)
 		}
 
 		// Get the default API Server Security Profile

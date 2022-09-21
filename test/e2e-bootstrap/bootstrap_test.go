@@ -158,6 +158,38 @@ spec:
 			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
 		},
 		{
+			name: "With a featuregate manifest and a config node manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: FeatureGate
+metadata:
+  name: cluster
+spec:
+  featureSet: TechPreviewNoUpgrade`),
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster
+spec:
+  cgroupMode: "v2"`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries", "98-master-generated-kubelet"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries", "98-worker-generated-kubelet"},
+		},
+		{
+			name: "With a config node manifest and without a featuregate manifest",
+			manifests: [][]byte{
+				[]byte(`apiVersion: config.openshift.io/v1
+kind: Node
+metadata:
+  name: cluster
+spec:
+  cgroupMode: "v2"`),
+			},
+			waitForMasterMCs: []string{"99-master-ssh", "99-master-generated-registries"},
+			waitForWorkerMCs: []string{"99-worker-ssh", "99-worker-generated-registries"},
+		},
+		{
 			name: "With a node config manifest and master kubelet config manifest",
 			manifests: [][]byte{
 				[]byte(`apiVersion: config.openshift.io/v1
