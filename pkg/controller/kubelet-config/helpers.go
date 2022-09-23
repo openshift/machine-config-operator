@@ -92,10 +92,7 @@ func createNewDefaultNodeconfig() *osev1.Node {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ctrlcommon.ClusterNodeInstanceName,
 		},
-		Spec: osev1.NodeSpec{
-			CgroupMode:           osev1.CgroupModeDefault,
-			WorkerLatencyProfile: osev1.DefaultUpdateDefaultReaction,
-		},
+		Spec: osev1.NodeSpec{},
 	}
 }
 
@@ -207,6 +204,7 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 		for _, value := range mc.Spec.KernelArguments {
 			if arg == value {
 				present = true
+				break
 			}
 		}
 		if !present {

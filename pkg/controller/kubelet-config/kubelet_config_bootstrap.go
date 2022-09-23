@@ -98,6 +98,10 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				Kind:       controllerKind.Kind,
 			}
 			mc.SetOwnerReferences([]metav1.OwnerReference{oref})
+			// updating the machine config resource with the relevant cgroup configuration
+			if isTechPreviewNoUpgradeEnabled(features) {
+				updateMachineConfigwithCgroup(nodeConfig, mc)
+			}
 			res = append(res, mc)
 		}
 	}
