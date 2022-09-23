@@ -82,10 +82,15 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 	for _, pool := range mcpPools {
 		var nodeConfig *osev1.Node
 		role := pool.Name
-		// Fetch the Node Config object
-		nodeConfig, err = ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
-		if errors.IsNotFound(err) {
-			nodeConfig = createNewDefaultNodeconfig()
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			// Fetch the Node Config object
+			nodeConfig, err = ctrl.nodeConfigLister.Get(ctrlcommon.ClusterNodeInstanceName)
+			if errors.IsNotFound(err) {
+				nodeConfig = createNewDefaultNodeconfig()
+			} else if err != nil {
+				err := fmt.Errorf("could not fetch Node: %w", err)
+				return err
+			}
 		}
 		// Get MachineConfig
 		managedKey, err := getManagedFeaturesKey(pool, ctrl.client)
@@ -111,9 +116,6 @@ func (ctrl *Controller) syncFeatureHandler(key string) error {
 		}
 		if rawCfgIgn == nil {
 			continue
-		}
-		if isTechPreviewNoUpgradeEnabled(features) {
-			updateMachineConfigwithCgroup(nodeConfig, mc)
 		}
 
 		mc.Spec.Config.Raw = rawCfgIgn
@@ -253,8 +255,12 @@ func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, no
 
 	for _, pool := range mcpPools {
 		role := pool.Name
-		if nodeConfig == nil {
-			nodeConfig = createNewDefaultNodeconfig()
+		if role == ctrlcommon.MachineConfigPoolWorker {
+			if nodeConfig == nil {
+				nodeConfig = createNewDefaultNodeconfig()
+			}
+		} else {
+			nodeConfig = nil
 		}
 		rawCfgIgn, err := generateKubeConfigIgnFromFeatures(controllerConfig, templateDir, role, features, nodeConfig)
 		if err != nil {
@@ -279,10 +285,6 @@ func RunFeatureGateBootstrap(templateDir string, features *osev1.FeatureGate, no
 		mc.Spec.Config.Raw = rawCfgIgn
 		mc.ObjectMeta.Annotations = map[string]string{
 			ctrlcommon.GeneratedByControllerVersionAnnotationKey: version.Hash,
-		}
-		// updating the machine config resource with the relevant cgroup configuration
-		if isTechPreviewNoUpgradeEnabled(features) {
-			updateMachineConfigwithCgroup(nodeConfig, mc)
 		}
 
 		machineConfigs = append(machineConfigs, mc)
