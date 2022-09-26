@@ -145,19 +145,7 @@ func updateOriginalKubeConfigwithNodeConfig(node *osev1.Node, originalKubeletCon
 // isTechPreviewNoUpgradeEnabled returns a boolean accordingly if a feature is enabled
 // (TODO) This can be generically used in future by passing any feature as an argument.
 func isTechPreviewNoUpgradeEnabled(features *osev1.FeatureGate) bool {
-	if features == nil {
-		return false
-	}
-	featureSet, ok := osev1.FeatureSets[osev1.TechPreviewNoUpgrade]
-	if !ok {
-		return false
-	}
-	for _, val := range featureSet.Enabled {
-		if val == cgroupv2Feature {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 // updateMachineConfigwithCgroup updates the Machine Config object based on the cgroup mode present in the Config Node resource.
