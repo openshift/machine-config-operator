@@ -148,15 +148,13 @@ func isTechPreviewNoUpgradeEnabled(features *osev1.FeatureGate) bool {
 	if features == nil {
 		return false
 	}
-	if features.Spec.FeatureGateSelection.FeatureSet == osev1.TechPreviewNoUpgrade {
-		featureSet, ok := osev1.FeatureSets[osev1.TechPreviewNoUpgrade]
-		if !ok {
-			return false
-		}
-		for _, val := range featureSet.Enabled {
-			if val == cgroupv2Feature {
-				return true
-			}
+	featureSet, ok := osev1.FeatureSets[osev1.TechPreviewNoUpgrade]
+	if !ok {
+		return false
+	}
+	for _, val := range featureSet.Enabled {
+		if val == cgroupv2Feature {
+			return true
 		}
 	}
 	return false
