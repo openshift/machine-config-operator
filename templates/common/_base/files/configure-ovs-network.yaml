@@ -209,7 +209,6 @@ contents:
             con-name br-ex \
             conn.interface br-ex \
             802-3-ethernet.mtu ${iface_mtu} \
-            802-3-ethernet.cloned-mac-address ${iface_mac} \
             ipv4.route-metric "$BRIDGE_METRIC" \
             ipv6.route-metric "$BRIDGE_METRIC" \
             ${extra_brex_args}
