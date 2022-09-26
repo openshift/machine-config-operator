@@ -22,7 +22,9 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			return nil, err
 		}
 	}
-
+	if nodeConfig == nil {
+		nodeConfig = createNewDefaultNodeconfig()
+	}
 	for _, kubeletConfig := range kubeletConfigs {
 		// use selector since label matching part of a KubeletConfig is not handled during the bootstrap
 		selector, err := metav1.LabelSelectorAsSelector(kubeletConfig.Spec.MachineConfigPoolSelector)
@@ -44,9 +46,6 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 			}
 			// updating the originalKubeConfig based on the nodeConfig on a worker node
 			if role == ctrlcommon.MachineConfigPoolWorker {
-				if nodeConfig == nil {
-					nodeConfig = createNewDefaultNodeconfig()
-				}
 				updateOriginalKubeConfigwithNodeConfig(nodeConfig, originalKubeConfig)
 			}
 			if kubeletConfig.Spec.TLSSecurityProfile != nil {
@@ -99,6 +98,10 @@ func RunKubeletBootstrap(templateDir string, kubeletConfigs []*mcfgv1.KubeletCon
 				Kind:       controllerKind.Kind,
 			}
 			mc.SetOwnerReferences([]metav1.OwnerReference{oref})
+			// updating the machine config resource with the relevant cgroup configuration
+			if isTechPreviewNoUpgradeEnabled(features) {
+				updateMachineConfigwithCgroup(nodeConfig, mc)
+			}
 			res = append(res, mc)
 		}
 	}

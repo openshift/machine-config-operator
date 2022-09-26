@@ -8,13 +8,12 @@ import (
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
 	osev1 "github.com/openshift/api/config/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
-
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	"github.com/openshift/machine-config-operator/test/helpers"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 )
 
 func TestOriginalKubeletConfigDefaultNodeConfig(t *testing.T) {
@@ -60,6 +59,8 @@ func TestNodeConfigDefault(t *testing.T) {
 			f.mcpLister = append(f.mcpLister, mcp)
 
 			nodeConfig := createNewDefaultNodeconfig()
+			nodeConfig.Spec.WorkerLatencyProfile = osev1.DefaultUpdateDefaultReaction
+			nodeConfig.Spec.CgroupMode = osev1.CgroupModeDefault
 			f.nodeLister = append(f.nodeLister, nodeConfig)
 			f.oseobjects = append(f.oseobjects, nodeConfig)
 
@@ -67,7 +68,6 @@ func TestNodeConfigDefault(t *testing.T) {
 			f.expectGetMachineConfigAction(mcsDeprecated)
 			f.expectGetMachineConfigAction(mcs)
 			f.expectCreateMachineConfigAction(mcs)
-
 			f.runNode(getKeyFromConfigNode(nodeConfig, t))
 		})
 	}
@@ -83,6 +83,7 @@ func TestBootstrapNodeConfigDefault(t *testing.T) {
 
 			features := createNewDefaultFeatureGate()
 			configNode := createNewDefaultNodeconfig()
+			configNode.Spec.WorkerLatencyProfile = osev1.DefaultUpdateDefaultReaction
 
 			mcs, err := RunNodeConfigBootstrap("../../../templates", features, cc, configNode, mcps)
 			if err != nil {
