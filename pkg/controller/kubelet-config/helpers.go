@@ -175,9 +175,9 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 	}
 	// updating the Machine Config resource with the relevant cgroup config
 	var (
-		kernelArgsv1                                            = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
-		kernelArgsv2                                            = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
-		kernelArgsToAdd, kernelArgsToRemove, adjustedKernelArgs []string
+		kernelArgsv1                        = []string{"systemd.unified_cgroup_hierarchy=0", "systemd.legacy_systemd_cgroup_controller=1"}
+		kernelArgsv2                        = []string{"systemd.unified_cgroup_hierarchy=1", "cgroup_no_v1=\"all\"", "psi=1"}
+		kernelArgsToAdd, kernelArgsToRemove []string
 	)
 	switch node.Spec.CgroupMode {
 	case osev1.CgroupModeV1:
@@ -192,21 +192,25 @@ func updateMachineConfigwithCgroup(node *osev1.Node, mc *mcfgv1.MachineConfig) e
 		return fmt.Errorf("unknown cgroup mode found %v, failed to update the machine config resource", node.Spec.CgroupMode)
 	}
 
-	for _, arg := range mc.Spec.KernelArguments {
-		// only append the args we want to keep, omitting the undesired
-		if !ctrlcommon.InSlice(arg, kernelArgsToRemove) {
-			adjustedKernelArgs = append(adjustedKernelArgs, arg)
+	for _, arg := range kernelArgsToRemove {
+		for key, value := range mc.Spec.KernelArguments {
+			if arg == value {
+				mc.Spec.KernelArguments = append(mc.Spec.KernelArguments[:key], mc.Spec.KernelArguments[key+1:]...)
+			}
 		}
 	}
-
 	for _, arg := range kernelArgsToAdd {
-		// add the additional that aren't already there
-		if !ctrlcommon.InSlice(arg, adjustedKernelArgs) {
-			adjustedKernelArgs = append(adjustedKernelArgs, arg)
+		var present bool
+		for _, value := range mc.Spec.KernelArguments {
+			if arg == value {
+				present = true
+				break
+			}
+		}
+		if !present {
+			mc.Spec.KernelArguments = append(mc.Spec.KernelArguments, arg)
 		}
 	}
-	// overwrite the KernelArguments with the adjusted KernelArgs
-	mc.Spec.KernelArguments = adjustedKernelArgs
 	return nil
 }
 
