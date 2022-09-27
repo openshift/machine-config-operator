@@ -22,8 +22,16 @@ var (
 			Help: "Set to the unix timestamp in utc of the current certificate expiry date if a certificate rotation is pending in specified paused pool",
 		}, []string{"pool"})
 
+	// OSImageURLOverride tells whether cluster is using default OS image or has been overridden by user
+	OSImageURLOverride = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "os_image_url_override",
+			Help: "state of OS image override",
+		}, []string{"pool"})
+
 	metricsList = []prometheus.Collector{
 		MachineConfigControllerPausedPoolKubeletCA,
+		OSImageURLOverride,
 	}
 )
 

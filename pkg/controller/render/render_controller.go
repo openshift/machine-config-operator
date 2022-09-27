@@ -487,9 +487,13 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 		return err
 	}
 
-	// Emit an event so it's more visible that OSImageURL was overridden.
+	// Emit event and collect metric when OSImageURL was overridden.
 	if generated.Spec.OSImageURL != cc.Spec.OSImageURL {
+		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(1)
 		ctrl.eventRecorder.Eventf(generated, corev1.EventTypeNormal, "OSImageURLOverridden", "OSImageURL was overridden via machineconfig in %s (was: %s is: %s)", generated.Name, cc.Spec.OSImageURL, generated.Spec.OSImageURL)
+	} else {
+		// Reset metric when OSImageURL has not been overridden
+		ctrlcommon.OSImageURLOverride.WithLabelValues(pool.Name).Set(0)
 	}
 
 	source := []corev1.ObjectReference{}
