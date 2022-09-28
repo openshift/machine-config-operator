@@ -14,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/opencontainers/go-digest"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -37,6 +38,7 @@ type RpmOstreeDeployment struct {
 	OSName                  string   `json:"osname"`
 	Serial                  int32    `json:"serial"`
 	Checksum                string   `json:"checksum"`
+	BaseChecksum            string   `json:"base-checksum,omitempty"`
 	Version                 string   `json:"version"`
 	Timestamp               uint64   `json:"timestamp"`
 	Booted                  bool     `json:"booted"`
@@ -67,7 +69,7 @@ type imageInspection struct {
 type NodeUpdaterClient interface {
 	Initialize() error
 	GetStatus() (string, error)
-	GetBootedOSImageURL() (string, string, error)
+	GetBootedOSImageURL() (string, string, string, error)
 	Rebase(string, string) (bool, error)
 	RebaseLayered(string) error
 	IsBootableImage(string) (bool, error)
@@ -135,6 +137,13 @@ func (r *RpmOstreeClient) Initialize() error {
 		return err
 	}
 
+	// Commands like update and rebase need the pull secrets to pull images and manifests,
+	// make sure we get access to them when we Initialize
+	err := useKubeletConfigSecrets()
+	if err != nil {
+		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
+	}
+
 	return nil
 }
 
@@ -161,16 +170,21 @@ func (r *RpmOstreeClient) GetStatus() (string, error) {
 	return string(output), nil
 }
 
-// GetBootedOSImageURL returns the image URL as well as the OSTree version (for logging)
+// GetBootedOSImageURL returns the image URL as well as the OSTree version(for logging) and the ostree commit (for comparisons)
 // Returns the empty string if the host doesn't have a custom origin that matches pivot://
 // (This could be the case for e.g. FCOS, or a future RHCOS which comes not-pivoted by default)
-func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
+func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) {
 	bootedDeployment, _, err := r.GetBootedAndStagedDeployment()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
+	// TODO(jkyros): take this out, I just want to see when/why it's empty?
+	j, _ := json.MarshalIndent(bootedDeployment, "", "    ")
+	glog.Infof("%s", j)
+
 	// the canonical image URL is stored in the custom origin field.
+
 	osImageURL := ""
 	if len(bootedDeployment.CustomOrigin) > 0 {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
@@ -186,7 +200,15 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, error) {
 			osImageURL = tokens[1]
 		}
 	}
-	return osImageURL, bootedDeployment.Version, nil
+
+	// BaseChecksum is populated if the system has been modified in a way that changes the base checksum
+	// (like via an RPM install) so prefer BaseCheksum that if it's present, otherwise just use Checksum.
+	baseChecksum := bootedDeployment.Checksum
+	if bootedDeployment.BaseChecksum != "" {
+		baseChecksum = bootedDeployment.BaseChecksum
+	}
+
+	return osImageURL, bootedDeployment.Version, baseChecksum, nil
 }
 
 func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
@@ -339,16 +361,50 @@ func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 	return isBootableImage == "true", nil
 }
 
+// RpmOstreeIsNewEnoughForLayering returns true if the version of rpm-ostree on the
+// host system is new enough for layering.
+// VersionData represents the static information about rpm-ostree.
+type VersionData struct {
+	Version  string   `yaml:"Version"`
+	Features []string `yaml:"Features"`
+	Git      string   `yaml:"Git"`
+}
+
+type RpmOstreeVersionData struct {
+	Root VersionData `yaml:"rpm-ostree"`
+}
+
+// RpmOstreeVersion returns the running rpm-ostree version number
+func rpmOstreeVersion() (*VersionData, error) {
+	buf, err := runGetOut("rpm-ostree", "--version")
+	if err != nil {
+		return nil, err
+	}
+
+	var q RpmOstreeVersionData
+	if err := yaml.Unmarshal(buf, &q); err != nil {
+		return nil, fmt.Errorf("failed to parse `rpm-ostree --version` output: %w", err)
+	}
+
+	return &q.Root, nil
+}
+
+func RpmOstreeIsNewEnoughForLayering() (bool, error) {
+	verdata, err := rpmOstreeVersion()
+	if err != nil {
+		return false, err
+	}
+	for _, v := range verdata.Features {
+		if v == "container" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RebaseLayered rebases system or errors if already rebased
 func (r *RpmOstreeClient) RebaseLayered(imgURL string) (err error) {
 	glog.Infof("Executing rebase to %s", imgURL)
-
-	// For now, just let ostree use the kublet config.json,
-	err = useKubeletConfigSecrets()
-	if err != nil {
-		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
-	}
-
 	return runRpmOstree("rebase", "--experimental", "ostree-unverified-registry:"+imgURL)
 }
 

@@ -48,6 +48,9 @@ import (
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 )
 
+// Gates whether or not the MCO uses the new format base OS container image by default
+var UseNewFormatImageByDefault = true
+
 // strToPtr converts the input string to a pointer to itself
 func strToPtr(s string) *string {
 	return &s
@@ -58,7 +61,7 @@ func strToPtr(s string) *string {
 // It uses the Ignition config from first object as base and appends all the rest.
 // Kernel arguments are concatenated.
 // It defaults to the OSImageURL provided by the CVO but allows a MC provided OSImageURL to take precedence.
-func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*mcfgv1.MachineConfig, error) {
+func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, cconfig *mcfgv1.ControllerConfig) (*mcfgv1.MachineConfig, error) {
 	if len(configs) == 0 {
 		return nil, nil
 	}
@@ -129,21 +132,28 @@ func MergeMachineConfigs(configs []*mcfgv1.MachineConfig, osImageURL string) (*m
 	}
 
 	// For layering, we want to let the user override OSImageURL again
-	overriddenOSImageURL := ""
+	// The template configs always match what's in controllerconfig because they get rendered from there,
+	// so the only way we get an override here is if the user adds something different
+	osImageURL := GetDefaultBaseImageContainer(&cconfig.Spec)
 	for _, cfg := range configs {
 		if cfg.Spec.OSImageURL != "" {
-			overriddenOSImageURL = cfg.Spec.OSImageURL
+			osImageURL = cfg.Spec.OSImageURL
 		}
 	}
-	// Make sure it's obvious in the logs that it was overridden
-	if overriddenOSImageURL != "" && overriddenOSImageURL != osImageURL {
-		osImageURL = overriddenOSImageURL
+
+	// Allow overriding the extensions container
+	baseOSExtensionsContainerImage := cconfig.Spec.BaseOSExtensionsContainerImage
+	for _, cfg := range configs {
+		if cfg.Spec.BaseOSExtensionsContainerImage != "" {
+			baseOSExtensionsContainerImage = cfg.Spec.BaseOSExtensionsContainerImage
+		}
 	}
 
 	return &mcfgv1.MachineConfig{
 		Spec: mcfgv1.MachineConfigSpec{
-			OSImageURL:      osImageURL,
-			KernelArguments: kargs,
+			OSImageURL:                     osImageURL,
+			BaseOSExtensionsContainerImage: baseOSExtensionsContainerImage,
+			KernelArguments:                kargs,
 			Config: runtime.RawExtension{
 				Raw: rawOutIgn,
 			},
@@ -970,4 +980,13 @@ func GetLongestValidCertificate(certificateList []*x509.Certificate, subjectPref
 		}
 	}
 	return nil
+}
+
+// GetDefaultBaseImageContainer is kind of a "soft feature gate" for using the "new format" image by default, its behavior
+// is determined by the "UseNewFormatImageByDefault" boolean
+func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) string {
+	if UseNewFormatImageByDefault {
+		return cconfigspec.BaseOSContainerImage
+	}
+	return cconfigspec.OSImageURL
 }

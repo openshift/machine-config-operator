@@ -293,8 +293,14 @@ func generateMachineConfigForName(config *RenderConfig, role, name, templateDir,
 	if err != nil {
 		return nil, fmt.Errorf("error creating MachineConfig from Ignition config: %w", err)
 	}
+
+	// TODO(jkyros): you might think you can remove this since we override later when we merge
+	// config, but resourcemerge doesn't blank this field out once it's populated
+	// so if you end up on a cluster where it was ever populated in this machineconfig, it
+	// will keep that last value forever once you upgrade...which is a problen now that we allow OSImageURL overrides
+	// because it will look like an override when it shouldn't be. So don't take this out until you've solved that.
 	// And inject the osimageurl here
-	mcfg.Spec.OSImageURL = config.OSImageURL
+	mcfg.Spec.OSImageURL = ctrlcommon.GetDefaultBaseImageContainer(config.ControllerConfigSpec)
 
 	return mcfg, nil
 }
