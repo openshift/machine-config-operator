@@ -64,6 +64,9 @@ type Daemon struct {
 	// bootedOSImageURL is the currently booted URL of the operating system
 	bootedOSImageURL string
 
+	// bootedOScommit is the commit hash of the currently booted operating system
+	bootedOSCommit string
+
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
 
@@ -210,6 +213,7 @@ func New(
 	var (
 		osImageURL string
 		osVersion  string
+		osCommit   string
 		err        error
 	)
 
@@ -228,11 +232,11 @@ func New(
 		if err != nil {
 			return nil, fmt.Errorf("error initializing rpm-ostree: %w", err)
 		}
-		osImageURL, osVersion, err = nodeUpdaterClient.GetBootedOSImageURL()
+		osImageURL, osVersion, osCommit, err = nodeUpdaterClient.GetBootedOSImageURL()
 		if err != nil {
 			return nil, fmt.Errorf("error reading osImageURL from rpm-ostree: %w", err)
 		}
-		glog.Infof("Booted osImageURL: %s (%s)", osImageURL, osVersion)
+		glog.Infof("Booted osImageURL: %s (%s) %s", osImageURL, osVersion, osCommit)
 	}
 
 	bootID := ""
@@ -264,6 +268,7 @@ func New(
 		os:                    hostos,
 		NodeUpdaterClient:     nodeUpdaterClient,
 		bootedOSImageURL:      osImageURL,
+		bootedOSCommit:        osCommit,
 		bootID:                bootID,
 		exitCh:                exitCh,
 		currentConfigPath:     currentConfigPath,
@@ -884,6 +889,30 @@ func (dn *Daemon) RunFirstbootCompleteMachineconfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse MachineConfig: %w", err)
 	}
+	newEnough, err := RpmOstreeIsNewEnoughForLayering()
+	if err != nil {
+		return err
+	}
+
+	// If the host isn't new enough to understand the new container model natively, run as a privileged container.
+	// See https://github.com/coreos/rpm-ostree/pull/3961 and https://issues.redhat.com/browse/MCO-356
+	// This currently will incur a double reboot; see https://github.com/coreos/rpm-ostree/issues/4018
+	if !newEnough {
+		dn.logSystem("rpm-ostree is not new enough for new-format image; forcing an update via container and queuing immediate reboot")
+		if err := dn.InplaceUpdateViaNewContainer(mc.Spec.OSImageURL); err != nil {
+			return err
+		}
+		rebootCmd := rebootCommand("extra reboot for in-place update")
+		if err := rebootCmd.Run(); err != nil {
+			dn.logSystem("failed to run reboot: %v", err)
+			return err
+		}
+		// wait to be killed via SIGTERM
+		time.Sleep(defaultRebootTimeout)
+		return fmt.Errorf("failed to reboot for secondary in-place update")
+	}
+
+	glog.Info("rpm-ostree has container feature")
 
 	// Start with an empty config, then add our *booted* osImageURL to
 	// it, reflecting the current machine state.
@@ -1456,7 +1485,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		targetOSImageURL := state.currentConfig.Spec.OSImageURL
 		osMatch := dn.checkOS(targetOSImageURL)
 		if !osMatch {
-			glog.Infof("Bootstrap pivot required to: %s", targetOSImageURL)
+			dn.logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
@@ -1487,7 +1516,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 			}
 			return dn.reboot(fmt.Sprintf("Node will reboot into config %v", state.currentConfig.GetName()))
 		}
-		glog.Info("No bootstrap pivot required; unlinking bootstrap node annotations")
+		dn.logSystem("No bootstrap pivot required; unlinking bootstrap node annotations")
 
 		// Rename the bootstrap node annotations; the
 		// currentConfig's osImageURL should now be *truth*.
@@ -1533,7 +1562,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 	}
 
 	if forceFileExists() {
-		glog.Infof("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
+		dn.logSystem("Skipping on-disk validation; %s present", constants.MachineConfigDaemonForceFile)
 		return dn.triggerUpdateWithMachineConfig(state.currentConfig, state.desiredConfig)
 	}
 
@@ -1543,7 +1572,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		return wErr
 	}
 
-	glog.Info("Validated on-disk state")
+	dn.logSystem("Validated on-disk state")
 
 	// We've validated state. Now, ensure that node is in desired state
 	var inDesiredConfig bool
@@ -1837,7 +1866,7 @@ func (dn *Daemon) validateOnDiskState(currentConfig *mcfgv1.MachineConfig) error
 	// Be sure we're booted into the OS we expect
 	osMatch := dn.checkOS(currentConfig.Spec.OSImageURL)
 	if !osMatch {
-		return fmt.Errorf("expected target osImageURL %q, have %q", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL)
+		return fmt.Errorf("expected target osImageURL %q, have %q (%q)", currentConfig.Spec.OSImageURL, dn.bootedOSImageURL, dn.bootedOSCommit)
 	}
 
 	if dn.os.IsCoreOSVariant() {
@@ -1861,6 +1890,20 @@ func (dn *Daemon) checkOS(osImageURL string) bool {
 	if !dn.os.IsCoreOSVariant() {
 		glog.Infof(`Not booted into a CoreOS variant, ignoring target OSImageURL %s`, osImageURL)
 		return true
+	}
+
+	// TODO(jkyros): the header for this functions says "if the digests match"
+	// so I'm wondering if at one point this used to work this way....
+	// TODO(jkyros): and pulling it just to check is so expensive, skopeo works now
+	// if you use the --no-tags argument (doesn't pull tags) so we should probably just do that
+	inspection, err := imageInspect(osImageURL)
+	if err != nil {
+		glog.Warningf("Unable to check manifest for matching hash: %s", err)
+	} else if ostreeCommit, ok := inspection.Labels["ostree.commit"]; ok {
+		if ostreeCommit == dn.bootedOSCommit {
+			glog.Infof("We are technically in the right image even if the URL doesn't match (%s == %s)", ostreeCommit, osImageURL)
+			return true
+		}
 	}
 
 	return dn.bootedOSImageURL == osImageURL

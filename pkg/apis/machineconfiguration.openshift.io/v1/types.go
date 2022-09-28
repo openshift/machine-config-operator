@@ -72,11 +72,11 @@ type ControllerConfigSpec struct {
 	// images is map of images that are used by the controller to render templates under ./templates/
 	Images map[string]string `json:"images"`
 
-	// BaseOperatingSystemContainer is the new-format container image for operating system updates.
-	BaseOperatingSystemContainer string `json:"baseOperatingSystemContainer"`
+	// BaseOSContainerImage is the new-format container image for operating system updates.
+	BaseOSContainerImage string `json:"baseOSContainerImage"`
 
-	// BaseOperatingSystemExtensionsContainer is the matching extensions container for the new-format container
-	BaseOperatingSystemExtensionsContainer string `json:"baseOperatingSystemExtensionsContainer"`
+	// BaseOSExtensionsContainerImage is the matching extensions container for the new-format container
+	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
 
 	// OSImageURL is the old-format container image that contains the OS update payload.
 	OSImageURL string `json:"osImageURL"`
@@ -200,6 +200,11 @@ type MachineConfigSpec struct {
 	// OSImageURL specifies the remote location that will be used to
 	// fetch the OS.
 	OSImageURL string `json:"osImageURL"`
+
+	// BaseOSExtensionsContainerImage specifies the remote location that will be used
+	// to fetch the extensions container matching a new-format OS image
+	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
+
 	// Config is a Ignition Config object.
 	Config runtime.RawExtension `json:"config"`
 

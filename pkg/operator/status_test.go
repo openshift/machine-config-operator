@@ -30,9 +30,10 @@ import (
 func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 	configNotFound := errors.New("Config Not Found")
 	type config struct {
-		name           string
-		version        string
-		releaseVersion string
+		name                 string
+		version              string
+		releaseVersion       string
+		osimageurlOverridden bool
 	}
 
 	tests := []struct {
@@ -119,22 +120,42 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 		generated: "g",
 		err:       errors.New("osImageURL mismatch for dummy-pool in g expected: myurl got: wrongurl"),
 	}, {
+		// This is specifically testing that we can make sure the operator status check
+		// allows a mismatched URL if it's a user override for Phase 0 layering
 		knownConfigs: []config{{
-			name:           "g",
-			version:        "v2",
-			releaseVersion: "rv1",
+			name:                 "g",
+			version:              "v2",
+			releaseVersion:       "rv2",
+			osimageurlOverridden: true,
 		}, {
 			name:           "c-0",
 			version:        "v2",
-			releaseVersion: "rv1",
+			releaseVersion: "rv2",
 		}, {
 			name: "u-0",
 		}},
 		source:    []string{"c-0", "u-0"},
-		testurl:   "myurl",
+		testurl:   "overriddenurl",
 		generated: "g",
-		err:       errors.New("release image version mismatch for dummy-pool in g expected: rv2 got: rv1"),
-	}}
+		err:       nil,
+	},
+		{
+			knownConfigs: []config{{
+				name:           "g",
+				version:        "v2",
+				releaseVersion: "rv1",
+			}, {
+				name:           "c-0",
+				version:        "v2",
+				releaseVersion: "rv1",
+			}, {
+				name: "u-0",
+			}},
+			source:    []string{"c-0", "u-0"},
+			testurl:   "myurl",
+			generated: "g",
+			err:       errors.New("release image version mismatch for dummy-pool in g expected: rv2 got: rv1"),
+		}}
 
 	for idx, test := range tests {
 		t.Run(fmt.Sprintf("case #%d", idx), func(t *testing.T) {
@@ -147,6 +168,9 @@ func TestIsMachineConfigPoolConfigurationValid(t *testing.T) {
 						}
 						if c.releaseVersion != "" {
 							annos[ctrlcommon.ReleaseImageVersionAnnotationKey] = c.releaseVersion
+						}
+						if c.osimageurlOverridden {
+							annos[ctrlcommon.OSImageURLOverriddenKey] = "true"
 						}
 						return &mcfgv1.MachineConfig{
 							ObjectMeta: metav1.ObjectMeta{
