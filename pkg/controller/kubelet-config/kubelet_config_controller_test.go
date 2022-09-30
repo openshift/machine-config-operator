@@ -53,6 +53,7 @@ type fixture struct {
 	featLister      []*osev1.FeatureGate
 	nodeLister      []*osev1.Node
 	apiserverLister []*osev1.APIServer
+	infraLister     []*osev1.Infrastructure
 
 	actions               []core.Action
 	skipActionsValidation bool
@@ -186,15 +187,16 @@ func (f *fixture) newController() *Controller {
 	f.oseclient = oseconfigfake.NewSimpleClientset(f.oseobjects...)
 
 	i := informers.NewSharedInformerFactory(f.client, 0)
-	featinformer := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
+	oseInformers := oseinformersv1.NewSharedInformerFactory(f.oseclient, 0)
 
 	c := New(templateDir,
 		i.Machineconfiguration().V1().MachineConfigPools(),
 		i.Machineconfiguration().V1().ControllerConfigs(),
 		i.Machineconfiguration().V1().KubeletConfigs(),
-		featinformer.Config().V1().FeatureGates(),
-		featinformer.Config().V1().Nodes(),
-		featinformer.Config().V1().APIServers(),
+		oseInformers.Config().V1().FeatureGates(),
+		oseInformers.Config().V1().Nodes(),
+		oseInformers.Config().V1().APIServers(),
+		oseInformers.Config().V1().Infrastructures(),
 		k8sfake.NewSimpleClientset(),
 		f.client,
 		f.oseclient,
@@ -222,13 +224,16 @@ func (f *fixture) newController() *Controller {
 		i.Machineconfiguration().V1().KubeletConfigs().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.featLister {
-		featinformer.Config().V1().FeatureGates().Informer().GetIndexer().Add(c)
+		oseInformers.Config().V1().FeatureGates().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.apiserverLister {
-		featinformer.Config().V1().APIServers().Informer().GetIndexer().Add(c)
+		oseInformers.Config().V1().APIServers().Informer().GetIndexer().Add(c)
 	}
 	for _, c := range f.nodeLister {
-		featinformer.Config().V1().Nodes().Informer().GetIndexer().Add(c)
+		oseInformers.Config().V1().Nodes().Informer().GetIndexer().Add(c)
+	}
+	for _, c := range f.infraLister {
+		oseInformers.Config().V1().Infrastructures().Informer().GetIndexer().Add(c)
 	}
 
 	return c
@@ -283,6 +288,18 @@ func (f *fixture) runNodeController(nodename string, expectError bool) {
 		f.t.Errorf("error syncing node configs: %v", err)
 	} else if expectError && err == nil {
 		f.t.Error("expected error syncing node configs, got nil")
+	}
+
+	f.validateActions()
+}
+
+func (f *fixture) runInfraController(infraname string, expectError bool) {
+	c := f.newController()
+	err := c.syncInfraConfigHandler(infraname)
+	if !expectError && err != nil {
+		f.t.Errorf("error syncing infra configs: %v", err)
+	} else if expectError && err == nil {
+		f.t.Error("expected error syncing infra configs, got nil")
 	}
 
 	f.validateActions()
@@ -788,6 +805,15 @@ func getKeyFromConfigNode(node *osev1.Node, t *testing.T) string {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
 	if err != nil {
 		t.Errorf("Unexpected error getting key for Config Node %v: %v", node.Name, err)
+		return ""
+	}
+	return key
+}
+
+func getKeyFromConfigInfra(infra *osev1.Infrastructure, t *testing.T) string {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(infra)
+	if err != nil {
+		t.Errorf("Unexpected error getting key for Config Infra %v: %v", infra.Name, err)
 		return ""
 	}
 	return key

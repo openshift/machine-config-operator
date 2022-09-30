@@ -97,12 +97,16 @@ type Controller struct {
 	nodeConfigLister       oselistersv1.NodeLister
 	nodeConfigListerSynced cache.InformerSynced
 
+	infraConfigLister       oselistersv1.InfrastructureLister
+	infraConfigListerSynced cache.InformerSynced
+
 	apiserverLister       oselistersv1.APIServerLister
 	apiserverListerSynced cache.InformerSynced
 
-	queue           workqueue.RateLimitingInterface
-	featureQueue    workqueue.RateLimitingInterface
-	nodeConfigQueue workqueue.RateLimitingInterface
+	queue            workqueue.RateLimitingInterface
+	featureQueue     workqueue.RateLimitingInterface
+	nodeConfigQueue  workqueue.RateLimitingInterface
+	infraConfigQueue workqueue.RateLimitingInterface
 }
 
 // New returns a new kubelet config controller
@@ -114,6 +118,7 @@ func New(
 	featInformer oseinformersv1.FeatureGateInformer,
 	nodeConfigInformer oseinformersv1.NodeInformer,
 	apiserverInformer oseinformersv1.APIServerInformer,
+	infraConfigInformer oseinformersv1.InfrastructureInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 	configclient configclientset.Interface,
@@ -123,13 +128,14 @@ func New(
 	eventBroadcaster.StartRecordingToSink(&coreclientsetv1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	ctrl := &Controller{
-		templatesDir:    templatesDir,
-		client:          mcfgClient,
-		configClient:    configclient,
-		eventRecorder:   eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
-		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
-		featureQueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
-		nodeConfigQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
+		templatesDir:     templatesDir,
+		client:           mcfgClient,
+		configClient:     configclient,
+		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
+		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
+		featureQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
+		nodeConfigQueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-nodeConfigcontroller"),
+		infraConfigQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-infraConfigcontroller"),
 	}
 
 	mkuInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -150,6 +156,12 @@ func New(
 		DeleteFunc: ctrl.deleteNodeConfig,
 	})
 
+	infraConfigInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    ctrl.addInfraConfig,
+		UpdateFunc: ctrl.updateInfraConfig,
+		DeleteFunc: ctrl.deleteInfraConfig,
+	})
+
 	ctrl.syncHandler = ctrl.syncKubeletConfig
 	ctrl.enqueueKubeletConfig = ctrl.enqueue
 
@@ -167,6 +179,9 @@ func New(
 
 	ctrl.nodeConfigLister = nodeConfigInformer.Lister()
 	ctrl.nodeConfigListerSynced = nodeConfigInformer.Informer().HasSynced
+
+	ctrl.infraConfigLister = infraConfigInformer.Lister()
+	ctrl.infraConfigListerSynced = infraConfigInformer.Informer().HasSynced
 
 	ctrl.apiserverLister = apiserverInformer.Lister()
 	ctrl.apiserverListerSynced = apiserverInformer.Informer().HasSynced
@@ -198,6 +213,10 @@ func (ctrl *Controller) Run(workers int, stopCh <-chan struct{}) {
 
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.nodeConfigWorker, time.Second, stopCh)
+	}
+
+	for i := 0; i < workers; i++ {
+		go wait.Until(ctrl.infraConfigWorker, time.Second, stopCh)
 	}
 
 	<-stopCh

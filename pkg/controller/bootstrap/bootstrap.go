@@ -188,8 +188,8 @@ func (b *Bootstrap) Run(destDir string) error {
 		configs = append(configs, kconfigs...)
 	}
 
-	if infraConfig.Status.CPUPartitioning != apicfgv1.CPUPartitioningNone {
-		cpuPartMCs, err := kubeletconfig.GenerateCPUPartitioningMC()
+	if infraConfig != nil {
+		cpuPartMCs, err := kubeletconfig.RunInfraConfigBootstrap(infraConfig, pools)
 		if err != nil {
 			return err
 		}
