@@ -1,0 +1,31 @@
+mode: 0755
+path: "/usr/local/lib/systemd/system-generators/alibaba-kubelet-extra-env-generator.sh"
+contents:
+  inline: |
+    #!/bin/sh
+    set -euo pipefail
+
+    # This systemd.generator(7) determines the alibaba nodename and sets
+    # it as a variable for the kubelet.service unit file.
+    #
+    # Place in /usr/local/lib/systemd/system-generators
+
+    # Generators don't have logging right now
+    # https://github.com/systemd/systemd/issues/15638
+    exec 1>/dev/kmsg; exec 2>&1
+
+    # If invoked with no arguments (for testing) write to /tmp.
+    earlydir="/tmp"
+    if [ -n "$2" ]; then
+        earlydir="$2"
+    fi
+
+    kubelet_service_d_dir="$earlydir/kubelet.service.d"
+    node_env="$kubelet_service_d_dir/alibaba-extra-env.conf"
+
+    mkdir -p "$kubelet_service_d_dir"
+
+    # This must NOT be a here-document otherwise this script will generate this error:
+    #   alibaba-kubelet-extra-env-generator.sh: cannot create temp file for here-document: Read-only file system
+
+    echo -e "[Service]\nEnvironmentFile=/run/kubelet-alibaba.env" > "${node_env}"
