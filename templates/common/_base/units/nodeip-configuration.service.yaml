@@ -3,9 +3,9 @@ enabled: {{if eq .Infra.Status.PlatformStatus.Type "None"}}true{{else}}false{{en
 contents: |
   [Unit]
   Description=Writes IP address configuration so that kubelet and crio services select a valid node IP
-  Wants=NetworkManager-wait-online.service crio-wipe.service
-  After=NetworkManager-wait-online.service ignition-firstboot-complete.service crio-wipe.service
-  Before=kubelet.service crio.service ovs-configuration.service
+  Wants=network-online.target crio-wipe.service
+  After=network-online.target ignition-firstboot-complete.service crio-wipe.service
+  Before=kubelet.service crio.service
 
   [Service]
   # Need oneshot to delay kubelet
@@ -20,7 +20,6 @@ contents: |
     --net=host \
     --security-opt label=disable \
     --volume /etc/systemd/system:/etc/systemd/system \
-    --volume /run/nodeip-configuration:/run/nodeip-configuration \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set \
@@ -33,7 +32,6 @@ contents: |
     sleep 5; \
     done"
   ExecStart=/bin/systemctl daemon-reload
-  ExecStartPre=/bin/mkdir -p /run/nodeip-configuration
 
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
