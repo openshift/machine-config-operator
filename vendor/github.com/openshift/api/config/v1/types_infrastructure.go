@@ -505,9 +505,155 @@ type BareMetalPlatformStatus struct {
 	NodeDNSIP string `json:"nodeDNSIP,omitempty"`
 }
 
+type OpenStackAPIBGPPeer struct {
+	// asn is the Autonomous System number of the peer.
+	//
+	// +optional
+	ASN string `json:"asn,omitempty"`
+
+	// ip is the IP address of the peer, as reachable from the Control
+	// plane machine. It may be either IPv4 or IPv6
+	//
+	// +kubebuilder:validation:Format=ip
+	// +kubebuilder:validation:Required
+	IP string `json:"ip"`
+
+	// password for BGP authentication against the peer
+	//
+	// +optional
+	Password string `json:"password,omitempty"`
+}
+
+// OpenStackAPIBGPSpeaker describes the BGP autonomous system that will contain
+// the API VIP for a specific failure domain.
+type OpenStackAPIBGPSpeaker struct {
+	// failureDomain is the name of a failure domain which this BGP
+	// configuration applies to. A failure domain with that name must be
+	// defined in the OpenStack platform spec.
+	//
+	// +kubebuilder:validation:Required
+	FailureDomain string `json:"failureDomain"`
+
+	// asn specifies the Autonomous System number to be used by the BGP
+	// speaker of the Control plane node. Control plane nodes in a failure
+	// domain where this field is not set are each assigned a distinct
+	// number: master-0 4273211230, master-1 4273211231, and master-2
+	// 4273211232. If multiple Control plane nodes are assigned the same
+	// failure domain, this field cannot be set.
+	//
+	// +optional
+	ASN string `json:"asn"`
+
+	// peers is a list of all BGP peers of the speaker for the VIPs of this
+	// failure domain. The list must contain at least one item.
+	//
+	// +kubebuilder:validation:MinItems:=1
+	Peers []OpenStackAPIBGPPeer `json:"peers"`
+}
+
+type OpenStackAPIBGPConfiguration struct {
+	// speakers is a list of BGP speaker configurations. We require a
+	// speaker configuration for every failure domain hosting a control
+	// plane node. The list must contain at least one item.
+	//
+	// +kubebuilder:validation:MinItems:=1
+	// +listType=map
+	// +listMapKey=failureDomain
+	Speakers []OpenStackAPIBGPSpeaker `json:"speakers"`
+}
+
+// OpenStackFailureDomain specifies a failure domain for an OpenStack server.
+// Specifically, it specifies a set of values which will be set on all machines
+// using the failure domain.
+type OpenStackFailureDomain struct {
+	// name is an arbitrary, unique name for this failure domain. This name
+	// can be used to refer to this failure domain when building a BGP
+	// speaker configuration.
+	//
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// computeZone specifies the OpenStack Compute availability zone for
+	// all servers in this failure domain.
+	//
+	// If not specified the servers are provisioned without reference to
+	// availability zones. Server placement is delegated to the OpenStack
+	// defaults.
+	// +optional
+	// + ---
+	// + TODO: define behaviour in case only one of computeZone and
+	// + storageZone is set.
+	ComputeZone string `json:"computeZone,omitempty"`
+
+	// storageZone specifies the OpenStack storage availability zone for
+	// all volumes in this failure domain.
+	//
+	// If not specified the volumes are provisioned without reference to
+	// availability zones. Volume placement is delegated to the OpenStack
+	// defaults.
+	// +optional
+	// + ---
+	// + TODO: define behaviour in case only one of computeZone and
+	// + storageZone is set.
+	StorageZone string `json:"storageZone,omitempty"`
+
+	// subnetID specifies an OpenStack subnet ID which will be attached as
+	// the first NIC of every server in this failure domain.
+	//
+	// +optional
+	SubnetID string `json:"subnetID,omitempty"`
+}
+
 // OpenStackPlatformSpec holds the desired state of the OpenStack infrastructure provider.
 // This only includes fields that can be modified in the cluster.
-type OpenStackPlatformSpec struct{}
+type OpenStackPlatformSpec struct {
+	// failureDomains is a list of failure domains available to Machines.
+	// Each failure domain has a name that can be referenced in Machines;
+	// Machines referencing a failure domain will be set the corresponding
+	// failure domain values.
+	// If no failure domain is defined, Machines can't reference any. If a
+	// Machine doesn't reference a failure domain, it is spun in the
+	// cluster subnet, using the OpenStack default availability zones.
+	//
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	FailureDomains []OpenStackFailureDomain `json:"failureDomains,omitempty"`
+
+	// apiLoadBalancer defines how traffic destined to the OpenShift API is
+	// routed to the API servers.
+	// When omitted, this means no opinion and the platform is left to
+	// choose a reasonable default. This default is subject to change over
+	// time.
+	// The current default configuration uses VRRP.
+	//
+	// +optional
+	APILoadBalancer OpenStackAPILoadBalancer `json:"apiLoadBalancer"`
+}
+
+// OpenStackAPILoadBalancer defines how inbound traffic is routed to the API
+// servers.
+type OpenStackAPILoadBalancer struct {
+	// apiLoadBalancerType defines the type of loadbalancer which will be
+	// configured for the API server. Permitted values are `VRRP` and
+	// `BGP`.
+	// When omitted, this means no opinion and the platform is left to
+	// choose a reasonable default. This default is subject to change over
+	// time.
+	// The current default value is `VRRP`.
+	//
+	// +unionDiscriminator
+	// +kubebuilder:validation:Enum:="VRRP";"BGP"
+	// +kubebuilder:validation:Required
+	APILoadBalancerType string `json:"type,omitempty"`
+
+	// bgpConfiguration describes the configuration of a BGP load balancer
+	// for the API server. It is only used if apiLoadBalancer is set to
+	// `BGP`.
+	//
+	// +optional
+	BGP *OpenStackAPIBGPConfiguration `json:"bgp,omitempty"`
+}
 
 // OpenStackPlatformStatus holds the current status of the OpenStack infrastructure provider.
 type OpenStackPlatformStatus struct {
@@ -600,9 +746,202 @@ type OvirtPlatformStatus struct {
 	NodeDNSIP string `json:"nodeDNSIP,omitempty"`
 }
 
+// VSpherePlatformFailureDomainSpec holds the region and zone failure domain and
+// the vCenter topology of that failure domain.
+type VSpherePlatformFailureDomainSpec struct {
+	// name defines the arbitrary but unique name
+	// of a failure domain.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Name string `json:"name"`
+
+	// region defines the name of a region tag that will
+	// be attached to a vCenter datacenter. The tag
+	// category in vCenter must be named openshift-region.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=80
+	// +kubebuilder:validation:Required
+	Region string `json:"region"`
+
+	// zone defines the name of a zone tag that will
+	// be attached to a vCenter cluster. The tag
+	// category in vCenter must be named openshift-zone.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=80
+	// +kubebuilder:validation:Required
+	Zone string `json:"zone"`
+
+	// server is the fully-qualified domain name or the IP address of the vCenter server.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// ---
+	// + Validation is applied via a patch, we validate the format as either ipv4, ipv6 or hostname
+	Server string `json:"server"`
+
+	// Topology describes a given failure domain using vSphere constructs
+	// +kubebuilder:validation:Required
+	Topology VSpherePlatformTopology `json:"topology"`
+}
+
+// VSpherePlatformTopology holds the required and optional vCenter objects - datacenter,
+// computeCluster, networks, datastore and resourcePool - to provision virtual machines.
+type VSpherePlatformTopology struct {
+	// datacenter is the name of vCenter datacenter in which virtual machines will be located.
+	// The maximum length of the datacenter name is 80 characters.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=80
+	Datacenter string `json:"datacenter"`
+
+	// computeCluster the absolute path of the vCenter cluster
+	// in which virtual machine will be located.
+	// The absolute path is of the form /<datacenter>/host/<cluster>.
+	// The maximum length of the path is 2048 characters.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^/.*?/host/.*?`
+	ComputeCluster string `json:"computeCluster"`
+
+	// networks is the list of port group network names within this failure domain.
+	// Currently, we only support a single interface per RHCOS virtual machine.
+	// The available networks (port groups) can be listed using
+	// `govc ls 'network/*'`
+	// The single interface should be the absolute path of the form
+	// /<datacenter>/network/<portgroup>.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxItems=1
+	// +kubebuilder:validation:MinItems=1
+	Networks []string `json:"networks"`
+
+	// datastore is the absolute path of the datastore in which the
+	// virtual machine is located.
+	// The absolute path is of the form /<datacenter>/datastore/<datastore>
+	// The maximum length of the path is 2048 characters.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^/.*?/datastore/.*?`
+	Datastore string `json:"datastore"`
+
+	// resourcePool is the absolute path of the resource pool where virtual machines will be
+	// created. The absolute path is of the form /<datacenter>/host/<cluster>/Resources/<resourcepool>.
+	// The maximum length of the path is 2048 characters.
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^/.*?/host/.*?/Resources.*`
+	// +optional
+	ResourcePool string `json:"resourcePool,omitempty"`
+
+	// folder is the absolute path of the folder where
+	// virtual machines are located. The absolute path
+	// is of the form /<datacenter>/vm/<folder>.
+	// The maximum length of the path is 2048 characters.
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^/.*?/vm/.*?`
+	// +optional
+	Folder string `json:"folder,omitempty"`
+}
+
+// VSpherePlatformVCenterSpec stores the vCenter connection fields.
+// This is used by the vSphere CCM.
+type VSpherePlatformVCenterSpec struct {
+
+	// server is the fully-qualified domain name or the IP address of the vCenter server.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=255
+	// ---
+	// + Validation is applied via a patch, we validate the format as either ipv4, ipv6 or hostname
+	Server string `json:"server"`
+
+	// port is the TCP port that will be used to communicate to
+	// the vCenter endpoint.
+	// When omitted, this means the user has no opinion and
+	// it is up to the platform to choose a sensible default,
+	// which is subject to change over time.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=32767
+	// +optional
+	Port int32 `json:"port,omitempty"`
+
+	// The vCenter Datacenters in which the RHCOS
+	// vm guests are located. This field will
+	// be used by the Cloud Controller Manager.
+	// Each datacenter listed here should be used within
+	// a topology.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Datacenters []string `json:"datacenters"`
+}
+
+// VSpherePlatformNodeNetworkingSpec holds the network CIDR(s) and port group name for
+// including and excluding IP ranges in the cloud provider.
+// This would be used for example when multiple network adapters are attached to
+// a guest to help determine which IP address the cloud config manager should use
+// for the external and internal node networking.
+type VSpherePlatformNodeNetworkingSpec struct {
+	// networkSubnetCidr IP address on VirtualMachine's network interfaces included in the fields' CIDRs
+	// that will be used in respective status.addresses fields.
+	// ---
+	// + Validation is applied via a patch, we validate the format as cidr
+	// +optional
+	NetworkSubnetCIDR []string `json:"networkSubnetCidr,omitempty"`
+
+	// network VirtualMachine's VM Network names that will be used to when searching
+	// for status.addresses fields. Note that if internal.networkSubnetCIDR and
+	// external.networkSubnetCIDR are not set, then the vNIC associated to this network must
+	// only have a single IP address assigned to it.
+	// The available networks (port groups) can be listed using
+	// `govc ls 'network/*'`
+	// +optional
+	Network string `json:"network,omitempty"`
+
+	// excludeNetworkSubnetCidr IP addresses in subnet ranges will be excluded when selecting
+	// the IP address from the VirtualMachine's VM for use in the status.addresses fields.
+	// ---
+	// + Validation is applied via a patch, we validate the format as cidr
+	// +optional
+	ExcludeNetworkSubnetCIDR []string `json:"excludeNetworkSubnetCidr,omitempty"`
+}
+
+// VSpherePlatformNodeNetworking holds the external and internal node networking spec.
+type VSpherePlatformNodeNetworking struct {
+	// external represents the network configuration of the node that is externally routable.
+	// +optional
+	External VSpherePlatformNodeNetworkingSpec `json:"external"`
+	// internal represents the network configuration of the node that is routable only within the cluster.
+	// +optional
+	Internal VSpherePlatformNodeNetworkingSpec `json:"internal"`
+}
+
 // VSpherePlatformSpec holds the desired state of the vSphere infrastructure provider.
-// This only includes fields that can be modified in the cluster.
-type VSpherePlatformSpec struct{}
+// In the future the cloud provider operator, storage operator and machine operator will
+// use these fields for configuration.
+type VSpherePlatformSpec struct {
+	// vcenters holds the connection details for services to communicate with vCenter.
+	// Currently, only a single vCenter is supported.
+	// ---
+	// + If VCenters is not defined use the existing cloud-config configmap defined
+	// + in openshift-config.
+	// +openshift:enable:FeatureSets=TechPreviewNoUpgrade
+	// +kubebuilder:validation:MaxItems=1
+	// +kubebuilder:validation:MinItems=0
+	// +optional
+	VCenters []VSpherePlatformVCenterSpec `json:"vcenters,omitempty"`
+
+	// failureDomains contains the definition of region, zone and the vCenter topology.
+	// If this is omitted failure domains (regions and zones) will not be used.
+	// +openshift:enable:FeatureSets=TechPreviewNoUpgrade
+	// +optional
+	FailureDomains []VSpherePlatformFailureDomainSpec `json:"failureDomains,omitempty"`
+
+	// nodeNetworking contains the definition of internal and external network constraints for
+	// assigning the node's networking.
+	// If this field is omitted, networking defaults to the legacy
+	// address selection behavior which is to only support a single address and
+	// return the first one found.
+	// +openshift:enable:FeatureSets=TechPreviewNoUpgrade
+	// +optional
+	NodeNetworking VSpherePlatformNodeNetworking `json:"nodeNetworking,omitempty"`
+}
 
 // VSpherePlatformStatus holds the current status of the vSphere infrastructure provider.
 type VSpherePlatformStatus struct {
@@ -652,7 +991,7 @@ type VSpherePlatformStatus struct {
 // This only includes fields that can be modified in the cluster.
 type IBMCloudPlatformSpec struct{}
 
-//IBMCloudPlatformStatus holds the current status of the IBMCloud infrastructure provider.
+// IBMCloudPlatformStatus holds the current status of the IBMCloud infrastructure provider.
 type IBMCloudPlatformStatus struct {
 	// Location is where the cluster has been deployed
 	Location string `json:"location,omitempty"`

@@ -116,7 +116,7 @@ spec:
                   The default ingresscontroller domain will follow this pattern: \"*.<domain>\".
                   \n Once set, changing domain is not currently supported."
                 type: string
-              loadbalancer:
+              loadBalancer:
                 description: loadBalancer contains the load balancer details in general
                   which are not only specific to the underlying infrastructure provider
                   of the current cluster and are required for Ingress Controller to

@@ -37,6 +37,10 @@ spec:
       jsonPath: .status.unavailableReplicas
       name: Unavailable
       type: integer
+    - description: ControlPlaneMachineSet state
+      jsonPath: .spec.state
+      name: State
+      type: string
     - description: ControlPlaneMachineSet age
       jsonPath: .metadata.creationTimestamp
       name: Age
@@ -77,6 +81,9 @@ spec:
                 - 5
                 format: int32
                 type: integer
+                x-kubernetes-validations:
+                - message: replicas is immutable
+                  rule: self == oldSelf
               selector:
                 description: Label selector for Machines. Existing Machines selected
                   by this selector will be the ones affected by this ControlPlaneMachineSet.
@@ -125,6 +132,25 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: selector is immutable
+                  rule: self == oldSelf
+              state:
+                default: Inactive
+                description: State defines whether the ControlPlaneMachineSet is Active
+                  or Inactive. When Inactive, the ControlPlaneMachineSet will not
+                  take any action on the state of the Machines within the cluster.
+                  When Active, the ControlPlaneMachineSet will reconcile the Machines
+                  and will update the Machines as necessary. Once Active, a ControlPlaneMachineSet
+                  cannot be made Inactive. To prevent further action please remove
+                  the ControlPlaneMachineSet.
+                enum:
+                - Active
+                - Inactive
+                type: string
+                x-kubernetes-validations:
+                - message: state cannot be changed once Active
+                  rule: oldSelf != 'Active' || self == oldSelf
               strategy:
                 default:
                   type: RollingUpdate
@@ -227,6 +253,19 @@ spec:
                                   required:
                                   - type
                                   type: object
+                                  x-kubernetes-validations:
+                                  - message: id is required when type is ID, and forbidden
+                                      otherwise
+                                    rule: 'has(self.type) && self.type == ''ID'' ?  has(self.id)
+                                      : !has(self.id)'
+                                  - message: arn is required when type is ARN, and
+                                      forbidden otherwise
+                                    rule: 'has(self.type) && self.type == ''ARN''
+                                      ?  has(self.arn) : !has(self.arn)'
+                                  - message: filters is required when type is Filters,
+                                      and forbidden otherwise
+                                    rule: 'has(self.type) && self.type == ''Filters''
+                                      ?  has(self.filters) : !has(self.filters)'
                               type: object
                             type: array
                           azure:
@@ -260,25 +299,10 @@ spec:
                               - zone
                               type: object
                             type: array
-                          openstack:
-                            description: OpenStack configures failure domain information
-                              for the OpenStack platform.
-                            items:
-                              description: OpenStackFailureDomain configures failure
-                                domain information for the OpenStack platform
-                              properties:
-                                availabilityZone:
-                                  description: The availability zone from which to
-                                    launch the server.
-                                  type: string
-                              required:
-                              - availabilityZone
-                              type: object
-                            type: array
                           platform:
                             description: Platform identifies the platform for which
                               the FailureDomain represents. Currently supported values
-                              are AWS, Azure, GCP and OpenStack.
+                              are AWS, Azure, and GCP.
                             enum:
                             - ""
                             - AWS
@@ -300,6 +324,19 @@ spec:
                         required:
                         - platform
                         type: object
+                        x-kubernetes-validations:
+                        - message: aws configuration is required when platform is
+                            AWS, and forbidden otherwise
+                          rule: 'has(self.platform) && self.platform == ''AWS'' ?  has(self.aws)
+                            : !has(self.aws)'
+                        - message: azure configuration is required when platform is
+                            Azure, and forbidden otherwise
+                          rule: 'has(self.platform) && self.platform == ''Azure''
+                            ?  has(self.azure) : !has(self.azure)'
+                        - message: gcp configuration is required when platform is
+                            GCP, and forbidden otherwise
+                          rule: 'has(self.platform) && self.platform == ''GCP'' ?  has(self.gcp)
+                            : !has(self.gcp)'
                       metadata:
                         description: 'ObjectMeta is the standard object metadata More
                           info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
@@ -321,8 +358,29 @@ spec:
                             description: 'Map of string keys and values that can be
                               used to organize and categorize (scope and select) objects.
                               May match selectors of replication controllers and services.
-                              More info: http://kubernetes.io/docs/user-guide/labels'
+                              More info: http://kubernetes.io/docs/user-guide/labels.
+                              This field must contain both the ''machine.openshift.io/cluster-api-machine-role''
+                              and ''machine.openshift.io/cluster-api-machine-type''
+                              labels, both with a value of ''master''. It must also
+                              contain a label with the key ''machine.openshift.io/cluster-api-cluster''.'
                             type: object
+                            x-kubernetes-validations:
+                            - message: label 'machine.openshift.io/cluster-api-machine-role'
+                                is required, and must have value 'master'
+                              rule: '''machine.openshift.io/cluster-api-machine-role''
+                                in self && self[''machine.openshift.io/cluster-api-machine-role'']
+                                == ''master'''
+                            - message: label 'machine.openshift.io/cluster-api-machine-type'
+                                is required, and must have value 'master'
+                              rule: '''machine.openshift.io/cluster-api-machine-type''
+                                in self && self[''machine.openshift.io/cluster-api-machine-type'']
+                                == ''master'''
+                            - message: label 'machine.openshift.io/cluster-api-cluster'
+                                is required
+                              rule: '''machine.openshift.io/cluster-api-cluster''
+                                in self'
+                        required:
+                        - labels
                         type: object
                       spec:
                         description: Spec contains the desired configuration of the
@@ -605,8 +663,13 @@ spec:
                     type: object
                 required:
                 - machineType
-                - machines_v1beta1_machine_openshift_io
                 type: object
+                x-kubernetes-validations:
+                - message: machines_v1beta1_machine_openshift_io configuration is
+                    required when machineType is machines_v1beta1_machine_openshift_io,
+                    and forbidden otherwise
+                  rule: 'has(self.machineType) && self.machineType == ''machines_v1beta1_machine_openshift_io''
+                    ?  has(self.machines_v1beta1_machine_openshift_io) : !has(self.machines_v1beta1_machine_openshift_io)'
             required:
             - replicas
             - selector

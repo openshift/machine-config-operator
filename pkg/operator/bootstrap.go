@@ -245,15 +245,32 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 				name:     "manifests/on-prem/coredns-corefile.tmpl",
 				filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
 			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.yaml",
-				filename: "openstack/manifests/keepalived.yaml",
-			},
-			manifest{
-				name:     "manifests/on-prem/keepalived.conf.tmpl",
-				filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
-			},
 		)
+		apiLBConfig := infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
+		if apiLBConfig.APILoadBalancerType == "BGP" {
+			manifests = append(manifests,
+				manifest{
+					name:     "manifests/on-prem/frr.yaml",
+					filename: "openstack/manifests/frr.yaml",
+				},
+				manifest{
+					name:     "manifests/on-prem/frr.conf.tmpl",
+					filename: "openstack/static-pod-resources/frr/frr.conf.tmpl",
+				},
+			)
+		} else {
+			manifests = append(manifests,
+				manifest{
+					name:     "manifests/on-prem/keepalived.yaml",
+					filename: "openstack/manifests/keepalived.yaml",
+				},
+				manifest{
+					name:     "manifests/on-prem/keepalived.conf.tmpl",
+					filename: "openstack/static-pod-resources/keepalived/keepalived.conf.tmpl",
+				},
+			)
+		}
+
 	}
 
 	if infra.Status.PlatformStatus.Ovirt != nil {

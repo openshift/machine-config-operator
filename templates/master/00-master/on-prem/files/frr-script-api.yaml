@@ -1,0 +1,6 @@
+mode: 0755
+path: "/etc/kubernetes/static-pod-resources/frr/scripts/chk_ocp_script_api.sh.tmpl"
+contents:
+  inline: |
+    #!/bin/bash
+    /usr/bin/curl -kLfs https://localhost:{{`{{ .LBConfig.ApiPort }}`}}/readyz

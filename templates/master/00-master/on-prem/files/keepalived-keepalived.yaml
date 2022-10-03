@@ -10,14 +10,14 @@ contents:
     }
 
     # These are separate checks to provide the following behavior:
-    # If the loadbalancer is healthy then all is well regardless
-    # of what the local API status is. Both checks will return success and
+    # If the loadbalanced endpoint is responding then all is well regardless
+    # of what the local api status is. Both checks will return success and
     # we'll have the maximum priority. This means as long as there is a node
     # with a functional loadbalancer it will get the VIP.
-    # If all of the loadbalancers go down but the local API is still running,
+    # If all of the loadbalancers go down but the local api is still running,
     # the _both check will still succeed and allow any node with a functional
-    # API to take the VIP. This isn't preferred because it means all API
-    # traffic will go through one node, but at least it keeps the API available.
+    # api to take the VIP. This isn't preferred because it means all api
+    # traffic will go through one node, but at least it keeps the api available.
     vrrp_script chk_ocp_lb {
         script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script.sh"
         interval 2

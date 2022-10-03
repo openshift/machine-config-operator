@@ -308,3 +308,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+// https://github.com/openshift/api/pull/1243
+replace github.com/openshift/api => github.com/shiftstack/api v0.0.0-20220930195829-95e81946c1ab

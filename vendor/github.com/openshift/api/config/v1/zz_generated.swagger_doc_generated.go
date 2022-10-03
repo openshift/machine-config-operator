@@ -1251,8 +1251,61 @@ func (NutanixPrismEndpoint) SwaggerDoc() map[string]string {
 	return map_NutanixPrismEndpoint
 }
 
+var map_OpenStackAPIBGPConfiguration = map[string]string{
+	"speakers": "speakers is a list of BGP speaker configurations. We require a speaker configuration for every failure domain hosting a control plane node. The list must contain at least one item.",
+}
+
+func (OpenStackAPIBGPConfiguration) SwaggerDoc() map[string]string {
+	return map_OpenStackAPIBGPConfiguration
+}
+
+var map_OpenStackAPIBGPPeer = map[string]string{
+	"asn":      "asn is the Autonomous System number of the peer.",
+	"ip":       "ip is the IP address of the peer, as reachable from the Control plane machine. It may be either IPv4 or IPv6",
+	"password": "password for BGP authentication against the peer",
+}
+
+func (OpenStackAPIBGPPeer) SwaggerDoc() map[string]string {
+	return map_OpenStackAPIBGPPeer
+}
+
+var map_OpenStackAPIBGPSpeaker = map[string]string{
+	"":              "OpenStackAPIBGPSpeaker describes the BGP autonomous system that will contain the API VIP for a specific failure domain.",
+	"failureDomain": "failureDomain is the name of a failure domain which this BGP configuration applies to. A failure domain with that name must be defined in the OpenStack platform spec.",
+	"asn":           "asn specifies the Autonomous System number to be used by the BGP speaker of the Control plane node. Control plane nodes in a failure domain where this field is not set are each assigned a distinct number: master-0 4273211230, master-1 4273211231, and master-2 4273211232. If multiple Control plane nodes are assigned the same failure domain, this field cannot be set.",
+	"peers":         "peers is a list of all BGP peers of the speaker for the VIPs of this failure domain. The list must contain at least one item.",
+}
+
+func (OpenStackAPIBGPSpeaker) SwaggerDoc() map[string]string {
+	return map_OpenStackAPIBGPSpeaker
+}
+
+var map_OpenStackAPILoadBalancer = map[string]string{
+	"":     "OpenStackAPILoadBalancer defines how inbound traffic is routed to the API servers.",
+	"type": "apiLoadBalancerType defines the type of loadbalancer which will be configured for the API server. Permitted values are `VRRP` and `BGP`. When omitted, this means no opinion and the platform is left to choose a reasonable default. This default is subject to change over time. The current default value is `VRRP`.",
+	"bgp":  "bgpConfiguration describes the configuration of a BGP load balancer for the API server. It is only used if apiLoadBalancer is set to `BGP`.",
+}
+
+func (OpenStackAPILoadBalancer) SwaggerDoc() map[string]string {
+	return map_OpenStackAPILoadBalancer
+}
+
+var map_OpenStackFailureDomain = map[string]string{
+	"":            "OpenStackFailureDomain specifies a failure domain for an OpenStack server. Specifically, it specifies a set of values which will be set on all machines using the failure domain.",
+	"name":        "name is an arbitrary, unique name for this failure domain. This name can be used to refer to this failure domain when building a BGP speaker configuration.",
+	"computeZone": "computeZone specifies the OpenStack Compute availability zone for all servers in this failure domain.\n\nIf not specified the servers are provisioned without reference to availability zones. Server placement is delegated to the OpenStack defaults. ",
+	"storageZone": "storageZone specifies the OpenStack storage availability zone for all volumes in this failure domain.\n\nIf not specified the volumes are provisioned without reference to availability zones. Volume placement is delegated to the OpenStack defaults. ",
+	"subnetID":    "subnetID specifies an OpenStack subnet ID which will be attached as the first NIC of every server in this failure domain.",
+}
+
+func (OpenStackFailureDomain) SwaggerDoc() map[string]string {
+	return map_OpenStackFailureDomain
+}
+
 var map_OpenStackPlatformSpec = map[string]string{
-	"": "OpenStackPlatformSpec holds the desired state of the OpenStack infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"":                "OpenStackPlatformSpec holds the desired state of the OpenStack infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"failureDomains":  "failureDomains is a list of failure domains available to Machines. Each failure domain has a name that can be referenced in Machines; Machines referencing a failure domain will be set the corresponding failure domain values. If no failure domain is defined, Machines can't reference any. If a Machine doesn't reference a failure domain, it is spun in the cluster subnet, using the OpenStack default availability zones.",
+	"apiLoadBalancer": "apiLoadBalancer defines how traffic destined to the OpenShift API is routed to the API servers. When omitted, this means no opinion and the platform is left to choose a reasonable default. This default is subject to change over time. The current default configuration uses VRRP.",
 }
 
 func (OpenStackPlatformSpec) SwaggerDoc() map[string]string {
@@ -1370,8 +1423,45 @@ func (PowerVSServiceEndpoint) SwaggerDoc() map[string]string {
 	return map_PowerVSServiceEndpoint
 }
 
+var map_VSpherePlatformFailureDomainSpec = map[string]string{
+	"":         "VSpherePlatformFailureDomainSpec holds the region and zone failure domain and the vCenter topology of that failure domain.",
+	"name":     "name defines the arbitrary but unique name of a failure domain.",
+	"region":   "region defines the name of a region tag that will be attached to a vCenter datacenter. The tag category in vCenter must be named openshift-region.",
+	"zone":     "zone defines the name of a zone tag that will be attached to a vCenter cluster. The tag category in vCenter must be named openshift-zone.",
+	"server":   "server is the fully-qualified domain name or the IP address of the vCenter server.",
+	"topology": "Topology describes a given failure domain using vSphere constructs",
+}
+
+func (VSpherePlatformFailureDomainSpec) SwaggerDoc() map[string]string {
+	return map_VSpherePlatformFailureDomainSpec
+}
+
+var map_VSpherePlatformNodeNetworking = map[string]string{
+	"":         "VSpherePlatformNodeNetworking holds the external and internal node networking spec.",
+	"external": "external represents the network configuration of the node that is externally routable.",
+	"internal": "internal represents the network configuration of the node that is routable only within the cluster.",
+}
+
+func (VSpherePlatformNodeNetworking) SwaggerDoc() map[string]string {
+	return map_VSpherePlatformNodeNetworking
+}
+
+var map_VSpherePlatformNodeNetworkingSpec = map[string]string{
+	"":                         "VSpherePlatformNodeNetworkingSpec holds the network CIDR(s) and port group name for including and excluding IP ranges in the cloud provider. This would be used for example when multiple network adapters are attached to a guest to help determine which IP address the cloud config manager should use for the external and internal node networking.",
+	"networkSubnetCidr":        "networkSubnetCidr IP address on VirtualMachine's network interfaces included in the fields' CIDRs that will be used in respective status.addresses fields.",
+	"network":                  "network VirtualMachine's VM Network names that will be used to when searching for status.addresses fields. Note that if internal.networkSubnetCIDR and external.networkSubnetCIDR are not set, then the vNIC associated to this network must only have a single IP address assigned to it. The available networks (port groups) can be listed using `govc ls 'network/*'`",
+	"excludeNetworkSubnetCidr": "excludeNetworkSubnetCidr IP addresses in subnet ranges will be excluded when selecting the IP address from the VirtualMachine's VM for use in the status.addresses fields.",
+}
+
+func (VSpherePlatformNodeNetworkingSpec) SwaggerDoc() map[string]string {
+	return map_VSpherePlatformNodeNetworkingSpec
+}
+
 var map_VSpherePlatformSpec = map[string]string{
-	"": "VSpherePlatformSpec holds the desired state of the vSphere infrastructure provider. This only includes fields that can be modified in the cluster.",
+	"":               "VSpherePlatformSpec holds the desired state of the vSphere infrastructure provider. In the future the cloud provider operator, storage operator and machine operator will use these fields for configuration.",
+	"vcenters":       "vcenters holds the connection details for services to communicate with vCenter. Currently, only a single vCenter is supported.",
+	"failureDomains": "failureDomains contains the definition of region, zone and the vCenter topology. If this is omitted failure domains (regions and zones) will not be used.",
+	"nodeNetworking": "nodeNetworking contains the definition of internal and external network constraints for assigning the node's networking. If this field is omitted, networking defaults to the legacy address selection behavior which is to only support a single address and return the first one found.",
 }
 
 func (VSpherePlatformSpec) SwaggerDoc() map[string]string {
@@ -1389,6 +1479,31 @@ var map_VSpherePlatformStatus = map[string]string{
 
 func (VSpherePlatformStatus) SwaggerDoc() map[string]string {
 	return map_VSpherePlatformStatus
+}
+
+var map_VSpherePlatformTopology = map[string]string{
+	"":               "VSpherePlatformTopology holds the required and optional vCenter objects - datacenter, computeCluster, networks, datastore and resourcePool - to provision virtual machines.",
+	"datacenter":     "datacenter is the name of vCenter datacenter in which virtual machines will be located. The maximum length of the datacenter name is 80 characters.",
+	"computeCluster": "computeCluster the absolute path of the vCenter cluster in which virtual machine will be located. The absolute path is of the form /<datacenter>/host/<cluster>. The maximum length of the path is 2048 characters.",
+	"networks":       "networks is the list of port group network names within this failure domain. Currently, we only support a single interface per RHCOS virtual machine. The available networks (port groups) can be listed using `govc ls 'network/*'` The single interface should be the absolute path of the form /<datacenter>/network/<portgroup>.",
+	"datastore":      "datastore is the absolute path of the datastore in which the virtual machine is located. The absolute path is of the form /<datacenter>/datastore/<datastore> The maximum length of the path is 2048 characters.",
+	"resourcePool":   "resourcePool is the absolute path of the resource pool where virtual machines will be created. The absolute path is of the form /<datacenter>/host/<cluster>/Resources/<resourcepool>. The maximum length of the path is 2048 characters.",
+	"folder":         "folder is the absolute path of the folder where virtual machines are located. The absolute path is of the form /<datacenter>/vm/<folder>. The maximum length of the path is 2048 characters.",
+}
+
+func (VSpherePlatformTopology) SwaggerDoc() map[string]string {
+	return map_VSpherePlatformTopology
+}
+
+var map_VSpherePlatformVCenterSpec = map[string]string{
+	"":            "VSpherePlatformVCenterSpec stores the vCenter connection fields. This is used by the vSphere CCM.",
+	"server":      "server is the fully-qualified domain name or the IP address of the vCenter server.",
+	"port":        "port is the TCP port that will be used to communicate to the vCenter endpoint. When omitted, this means the user has no opinion and it is up to the platform to choose a sensible default, which is subject to change over time.",
+	"datacenters": "The vCenter Datacenters in which the RHCOS vm guests are located. This field will be used by the Cloud Controller Manager. Each datacenter listed here should be used within a topology.",
+}
+
+func (VSpherePlatformVCenterSpec) SwaggerDoc() map[string]string {
+	return map_VSpherePlatformVCenterSpec
 }
 
 var map_AWSIngressSpec = map[string]string{
@@ -1460,7 +1575,7 @@ var map_IngressSpec = map[string]string{
 	"appsDomain":           "appsDomain is an optional domain to use instead of the one specified in the domain field when a Route is created without specifying an explicit host. If appsDomain is nonempty, this value is used to generate default host values for Route. Unlike domain, appsDomain may be modified after installation. This assumes a new ingresscontroller has been setup with a wildcard certificate.",
 	"componentRoutes":      "componentRoutes is an optional list of routes that are managed by OpenShift components that a cluster-admin is able to configure the hostname and serving certificate for. The namespace and name of each route in this list should match an existing entry in the status.componentRoutes list.\n\nTo determine the set of configurable Routes, look at namespace and name of entries in the .status.componentRoutes list, where participating operators write the status of configurable routes.",
 	"requiredHSTSPolicies": "requiredHSTSPolicies specifies HSTS policies that are required to be set on newly created  or updated routes matching the domainPattern/s and namespaceSelector/s that are specified in the policy. Each requiredHSTSPolicy must have at least a domainPattern and a maxAge to validate a route HSTS Policy route annotation, and affect route admission.\n\nA candidate route is checked for HSTS Policies if it has the HSTS Policy route annotation: \"haproxy.router.openshift.io/hsts_header\" E.g. haproxy.router.openshift.io/hsts_header: max-age=31536000;preload;includeSubDomains\n\n- For each candidate route, if it matches a requiredHSTSPolicy domainPattern and optional namespaceSelector, then the maxAge, preloadPolicy, and includeSubdomainsPolicy must be valid to be admitted.  Otherwise, the route is rejected. - The first match, by domainPattern and optional namespaceSelector, in the ordering of the RequiredHSTSPolicies determines the route's admission status. - If the candidate route doesn't match any requiredHSTSPolicy domainPattern and optional namespaceSelector, then it may use any HSTS Policy annotation.\n\nThe HSTS policy configuration may be changed after routes have already been created. An update to a previously admitted route may then fail if the updated route does not conform to the updated HSTS policy configuration. However, changing the HSTS policy configuration will not cause a route that is already admitted to stop working.\n\nNote that if there are no RequiredHSTSPolicies, any HSTS Policy annotation on the route is valid.",
-	"loadbalancer":         "loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure provider of the current cluster and are required for Ingress Controller to work on OpenShift.",
+	"loadBalancer":         "loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure provider of the current cluster and are required for Ingress Controller to work on OpenShift.",
 }
 
 func (IngressSpec) SwaggerDoc() map[string]string {

@@ -317,8 +317,11 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
+	funcs["onPremPlatformBGPConfiguration"] = onPremPlatformBGPConfiguration
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
+	funcs["isFrrEnabled"] = isFrrEnabled
+	funcs["isKeepalivedEnabled"] = isKeepalivedEnabled
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -605,5 +608,89 @@ func urlPort(u string) (interface{}, error) {
 		return "80", nil
 	default:
 		return "", fmt.Errorf("unknown scheme in %s", u)
+	}
+}
+
+func onPremPlatformBGPConfiguration(cfg RenderConfig) (interface{}, error) {
+	// Here at some point we'll get the Failure Domain from the Machine
+	const failureDomain = "default"
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.OpenStackPlatformType:
+			apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
+			if apiLBConfig.APILoadBalancerType != "BGP" {
+				return nil, fmt.Errorf("invalid API Load Balancer type for BGP configuration")
+			}
+			for _, speaker := range apiLBConfig.BGP.Speakers {
+				// if a failure domain corresponding to the machine is found in the BGP configuration, return the configuration
+				if speaker.FailureDomain == failureDomain {
+					if speaker.FailureDomain == "default" {
+						if speaker.ASN == "" {
+							speaker.ASN = "4273211230"
+						}
+						return speaker, nil
+					}
+				}
+			}
+		default:
+			return nil, fmt.Errorf("invalid platform for BGP configuration")
+		}
+	} else {
+		return nil, fmt.Errorf("")
+	}
+	return nil, fmt.Errorf("no BGP configuration was found")
+}
+
+func isKeepalivedEnabled(cfg RenderConfig) bool {
+	ips, err := onPremPlatformAPIServerInternalIPs(cfg)
+	if err != nil {
+		return false
+	}
+	if ips != nil {
+		if cfg.Infra.Status.PlatformStatus != nil {
+			switch cfg.Infra.Status.PlatformStatus.Type {
+			case configv1.OpenStackPlatformType:
+				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
+				if apiLBConfig.APILoadBalancerType != "BGP" {
+					return true
+				}
+				return false
+			default:
+				// If the platform is not OpenStack, keepalived is enabled but in the future
+				// we might want to disable it for other platforms if FRR is being used.
+				return true
+			}
+		} else {
+			return false
+		}
+	} else {
+		return false
+	}
+}
+
+func isFrrEnabled(cfg RenderConfig) bool {
+	ips, err := onPremPlatformAPIServerInternalIPs(cfg)
+	if err != nil {
+		return false
+	}
+	if ips != nil {
+		if cfg.Infra.Status.PlatformStatus != nil {
+			switch cfg.Infra.Status.PlatformStatus.Type {
+			case configv1.OpenStackPlatformType:
+				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
+				if apiLBConfig.APILoadBalancerType == "BGP" {
+					return true
+				}
+				return false
+			default:
+				// If the platform is not OpenStack, frr is disabled but in the future
+				// we might want to enable it for other platforms if FRR is being used.
+				return false
+			}
+		} else {
+			return false
+		}
+	} else {
+		return false
 	}
 }
