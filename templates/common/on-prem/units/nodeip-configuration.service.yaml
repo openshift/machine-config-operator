@@ -6,9 +6,9 @@ contents: |
   # This only applies to VIP managing environments where the kubelet and crio IP
   # address picking logic is flawed and may end up selecting an address from a
   # different subnet or a deprecated address
-  Wants=network-online.target crio-wipe.service
-  After=network-online.target ignition-firstboot-complete.service crio-wipe.service
-  Before=kubelet.service crio.service
+  Wants=NetworkManager-wait-online.service crio-wipe.service
+  After=NetworkManager-wait-online.service ignition-firstboot-complete.service crio-wipe.service
+  Before=kubelet.service crio.service ovs-configuration.service
 
   [Service]
   # Need oneshot to delay kubelet
@@ -23,6 +23,7 @@ contents: |
     --net=host \
     --security-opt label=disable \
     --volume /etc/systemd/system:/etc/systemd/system \
+    --volume /run/nodeip-configuration:/run/nodeip-configuration \
     {{ .Images.baremetalRuntimeCfgImage }} \
     node-ip \
     set --retry-on-failure \
@@ -31,7 +32,7 @@ contents: |
     sleep 5; \
     done"
   ExecStart=/bin/systemctl daemon-reload
-
+  ExecStartPre=/bin/mkdir -p /run/nodeip-configuration
   {{if .Proxy -}}
   EnvironmentFile=/etc/mco/proxy.env
   {{end -}}
