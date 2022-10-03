@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	emptyInput      = ""
-	cgroupv2Feature = "CGroupsV2"
+	emptyInput              = ""
+	cgroupv2Feature         = "CGroupsV2"
+	workloadsCapacitySuffix = "workload.openshift.io/cores"
 )
 
 func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, userDefinedSystemReserved map[string]string) *ign3types.File {

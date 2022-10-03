@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -78,6 +79,18 @@ func (ctrl *Controller) syncInfraConfigHandler(key string) error {
 		return nil
 	}
 
+	// When it comes to single node, we'll need to do an extra check to account for upgrades
+	// and pre-existing installs that are already configured for CPU Partitioning.
+	// We collect the partitioning status of the nodes and save them by role.
+	singleNodeRoleIsConfigured := map[string]bool{}
+	if infraConfig.Status.InfrastructureTopology == osev1.SingleReplicaTopologyMode {
+		nodes, err := ctrl.kubeClient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			return fmt.Errorf("could not fetch Infra: %w", err)
+		}
+		singleNodeRoleIsConfigured = collectNodePartitioningStatus(nodes.Items)
+	}
+
 	// Find all MachineConfigPools
 	mcpPools, err := ctrl.mcpLister.List(labels.Everything())
 	if err != nil {
@@ -105,6 +118,12 @@ func (ctrl *Controller) syncInfraConfigHandler(key string) error {
 				return err
 			}
 			mc.Spec.Config = runtime.RawExtension{Raw: rawIgnition}
+		}
+
+		// If the MC for Partitioning doesn't exist and the single node role is already configured
+		// We skip this as it's not needed.
+		if isNotFound && singleNodeRoleIsConfigured[role] {
+			continue
 		}
 
 		// Create or Update, on conflict retry
@@ -260,4 +279,26 @@ func cpuPartitionIgn() ign3types.Config {
 
 func cpuPartitionMCName(role string) string {
 	return fmt.Sprintf("01-%s-cpu-partitioning", role)
+}
+
+func containsCPUResource(resources corev1.ResourceList) bool {
+	for k := range resources {
+		if strings.Contains(k.String(), workloadsCapacitySuffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func collectNodePartitioningStatus(nodes []corev1.Node) map[string]bool {
+	result := map[string]bool{}
+	for _, node := range nodes {
+		_, isMaster := node.Labels["node-role.kubernetes.io/master"]
+		if isMaster {
+			result["master"] = containsCPUResource(node.Status.Allocatable)
+		} else {
+			result["worker"] = containsCPUResource(node.Status.Allocatable)
+		}
+	}
+	return result
 }

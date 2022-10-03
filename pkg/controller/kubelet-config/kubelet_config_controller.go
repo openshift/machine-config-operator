@@ -75,6 +75,7 @@ var errCouldNotFindMCPSet = errors.New("could not find any MachineConfigPool set
 type Controller struct {
 	templatesDir string
 
+	kubeClient    clientset.Interface
 	client        mcfgclientset.Interface
 	configClient  configclientset.Interface
 	eventRecorder record.EventRecorder
@@ -131,6 +132,7 @@ func New(
 		templatesDir:     templatesDir,
 		client:           mcfgClient,
 		configClient:     configclient,
+		kubeClient:       kubeClient,
 		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "machineconfigcontroller-kubeletconfigcontroller"}),
 		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-kubeletconfigcontroller"),
 		featureQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineconfigcontroller-featurecontroller"),
