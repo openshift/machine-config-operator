@@ -22,8 +22,8 @@ contents:
         script "/usr/bin/timeout 1.9 /etc/keepalived/chk_ocp_script.sh"
         interval 2
         weight 20
-        rise 3
-        fall 3
+        rise 1
+        fall 1
     }
 
     vrrp_script chk_ocp_both {
@@ -32,8 +32,8 @@ contents:
         # Use a smaller weight for this check so it won't trigger the move from
         # bootstrap to master by itself.
         weight 5
-        rise 3
-        fall 3
+        rise 1
+        fall 1
     }
 
     # TODO: Improve this check. The port is assumed to be alive.
