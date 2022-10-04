@@ -33,6 +33,10 @@ spec:
             summary: "Paused machine configuration pool '{{$labels.pool}}' is blocking a necessary certificate rotation and must be unpaused before the current kube-apiserver-to-kubelet-signer certificate expires in {{ $value | humanizeDuration }}."
             description: "Machine config pools have a 'pause' feature, which allows config to be rendered, but prevents it from being rolled out to the nodes. This alert indicates that a certificate rotation has taken place, and the new kubelet-ca certificate bundle has been rendered into a machine config, but because the pool '{{$labels.pool}}' is paused, the config cannot be rolled out to the nodes in that pool. You will notice almost immediately that for nodes in pool '{{$labels.pool}}', pod logs will not be visible in the console and interactive commands (oc log, oc exec, oc debug, oc attach) will not work. You must unpause machine config pool '{{$labels.pool}}' to let the certificates through before the kube-apiserver-to-kubelet-signer certificate expires. You have approximately {{ $value | humanizeDuration }} remaining before this happens and nodes in '{{$labels.pool}}' cease to function properly." 
             runbook_url: https://github.com/openshift/blob/master/alerts/machine-config-operator/MachineConfigControllerPausedPoolKubeletCA.md
+    - name: os-image-override.rules
+      rules:
+        - expr: sum(os_image_url_override)
+          record: os_image_url_override:sum
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
