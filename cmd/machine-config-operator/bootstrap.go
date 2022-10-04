@@ -133,7 +133,6 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 		imgstream := resourceread.ReadImageStreamV1OrDie(imageRefData)
 
 		bootstrapOpts.mcoImage = findImageOrDie(imgstream, "machine-config-operator")
-		bootstrapOpts.oscontentImage = findImageOrDie(imgstream, "machine-os-content")
 		bootstrapOpts.keepalivedImage = findImageOrDie(imgstream, "keepalived-ipfailover")
 		bootstrapOpts.corednsImage = findImageOrDie(imgstream, "coredns")
 		bootstrapOpts.baremetalRuntimeCfgImage = findImageOrDie(imgstream, "baremetal-runtimecfg")
@@ -155,7 +154,6 @@ func runBootstrapCmd(_ *cobra.Command, _ []string) {
 	imgs := operator.Images{
 		RenderConfigImages: operator.RenderConfigImages{
 			MachineConfigOperator:          bootstrapOpts.mcoImage,
-			MachineOSContent:               bootstrapOpts.oscontentImage,
 			KeepalivedBootstrap:            bootstrapOpts.keepalivedImage,
 			CorednsBootstrap:               bootstrapOpts.corednsImage,
 			BaremetalRuntimeCfgBootstrap:   bootstrapOpts.baremetalRuntimeCfgImage,

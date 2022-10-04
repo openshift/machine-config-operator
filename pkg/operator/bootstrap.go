@@ -138,7 +138,6 @@ func RenderBootstrap(
 
 	spec.RootCAData = bundle
 	spec.PullSecret = nil
-	spec.OSImageURL = imgs.MachineOSContent
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
 	spec.ReleaseImage = releaseImage
