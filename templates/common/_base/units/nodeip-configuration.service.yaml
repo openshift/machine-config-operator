@@ -27,7 +27,7 @@ contents: |
     --prefer-ipv6 \
     {{end -}}
     --retry-on-failure \
-    $KUBELET_NODEIP_HINT; \
+    ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
     do \
     sleep 5; \
     done"
