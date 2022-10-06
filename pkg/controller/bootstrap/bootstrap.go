@@ -182,8 +182,11 @@ func (b *Bootstrap) Run(destDir string) error {
 		}
 		configs = append(configs, kconfigs...)
 	}
-	if err := mcfgv1.ProxyValidation(cconfig.Spec.Proxy); err != nil {
-		return err
+
+	if releaseVersion, ok := cconfig.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]; ok {
+		if err := ctrlcommon.ProxyValidation(cconfig.Spec.Proxy, releaseVersion, icspRules); err != nil {
+			return err
+		}
 	}
 
 	fpools, gconfigs, err := render.RunBootstrap(pools, configs, cconfig)

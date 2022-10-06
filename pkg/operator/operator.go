@@ -9,6 +9,8 @@ import (
 	"github.com/golang/glog"
 
 	configclientset "github.com/openshift/client-go/config/clientset/versioned"
+	operatorlisterv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
+
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	apiextclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -32,6 +34,8 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	configinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
+	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
+
 	configlistersv1 "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 
@@ -86,6 +90,7 @@ type Operator struct {
 	oseKubeAPILister corelisterv1.ConfigMapLister
 	nodeLister       corelisterv1.NodeLister
 	dnsLister        configlistersv1.DNSLister
+	icspLister       operatorlisterv1alpha1.ImageContentSourcePolicyLister
 
 	crdListerSynced                  cache.InformerSynced
 	deployListerSynced               cache.InformerSynced
@@ -105,6 +110,7 @@ type Operator struct {
 	nodeListerSynced                 cache.InformerSynced
 	dnsListerSynced                  cache.InformerSynced
 	maoSecretInformerSynced          cache.InformerSynced
+	icspListerSynced                 cache.InformerSynced
 
 	// queue only ever has one item, but it has nice error handling backoff/retry semantics
 	queue workqueue.RateLimitingInterface
@@ -132,6 +138,7 @@ func New(
 	networkInformer configinformersv1.NetworkInformer,
 	proxyInformer configinformersv1.ProxyInformer,
 	dnsInformer configinformersv1.DNSInformer,
+	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	client mcfgclientset.Interface,
 	kubeClient kubernetes.Interface,
 	apiExtClient apiextclientset.Interface,
@@ -180,6 +187,7 @@ func New(
 		nodeInformer.Informer(),
 		dnsInformer.Informer(),
 		maoSecretInformer.Informer(),
+		icspInformer.Informer(),
 	} {
 		i.AddEventHandler(optr.eventHandler())
 	}
@@ -219,6 +227,8 @@ func New(
 	optr.networkListerSynced = networkInformer.Informer().HasSynced
 	optr.dnsLister = dnsInformer.Lister()
 	optr.dnsListerSynced = dnsInformer.Informer().HasSynced
+	optr.icspLister = icspInformer.Lister()
+	optr.icspListerSynced = icspInformer.Informer().HasSynced
 
 	optr.vStore.Set("operator", os.Getenv("RELEASE_VERSION"))
 

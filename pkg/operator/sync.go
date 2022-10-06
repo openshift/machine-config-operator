@@ -16,9 +16,11 @@ import (
 
 	"github.com/golang/glog"
 
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -301,9 +303,22 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 		}
 	}
 	spec.AdditionalTrustBundle = trustBundle
-
-	if proxy != nil {
-		if err := mcfgv1.ProxyValidation(&proxy.Status); err != nil {
+	clusterversionCfg, err := optr.configClient.ConfigV1().ClusterVersions().Get(context.TODO(), "version", metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		glog.Infof("ClusterVersionConfig 'version' does not exist or has been deleted")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if proxy != nil && clusterversionCfg != nil {
+		icspRules, err := optr.icspLister.List(labels.Everything())
+		if err != nil && errors.IsNotFound(err) {
+			icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
+		} else if err != nil {
+			return err
+		}
+		if err := ctrlcommon.ProxyValidation(&proxy.Status, clusterversionCfg.Status.Desired.Version, icspRules); err != nil {
 			return err
 		}
 	}

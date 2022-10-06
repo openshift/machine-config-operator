@@ -12,6 +12,10 @@ COPY --from=builder /go/src/github.com/openshift/machine-config-operator/instroo
 RUN cd / && tar xf /tmp/instroot.tar && rm -f /tmp/instroot.tar
 COPY install /manifests
 
+RUN dnf -y update && dnf -y reinstall shadow-utils && \
+dnf -y install skopeo && dnf -y install openshift-clients && \
+rm -rf /var/cache /var/log/dnf*
+
 RUN if [[ "${TAGS}" == "fcos" ]] || [[ "${TAGS}" == "scos" ]]; then \
     # comment out non-base/extensions image-references entirely for fcos/scos
     sed -i '/- name: rhel-coreos-8-/,+3 s/^/#/' /manifests/image-references && \
@@ -21,11 +25,6 @@ RUN if [[ "${TAGS}" == "fcos" ]] || [[ "${TAGS}" == "scos" ]]; then \
     if [[ "${TAGS}" == "fcos" ]]; then sed -i 's/rhel-coreos-8/fedora-coreos/g' /manifests/*; \
     elif [[ "${TAGS}" == "scos" ]]; then sed -i 's/rhel-coreos-8/centos-stream-coreos-9/g' /manifests/*; fi && \
     if ! rpm -q util-linux; then yum install -y util-linux && yum clean all && rm -rf /var/cache/yum/*; fi
-
-RUN dnf -y update && dnf -y reinstall shadow-utils && \
-dnf -y install skopeo && \
-rm -rf /var/cache /var/log/dnf*
-
 COPY templates /etc/mcc/templates
 ENTRYPOINT ["/usr/bin/machine-config-operator"]
 LABEL io.openshift.release.operator true

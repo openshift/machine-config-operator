@@ -14,11 +14,16 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"os/exec"
 	"reflect"
 	"sort"
 	"strings"
+	"time"
+
+	runtimeutils "github.com/openshift/runtime-utils/pkg/registries"
 
 	"github.com/clarketm/json"
+	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	fcctbase "github.com/coreos/fcct/base/v0_1"
 	"github.com/coreos/ign-converter/translate/v23tov30"
 	"github.com/coreos/ign-converter/translate/v32tov22"
@@ -39,6 +44,8 @@ import (
 	validate3 "github.com/coreos/ignition/v2/config/validate"
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	apicfgv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/vincent-petithory/dataurl"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1000,4 +1007,136 @@ func GetDefaultBaseImageContainer(cconfigspec *mcfgv1.ControllerConfigSpec) stri
 		return cconfigspec.BaseOSContainerImage
 	}
 	return cconfigspec.OSImageURL
+}
+
+// ProxyValidation inspects the proxyTestImage to validate if the http proxy is valid.
+func ProxyValidation(proxy *apicfgv1.ProxyStatus, releaseVerision string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) error {
+	if proxy == nil {
+		return nil
+	}
+
+	cnoImg, err := cnoImageSpec(releaseVerision, icspRules)
+	if err != nil || cnoImg == "" {
+		return fmt.Errorf("%w: error retrieving CNO image pull spec", err)
+	}
+
+	return skopeoInspectUseProxy(cnoImg, proxy.HTTPProxy, proxy.HTTPSProxy)
+}
+
+func cnoImageSpec(releaseVersion string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (string, error) {
+	const (
+		tagName           = "cluster-network-operator"
+		imageInfo         = "adm release info %s --image-for %s"
+		imageInfoWithICSP = "adm release info %s --image-for %s --icsp-file %s"
+	)
+
+	oc, err := exec.LookPath("oc")
+	if err != nil {
+		return "", err
+	}
+
+	cmd := fmt.Sprintf(imageInfo, releaseVersion, tagName)
+	if len(icspRules) > 0 {
+		icspfile, err := generateICSPFile(icspRules)
+		if err != nil {
+			return "", err
+		}
+		cmd = fmt.Sprintf(imageInfoWithICSP, releaseVersion, tagName, icspfile)
+		defer os.Remove(icspfile)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	args := strings.Split(cmd, " ")
+	cmdExec := exec.CommandContext(ctx, oc, args...)
+	rawOut, err := cmdExec.Output()
+	if err != nil {
+		return "", fmt.Errorf("%w: error running %s %s: %s", err, oc, strings.Join(args, " "), string(rawOut))
+	}
+	return strings.TrimSpace(string(rawOut)), nil
+}
+
+func generateICSPFile(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (string, error) {
+	regisConf := &sysregistriesv2.V2RegistriesConf{}
+	// process the icspRules to registries.conf if mutiple icsp exist in icspRules
+	runtimeutils.EditRegistriesConfig(regisConf, nil, nil, icspRules)
+	icsp := apioperatorsv1alpha1.ImageContentSourcePolicy{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: apioperatorsv1alpha1.SchemeGroupVersion.String(),
+			Kind:       "ImageContentSourcePolicy",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "image-policy",
+		},
+	}
+	rdms := []apioperatorsv1alpha1.RepositoryDigestMirrors{}
+	for _, reg := range regisConf.Registries {
+		mirrors := []string{}
+		for _, m := range reg.Mirrors {
+			mirrors = append(mirrors, m.Location)
+		}
+		rdm := apioperatorsv1alpha1.RepositoryDigestMirrors{
+			Source:  reg.Location,
+			Mirrors: mirrors,
+		}
+		rdms = append(rdms, rdm)
+	}
+	icsp.Spec.RepositoryDigestMirrors = rdms
+
+	// Convert to json first so json tags are handled
+	jsonData, err := json.Marshal(&icsp)
+	if err != nil {
+		return "", err
+	}
+	contents, err := yaml.JSONToYAML(jsonData)
+	if err != nil {
+		return "", err
+	}
+	icspfile, err := os.CreateTemp("", "icsp-file")
+	if err != nil {
+		return "", err
+	}
+	if _, err := icspfile.Write(contents); err != nil {
+		icspfile.Close()
+		os.Remove(icspfile.Name())
+		return "", err
+	}
+	defer icspfile.Close()
+	return icspfile.Name(), nil
+}
+
+// skopeoInspectUseProxy uses skopeo to inspect the proxyTestImage, through the http(s) proxy if exists.
+// returns error if the inspection fails.
+func skopeoInspectUseProxy(imageURL, httpProxy, httpsProxy string) error {
+	// proxy error from docker registry starts with proxyErr
+	proxyErr := "proxyconnect"
+	skopeo, err := exec.LookPath("skopeo")
+	if err != nil {
+		return err
+	}
+	imageSpec := fmt.Sprintf("docker://%s", imageURL)
+	var envs []string
+	if httpProxy != "" {
+		envs = append(envs, fmt.Sprintf("HTTP_PROXY=%s", httpProxy))
+	}
+	if httpsProxy != "" {
+		envs = append(envs, fmt.Sprintf("HTTPS_PROXY=%s", httpsProxy))
+	}
+
+	args := []string{"inspect", imageSpec}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, skopeo, args...)
+	cmd.Env = envs
+	rawOut, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(rawOut), proxyErr) {
+			return fmt.Errorf("invalid http proxy: %w: error running %s %s: %s", err, skopeo, strings.Join(args, " "), string(rawOut))
+		}
+		return fmt.Errorf("%w: error running %s %s: %s", err, skopeo, strings.Join(args, " "), string(rawOut))
+	}
+	return nil
 }

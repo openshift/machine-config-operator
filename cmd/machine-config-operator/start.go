@@ -76,6 +76,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 			ctrlctx.ConfigInformerFactory.Config().V1().Networks(),
 			ctrlctx.ConfigInformerFactory.Config().V1().Proxies(),
 			ctrlctx.ConfigInformerFactory.Config().V1().DNSes(),
+			ctrlctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie(componentName),
 			ctrlctx.ClientBuilder.KubeClientOrDie(componentName),
 			ctrlctx.ClientBuilder.APIExtClientOrDie(componentName),

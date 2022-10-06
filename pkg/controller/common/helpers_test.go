@@ -1,6 +1,8 @@
 package common
 
 import (
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	ign3 "github.com/coreos/ignition/v2/config/v3_2"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	validate3 "github.com/coreos/ignition/v2/config/validate"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -545,4 +548,49 @@ func TestParseAndConvertGzippedConfig(t *testing.T) {
 			assert.Equal(t, expectedIgnition, parsedIgn)
 		})
 	}
+}
+
+// TestSkopeoInspectUseProxy tests the proxyTestImage can be inspected by skopeo successfully without a proxy
+// This does not test some proxy. Make sure if skopeoInspectUseProxy failed, it would caused by the proxy not the function itself.
+func TestInspectUseProxy(t *testing.T) {
+	// proxyTestImage will be skopeo inspect through http proxy if set for proxy validation
+	const proxyTestImage = "quay.io/podman/stable"
+
+	_, err := exec.LookPath("skopeo")
+	if err != nil {
+		t.Skip("skip the test since skopeo not available")
+	}
+	err = skopeoInspectUseProxy(proxyTestImage, "", "")
+	require.NoError(t, err)
+}
+
+func TestGenerateICSPFile(t *testing.T) {
+	icspRules := []*apioperatorsv1alpha1.ImageContentSourcePolicy{
+		{
+			Spec: apioperatorsv1alpha1.ImageContentSourcePolicySpec{
+				RepositoryDigestMirrors: []apioperatorsv1alpha1.RepositoryDigestMirrors{
+					{Source: "blah.io/myuser", Mirrors: []string{"mirror-1.io/myuser", "mirror-2.io/myuser"}},
+				},
+			},
+		},
+	}
+	expect := []byte(
+		`apiVersion: operator.openshift.io/v1alpha1
+kind: ImageContentSourcePolicy
+metadata:
+  name: image-policy
+spec:
+  repositoryDigestMirrors:
+  - mirrors:
+    - mirror-1.io/myuser
+    - mirror-2.io/myuser
+    source: blah.io/myuser
+`)
+	file, err := generateICSPFile(icspRules)
+	defer os.Remove(file)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Equal(t, expect, content)
 }
