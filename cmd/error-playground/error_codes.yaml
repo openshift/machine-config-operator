@@ -1,0 +1,18 @@
+error_code_prefix: MCOError
+error_codes:
+  1000:
+    description: MalformedMachineConfig
+    resolution:
+      docURL: https://link.to.kb.article/123
+  1001:
+    description: DesiredMachineConfigCouldNotBeFound
+    resolution:
+      docURL: https://link.to.kb.article/456
+  1002:
+    resolution:
+      instructions: |
+        Here we can add some free-form instructions.
+        Including multiple-line instructions with more stuff.
+  1003:
+    description: IHaveNoResolution
+  1004: {}
