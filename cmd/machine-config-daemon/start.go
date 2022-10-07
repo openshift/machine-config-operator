@@ -147,7 +147,6 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	defer close(exitCh)
 
 	dn, err := daemon.New(
-		daemon.NewNodeUpdaterClient(),
 		exitCh,
 	)
 	if err != nil {

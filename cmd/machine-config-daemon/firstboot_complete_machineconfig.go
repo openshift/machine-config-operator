@@ -31,7 +31,7 @@ func runFirstBootCompleteMachineConfig(_ *cobra.Command, _ []string) error {
 	exitCh := make(chan error)
 	defer close(exitCh)
 
-	dn, err := daemon.New(daemon.NewNodeUpdaterClient(), exitCh)
+	dn, err := daemon.New(exitCh)
 	if err != nil {
 		return err
 	}
