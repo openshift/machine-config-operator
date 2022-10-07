@@ -153,6 +153,12 @@ func (b *Bootstrap) Run(destDir string) error {
 
 	configs = append(configs, rconfigs...)
 
+	inheritableCapabilitiesUseconfigs, err := containerruntimeconfig.RunAddInheritableCapabilitiesBootstrap(pools)
+	if err != nil {
+		return err
+	}
+	configs = append(configs, inheritableCapabilitiesUseconfigs...)
+
 	if len(crconfigs) > 0 {
 		containerRuntimeConfigs, err := containerruntimeconfig.RunContainerRuntimeBootstrap(b.templatesDir, crconfigs, cconfig, pools)
 		if err != nil {
