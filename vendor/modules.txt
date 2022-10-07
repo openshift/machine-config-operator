@@ -237,6 +237,9 @@ github.com/coreos/ignition/v2/config/v3_2
 github.com/coreos/ignition/v2/config/v3_2/translate
 github.com/coreos/ignition/v2/config/v3_2/types
 github.com/coreos/ignition/v2/config/validate
+# github.com/coreos/rpmostree-client-go v0.0.0-20220922143538-78889752c880
+## explicit; go 1.17
+github.com/coreos/rpmostree-client-go/pkg/client
 # github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4
 ## explicit; go 1.15
 github.com/coreos/vcontext/json
@@ -746,14 +749,14 @@ github.com/olekukonko/tablewriter
 # github.com/opencontainers/go-digest v1.0.0
 ## explicit; go 1.13
 github.com/opencontainers/go-digest
-# github.com/opencontainers/image-spec v1.0.3-0.20220811233833-d265d74f4fad
-## explicit; go 1.16
+# github.com/opencontainers/image-spec v1.0.3-0.20220114050600-8b9d41f48198
+## explicit; go 1.11
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.1.3
 ## explicit; go 1.16
 github.com/opencontainers/runc/libcontainer/user
-# github.com/opencontainers/runtime-spec v1.0.3-0.20220809190508-9ee22abf867e => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
+# github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
 # github.com/openshift/api v0.0.0-20220915134421-1265e9925688
