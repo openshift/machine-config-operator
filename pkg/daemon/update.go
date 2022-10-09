@@ -1908,7 +1908,44 @@ func (dn *Daemon) updateOS(config *mcfgv1.MachineConfig, osImageContentDir strin
 // via a privileged container.  This is needed on firstboot of old
 // nodes as well as temporarily for 4.11 -> 4.12 upgrades.
 func (dn *Daemon) InplaceUpdateViaNewContainer(target string) error {
-	return runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+	// HACK: Disable selinux enforcement for this because it's not
+	// really easily possible to get the correct install_t context
+	// here when run from a container image.
+	// xref https://issues.redhat.com/browse/MCO-396
+	enforceFile := "/sys/fs/selinux/enforce"
+	enforcingBuf, err := ioutil.ReadFile(enforceFile)
+	var enforcing bool
+	if err != nil {
+		if os.IsNotExist(err) {
+			enforcing = false
+		} else {
+			return fmt.Errorf("failed to read %s: %w", enforceFile, err)
+		}
+	} else {
+		enforcingStr := string(enforcingBuf)
+		v, err := strconv.Atoi(strings.TrimSpace(enforcingStr))
+		if err != nil {
+			return fmt.Errorf("failed to parse selinux enforcing %v: %w", enforcingBuf, err)
+		}
+		enforcing = (v == 1)
+	}
+	if enforcing {
+		if err := runCmdSync("setenforce", "0"); err != nil {
+			return err
+		}
+	} else {
+		glog.Info("SELinux is not enforcing")
+	}
+	err = runCmdSync("systemd-run", "--unit", "machine-config-daemon-update-rpmostree-via-container", "--collect", "--wait", "--", "podman", "run", "--authfile", "/var/lib/kubelet/config.json", "--privileged", "--pid=host", "--net=host", "--rm", "-v", "/:/run/host", target, "rpm-ostree", "ex", "deploy-from-self", "/run/host")
+	if err != nil {
+		return err
+	}
+	if enforcing {
+		if err := runCmdSync("setenforce", "1"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // updateLayeredOS updates the system OS to the one specified in newConfig
