@@ -552,7 +552,8 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToReconcile", wrappedErr.Error())
 		}
-		return &unreconcilableErr{wrappedErr}
+		// Wrap our error in a CodedError to provide an error code and resolution instructions.
+		return mcdErrorIndex.Wrap(mcdError1001Unreconcilable, &unreconcilableErr{wrappedErr})
 	}
 
 	dn.logSystem("Starting update from %s to %s: %+v", oldConfigName, newConfigName, diff)

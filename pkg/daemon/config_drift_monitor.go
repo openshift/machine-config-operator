@@ -266,7 +266,9 @@ func (c *configDriftWatcher) handleFileEvent(event fsnotify.Event) error {
 
 	var cdErr *configDriftErr
 	if errors.As(err, &cdErr) {
-		c.OnDrift(cdErr)
+		// Wrap the configDriftErr with an error code and handle as usual.
+		c.OnDrift(mcdErrorIndex.Wrap(mcdError1000ConfigDrift, cdErr))
+
 		// Don't bubble this error up further since it's handled by OnDrift.
 		return nil
 	}

@@ -34,6 +34,9 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	rpmostreeclient "github.com/coreos/rpmostree-client-go/pkg/client"
+	mcoErrors "github.com/openshift/machine-config-operator/pkg/errors"
+	mcoErrorCodes "github.com/openshift/machine-config-operator/pkg/errors/mco"
+
 	configv1 "github.com/openshift/api/config/v1"
 	mcoResourceRead "github.com/openshift/machine-config-operator/lib/resourceread"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -428,7 +431,18 @@ func (dn *Daemon) updateErrorState(err error) {
 	if errors.As(err, &uErr) {
 		dn.nodeWriter.SetUnreconcilable(err)
 	} else {
+		err = mcoErrorCodes.Wrap(mcoErrorCodes.MCOError1000Degraded, err)
 		dn.nodeWriter.SetDegraded(err)
+	}
+
+	// This is an example of how we can extract the error resolution information
+	// and present it when the context is appropriate.
+	var codedErr *mcoErrors.CodedError
+	if errors.As(err, &codedErr) {
+		errCode := codedErr.ErrorCode()
+		if errCode.Resolution != nil && errCode.Resolution.DocURL != "" {
+			glog.Errorf("Error: %s - See '%s' for resolution", errCode.ToString(), errCode.Resolution.DocURL)
+		}
 	}
 }
 
