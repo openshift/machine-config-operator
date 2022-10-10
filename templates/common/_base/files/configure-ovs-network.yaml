@@ -441,25 +441,64 @@ contents:
         fi
       done
 
-      # Then activate all the connections
+      # Activate all connections and fail if activation fails
+      # For slave connections - for as long as at least one slave that belongs to a bond/team
+      # comes up, we should not fail
+      declare -A master_interfaces
       for conn in "${connections[@]}"; do
-        local active_state=$(nmcli -g GENERAL.STATE conn show "$conn")
-        if [ "$active_state" != "activated" ]; then
-          for i in {1..10}; do
-            echo "Attempt $i to bring up connection $conn"
-            nmcli conn up "$conn" && s=0 && break || s=$?
-            sleep 5
-          done
-          if [ $s -eq 0 ]; then
-            echo "Brought up connection $conn successfully"
-          else
-            echo "ERROR: Cannot bring up connection $conn after $i attempts"
-            return $s
+        # Get the slave type
+        local slave_type=$(nmcli -g connection.slave-type connection show "$conn")
+        local is_slave=false
+        if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
+          is_slave=true
+        fi 
+
+        # For slave interfaces, initialize the master interface to false if the key is not yet in the array
+        local master_interface
+        if $is_slave; then
+          master_interface=$(nmcli -g connection.master connection show "$conn")
+          if ! [[ -v "master_interfaces[$master_interface]" ]]; then
+            master_interfaces["$master_interface"]=false
           fi
-        else
+        fi
+
+        # Do not activate interfaces that are already active
+        # But set the entry in master_interfaces to true if this is a slave
+        # Also set autoconnect to yes
+        local active_state=$(nmcli -g GENERAL.STATE conn show "$conn")
+        if [ "$active_state" == "activated" ]; then
           echo "Connection $conn already activated"
+          if $is_slave; then
+            master_interfaces[$master_interface]=true
+          fi
+          nmcli c mod "$conn" connection.autoconnect yes
+          continue
+        fi
+
+        # Activate all interfaces that are not yet active
+        for i in {1..10}; do
+          echo "Attempt $i to bring up connection $conn"
+          nmcli conn up "$conn" && s=0 && break || s=$?
+          sleep 5
+        done
+        if [ $s -eq 0 ]; then
+          echo "Brought up connection $conn successfully"
+          if $is_slave; then
+            master_interfaces["$master_interface"]=true
+          fi
+        elif ! $is_slave; then
+          echo "ERROR: Cannot bring up connection $conn after $i attempts"
+          return $s
         fi
         nmcli c mod "$conn" connection.autoconnect yes
+      done
+      # Check that all master interfaces report at least a single active slave
+      # Note: associative arrays require an exclamation mark when looping
+      for i in "${!master_interfaces[@]}"; do
+        if ! ${master_interfaces["$i"]}; then
+            echo "ERROR: Cannot bring up any slave interface for master interface: $i"
+            return 1
+        fi
       done
     }
 
