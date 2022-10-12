@@ -1,0 +1,8 @@
+name: rpm-ostreed.service
+dropins:
+  - name: 10-mco-default-env.conf
+    contents: |
+      {{if .Proxy -}}
+      [Service]
+      EnvironmentFile=/etc/mco/proxy.env
+      {{end -}}
