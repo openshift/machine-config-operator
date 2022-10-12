@@ -33,6 +33,11 @@ func (os OperatingSystem) IsFCOS() bool {
 	return os.ID == "fedora" && os.VariantID == "coreos"
 }
 
+// IsSCOS is true if the OS is SCOS
+func (os OperatingSystem) IsSCOS() bool {
+	return os.ID == "scos"
+}
+
 // IsCoreOSVariant is true if the OS is FCOS or a derivative (ostree+Ignition)
 // which includes SCOS and RHCOS.
 func (os OperatingSystem) IsCoreOSVariant() bool {
