@@ -379,7 +379,7 @@ func useKubeletConfigSecrets() error {
 			}
 
 			// Short term workaround for https://issues.redhat.com/browse/OKD-63
-			if runningos.IsFCOS() {
+			if runningos.IsFCOS() || runningos.IsSCOS() {
 				contents, err := ioutil.ReadFile(kubeletAuthFile)
 				if err != nil {
 					return err
