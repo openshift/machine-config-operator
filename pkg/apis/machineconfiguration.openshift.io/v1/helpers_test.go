@@ -27,6 +27,24 @@ var (
 		}
 	}
 
+	condUpdatingToV0 = func() MachineConfigPoolCondition {
+		return MachineConfigPoolCondition{
+			Type:    MachineConfigPoolUpdating,
+			Status:  corev1.ConditionTrue,
+			Reason:  "",
+			Message: "Updating to v0",
+		}
+	}
+
+	condUpdatingToV1 = func() MachineConfigPoolCondition {
+		return MachineConfigPoolCondition{
+			Type:    MachineConfigPoolUpdating,
+			Status:  corev1.ConditionTrue,
+			Reason:  "",
+			Message: "Updating to v1",
+		}
+	}
+
 	status = func() *MachineConfigPoolStatus {
 		return &MachineConfigPoolStatus{
 			Conditions: []MachineConfigPoolCondition{condUpdatedFalse()},
@@ -80,6 +98,16 @@ func TestSetMachineConfigPoolCondition(t *testing.T) {
 		cond:   condUpdatedTrue(),
 
 		expectedStatus: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatedTrue()}},
+	}, {
+		status: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatingToV0()}},
+		cond:   condUpdatingToV0(),
+
+		expectedStatus: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatingToV0()}},
+	}, {
+		status: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatingToV0()}},
+		cond:   condUpdatingToV1(),
+
+		expectedStatus: &MachineConfigPoolStatus{Conditions: []MachineConfigPoolCondition{condUpdatingToV1()}},
 	}}
 
 	for idx, test := range tests {
