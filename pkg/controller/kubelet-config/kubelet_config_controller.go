@@ -438,6 +438,7 @@ func (ctrl *Controller) addAnnotation(cfg *mcfgv1.KubeletConfig, annotationKey, 
 
 // syncKubeletConfig will sync the kubeletconfig with the given key.
 // This function is not meant to be invoked concurrently with the same key.
+//
 //nolint:gocyclo
 func (ctrl *Controller) syncKubeletConfig(key string) error {
 	startTime := time.Now()
@@ -576,6 +577,11 @@ func (ctrl *Controller) syncKubeletConfig(key string) error {
 			if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
 				userDefinedSystemReserved["cpu"] = val
 				delete(specKubeletConfig.SystemReserved, "cpu")
+			}
+
+			if val, ok := specKubeletConfig.SystemReserved["ephemeral-storage"]; ok {
+				userDefinedSystemReserved["ephemeral-storage"] = val
+				delete(specKubeletConfig.SystemReserved, "ephemeral-storage")
 			}
 
 			// FeatureGates must be set from the FeatureGate.
