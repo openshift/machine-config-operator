@@ -29,6 +29,7 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 	var autoNodeSizing string
 	var systemReservedMemory string
 	var systemReservedCPU string
+	var systemReservedEphemeralStorage string
 
 	if autoSystemReserved == nil {
 		autoNodeSizing = "false"
@@ -48,7 +49,14 @@ func createNewKubeletDynamicSystemReservedIgnition(autoSystemReserved *bool, use
 		systemReservedCPU = "500m"
 	}
 
-	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\n", autoNodeSizing, systemReservedMemory, systemReservedCPU)
+	if val, ok := userDefinedSystemReserved["ephemeral-storage"]; ok {
+		systemReservedEphemeralStorage = val
+	} else {
+		systemReservedEphemeralStorage = "1Gi"
+	}
+
+	config := fmt.Sprintf("NODE_SIZING_ENABLED=%s\nSYSTEM_RESERVED_MEMORY=%s\nSYSTEM_RESERVED_CPU=%s\nSYSTEM_RESERVED_ES=%s\n",
+		autoNodeSizing, systemReservedMemory, systemReservedCPU, systemReservedEphemeralStorage)
 
 	mode := 0644
 	overwrite := true
@@ -364,6 +372,11 @@ func generateKubeletIgnFiles(kubeletConfig *mcfgv1.KubeletConfig, originalKubeCo
 		if val, ok := specKubeletConfig.SystemReserved["cpu"]; ok {
 			userDefinedSystemReserved["cpu"] = val
 			delete(specKubeletConfig.SystemReserved, "cpu")
+		}
+
+		if val, ok := specKubeletConfig.SystemReserved["ephemeral-storage"]; ok {
+			userDefinedSystemReserved["ephemeral-storage"] = val
+			delete(specKubeletConfig.SystemReserved, "ephemeral-storage")
 		}
 
 		// FeatureGates must be set from the FeatureGate.
