@@ -26,6 +26,7 @@ contents: |
     set \
     {{if eq .IPFamilies "IPv6" -}}
     --prefer-ipv6 \
+    --prefer-global \
     {{end -}}
     --retry-on-failure \
     ${NODEIP_HINT:-${KUBELET_NODEIP_HINT:-}}; \
