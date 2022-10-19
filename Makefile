@@ -47,7 +47,7 @@ image:
 test: test-unit test-e2e
 
 # Unit tests only (no active cluster required)
-test-unit: install-go-junit-report
+test-unit: install-go-junit-report install-shellcheck
 	./hack/test-unit.sh $(@) $(GOTAGS)
 
 # Run the code generation tasks.
@@ -94,7 +94,17 @@ else
 	GO111MODULE=on go build -o $(GOPATH)/bin/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 endif
 
-install-tools: install-golangci-lint install-setup-envtest install-go-junit-report
+SHELLCHECK := $(shell command -v shellcheck 2> /dev/null)
+install-shellcheck:
+ifdef SHELLCHECK:
+	@echo "Found shellcheck"
+	shellcheck --version
+else
+	@echo "Installing shellcheck"
+	mkdir -p $(GOPATH)/bin && curl -L https://github.com/koalaman/shellcheck/releases/download/v0.9.0/shellcheck-v0.9.0.linux.x86_64.tar.xz | tar -Jxv --strip-components=1 -C $(GOPATH)/bin shellcheck-v0.9.0/shellcheck
+endif
+
+install-tools: install-golangci-lint install-setup-envtest install-go-junit-report install-shellcheck
 
 # Run verification steps
 # Example:
