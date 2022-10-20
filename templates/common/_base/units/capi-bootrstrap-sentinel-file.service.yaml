@@ -1,0 +1,14 @@
+name: capi-bootrstrap-sentinel-file.service
+enabled: true
+contents: |
+  [Unit]
+  Description=Create a CAPI bootstrap sentinel file like it is described in https://cluster-api.sigs.k8s.io/developer/providers/bootstrap.html
+  # This file's required for Cluster API providers only, it has no effect if we use Machine API.
+  After=kubelet.service crio.service
+
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/bin/env bash -c "/usr/bin/mkdir -p /run/cluster-api && /usr/bin/touch /run/cluster-api/bootstrap-success.complete"
+
+  [Install]
+  WantedBy=multi-user.target
