@@ -2180,7 +2180,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 
 	var osExtensionsContentDir string
 	var err error
-	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
+	if newConfig.Spec.BaseOSExtensionsContainerImage != "" && (mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType) {
 
 		// TODO(jkyros): the original intent was that we use the extensions container as a service, but that currently results
 		// in a lot of complexity due to boostrap and firstboot where the service isn't easily available, so for now we are going
