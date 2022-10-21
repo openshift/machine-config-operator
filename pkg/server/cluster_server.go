@@ -1,29 +1,27 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"path/filepath"
+	"time"
 
 	yaml "github.com/ghodss/yaml"
+	"github.com/openshift/machine-config-operator/internal/clients"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
+	mcfginformers "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	rest "k8s.io/client-go/rest"
-	clientcmd "k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/cache"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 
-	v1 "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/typed/machineconfiguration.openshift.io/v1"
+	v1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
 )
 
 const (
-	// inClusterConfig tells the client to grab the config from the cluster it
-	// is running on, instead of using a config passed to it.
-	inClusterConfig = ""
-
 	//nolint:gosec
 	bootstrapTokenDir = "/etc/mcs/bootstrap-token"
 )
@@ -33,11 +31,22 @@ const (
 var _ = Server(&clusterServer{})
 
 type clusterServer struct {
-	// machineClient is used to interact with the
-	// machine config, pool objects.
-	machineClient v1.MachineconfigurationV1Interface
+	machineConfigPoolLister v1.MachineConfigPoolLister
+	machineConfigLister     v1.MachineConfigLister
 
 	kubeconfigFunc kubeconfigFunc
+}
+
+const minResyncPeriod = 20 * time.Minute
+
+func resyncPeriod() func() time.Duration {
+	return func() time.Duration {
+		// Disable gosec here to avoid throwing
+		// G404: Use of weak random number generator (math/rand instead of crypto/rand)
+		// #nosec
+		factor := rand.Float64() + 1
+		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
+	}
 }
 
 // NewClusterServer is used to initialize the machine config
@@ -47,22 +56,36 @@ type clusterServer struct {
 // run from within a cluster(useful in testing).
 // It accepts the apiserverURL which is the location of the KubeAPIServer.
 func NewClusterServer(kubeConfig, apiserverURL string) (Server, error) {
-	restConfig, err := getClientConfig(kubeConfig)
+	clientsBuilder, err := clients.NewBuilder(kubeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes rest client: %w", err)
 	}
 
-	mc := v1.NewForConfigOrDie(restConfig)
+	machineConfigClient := clientsBuilder.MachineConfigClientOrDie("machine-config-shared-informer")
+	sharedInformerFactory := mcfginformers.NewSharedInformerFactory(machineConfigClient, resyncPeriod()())
+
+	mcpInformer, mcInformer := sharedInformerFactory.Machineconfiguration().V1().MachineConfigPools(), sharedInformerFactory.Machineconfiguration().V1().MachineConfigs()
+	mcpLister, mcLister := mcpInformer.Lister(), mcInformer.Lister()
+	mcpListerHasSynced, mcListerHasSynced := mcpInformer.Informer().HasSynced, mcInformer.Informer().HasSynced
+
+	var informerStopCh chan struct{}
+	go sharedInformerFactory.Start(informerStopCh)
+
+	if !cache.WaitForCacheSync(informerStopCh, mcpListerHasSynced, mcListerHasSynced) {
+		return nil, errors.New("failed to wait for cache sync")
+	}
+
 	return &clusterServer{
-		machineClient:  mc,
-		kubeconfigFunc: func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
+		machineConfigPoolLister: mcpLister,
+		machineConfigLister:     mcLister,
+		kubeconfigFunc:          func() ([]byte, []byte, error) { return kubeconfigFromSecret(bootstrapTokenDir, apiserverURL) },
 	}, nil
 }
 
 // GetConfig fetches the machine config(type - Ignition) from the cluster,
 // based on the pool request.
 func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error) {
-	mp, err := cs.machineClient.MachineConfigPools().Get(context.TODO(), cr.machineConfigPool, metav1.GetOptions{})
+	mp, err := cs.machineConfigPoolLister.Get(cr.machineConfigPool)
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch pool. err: %w", err)
 	}
@@ -78,7 +101,7 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		currConf = mp.Status.Configuration.Name
 	}
 
-	mc, err := cs.machineClient.MachineConfigs().Get(context.TODO(), currConf, metav1.GetOptions{})
+	mc, err := cs.machineConfigLister.Get(currConf)
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch config %s, err: %w", currConf, err)
 	}
@@ -99,16 +122,6 @@ func (cs *clusterServer) GetConfig(cr poolRequest) (*runtime.RawExtension, error
 		return nil, err
 	}
 	return &runtime.RawExtension{Raw: rawConf}, nil
-}
-
-// getClientConfig returns a Kubernetes client Config.
-func getClientConfig(path string) (*rest.Config, error) {
-	if path != inClusterConfig {
-		// build Config from a kubeconfig filepath
-		return clientcmd.BuildConfigFromFlags("", path)
-	}
-	// uses pod's service account to get a Config
-	return rest.InClusterConfig()
 }
 
 // kubeconfigFromSecret creates a kubeconfig with the certificate
