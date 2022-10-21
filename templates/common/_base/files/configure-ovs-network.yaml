@@ -161,13 +161,15 @@ contents:
       # create bridge
       if ! nmcli connection show "$bridge_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-br "$bridge_name"
-        add_nm_conn type ovs-bridge con-name "$bridge_name" conn.interface "$bridge_name" 802-3-ethernet.mtu ${iface_mtu}
+        add_nm_conn type ovs-bridge con-name "$bridge_name" conn.interface "$bridge_name" 802-3-ethernet.mtu ${iface_mtu} \
+        connection.autoconnect-slaves 1
       fi
 
       # find default port to add to bridge
       if ! nmcli connection show "$default_port_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists del-port "$bridge_name" ${iface}
-        add_nm_conn type ovs-port conn.interface ${iface} master "$bridge_name" con-name "$default_port_name"
+        add_nm_conn type ovs-port conn.interface ${iface} master "$bridge_name" con-name "$default_port_name" \
+        connection.autoconnect-slaves 1
       fi
 
       if ! nmcli connection show "$ovs_port" &> /dev/null; then
@@ -238,7 +240,8 @@ contents:
       if ! nmcli connection show "$bridge_interface_name" &> /dev/null; then
         ovs-vsctl --timeout=30 --if-exists destroy interface ${iface}
         add_nm_conn type ${iface_type} conn.interface ${iface} master "$default_port_name" con-name "$bridge_interface_name" \
-        connection.autoconnect-priority 100 802-3-ethernet.mtu ${iface_mtu} ${extra_phys_args[@]+"${extra_phys_args[@]}"}
+        connection.autoconnect-priority 100 connection.autoconnect-slaves 1 802-3-ethernet.mtu ${iface_mtu} \
+        ${extra_phys_args[@]+"${extra_phys_args[@]}"}
       fi
 
       # Get the new connection uuids
@@ -425,15 +428,18 @@ contents:
     # Activates an ordered set of NM connection profiles
     activate_nm_connections() {
       local connections=("$@")
-      
-      # make sure to set bond or team slaves autoconnect, otherwise as we
-      # activate one slave, the other slave might get implicitly re-activated
-      # with the old profile, activating the old master, interfering and
-      # causing the former activation to fail.
-      # we don't want to set autoconnect on all the other profiles just yet
-      # though as that would activate them which is what we want to do next.
-      # note that these slaves should already be activated with their original
-      # profiles and setting autoconnect won't implicitly activate them again.
+
+      # We want autoconnect set for our cloned slave profiles so that they are
+      # used over the original profiles if implicitly re-activated with other
+      # dependant profiles. Otherwise if a slave activates with an old profile,
+      # the old master profile might activate as well, interfering and causing
+      # further activations to fail.
+      # Slave interfaces should already be active so setting autoconnect here
+      # won't implicitly activate them but there is an edge case where a slave
+      # might be inactive (link down for example) and in that case setting
+      # autoconnect will cause an implicit activation. This is not necessarily a
+      # problem and hopefully we can make sure everything is activated as we
+      # want next.
       for conn in "${connections[@]}"; do
         local slave_type=$(nmcli -g connection.slave-type connection show "$conn")
         if [ "$slave_type" = "team" ] || [ "$slave_type" = "bond" ]; then
@@ -835,16 +841,28 @@ contents:
       # Remove bridges created by openshift-sdn
       ovs-vsctl --timeout=30 --if-exists del-br br0
 
-      # Make sure everything is activated
-      connections=()
+      # Make sure everything is activated. Do it in a specific order:
+      # - activate br-ex first, due to autoconnect-slaves this will also
+      #   activate ovs-port-br-ex, ovs-port-phys0 and ovs-if-phys0. It is
+      #   important that ovs-if-phys0 activates with br-ex to avoid the
+      #   ovs-if-phys0 profile being overridden with a profile generated from
+      #   kargs. The activation of ovs-if-phys0, if a bond, might cause the
+      #   slaves to re-activate, but it should be with our profiles since they
+      #   have higher priority
+      # - make sure that ovs-if-phys0 and its slaves, if any, are activated.
+      # - finally activate ovs-if-br-ex which holds the IP configuration.
+      connections=(br-ex ovs-if-phys0)
+      if [ -f "$extra_bridge_file" ]; then
+        connections+=(br-ex1 ovs-if-phys1)
+      fi
       while IFS= read -r connection; do
         if [[ $connection == *"$MANAGED_NM_CONN_SUFFIX" ]]; then
           connections+=("$connection")
         fi
       done < <(nmcli -g NAME c)
-      connections+=(ovs-if-phys0 ovs-if-br-ex)
+      connections+=(ovs-if-br-ex)
       if [ -f "$extra_bridge_file" ]; then
-        connections+=(ovs-if-phys1 ovs-if-br-ex1)
+        connections+=(ovs-if-br-ex1)
       fi
       activate_nm_connections "${connections[@]}"
       try_to_bind_ipv6_address
