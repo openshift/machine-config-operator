@@ -215,7 +215,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	}
 
 	var imageData *types.ImageInspectInfo
-	if imageData, err = imageInspect(imgURL); err != nil {
+	if imageData, _, err = imageInspect(imgURL); err != nil {
 		if err != nil {
 			var podmanImgData *imageInspection
 			glog.Infof("Falling back to using podman inspect")
@@ -289,7 +289,7 @@ func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 	var isBootableImage string
 	var imageData *types.ImageInspectInfo
 	var err error
-	if imageData, err = imageInspect(imgURL); err != nil {
+	if imageData, _, err = imageInspect(imgURL); err != nil {
 		return false, err
 	}
 	isBootableImage = imageData.Labels["ostree.bootable"]
