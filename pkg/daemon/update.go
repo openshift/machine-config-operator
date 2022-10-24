@@ -2177,6 +2177,12 @@ func (dn *Daemon) reboot(rationale string) error {
 }
 
 func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfig, newConfig *mcfgv1.MachineConfig) (retErr error) {
+	// Override the computed diff if the booted state differs from the oldConfig
+	// https://issues.redhat.com/browse/OCPBUGS-2757
+	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
+		glog.Infof("Already in desired image %s", newConfig.Spec.OSImageURL)
+		mcDiff.osUpdate = false
+	}
 
 	var osExtensionsContentDir string
 	var err error
