@@ -450,6 +450,7 @@ func createControllers(ctx *ctrlcommon.ControllerContext) []ctrlcommon.Controlle
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigPools(),
 			ctx.InformerFactory.Machineconfiguration().V1().MachineConfigs(),
 			ctx.InformerFactory.Machineconfiguration().V1().ControllerConfigs(),
+			ctx.OperatorInformerFactory.Operator().V1alpha1().ImageContentSourcePolicies(),
 			ctx.ClientBuilder.KubeClientOrDie("render-controller"),
 			ctx.ClientBuilder.MachineConfigClientOrDie("render-controller"),
 		),

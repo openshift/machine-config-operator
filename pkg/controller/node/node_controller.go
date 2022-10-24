@@ -14,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	cligoinformersv1 "github.com/openshift/client-go/config/informers/externalversions/config/v1"
 	cligolistersv1 "github.com/openshift/client-go/config/listers/config/v1"
+	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/machine-config-operator/internal"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -90,11 +91,13 @@ type Controller struct {
 	mcLister   mcfglistersv1.MachineConfigLister
 	mcpLister  mcfglistersv1.MachineConfigPoolLister
 	nodeLister corelisterv1.NodeLister
+	icspLister operatorlistersv1alpha1.ImageContentSourcePolicyLister
 
 	ccListerSynced   cache.InformerSynced
 	mcListerSynced   cache.InformerSynced
 	mcpListerSynced  cache.InformerSynced
 	nodeListerSynced cache.InformerSynced
+	icspListerSynced cache.InformerSynced
 
 	schedulerList         cligolistersv1.SchedulerLister
 	schedulerListerSynced cache.InformerSynced

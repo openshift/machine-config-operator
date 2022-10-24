@@ -1015,34 +1015,40 @@ func ProxyValidation(proxy *apicfgv1.ProxyStatus, releaseVerision string, icspRu
 		return nil
 	}
 
-	cnoImg, err := cnoImageSpec(releaseVerision, icspRules)
+	oc, err := exec.LookPath("oc")
+	if err != nil {
+		return err
+	}
+
+	var icspfile string
+	if len(icspRules) > 0 {
+		icspfile, err = generateICSPFile(icspRules)
+		if err != nil {
+			return err
+		}
+		// cmd = fmt.Sprintf(imageInfoWithICSP, releaseVersion, tagName, icspfile)
+		defer os.Remove(icspfile)
+	}
+
+	cnoImg, err := cnoImageSpec(oc, releaseVerision, icspfile)
 	if err != nil || cnoImg == "" {
 		return fmt.Errorf("%w: error retrieving CNO image pull spec", err)
 	}
 
-	return skopeoInspectUseProxy(cnoImg, proxy.HTTPProxy, proxy.HTTPSProxy)
+	return ocImageInfoUseProxy(oc, cnoImg, proxy.HTTPProxy, proxy.HTTPSProxy, icspfile)
 }
 
-func cnoImageSpec(releaseVersion string, icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (string, error) {
+func cnoImageSpec(oc, releaseVersion, icspfile string) (string, error) {
 	const (
 		tagName           = "cluster-network-operator"
 		imageInfo         = "adm release info %s --image-for %s"
 		imageInfoWithICSP = "adm release info %s --image-for %s --icsp-file %s"
 	)
 
-	oc, err := exec.LookPath("oc")
-	if err != nil {
-		return "", err
-	}
-
 	cmd := fmt.Sprintf(imageInfo, releaseVersion, tagName)
-	if len(icspRules) > 0 {
-		icspfile, err := generateICSPFile(icspRules)
-		if err != nil {
-			return "", err
-		}
+
+	if icspfile != "" {
 		cmd = fmt.Sprintf(imageInfoWithICSP, releaseVersion, tagName, icspfile)
-		defer os.Remove(icspfile)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1059,7 +1065,7 @@ func cnoImageSpec(releaseVersion string, icspRules []*apioperatorsv1alpha1.Image
 
 func generateICSPFile(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy) (string, error) {
 	regisConf := &sysregistriesv2.V2RegistriesConf{}
-	// process the icspRules to registries.conf if mutiple icsp exist in icspRules
+	// process the icspRules to registries.conf, it can merge mutiple icsps exist in icspRules
 	runtimeutils.EditRegistriesConfig(regisConf, nil, nil, icspRules)
 	icsp := apioperatorsv1alpha1.ImageContentSourcePolicy{
 		TypeMeta: metav1.TypeMeta{
@@ -1106,16 +1112,15 @@ func generateICSPFile(icspRules []*apioperatorsv1alpha1.ImageContentSourcePolicy
 	return icspfile.Name(), nil
 }
 
-// skopeoInspectUseProxy uses skopeo to inspect the proxyTestImage, through the http(s) proxy if exists.
-// returns error if the inspection fails.
-func skopeoInspectUseProxy(imageURL, httpProxy, httpsProxy string) error {
-	// proxy error from docker registry starts with proxyErr
-	proxyErr := "proxyconnect"
-	skopeo, err := exec.LookPath("skopeo")
-	if err != nil {
-		return err
-	}
-	imageSpec := fmt.Sprintf("docker://%s", imageURL)
+// ocImageInfoUseProxy uses oc image info to retrive the proxyTestImage, through the http(s) proxy if exists.
+// returns error if the command fails.
+func ocImageInfoUseProxy(oc, imageSpec, httpProxy, httpsProxy, icspfile string) error {
+	const (
+		// proxy error from docker registry starts with "proxyconnect"
+		proxyErr             = "proxyconnect"
+		cnoimageInfo         = "image info %s"
+		cnoimageInfoWithICSP = "image info %s --icsp-file %s"
+	)
 	var envs []string
 	if httpProxy != "" {
 		envs = append(envs, fmt.Sprintf("HTTP_PROXY=%s", httpProxy))
@@ -1124,19 +1129,23 @@ func skopeoInspectUseProxy(imageURL, httpProxy, httpsProxy string) error {
 		envs = append(envs, fmt.Sprintf("HTTPS_PROXY=%s", httpsProxy))
 	}
 
-	args := []string{"inspect", imageSpec}
+	cmd := fmt.Sprintf(cnoimageInfo, imageSpec)
+	if icspfile != "" {
+		cmd = fmt.Sprintf(cnoimageInfoWithICSP, imageSpec, icspfile)
+	}
+	args := strings.Split(cmd, " ")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, skopeo, args...)
-	cmd.Env = envs
-	rawOut, err := cmd.CombinedOutput()
+	cmdExec := exec.CommandContext(ctx, oc, args...)
+	cmdExec.Env = envs
+	rawOut, err := cmdExec.CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(rawOut), proxyErr) {
-			return fmt.Errorf("invalid http proxy: %w: error running %s %s: %s", err, skopeo, strings.Join(args, " "), string(rawOut))
+			return fmt.Errorf("invalid http proxy: %w: error running %s %s: %s", err, oc, strings.Join(args, " "), string(rawOut))
 		}
-		return fmt.Errorf("%w: error running %s %s: %s", err, skopeo, strings.Join(args, " "), string(rawOut))
+		return fmt.Errorf("%w: error running %s %s: %s", err, oc, strings.Join(args, " "), string(rawOut))
 	}
 	return nil
 }

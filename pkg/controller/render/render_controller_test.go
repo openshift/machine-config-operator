@@ -9,6 +9,7 @@ import (
 	"github.com/clarketm/json"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
 	configv1 "github.com/openshift/api/config/v1"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -43,9 +44,10 @@ type fixture struct {
 
 	client *fake.Clientset
 
-	mcpLister []*mcfgv1.MachineConfigPool
-	mcLister  []*mcfgv1.MachineConfig
-	ccLister  []*mcfgv1.ControllerConfig
+	mcpLister  []*mcfgv1.MachineConfigPool
+	mcLister   []*mcfgv1.MachineConfig
+	ccLister   []*mcfgv1.ControllerConfig
+	icspLister []*apioperatorsv1alpha1.ImageContentSourcePolicy
 
 	actions []core.Action
 

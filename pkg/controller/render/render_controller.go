@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	apioperatorsv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	operatorinformersv1alpha1 "github.com/openshift/client-go/operator/informers/externalversions/operator/v1alpha1"
+	operatorlistersv1alpha1 "github.com/openshift/client-go/operator/listers/operator/v1alpha1"
 	mcoResourceApply "github.com/openshift/machine-config-operator/lib/resourceapply"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
@@ -67,6 +70,9 @@ type Controller struct {
 	ccLister       mcfglistersv1.ControllerConfigLister
 	ccListerSynced cache.InformerSynced
 
+	icspLister       operatorlistersv1alpha1.ImageContentSourcePolicyLister
+	icspListerSynced cache.InformerSynced
+
 	queue workqueue.RateLimitingInterface
 }
 
@@ -75,6 +81,7 @@ func New(
 	mcpInformer mcfginformersv1.MachineConfigPoolInformer,
 	mcInformer mcfginformersv1.MachineConfigInformer,
 	ccInformer mcfginformersv1.ControllerConfigInformer,
+	icspInformer operatorinformersv1alpha1.ImageContentSourcePolicyInformer,
 	kubeClient clientset.Interface,
 	mcfgClient mcfgclientset.Interface,
 ) *Controller {
@@ -108,6 +115,8 @@ func New(
 	ctrl.mcListerSynced = mcInformer.Informer().HasSynced
 	ctrl.ccLister = ccInformer.Lister()
 	ctrl.ccListerSynced = ccInformer.Informer().HasSynced
+	ctrl.icspLister = icspInformer.Lister()
+	ctrl.icspListerSynced = icspInformer.Informer().HasSynced
 
 	return ctrl
 }
@@ -480,6 +489,18 @@ func (ctrl *Controller) syncGeneratedMachineConfig(pool *mcfgv1.MachineConfigPoo
 	cc, err := ctrl.ccLister.Get(ctrlcommon.ControllerConfigName)
 	if err != nil {
 		return err
+	}
+
+	icspRules, err := ctrl.icspLister.List(labels.Everything())
+	if err != nil && errors.IsNotFound(err) {
+		icspRules = []*apioperatorsv1alpha1.ImageContentSourcePolicy{}
+	} else if err != nil {
+		return err
+	}
+	if releaseVersion, ok := cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey]; ok {
+		if err := ctrlcommon.ProxyValidation(cc.Spec.Proxy, releaseVersion, icspRules); err != nil {
+			return err
+		}
 	}
 
 	generated, err := generateRenderedMachineConfig(pool, configs, cc)

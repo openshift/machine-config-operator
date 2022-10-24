@@ -552,15 +552,15 @@ func TestParseAndConvertGzippedConfig(t *testing.T) {
 
 // TestSkopeoInspectUseProxy tests the proxyTestImage can be inspected by skopeo successfully without a proxy
 // This does not test some proxy. Make sure if skopeoInspectUseProxy failed, it would caused by the proxy not the function itself.
-func TestInspectUseProxy(t *testing.T) {
+func TestOcImageInfoUseProxy(t *testing.T) {
 	// proxyTestImage will be skopeo inspect through http proxy if set for proxy validation
-	const proxyTestImage = "quay.io/podman/stable"
+	const proxyTestImage = "registry.access.redhat.com/ubi8/ubi-minimal@sha256:4a02f98dd98f11f0ab2849a57dcf4d9e33e24568e9e4ce81b549b60191b6c7d7"
 
-	_, err := exec.LookPath("skopeo")
+	oc, err := exec.LookPath("oc")
 	if err != nil {
-		t.Skip("skip the test since skopeo not available")
+		t.Skip("skip the test since oc not available")
 	}
-	err = skopeoInspectUseProxy(proxyTestImage, "", "")
+	err = ocImageInfoUseProxy(oc, proxyTestImage, "", "", "")
 	require.NoError(t, err)
 }
 
