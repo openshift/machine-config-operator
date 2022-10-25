@@ -882,16 +882,11 @@ func (optr *Operator) getOsImageURLs(namespace string) (string, string, string, 
 		return "", "", "", fmt.Errorf("refusing to read osImageURL version %q, operator version %q", releaseVersion, optrVersion)
 	}
 
-	newextensions, hasNewExtensions := cm.Data["baseOSExtensionsContainerImage"]
+	newextensions, _ := cm.Data["baseOSExtensionsContainerImage"]
 
 	newformat, hasNewFormat := cm.Data["baseOSContainerImage"]
 
 	oldformat, hasOldFormat := cm.Data["osImageURL"]
-
-	if hasNewFormat && !hasNewExtensions {
-		// TODO(jkyros): This is okay for now because it's not required, but someday this will be bad
-		glog.Warningf("New format image specified, but no matching extensions image present")
-	}
 
 	// If we don't have a new format image, and we can't fall back to the old one
 	if !hasOldFormat && !hasNewFormat {
