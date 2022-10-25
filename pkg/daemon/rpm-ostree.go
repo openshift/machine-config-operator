@@ -138,12 +138,7 @@ func (r *RpmOstreeClient) GetBootedOSImageURL() (string, string, string, error) 
 		return "", "", "", err
 	}
 
-	// TODO(jkyros): take this out, I just want to see when/why it's empty?
-	j, _ := json.MarshalIndent(bootedDeployment, "", "    ")
-	glog.Infof("%s", j)
-
 	// the canonical image URL is stored in the custom origin field.
-
 	osImageURL := ""
 	if len(bootedDeployment.CustomOrigin) > 0 {
 		if strings.HasPrefix(bootedDeployment.CustomOrigin[0], "pivot://") {
