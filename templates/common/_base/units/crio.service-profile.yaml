@@ -1,0 +1,7 @@
+name: crio.service
+dropins:
+  - name: 10-mco-profile.conf
+    contents: |
+      [Service]
+      Environment="CONTAINER_PROFILE=true"
+      Environment="CONTAINER_PROFILE_PORT=26060"
