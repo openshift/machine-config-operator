@@ -49,10 +49,6 @@ contents:
             cp /var/run/NetworkManager/resolv.conf /etc/resolv.conf
         fi
 
-        # Pull container image outside of the timeout to workaround possible
-        # image corruption
-        # https://github.com/containers/podman/issues/14003
-        /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}
 
         NAMESERVER_IP=$(timeout 20s /usr/bin/podman run --rm \
             --authfile /var/lib/kubelet/config.json \
