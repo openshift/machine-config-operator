@@ -248,10 +248,17 @@ spec:
          echo "Container stopped"
          sleep 60
       done
+      if [ ! -s "/etc/frr/frr.conf" ]; then
+          echo "/etc/frr/frr.conf doesn't exist yet, let's wait 30 seconds"
+          sleep 30
+      fi
       if [ -s "/etc/frr/frr.conf" ]; then
           echo "/etc/frr/frr.conf was found, now creating VIPs and starting FRR"
           start_all_vips
           /usr/libexec/frr/frr start
+      else
+          echo "ERROR: /etc/frr/frr.conf was not found"
+          exit 1
       fi
       rm -f "$frr_sock"
       socat UNIX-LISTEN:${frr_sock},fork system:'bash -c msg_handler'
