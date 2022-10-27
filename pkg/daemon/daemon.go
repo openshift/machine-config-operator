@@ -1300,7 +1300,7 @@ func (dn *Daemon) LogSystemData() {
 		if err != nil {
 			glog.Fatalf("unable to get rpm-ostree status: %s", err)
 		}
-		glog.Info(out)
+		glog.Infof("%s", out)
 
 		logProvisioningInformation()
 	}
