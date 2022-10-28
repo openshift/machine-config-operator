@@ -899,6 +899,10 @@ func reconcilable(oldConfig, newConfig *mcfgv1.MachineConfig) (*machineConfigDif
 		if len(f.Append) > 0 {
 			return nil, fmt.Errorf("ignition file %v includes append", f.Path)
 		}
+		// We also disallow writing some special files
+		if f.Path == constants.MachineConfigDaemonForceFile {
+			return nil, fmt.Errorf("cannot create %s via Ignition", f.Path)
+		}
 	}
 
 	// Systemd section
