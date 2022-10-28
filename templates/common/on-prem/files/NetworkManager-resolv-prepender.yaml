@@ -52,7 +52,14 @@ contents:
         # Pull container image outside of the timeout to workaround possible
         # image corruption
         # https://github.com/containers/podman/issues/14003
-        /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }}
+        if ! /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; then
+            # Send process to background.
+            # Multiple podman pulls may occur in parallel wasting bandwidth therefore this
+            # needs to be removed when podman image corruption issue is resolved.
+            /usr/bin/podman pull --authfile /var/lib/kubelet/config.json {{ .Images.baremetalRuntimeCfgImage }} &
+            # Wait until image is available or timeout and exit.
+            timeout 80s bash -c 'until /usr/bin/podman image exists {{ .Images.baremetalRuntimeCfgImage }}; do sleep 1; done'
+        fi
 
         NAMESERVER_IP=$(timeout 20s /usr/bin/podman run --rm \
             --authfile /var/lib/kubelet/config.json \
