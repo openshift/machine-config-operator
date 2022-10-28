@@ -677,8 +677,7 @@ func isFrrEnabled(cfg RenderConfig) bool {
 		if cfg.Infra.Status.PlatformStatus != nil {
 			switch cfg.Infra.Status.PlatformStatus.Type {
 			case configv1.OpenStackPlatformType:
-				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-				if apiLBConfig.APILoadBalancerType == "BGP" {
+				if cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer != nil && cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer.APILoadBalancerType == "BGP" {
 					return true
 				}
 				return false
