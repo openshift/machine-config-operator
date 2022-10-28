@@ -529,7 +529,8 @@ type OpenStackAPIBGPPeer struct {
 type OpenStackAPIBGPSpeaker struct {
 	// failureDomain is the name of a failure domain which this BGP
 	// configuration applies to. A failure domain with that name must be
-	// defined in the OpenStack platform spec.
+	// defined in the OpenStack platform spec. If there are no failure
+	// domains defined, use "default".
 	//
 	// +kubebuilder:validation:Required
 	FailureDomain string `json:"failureDomain"`
