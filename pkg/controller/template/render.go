@@ -614,12 +614,13 @@ func urlPort(u string) (interface{}, error) {
 func onPremPlatformBGPConfiguration(cfg RenderConfig) (interface{}, error) {
 	// Here at some point we'll get the Failure Domain from the Machine
 	const failureDomain = "default"
+	var emptySpeakerConfig = configv1.OpenStackAPIBGPSpeaker{}
 	if cfg.Infra.Status.PlatformStatus != nil {
 		switch cfg.Infra.Status.PlatformStatus.Type {
 		case configv1.OpenStackPlatformType:
 			apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
 			if apiLBConfig.APILoadBalancerType != "BGP" {
-				return nil, fmt.Errorf("invalid API Load Balancer type for BGP configuration")
+				return emptySpeakerConfig, nil
 			}
 			for _, speaker := range apiLBConfig.BGP.Speakers {
 				// if a failure domain corresponding to the machine is found in the BGP configuration, return the configuration
