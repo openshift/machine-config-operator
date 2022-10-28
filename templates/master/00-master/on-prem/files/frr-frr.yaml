@@ -1,5 +1,5 @@
 mode: 0644
-path: {{ if isFrrEnabled . }}"/etc/kubernetes/static-pod-resources/frr/frr.conf.tmpl"{{ else }}"/etc/kubernetes/disabled-manifests/frr.conf.tmpl"{{ end }}
+path: "/etc/kubernetes/static-pod-resources/frr/frr.conf.tmpl"
 contents:
   inline: |
     # Configuration template for FRR, which is used to manage the BGP routing.
