@@ -22,14 +22,14 @@ router bgp {{ with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}{{
   no bgp ebgp-requires-policy
 
   {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}
-  {{- range $i, $peer := $bgp.Peers }}
+  {{ range $i, $peer := $bgp.Peers }}
   neighbor uplink-{{ $i }} peer-group
   neighbor uplink-{{ $i }} remote-as external
   neighbor uplink-{{ $i }} bfd
   neighbor uplink-{{ $i }} bfd profile openshift
   neighbor uplink-{{ $i }} password {{ $peer.Password }}
   neighbor {{ $peer.IP }} peer-group uplink-{{ $i }}
-  {{- end }}
+  {{ end }}
   {{- end }}
 
   address-family ipv4 unicast
@@ -38,18 +38,18 @@ router bgp {{ with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}{{
 
   address-family ipv6 unicast
     redistribute connected route-map vip
-  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}
-  {{- range $i, $peer := $bgp.Peers -}}
+  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig -}}
+  {{ range $i, $peer := $bgp.Peers }}
     neighbor uplink-{{ $i }} activate
-  {{- end }}
+  {{- end -}}
   {{- end }}
   exit-address-family
 
   address-family l2vpn evpn
-  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}
-  {{- range $i, $peer := $bgp.Peers }}
+  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig -}}
+  {{ range $i, $peer := $bgp.Peers }}
     neighbor uplink-{{ $i }} activate
-  {{- end }}
+  {{- end -}}
   {{- end }}
   exit-address-family
 

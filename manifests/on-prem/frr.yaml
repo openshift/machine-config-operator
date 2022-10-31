@@ -90,7 +90,7 @@ spec:
     - /bin/bash
     - -c
     - |
-      #/bin/bash
+      #!/bin/bash
       #
       # TODO in this script:
       # * IPv6 support
@@ -147,21 +147,6 @@ spec:
           fi
       }
       
-      delete_vip_routing()
-      {
-          # remove VIP routing from the host
-          # takes one argument: the VIP to remove from routing.
-          local vip=$1
-          if ip route show table 168 | grep -q $GATEWAY; then
-              echo "Delete default route for table 168 via $GATEWAY"
-              ip route delete default via $GATEWAY table 168
-          fi
-          if ip rule show table 168 | grep -q $vip; then
-              echo "Delete ip rule for $NETWORK_CIDR in table 168"
-              ip rule delete from $vip to $NETWORK_CIDR lookup 168
-          fi
-      }
-      
       create_vip()
       {
           # create the VIP on the node.
@@ -186,6 +171,7 @@ spec:
       start_all_vips()
       {
         VIP_NETMASK=32
+        echo "Starting all VIPs"
         for vip in $VIPS; do
           create_vip $vip/$VIP_NETMASK
           create_vip_routing $vip
@@ -195,34 +181,25 @@ spec:
       stop_all_vips()
       {
         VIP_NETMASK=32
+        echo "Stopping all VIPs"
         for vip in $VIPS; do
-          delete_vip_routing $vip
           delete_vip $vip/$VIP_NETMASK
         done
-      }
-      
-      reload_frr()
-      {
-        stop_all_vips
-        start_all_vips
-        /usr/libexec/frr/frr reload
       }
       
       stop_frr()
       {
         echo "Frr process stopped" >> /var/run/frr/stopped
         stop_all_vips
-        /usr/libexec/frr/frr stop
+        [ -r /var/run/frr/watchfrr.pid ] && /usr/libexec/frr/frr stop
       }
       
       msg_handler()
       {
         while read -r line; do
           echo "The client sent: $line" >&2
-          # currently only 'reload' and 'stop' messages are supported
-          if [ "$line" = reload ]; then
-              reload_frr
-          elif  [ "$line" = stop ]; then
+          # currently only 'stop' messages are supported
+          if  [ "$line" = stop ]; then
               stop_frr
           fi
         done
@@ -235,25 +212,18 @@ spec:
       export NETWORK_CIDR
       export -f check_vip
       export -f create_vip_routing
-      export -f delete_vip_routing
       export -f create_vip
       export -f delete_vip
       export -f start_all_vips
       export -f stop_all_vips
       export -f msg_handler
-      export -f reload_frr
       export -f stop_frr
       
       while [ -s "/var/run/frr/stopped" ]; do
          echo "Container stopped"
          sleep 60
       done
-      if [ ! -s "/etc/frr/frr.conf" ]; then
-          echo "/etc/frr/frr.conf doesn't exist yet, let's wait 30 seconds"
-          sleep 30
-      fi
-      if [ -s "/etc/frr/frr.conf" ]; then
-          echo "/etc/frr/frr.conf was found, now creating VIPs and starting FRR"
+      if timeout 30s bash -c "while true; do [ -f /etc/frr/frr.conf ] && break; done"; then
           start_all_vips
           /usr/libexec/frr/frr start
       else

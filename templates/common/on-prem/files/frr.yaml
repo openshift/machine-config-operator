@@ -143,7 +143,7 @@ contents:
             - /bin/bash
             - -c
             - |
-              #/bin/bash
+              #!/bin/bash
               #
               # TODO in this script:
               # * IPv6 support
@@ -216,21 +216,6 @@ contents:
                   fi
               }
               
-              delete_vip_routing()
-              {
-                  # remove VIP routing from the host
-                  # takes one argument: the VIP to remove from routing.
-                  local vip=$1
-                  if ip route show table 168 | grep -q $GATEWAY; then
-                      echo "Delete default route for table 168 via $GATEWAY"
-                      ip route delete default via $GATEWAY table 168
-                  fi
-                  if ip rule show table 168 | grep -q $vip; then
-                      echo "Delete ip rule for $NETWORK_CIDR in table 168"
-                      ip rule delete from $vip to $NETWORK_CIDR lookup 168
-                  fi
-              }
-              
               create_vip()
               {
                   # create the VIP on the node.
@@ -264,7 +249,6 @@ contents:
                   else
                     echo "Healthcheck for API not OK"
                     for vip in $API_VIPS; do
-                      delete_vip_routing $vip
                       delete_vip $vip/$VIP_NETMASK
                     done
                   fi
@@ -278,7 +262,6 @@ contents:
                   else
                     echo "Healthcheck for Ingress not OK"
                     for vip in $INGRESS_VIPS; do
-                      delete_vip_routing $vip
                       delete_vip $vip/$VIP_NETMASK
                     done
                   fi
@@ -303,7 +286,7 @@ contents:
               #/bin/bash
               stop_frr()
               {
-                /usr/libexec/frr/frr stop
+                [ -r /var/run/frr/watchfrr.pid ] && /usr/libexec/frr/frr stop
               }
 
               reload_frr()

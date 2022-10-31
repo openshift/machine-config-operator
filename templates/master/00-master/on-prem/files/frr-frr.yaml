@@ -26,14 +26,14 @@ contents:
       no bgp ebgp-requires-policy
     
       {{- with $bgp := onPremPlatformBGPConfiguration . }}
-      {{- range $i, $peer := $bgp.Peers }}
+      {{ range $i, $peer := $bgp.Peers }}
       neighbor uplink-{{ $i }} peer-group
       neighbor uplink-{{ $i }} remote-as external
       neighbor uplink-{{ $i }} bfd
       neighbor uplink-{{ $i }} bfd profile openshift
       neighbor uplink-{{ $i }} password {{ $peer.Password }}
       neighbor {{ $peer.IP }} peer-group uplink-{{ $i }}
-      {{- end }}
+      {{ end }}
       {{- end }}
     
       address-family ipv4 unicast
@@ -42,18 +42,18 @@ contents:
     
       address-family ipv6 unicast
         redistribute connected route-map vip
-      {{- with $bgp := onPremPlatformBGPConfiguration . }}
-      {{- range $i, $peer := $bgp.Peers -}}
+      {{- with $bgp := onPremPlatformBGPConfiguration . -}}
+      {{ range $i, $peer := $bgp.Peers }}
         neighbor uplink-{{ $i }} activate
-      {{- end }}
+      {{- end -}}
       {{- end }}
       exit-address-family
     
       address-family l2vpn evpn
-      {{- with $bgp := onPremPlatformBGPConfiguration . }}
-      {{- range $i, $peer := $bgp.Peers }}
+      {{- with $bgp := onPremPlatformBGPConfiguration . -}}
+      {{ range $i, $peer := $bgp.Peers }}
         neighbor uplink-{{ $i }} activate
-      {{- end }}
+      {{- end -}}
       {{- end }}
       exit-address-family
     
@@ -65,7 +65,8 @@ contents:
         transmit-interval 500
         receive-interval 500
     
-    access-list 7 seq 10 permit {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+    access-list vip seq 1 permit {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+    access-list vip seq 2 permit {{`{{ .Cluster.IngressVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
     
     route-map vip permit 1
-      match ip address 7
+      match ip address vip
