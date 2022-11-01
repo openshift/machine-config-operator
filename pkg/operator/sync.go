@@ -39,6 +39,9 @@ import (
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	"github.com/openshift/machine-config-operator/pkg/server"
 	"github.com/openshift/machine-config-operator/pkg/version"
+
+	authenticationv1 "k8s.io/api/authentication/v1"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 )
 
 const (
@@ -71,6 +74,7 @@ const (
 	mccEventsRoleBindingTargetManifestPath  = "manifests/machineconfigcontroller/events-rolebinding-target.yaml"
 	mccClusterRoleBindingManifestPath       = "manifests/machineconfigcontroller/clusterrolebinding.yaml"
 	mccServiceAccountManifestPath           = "manifests/machineconfigcontroller/sa.yaml"
+	mccImagePullServiceAccountManifestPath  = "manifests/machineconfigcontroller/imagepull-sa.yaml"
 
 	// Machine Config Daemon manifest paths
 	mcdClusterRoleManifestPath              = "manifests/machineconfigdaemon/clusterrole.yaml"
@@ -290,6 +294,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
+
 	if len(additionalTrustBundle) > 0 {
 		if !certPool.AppendCertsFromPEM(additionalTrustBundle) {
 			return fmt.Errorf("configmap %s/%s doesn't have a valid PEM bundle", "openshift-config", "user-ca-bundle")
@@ -310,6 +315,43 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 			trustBundle = append(trustBundle, proxyTrustBundle...)
 		}
 	}
+
+	// If the image registry is present, pack the additional certs it needs
+	// TODO(jkyros): This is the worst
+	var internalRegistryPullSecret []byte
+	if !optr.inClusterBringup {
+		glog.Infof("It's safe to add the additional trust!")
+		if co, err := optr.configClient.ConfigV1().ClusterOperators().Get(context.TODO(), "image-registry", metav1.GetOptions{}); err == nil && co != nil {
+			glog.Infof("Image registry is present, so I can add the stuff")
+			// Add trust for both internal and external registry service trust
+			// We have to make sure it's available for firstboot because
+			// firstboot happens BEFORE the kubelet starts
+			// TODO(jkyros): WHY does our default PKI not have an actual cert chain
+			evenMoreTrust, err := optr.CollectAdditionalTrustBundles()
+			if err != nil {
+				return err
+			}
+
+			// Add secrets for access to the internal registry
+			acquiredPullerPullSecret, err := optr.acquireMCOPullSecretList(dns)
+			if err != nil {
+				glog.Warningf("Failed to acquire MCD pull secret list: %s", err)
+			}
+
+			// I would much rather only render one "different" machineconfig than two
+			// and one of these is useless without the other, so wait for both
+			// TODO(jkyros): you will someday regret this
+			if acquiredPullerPullSecret != nil && evenMoreTrust != nil {
+
+				glog.Infof("Adding extra pull secret and trust bundle!")
+				trustBundle = append(trustBundle, evenMoreTrust...)
+
+				internalRegistryPullSecret = acquiredPullerPullSecret
+			}
+		}
+
+	}
+
 	spec.AdditionalTrustBundle = trustBundle
 
 	if err := optr.syncCloudConfig(spec, infra); err != nil {
@@ -319,6 +361,7 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	spec.KubeAPIServerServingCAData = kubeAPIServerServingCABytes
 	spec.RootCAData = bundle
 	spec.PullSecret = &corev1.ObjectReference{Namespace: "openshift-config", Name: "pull-secret"}
+	spec.InternalRegistryPullSecret = internalRegistryPullSecret
 	spec.OSImageURL = imgs.MachineOSContent
 	spec.BaseOSContainerImage = imgs.BaseOSContainerImage
 	spec.BaseOSExtensionsContainerImage = imgs.BaseOSExtensionsContainerImage
@@ -350,6 +393,140 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	// create renderConfig
 	optr.renderConfig = getRenderConfig(optr.namespace, string(kubeAPIServerServingCABytes), spec, &imgs.RenderConfigImages, infra.Status.APIServerInternalURL, pointerConfigData)
 	return nil
+}
+
+// CollectAdditionalTrustBundles lets us grab public keys from configmaps so we can stuff them
+// in the system trust store.
+func (optr *Operator) CollectAdditionalTrustBundles() ([]byte, error) {
+	certPool := x509.NewCertPool()
+
+	var trustBundle []byte
+	type caConfigMap struct {
+		Namespace string
+		Name      string
+		Key       string
+	}
+	var scrapeThese = []caConfigMap{
+		//{"openshift-ingress-operator", "openshift-service-ca.crt", "service-ca.crt"},
+		// TODO(jkyros): kube-root for default ingress certificates. Maybe because it's type reencrypt?
+		{"openshift-ingress-operator", "kube-root-ca.crt", "ca.crt"},
+
+		// TODO(jkyros): this actually gets stuffed into the docker certs by the image registry operator
+		// which works, but not during bootstrap becase the default route uses a different cert
+		// We don't need this if we're using the exposed default route, but if we go the "get the registry to listen on the pod network" way,
+		// we will need this because it has a self-signed cert. So pick your poison, I guess :)
+		//{"openshift-image-registry", "image-registry-certificates", "image-registry.openshift-image-registry.svc..5000"},
+	}
+
+	for _, scrape := range scrapeThese {
+		// Get the configmap and the key that we want to include
+		certs, err := optr.getCAsFromConfigMap(scrape.Namespace, scrape.Name, scrape.Key)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		if len(certs) > 0 {
+			// TODO(jkyros): the certpool is just here to run the test, this is
+			// "if they parse as pems, the bytes are valid, use them"
+			if !certPool.AppendCertsFromPEM(certs) {
+				return nil, fmt.Errorf("configmap %s/%s:%s doesn't have a valid PEM bundle", scrape.Namespace, scrape.Name, scrape.Key)
+			}
+			trustBundle = append(trustBundle, certs...)
+		}
+
+	}
+	return trustBundle, nil
+}
+
+func (optr *Operator) acquireMCOPullSecretList(dns *configv1.DNS) ([]byte, error) {
+
+	dockerConfigJSON := credentialprovider.DockerConfigJson{
+		Auths: map[string]credentialprovider.DockerConfigEntry{},
+	}
+
+	// Get the list of image pull secrets from the designated service account
+	imagePullSecretList, err := optr.kubeClient.CoreV1().ServiceAccounts("openshift-machine-config-operator").Get(context.TODO(), "machine-config-operator-imagepull", metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve service account: %w", err)
+	}
+
+	for _, secret := range imagePullSecretList.ImagePullSecrets {
+
+		// Get each imagepull secret
+		secret, err := optr.kubeClient.CoreV1().Secrets("openshift-machine-config-operator").Get(context.TODO(), secret.Name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("Failed to retireve imagePullSecret %s: %w", secret.Name, err)
+		}
+
+		// It's just raw JSON, so we have to unmarshal it
+		var dockerConfig credentialprovider.DockerConfig
+		err = json.Unmarshal(secret.Data[corev1.DockerConfigKey], &dockerConfig)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to unmarshal imagePullSecret %s: %w", secret.Name, err)
+		}
+
+		// We're merging these all together so we can write a single auths file for rpm-ostree,
+		// so squish them all together
+		for host, _ := range dockerConfig {
+			dockerConfigJSON.Auths[host] = dockerConfig[host]
+			// Get the pull secret to work from external, it won't be supplied during pull if the host doesn't match
+			if host == "image-registry.openshift-image-registry.svc:5000" {
+				assembledDefaultRoute := "default-route-openshift-image-registry.apps." + dns.Spec.BaseDomain
+				dockerConfigJSON.Auths[assembledDefaultRoute] = dockerConfig[host]
+			}
+		}
+	}
+
+	// Don't push a file with on auths, it will roll the machineconfig
+	// the first time because of the json wrapper
+	if len(dockerConfigJSON.Auths) > 0 {
+
+		internalRegistryPullSecret, err := json.Marshal(dockerConfigJSON)
+		if err != nil {
+			return nil, fmt.Errorf("Error trying to marshal imagePullSecrets: %w", err)
+		}
+
+		return internalRegistryPullSecret, nil
+	}
+
+	return nil, nil
+}
+
+func (optr *Operator) genPullSecretFromServiceAccountToken() ([]byte, error) {
+	internalRegistryName := "image-registry.openshift-image-registry.svc:5000"
+
+	token, err := optr.kubeClient.CoreV1().ServiceAccounts("openshift-machine-config-operator").CreateToken(context.TODO(),
+		"machine-config-daemon",
+		&authenticationv1.TokenRequest{
+			// TODO(jkyros): set timeout and bound object on this so it's not just some rando token?
+			Spec: authenticationv1.TokenRequestSpec{},
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Could not request machine-config-daemon service account token: %w", err)
+	}
+
+	cp := credentialprovider.DockerConfigEntry{
+		Username: "machine-config-daemon",
+		Password: string(token.Status.Token),
+	}
+
+	dockerConfigJSON := credentialprovider.DockerConfigJson{
+		Auths: map[string]credentialprovider.DockerConfigEntry{
+			internalRegistryName: cp,
+		},
+	}
+
+	// Combine our pull secret with the existing auths so rpm-ostree can always pull
+	// regardless of where it is
+
+	authfileData, err := json.Marshal(dockerConfigJSON)
+	if err != nil {
+		return nil, fmt.Errorf("Error trying to marshal docker secrets: %s", authfileData)
+	}
+
+	return authfileData, nil
 }
 
 func getIgnitionHost(infraStatus *configv1.InfrastructureStatus) (string, error) {
@@ -604,6 +781,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 		},
 		serviceAccounts: []string{
 			mccServiceAccountManifestPath,
+			mccImagePullServiceAccountManifestPath,
 		},
 	}
 	if err := optr.applyManifests(config, paths); err != nil {
