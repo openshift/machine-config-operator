@@ -21,8 +21,8 @@ github.com/Djarvur/go-err113
 # github.com/GaijinEntertainment/go-exhaustruct/v2 v2.3.0
 ## explicit; go 1.19
 github.com/GaijinEntertainment/go-exhaustruct/v2/pkg/analyzer
-# github.com/InVisionApp/go-health v2.1.0+incompatible => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
-## explicit; go 1.13
+# github.com/InVisionApp/go-health v2.1.0+incompatible
+## explicit
 github.com/InVisionApp/go-health
 github.com/InVisionApp/go-health/checkers
 # github.com/InVisionApp/go-logger v1.0.1
@@ -1396,6 +1396,8 @@ google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/emptypb
 google.golang.org/protobuf/types/known/timestamppb
+# gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0
+## explicit
 # gopkg.in/inf.v0 v0.9.1
 ## explicit
 gopkg.in/inf.v0
@@ -1929,6 +1931,9 @@ k8s.io/gengo/generator
 k8s.io/gengo/namer
 k8s.io/gengo/parser
 k8s.io/gengo/types
+# k8s.io/klog v1.0.0
+## explicit; go 1.12
+k8s.io/klog
 # k8s.io/klog/v2 v2.70.1
 ## explicit; go 1.13
 k8s.io/klog/v2
@@ -1976,6 +1981,9 @@ k8s.io/kubectl/pkg/validation
 # k8s.io/kubelet v0.25.1
 ## explicit; go 1.19
 k8s.io/kubelet/config/v1beta1
+# k8s.io/kubernetes v1.13.0
+## explicit
+k8s.io/kubernetes/pkg/credentialprovider
 # k8s.io/utils v0.0.0-20220823124924-e9cbc92d1a73
 ## explicit; go 1.12
 k8s.io/utils/buffer
@@ -2119,7 +2127,6 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 # github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 # github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 # github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48

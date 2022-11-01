@@ -46,8 +46,14 @@ require (
 	k8s.io/component-base v0.25.1
 	k8s.io/kubectl v0.25.1
 	k8s.io/kubelet v0.25.1
+	k8s.io/kubernetes v1.13.0
 	k8s.io/utils v0.0.0-20220823124924-e9cbc92d1a73
 	sigs.k8s.io/controller-runtime v0.13.0
+)
+
+require (
+	gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
+	k8s.io/klog v1.0.0 // indirect
 )
 
 require (
@@ -308,7 +314,6 @@ require (
 )
 
 replace (
-	github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
