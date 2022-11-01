@@ -304,7 +304,7 @@ func TestCreatesMachineConfigs(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestCreatesMachineConfigsWithFeatureGate(t *testing.T) {
 	f.objects = append(f.objects, cc)
 	f.kubeobjects = append(f.kubeobjects, ps)
 
-	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	expMCs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestDoNothing(t *testing.T) {
 	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
 	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestRecreateMachineConfig(t *testing.T) {
 	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
 	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 	feat := newFeatures("cluster", "CustomNoUpgrade", []string{cloudprovider.ExternalCloudProviderFeature}, nil)
 	f.featLister = append(f.featLister, feat)
 
-	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	mcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), nil, feat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestUpdateMachineConfig(t *testing.T) {
 		f.objects = append(f.objects, mcs[idx])
 	}
 
-	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), feat)
+	expmcs, err := getMachineConfigsForControllerConfig(templateDir, cc, []byte(`{"dummy": "dummy"}`), []byte(`{"dummy": "dummy"}`), feat)
 	if err != nil {
 		t.Fatal(err)
 	}

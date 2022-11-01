@@ -112,7 +112,7 @@ func TestCloudProvider(t *testing.T) {
 					},
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -254,7 +254,7 @@ func TestCloudConfigFlag(t *testing.T) {
 					CloudProviderConfig: c.content,
 				},
 			}
-			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
+			got, err := renderTemplate(RenderConfig{&config.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, c.featureGate, nil}, name, dummyTemplate)
 			if err != nil {
 				t.Fatalf("expected nil error %v", err)
 			}
@@ -345,14 +345,14 @@ func TestInvalidPlatform(t *testing.T) {
 
 	// we must treat unrecognized constants as "none"
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_bad_"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil, nil}, templateDir)
 	if err != nil {
 		t.Errorf("expect nil error, got: %v", err)
 	}
 
 	// explicitly blocked
 	controllerConfig.Spec.Infra.Status.PlatformStatus.Type = "_base"
-	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+	_, err = generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil, nil}, templateDir)
 	expectErr(err, "failed to create MachineConfig for role master: platform _base unsupported")
 }
 
@@ -363,7 +363,7 @@ func TestGenerateMachineConfigs(t *testing.T) {
 			t.Fatalf("failed to get controllerconfig config: %v", err)
 		}
 
-		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, nil, nil}, templateDir)
+		cfgs, err := generateTemplateMachineConfigs(&RenderConfig{&controllerConfig.Spec, `{"dummy":"dummy"}`, `{"dummy":"dummy"}`, nil, nil}, templateDir)
 		if err != nil {
 			t.Fatalf("failed to generate machine configs: %v", err)
 		}
