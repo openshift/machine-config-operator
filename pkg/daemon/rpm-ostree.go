@@ -191,6 +191,48 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 
 }
 
+// skopeoInspect is a wrapper around the "skopeo inspect" command. Skopeo gets the proxy
+// from our environment, reads /etc/containers/registries.* so it should be mirror-aware
+// and it handles exponential backoff/retries that take the type of error into account. It's preferred
+// over podmanInspect because it doesn't have to pull the image to inspect it.
+func skopeoInspect(imgURL string) (imgdata *imageInspection, err error) {
+	// TODO(jkyros): This does not handle manifestlists. It looks like if you
+	// run with --raw, you can get the manifests and inspect them separately
+	// but we don't need that yet.
+
+	var authArgs []string
+	if _, err := os.Stat(kubeletAuthFile); err == nil {
+		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+	}
+
+	// Skopeo requires you to specify your transport
+	if !strings.HasPrefix(imgURL, "docker://") {
+		imgURL = "docker://" + imgURL
+	}
+
+	args := []string{"inspect", "--no-tags", "--retry-times", fmt.Sprintf("%d", numRetriesNetCommands)}
+	args = append(args, authArgs...)
+	args = append(args, imgURL)
+
+	var output []byte
+	// We let skopeo handle the retries, since it's smart enough to know what errors can be retried,
+	// If *we* do the retries, we're just blindly retrying every failure.
+	output, err = runGetOut("skopeo", args...)
+	if err != nil {
+		return
+	}
+
+	var inspection imageInspection
+	err = json.Unmarshal(output, &inspection)
+	if err != nil {
+		err = fmt.Errorf("unmarshaling skopeo inspect: %w", err)
+		return
+	}
+	imgdata = &inspection
+	return
+
+}
+
 // Rebase potentially rebases system if not already rebased.
 func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool, err error) {
 	var (
@@ -286,25 +328,13 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 // IsBootableImage determines if the image is a bootable (new container formet) image, or a wrapper (old container format)
 func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 
-	// TODO(jkyros): This is duplicated-ish from Rebase(), do we still need to carry this around?
 	var isBootableImage string
-	var imageData *types.ImageInspectInfo
-	var err error
-	if imageData, err = imageInspect(imgURL); err != nil {
-		if err != nil {
-			var podmanImgData *imageInspection
-			glog.Infof("Falling back to using podman inspect")
-
-			if podmanImgData, err = podmanInspect(imgURL); err != nil {
-				return false, err
-			}
-			isBootableImage = podmanImgData.Labels["ostree.bootable"]
-		}
-	} else {
-		isBootableImage = imageData.Labels["ostree.bootable"]
+	imageData, err := skopeoInspect(imgURL)
+	if err != nil {
+		return false, err
 	}
-	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
-	defer exec.Command("podman", "rmi", imgURL).Run()
+
+	isBootableImage = imageData.Labels["ostree.bootable"]
 
 	return isBootableImage == "true", nil
 }
