@@ -32,6 +32,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	pivottypes "github.com/openshift/machine-config-operator/pkg/daemon/pivot/types"
 	pivotutils "github.com/openshift/machine-config-operator/pkg/daemon/pivot/utils"
+
+	"k8s.io/kubernetes/pkg/credentialprovider"
 )
 
 const (
@@ -607,6 +609,23 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 	if dn.os.IsCoreOSVariant() {
 		coreOSDaemon := CoreOSDaemon{dn}
+
+		// TODO(jkyros): this is awful, it's conditionally mangling for outside cluster, and I'm just
+		// using what I have available to make it work until we decide what/if we want to accommodate this
+		if _, err := os.Stat(constants.MachineConfigEncapsulatedPath); err == nil {
+
+			mcoPulls, err := credentialprovider.ReadSpecificDockerConfigJsonFile("/etc/mco/internal-registry-pull-secret.json")
+			if err != nil {
+				glog.Warningf("Failed to hack in the external registry service name: %v", err)
+			}
+			for host, _ := range mcoPulls {
+				if strings.HasPrefix(host, "default-route-openshift-image-registry") {
+					glog.Infof("Mangling internal registry name for external use: --> %s", host)
+					newConfig.Spec.OSImageURL = strings.Replace(newConfig.Spec.OSImageURL, "image-registry.openshift-image-registry.svc:5000", host, 1)
+				}
+			}
+		}
+
 		if err := coreOSDaemon.applyOSChanges(*diff, oldConfig, newConfig); err != nil {
 			return err
 		}
@@ -2185,6 +2204,14 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// https://issues.redhat.com/browse/OCPBUGS-2757
 	if mcDiff.osUpdate && dn.bootedOSImageURL == newConfig.Spec.OSImageURL {
 		glog.Infof("Already in desired image %s", newConfig.Spec.OSImageURL)
+		mcDiff.osUpdate = false
+	}
+
+	// TODO(jkyros): the registry name is different on the "outside" when we're in firstboot,
+	// but it's the same on the inside. I really should be checking the name + digest.
+	justTheImage := strings.TrimPrefix(dn.bootedOSImageURL, "image-registry.openshift-image-registry.svc:5000")
+	if strings.HasSuffix(newConfig.Spec.OSImageURL, justTheImage) {
+		glog.Infof("Ignoring image name difference -- image acquired from firstboot is equivalent")
 		mcDiff.osUpdate = false
 	}
 
