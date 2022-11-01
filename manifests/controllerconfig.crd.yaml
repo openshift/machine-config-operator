@@ -995,6 +995,9 @@ spec:
                       CIDRs for which the proxy should not be used.
                     type: string
                 type: object
+              internalRegistryPullSecret:
+                description: internalRegistryPullSecret is the pull secret for the internal registry. 
+                type: string
               pullSecret:
                 description: pullSecret is the default pull secret that needs to be
                   installed on all machines.

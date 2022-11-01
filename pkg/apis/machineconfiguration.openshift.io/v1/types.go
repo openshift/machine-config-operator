@@ -69,6 +69,9 @@ type ControllerConfigSpec struct {
 	// on all machines.
 	PullSecret *corev1.ObjectReference `json:"pullSecret,omitempty"`
 
+	// internalRegistryPullSecret is the pull secret for the internal registry
+	InternalRegistryPullSecret []byte `json:"internalRegistryPullSecret,omitempty"`
+
 	// images is map of images that are used by the controller to render templates under ./templates/
 	Images map[string]string `json:"images"`
 
