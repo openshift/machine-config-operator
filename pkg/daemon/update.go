@@ -55,6 +55,8 @@ const (
 	postConfigChangeActionNone = "none"
 	// The "reload crio" action will run "systemctl reload crio"
 	postConfigChangeActionReloadCrio = "reload crio"
+	// The "update ca trust" action will run
+	postConfigChangeActionUpdateCATrust = "update ca trust"
 	// Rebooting is still the default scenario for any other change
 	postConfigChangeActionReboot = "reboot"
 
@@ -130,6 +132,17 @@ func (dn *Daemon) performPostConfigChangeAction(postConfigChangeActions []string
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "SkipReboot", "Config changes do not require reboot.")
 		}
 		dn.logSystem("Node has Desired Config %s, skipping reboot", configName)
+	}
+
+	if ctrlcommon.InSlice(postConfigChangeActionUpdateCATrust, postConfigChangeActions) {
+		if out, err := runGetOut("update-ca-trust"); err != nil {
+			glog.Warningf("Error updating CA trust: %s", out)
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedUpdateCATrust", fmt.Sprintf("Updating ca trust failed. Error: %v", err))
+			}
+			return fmt.Errorf("could not apply update: updating ca trust failed. Error: %w", err)
+		}
+
 	}
 
 	if ctrlcommon.InSlice(postConfigChangeActionReloadCrio, postConfigChangeActions) {
@@ -467,17 +480,23 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 	filesPostConfigChangeActionNone := []string{
 		"/etc/kubernetes/kubelet-ca.crt",
 		"/var/lib/kubelet/config.json",
+		"/etc/mco/internal-registry-pull-secret.json",
 	}
 	filesPostConfigChangeActionReloadCrio := []string{
 		constants.ContainerRegistryConfPath,
 		GPGNoRebootPath,
 		"/etc/containers/policy.json",
 	}
-
+	directoryPostConfigActionUpdateCATrust := []string{
+		"/etc/pki",
+		"/usr/share/pki",
+	}
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
 			continue
+		} else if ctrlcommon.SliceHasPrefix(directoryPostConfigActionUpdateCATrust, path) {
+			actions = []string{postConfigChangeActionUpdateCATrust}
 		} else if ctrlcommon.InSlice(path, filesPostConfigChangeActionReloadCrio) {
 			actions = []string{postConfigChangeActionReloadCrio}
 		} else {
