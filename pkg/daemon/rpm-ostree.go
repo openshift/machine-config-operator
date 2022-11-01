@@ -91,14 +91,15 @@ func (r *RpmOstreeClient) Initialize() error {
 	if err := bug2111817Workaround(); err != nil {
 		return err
 	}
-
-	// Commands like update and rebase need the pull secrets to pull images and manifests,
-	// make sure we get access to them when we Initialize
-	err := useKubeletConfigSecrets()
-	if err != nil {
-		return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
-	}
-
+	// TODO(jkyros): removing this if we're crafting our own pull secrets here
+	/*
+		// Commands like update and rebase need the pull secrets to pull images and manifests,
+		// make sure we get access to them when we Initialize
+		err := useKubeletConfigSecrets()
+		if err != nil {
+			return fmt.Errorf("Error while ensuring access to kublet config.json pull secrets: %w", err)
+		}
+	*/
 	return nil
 }
 
@@ -163,7 +164,7 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 	// Pull the container image if not already available
 	var authArgs []string
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+		authArgs = append(authArgs, "--authfile", ostreeAuthFile)
 	}
 	args := []string{"pull", "-q"}
 	args = append(args, authArgs...)
@@ -202,7 +203,7 @@ func skopeoInspect(imgURL string) (imgdata *imageInspection, err error) {
 
 	var authArgs []string
 	if _, err := os.Stat(kubeletAuthFile); err == nil {
-		authArgs = append(authArgs, "--authfile", kubeletAuthFile)
+		authArgs = append(authArgs, "--authfile", ostreeAuthFile)
 	}
 
 	// Skopeo requires you to specify your transport

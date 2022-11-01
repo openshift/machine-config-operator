@@ -41,6 +41,8 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfginformersv1 "github.com/openshift/machine-config-operator/pkg/generated/informers/externalversions/machineconfiguration.openshift.io/v1"
 	mcfglistersv1 "github.com/openshift/machine-config-operator/pkg/generated/listers/machineconfiguration.openshift.io/v1"
+
+	"k8s.io/kubernetes/pkg/credentialprovider"
 )
 
 // Daemon is the dispatch point for the functions of the agent on the
@@ -327,6 +329,8 @@ func (dn *Daemon) ClusterConnect(
 	dn.kubeletHealthzEndpoint = kubeletHealthzEndpoint
 
 	go dn.runLoginMonitor(dn.stopCh, dn.exitCh)
+
+	dn.WritePullSecret()
 
 	return nil
 }
@@ -1494,6 +1498,10 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 		if !osMatch {
 			dn.logSystem("Bootstrap pivot required to: %s", targetOSImageURL)
 
+			err := dn.WritePullSecret()
+			if err != nil {
+				return fmt.Errorf("Unable to write pull secret for rpm-ostree: %w", err)
+			}
 			// Check to see if we have a layered/new format image
 			isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(targetOSImageURL)
 			if err != nil {
@@ -2014,4 +2022,61 @@ func forceFileExists() bool {
 	}
 
 	return false
+}
+
+// genPullSecretFromServiceAccountToken packs the service account token into a compatible docker config so it can be used to login
+// to the container registry.
+// TODO(jkyros): I wrote this before I found where the default dockercfg secrets were generated, and controller-manager
+// does the same thing (albeit more elegantly). I still don't think we want the serviceaccount token on disk.
+// https://github.com/openshift/openshift-controller-manager/blob/aca2e4f51451e7036e53e88c7f64c75c2a20fa3d/pkg/serviceaccounts/controllers/create_dockercfg_secrets.go#L468
+func (dn *Daemon) genPullSecretFromServiceAccountToken() ([]byte, error) {
+
+	// credentialprovidre DockerConfig is just a map[string]Auth
+	kubeletConfig, err := credentialprovider.ReadSpecificDockerConfigJsonFile(kubeletAuthFile)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerConfigJSON := credentialprovider.DockerConfigJson{
+		Auths: map[string]credentialprovider.DockerConfigEntry{},
+	}
+	// If we have an internal registry secret, combine it with the kublet auth file to make our "ostree pull secret"
+	// that contains all of them (so it can pull from anywhere)
+	if internalRegistryConfig, err := credentialprovider.ReadSpecificDockerConfigJsonFile("/etc/mco/internal-registry-pull-secret.json"); err != nil {
+		glog.Warningf("Failed to get internal registry pull secret (okay if we're firstboot/boostrapping or there isn't one): %s", err)
+	} else {
+
+		for host, _ := range internalRegistryConfig {
+			dockerConfigJSON.Auths[host] = internalRegistryConfig[host]
+		}
+	}
+
+	// Combine our pull secret with the existing auths so rpm-ostree can always pull
+	// regardless of where the image is
+	for host := range kubeletConfig {
+		dockerConfigJSON.Auths[host] = kubeletConfig[host]
+	}
+
+	authfileData, err := json.Marshal(dockerConfigJSON)
+	if err != nil {
+		return nil, fmt.Errorf("Error trying to marshal docker secrets: %s", authfileData)
+	}
+
+	return authfileData, nil
+}
+
+func (dn *Daemon) WritePullSecret() error {
+	pullSecret, err := dn.genPullSecretFromServiceAccountToken()
+	if err != nil {
+		return err
+	}
+
+	// TODO: take this out once https://github.com/ostreedev/ostree/pull/2563 merges and is available
+	os.Mkdir("/run/ostree", 0544)
+	// daemon pull secret to allow rpm-ostree to pull in cluster images
+	err = ioutil.WriteFile(ostreeAuthFile, pullSecret, 0400)
+	if err != nil {
+		return fmt.Errorf("failed to write pull secret file: %w", err)
+	}
+	return nil
 }

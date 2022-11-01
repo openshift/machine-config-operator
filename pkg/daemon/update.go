@@ -420,6 +420,10 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 		}
 
 	}
+	err := dn.WritePullSecret()
+	if err != nil {
+		return fmt.Errorf("Unable to write pull secret for rpm-ostree: %w", err)
+	}
 
 	// The steps from here on are different depending on the image type, so check the image type
 	isLayeredImage, err := dn.NodeUpdaterClient.IsBootableImage(newConfig.Spec.OSImageURL)
@@ -487,10 +491,12 @@ func calculatePostConfigChangeActionFromFileDiffs(diffFileSet []string) (actions
 		GPGNoRebootPath,
 		"/etc/containers/policy.json",
 	}
+
 	directoryPostConfigActionUpdateCATrust := []string{
 		"/etc/pki",
 		"/usr/share/pki",
 	}
+
 	actions = []string{postConfigChangeActionNone}
 	for _, path := range diffFileSet {
 		if ctrlcommon.InSlice(path, filesPostConfigChangeActionNone) {
@@ -651,6 +657,7 @@ func (dn *Daemon) update(oldConfig, newConfig *mcfgv1.MachineConfig) (retErr err
 
 		defer func() {
 			if retErr != nil {
+
 				if err := coreOSDaemon.applyOSChanges(*diff, newConfig, oldConfig); err != nil {
 					errs := kubeErrs.NewAggregate([]error{err, retErr})
 					retErr = fmt.Errorf("error rolling back changes to OS: %w", errs)

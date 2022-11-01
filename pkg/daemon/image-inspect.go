@@ -15,6 +15,8 @@ import (
 const (
 	// Number of retry we want to perform
 	cmdRetriesCount = 2
+
+	ostreeAuthFile = "/run/ostree/auth.json"
 )
 
 func retryIfNecessary(ctx context.Context, operation func() error) error {
@@ -60,7 +62,7 @@ func imageInspect(imageName string) (*types.ImageInspectInfo, error) {
 	)
 
 	ctx := context.Background()
-	sys := &types.SystemContext{AuthFilePath: kubeletAuthFile}
+	sys := &types.SystemContext{AuthFilePath: ostreeAuthFile}
 
 	if err := retryIfNecessary(ctx, func() error {
 		src, err = newDockerImageSource(ctx, sys, imageName)
