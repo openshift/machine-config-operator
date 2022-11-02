@@ -303,14 +303,18 @@ contents:
         else
           extra_if_brex_args=""
           # check if interface had ipv4/ipv6 addresses assigned
-          num_ipv4_addrs=$(ip -j a show dev ${iface} | jq ".[0].addr_info | map(. | select(.family == \"inet\")) | length")
+          # note: 'ip -j' is not available in the RHEL7 version of iproute2, so
+          # we can't use it here
+          num_ipv4_addrs=$(ip a show dev ${iface} | grep -E "^[[:blank:]]*inet\b" | wc -l)
           if [ "$num_ipv4_addrs" -gt 0 ]; then
             extra_if_brex_args+="ipv4.may-fail no "
           fi
 
           # IPV6 should have at least a link local address. Check for more than 1 to see if there is an
           # assigned address.
-          num_ip6_addrs=$(ip -j a show dev ${iface} | jq ".[0].addr_info | map(. | select(.family == \"inet6\" and .scope != \"link\")) | length")
+          # note: 'ip -j' is not available in the RHEL7 version of iproute2, so
+          # we can't use it here
+          num_ip6_addrs=$(ip a show dev ${iface} | grep -E "^[[:blank:]]*inet6\b" | grep -v "\bscope link\b" | wc -l)
           if [ "$num_ip6_addrs" -gt 0 ]; then
             extra_if_brex_args+="ipv6.may-fail no "
           fi
