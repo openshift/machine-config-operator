@@ -33,6 +33,9 @@ contents:
       - name: chroot-host
         hostPath:
           path: "/"
+      - name: nodeip-configuration
+        hostPath:
+          path: "/run/nodeip-configuration"
       initContainers:
       - name: render-config-keepalived
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -55,6 +58,8 @@ contents:
           mountPath: "/config"
         - name: conf-dir
           mountPath: "/etc/keepalived"
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
         imagePullPolicy: IfNotPresent
       containers:
       - name: keepalived
@@ -184,6 +189,8 @@ contents:
           mountPath: "/var/run/keepalived"
         - name: chroot-host
           mountPath: "/host"
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
         imagePullPolicy: IfNotPresent
       hostNetwork: true
       tolerations:
