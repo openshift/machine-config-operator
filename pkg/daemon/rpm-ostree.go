@@ -115,22 +115,8 @@ func (r *RpmOstreeClient) Initialize() error {
 		return err
 	}
 
-	status, err := r.loadStatus()
-	if err != nil {
+	if err := r.workaroundBug2101379(); err != nil {
 		return err
-	}
-
-	// If there's an active transaction when the MCD starts up,
-	// it's possible that we hit
-	// https://bugzilla.redhat.com/show_bug.cgi?id=1982389
-	// This is fixed upstream, but we need a newer RHEL for that,
-	// so let's just restart the service as a workaround.
-	if status.Transaction != nil {
-		glog.Warningf("Detected active transaction during daemon startup, restarting to clear it")
-		err := runCmdSync("systemctl", "restart", "rpm-ostreed")
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -215,8 +201,34 @@ func podmanInspect(imgURL string) (imgdata *imageInspection, err error) {
 
 }
 
+func (r *RpmOstreeClient) workaroundBug2101379() error {
+	status, err := r.loadStatus()
+	if err != nil {
+		return err
+	}
+
+	// If there's an active transaction when the MCD starts up,
+	// it's possible that we hit
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1982389
+	// This is fixed upstream, but we need a newer RHEL for that,
+	// so let's just restart the service as a workaround.
+	if status.Transaction != nil {
+		glog.Warningf("Detected active transaction during daemon startup, restarting to clear it")
+		err := runCmdSync("systemctl", "restart", "rpm-ostreed")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Rebase potentially rebases system if not already rebased.
 func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool, err error) {
+	if err := r.workaroundBug2101379(); err != nil {
+		return false, err
+	}
+
 	var (
 		ostreeCsum    string
 		ostreeVersion string
