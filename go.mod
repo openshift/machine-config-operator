@@ -308,5 +308,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
-
-replace github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
