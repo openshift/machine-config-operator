@@ -50,6 +50,8 @@ require (
 	sigs.k8s.io/controller-runtime v0.13.0
 )
 
+require gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0 // indirect
+
 require (
 	4d63.com/gochecknoglobals v0.1.0 // indirect
 	github.com/Antonboom/errname v0.1.7 // indirect
@@ -308,7 +310,6 @@ require (
 )
 
 replace (
-	github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
 	github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
 	github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
 	github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
