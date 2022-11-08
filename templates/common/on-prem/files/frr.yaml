@@ -162,9 +162,9 @@ contents:
                   # takes one argument: the service name (api or ingress) to check (must returns 200)
                   local service=$1
                   if [ "${service}" == "api" ]; then
-                    /usr/bin/timeout 1.9 /etc/frr/chk_ocp_script_api.sh
+                    /etc/frr/chk_ocp_script_api.sh
                   elif [ "${service}" == "ingress" ]; then
-                    /usr/bin/timeout 1.9 /etc/frr/chk_ocp_script_ingress.sh
+                    /etc/frr/chk_ocp_script_ingress.sh
                   else
                     echo "Wrong service name: ${service}"
                     return 1
@@ -265,6 +265,7 @@ contents:
                       delete_vip $vip/$VIP_NETMASK
                     done
                   fi
+                  sleep 2
               done
         resources:
           requests:
@@ -276,6 +277,7 @@ contents:
         terminationMessagePolicy: FallbackToLogsOnError
         imagePullPolicy: IfNotPresent
       - name: frr
+        # change that, see https://github.com/metallb/metallb/blob/350855a42d4d2bd510c9cdd6d484d49224879436/config/frr/speaker-patch.yaml#L55-L57
         securityContext:
           privileged: true
         image: quay.io/emilien/frr:latest

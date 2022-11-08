@@ -83,6 +83,8 @@ spec:
     imagePullPolicy: IfNotPresent
   containers:
   - name: frr
+    # change that, see
+    # https://github.com/metallb/metallb/blob/350855a42d4d2bd510c9cdd6d484d49224879436/config/frr/speaker-patch.yaml#L55-L57
     securityContext:
       privileged: true
     image: quay.io/emilien/frr:latest

@@ -3,4 +3,4 @@ path: "/etc/kubernetes/static-pod-resources/frr/scripts/chk_ocp_script_api.sh.tm
 contents:
   inline: |
     #!/bin/bash
-    /usr/bin/curl -kLfs https://localhost:{{`{{ .LBConfig.ApiPort }}`}}/readyz
+    /usr/bin/timeout 1.9 curl -kLfs https://localhost:{{`{{ .LBConfig.ApiPort }}`}}/readyz
