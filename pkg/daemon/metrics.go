@@ -23,7 +23,7 @@ var (
 	// MCDSSHAccessed shows ssh access count for a node
 	MCDSSHAccessed = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "ssh_accessed",
+			Name: "ssh_accessed_total",
 			Help: "indicates a successful SSH login",
 		})
 
@@ -34,12 +34,12 @@ var (
 			Help: "logs failed drain",
 		})
 
-	// MCDPivotErr shows errors encountered during pivot
-	MCDPivotErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "mcd_pivot_err",
-			Help: "errors encountered during pivot",
-		}, []string{"node", "pivot_target", "err"})
+	// MCDPivotErr flags error encountered during pivot
+	MCDPivotErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mcd_pivot_err_total",
+			Help: "error encountered during pivot",
+		}, []string{})
 
 	// MCDState is state of mcd for indicated node (ex: degraded)
 	MCDState = prometheus.NewGaugeVec(
@@ -55,11 +55,11 @@ var (
 			Help: "state of kubelet health monitor",
 		})
 
-	// MCDRebootErr logs success/failure of reboot and errors
-	MCDRebootErr = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "mcd_reboot_err",
-		}, []string{"node", "message", "err"})
+	// MCDRebootErr tallys failed reboot attempts
+	MCDRebootErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mcd_reboot_err_total",
+		}, []string{})
 
 	// MCDUpdateState logs completed update or error
 	MCDUpdateState = prometheus.NewGaugeVec(
@@ -89,9 +89,7 @@ func registerMCDMetrics() error {
 	}
 
 	MCDDrainErr.Set(0)
-	MCDPivotErr.WithLabelValues("", "", "").Set(0)
 	KubeletHealthState.Set(0)
-	MCDRebootErr.WithLabelValues("", "", "").Set(0)
 	MCDUpdateState.WithLabelValues("", "").Set(0)
 
 	return nil
