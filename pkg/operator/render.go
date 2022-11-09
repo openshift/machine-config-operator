@@ -372,3 +372,57 @@ func onPremPlatformBGPConfiguration(cfg mcfgv1.ControllerConfigSpec) (interface{
 	}
 	return nil, fmt.Errorf("no BGP configuration was found")
 }
+
+func isKeepalivedEnabled(cfg mcfgv1.ControllerConfigSpec) bool {
+	ips, err := onPremPlatformAPIServerInternalIPs(cfg)
+	if err != nil {
+		return false
+	}
+	if ips != nil {
+		if cfg.Infra.Status.PlatformStatus != nil {
+			switch cfg.Infra.Status.PlatformStatus.Type {
+			case configv1.OpenStackPlatformType:
+				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
+				if apiLBConfig.APILoadBalancerType != "BGP" {
+					return true
+				}
+				return false
+			default:
+				// If the platform is not OpenStack, keepalived is enabled but in the future
+				// we might want to disable it for other platforms if FRR is being used.
+				return true
+			}
+		} else {
+			return false
+		}
+	} else {
+		return false
+	}
+}
+
+func isFrrEnabled(cfg mcfgv1.ControllerConfigSpec) bool {
+	ips, err := onPremPlatformAPIServerInternalIPs(cfg)
+	if err != nil {
+		return false
+	}
+	if ips != nil {
+		if cfg.Infra.Status.PlatformStatus != nil {
+			switch cfg.Infra.Status.PlatformStatus.Type {
+			case configv1.OpenStackPlatformType:
+				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
+				if apiLBConfig.APILoadBalancerType == "BGP" {
+					return true
+				}
+				return false
+			default:
+				// If the platform is not OpenStack, frr is disabled but in the future
+				// we might want to enable it for other platforms if FRR is being used.
+				return false
+			}
+		} else {
+			return false
+		}
+	} else {
+		return false
+	}
+}
