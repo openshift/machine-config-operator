@@ -5,11 +5,13 @@ aliases:
     - bfournie
     - celebdor
     - cybertron
+    - dougsland
     - hardys
   baremetal-reviewers:
     - bfournie
     - celebdor
     - cybertron
+    - dougsland
     - hardys
   openstack-approvers:
     - EmilienM
