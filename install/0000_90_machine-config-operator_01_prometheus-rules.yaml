@@ -55,7 +55,7 @@ spec:
       rules:
         - alert: MCDRebootError
           expr: |
-             mcd_reboot_err > 0
+             mcd_reboot_err_total > 0
           labels:
             severity: critical
           annotations:
@@ -73,11 +73,11 @@ spec:
       rules:
         - alert: MCDPivotError
           expr: |
-            mcd_pivot_err > 0
+            mcd_pivot_err_total > 0
           labels:
             severity: warning
           annotations:
-            message: "Error detected in pivot logs on {{ $labels.node }} "
+            message: "Error detected in pivot logs on {{ $labels.node }} , upgrade may be blocked. For more details:  oc logs -f -n openshift-machine-config-operator {{ $labels.pod }} -c machine-config-daemon "
     - name: mcd-kubelet-health-state-error
       rules:
         - alert: KubeletHealthState

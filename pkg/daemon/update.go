@@ -1307,6 +1307,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
+//
 //nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Deleting stale data")
@@ -2169,14 +2170,14 @@ func (dn *Daemon) reboot(rationale string) error {
 	// either, we just have one for the MCD itself.
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
-		MCDRebootErr.WithLabelValues(dn.node.Name, "failed to run reboot", err.Error()).SetToCurrentTime()
+		MCDRebootErr.WithLabelValues().Inc()
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
 	time.Sleep(defaultRebootTimeout)
 
 	// if everything went well, this should be unreachable.
-	MCDRebootErr.WithLabelValues(dn.node.Name, "reboot failed", "this error should be unreachable, something is seriously wrong").SetToCurrentTime()
+	MCDRebootErr.WithLabelValues().Inc()
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }
 
@@ -2210,11 +2211,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
-			nodeName := ""
-			if dn.node != nil {
-				nodeName = dn.node.Name
-			}
-			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
+			MCDPivotErr.WithLabelValues().Inc()
 			return err
 		}
 		if dn.nodeWriter != nil {
@@ -2282,11 +2279,7 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
-			nodeName := ""
-			if dn.node != nil {
-				nodeName = dn.node.Name
-			}
-			MCDPivotErr.WithLabelValues(nodeName, newConfig.Spec.OSImageURL, err.Error()).SetToCurrentTime()
+			MCDPivotErr.WithLabelValues().Inc()
 			return err
 		}
 		if dn.nodeWriter != nil {
