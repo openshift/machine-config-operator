@@ -21,8 +21,8 @@ github.com/Djarvur/go-err113
 # github.com/GaijinEntertainment/go-exhaustruct/v2 v2.3.0
 ## explicit; go 1.19
 github.com/GaijinEntertainment/go-exhaustruct/v2/pkg/analyzer
-# github.com/InVisionApp/go-health v2.1.0+incompatible => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
-## explicit; go 1.13
+# github.com/InVisionApp/go-health v2.1.0+incompatible
+## explicit
 github.com/InVisionApp/go-health
 github.com/InVisionApp/go-health/checkers
 # github.com/InVisionApp/go-logger v1.0.1
@@ -756,7 +756,7 @@ github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.1.3
 ## explicit; go 1.16
 github.com/opencontainers/runc/libcontainer/user
-# github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
+# github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
 # github.com/openshift/api v0.0.0-20220915134421-1265e9925688
@@ -1396,6 +1396,8 @@ google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/emptypb
 google.golang.org/protobuf/types/known/timestamppb
+# gopkg.in/DATA-DOG/go-sqlmock.v1 v1.3.0
+## explicit
 # gopkg.in/inf.v0 v0.9.1
 ## explicit
 gopkg.in/inf.v0
@@ -2119,9 +2121,3 @@ sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/InVisionApp/go-health => github.com/InVisionApp/go-health v1.1.7-0.20190926150048-b5cab38233bb
-# github.com/go-log/log => github.com/go-log/log v0.1.1-0.20181211034820-a514cf01a3eb
-# github.com/godbus/dbus => github.com/godbus/dbus v0.0.0-20190623212516-8a1682060722
-# github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v0.1.2-0.20190408193819-a1b50f621a48
-# github.com/openshift/cluster-api => github.com/openshift/cluster-api v0.0.0-20191129101638-b09907ac6668
-# github.com/securego/gosec => github.com/securego/gosec v0.0.0-20190709033609-4b59c948083c
