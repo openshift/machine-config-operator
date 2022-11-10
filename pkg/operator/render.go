@@ -65,6 +65,8 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["onPremPlatformBGPConfiguration"] = onPremPlatformBGPConfiguration
+	funcs["isKeepalivedEnabled"] = isKeepalivedEnabled
+	funcs["isFrrEnabled"] = isFrrEnabled
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
