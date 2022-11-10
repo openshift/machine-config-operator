@@ -166,7 +166,7 @@ contents:
                   elif [ "${service}" == "ingress" ]; then
                     /etc/frr/chk_ocp_script_ingress.sh
                   else
-                    echo "Wrong service name: ${service}"
+                    echo `date "+%FT%T"` "Wrong service name: ${service}"
                     return 1
                   fi
               }
@@ -178,10 +178,10 @@ contents:
                   # takes one argument: the VIP to check.
                   local vip=$1
                   if ip address show dev lo | grep -q $vip; then
-                      echo "VIP $vip is assigned to this node"
+                      echo `date "+%FT%T"` "VIP $vip is assigned to this node"
                       return 0
                   else
-                      echo "VIP $vip is not assigned to this node"
+                      echo `date "+%FT%T"` "VIP $vip is not assigned to this node"
                       return 1
                   fi
               }
@@ -207,11 +207,11 @@ contents:
                   # takes one argument: the VIP to route.
                   local vip=$1
                   if ! ip rule show table 168 | grep -q $vip; then
-                      echo "Create ip rule for $NETWORK_CIDR in table 168"
+                      echo `date "+%FT%T"` "Create ip rule for $NETWORK_CIDR in table 168"
                       ip rule add from $vip to $NETWORK_CIDR lookup 168
                   fi
                   if ! ip route show table 168 | grep -q $GATEWAY; then
-                      echo "Create default route for table 168 via $GATEWAY"
+                      echo `date "+%FT%T"` "Create default route for table 168 via $GATEWAY"
                       ip route add default via $GATEWAY table 168
                   fi
               }
@@ -222,7 +222,7 @@ contents:
                   # takes one argument: the VIP to create.
                   local vip=$1
                   if ! ip address show dev lo | grep -q $vip; then
-                    echo "Creating VIP $vip"
+                    echo `date "+%FT%T"` "Creating VIP $vip"
                     ip address add $vip dev lo
                   fi
               }
@@ -232,7 +232,7 @@ contents:
                   # takes one argument: the VIP to delete.
                   local vip=$1
                   if ip address show dev lo | grep -q $vip; then
-                    echo "Deleting VIP $vip"
+                    echo `date "+%FT%T"` "Deleting VIP $vip"
                     ip address del $vip dev lo
                   fi
               }
@@ -241,26 +241,26 @@ contents:
                   VIP_NETMASK=32
 
                   if check_health "api"; then
-                    echo "Healthcheck for API OK"
+                    echo `date "+%FT%T"` "Healthcheck for API OK"
                     for vip in $API_VIPS; do
                       create_vip $vip/$VIP_NETMASK
                       create_vip_routing $vip
                     done
                   else
-                    echo "Healthcheck for API not OK"
+                    echo `date "+%FT%T"` "Healthcheck for API not OK"
                     for vip in $API_VIPS; do
                       delete_vip $vip/$VIP_NETMASK
                     done
                   fi
 
                   if check_health "ingress"; then
-                    echo "Healthcheck for Ingress OK"
+                    echo `date "+%FT%T"` "Healthcheck for Ingress OK"
                     for vip in $INGRESS_VIPS; do
                       create_vip $vip/$VIP_NETMASK
                       create_vip_routing $vip
                     done
                   else
-                    echo "Healthcheck for Ingress not OK"
+                    echo `date "+%FT%T"` "Healthcheck for Ingress not OK"
                     for vip in $INGRESS_VIPS; do
                       delete_vip $vip/$VIP_NETMASK
                     done

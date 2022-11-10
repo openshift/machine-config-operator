@@ -3,4 +3,4 @@ path: "/etc/kubernetes/static-pod-resources/frr/scripts/chk_ocp_script_ingress.s
 contents:
   inline: |
     #!/bin/bash
-    /usr/bin/timeout 4.9 curl -o /dev/null -kLfs http://localhost:1936/healthz/ready
+    /usr/bin/timeout 4.9 curl -o /dev/null -kLfs http://localhost:1936/healthz/ready &>/dev/null
