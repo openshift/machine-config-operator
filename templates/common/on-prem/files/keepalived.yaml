@@ -125,6 +125,11 @@ contents:
           export -f reload_keepalived
           export -f sigterm_handler
 
+          # in remote worker case sleep forever
+          if [ -f "/run/nodeip-configuration/notMatchesVips" ]; then
+             sleep infinity
+          fi
+
           trap sigterm_handler SIGTERM
           if [ -s "/etc/keepalived/keepalived.conf" ]; then
               /usr/sbin/keepalived -f /etc/keepalived/keepalived.conf --dont-fork --vrrp --log-detail --log-console &
@@ -145,6 +150,8 @@ contents:
           mountPath: "/host"
         - name: kubeconfigvarlib
           mountPath: "/var/lib/kubelet"
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
         livenessProbe:
           exec:
             command:
@@ -166,14 +173,17 @@ contents:
           - name: IS_BOOTSTRAP
             value: "no"
         command:
-        - dynkeepalived
-        - "/var/lib/kubelet/kubeconfig"
-        - "/config/keepalived.conf.tmpl"
-        - "/etc/keepalived/keepalived.conf"
-        - "--api-vips"
-        - "{{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
-        - "--ingress-vips"
-        - "{{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}"
+        - /bin/bash
+        - -c
+        - |
+          #/bin/bash
+          # in remote worker case sleep forever
+          if [ -f "/run/nodeip-configuration/notMatchesVips" ]; then
+              sleep infinity
+          fi
+          api_vips={{- range $index, $ip := onPremPlatformAPIServerInternalIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
+          ingress_vips={{- range $index, $ip := onPremPlatformIngressIPs . }}{{ if gt $index 0 }},{{end}}{{$ip}}{{end}}
+          dynkeepalived /var/lib/kubelet/kubeconfig /config/keepalived.conf.tmpl /etc/keepalived/keepalived.conf --api-vips "${api_vips}" --ingress-vips "${ingress_vips}"
         resources:
           requests:
             cpu: 100m
