@@ -355,6 +355,7 @@ func (ctrl *Controller) isMaster(node *corev1.Node) bool {
 
 // Determine if a given Node is a remote worker
 func (ctrl *Controller) isRemoteWorker(node *corev1.Node) bool {
+	glog.Error("Verifying is remote worker")
 	_, remoteWorker := node.ObjectMeta.Annotations[daemonconsts.RemoteWorkerAnnotationKey]
 	return remoteWorker
 }
@@ -399,6 +400,10 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 }
 
 func (ctrl *Controller) reconcileRemoteWorker(node *corev1.Node) {
+	glog.Error("REMOTE WORKER")
+	if _, hasRemoteWorkerLabel := node.Labels[daemonconsts.RemoteWorkerAnnotationKey]; hasRemoteWorkerLabel {
+		return
+	}
 	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
 		// Add worker label
 		newLabels := node.Labels
@@ -435,10 +440,6 @@ func (ctrl *Controller) addNode(obj interface{}) {
 
 	if ctrl.isMaster(node) {
 		ctrl.reconcileMaster(node)
-	}
-
-	if ctrl.isRemoteWorker(node) {
-		ctrl.reconcileRemoteWorker(node)
 	}
 
 	pools, err := ctrl.getPoolsForNode(node)
@@ -480,6 +481,10 @@ func (ctrl *Controller) updateNode(old, cur interface{}) {
 
 	if ctrl.isMaster(curNode) {
 		ctrl.reconcileMaster(curNode)
+	}
+
+	if ctrl.isRemoteWorker(curNode) {
+		ctrl.reconcileRemoteWorker(curNode)
 	}
 
 	pool, err := ctrl.getPrimaryPoolForNode(curNode)
