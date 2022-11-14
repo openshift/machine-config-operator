@@ -188,12 +188,24 @@ spec:
           delete_vip $vip/$VIP_NETMASK
         done
       }
-      
+     
+      start_frr()
+      {
+          /usr/libexec/frr/frr start
+          start_all_vips
+      }
+
       stop_frr()
       {
         echo `date "+%FT%T"` "Frr process stopped" >> /var/run/frr/stopped
         stop_all_vips
         [ -r /var/run/frr/watchfrr.pid ] && /usr/libexec/frr/frr stop
+      }
+      
+      reload_frr()
+      {
+        stop_frr
+        start_frr
       }
       
       msg_handler()
@@ -203,11 +215,13 @@ spec:
           # currently only 'stop' messages are supported
           if  [ "$line" = stop ]; then
               stop_frr
+          elif  [ "$line" = reload ]; then
+              reload_frr
           fi
         done
       }
       
-      set -ex
+      set -e
       declare -r frr_sock="/var/run/frr/frr.sock"
       export VIPS
       export GATEWAY
@@ -219,6 +233,8 @@ spec:
       export -f start_all_vips
       export -f stop_all_vips
       export -f msg_handler
+      export -f reload_frr
+      export -f start_frr
       export -f stop_frr
       
       while [ -s "/var/run/frr/stopped" ]; do
@@ -226,8 +242,7 @@ spec:
          sleep 60
       done
       if timeout 30s bash -c "while true; do [ -f /etc/frr/frr.conf ] && break; done"; then
-          start_all_vips
-          /usr/libexec/frr/frr start
+          start_frr
       else
           echo `date "+%FT%T"` "ERROR: /etc/frr/frr.conf was not found"
           exit 1

@@ -286,6 +286,12 @@ contents:
             - -c
             - |
               #/bin/bash
+              
+              start_frr()
+              {
+                /usr/libexec/frr/frr start
+              }
+
               stop_frr()
               {
                 [ -r /var/run/frr/watchfrr.pid ] && /usr/libexec/frr/frr stop
@@ -293,7 +299,8 @@ contents:
 
               reload_frr()
               {
-                /usr/libexec/frr/frr reload
+                stop_frr
+                start_frr
               }
 
               msg_handler()
@@ -311,11 +318,12 @@ contents:
               declare -r frr_sock="/var/run/frr/frr.sock"
               export -f msg_handler
               export -f reload_frr
+              export -f start_frr
               export -f stop_frr
 
               trap stop_frr SIGTERM
               if [ -s "/etc/frr/frr.conf" ]; then
-                  /usr/libexec/frr/frr start
+                  start_frr
               fi
 
               rm -f "$frr_sock"
