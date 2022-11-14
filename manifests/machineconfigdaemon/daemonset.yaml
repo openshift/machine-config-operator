@@ -34,6 +34,8 @@ spec:
         volumeMounts:
           - mountPath: /rootfs
             name: rootfs
+          - name: nodeip-configuration
+            mountPath: "/run/nodeip-configuration"
         env:
           - name: NODE_NAME
             valueFrom:
@@ -78,8 +80,6 @@ spec:
           name: proxy-tls
         - mountPath: /etc/tls/cookie-secret
           name: cookie-secret
-        - name: nodeip-configuration
-          mountPath: "/run/nodeip-configuration"
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
