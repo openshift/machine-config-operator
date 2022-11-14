@@ -82,4 +82,6 @@ const (
 
 	// changes to registries.conf will cause a crio reload and require extra logic about whether to drain
 	ContainerRegistryConfPath = "/etc/containers/registries.conf"
+
+	RemoteWorkerAnnotationKey = "node-role.kubernetes.io/remote-worker"
 )

@@ -78,6 +78,8 @@ spec:
           name: proxy-tls
         - mountPath: /etc/tls/cookie-secret
           name: cookie-secret
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
       hostNetwork: true
       hostPID: true
       serviceAccountName: machine-config-daemon
@@ -89,6 +91,9 @@ spec:
         - name: rootfs
           hostPath:
             path: /
+        - name: nodeip-configuration
+          hostPath:
+              path: "/run/nodeip-configuration"
         - name: proxy-tls
           secret:
             secretName: proxy-tls

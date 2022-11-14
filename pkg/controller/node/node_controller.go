@@ -353,6 +353,12 @@ func (ctrl *Controller) isMaster(node *corev1.Node) bool {
 	return master
 }
 
+// Determine if a given Node is a remote worker
+func (ctrl *Controller) isRemoteWorker(node *corev1.Node) bool {
+	_, remoteWorker := node.ObjectMeta.Annotations[daemonconsts.RemoteWorkerAnnotationKey]
+	return remoteWorker
+}
+
 // isWindows checks if given node is a Windows node or a Linux node
 func isWindows(node *corev1.Node) bool {
 	windowsOsValue := "windows"
@@ -392,6 +398,20 @@ func (ctrl *Controller) reconcileMaster(node *corev1.Node) {
 	}
 }
 
+func (ctrl *Controller) reconcileRemoteWorker(node *corev1.Node) {
+	_, err := internal.UpdateNodeRetry(ctrl.kubeClient.CoreV1().Nodes(), ctrl.nodeLister, node.Name, func(node *corev1.Node) {
+		// Add worker label
+		newLabels := node.Labels
+		if _, hasRemoteWorkerLabel := newLabels[daemonconsts.RemoteWorkerAnnotationKey]; !hasRemoteWorkerLabel {
+			newLabels[daemonconsts.RemoteWorkerAnnotationKey] = ""
+		}
+		node.Labels = newLabels
+	})
+	if err != nil {
+		glog.Error(err)
+	}
+}
+
 // Get a list of current masters and apply scheduler config to them
 // TODO: Taint reconciliation should happen elsewhere, in a generic taint/label reconciler
 func (ctrl *Controller) reconcileMasters() {
@@ -415,6 +435,10 @@ func (ctrl *Controller) addNode(obj interface{}) {
 
 	if ctrl.isMaster(node) {
 		ctrl.reconcileMaster(node)
+	}
+
+	if ctrl.isRemoteWorker(node) {
+		ctrl.reconcileRemoteWorker(node)
 	}
 
 	pools, err := ctrl.getPoolsForNode(node)

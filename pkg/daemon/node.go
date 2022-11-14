@@ -42,6 +42,10 @@ func (dn *Daemon) loadNodeAnnotations(node *corev1.Node) (*corev1.Node, error) {
 		return nil, fmt.Errorf("failed to unmarshal initial annotations: %w", err)
 	}
 
+	if _, err := os.Stat("/run/nodeip-configuration/notMatchesVips"); err == nil {
+		initial[constants.RemoteWorkerAnnotationKey] = ""
+	}
+
 	glog.Infof("Setting initial node config: %s", initial[constants.CurrentMachineConfigAnnotationKey])
 	node, err = dn.nodeWriter.SetAnnotations(initial)
 	if err != nil {
