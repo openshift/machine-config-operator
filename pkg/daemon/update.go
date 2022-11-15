@@ -338,20 +338,6 @@ func (dn *CoreOSDaemon) applyOSChanges(mcDiff machineConfigDiff, oldConfig, newC
 
 	var osImageContentDir string
 	if mcDiff.osUpdate || mcDiff.extensions || mcDiff.kernelType {
-		// When we're going to apply an OS update, switch the block
-		// scheduler to BFQ to apply more fairness between etcd
-		// and the OS update. Only do this on masters since etcd
-		// only operates on masters, and RHEL compute nodes can't
-		// do this.
-		// Add nil check since firstboot also goes through this path,
-		// which doesn't have a node object yet.
-		if dn.node != nil {
-			if _, isControlPlane := dn.node.Labels[ctrlcommon.MasterLabel]; isControlPlane {
-				if err := setRootDeviceSchedulerBFQ(); err != nil {
-					return err
-				}
-			}
-		}
 		// We emitted this event before, so keep it
 		if dn.nodeWriter != nil {
 			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "InClusterUpgrade", fmt.Sprintf("Updating from oscontainer %s", newConfig.Spec.OSImageURL))
@@ -1267,6 +1253,7 @@ func (dn *Daemon) isPathInDropins(path string, systemd *ign3types.Systemd) bool 
 // all the files, units that are present in the old config but not in the new one.
 // this function will error out if it fails to delete a file (with the exception
 // of simply warning if the error is ENOENT since that's the desired state).
+//
 //nolint:gocyclo
 func (dn *Daemon) deleteStaleData(oldIgnConfig, newIgnConfig ign3types.Config) error {
 	glog.Info("Deleting stale data")
