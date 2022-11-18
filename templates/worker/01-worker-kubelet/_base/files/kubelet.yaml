@@ -22,8 +22,6 @@ contents:
     serializeImagePulls: false
     staticPodPath: /etc/kubernetes/manifests
     systemCgroups: /system.slice
-    systemReserved:
-      ephemeral-storage: 1Gi
     featureGates:
       APIPriorityAndFairness: true
       LegacyNodeRoleBehavior: false
