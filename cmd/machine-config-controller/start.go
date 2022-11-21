@@ -66,7 +66,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		ctrlctx := ctrlcommon.CreateControllerContext(cb, ctx.Done(), componentName)
 
 		// Start the metrics handler
-		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop)
+		go ctrlcommon.StartMetricsListener(startOpts.promMetricsListenAddress, ctrlctx.Stop, ctrlcommon.RegisterMCCMetrics)
 
 		controllers := createControllers(ctrlctx)
 		draincontroller := drain.New(

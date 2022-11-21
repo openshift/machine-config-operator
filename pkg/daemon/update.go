@@ -2154,14 +2154,14 @@ func (dn *Daemon) reboot(rationale string) error {
 	// either, we just have one for the MCD itself.
 	if err := rebootCmd.Run(); err != nil {
 		dn.logSystem("failed to run reboot: %v", err)
-		MCDRebootErr.Inc()
+		mcdRebootErr.Inc()
 	}
 
 	// wait to be killed via SIGTERM from the kubelet shutting down
 	time.Sleep(defaultRebootTimeout)
 
 	// if everything went well, this should be unreachable.
-	MCDRebootErr.Inc()
+	mcdRebootErr.Inc()
 	return fmt.Errorf("reboot failed; this error should be unreachable, something is seriously wrong")
 }
 
@@ -2195,7 +2195,7 @@ func (dn *CoreOSDaemon) applyLayeredOSChanges(mcDiff machineConfigDiff, oldConfi
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateLayeredOS(newConfig); err != nil {
-			MCDPivotErr.Inc()
+			mcdPivotErr.Inc()
 			return err
 		}
 		if dn.nodeWriter != nil {
@@ -2263,7 +2263,7 @@ func (dn *CoreOSDaemon) applyLegacyOSChanges(mcDiff machineConfigDiff, oldConfig
 	// Update OS
 	if mcDiff.osUpdate {
 		if err := dn.updateOS(newConfig, osImageContentDir); err != nil {
-			MCDPivotErr.Inc()
+			mcdPivotErr.Inc()
 			return err
 		}
 		if dn.nodeWriter != nil {

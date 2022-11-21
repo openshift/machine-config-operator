@@ -226,7 +226,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	}
 
 	// Start local metrics listener
-	go daemon.StartMetricsListener(startOpts.promMetricsURL, stopCh)
+	go ctrlcommon.StartMetricsListener(startOpts.promMetricsURL, stopCh, daemon.RegisterMCDMetrics)
 
 	ctx := ctrlcommon.CreateControllerContext(cb, stopCh, componentName)
 	// create the daemon instance. this also initializes kube client items
