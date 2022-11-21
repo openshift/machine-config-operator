@@ -14,6 +14,7 @@ const (
 	DefaultBindAddress = ":8797"
 )
 
+// MCC Metrics
 var (
 	// MachineConfigControllerPausedPoolKubeletCA logs when a certificate rotation is being held up by pause
 	MachineConfigControllerPausedPoolKubeletCA = prometheus.NewGaugeVec(
@@ -28,15 +29,17 @@ var (
 			Name: "os_image_url_override",
 			Help: "state of OS image override",
 		}, []string{"pool"})
-
-	metricsList = []prometheus.Collector{
-		MachineConfigControllerPausedPoolKubeletCA,
-		OSImageURLOverride,
-	}
 )
 
 func RegisterMCCMetrics() error {
-	for _, metric := range metricsList {
+	return RegisterMetrics([]prometheus.Collector{
+		MachineConfigControllerPausedPoolKubeletCA,
+		OSImageURLOverride,
+	})
+}
+
+func RegisterMetrics(metrics []prometheus.Collector) error {
+	for _, metric := range metrics {
 		err := prometheus.Register(metric)
 		if err != nil {
 			return err
@@ -47,13 +50,13 @@ func RegisterMCCMetrics() error {
 }
 
 // StartMetricsListener is metrics listener via http on localhost
-func StartMetricsListener(addr string, stopCh <-chan struct{}) {
+func StartMetricsListener(addr string, stopCh <-chan struct{}, registerFunc func() error) {
 	if addr == "" {
 		addr = DefaultBindAddress
 	}
 
 	glog.Info("Registering Prometheus metrics")
-	if err := RegisterMCCMetrics(); err != nil {
+	if err := registerFunc(); err != nil {
 		glog.Errorf("unable to register metrics: %v", err)
 		// No sense in continuing starting the listener if this fails
 		return
@@ -77,5 +80,4 @@ func StartMetricsListener(addr string, stopCh <-chan struct{}) {
 	} else {
 		glog.Infof("Metrics listener successfully stopped")
 	}
-
 }

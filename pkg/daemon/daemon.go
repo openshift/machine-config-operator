@@ -224,7 +224,7 @@ func New(
 	if !mock {
 		hostos, err = GetHostRunningOS()
 		if err != nil {
-			HostOS.WithLabelValues("unsupported", "").Set(1)
+			hostOS.WithLabelValues("unsupported", "").Set(1)
 			return nil, fmt.Errorf("checking operating system: %w", err)
 		}
 	}
@@ -267,7 +267,7 @@ func New(
 	}
 
 	// report OS & version (if RHCOS or FCOS) to prometheus
-	HostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
+	hostOS.WithLabelValues(hostos.ToPrometheusLabel(), osVersion).Set(1)
 
 	return &Daemon{
 		mock:                  mock,
@@ -1140,7 +1140,7 @@ func (dn *Daemon) stopConfigDriftMonitor() {
 
 func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<- error) {
 	failureCount := 0
-	KubeletHealthState.Set(float64(failureCount))
+	kubeletHealthState.Set(float64(failureCount))
 	for {
 		select {
 		case <-stopCh:
@@ -1154,7 +1154,7 @@ func (dn *Daemon) runKubeletHealthzMonitor(stopCh <-chan struct{}, exitCh chan<-
 				// reset failure count on success
 				failureCount = 0
 			}
-			KubeletHealthState.Set(float64(failureCount))
+			kubeletHealthState.Set(float64(failureCount))
 		}
 	}
 }
@@ -1332,7 +1332,7 @@ func (dn *Daemon) getStateAndConfigs(pendingConfigName string) (*stateAndConfigs
 		}
 	}
 
-	MCDState.WithLabelValues(state, degradedReason).SetToCurrentTime()
+	mcdState.WithLabelValues(state, degradedReason).SetToCurrentTime()
 
 	return &stateAndConfigs{
 		bootstrapping: bootstrapping,
@@ -1482,6 +1482,7 @@ func removeIgnitionArtifacts() error {
 // the daemon took over.
 //
 // Some more background in this PR: https://github.com/openshift/machine-config-operator/pull/245
+//
 //nolint:gocyclo
 func (dn *Daemon) checkStateOnFirstRun() error {
 	node, err := dn.loadNodeAnnotations(dn.node)
@@ -1674,7 +1675,7 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 			// let's mark it done!
 			glog.Infof("Completing pending config %s", state.pendingConfig.GetName())
 			if err := dn.completeUpdate(state.pendingConfig.GetName()); err != nil {
-				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
+				mcdUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return inDesiredConfig, err
 			}
 
@@ -1695,13 +1696,13 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 		if state.state == constants.MachineConfigDaemonStateDegraded {
 			if err := dn.nodeWriter.SetDone(state.currentConfig.GetName()); err != nil {
 				errLabelStr := fmt.Sprintf("error setting node's state to Done: %v", err)
-				MCDUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
+				mcdUpdateState.WithLabelValues("", errLabelStr).SetToCurrentTime()
 				return inDesiredConfig, fmt.Errorf("error setting node's state to Done: %w", err)
 			}
 		}
 
 		glog.Infof("In desired config %s", state.currentConfig.GetName())
-		MCDUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
+		mcdUpdateState.WithLabelValues(state.currentConfig.GetName(), "").SetToCurrentTime()
 	}
 
 	// No errors have occurred. Returns true if currentConfig == desiredConfig, false otherwise (needs update)
@@ -1840,7 +1841,7 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		if err == wait.ErrWaitTimeout {
 			failMsg := fmt.Sprintf("failed to uncordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
-			MCDDrainErr.Set(1)
+			mcdDrainErr.Set(1)
 			return fmt.Errorf(failMsg)
 		}
 		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
