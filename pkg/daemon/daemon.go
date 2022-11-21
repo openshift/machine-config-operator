@@ -1841,7 +1841,6 @@ func (dn *Daemon) completeUpdate(desiredConfigName string) error {
 		if err == wait.ErrWaitTimeout {
 			failMsg := fmt.Sprintf("failed to uncordon node: %s after 10 minutes. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToUncordon", failMsg)
-			mcdDrainErr.Set(1)
 			return fmt.Errorf(failMsg)
 		}
 		return fmt.Errorf("Something went wrong while attempting to uncordon node: %v", err)
