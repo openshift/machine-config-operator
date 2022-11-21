@@ -1601,18 +1601,7 @@ func (dn *Daemon) checkStateOnFirstRun() error {
 // updateConfigAndState updates node to desired state, labels nodes as done and uncordon
 func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 	// In the case where we had a pendingConfig, make that now currentConfig.
-	// We update the node annotation, delete the state file, etc.
 	if state.pendingConfig != nil {
-		if dn.nodeWriter != nil {
-			dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
-		}
-		if err := dn.nodeWriter.SetDone(state.pendingConfig.GetName()); err != nil {
-			return true, fmt.Errorf("error setting node's state to Done: %w", err)
-		}
-		if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
-			return true, fmt.Errorf("failed to reset pending config: %s: %w", string(out), err)
-		}
-
 		state.currentConfig = state.pendingConfig
 	}
 
@@ -1635,6 +1624,18 @@ func (dn *Daemon) updateConfigAndState(state *stateAndConfigs) (bool, error) {
 				MCDUpdateState.WithLabelValues("", err.Error()).SetToCurrentTime()
 				return inDesiredConfig, err
 			}
+
+			// We update the node annotation, delete the state file, etc.
+			if dn.nodeWriter != nil {
+				dn.nodeWriter.Eventf(corev1.EventTypeNormal, "NodeDone", fmt.Sprintf("Setting node %s, currentConfig %s to Done", dn.node.Name, state.pendingConfig.GetName()))
+			}
+			if err := dn.nodeWriter.SetDone(state.pendingConfig.GetName()); err != nil {
+				return true, fmt.Errorf("error setting node's state to Done: %w", err)
+			}
+			if out, err := dn.storePendingState(state.pendingConfig, 0); err != nil {
+				return true, fmt.Errorf("failed to reset pending config: %s: %w", string(out), err)
+			}
+
 		}
 		// If we're degraded here, it means we got an error likely on startup and we retried.
 		// If that's the case, clear it out.
