@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	ctrlcommon "github.com/openshift/machine-config-operator/pkg/controller/common"
 	daemonconsts "github.com/openshift/machine-config-operator/pkg/daemon/constants"
 	mcfgclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned/scheme"
@@ -281,48 +282,8 @@ func (ctrl *Controller) syncNode(key string) error {
 		// pod is running on will also be terminated (the drainer will skip it).
 		// This is a bit problematic in practice since we don't really have a previous state.
 		// TODO (jerzhang) consider using a new CRD for coordination
-
-		ongoingDrain := false
-		var duration time.Duration
-		for k, v := range ctrl.ongoingDrains {
-			if k != node.Name {
-				continue
-			}
-			ongoingDrain = true
-			duration = time.Now().Sub(v)
-			glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
-			if duration > drainTimeoutDuration {
-				// TODO right now the daemon will alert to match previous behaviour. Consider having controller do so instead.
-				glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, drainTimeoutDuration)
-			}
-			break
-		}
-		if !ongoingDrain {
-			ctrl.logNode(node, "cordoning")
-			// perform cordon
-			if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
-				return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
-			}
-			ctrl.ongoingDrains[node.Name] = time.Now()
-		}
-
-		// Attempt drain
-		ctrl.logNode(node, "initiating drain")
-		if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
-			// To mimic our old daemon logic, we should probably have a more nuanced backoff.
-			// However since the controller is processing all drains, it is less deterministic how soon the next drain will retry,
-			// Anywhere between instant (if a node change happened) or up to hours (if there are many nodes competing for resources)
-			// For now, let's say if a node has been trying for a set amount of time, we make it less prioritized.
-			if duration > drainRequeueFailingThreshold {
-				ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
-					"Error message from drain: %v", drainRequeueFailingThreshold.Minutes(), drainRequeueFailingDelay.Minutes(), err)
-				ctrl.enqueueAfter(node, drainRequeueFailingDelay)
-			} else {
-				ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
-					drainRequeueDelay.Minutes(), err)
-				ctrl.enqueueAfter(node, drainRequeueDelay)
-			}
-			return nil
+		if err := ctrl.drainNode(node, drainer); err != nil {
+			return fmt.Errorf("drain failed: %w", err)
 		}
 
 		// Drain was successful. Delete the ongoing drain, then set the annotation
@@ -339,6 +300,59 @@ func (ctrl *Controller) syncNode(key string) error {
 	if err := ctrl.setNodeAnnotations(node.Name, annotations); err != nil {
 		return fmt.Errorf("node %s: failed to set node uncordoned annotation: %w", node.Name, err)
 	}
+
+	return nil
+}
+
+func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) error {
+	isOngoingDrain := false
+	var duration time.Duration
+
+	for k, v := range ctrl.ongoingDrains {
+		if k != node.Name {
+			continue
+		}
+		isOngoingDrain = true
+		duration = time.Now().Sub(v)
+		glog.Infof("Previous node drain found. Drain has been going on for %v hours", duration.Hours())
+		if duration > drainTimeoutDuration {
+			glog.Errorf("node %s: drain exceeded timeout: %v. Will continue to retry.", node.Name, drainTimeoutDuration)
+			ctrlcommon.MCCDrainErr.Set(1)
+		}
+		break
+	}
+
+	if !isOngoingDrain {
+		ctrl.logNode(node, "cordoning")
+		// perform cordon
+		if err := ctrl.cordonOrUncordonNode(true, node, drainer); err != nil {
+			return fmt.Errorf("node %s: failed to cordon: %w", node.Name, err)
+		}
+		ctrl.ongoingDrains[node.Name] = time.Now()
+	}
+
+	// Attempt drain
+	ctrl.logNode(node, "initiating drain")
+	if err := drain.RunNodeDrain(drainer, node.Name); err != nil {
+		// To mimic our old daemon logic, we should probably have a more nuanced backoff.
+		// However since the controller is processing all drains, it is less deterministic how soon the next drain will retry,
+		// Anywhere between instant (if a node change happened) or up to hours (if there are many nodes competing for resources)
+		// For now, let's say if a node has been trying for a set amount of time, we make it less prioritized.
+		if duration > drainRequeueFailingThreshold {
+			ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
+				"Error message from drain: %v", drainRequeueFailingThreshold.Minutes(), drainRequeueFailingDelay.Minutes(), err)
+			ctrl.enqueueAfter(node, drainRequeueFailingDelay)
+			ctrlcommon.MCCDrainErr.Set(1)
+		} else {
+			ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
+				drainRequeueDelay.Minutes(), err)
+			ctrl.enqueueAfter(node, drainRequeueDelay)
+		}
+
+		return nil
+	}
+
+	ctrlcommon.MCCDrainErr.Set(0)
 
 	return nil
 }

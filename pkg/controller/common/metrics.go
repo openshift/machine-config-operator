@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/golang/glog"
@@ -29,13 +30,28 @@ var (
 			Name: "os_image_url_override",
 			Help: "state of OS image override",
 		}, []string{"pool"})
+
+	// MCCDrainErr logs failed drain
+	MCCDrainErr = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mcc_drain_err",
+			Help: "logs failed drain",
+		})
 )
 
 func RegisterMCCMetrics() error {
-	return RegisterMetrics([]prometheus.Collector{
+	err := RegisterMetrics([]prometheus.Collector{
 		MachineConfigControllerPausedPoolKubeletCA,
 		OSImageURLOverride,
 	})
+
+	if err != nil {
+		return fmt.Errorf("could not register machine-config-controller metrics: %w", err)
+	}
+
+	MCCDrainErr.Set(0)
+
+	return nil
 }
 
 func RegisterMetrics(metrics []prometheus.Collector) error {

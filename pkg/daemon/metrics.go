@@ -23,13 +23,6 @@ var (
 			Help: "Total number of SSH access occurred.",
 		})
 
-	// mcdDrainErr logs failed drain
-	mcdDrainErr = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "mcd_drain_err",
-			Help: "logs failed drain",
-		})
-
 	// mcdPivotErr flags error encountered during pivot
 	mcdPivotErr = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -70,7 +63,6 @@ func RegisterMCDMetrics() error {
 	err := ctrlcommon.RegisterMetrics([]prometheus.Collector{
 		hostOS,
 		mcdSSHAccessed,
-		mcdDrainErr,
 		mcdPivotErr,
 		mcdState,
 		kubeletHealthState,
@@ -79,10 +71,9 @@ func RegisterMCDMetrics() error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("could not register MCC metrics: %w", err)
+		return fmt.Errorf("could not register machine-config-daemon metrics: %w", err)
 	}
 
-	mcdDrainErr.Set(0)
 	kubeletHealthState.Set(0)
 	mcdUpdateState.WithLabelValues("", "").Set(0)
 
