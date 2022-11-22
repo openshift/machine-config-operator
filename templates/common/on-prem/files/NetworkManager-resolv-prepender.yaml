@@ -92,12 +92,12 @@ contents:
                 {{range onPremPlatformIngressIPs . }}"{{.}}" {{end}})
             DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
             if [[ -n "$NAMESERVER_IP" ]]; then
+                KNICONFDONEPATH="/run/resolv-prepender-kni-conf-done"
                 if systemctl -q is-enabled systemd-resolved; then
                     >&2 echo "NM resolv-prepender: Configure for OKD domain and local IP"
                     mkdir -p /etc/systemd/resolved.conf.d
                     KNICONFTMPPATH="$(mktemp)"
                     KNICONFPATH="/etc/systemd/resolved.conf.d/60-kni.conf"
-                    KNICONFDONEPATH="/run/resolv-prepender-kni-conf-done"
                     echo "[Resolve]" > "${KNICONFTMPPATH}"
                     echo "DNS=$NAMESERVER_IP" >> "${KNICONFTMPPATH}"
                     echo "Domains=$DOMAINS" >> "${KNICONFTMPPATH}"
@@ -139,6 +139,7 @@ contents:
                     # re-run the lookup of the hostname now that we know we have DNS
                     # servers configured correctly in resolv.conf.
                     nmcli general reload dns-rc
+                    touch "${KNICONFDONEPATH}"
                 fi
             fi
             ;;
