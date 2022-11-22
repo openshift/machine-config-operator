@@ -118,6 +118,9 @@ github.com/chavacava/garif
 # github.com/clarketm/json v1.14.1
 ## explicit
 github.com/clarketm/json
+# github.com/containers/common v0.50.1
+## explicit; go 1.17
+github.com/containers/common/pkg/retry
 # github.com/containers/image/v5 v5.23.0
 ## explicit; go 1.17
 github.com/containers/image/v5/docker
@@ -192,7 +195,7 @@ github.com/coreos/go-semver/semver
 # github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 ## explicit
 github.com/coreos/go-systemd/unit
-# github.com/coreos/go-systemd/v22 v22.3.2
+# github.com/coreos/go-systemd/v22 v22.4.0
 ## explicit; go 1.12
 github.com/coreos/go-systemd/v22/unit
 # github.com/coreos/ign-converter v0.0.0-20201123214124-8dac862888aa
