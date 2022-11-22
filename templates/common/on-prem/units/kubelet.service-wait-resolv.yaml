@@ -6,6 +6,5 @@ dropins:
       [Service]
       # Wait for resolv-prepender to configure nameservers, exit 255 otherwise
       # to mark the unit as failed and retry later
-      ExecCondition=/bin/bash -c '! systemctl -q is-enabled systemd-resolved || [ -f /etc/systemd/resolved.conf.d/60-kni.conf ] || exit 255'
-      ExecCondition=/bin/bash -c 'systemctl -q is-enabled systemd-resolved || grep -qs "KNI resolv prepender" /etc/resolv.conf || exit 255'
+      ExecCondition=/bin/bash -c 'test -f /run/resolv-prepender-kni-conf-done || exit 255'
       {{end -}}
