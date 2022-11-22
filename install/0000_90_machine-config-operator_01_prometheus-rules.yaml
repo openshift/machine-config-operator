@@ -55,7 +55,7 @@ spec:
       rules:
         - alert: MCDRebootError
           expr: |
-             mcd_reboot_err_total > 0
+             mcd_reboots_failed_total > 0
           labels:
             severity: critical
           annotations:
@@ -73,7 +73,7 @@ spec:
       rules:
         - alert: MCDPivotError
           expr: |
-            mcd_pivot_err_total > 0
+            mcd_pivot_errors_total > 0
           labels:
             severity: warning
           annotations:

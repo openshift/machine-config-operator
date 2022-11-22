@@ -24,7 +24,7 @@ var (
 	MCDSSHAccessed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "ssh_accessed_total",
-			Help: "indicates a successful SSH login",
+			Help: "Total number of SSH access occurred.",
 		})
 
 	// MCDDrainErr logs failed drain
@@ -35,11 +35,11 @@ var (
 		})
 
 	// MCDPivotErr flags error encountered during pivot
-	MCDPivotErr = prometheus.NewCounterVec(
+	MCDPivotErr = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "mcd_pivot_err_total",
-			Help: "error encountered during pivot",
-		}, []string{})
+			Name: "mcd_pivot_errors_total",
+			Help: "Total number of errors encountered during pivot.",
+		})
 
 	// MCDState is state of mcd for indicated node (ex: degraded)
 	MCDState = prometheus.NewGaugeVec(
@@ -56,10 +56,11 @@ var (
 		})
 
 	// MCDRebootErr tallys failed reboot attempts
-	MCDRebootErr = prometheus.NewCounterVec(
+	MCDRebootErr = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "mcd_reboot_err_total",
-		}, []string{})
+			Name: "mcd_reboots_failed_total",
+			Help: "Total number of reboots that failed.",
+		})
 
 	// MCDUpdateState logs completed update or error
 	MCDUpdateState = prometheus.NewGaugeVec(
