@@ -2,8 +2,13 @@ package framework
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	goruntime "runtime"
 
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -19,9 +24,64 @@ import (
 
 const (
 	openshiftConfigNamespace string = "openshift-config"
+	kubebuilderPath          string = "/tmp/kubebuilder"
+	envTestPath              string = kubebuilderPath + "/bin"
+
+	// TODO: Figure out how to obtain this value programmatically so we don't
+	// have to remember to increment it.
+	k8sVersion string = "1.22.1"
 )
 
+func fetchTools() error {
+	if _, ok := os.LookupEnv("SKIP_FETCH_TOOLS"); ok {
+		fmt.Println("SKIP_FETCH_TOOLS set, skipping!")
+		return nil
+	}
+
+	toolsArchiveName := fmt.Sprintf("kubebuilder-tools-%s-%s-%s.tar.gz", k8sVersion, goruntime.GOOS, goruntime.GOARCH)
+	downloadURL := fmt.Sprintf("https://storage.googleapis.com/kubebuilder-tools/%s", toolsArchiveName)
+	toolsArchiveDownloadPath := filepath.Join("/tmp/kubebuilder", toolsArchiveName)
+
+	if err := os.MkdirAll(envTestPath, 0755); err != nil {
+		return fmt.Errorf("could not mkdir: %w", err)
+	}
+
+	// Check if we have the archive on disk. If not, we should retrieve it.
+	if _, err := os.Stat(toolsArchiveDownloadPath); os.IsNotExist(err) {
+		// While it is possible to write this and the tar extract below in pure Go, I
+		// opted to shell out to preexisting tools for brevity.
+		cmd := exec.Command("curl", "-fsL", downloadURL, "-o", toolsArchiveDownloadPath)
+
+		fmt.Println("Executing", cmd)
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("could not download tools archive: %w", err)
+		}
+	} else {
+		fmt.Println("Found preexisting tools archive", toolsArchiveDownloadPath)
+	}
+
+	cmd := exec.Command("tar", "-zvxf", toolsArchiveDownloadPath, "-C", "/tmp/")
+
+	fmt.Println("Executing", cmd)
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("could not extract tools archive: %w", err)
+	}
+
+	return nil
+}
+
 func NewTestEnv() *envtest.Environment {
+	if err := fetchTools(); err != nil {
+		panic(err)
+	}
+
+	home := os.Getenv("HOME")
+	if home == "/" || home == "" {
+		os.Setenv("HOME", kubebuilderPath)
+	}
+
 	return &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "install"),
@@ -29,6 +89,7 @@ func NewTestEnv() *envtest.Environment {
 			filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
 			filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
 		},
+		BinaryAssetsDirectory: envTestPath,
 	}
 }
 
