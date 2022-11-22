@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -241,4 +242,30 @@ func (client *Client) RebaseToContainerImage(target reference.Reference) error {
 // RebaseToContainerImageAllowUnsigned switches to the target container image, ignoring lack of image signatures.
 func (client *Client) RebaseToContainerImageAllowUnsigned(target reference.Reference) error {
 	return client.run("rebase", "--experimental", fmt.Sprintf("ostree-unverified-registry:%s", target.String()))
+}
+
+func parseDeploymentError(buf string) (*string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(buf))
+	for scanner.Scan() {
+		msg := scanner.Text()
+		// Brutal hack: look for error:
+		// In the future, it probably makes sense to build on
+		// ostree-boot-complete
+		// https://github.com/ostreedev/ostree/pull/2589
+		// but this is backwards compatible.
+		if !strings.HasPrefix(msg, "error:") {
+			continue
+		}
+		return &msg, nil
+	}
+	return nil, nil
+}
+
+// QueryPreviousDeploymentError searches from an error message
+func (client *Client) QueryPreviousDeploymentError() (*string, error) {
+	bufraw, err := exec.Command("journalctl", "-b", "-1", "-o", "cat", "_UID=0", "-u", "ostree-finalize-staged.service").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("error querying for previous finalization via journalctl: %w", err)
+	}
+	return parseDeploymentError(string(bufraw))
 }
