@@ -129,9 +129,25 @@ func CheckCleanEnvironment(t *testing.T, clientSet *ClientSet) {
 	// #############
 	// BEGIN: "core"
 	// #############
-	secretList, err := clientSet.Secrets(openshiftConfigNamespace).List(ctx, metav1.ListOptions{})
+	namespaceList, err := clientSet.Namespaces().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
-	require.Len(t, secretList.Items, 0)
+
+	for _, namespace := range namespaceList.Items {
+		namespaceName := namespace.GetName()
+
+		secretList, err := clientSet.Secrets(namespaceName).List(ctx, metav1.ListOptions{})
+		require.NoError(t, err)
+		require.Len(t, secretList.Items, 0)
+
+		podList, err := clientSet.Pods(namespaceName).List(ctx, metav1.ListOptions{})
+		require.NoError(t, err)
+		require.Len(t, podList.Items, 0)
+	}
+
+	nodeList, err := clientSet.ConfigV1Interface.Nodes().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, nodeList.Items, 0)
+
 	// ###########
 	// END: "core"
 	// ###########
@@ -212,7 +228,20 @@ func CleanEnvironment(t *testing.T, clientSet *ClientSet) {
 	// #############
 	// BEGIN: "core"
 	// #############
-	err = clientSet.Secrets(openshiftConfigNamespace).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+	namespaceList, err := clientSet.Namespaces().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+
+	for _, namespace := range namespaceList.Items {
+		namespaceName := namespace.GetName()
+
+		err = clientSet.Secrets(namespaceName).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+		require.NoError(t, err)
+
+		err = clientSet.Pods(namespaceName).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
+		require.NoError(t, err)
+	}
+
+	err = clientSet.ConfigV1Interface.Nodes().DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{})
 	require.NoError(t, err)
 	// ###########
 	// END: "core"
@@ -277,6 +306,12 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			require.NoError(t, err)
 		case *corev1.Secret:
 			_, err := clientSet.Secrets(tObj.GetNamespace()).Create(ctx, tObj, metav1.CreateOptions{})
+			require.NoError(t, err)
+		case *corev1.Pod:
+			_, err := clientSet.Pods(tObj.GetNamespace()).Create(ctx, tObj, metav1.CreateOptions{})
+			require.NoError(t, err)
+		case *corev1.Node:
+			_, err := clientSet.CoreV1Interface.Nodes().Create(ctx, tObj, metav1.CreateOptions{})
 			require.NoError(t, err)
 		case *apioperatorsv1alpha1.ImageContentSourcePolicy:
 			_, err := clientSet.ImageContentSourcePolicies().Create(ctx, tObj, metav1.CreateOptions{})
