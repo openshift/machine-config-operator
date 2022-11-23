@@ -7,9 +7,13 @@ export MCD_DAEMONSET="daemonset/machine-config-daemon"
 export MCD_CONTAINER_NAME="machine-config-daemon"
 export ROOTFS_MCD_PATH="/rootfs/usr/local/bin/machine-config-daemon"
 
+exists() {
+  builtin type -P "$1" &> /dev/null
+}
+
 can_run() {
   # Check if we have an oc binary in our path
-  if [ ! "$(which oc)" ]; then
+  if ! exists 'oc'; then
     echo "oc not in path"
     exit 1
   fi
