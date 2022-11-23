@@ -1,14 +1,14 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	goruntime "runtime"
 
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -23,73 +23,96 @@ import (
 )
 
 const (
-	openshiftConfigNamespace string = "openshift-config"
-	kubebuilderPath          string = "/tmp/kubebuilder"
-	envTestPath              string = kubebuilderPath + "/bin"
+	OpenshiftConfigNamespace string = "openshift-config"
 
 	// TODO: Figure out how to obtain this value programmatically so we don't
 	// have to remember to increment it.
 	k8sVersion string = "1.22.1"
 )
 
-func fetchTools() error {
-	if _, ok := os.LookupEnv("SKIP_FETCH_TOOLS"); ok {
-		fmt.Println("SKIP_FETCH_TOOLS set, skipping!")
-		return nil
+// This is needed because both setup-envtest and the kubebuilder tools assume
+// that HOME is set to a writable value. While running locally, this is
+// generally a given, it is not in OpenShift CI. OpenShift CI usually defaults
+// to "/" as the HOME value, which is not writable.
+//
+// TODO: Pre-fetch the kubebuilder binaries as part of the build-root process
+// so we only have to fetch the kubebuilder tools once.
+func overrideHomeDir(t *testing.T) (string, bool) {
+	homeDir := os.Getenv("HOME")
+	if homeDir != "" && homeDir != "/" {
+		t.Logf("HOME env var set to %s, will use as-is", homeDir)
+		return "", false
 	}
 
-	toolsArchiveName := fmt.Sprintf("kubebuilder-tools-%s-%s-%s.tar.gz", k8sVersion, goruntime.GOOS, goruntime.GOARCH)
-	downloadURL := fmt.Sprintf("https://storage.googleapis.com/kubebuilder-tools/%s", toolsArchiveName)
-	toolsArchiveDownloadPath := filepath.Join("/tmp/kubebuilder", toolsArchiveName)
+	// For the purposes of this library, we will use the repo root
+	// (/go/src/github.com/openshift/machine-config-operator). This is so that we
+	// have a predictable HOME value which enables setup-envtest to reuse a
+	// kubebuilder tool package across multiple test suites (assuming they run in
+	// the same pod).
+	overrideHomeDir, err := os.Getwd()
+	require.NoError(t, err)
 
-	if err := os.MkdirAll(envTestPath, 0755); err != nil {
-		return fmt.Errorf("could not mkdir: %w", err)
+	if homeDir == "/" {
+		t.Log("HOME env var set to '/', overriding with", overrideHomeDir)
+		return overrideHomeDir, true
 	}
 
-	// Check if we have the archive on disk. If not, we should retrieve it.
-	if _, err := os.Stat(toolsArchiveDownloadPath); os.IsNotExist(err) {
-		// While it is possible to write this and the tar extract below in pure Go, I
-		// opted to shell out to preexisting tools for brevity.
-		cmd := exec.Command("curl", "-fsL", downloadURL, "-o", toolsArchiveDownloadPath)
-
-		fmt.Println("Executing", cmd)
-
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("could not download tools archive: %w", err)
-		}
-	} else {
-		fmt.Println("Found preexisting tools archive", toolsArchiveDownloadPath)
-	}
-
-	cmd := exec.Command("tar", "-zvxf", toolsArchiveDownloadPath, "-C", "/tmp/")
-
-	fmt.Println("Executing", cmd)
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("could not extract tools archive: %w", err)
-	}
-
-	return nil
+	t.Log("HOME env var not set, overriding with", overrideHomeDir)
+	return overrideHomeDir, true
 }
 
-func NewTestEnv() *envtest.Environment {
-	if err := fetchTools(); err != nil {
-		panic(err)
+// Instead of using a couple of ad-hoc shell scripts, envtest helpfully
+// includes a setup utility (setup-envtest) that will retrieve the appropriate
+// version of the kubebuilder toolchain for a given GOOS / GOARCH and K8s
+// version. setup-envtest can also allow the toolchain to be prefetched and
+// will cache it. This way, if multiple envtest targets are running in the same
+// CI test pod, it will only fetch kubebuilder for the first suite.
+func setupEnvTest(t *testing.T) (string, error) {
+	setupEnvTestBinPath, err := exec.LookPath("setup-envtest")
+	if err != nil {
+		return "", fmt.Errorf("setup-envtest not installed, see installation instructions: https://github.com/kubernetes-sigs/controller-runtime/tree/master/tools/setup-envtest")
 	}
 
-	home := os.Getenv("HOME")
-	if home == "/" || home == "" {
-		os.Setenv("HOME", kubebuilderPath)
+	homeDir, overrideHomeDir := overrideHomeDir(t)
+
+	if overrideHomeDir {
+		os.Setenv("HOME", homeDir)
 	}
+
+	cmd := exec.Command(setupEnvTestBinPath, "use", k8sVersion, "-p", "path")
+	t.Log("Setting up EnvTest: $", cmd)
+
+	// We want to consume the path of where setup-envtest installed the
+	// kubebuilder toolchain. So we capture stdout from setup-envtest (as well as
+	// write it to os.Stdout for debugging purposes).
+	pathBuffer := bytes.NewBuffer([]byte{})
+	cmd.Stdout = io.MultiWriter(pathBuffer, os.Stdout)
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("could not fetch envtest archive: %w", err)
+	}
+
+	t.Log("setup-envtest complete!")
+
+	return pathBuffer.String(), nil
+}
+
+func NewTestEnv(t *testing.T) *envtest.Environment {
+	toolsPath, err := setupEnvTest(t)
+	require.NoError(t, err)
 
 	return &envtest.Environment{
-		CRDDirectoryPaths: []string{
-			filepath.Join("..", "..", "install"),
-			filepath.Join("..", "..", "manifests", "controllerconfig.crd.yaml"),
-			filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
-			filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
+		CRDInstallOptions: envtest.CRDInstallOptions{
+			Paths: []string{
+				filepath.Join("..", "..", "install"),
+				filepath.Join("..", "..", "manifests", "controllerconfig.crd.yaml"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "config", "v1"),
+				filepath.Join("..", "..", "vendor", "github.com", "openshift", "api", "operator", "v1alpha1"),
+			},
+			CleanUpAfterUse: true,
 		},
-		BinaryAssetsDirectory: envTestPath,
+		BinaryAssetsDirectory: toolsPath,
 	}
 }
 
@@ -132,6 +155,8 @@ func CheckCleanEnvironment(t *testing.T, clientSet *ClientSet) {
 	namespaceList, err := clientSet.Namespaces().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 
+	// Iterate through each namespace for namespace-scoped objects so we can
+	// ensure they've been deleted.
 	for _, namespace := range namespaceList.Items {
 		namespaceName := namespace.GetName()
 
@@ -231,6 +256,8 @@ func CleanEnvironment(t *testing.T, clientSet *ClientSet) {
 	namespaceList, err := clientSet.Namespaces().List(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 
+	// Iterate through each namespace for namespace-scoped objects so we can
+	// delete them from all known namespaces.
 	for _, namespace := range namespaceList.Items {
 		namespaceName := namespace.GetName()
 
@@ -293,7 +320,7 @@ func CreateObjects(t *testing.T, clientSet *ClientSet, objs ...runtime.Object) {
 			o := tObj.DeepCopy()
 			o.Spec.PullSecret = &corev1.ObjectReference{
 				Name:      "pull-secret",
-				Namespace: openshiftConfigNamespace,
+				Namespace: OpenshiftConfigNamespace,
 			}
 
 			_, err := clientSet.ControllerConfigs().Create(ctx, o, metav1.CreateOptions{})

@@ -37,10 +37,9 @@ import (
 )
 
 const (
-	bootstrapTestName        = "BootstrapTest"
-	templatesDir             = "../../templates"
-	bootstrapTestDataDir     = "../../pkg/controller/bootstrap/testdata/bootstrap"
-	openshiftConfigNamespace = "openshift-config"
+	bootstrapTestName    = "BootstrapTest"
+	templatesDir         = "../../templates"
+	bootstrapTestDataDir = "../../pkg/controller/bootstrap/testdata/bootstrap"
 )
 
 var (
@@ -58,7 +57,7 @@ type fixture struct {
 func TestE2EBootstrap(t *testing.T) {
 	ctx := context.Background()
 
-	testEnv := framework.NewTestEnv()
+	testEnv := framework.NewTestEnv(t)
 
 	configv1.Install(scheme.Scheme)
 	mcfgv1.Install(scheme.Scheme)
@@ -76,7 +75,7 @@ func TestE2EBootstrap(t *testing.T) {
 
 	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: openshiftConfigNamespace,
+			Name: framework.OpenshiftConfigNamespace,
 		},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
