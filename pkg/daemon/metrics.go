@@ -23,7 +23,7 @@ var (
 	// MCDSSHAccessed shows ssh access count for a node
 	MCDSSHAccessed = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "ssh_accessed_total",
+			Name: "ssh_accesses_total",
 			Help: "Total number of SSH access occurred.",
 		})
 
