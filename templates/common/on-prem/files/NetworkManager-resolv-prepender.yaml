@@ -81,7 +81,7 @@ contents:
             done
 
             # Image must exist before reaching this point otherwise timeout may cause image corruption.
-            NAMESERVER_IP=$(/usr/bin/podman run --rm \
+            NAMESERVER_IP="$(/usr/bin/podman run --rm \
                 --authfile /var/lib/kubelet/config.json \
                 --net=host \
                 {{ .Images.baremetalRuntimeCfgImage }} \
@@ -89,7 +89,7 @@ contents:
                 show \
                 --retry-on-failure \
                 "{{ onPremPlatformAPIServerInternalIP . }}" \
-                "{{ onPremPlatformIngressIP . }}")
+                "{{ onPremPlatformIngressIP . }}")"
             DOMAINS="${IP4_DOMAINS} ${IP6_DOMAINS} {{.DNS.Spec.BaseDomain}}"
             if [[ -n "$NAMESERVER_IP" ]]; then
                 if systemctl -q is-enabled systemd-resolved; then
@@ -100,13 +100,12 @@ contents:
                     KNICONFDONEPATH="/run/resolv-prepender-kni-conf-done"
                     echo "[Resolve]" > "${KNICONFTMPPATH}"
                     echo "DNS=$NAMESERVER_IP" >> "${KNICONFTMPPATH}"
-                    echo "Domains=$DOMAINS" >> "${KNICONFTMPPATH}"
+                    echo "Domains=${DOMAINS}" >> "${KNICONFTMPPATH}"
 
                     # If KNI conf is not created or doesn't match what is generated or
                     # if we haven't completed a full update - create or update it
                     if [[ ! -f "${KNICONFPATH}" ]] || [[ ! -f "${KNICONFDONEPATH}" ]] || ! cmp --silent "${KNICONFPATH}" "${KNICONFTMPPATH}"; then
                         >&2 echo "NM resolv-prepender: Creating/updating /etc/systemd/resolved.conf.d/60-kni.conf"
-                        rm -f "${KNICONFDONEPATH}"
                         # Copy tmp file contents to preserve permissions and SELinux label
                         cat "${KNICONFTMPPATH}" > "${KNICONFPATH}"
                         rm -rf "${KNICONFTMPPATH}"
