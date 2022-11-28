@@ -33,6 +33,11 @@ func BoolToPtr(b bool) *bool {
 	return &b
 }
 
+// IntToPtr returns a pointer to an int
+func IntToPtr(i int) *int {
+	return &i
+}
+
 // NewMachineConfig returns a basic machine config with supplied labels, osurl & files added
 func NewMachineConfig(name string, labels map[string]string, osurl string, files []ign3types.File) *mcfgv1.MachineConfig {
 	return NewMachineConfigExtended(
