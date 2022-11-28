@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	ign2types "github.com/coreos/ignition/config/v2_2/types"
 	ign3types "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -72,35 +71,90 @@ func checkV3Dropin(systemdPath string, unit ign3types.Unit, dropin ign3types.Dro
 	return checkFileContentsAndMode(path, []byte(content), defaultFilePermissions)
 }
 
+// checkV3Units validates the contents of an individual unit in the
+// target config and returns nil if they match.
+func checkV3Unit(unit ign3types.Unit, systemdPath string) error {
+	for _, dropin := range unit.Dropins {
+		if err := checkV3Dropin(systemdPath, unit, dropin); err != nil {
+			return err
+		}
+	}
+
+	if unit.Contents == nil || *unit.Contents == "" {
+		// Return early if the contents are empty.
+		return nil
+	}
+
+	path := getIgn3SystemdUnitPath(systemdPath, unit)
+	if unit.Mask != nil && *unit.Mask {
+		link, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("state validation: error while evaluation symlink for path %q: %w", path, err)
+		}
+
+		if link != pathDevNull {
+			return fmt.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
+		}
+
+		// Return early if the unit is masked.
+		// See: https://issues.redhat.com/browse/OCPBUGS-3636
+		return nil
+	}
+
+	if err := checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // checkV3Units validates the contents of all the units in the
 // target config and returns nil if they match.
 func checkV3Units(units []ign3types.Unit, systemdPath string) error {
 	for _, unit := range units {
-		for _, dropin := range unit.Dropins {
-			if err := checkV3Dropin(systemdPath, unit, dropin); err != nil {
-				return err
-			}
-		}
-
-		if unit.Contents == nil || *unit.Contents == "" {
-			continue
-		}
-
-		path := getIgn3SystemdUnitPath(systemdPath, unit)
-		if unit.Mask != nil && *unit.Mask {
-			link, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return fmt.Errorf("state validation: error while evaluation symlink for path %q: %w", path, err)
-			}
-			if strings.Compare(pathDevNull, link) != 0 {
-				return fmt.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
-			}
-		}
-		if err := checkFileContentsAndMode(path, []byte(*unit.Contents), defaultFilePermissions); err != nil {
+		if err := checkV3Unit(unit, systemdPath); err != nil {
 			return err
 		}
-
 	}
+
+	return nil
+}
+
+// checkV2Units validates the contents of a given unit in the
+// target config and returns nil if they match.
+func checkV2Unit(unit ign2types.Unit, systemdPath string) error {
+	for _, dropin := range unit.Dropins {
+		path := getIgn2SystemdDropinPath(systemdPath, unit, dropin)
+		if err := checkFileContentsAndMode(path, []byte(dropin.Contents), defaultFilePermissions); err != nil {
+			return err
+		}
+	}
+
+	if unit.Contents == "" {
+		// Return early if contents are empty
+		return nil
+	}
+
+	path := getIgn2SystemdUnitPath(systemdPath, unit)
+	if unit.Mask {
+		link, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("state validation: error while evaluation symlink for path %q: %w", path, err)
+		}
+
+		if link != pathDevNull {
+			return fmt.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
+		}
+
+		// Return early if unit is masked
+		// See: https://issues.redhat.com/browse/OCPBUGS-3636
+		return nil
+	}
+
+	if err := checkFileContentsAndMode(path, []byte(unit.Contents), defaultFilePermissions); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -108,32 +162,11 @@ func checkV3Units(units []ign3types.Unit, systemdPath string) error {
 // target config and returns nil if they match.
 func checkV2Units(units []ign2types.Unit, systemdPath string) error {
 	for _, unit := range units {
-		for _, dropin := range unit.Dropins {
-			path := getIgn2SystemdDropinPath(systemdPath, unit, dropin)
-			if err := checkFileContentsAndMode(path, []byte(dropin.Contents), defaultFilePermissions); err != nil {
-				return err
-			}
-		}
-
-		if unit.Contents == "" {
-			continue
-		}
-
-		path := getIgn2SystemdUnitPath(systemdPath, unit)
-		if unit.Mask {
-			link, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return fmt.Errorf("state validation: error while evaluation symlink for path %q: %w", path, err)
-			}
-			if strings.Compare(pathDevNull, link) != 0 {
-				return fmt.Errorf("state validation: invalid unit masked setting. path: %q; expected: %v; received: %v", path, pathDevNull, link)
-			}
-		}
-		if err := checkFileContentsAndMode(path, []byte(unit.Contents), defaultFilePermissions); err != nil {
+		if err := checkV2Unit(unit, systemdPath); err != nil {
 			return err
 		}
-
 	}
+
 	return nil
 }
 
