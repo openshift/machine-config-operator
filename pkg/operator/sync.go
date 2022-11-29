@@ -118,6 +118,16 @@ func (optr *Operator) syncAll(syncFuncs []syncFunc) error {
 			glog.Infof("[init mode] synced %s in %v", sf.name, time.Since(startTime))
 		}
 		if syncErr.err != nil {
+			// Keep rendering controllerconfig if the daemon sync fails so (among other things)
+			// our certificates don't expire.
+			// https://bugzilla.redhat.com/show_bug.cgi?id=2034883
+			if sf.name == "MachineConfigDaemon" {
+				if err := optr.safetySyncControllerConfig(optr.renderConfig); err != nil {
+					// we don't want this error to supersede the actual error
+					// it's just "oh also, we tried to save you, but that didn't work either"
+					glog.Errorf("Error performing safety controllerconfig sync: %v", err)
+				}
+			}
 			break
 		}
 		if err := optr.clearDegradedStatus(sf.name); err != nil {
@@ -524,6 +534,57 @@ func (optr *Operator) applyManifests(config *renderConfig, paths manifestPaths) 
 	return nil
 }
 
+// safetySyncControllerConfig is a special case render of the controllerconfig that we run when
+// we need to keep syncing controllerconfig, but something (like daemon sync failing) is preventing
+// us from getting to the actual controller sync
+func (optr *Operator) safetySyncControllerConfig(config *renderConfig) error {
+	glog.Infof("Performing safety controllerconfig sync")
+
+	// If we have an existing controllerconfig, we might be able to keep rendering
+	existingCc, err := optr.ccLister.Get(ctrlcommon.ControllerConfigName)
+	if err != nil {
+		return err
+	}
+
+	// If there is an existing config, but we didn't render it (e.g. we are in the middle of an upgrade)
+	// we can't render a new one here, it won't succeed because the existing controller won't touch it
+	// and we'll time out waiting.
+	if existingCc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] != version.Raw {
+		return fmt.Errorf("Our version (%s) differs from controllerconfig (%s), can't do 'safety' controllerconfig sync until controller is updated", version.Raw, existingCc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey])
+	}
+
+	// If we made it here, we should be able to sync controllerconfig, and the existing controller should handle it
+	return optr.syncControllerConfig(config)
+}
+
+// syncControllerConfig is NOT meant to be called as a separate 'top level" sync in syncAll,
+// it is meant to be called as part of syncMachineConfigController because it will only succeed if
+// the operator version and controller version match. We can call it from safetySyncControllerConfig
+// because safetySyncControllerConfig ensures that the operator and controller versions match before it syncs.
+func (optr *Operator) syncControllerConfig(config *renderConfig) error {
+	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
+	if err != nil {
+		return err
+	}
+	cc := mcoResourceRead.ReadControllerConfigV1OrDie(ccBytes)
+	// Propagate our binary version into the controller config to help
+	// suppress rendered config generation until a corresponding
+	// new controller can roll out too.
+	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
+	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
+
+	// add ocp release version as annotation to controller config, for use when
+	// annotating rendered configs with same.
+	optrVersion, _ := optr.vStore.Get("operator")
+	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
+
+	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
+	if err != nil {
+		return err
+	}
+	return optr.waitForControllerConfigToBeCompleted(cc)
+}
+
 func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 	paths := manifestPaths{
 		clusterRoles: []string{
@@ -560,27 +621,7 @@ func (optr *Operator) syncMachineConfigController(config *renderConfig) error {
 			return err
 		}
 	}
-	ccBytes, err := renderAsset(config, "manifests/machineconfigcontroller/controllerconfig.yaml")
-	if err != nil {
-		return err
-	}
-	cc := mcoResourceRead.ReadControllerConfigV1OrDie(ccBytes)
-	// Propagate our binary version into the controller config to help
-	// suppress rendered config generation until a corresponding
-	// new controller can roll out too.
-	// https://bugzilla.redhat.com/show_bug.cgi?id=1879099
-	cc.Annotations[daemonconsts.GeneratedByVersionAnnotationKey] = version.Raw
-
-	// add ocp release version as annotation to controller config, for use when
-	// annotating rendered configs with same.
-	optrVersion, _ := optr.vStore.Get("operator")
-	cc.Annotations[ctrlcommon.ReleaseImageVersionAnnotationKey] = optrVersion
-
-	_, _, err = mcoResourceApply.ApplyControllerConfig(optr.client.MachineconfigurationV1(), cc)
-	if err != nil {
-		return err
-	}
-	return optr.waitForControllerConfigToBeCompleted(cc)
+	return optr.syncControllerConfig(config)
 }
 
 func (optr *Operator) syncMachineConfigDaemon(config *renderConfig) error {
