@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	configDriftSystemdUnitFilename       string = "/etc/systemd/system/unittest.service"
-	configDriftSystemdUnitFileContents   string = "unittest-service-unit-contents"
-	configDriftSystemdDropinFilename     string = "/etc/systemd/system/unittest.service.d/10-unittest-service.conf"
-	configDriftSystemdDropinFileContents string = "unittest-service-dropin-contents"
+	configDriftSystemdUnitFilename       string = "/etc/systemd/system/e2etest.service"
+	configDriftSystemdUnitFileContents   string = "e2etest-service-unit-contents"
+	configDriftSystemdDropinFilename     string = "/etc/systemd/system/e2etest.service.d/10-e2etest-service.conf"
+	configDriftSystemdDropinFileContents string = "e2etest-service-dropin-contents"
 	configDriftCompressedFilename        string = "/etc/compressed-file"
 	configDriftFilename                  string = "/etc/etc-file"
 	configDriftFileContents              string = "expected-file-data"
@@ -135,17 +135,24 @@ func (c configDriftTest) getMachineConfig(t *testing.T) *mcfgv1.MachineConfig {
 		},
 		[]ign3types.Unit{
 			{
-				Name:     "unittest.service",
+				Name:     "e2etest.service",
 				Contents: helpers.StrToPtr(configDriftSystemdUnitFileContents),
 				Dropins: []ign3types.Dropin{
 					{
 						Contents: helpers.StrToPtr(configDriftSystemdDropinFileContents),
-						Name:     "10-unittest-service.conf",
+						Name:     "10-e2etest-service.conf",
 					},
 					{
-						Name: "20-unittest-service.conf",
+						Name: "20-e2etest-service.conf",
 					},
 				},
+			},
+			// Add a masked systemd unit to ensure that we don't inadvertently drift.
+			// See: https://issues.redhat.com/browse/OCPBUGS-3909
+			{
+				Name:     "mask-and-contents.service",
+				Contents: helpers.StrToPtr("[Unit]\nDescription=Just random content"),
+				Mask:     helpers.BoolToPtr(true),
 			},
 		},
 		[]ign3types.SSHAuthorizedKey{},
@@ -216,6 +223,15 @@ func (c configDriftTest) Run(t *testing.T) {
 					t.Logf("Setting forcefile to initiate recovery (%s)", constants.MachineConfigDaemonForceFile)
 					helpers.ExecCmdOnNode(t, c.ClientSet, c.node, "touch", filepath.Join("/rootfs", constants.MachineConfigDaemonForceFile))
 				})
+			},
+		},
+		// Checks that a masked systemd unit does not cause config drift.
+		// See: https://issues.redhat.com/browse/OCPBUGS-3909
+		{
+			name:           "masked systemd unit does not degrade",
+			rebootExpected: false,
+			testFunc: func(t *testing.T) {
+				assertNodeIsInDoneState(t, c.ClientSet, c.node)
 			},
 		},
 	}
