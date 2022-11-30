@@ -70,6 +70,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 
 		controllers := createControllers(ctrlctx)
 		draincontroller := drain.New(
+			drain.DefaultConfig(),
 			ctrlctx.KubeInformerFactory.Core().V1().Nodes(),
 			ctrlctx.ClientBuilder.KubeClientOrDie("node-update-controller"),
 			ctrlctx.ClientBuilder.MachineConfigClientOrDie("node-update-controller"),
