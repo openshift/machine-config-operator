@@ -119,6 +119,8 @@ func assertNodeAndMCPIsDegraded(t *testing.T, cs *framework.ClientSet, node core
 }
 
 func assertLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod, expectedContents string) {
+	t.Helper()
+
 	logs, err := cs.Pods(mcdPod.Namespace).GetLogs(mcdPod.Name, &corev1.PodLogOptions{
 		Container: "machine-config-daemon",
 	}).DoRaw(context.TODO())
@@ -129,17 +131,23 @@ func assertLogsContain(t *testing.T, cs *framework.ClientSet, mcdPod *corev1.Pod
 	}
 }
 
+func assertNodeIsInDoneState(t *testing.T, cs *framework.ClientSet, node corev1.Node) {
+	t.Helper()
+
+	assertNodeReachesState(t, cs, node, func(n corev1.Node) bool {
+		isDone := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == string(constants.MachineConfigDaemonStateDone)
+		hasClearedReason := n.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] == ""
+		return isDone && hasClearedReason
+	})
+}
+
 func assertNodeAndMCPIsRecovered(t *testing.T, cs *framework.ClientSet, node corev1.Node, mcp mcfgv1.MachineConfigPool) {
 	t.Helper()
 
 	t.Log("Verifying node has recovered from config mismatch")
 	// Assert that the node eventually reaches a Done state and its reason is
 	// cleared
-	assertNodeReachesState(t, cs, node, func(n corev1.Node) bool {
-		isDone := n.Annotations[constants.MachineConfigDaemonStateAnnotationKey] == "Done"
-		hasClearedReason := n.Annotations[constants.MachineConfigDaemonReasonAnnotationKey] == ""
-		return isDone && hasClearedReason
-	})
+	assertNodeIsInDoneState(t, cs, node)
 
 	t.Log("Verifying MachineConfigPool has recovered from config mismatch")
 	// Assert that the MachineConfigPool eventually recovers.
