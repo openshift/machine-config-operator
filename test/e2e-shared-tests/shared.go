@@ -2,6 +2,8 @@ package e2e_shared_test
 
 import (
 	"testing"
+
+	"github.com/openshift/machine-config-operator/test/helpers"
 )
 
 // Options for all shared tests
@@ -32,12 +34,12 @@ func Run(t *testing.T, opts SharedTestOpts) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			defer timeIt(t, "Teardown complete", func() {
+			defer helpers.TimeIt(t, "Teardown complete", func() {
 				t.Log("Starting teardown")
 				testCase.sharedTest.Teardown(t)
 			})
 
-			timeIt(t, "Setup complete", func() {
+			helpers.TimeIt(t, "Setup complete", func() {
 				t.Log("Starting setup")
 				testCase.sharedTest.Setup(t)
 			})

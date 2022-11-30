@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"k8s.io/apimachinery/pkg/types"
+	aggregate "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -556,6 +557,45 @@ func AssertNodeReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, i
 func AssertNodeNotReboot(t *testing.T, cs *framework.ClientSet, node corev1.Node, initialUptime float64) bool {
 	current := GetNodeUptime(t, cs, node)
 	return assert.Greater(t, current, initialUptime, "node %s rebooted unexpectedly; initial uptime: %d, current uptime: %d", node.Name, initialUptime, current)
+}
+
+// Asserts that a series of conditions are eventually reached.
+//
+// Runs all condition check functions concurrently and fails if an error is
+// encountered in the process or the provided context is canceled. To set a
+// timeout, provide a context with a timeout.
+func AssertConditionsAreReached(ctx context.Context, t *testing.T, conditions []wait.ConditionWithContextFunc) bool {
+	t.Helper()
+	return assert.NoError(t, WaitForAllConditions(ctx, conditions))
+}
+
+// Waits for all conditions to be reached.
+//
+// Runs all condition check functions concurrently and fails if an error is
+// encountered in the process or the provided context is canceled. To set a
+// timeout, provide a context with a timeout.
+func WaitForAllConditions(ctx context.Context, conditions []wait.ConditionWithContextFunc) error {
+	aggFuncs := []func() error{}
+
+	for _, condition := range conditions {
+		condition := condition
+		aggFuncs = append(aggFuncs, func() error {
+			return wait.PollImmediateUntilWithContext(ctx, 100*time.Millisecond, condition)
+		})
+	}
+
+	return aggregate.AggregateGoroutines(aggFuncs...)
+}
+
+// Runs a function and logs the info string with the elapsed time
+func TimeIt(t *testing.T, info string, timedFunc func()) {
+	start := time.Now()
+
+	defer func() {
+		t.Logf("%s (took %v)", info, time.Since(start))
+	}()
+
+	timedFunc()
 }
 
 func mcdForNode(cs *framework.ClientSet, node *corev1.Node) (*corev1.Pod, error) {

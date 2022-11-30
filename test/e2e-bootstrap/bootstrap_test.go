@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/machine-config-operator/pkg/controller/node"
 	"github.com/openshift/machine-config-operator/pkg/controller/render"
 	"github.com/openshift/machine-config-operator/pkg/controller/template"
+	"github.com/openshift/machine-config-operator/test/envtest"
 	"github.com/openshift/machine-config-operator/test/framework"
 	"github.com/openshift/machine-config-operator/test/helpers"
 
@@ -57,7 +58,7 @@ type fixture struct {
 func TestE2EBootstrap(t *testing.T) {
 	ctx := context.Background()
 
-	testEnv := framework.NewTestEnv(t)
+	testEnv := envtest.NewTestEnv(t)
 
 	configv1.Install(scheme.Scheme)
 	mcfgv1.Install(scheme.Scheme)
@@ -75,7 +76,7 @@ func TestE2EBootstrap(t *testing.T) {
 
 	_, err = clientSet.Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: framework.OpenshiftConfigNamespace,
+			Name: envtest.OpenshiftConfigNamespace,
 		},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -294,7 +295,7 @@ spec:
 
 			fixture := newTestFixture(t, cfg, objs)
 			// Defer stop after cleanup so that the cleanup happens after the stop (defer unwrapping order)
-			defer framework.CleanEnvironment(t, clientSet)
+			defer envtest.CleanEnvironment(t, clientSet)
 			defer fixture.stop()
 
 			// Fetch the controller rendered configurations
@@ -371,8 +372,8 @@ func newTestFixture(t *testing.T, cfg *rest.Config, objs []runtime.Object) *fixt
 	clientSet := framework.NewClientSetFromConfig(cfg)
 
 	// Ensure the environment has been cleaned, then create this tests objects
-	framework.CheckCleanEnvironment(t, clientSet)
-	framework.CreateObjects(t, clientSet, objs...)
+	envtest.CheckCleanEnvironment(t, clientSet)
+	envtest.CreateObjects(t, clientSet, objs...)
 	createClusterVersion(t, clientSet, objs...)
 
 	controllers := createControllers(ctrlctx)

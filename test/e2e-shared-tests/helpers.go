@@ -257,13 +257,3 @@ func allMCPConditionsFalse(conditions []mcfgv1.MachineConfigPoolConditionType, m
 
 	return true
 }
-
-func timeIt(t *testing.T, info string, timedFunc func()) {
-	start := time.Now()
-
-	defer func() {
-		t.Logf("%s (took %v)", info, time.Since(start))
-	}()
-
-	timedFunc()
-}
