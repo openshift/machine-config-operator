@@ -505,101 +505,95 @@ type BareMetalPlatformStatus struct {
 	NodeDNSIP string `json:"nodeDNSIP,omitempty"`
 }
 
-type OpenStackAPIBGPPeer struct {
-	// asn is the Autonomous System number of the peer.
+// BGPPeer describes a BGP peer.
+type BGPPeer struct {
+	// asn is the Autonomous System Number of the peer.
 	//
 	// +optional
 	ASN string `json:"asn,omitempty"`
 
-	// ip is the IP address of the peer, as reachable from the Control
-	// plane machine. It may be either IPv4 or IPv6
+	// ip is the IP address of the peer, as reachable from the cluster.
+	// It may be either IPv4 or IPv6.
 	//
 	// +kubebuilder:validation:Required
 	// + ---
 	// + {IPv4 or IPv6} validation in crd.yaml-patch
 	IP string `json:"ip"`
 
-	// password for BGP authentication against the peer
+	// password for BGP authentication against the peer.
 	//
 	// +optional
 	Password string `json:"password,omitempty"`
 }
 
-// OpenStackAPIBGPSpeaker describes the BGP autonomous system that will contain
-// the API VIP for a specific failure domain.
-type OpenStackAPIBGPSpeaker struct {
-	// failureDomain is the name of a failure domain which this BGP
-	// configuration applies to. A failure domain with that name must be
-	// defined in the OpenStack platform spec. If there are no failure
-	// domains defined, use "default".
+// OpenStackBGPSpeaker describes the BGP speaker configuration for a given
+// OpenStack subnet.
+type BGPSpeaker struct {
+	// subnetCIDR is the CIDR which this BGP configuration applies to.
 	//
+	// + Validation is applied via a patch, we validate the format as cidr
 	// +kubebuilder:validation:Required
-	FailureDomain string `json:"failureDomain"`
+	SubnetCIDR string `json:"subnetCIDR"`
 
 	// asn specifies the Autonomous System number to be used by the BGP
-	// speaker of the Control plane node. Control plane nodes in a failure
-	// domain where this field is not set are each assigned a distinct
-	// number: master-0 4273211230, master-1 4273211231, and master-2
-	// 4273211232. If multiple Control plane nodes are assigned the same
-	// failure domain, this field cannot be set.
+	// speaker. If this field is not set, the cluster will assign an
+	// arbitrary number.
 	//
 	// +optional
 	ASN string `json:"asn"`
 
-	// peers is a list of all BGP peers of the speaker for the VIPs of this
-	// failure domain. The list must contain at least one item.
+	// peers is a list of all BGP peers of the speaker of the subnet.
 	//
 	// +kubebuilder:validation:MinItems:=1
-	Peers []OpenStackAPIBGPPeer `json:"peers"`
+	Peers []BGPPeer `json:"peers"`
 }
 
-type OpenStackAPIBGPConfiguration struct {
+type ControlPlaneBGPConfiguration struct {
 	// speakers is a list of BGP speaker configurations. We require a
-	// speaker configuration for every failure domain hosting a control
-	// plane node. The list must contain at least one item.
+	// speaker configuration for every control plane subnet.
+	// The list must contain at least one item.
 	//
 	// +kubebuilder:validation:MinItems:=1
 	// +listType=map
-	// +listMapKey=failureDomain
-	Speakers []OpenStackAPIBGPSpeaker `json:"speakers"`
+	// +listMapKey=subnetCIDR
+	Speakers []BGPSpeaker `json:"speakers"`
+}
+
+type ControlPlaneLoadBalancer struct {
+	// controlPlaneLoadBalancerType defines the type of load-balancer which will be
+	// configured for the control plane VIPs. Permitted values are `VRRP` and
+	// `BGP`.
+	// When omitted, this means no opinion and the platform is left to
+	// choose a reasonable default.
+	// The current default value is `VRRP`.
+	//
+	// +unionDiscriminator
+	// +kubebuilder:validation:Enum:="VRRP";"BGP"
+	// +kubebuilder:validation:Required
+	ControlPlaneLoadBalancerType string `json:"type,omitempty"`
+
+	// BGPSpeakers is a list of BGP speaker configurations. We require a
+	// speaker configuration for every subnet where we want to peer.
+	// The list must contain at least one item.
+	//
+	// +kubebuilder:validation:MinItems:=1
+	// +listType=map
+	// +listMapKey=subnetCIDR
+	BGP *ControlPlaneBGPConfiguration `json:"bgp,omitempty"`
 }
 
 // OpenStackPlatformSpec holds the desired state of the OpenStack infrastructure provider.
 // This only includes fields that can be modified in the cluster.
 type OpenStackPlatformSpec struct {
-	// apiLoadBalancer defines how traffic destined to the OpenShift API is
-	// routed to the API servers.
+	// controlPlaneLoadBalancer defines how traffic destined to the OpenShift API and Ingress
+	// is routed to the servers.
 	// When omitted, this means no opinion and the platform is left to
 	// choose a reasonable default. This default is subject to change over
 	// time.
 	// The current default configuration uses VRRP.
 	//
 	// +optional
-	APILoadBalancer OpenStackAPILoadBalancer `json:"apiLoadBalancer"`
-}
-
-// OpenStackAPILoadBalancer defines how inbound traffic is routed to the API
-// servers.
-type OpenStackAPILoadBalancer struct {
-	// apiLoadBalancerType defines the type of loadbalancer which will be
-	// configured for the API server. Permitted values are `VRRP` and
-	// `BGP`.
-	// When omitted, this means no opinion and the platform is left to
-	// choose a reasonable default. This default is subject to change over
-	// time.
-	// The current default value is `VRRP`.
-	//
-	// +unionDiscriminator
-	// +kubebuilder:validation:Enum:="VRRP";"BGP"
-	// +kubebuilder:validation:Required
-	APILoadBalancerType string `json:"type,omitempty"`
-
-	// bgpConfiguration describes the configuration of a BGP load balancer
-	// for the API server. It is only used if apiLoadBalancer is set to
-	// `BGP`.
-	//
-	// +optional
-	BGP *OpenStackAPIBGPConfiguration `json:"bgp,omitempty"`
+	ControlPlaneLoadBalancer ControlPlaneLoadBalancer `json:"controlPlaneLoadBalancer"`
 }
 
 // OpenStackPlatformStatus holds the current status of the OpenStack infrastructure provider.
