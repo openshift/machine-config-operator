@@ -1144,8 +1144,8 @@ github.com/sergi/go-diff v1.0.0/go.mod h1:0CfEIISq7TuYL3j771MWULgwwjU+GofnZX9QAm
 github.com/sergi/go-diff v1.1.0 h1:we8PVUC3FE2uYfodKH/nBHMSetSfHDR6scGdBi+erh0=
 github.com/shazow/go-diff v0.0.0-20160112020656-b6b7b6733b8c h1:W65qqJCIOVP4jpqPQ0YvHYKwcMEMVWIzWC5iNQQfBTU=
 github.com/shazow/go-diff v0.0.0-20160112020656-b6b7b6733b8c/go.mod h1:/PevMnwAxekIXwN8qQyfc5gl2NlkB3CQlkizAbOkeBs=
-github.com/shiftstack/api v0.0.0-20221203003222-27ae90479536 h1:zRfks9+vtVw4Fsh+97EsYT1swicKwA0mO5qJi3vOclw=
-github.com/shiftstack/api v0.0.0-20221203003222-27ae90479536/go.mod h1:OW9hi5XDXOQWm/kRqUww6RVxZSf0nqrS4heerSmHBC4=
+github.com/shiftstack/api v0.0.0-20221213013249-fdd8720e65c0 h1:NN4DLlv761JzjaSxPGSf2+07koIAvnxMHU2P+vha76U=
+github.com/shiftstack/api v0.0.0-20221213013249-fdd8720e65c0/go.mod h1:OW9hi5XDXOQWm/kRqUww6RVxZSf0nqrS4heerSmHBC4=
 github.com/shurcooL/go v0.0.0-20180423040247-9e1955d9fb6e/go.mod h1:TDJrrUr11Vxrven61rcy3hJMUqaf/CLWYhHNPmT14Lk=
 github.com/shurcooL/go-goon v0.0.0-20170922171312-37c2f522c041/go.mod h1:N5mDOmsrJOB+vfqUK+7DmDyjhSLIIBnXo9lvZJj3MWQ=
 github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeVRXNmyL/1OwPU0+IJeTBvfc=

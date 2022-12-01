@@ -241,12 +241,16 @@ spec:
          echo `date "+%FT%T"` "Container stopped"
          sleep 60
       done
-      if timeout 30s bash -c "while true; do [ -f /etc/frr/frr.conf ] && break; done"; then
+
+      # Here we need to wait for baremetal-runtimecfg to generate frr.conf, which can take
+      # time since it needs the local kubeapi to run.
+      if timeout 5m bash -c "while true; do [ -f /etc/frr/frr.conf ] && break; done"; then
           start_frr
       else
           echo `date "+%FT%T"` "ERROR: /etc/frr/frr.conf was not found"
           exit 1
       fi
+
       rm -f "$frr_sock"
       socat UNIX-LISTEN:${frr_sock},fork system:'bash -c msg_handler'
     resources:
@@ -264,6 +268,7 @@ spec:
         - /bin/bash
         - -c
         - |
+          [[ ! -f /etc/frr/frr.conf ]] || \
           [[ -s /var/run/frr/stopped ]] || \
           vtysh -c "show bfd peers"
       initialDelaySeconds: 20

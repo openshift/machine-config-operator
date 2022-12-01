@@ -64,7 +64,6 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
-	funcs["onPremPlatformBGPConfiguration"] = onPremPlatformBGPConfiguration
 	funcs["isKeepalivedEnabled"] = isKeepalivedEnabled
 	funcs["isFrrEnabled"] = isFrrEnabled
 
@@ -247,6 +246,7 @@ func onPremPlatformShortName(cfg mcfgv1.ControllerConfigSpec) interface{} {
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformIngressIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -297,6 +297,7 @@ func onPremPlatformIngressIPs(cfg mcfgv1.ControllerConfigSpec) (interface{}, err
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -345,36 +346,6 @@ func onPremPlatformAPIServerInternalIPs(cfg mcfgv1.ControllerConfigSpec) (interf
 	return nil, fmt.Errorf("")
 }
 
-func onPremPlatformBGPConfiguration(cfg mcfgv1.ControllerConfigSpec) (interface{}, error) {
-	// Here at some point we'll get the Failure Domain from the Machine
-	const failureDomain = "default"
-	if cfg.Infra.Status.PlatformStatus != nil {
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.OpenStackPlatformType:
-			apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-			if apiLBConfig.APILoadBalancerType != "BGP" {
-				return nil, fmt.Errorf("invalid API Load Balancer type for BGP configuration")
-			}
-			for _, speaker := range apiLBConfig.BGP.Speakers {
-				// if a failure domain corresponding to the machine is found in the BGP configuration, return the configuration
-				if speaker.FailureDomain == failureDomain {
-					if speaker.FailureDomain == "default" {
-						if speaker.ASN == "" {
-							speaker.ASN = "4273211230"
-						}
-						return speaker, nil
-					}
-				}
-			}
-		default:
-			return nil, fmt.Errorf("invalid platform for BGP configuration")
-		}
-	} else {
-		return nil, fmt.Errorf("")
-	}
-	return nil, fmt.Errorf("no BGP configuration was found")
-}
-
 func isKeepalivedEnabled(cfg mcfgv1.ControllerConfigSpec) bool {
 	ips, err := onPremPlatformAPIServerInternalIPs(cfg)
 	if err != nil {
@@ -384,8 +355,7 @@ func isKeepalivedEnabled(cfg mcfgv1.ControllerConfigSpec) bool {
 		if cfg.Infra.Status.PlatformStatus != nil {
 			switch cfg.Infra.Status.PlatformStatus.Type {
 			case configv1.OpenStackPlatformType:
-				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-				if apiLBConfig.APILoadBalancerType != "BGP" {
+				if cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType != "BGP" {
 					return true
 				}
 				return false
@@ -411,8 +381,7 @@ func isFrrEnabled(cfg mcfgv1.ControllerConfigSpec) bool {
 		if cfg.Infra.Status.PlatformStatus != nil {
 			switch cfg.Infra.Status.PlatformStatus.Type {
 			case configv1.OpenStackPlatformType:
-				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-				if apiLBConfig.APILoadBalancerType == "BGP" {
+				if cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType == "BGP" {
 					return true
 				}
 				return false

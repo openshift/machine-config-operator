@@ -19,13 +19,13 @@ contents:
     debug bgp updates
     debug bgp update-groups
     
-    router bgp {{ with $bgp := onPremPlatformBGPConfiguration . }}{{ $bgp.ASN }}{{ end }}
+    router bgp {{`{{ with $bgp := .BGPSpeaker }}{{ $bgp.ASN }}{{ end }}`}}
       bgp router-id {{`{{.NonVirtualIP}}`}}
       bgp log-neighbor-changes
       bgp graceful-shutdown
       no bgp ebgp-requires-policy
     
-      {{- with $bgp := onPremPlatformBGPConfiguration . }}
+      {{`{{- with $bgp := .BGPSpeaker }}
       {{ range $i, $peer := $bgp.Peers }}
       neighbor uplink-{{ $i }} peer-group
       neighbor uplink-{{ $i }} remote-as external
@@ -34,7 +34,7 @@ contents:
       neighbor uplink-{{ $i }} password {{ $peer.Password }}
       neighbor {{ $peer.IP }} peer-group uplink-{{ $i }}
       {{ end }}
-      {{- end }}
+      {{- end }}`}}
     
       address-family ipv4 unicast
         redistribute connected route-map vip
@@ -42,19 +42,19 @@ contents:
     
       address-family ipv6 unicast
         redistribute connected route-map vip
-      {{- with $bgp := onPremPlatformBGPConfiguration . -}}
+      {{`{{- with $bgp := .BGPSpeaker -}}
       {{ range $i, $peer := $bgp.Peers }}
         neighbor uplink-{{ $i }} activate
       {{- end -}}
-      {{- end }}
+      {{- end }}`}}
       exit-address-family
     
       address-family l2vpn evpn
-      {{- with $bgp := onPremPlatformBGPConfiguration . -}}
+      {{`{{- with $bgp := .BGPSpeaker -}}
       {{ range $i, $peer := $bgp.Peers }}
         neighbor uplink-{{ $i }} activate
       {{- end -}}
-      {{- end }}
+      {{- end }}`}}
       exit-address-family
     
     ip nht resolve-via-default

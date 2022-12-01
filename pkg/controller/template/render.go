@@ -46,14 +46,13 @@ const (
 // All files from platform _base are always included, and may be overridden or
 // supplemented by platform-specific templates.
 //
-//  ex:
-//       templates/worker/00-worker/_base/units/kubelet.conf.tmpl
-//                                    /files/hostname.tmpl
-//                              /aws/units/kubelet-dropin.conf.tmpl
-//                       /01-worker-kubelet/_base/files/random.conf.tmpl
-//                /master/00-master/_base/units/kubelet.tmpl
-//                                    /files/hostname.tmpl
-//
+//	ex:
+//	     templates/worker/00-worker/_base/units/kubelet.conf.tmpl
+//	                                  /files/hostname.tmpl
+//	                            /aws/units/kubelet-dropin.conf.tmpl
+//	                     /01-worker-kubelet/_base/files/random.conf.tmpl
+//	              /master/00-master/_base/units/kubelet.tmpl
+//	                                  /files/hostname.tmpl
 func generateTemplateMachineConfigs(config *RenderConfig, templateDir string) ([]*mcfgv1.MachineConfig, error) {
 	infos, err := ioutil.ReadDir(templateDir)
 	if err != nil {
@@ -317,7 +316,6 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["onPremPlatformIngressIP"] = onPremPlatformIngressIP
 	funcs["onPremPlatformIngressIPs"] = onPremPlatformIngressIPs
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
-	funcs["onPremPlatformBGPConfiguration"] = onPremPlatformBGPConfiguration
 	funcs["urlHost"] = urlHost
 	funcs["urlPort"] = urlPort
 	funcs["isFrrEnabled"] = isFrrEnabled
@@ -436,6 +434,7 @@ func onPremPlatformShortName(cfg RenderConfig) interface{} {
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformIngressIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -495,6 +494,7 @@ func onPremPlatformIngressIPs(cfg RenderConfig) (interface{}, error) {
 
 // This function should be removed in 4.13 when we no longer have to worry
 // about upgrades from releases that still use it.
+//
 //nolint:dupl
 func onPremPlatformAPIServerInternalIP(cfg RenderConfig) (interface{}, error) {
 	if cfg.Infra.Status.PlatformStatus != nil {
@@ -611,37 +611,6 @@ func urlPort(u string) (interface{}, error) {
 	}
 }
 
-func onPremPlatformBGPConfiguration(cfg RenderConfig) (interface{}, error) {
-	// Here at some point we'll get the Failure Domain from the Machine
-	const failureDomain = "default"
-	var emptySpeakerConfig = configv1.OpenStackAPIBGPSpeaker{}
-	if cfg.Infra.Status.PlatformStatus != nil {
-		switch cfg.Infra.Status.PlatformStatus.Type {
-		case configv1.OpenStackPlatformType:
-			apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-			if apiLBConfig.APILoadBalancerType != "BGP" {
-				return emptySpeakerConfig, nil
-			}
-			for _, speaker := range apiLBConfig.BGP.Speakers {
-				// if a failure domain corresponding to the machine is found in the BGP configuration, return the configuration
-				if speaker.FailureDomain == failureDomain {
-					if speaker.FailureDomain == "default" {
-						if speaker.ASN == "" {
-							speaker.ASN = "4273211230"
-						}
-						return speaker, nil
-					}
-				}
-			}
-		default:
-			return nil, fmt.Errorf("invalid platform for BGP configuration")
-		}
-	} else {
-		return nil, fmt.Errorf("")
-	}
-	return nil, fmt.Errorf("no BGP configuration was found")
-}
-
 func isKeepalivedEnabled(cfg RenderConfig) bool {
 	ips, err := onPremPlatformAPIServerInternalIPs(cfg)
 	if err != nil {
@@ -651,8 +620,7 @@ func isKeepalivedEnabled(cfg RenderConfig) bool {
 		if cfg.Infra.Status.PlatformStatus != nil {
 			switch cfg.Infra.Status.PlatformStatus.Type {
 			case configv1.OpenStackPlatformType:
-				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-				if apiLBConfig.APILoadBalancerType != "BGP" {
+				if cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType != "BGP" {
 					return true
 				}
 				return false
@@ -678,8 +646,7 @@ func isFrrEnabled(cfg RenderConfig) bool {
 		if cfg.Infra.Status.PlatformStatus != nil {
 			switch cfg.Infra.Status.PlatformStatus.Type {
 			case configv1.OpenStackPlatformType:
-				apiLBConfig := cfg.Infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-				if apiLBConfig.APILoadBalancerType == "BGP" {
+				if cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType == "BGP" {
 					return true
 				}
 				return false

@@ -15,13 +15,13 @@ debug bgp neighbor-events
 debug bgp updates
 debug bgp update-groups
 
-router bgp {{ with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}{{ $bgp.ASN }}{{ end }}
+router bgp {{`{{ with $bgp := .BGPSpeaker }}{{ $bgp.ASN }}{{ end }}`}}
   bgp router-id {{`{{.NonVirtualIP}}`}}
   bgp log-neighbor-changes
   bgp graceful-shutdown
   no bgp ebgp-requires-policy
 
-  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}
+  {{`{{- with $bgp := .BGPSpeaker }}
   {{ range $i, $peer := $bgp.Peers }}
   neighbor uplink-{{ $i }} peer-group
   neighbor uplink-{{ $i }} remote-as external
@@ -30,7 +30,7 @@ router bgp {{ with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}{{
   neighbor uplink-{{ $i }} password {{ $peer.Password }}
   neighbor {{ $peer.IP }} peer-group uplink-{{ $i }}
   {{ end }}
-  {{- end }}
+  {{- end }}`}}
 
   address-family ipv4 unicast
     redistribute connected route-map vip
@@ -38,19 +38,19 @@ router bgp {{ with $bgp := onPremPlatformBGPConfiguration .ControllerConfig }}{{
 
   address-family ipv6 unicast
     redistribute connected route-map vip
-  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig -}}
+  {{`{{- with $bgp := .BGPSpeaker -}}
   {{ range $i, $peer := $bgp.Peers }}
     neighbor uplink-{{ $i }} activate
   {{- end -}}
-  {{- end }}
+  {{- end }}`}}
   exit-address-family
 
   address-family l2vpn evpn
-  {{- with $bgp := onPremPlatformBGPConfiguration .ControllerConfig -}}
+  {{`{{- with $bgp := .BGPSpeaker -}}
   {{ range $i, $peer := $bgp.Peers }}
     neighbor uplink-{{ $i }} activate
   {{- end -}}
-  {{- end }}
+  {{- end }}`}}
   exit-address-family
 
 ip nht resolve-via-default
@@ -61,7 +61,7 @@ bfd
     transmit-interval 500
     receive-interval 500
 
-access-list 7 seq 10 permit {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
+access-list vip seq 1 permit {{`{{ .Cluster.APIVIP }}`}}/{{`{{ .Cluster.VIPNetmask }}`}}
 
 route-map vip permit 1
-    match ip address 7
+    match ip address vip

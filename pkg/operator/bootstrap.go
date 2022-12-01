@@ -246,8 +246,7 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 				filename: "openstack/static-pod-resources/coredns/Corefile.tmpl",
 			},
 		)
-		apiLBConfig := infra.Spec.PlatformSpec.OpenStack.APILoadBalancer
-		if apiLBConfig.APILoadBalancerType == "BGP" {
+		if infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType == "BGP" {
 			manifests = append(manifests,
 				manifest{
 					name:     "manifests/on-prem/frr.yaml",

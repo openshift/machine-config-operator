@@ -33,6 +33,9 @@ contents:
       - name: chroot-host
         hostPath:
           path: "/"
+      - name: nodeip-configuration
+        hostPath:
+          path: "/run/nodeip-configuration"
       initContainers:
       - name: verify-api-int-resolvable
         image: {{ .Images.baremetalRuntimeCfgImage }}
@@ -70,6 +73,8 @@ contents:
           mountPath: "/config"
         - name: conf-dir
           mountPath: "/etc/frr"
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
         imagePullPolicy: IfNotPresent
       # (emilien) We need to create /etc/frr/daemons and /etc/frr/vtysh.conf files because
       # /etc/frr is bind-mounted to generate frr.conf and frr also needs daemons configured.
@@ -322,8 +327,14 @@ contents:
               export -f stop_frr
 
               trap stop_frr SIGTERM
-              if [ -s "/etc/frr/frr.conf" ]; then
+
+              # Here we need to wait for baremetal-runtimecfg to generate frr.conf, which can take
+              # time since it needs the local kubeapi to run.
+              if timeout 5m bash -c "while true; do [ -f /etc/frr/frr.conf ] && break; done"; then
                   start_frr
+              else
+                  echo `date "+%FT%T"` "ERROR: /etc/frr/frr.conf was not found"
+                  exit 1
               fi
 
               rm -f "$frr_sock"
@@ -382,6 +393,8 @@ contents:
           mountPath: "/var/run/frr"
         - name: chroot-host
           mountPath: "/host"
+        - name: nodeip-configuration
+          mountPath: "/run/nodeip-configuration"
         imagePullPolicy: IfNotPresent        
       hostNetwork: true
       tolerations:
