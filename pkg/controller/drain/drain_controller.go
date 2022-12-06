@@ -373,7 +373,6 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			ctrl.logNode(node, "Drain failed. Drain has been failing for more than %v minutes. Waiting %v minutes then retrying. "+
 				"Error message from drain: %v", ctrl.cfg.DrainRequeueFailingThreshold.Minutes(), ctrl.cfg.DrainRequeueFailingDelay.Minutes(), err)
 			ctrl.enqueueAfter(node, ctrl.cfg.DrainRequeueFailingDelay)
-			ctrlcommon.MCCDrainErr.Set(1)
 		} else {
 			ctrl.logNode(node, "Drain failed. Waiting %v minute then retrying. Error message from drain: %v",
 				ctrl.cfg.DrainRequeueDelay.Minutes(), err)
