@@ -244,20 +244,12 @@ func (optr *Operator) syncRenderConfig(_ *renderConfig) error {
 	if err != nil {
 		return err
 	}
-	// as described by the name this is essentially static, but it no worse than what was here before.  Since changes disrupt workloads
-	// and since must perfectly match what the installer creates, this is effectively frozen in time.
-	initialKubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config", "initial-kube-apiserver-server-ca", "ca-bundle.crt")
+
+	// This is the ca-bundle published by the kube-apiserver that is used terminate client-certificates in the kube cluster.
+	// If the kubelet has a flag to check the in-cluster published ca bundle, that would be ideal.
+	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-config-managed", "kube-apiserver-client-ca", "ca-bundle.crt")
 	if err != nil {
 		return err
-	}
-
-	// Fetch the following configmap and merge into the the initial CA. The CA is the same for the first year, and will rotate
-	// automatically afterwards.
-	kubeAPIServerServingCABytes, err := optr.getCAsFromConfigMap("openshift-kube-apiserver-operator", "kube-apiserver-to-kubelet-client-ca", "ca-bundle.crt")
-	if err != nil {
-		kubeAPIServerServingCABytes = initialKubeAPIServerServingCABytes
-	} else {
-		kubeAPIServerServingCABytes = mergeCertWithCABundle(initialKubeAPIServerServingCABytes, kubeAPIServerServingCABytes, "kube-apiserver-to-kubelet-signer")
 	}
 
 	bundle := make([]byte, 0)
