@@ -3,35 +3,20 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
-	"time"
 
+	"github.com/containers/common/pkg/retry"
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/image"
+	"github.com/containers/image/v5/manifest"
 	"github.com/containers/image/v5/types"
+	digest "github.com/opencontainers/go-digest"
 )
 
 const (
 	// Number of retry we want to perform
 	cmdRetriesCount = 2
 )
-
-func retryIfNecessary(ctx context.Context, operation func() error) error {
-	err := operation()
-	for attempt := 0; err != nil && attempt < cmdRetriesCount; attempt++ {
-		delay := time.Duration(int(math.Pow(2, float64(attempt)))) * time.Second
-		fmt.Printf("Warning: failed, retrying in %s ... (%d/%d)", delay, attempt+1, cmdRetriesCount)
-		select {
-		case <-time.After(delay):
-			break
-		case <-ctx.Done():
-			return err
-		}
-		err = operation()
-	}
-	return err
-}
 
 // newDockerImageSource creates an image source for an image reference.
 // The caller must call .Close() on the returned ImageSource.
@@ -52,36 +37,60 @@ func newDockerImageSource(ctx context.Context, sys *types.SystemContext, name st
 
 // This function has been inspired from upstream skopeo inspect, see https://github.com/containers/skopeo/blob/master/cmd/skopeo/inspect.go
 // We can use skopeo inspect directly once fetching RepoTags becomes optional in skopeo.
-func imageInspect(imageName string) (*types.ImageInspectInfo, error) {
+// TODO(jkyros): I know we said we eventually wanted to use skopeo inspect directly, but it is really great being able
+// to know what the error is by using the libraries directly :)
+//nolint:unparam
+func imageInspect(imageName string) (*types.ImageInspectInfo, *digest.Digest, error) {
 	var (
 		src        types.ImageSource
 		imgInspect *types.ImageInspectInfo
 		err        error
 	)
 
+	retryOpts := retry.Options{
+		MaxRetry: cmdRetriesCount,
+	}
+
 	ctx := context.Background()
 	sys := &types.SystemContext{AuthFilePath: kubeletAuthFile}
 
-	if err := retryIfNecessary(ctx, func() error {
+	// retry.IfNecessary takes into account whether the error is "retryable"
+	// so we don't keep looping on errors that will never resolve
+	if err := retry.IfNecessary(ctx, func() error {
 		src, err = newDockerImageSource(ctx, sys, imageName)
 		return err
-	}); err != nil {
-		return nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
+	}, &retryOpts); err != nil {
+		return nil, nil, fmt.Errorf("error parsing image name %q: %w", imageName, err)
+	}
+
+	var rawManifest []byte
+	if err := retry.IfNecessary(ctx, func() error {
+		rawManifest, _, err = src.GetManifest(ctx, nil)
+
+		return err
+	}, &retryOpts); err != nil {
+		return nil, nil, fmt.Errorf("error retrieving image manifest %q: %w", imageName, err)
+	}
+
+	// get the digest here because it's not part of the image inspection
+	digest, err := manifest.Digest(rawManifest)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error retrieving image digest: %q: %w", imageName, err)
 	}
 
 	defer src.Close()
 
 	img, err := image.FromUnparsedImage(ctx, sys, image.UnparsedInstance(src, nil))
 	if err != nil {
-		return nil, fmt.Errorf("error parsing manifest for image: %w", err)
+		return nil, nil, fmt.Errorf("error parsing manifest for image %q: %w", imageName, err)
 	}
 
-	if err := retryIfNecessary(ctx, func() error {
+	if err := retry.IfNecessary(ctx, func() error {
 		imgInspect, err = img.Inspect(ctx)
 		return err
-	}); err != nil {
-		return nil, err
+	}, &retryOpts); err != nil {
+		return nil, nil, err
 	}
 
-	return imgInspect, nil
+	return imgInspect, &digest, nil
 }

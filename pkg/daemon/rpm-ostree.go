@@ -215,7 +215,7 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 	}
 
 	var imageData *types.ImageInspectInfo
-	if imageData, err = imageInspect(imgURL); err != nil {
+	if imageData, _, err = imageInspect(imgURL); err != nil {
 		if err != nil {
 			var podmanImgData *imageInspection
 			glog.Infof("Falling back to using podman inspect")
@@ -286,25 +286,13 @@ func (r *RpmOstreeClient) Rebase(imgURL, osImageContentDir string) (changed bool
 // IsBootableImage determines if the image is a bootable (new container formet) image, or a wrapper (old container format)
 func (r *RpmOstreeClient) IsBootableImage(imgURL string) (bool, error) {
 
-	// TODO(jkyros): This is duplicated-ish from Rebase(), do we still need to carry this around?
 	var isBootableImage string
 	var imageData *types.ImageInspectInfo
 	var err error
-	if imageData, err = imageInspect(imgURL); err != nil {
-		if err != nil {
-			var podmanImgData *imageInspection
-			glog.Infof("Falling back to using podman inspect")
-
-			if podmanImgData, err = podmanInspect(imgURL); err != nil {
-				return false, err
-			}
-			isBootableImage = podmanImgData.Labels["ostree.bootable"]
-		}
-	} else {
-		isBootableImage = imageData.Labels["ostree.bootable"]
+	if imageData, _, err = imageInspect(imgURL); err != nil {
+		return false, err
 	}
-	// We may have pulled in OSContainer image as fallback during podmanCopy() or podmanInspect()
-	defer exec.Command("podman", "rmi", imgURL).Run()
+	isBootableImage = imageData.Labels["ostree.bootable"]
 
 	return isBootableImage == "true", nil
 }
