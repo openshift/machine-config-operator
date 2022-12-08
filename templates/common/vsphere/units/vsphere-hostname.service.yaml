@@ -6,7 +6,6 @@ contents: |
   Requires=vmtoolsd.service
   After=vmtoolsd.service
 
-  ConditionPathExists=!/etc/hostname
   ConditionVirtualization=vmware
   
   Before=kubelet.service
@@ -17,7 +16,7 @@ contents: |
   ExecStart=/usr/local/bin/vsphere-hostname.sh
   Restart=on-failure
   RestartSec=15
+  StartLimitIntervalSec=0
 
   [Install]
   WantedBy=multi-user.target
-
