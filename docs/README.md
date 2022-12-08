@@ -24,6 +24,8 @@ Kubernetes component" that you can inspect and manage with `oc`.
 The MCO uses [CoreOS Ignition](https://github.com/coreos/ignition) as a configuration
 format.  Operating system updates use [rpm-ostree](http://github.com/projectatomic/rpm-ostree), with ostree updates encapsulated inside a container image.  More information in [OSUpgrades.md](/docs/OSUpgrades.md).
 
+As of release 4.12, you can try out [OCP CoreOS Layering](/docs/UsingLayering.md) which lets you use more familiar "Containerfile" (Dockerfile) syntax to apply configuration to your pools.
+
 # Sub-components and design
 
 This one git repository generates 4 components in a cluster; the `machine-config-operator`
