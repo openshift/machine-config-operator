@@ -307,18 +307,12 @@ func (ctrl *Controller) syncNode(key string) error {
 			return fmt.Errorf("failed to uncordon node %v: %w", node.Name, err)
 		}
 	case daemonconsts.DrainerStateDrain:
-		// First check if we have an ongoing drain
-		// This is currently stored in the object itself as a map but,
-		// Practically during upgrades the control plane node this controller
-		// pod is running on will also be terminated (the drainer will skip it).
-		// This is a bit problematic in practice since we don't really have a previous state.
-		// TODO (jerzhang) consider using a new CRD for coordination
 		if err := ctrl.drainNode(node, drainer); err != nil {
-			return fmt.Errorf("drain failed: %w", err)
+			// If we get an error from drainNode, that means the drain failed.
+			// However, we want to requeue and try again. So we need to return nil
+			// from here so that we can requeue.
+			return nil
 		}
-
-		// Drain was successful. Delete the ongoing drain, then set the annotation
-		delete(ctrl.ongoingDrains, node.Name)
 	default:
 		return fmt.Errorf("node %s: non-recognized drain verb detected %s", node.Name, desiredVerb)
 	}
@@ -336,6 +330,12 @@ func (ctrl *Controller) syncNode(key string) error {
 }
 
 func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) error {
+	// First check if we have an ongoing drain
+	// This is currently stored in the object itself as a map but,
+	// Practically during upgrades the control plane node this controller
+	// pod is running on will also be terminated (the drainer will skip it).
+	// This is a bit problematic in practice since we don't really have a previous state.
+	// TODO (jerzhang) consider using a new CRD for coordination
 	isOngoingDrain := false
 	var duration time.Duration
 
@@ -379,9 +379,14 @@ func (ctrl *Controller) drainNode(node *corev1.Node, drainer *drain.Helper) erro
 			ctrl.enqueueAfter(node, ctrl.cfg.DrainRequeueDelay)
 		}
 
-		return nil
+		// Return early without deleting the ongoing drain.
+		return err
 	}
 
+	// Drain was successful. Delete the ongoing drain.
+	delete(ctrl.ongoingDrains, node.Name)
+
+	// Clear the MCCDrainErr, if any.
 	ctrlcommon.MCCDrainErr.Set(0)
 
 	return nil
