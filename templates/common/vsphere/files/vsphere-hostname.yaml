@@ -7,7 +7,6 @@ contents:
 
     # only run if the hostname is not set
     test -s /etc/hostname && exit 0 || :
-    echo "Current hostname: $(cat /etc/hostname)"
 
     if vm_name=$(/bin/vmtoolsd --cmd 'info-get guestinfo.hostname'); then
         /usr/bin/hostnamectl set-hostname --static ${vm_name}
