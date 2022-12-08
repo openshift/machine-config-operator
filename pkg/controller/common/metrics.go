@@ -43,6 +43,7 @@ func RegisterMCCMetrics() error {
 	err := RegisterMetrics([]prometheus.Collector{
 		MachineConfigControllerPausedPoolKubeletCA,
 		OSImageURLOverride,
+		MCCDrainErr,
 	})
 
 	if err != nil {
