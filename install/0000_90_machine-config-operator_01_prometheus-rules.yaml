@@ -55,11 +55,11 @@ spec:
       rules:
         - alert: MCDRebootError
           expr: |
-             mcd_reboot_err > 0
+            max by(namespace, node, pod) (increase(mcd_reboots_failed_total[15m])) > 0
           labels:
             severity: critical
           annotations:
-            message: "Reboot failed on {{ $labels.node }} , update may be blocked"
+            message: "Reboot failed on {{ $labels.node }} , update may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
     - name: mcd-drain-error
       rules:
         - alert: MCDDrainError
@@ -73,11 +73,11 @@ spec:
       rules:
         - alert: MCDPivotError
           expr: |
-            mcd_pivot_err > 0
+            max by(namespace, node, pod) (increase(mcd_pivot_errors_total[15m])) > 0
           labels:
             severity: warning
           annotations:
-            message: "Error detected in pivot logs on {{ $labels.node }} "
+            message: "Error detected in pivot logs on {{ $labels.node }} , upgrade may be blocked. For more details:  oc logs -f -n {{ $labels.namespace }} {{ $labels.pod }} -c machine-config-daemon "
     - name: mcd-kubelet-health-state-error
       rules:
         - alert: KubeletHealthState
