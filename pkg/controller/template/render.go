@@ -16,6 +16,7 @@ import (
 	"github.com/golang/glog"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/cloudprovider"
+	"gopkg.in/yaml.v2"
 
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/openshift/machine-config-operator/pkg/constants"
@@ -320,6 +321,7 @@ func renderTemplate(config RenderConfig, path string, b []byte) ([]byte, error) 
 	funcs["urlPort"] = urlPort
 	funcs["isFrrEnabled"] = isFrrEnabled
 	funcs["isKeepalivedEnabled"] = isKeepalivedEnabled
+	funcs["getControlPlaneLoadBalancer"] = getControlPlaneLoadBalancer
 	tmpl, err := template.New(path).Funcs(funcs).Parse(string(b))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template %s: %w", path, err)
@@ -661,4 +663,18 @@ func isFrrEnabled(cfg RenderConfig) bool {
 	} else {
 		return false
 	}
+}
+
+func getControlPlaneLoadBalancer(cfg RenderConfig) string {
+	var cpCfg string
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.OpenStackPlatformType:
+			if cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType == "BGP" {
+				cpCfg, _ := yaml.Marshal(cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer)
+				return string(cpCfg)
+			}
+		}
+	}
+	return cpCfg
 }

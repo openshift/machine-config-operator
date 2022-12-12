@@ -256,6 +256,10 @@ func appendManifestsByPlatform(manifests []manifest, infra configv1.Infrastructu
 					name:     "manifests/on-prem/frr.conf.tmpl",
 					filename: "openstack/static-pod-resources/frr/frr.conf.tmpl",
 				},
+				manifest{
+					name:     "manifests/on-prem/cp-lb.yaml.tmpl",
+					filename: "openstack/static-pod-resources/frr/cp-lb.yaml",
+				},
 			)
 		} else {
 			manifests = append(manifests,

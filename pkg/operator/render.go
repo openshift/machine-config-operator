@@ -66,6 +66,7 @@ func (a *assetRenderer) addTemplateFuncs() {
 	funcs["onPremPlatformShortName"] = onPremPlatformShortName
 	funcs["isKeepalivedEnabled"] = isKeepalivedEnabled
 	funcs["isFrrEnabled"] = isFrrEnabled
+	funcs["getControlPlaneLoadBalancer"] = getControlPlaneLoadBalancer
 
 	a.tmpl = a.tmpl.Funcs(funcs)
 }
@@ -396,4 +397,18 @@ func isFrrEnabled(cfg mcfgv1.ControllerConfigSpec) bool {
 	} else {
 		return false
 	}
+}
+
+func getControlPlaneLoadBalancer(cfg mcfgv1.ControllerConfigSpec) string {
+	var cpCfg string
+	if cfg.Infra.Status.PlatformStatus != nil {
+		switch cfg.Infra.Status.PlatformStatus.Type {
+		case configv1.OpenStackPlatformType:
+			if cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer.ControlPlaneLoadBalancerType == "BGP" {
+				cpCfg, _ := yaml.Marshal(cfg.Infra.Spec.PlatformSpec.OpenStack.ControlPlaneLoadBalancer)
+				return string(cpCfg)
+			}
+		}
+	}
+	return cpCfg
 }
