@@ -75,9 +75,7 @@ spec:
       vrrpd_options="  -A 127.0.0.1"
       pathd_options="  -A 127.0.0.1"
       EOF
-      cat <<EOF > /etc/frr/vtysh.conf
-      service integrated-vtysh-config
-      EOF
+      touch /etc/frr/vtysh.conf
     resources: {}
     volumeMounts:
     - name: conf-dir
