@@ -146,7 +146,7 @@ func (nw *clusterNodeWriter) SetDone(dcAnnotation string) error {
 		// clear out any Degraded/Unreconcilable reason
 		constants.MachineConfigDaemonReasonAnnotationKey: "",
 	}
-	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
+	mcdState.WithLabelValues(constants.MachineConfigDaemonStateDone, "").SetToCurrentTime()
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -161,7 +161,7 @@ func (nw *clusterNodeWriter) SetWorking() error {
 	annos := map[string]string{
 		constants.MachineConfigDaemonStateAnnotationKey: constants.MachineConfigDaemonStateWorking,
 	}
-	MCDState.WithLabelValues(constants.MachineConfigDaemonStateWorking, "").SetToCurrentTime()
+	mcdState.WithLabelValues(constants.MachineConfigDaemonStateWorking, "").SetToCurrentTime()
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -181,7 +181,7 @@ func (nw *clusterNodeWriter) SetUnreconcilable(err error) error {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateUnreconcilable,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	MCDState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, truncatedErr).SetToCurrentTime()
+	mcdState.WithLabelValues(constants.MachineConfigDaemonStateUnreconcilable, truncatedErr).SetToCurrentTime()
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -205,7 +205,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 		constants.MachineConfigDaemonStateAnnotationKey:  constants.MachineConfigDaemonStateDegraded,
 		constants.MachineConfigDaemonReasonAnnotationKey: truncatedErr,
 	}
-	MCDState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, truncatedErr).SetToCurrentTime()
+	mcdState.WithLabelValues(constants.MachineConfigDaemonStateDegraded, truncatedErr).SetToCurrentTime()
 	respChan := make(chan response, 1)
 	nw.writer <- message{
 		annos:           annos,
@@ -220,7 +220,7 @@ func (nw *clusterNodeWriter) SetDegraded(err error) error {
 
 // SetSSHAccessed sets the ssh annotation to accessed
 func (nw *clusterNodeWriter) SetSSHAccessed() error {
-	MCDSSHAccessed.Inc()
+	mcdSSHAccessed.Inc()
 	annos := map[string]string{
 		machineConfigDaemonSSHAccessAnnotationKey: machineConfigDaemonSSHAccessValue,
 	}

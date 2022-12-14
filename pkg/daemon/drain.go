@@ -52,7 +52,6 @@ func (dn *Daemon) performDrain() error {
 		// A third case we can hit this is that the node fails validation upon reboot, and then we use
 		// the forcefile. But in that case, since we never uncordoned, skipping the drain should be fine
 		dn.logSystem("drain is already completed on this node")
-		MCDDrainErr.Set(0)
 		return nil
 	}
 
@@ -84,7 +83,6 @@ func (dn *Daemon) performDrain() error {
 		if err == wait.ErrWaitTimeout {
 			failMsg := fmt.Sprintf("failed to drain node: %s after 1 hour. Please see machine-config-controller logs for more information", dn.node.Name)
 			dn.nodeWriter.Eventf(corev1.EventTypeWarning, "FailedToDrain", failMsg)
-			MCDDrainErr.Set(1)
 			return fmt.Errorf(failMsg)
 		}
 		return fmt.Errorf("Something went wrong while attempting to drain node: %v", err)
@@ -93,7 +91,6 @@ func (dn *Daemon) performDrain() error {
 	dn.logSystem("drain complete")
 	t := time.Since(startTime).Seconds()
 	glog.Infof("Successful drain took %v seconds", t)
-	MCDDrainErr.Set(0)
 
 	return nil
 }
@@ -128,6 +125,7 @@ func isDrainRequired(actions, diffFileSet []string, oldIgnConfig, newIgnConfig i
 // 1. A new mirror is added to an existing registry that has `mirror-by-digest-only=true`
 // 2. A new registry has been added that has `mirror-by-digest-only=true`
 // See https://bugzilla.redhat.com/show_bug.cgi?id=1943315
+//
 //nolint:gocyclo
 func isSafeContainerRegistryConfChanges(oldIgnConfig, newIgnConfig ign3types.Config) (bool, error) {
 	// /etc/containers/registries.conf contains config in toml format. Parse the file
