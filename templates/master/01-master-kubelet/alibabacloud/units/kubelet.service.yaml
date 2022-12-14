@@ -20,6 +20,7 @@ contents: |
   EnvironmentFile=-/etc/kubernetes/kubelet-workaround
   EnvironmentFile=-/etc/kubernetes/kubelet-env
   EnvironmentFile=/etc/node-sizing.env
+  EnvironmentFile=/run/kubelet-alibaba.env
 
   ExecStart=/usr/local/bin/kubenswrapper \
       /usr/bin/kubelet \
