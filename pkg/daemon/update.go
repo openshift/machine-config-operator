@@ -711,12 +711,20 @@ func (dn *Daemon) updateHypershift(oldConfig, newConfig *mcfgv1.MachineConfig, d
 // We don't generally expect administrators to use this versus e.g. removing
 // broken configuration. We only remove the rollback once the MCD pod has
 // landed on a node, so we know kubelet is working.
-func (dn *Daemon) removeRollback() error {
+func (dn *Daemon) removeRollback() {
 	if !dn.os.IsCoreOSVariant() {
 		// do not attempt to rollback on non-RHCOS/FCOS machines
-		return nil
+		return
 	}
-	return runRpmOstree("cleanup", "-r")
+	for {
+		err := runRpmOstree("cleanup", "-r")
+		if err == nil {
+			break
+		}
+		glog.Errorf("Failed to remove rollback: %v", err)
+		glog.Info("Sleeping 1 minute for retry")
+		time.Sleep(time.Minute)
+	}
 }
 
 // machineConfigDiff represents an ad-hoc difference between two MachineConfig objects.
